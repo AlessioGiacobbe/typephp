@@ -82,7 +82,7 @@ define('ROOT_PATH', dirname(__DIR__));
 
     $('#btn-convert').click(function () {
         const code = textarea1.value
-        $.post("/convert.php", {code: code}, function (result) {
+        $.post("./convert.php", {code: code}, function (result) {
             const json = JSON.parse(result)
             textarea1.value = json.data.code
             $('#btn-convert').hide()
