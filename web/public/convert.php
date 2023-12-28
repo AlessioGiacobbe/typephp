@@ -7,17 +7,23 @@ define('ROOT_PATH', dirname(__DIR__, 2));
 
 $id = date('Ymd_H_') . uniqid();
 
-$file = ROOT_PATH . '/logs/' . $id . '.py';
-$out_file = ROOT_PATH . '/logs/' . $id . '.php';
+$py_file = ROOT_PATH . '/logs/' . $id . '.py';
+$php_file = ROOT_PATH . '/logs/' . $id . '.php';
 
-file_put_contents($file, $_POST['code']);
+file_put_contents($py_file, $_POST['code']);
 $conv = ROOT_PATH . '/conv.php';
 
-$cmd = 'php ' . $conv . ' ' . $file;
-$out = shell_exec($cmd);
+$cmd = 'php ' . $conv . ' ' . $py_file;
+$code = shell_exec($cmd);
 
 echo json_encode([
-    'data' => ['code' => $out,]
+    'data' => ['code' => $code,]
 ]);
 
-file_put_contents($out_file, $out);
+file_put_contents($php_file, $code);
+
+// 运行正常，删除历史文件
+if (str_starts_with($code, '<?php')) {
+    unlink($py_file);
+    unlink($php_file);
+}
