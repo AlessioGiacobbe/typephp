@@ -18,11 +18,11 @@
         }
 
     </style>
-    <link href="/static/css/style.css" rel="stylesheet"/>
+    <link href="./static/css/style.css" rel="stylesheet"/>
     <link id='theme1' href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/a11y-dark.min.css"
           rel="stylesheet"/>
-    <script src="/static/js/codeEditorShortcutKeys.js" type="text/javascript"></script>
-    <script src="/static/js/jquery-1.10.2.js" type="text/javascript"></script>
+    <script src="./static/js/codeEditorShortcutKeys.js" type="text/javascript"></script>
+    <script src="./static/js/jquery-1.10.2.js" type="text/javascript"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"
             type="text/javascript"></script>
 </head>
