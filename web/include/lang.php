@@ -1,4 +1,4 @@
-<select id="selectLanguage">
+<select id="selectLanguage" disabled="disabled">
     <?php if (false): ?>
         <option value="language-html">HTML</option>
         <option value="language-javascript">JavaScript</option>

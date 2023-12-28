@@ -4,6 +4,20 @@
 
 <head>
     <title>Convert Python code to PHP</title>
+    <style id="styleFont">
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400&display=swap');
+
+        #preCode code,
+        textarea,
+        #lineNumbers,
+        .lineNumbers {
+            font-family: "Roboto Mono", monospace;
+            font-weight: 400;
+            font-size: 12pt;
+            line-height: 150%;
+        }
+
+    </style>
     <link href="/static/css/style.css" rel="stylesheet"/>
     <link id='theme1' href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/a11y-dark.min.css"
           rel="stylesheet"/>
@@ -20,19 +34,18 @@
 define('ROOT_PATH', dirname(__DIR__));
 ?>
 <p style="height: 36px">
+    编程语言:
+    <?php include ROOT_PATH . '/include/lang.php'; ?>
     风格:
     <?php include ROOT_PATH . '/include/style.php'; ?>
     字体:
     <?php include ROOT_PATH . '/include/font.php'; ?>
     字体尺寸:
-    <input id="inputFontSize" type="number" step=".1" value="12" style="width: 40px;"/>
-    编程语言:
-    <?php include ROOT_PATH . '/include/lang.php'; ?>
+    <input id="inputFontSize" type="number" step="1" value="12" style="width: 40px;"/>
     行高 (%):
-    <input id="lineHeight" type="number" value="200" style="width: 50px;"/>
+    <input id="lineHeight" type="number" step="10" value="200" style="width: 50px;"/>
 </p>
 
-<!-- Textarea, the code editor -->
 <div id="divCodeWrapper">
     <pre><code style="position: absolute; width: 100%; height: 100%; top: 0; left: 0;" class="lineNumbers"></code></pre>
     <pre><code id="lineNumbers" style="opacity: 0.5;"></code></pre>
@@ -114,7 +127,7 @@ define('ROOT_PATH', dirname(__DIR__));
     }
 
     function updateLang() {
-        document.getElementById("codeBlock").className =  $("#selectLanguage").val()
+        document.getElementById("codeBlock").className = $("#selectLanguage").val()
         highlightJS()
     }
 
