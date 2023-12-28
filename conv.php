@@ -3,6 +3,7 @@ if ($argc < 2) {
     die("Usage: php conv.php [python-file]\n");
 }
 
+define('DEBUG', getenv('PY2PHP_DEBUG'));
 $py_script = __DIR__ . '/dump.py';
 $result = shell_exec('python ' . $py_script . ' ' . $argv[1]);
 $json = json_decode($result);
@@ -17,9 +18,11 @@ function debug($v)
 {
     global $translator;
     if ($translator->mode == 'cli') {
-        echo 'Error: Unsupported Python Syntax, Line: ' . $v->lineno . PHP_EOL;
-        debug_print_backtrace();
-        var_dump($v);
+        echo 'Error: Unsupported Python Syntax, Line: ' . $v->lineno . ', Type: ' . $v->_type . PHP_EOL;
+        if (DEBUG) {
+            debug_print_backtrace();
+            var_dump($v);
+        }
     } else {
         header('Content-Type: application/json');
         echo json_encode($v, JSON_PRETTY_PRINT);
