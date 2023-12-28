@@ -235,6 +235,8 @@ class Translator
                 return $this->parseCall($value);
             case 'Constant':
                 return $this->parseConstant($value);
+            case 'Attribute':
+                return $this->parseAttribute($value);
             case 'Name':
                 return $this->parseName($value);
             case 'List':
