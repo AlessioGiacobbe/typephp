@@ -277,7 +277,7 @@ class Translator
 
     function parseSlice($slice, $op = 'Load')
     {
-        if ($slice->_type != 'Constant') {
+        if ($slice->_type == 'Slice') {
             $_args[] = $slice->lower ? $this->parseTarget($slice->lower) : 'null';
             $_args[] = $slice->upper ? $this->parseTarget($slice->upper) : 'null';
             $_args[] = $slice->step ? $this->parseTarget($slice->step) : 'null';

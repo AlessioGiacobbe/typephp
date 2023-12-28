@@ -79,8 +79,8 @@ _ = 2 < 3 and 3 < 2  # => False
 _ = 1 < 2 < 3  # => True
 _ = 2 < 3 < 2  # => False
 
-_ = a = [1, 2, 3, 4]  # Point a at a new list, [1, 2, 3, 4]
-_ = b = a  # Point b at what a is pointing to
+a = [1, 2, 3, 4]  # Point a at a new list, [1, 2, 3, 4]
+b = a  # Point b at what a is pointing to
 _ = b is a  # => True, a and b refer to the same object
 _ = b == a  # => True, a's and b's objects are equal
 _ = b = [1, 2, 3, 4]  # Point b at a new list, [1, 2, 3, 4]
