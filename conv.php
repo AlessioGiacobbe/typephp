@@ -1,17 +1,14 @@
 <?php
-
-use PhpyTool\Tool;
-
 if ($argc < 2) {
     die("Usage: php conv.php [python-file]\n");
 }
 
-require_once __DIR__ . '/src/Tool.php';
-
-$result = shell_exec('python dump.py ' . $argv[1]);
-
+$py_script = __DIR__ . '/dump.py';
+$result = shell_exec('python ' . $py_script . ' ' . $argv[1]);
 $json = json_decode($result);
-
+if (empty($json)) {
+    die("error py code");
+}
 if ($json->_type != 'Module') {
     echo "invalid python module\n";
 }
@@ -173,9 +170,39 @@ class Translator
         }
     }
 
+    static function valueToRepr($v, $python = false)
+    {
+        if (is_string($v)) {
+            $v = str_replace(
+                ["\\", "\n", "\r", "\t", "\v", "\x00", "\""],
+                ["\\\\", "\\n", "\\r", "\\t", "\\v", "\\x00", "\\\""],
+                $v);
+            return "\"$v\"";
+        } elseif ($v === []) {
+            return '[]';
+        } elseif (is_numeric($v)) {
+            if ($python) {
+                if (is_infinite($v)) {
+                    return "float('inf')";
+                } elseif (is_nan($v)) {
+                    return "float('nan')";
+                }
+            }
+            return strval($v);
+        } elseif (is_bool($v)) {
+            return $python ? ($v ? 'True' : 'False') : ($v ? 'true' : 'false');
+        } elseif (is_null($v)) {
+            return $python ? 'None' : 'null';
+        } elseif (is_array($v)) {
+            return var_export($v, true);
+        } else {
+            return $python ? 'None' : 'null';
+        }
+    }
+
     function parseConstant($value): string
     {
-        return Tool::valueToRepr($value->value);
+        return self::valueToRepr($value->value);
     }
 
     function parseTuple($tuple)

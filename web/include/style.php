@@ -1,5 +1,5 @@
 <select id="selectStyle">
-    <option>a11y-dark.min.css</option>
+    <option selected="selected">a11y-dark.min.css</option>
     <option>a11y-light.min.css</option>
     <option>agate.min.css</option>
     <option>an-old-hope.min.css</option>
@@ -68,7 +68,7 @@
     <option>tomorrow-night-blue.min.css</option>
     <option>tomorrow-night-bright.min.css</option>
     <option>vs.min.css</option>
-    <option selected>vs2015.min.css</option>
+    <option>vs2015.min.css</option>
     <option>xcode.min.css</option>
     <option>xt256.min.css</option>
     <option>base16/3024.min.css</option>

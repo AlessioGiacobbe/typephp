@@ -16,10 +16,8 @@ def test(name, n, hello, **kwargs):
     model2 = vLLMWrapper('Qwen/Qwen-72B-Chat', tensor_parallel_size=2)
 
     def it(m):
-
         return "hello world"
 
     s = it(model2)
 
     return model2
-

@@ -5,9 +5,10 @@
 <head>
     <title>Convert Python code to PHP</title>
     <link href="/static/css/style.css" rel="stylesheet"/>
-    <link id='theme1' href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/vs2015.min.css"
+    <link id='theme1' href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/a11y-dark.min.css"
           rel="stylesheet"/>
     <script src="/static/js/codeEditorShortcutKeys.js" type="text/javascript"></script>
+    <script src="/static/js/jquery-1.10.2.js" type="text/javascript"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"
             type="text/javascript"></script>
 </head>
@@ -40,7 +41,8 @@ define('ROOT_PATH', dirname(__DIR__));
 </div>
 
 <div style="margin-top: 8px">
-    <button onclick="" style="height: 32px; width: 60px">转换</button>
+    <button id="btn-convert" style="height: 32px; width: 60px">转换</button>
+    <button id="btn-reset" style="height: 32px; width: 60px">重置</button>
 </div>
 
 <h2>快捷键</h2>
@@ -65,6 +67,26 @@ define('ROOT_PATH', dirname(__DIR__));
     const codeBlock = document.getElementById("codeBlock");
     const lineNumbers = document.getElementById('lineNumbers');
 
+    $('#btn-convert').click(function () {
+        const code = textarea1.value
+        $.post("/convert.php", {code: code}, function (result) {
+            const json = JSON.parse(result)
+            textarea1.value = json.data.code
+            $('#btn-convert').hide()
+            $('#selectLanguage').val('language-php')
+            updateLang()
+            updateCode()
+        });
+    })
+
+    $('#btn-reset').click(function () {
+        textarea1.value = ''
+        $('#btn-convert').show()
+        $('#selectLanguage').val('language-python')
+        updateLang()
+        updateCode()
+    })
+
     function updateLineNumbers() {
         let lineCount = textarea1.value.split('\n').length;
         let lines = '';
@@ -76,7 +98,6 @@ define('ROOT_PATH', dirname(__DIR__));
 
     // copy code from textarea to code block
     function updateCode() {
-
         let content = textarea1.value;
 
         // encode the special characters
@@ -90,6 +111,11 @@ define('ROOT_PATH', dirname(__DIR__));
 
         // call highlight.js to render the syntax highligtning
         highlightJS();
+    }
+
+    function updateLang() {
+        document.getElementById("codeBlock").className =  $("#selectLanguage").val()
+        highlightJS()
     }
 
     // syntax highlight
