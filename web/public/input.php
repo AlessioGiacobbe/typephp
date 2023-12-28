@@ -47,22 +47,7 @@ define('ROOT_PATH', dirname(__DIR__));
     <button id="btn-reset" style="height: 32px; width: 60px">重置</button>
 </div>
 
-<h2>快捷键</h2>
-<ol>
-    <li>
-        <p><strong>Enter</strong>：换行，并保持与上一行相同的缩进</p>
-    </li>
-    <li>
-        <p><strong>Tab</strong>/<strong>Shift</strong> + <strong>Tab</strong>：增加/减少缩进（支持多行）</p>
-    </li>
-    <li>
-        <p><strong>Shift</strong> + <strong>Del</strong> 或 <strong>Shift</strong> + <strong>Backspace</strong>：删除整行
-        </p>
-    </li>
-    <li>
-        <p><strong>Home</strong>：将光标移到文本中的第一个非空格字符之前</p>
-    </li>
-</ol>
+<?php include ROOT_PATH . '/include/tips.php'; ?>
 
 <script type="text/javascript">
     const textarea1 = document.getElementById("textarea1");
@@ -75,9 +60,9 @@ define('ROOT_PATH', dirname(__DIR__));
     }
 
     $('#divCodeWrapper').css('height', (window.screen.height - 30) + 'px')
+    updateFont();
 
     $('#btn-convert').click(function () {
-
         const code = textarea1.value
         $.post("./convert.php", {code: code}, function (result) {
             const json = JSON.parse(result)

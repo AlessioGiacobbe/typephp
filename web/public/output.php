@@ -58,6 +58,7 @@ define('ROOT_PATH', dirname(__DIR__));
     })
 
     $('#divCodeWrapper').css('height', (window.screen.height - 30) + 'px')
+    updateFont();
 
     function updateLineNumbers() {
         let lineCount = textarea1.value.split('\n').length;
