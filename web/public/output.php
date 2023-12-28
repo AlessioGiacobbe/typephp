@@ -48,7 +48,7 @@ define('ROOT_PATH', dirname(__DIR__));
     <pre><code style="position: absolute; width: 100%; height: 100%; top: 0; left: 0;" class="lineNumbers"></code></pre>
     <pre><code id="lineNumbers" style="opacity: 0.5;"></code></pre>
     <pre id="preCode"><code id="codeBlock" class="language-php"></code></pre>
-    <textarea id="textarea1" wrap="soft" disabled="disabled" spellcheck="false"></textarea>
+    <textarea id="textarea1" wrap="soft" spellcheck="false"></textarea>
 </div>
 
 <div style="margin-top: 8px">
