@@ -4,6 +4,8 @@ if ($argc < 2) {
 }
 
 define('DEBUG', getenv('PY2PHP_DEBUG'));
+define('STEP', getenv('PY2PHP_STEP'));
+
 $py_script = __DIR__ . '/dump.py';
 $result = shell_exec('python ' . $py_script . ' ' . $argv[1]);
 $json = json_decode($result);
@@ -272,6 +274,8 @@ class Translator
                 return $this->parseIfExp($value);
             case 'Yield':
                 return $this->parseYield($value);
+            case 'Lambda':
+                return $this->parseLambda($value);
             default:
                 debug($value);
                 break;
@@ -357,6 +361,8 @@ class Translator
                 return $this->parseTest($target);
             case 'Slice':
                 return $this->parseSlice($target);
+            case 'BoolOp':
+                return $this->parseBoolOp($target);
             default:
                 debug($target);
                 break;
@@ -404,12 +410,21 @@ class Translator
 
     function parseTest($test)
     {
-        $left = $this->parseValue($test->left);
-        $ops = $test->ops;
-        $comparators = $test->comparators;
-
-        $op = $ops[0]->_type;
-        $comparator = $comparators[0];
+        $comparator = null;
+        $left = $test->left ? $this->parseValue($test->left) : '';
+        if ($test->ops) {
+            $ops = $test->ops;
+            if (count($ops) != 1) {
+                debug($test);
+            }
+            $op = $ops[0]->_type;
+            $comparators = $test->comparators;
+            $comparator = $comparators[0];
+        } elseif ($test->op) {
+            $op = $test->op->_type;
+        } else {
+            $op = '';
+        }
 
         switch ($op) {
             case 'Is':
@@ -419,6 +434,8 @@ class Translator
                 return $left . ' != ' . $this->parseValue($comparator);
             case 'In':
                 return $this->parseValue($comparator) . '->__contains__(' . $left . ')';
+            case 'NotIn':
+                return '!' . $this->parseValue($comparator) . '->__contains__(' . $left . ')';
             case 'Gt':
                 return $left . ' > ' . $this->parseValue($comparator);
             case 'Lt':
@@ -427,8 +444,14 @@ class Translator
                 return $left . ' >= ' . $this->parseValue($comparator);
             case 'LtE':
                 return $left . ' <= ' . $this->parseValue($comparator);
+            case 'Not':
+                return '!' . $this->parseValue($test->operand);
+            case 'Or':
+                return $this->parseOr($test->values);
+            case 'And':
+                return $this->parseAnd($test->values);
             default:
-                debug($test);
+                return $this->parseTarget($test);
         }
     }
 
@@ -512,86 +535,104 @@ class Translator
 
     private function addLine($line, array &$lines)
     {
-        if ($this->mode == 'cli') {
-//            echo $line . PHP_EOL;
+        if ($this->mode == 'cli' && STEP) {
+            echo $line . PHP_EOL;
         }
         $lines[] = $line;
+    }
+
+    private function parseLine($node, &$lines)
+    {
+        switch ($node->_type) {
+            case 'ImportFrom':
+                $line = $this->parseImportFrom($node) . ';';
+                break;
+            case 'Assign':
+                $target = $this->parseTarget($node->targets[0]);
+                $value = $this->parseValue($node->value);
+                if ($node->targets[0]->_type == 'Subscript') {
+                    $this->addLine('$__value = ' . $value . ';', $lines);
+                    $line = "$target;";
+                } else {
+                    $line = "$target = $value;";
+                }
+                break;
+            case 'AugAssign':
+                $target = $this->parseTarget($node->target);
+                $value = $this->parseValue($node->value);
+                $line = "$target += $value;";
+                break;
+            case 'Import':
+                $line = $this->parseImport($node) . ';';
+                break;
+            case 'Expr':
+                $line = $this->parseExpr($node);
+                break;
+            case 'FunctionDef':
+                $line = $this->parseFunctionDef($node);
+                break;
+            case 'Return':
+                $line = $this->parseReturn($node) . ';';
+                break;
+            case 'If':
+                $line = $this->parseIf($node);
+                break;
+            case 'For':
+                $line = $this->parseFor($node);
+                break;
+            case 'While':
+                $line = $this->parseWhile($node);
+                break;
+            case 'Try':
+                $line = $this->parseTry($node);
+                break;
+            case 'Raise':
+                $line = $this->parseRaise($node) . ';';
+                break;
+            case 'Subscript':
+                $line = $this->parseSubscript($node) . ';';
+                break;
+            case 'With':
+                $line = $this->parseWith($node);
+                break;
+            case 'Compare':
+                $line = $this->parseTest($node);
+                break;
+            case 'Delete':
+                $line = $this->parseDelete($node);
+                break;
+            case 'Continue':
+                $line = $this->parseContinue($node) . ';';
+                break;
+            case 'Break':
+                $line = $this->parseBreak($node) . ';';
+                break;
+            case 'Global':
+                $line = $this->parseGlobal($node) . ';';
+                break;
+            case 'Pass':
+                $line = $this->parsePass($node) . ';';
+                break;
+            case 'BinOp':
+                $line = $this->parseBinOp($node) . ';';
+                break;
+            default:
+                debug($node);
+                $line = '';
+                break;
+        }
+        $this->addLine($line, $lines);
     }
 
     function parseBody($tree)
     {
         $lines = [];
         foreach ($tree as $node) {
-            switch ($node->_type) {
-                case 'ImportFrom':
-                    $line = $this->parseImportFrom($node) . ';';
-                    break;
-                case 'Assign':
-                    $target = $this->parseTarget($node->targets[0]);
-                    $value = $this->parseValue($node->value);
-                    if ($node->targets[0]->_type == 'Subscript') {
-                        $this->addLine('$__value = ' . $value . ';', $lines);
-                        $line = "$target;";
-                    } else {
-                        $line = "$target = $value;";
-                    }
-                    break;
-                case 'AugAssign':
-                    $target = $this->parseTarget($node->target);
-                    $value = $this->parseValue($node->value);
-                    $line = "$target += $value;";
-                    break;
-                case 'Import':
-                    $line = $this->parseImport($node) . ';';
-                    break;
-                case 'Expr':
-                    $line = $this->parseExpr($node);
-                    break;
-                case 'FunctionDef':
-                    $line = $this->parseFunctionDef($node);
-                    break;
-                case 'Return':
-                    $line = $this->parseReturn($node) . ';';
-                    break;
-                case 'If':
-                    $line = $this->parseIf($node);
-                    break;
-                case 'For':
-                    $line = $this->parseFor($node);
-                    break;
-                case 'While':
-                    $line = $this->parseWhile($node);
-                    break;
-                case 'Try':
-                    $line = $this->parseTry($node);
-                    break;
-                case 'Raise':
-                    $line = $this->parseRaise($node) . ';';
-                    break;
-                case 'Subscript':
-                    $line = $this->parseSubscript($node) . ';';
-                    break;
-                case 'With':
-                    $line = $this->parseWith($node);
-                    break;
-                case 'Compare':
-                    $line = $this->parseTest($node);
-                    break;
-                case 'Delete':
-                    $line = $this->parseDelete($node);
-                    break;
-                default:
-                    debug($node);
-                    $line = '';
-                    break;
-            }
-            $this->addLine($line, $lines);
+            $this->parseLine($node, $lines);
         }
-
         foreach ($lines as &$line) {
             $line = $this->getIndent() . $line;
         }
-
         return implode(PHP_EOL, $lines);
     }
 
@@ -743,7 +784,7 @@ class Translator
         foreach ($values as $v) {
             $targets[] = $this->parseTarget($v);
         }
-        return implode(' && ', $targets);
+        return implode(' and ', $targets);
     }
 
     private function parseOr($values)
@@ -752,7 +793,7 @@ class Translator
         foreach ($values as $v) {
             $targets[] = $this->parseTarget($v);
         }
-        return implode(' || ', $targets);
+        return implode(' or ', $targets);
     }
 
     private function parseDelete(mixed $node)
@@ -840,6 +881,45 @@ class Translator
     private function parseName($value)
     {
         return '$' . $value->id;
+    }
+
+    private function parseContinue(mixed $node)
+    {
+        return 'continue';
+    }
+
+    private function parseBreak(mixed $node)
+    {
+        return 'break';
+    }
+
+    private function parseGlobal(mixed $node)
+    {
+        $names = [];
+        foreach ($node->names as $name) {
+            $names[] = '$' . $name;
+        }
+        return 'global ' . implode(', ', $names);
+    }
+
+    private function parsePass(mixed $node)
+    {
+        return 'return';
+    }
+
+    private function parseLambda($value)
+    {
+        $lines = [];
+        $args = $this->parseArguments($value->args);
+        $code = 'function (' . $args . ') {' . PHP_EOL;
+        $this->indentLevel++;
+        $this->parseLine($value->body, $lines);
+        $this->indentLevel--;
+        if (count($lines) != 1) {
+            debug($value);
+        }
+        $code = 'return ' . $lines[0] . PHP_EOL;
+        return $code . PHP_EOL . $this->getIndent() . '}';
     }
 }
 
