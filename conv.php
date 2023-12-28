@@ -119,6 +119,8 @@ class Translator
                 return 'PyCore::str("' . $attr->s . '")';
             case 'Call':
                 return $this->parseCall($attr);
+            case 'Subscript':
+                return $this->parseSubscript($attr);
             default:
                 var_dump(__METHOD__, __LINE__);
                 debug($attr);
