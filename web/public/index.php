@@ -20,11 +20,12 @@
 <iframe src="./input.php" id="iframe-input" class="code-iframe"></iframe>
 <iframe src="./output.php" width="50%" id="iframe-output"></iframe>
 <script>
-    document.getElementById('iframe-input').height = window.screen.height
-    document.getElementById('iframe-output').height = window.screen.height
-    const sub = 60
-    document.getElementById('iframe-input').width = window.screen.width / 2 - sub
-    document.getElementById('iframe-output').width = window.screen.width / 2 - sub
+    const wsub = 60
+    const hsub = 100
+    document.getElementById('iframe-input').height = window.screen.height - hsub
+    document.getElementById('iframe-output').height = window.screen.height - hsub
+    document.getElementById('iframe-input').width = window.screen.width / 2 - wsub
+    document.getElementById('iframe-output').width = window.screen.width / 2 - wsub
 </script>
 </body>
 </html>

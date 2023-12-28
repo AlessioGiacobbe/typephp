@@ -263,7 +263,7 @@ class Translator
             case 'Subscript':
                 return $this->parseSubscript($value);
             case 'FormattedValue':
-                return $this->parseValue($value->value);
+                return $this->parseFormattedValue($value);
             case 'UnaryOp':
                 return $this->parseTarget($value);
             case 'BoolOp':
@@ -920,6 +920,22 @@ class Translator
         }
         $code = 'return ' . $lines[0] . PHP_EOL;
         return $code . PHP_EOL . $this->getIndent() . '}';
+    }
+
+    private function parseFormattedValue($value)
+    {
+        $expr = $this->parseValue($value->value);
+        if ($value->format_spec and $value->format_spec->_type == 'JoinedStr') {
+            if (count($value->format_spec->values) != 1) {
+                debug($value);
+            }
+            $format = $value->format_spec->values[0]->value;
+            if ($format[0] == '.' and $format[-1] == 'f') {
+                return 'round(' . $expr . ', ' . substr($format, 1, strlen($format) - 2) . ')';
+            }
+        } else {
+            return $expr;
+        }
     }
 }
 

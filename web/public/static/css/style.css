@@ -3,7 +3,6 @@ select {
 }
 
 #divCodeWrapper {
-    height: calc(100vh - 200px);
     max-height: 800px;
     width: 1200px;
     overflow: hidden;
@@ -41,7 +40,7 @@ textarea {
     padding: 15px;
     z-index: 2;
     overflow-x: auto;
-    overflow-y: scroll;
+    overflow-y: auto;
     white-space: nowrap;
     background-color: rgba(0, 0, 0, 0);
     color: rgba(0, 0, 0, 0);

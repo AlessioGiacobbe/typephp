@@ -65,6 +65,8 @@ define('ROOT_PATH', dirname(__DIR__));
         $('#btn-copy').attr('disabled', 'disabled').text('已复制代码')
     })
 
+    $('#divCodeWrapper').css('height', (window.screen.height - 30) + 'px')
+
     function updateLineNumbers() {
         let lineCount = textarea1.value.split('\n').length;
         let lines = '';

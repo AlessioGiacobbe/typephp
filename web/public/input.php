@@ -83,6 +83,8 @@ define('ROOT_PATH', dirname(__DIR__));
         window.parent.frames[1].updateCode()
     }
 
+    $('#divCodeWrapper').css('height', (window.screen.height - 30) + 'px')
+
     $('#btn-convert').click(function () {
 
         const code = textarea1.value
