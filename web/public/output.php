@@ -33,16 +33,8 @@
 <?php
 define('ROOT_PATH', dirname(__DIR__));
 ?>
-<p style="height: 36px">
-    风格:
-    <?php include ROOT_PATH . '/include/style.php'; ?>
-    字体:
-    <?php include ROOT_PATH . '/include/font.php'; ?>
-    字体尺寸:
-    <input id="inputFontSize" type="number" step="1" value="12" style="width: 40px;"/>
-    行高 (%):
-    <input id="lineHeight" type="number" step="10" value="200" style="width: 50px;"/>
-</p>
+
+<?php include ROOT_PATH . '/include/toolbar.php'; ?>
 
 <div id="divCodeWrapper">
     <pre><code style="position: absolute; width: 100%; height: 100%; top: 0; left: 0;" class="lineNumbers"></code></pre>
