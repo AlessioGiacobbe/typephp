@@ -126,6 +126,8 @@ class Translator
                 return $this->parseCall($attr);
             case 'Subscript':
                 return $this->parseSubscript($attr);
+            case 'BinOp':
+                return $this->parseBinOp($attr);
             default:
                 var_dump(__METHOD__, __LINE__);
                 debug($attr);
@@ -165,6 +167,7 @@ class Translator
         foreach ($args as $arg) {
             $args_list[] = $this->parseValue($arg);
         }
+
         foreach ($kwargs as $arg) {
             $name = $arg->arg;
             $args_list[] = $name . ': ' . $this->parseValue($arg->value);
@@ -226,7 +229,7 @@ class Translator
         $code = '';
         $this->indentLevel++;
         $code .= $this->getIndent() . '$___ = [];' . PHP_EOL;
-        $recipient = '$___[]';
+        $recipient = '$___';
         $generators = $this->parseGenerators($listComp->generators, $recipient, $captures);
         $code .= $this->getIndent() . $generators;
         $code .= $this->getIndent() . 'return $___;' . PHP_EOL;
@@ -363,6 +366,8 @@ class Translator
                 return $this->parseSlice($target);
             case 'BoolOp':
                 return $this->parseBoolOp($target);
+            case 'ListComp':
+                return $this->parseListComp($target);
             default:
                 debug($target);
                 break;
@@ -482,6 +487,8 @@ class Translator
                 return $this->parseDict($iter);
             case 'Name':
                 return $this->parseName($iter);
+            case 'Subscript':
+                return $this->parseSubscript($iter);
             default:
                 debug($iter);
         }
@@ -616,6 +623,18 @@ class Translator
             case 'BinOp':
                 $line = $this->parseBinOp($node) . ';';
                 break;
+            case 'IfExp':
+                $line = $this->parseIfExp($node) . ';';
+                break;
+            case 'Tuple':
+                $line = $this->parseTuple($node) . ';';
+                break;
+            case 'Lambda':
+                $line = $this->parseLambda($node) . ';';
+                break;
+            case 'Call':
+                $line = $this->parseCall($node) . ';';
+                break;
             default:
                 debug($node);
                 $line = '';
@@ -649,19 +668,28 @@ class Translator
 
     private function parseGenerators($generators, $recipient, &$captures)
     {
-        $code = '$elts = [];' . PHP_EOL;
+        $captures = [];
+        $code = '';
+
         foreach ($generators as $k => $generator) {
             $target = $this->parseTarget($generator->target);
-            $iter = $generator->iter->id;
-            $name = '$' . $iter;
-            $captures[] = $name;
-            $code .= $this->getIndent() . 'foreach(' . $name . ' as ' . $target . ') {' . PHP_EOL;
+            if ($generator->iter->_type == 'Name') {
+                $name = '$' . $generator->iter->id;
+                $captures[] = $name;
+            } else {
+                $name = '$___iter';
+                $code .= $this->getIndent() . '$___iter = ' . $this->parseIter($generator->iter) . ';' . PHP_EOL;
+            }
+            $code .= $this->getIndent() . 'foreach(' . $name . ' as $___i => ' . $target . ') {' . PHP_EOL;
             $this->indentLevel++;
-            $code .= $this->getIndent() . '$elts[' . $k . '] = ' . $target . ';' . PHP_EOL;
+            if (count($generators) === 1) {
+                $code .= $this->getIndent() . $recipient . '[] = ' . $target . ';' . PHP_EOL;
+            } else {
+                $code .= $this->getIndent() . $recipient . '[$___i][' . $k . '] = ' . $target . ';' . PHP_EOL;
+            }
             $this->indentLevel--;
             $code .= $this->getIndent() . '}' . PHP_EOL;
         }
-        $code .= $this->getIndent() . $recipient . ' = $elts;' . PHP_EOL;;
         return $code;
     }
 
@@ -817,7 +845,7 @@ class Translator
     private function parseWhile(mixed $node)
     {
         $test = $this->parseTest($node->test);
-        $code = $this->getIndent() . 'while(' . $test . ') {' . PHP_EOL;
+        $code = 'while(' . $test . ') {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->parseBody($node->body);
         $this->indentLevel--;
@@ -914,12 +942,10 @@ class Translator
         $code = 'function (' . $args . ') {' . PHP_EOL;
         $this->indentLevel++;
         $this->parseLine($value->body, $lines);
+        $code .= $this->getIndent() . 'return ' . $lines[0] . PHP_EOL;
         $this->indentLevel--;
-        if (count($lines) != 1) {
-            debug($value);
-        }
-        $code = 'return ' . $lines[0] . PHP_EOL;
-        return $code . PHP_EOL . $this->getIndent() . '}';
+        $code .= $this->getIndent() . '}';
+        return $code;
     }
 
     private function parseFormattedValue($value)
