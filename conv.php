@@ -259,6 +259,8 @@ class Translator
                 return $this->parseTuple($value);
             case 'ListComp':
                 return $this->parseListComp($value);
+            case 'DictComp':
+                return $this->parseDictComp($value);
             case 'BinOp':
                 return $this->parseBinOp($value);
             case 'JoinedStr':
@@ -279,6 +281,8 @@ class Translator
                 return $this->parseYield($value);
             case 'Lambda':
                 return $this->parseLambda($value);
+            case 'GeneratorExp':
+                return $this->parseGeneratorExp($value);
             default:
                 debug($value);
                 break;
@@ -962,6 +966,25 @@ class Translator
         } else {
             return $expr;
         }
+    }
+
+    private function parseDictComp($node)
+    {
+        $code = '';
+        $this->indentLevel++;
+        $code .= $this->getIndent() . '$___ = [];' . PHP_EOL;
+        $recipient = '$___';
+        $generators = $this->parseGenerators($node->generators, $recipient, $captures);
+        $code .= $this->getIndent() . $generators;
+        $code .= $this->getIndent() . 'return $___;' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '})(' . implode(',', $captures) . ')';
+        return '(function(' . implode(',', $captures) . ') {' . PHP_EOL . $code;
+    }
+
+    private function parseGeneratorExp($value)
+    {
+        debug($value);
     }
 }
 
