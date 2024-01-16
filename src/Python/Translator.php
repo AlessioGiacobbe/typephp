@@ -2,14 +2,12 @@
 
 namespace PhpAot\Python;
 
-class Translator
+class Translator extends \PhpAot\Core\Translator
 {
     private array $keywords = ['abs', 'aiter', 'all', 'anext', 'any', 'ascii', 'bin', 'bool', 'breakpoint', 'bytearray', 'bytes', 'callable', 'chr', 'classmethod', 'compile', 'complex', 'copyright', 'credits', 'delattr', 'dict', 'dir', 'divmod', 'enumerate', 'eval', 'exec', 'exit', 'filter', 'float', 'format', 'frozenset', 'getattr', 'globals', 'hasattr', 'hash', 'help', 'hex', 'id', 'input', 'int', 'isinstance', 'issubclass', 'iter', 'len', 'license', 'list', 'locals', 'map', 'max', 'memoryview', 'min', 'next', 'object', 'oct', 'open', 'ord', 'pow', 'print', 'property', 'quit', 'range', 'repr', 'reversed', 'round', 'set', 'setattr', 'slice', 'sorted', 'staticmethod', 'str', 'sum', 'super', 'tuple', 'type', 'vars', 'zip'];
     private array $keywordsMap = [];
-    private int $indentLevel = 0;
-    private string $indentStr = "\t";
-    public string $mode;
     private array $definedFunctions = [];
+    protected string $lang = 'Python';
     private array $builtinTypes = [
         'ArithmeticError',
         'AssertionError',
@@ -50,16 +48,6 @@ class Translator
         $this->builtinTypes = array_flip($this->builtinTypes);
     }
 
-    function setMode($mode)
-    {
-        $this->mode = $mode;
-    }
-
-    function setIndent(string $indent)
-    {
-        $this->indentStr = $indent;
-    }
-
     function prepare($root)
     {
         foreach ($root->body as $body) {
@@ -67,6 +55,16 @@ class Translator
                 $this->definedFunctions[$body->name] = 1;
             }
         }
+    }
+
+    function getLine($node): int
+    {
+        return $node->lineno;
+    }
+
+    function getType($node): string
+    {
+        return $node->_type;
     }
 
     function parseAttribute($attr)
@@ -480,11 +478,6 @@ class Translator
         $this->indentLevel--;
 
         return $code . $this->getIndent() . PHP_EOL . $this->getIndent() . '}';
-    }
-
-    private function getIndent()
-    {
-        return str_repeat($this->indentStr, $this->indentLevel);
     }
 
     function parseFunctionDef($node)
