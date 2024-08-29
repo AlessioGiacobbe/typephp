@@ -277,10 +277,13 @@ class Translator extends \PhpAot\Core\Translator
 
     function parseImport($node)
     {
-        $name = $node->names[0];
-        $module = $name->name;
-        $as = empty($name->asname) ? $module : $name->asname;
-        return "\$$as = PyCore::import('$module')";
+        $out = '';
+        foreach ($node->names as $name) {
+            $module = $name->name;
+            $as = empty($name->asname) ? $module : $name->asname;
+            $out .= $this->getIndent() . "\$$as = PyCore::import('$module');\n";
+        }
+        return $out;
     }
 
     function parseTarget($target)
@@ -523,7 +526,7 @@ class Translator extends \PhpAot\Core\Translator
                 $line = "$target += $value;";
                 break;
             case 'Import':
-                $line = $this->parseImport($node) . ';';
+                $line = $this->parseImport($node);
                 break;
             case 'Expr':
                 $line = $this->parseExpr($node);
@@ -596,7 +599,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->addLine($line, $lines);
     }
 
-    function parseBody($tree)
+    function parseBody($tree): string
     {
         $lines = [];
         foreach ($tree as $node) {
@@ -608,7 +611,7 @@ class Translator extends \PhpAot\Core\Translator
         return implode(PHP_EOL, $lines);
     }
 
-    function convert($tree)
+    function convert($tree): void
     {
         $this->prepare($tree);
         $output = '<?php' . PHP_EOL;
