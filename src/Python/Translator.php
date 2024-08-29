@@ -258,7 +258,7 @@ class Translator extends \PhpAot\Core\Translator
         } elseif ($op == 'Del') {
             return $slice->id . '->__delitem__(' . $target . ')';
         } else {
-            return $slice->id . '->__getitem__(' . $target . ')';
+            return $slice->id . '[' . $target . ']';
         }
     }
 
@@ -275,7 +275,7 @@ class Translator extends \PhpAot\Core\Translator
         return implode(';' . PHP_EOL, $imports);
     }
 
-    function parseImport($node)
+    function parseImport($node): string
     {
         $out = '';
         foreach ($node->names as $name) {
@@ -359,9 +359,14 @@ class Translator extends \PhpAot\Core\Translator
 
     function parseArguments($args): string
     {
+        $defaults = $args->defaults ?? [];
         $names = [];
-        foreach ($args->args as $arg) {
-            $names[] = '$' . $arg->arg;
+        foreach ($args->args as $k => $arg) {
+            $tmp = '$' . $arg->arg;
+            if ($k >= count($args->args) - count($defaults)) {
+                $tmp .= ' = ' . $this->parseValue($defaults[$k - count($args->args) + count($defaults)]);
+            }
+            $names[] = $tmp;
         }
         if ($args->vararg) {
             $names[] = '...$' . $args->vararg->arg;
@@ -914,6 +919,10 @@ class Translator extends \PhpAot\Core\Translator
             $format = $value->format_spec->values[0]->value;
             if ($format[0] == '.' and $format[-1] == 'f') {
                 return 'round(' . $expr . ', ' . substr($format, 1, strlen($format) - 2) . ')';
+            } elseif (str_contains($format, '%')) {
+                return $expr . '->strftime("' . $format . '")';
+            } else {
+                throw new \RuntimeException("Unsupported format: $format");
             }
         } else {
             return $expr;
