@@ -7,10 +7,10 @@ function debug($v)
     /**
      * @var $translator Translator
      */
-    global $encryptor;
-    $lang = $encryptor->getLang();
-    if ($encryptor->mode == 'cli') {
-        echo 'Error: Unsupported ' . $lang . ' Syntax, Line: ' . $encryptor->getLine($v) . ', Type: ' . $encryptor->getType($v) . PHP_EOL;
+    global $translator;
+    $lang = $translator->getLang();
+    if ($translator->mode == 'cli') {
+        echo 'Error: Unsupported ' . $lang . ' Syntax, Line: ' . $translator->getLine($v) . ', Type: ' . $translator->getType($v) . PHP_EOL;
         if (DEBUG) {
             debug_print_backtrace();
             var_dump($v);

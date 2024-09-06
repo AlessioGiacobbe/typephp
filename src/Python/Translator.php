@@ -455,6 +455,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseName($iter);
             case 'Subscript':
                 return $this->parseSubscript($iter);
+            case 'Attribute':
+                return $this->parseAttribute($iter);
             default:
                 debug($iter);
         }
