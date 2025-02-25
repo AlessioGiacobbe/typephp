@@ -721,8 +721,7 @@ class Translator extends \PhpAot\Core\Translator
         return 'yield ' . $this->parseValue($value->value) . ';';
     }
 
-
-    private function parseWith(mixed $node)
+    private function parseWith(mixed $node): string
     {
         $items = $node->items;
         $body = $node->body;
@@ -735,7 +734,7 @@ class Translator extends \PhpAot\Core\Translator
             $code .= $target . '__object = ' . $call . ';' . PHP_EOL;;
             $code .= $target . ' = ' . $target . '__object->__enter__();' . PHP_EOL;
             $this->indentLevel++;
-            $finally_code .= $this->getIndent() . $target . '__object->__exit__();' . PHP_EOL;
+            $finally_code .= $this->getIndent() . $target . '__object->__exit__(null, null, null);' . PHP_EOL;
             $this->indentLevel--;
         };
 
