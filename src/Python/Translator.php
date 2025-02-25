@@ -528,9 +528,7 @@ class Translator extends \PhpAot\Core\Translator
                 }
                 break;
             case 'AugAssign':
-                $target = $this->parseTarget($node->target);
-                $value = $this->parseValue($node->value);
-                $line = "$target += $value;";
+                $line = $this->parseAugAssign($node);
                 break;
             case 'Import':
                 $line = $this->parseImport($node);
@@ -656,24 +654,47 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
+    private function parseOp($op)
+    {
+        switch ($op) {
+            case 'Mod':
+                return '%';
+            case 'Add':
+                return '+';
+            case 'Sub':
+                return '-';
+            case 'Mult':
+                return '*';
+            case 'Div':
+                return '/';
+            default:
+                return false;
+        }
+    }
+
+    private function parseAugAssign($value): string
+    {
+        $op = $value->op->_type;
+        $left = $this->parseTarget($value->target);
+        $right = $this->parseValue($value->value);
+        $op_str = $this->parseOp($op);
+        if ($op_str) {
+            return $left . ' ' . $op_str . '= ' . $right;
+        } else {
+            return $left .' = $operator->' . strtolower($op) . '(' . $left . ' , ' . $right . ')';
+        }
+    }
+
     private function parseBinOp($value)
     {
         $op = $value->op->_type;
         $left = $this->parseTarget($value->left);
         $right = $this->parseValue($value->right);
-        switch ($op) {
-            case 'Mod':
-                return $left . ' % ' . $right;
-            case 'Add':
-                return $left . ' + ' . $right;
-            case 'Sub':
-                return $left . ' - ' . $right;
-            case 'Mult':
-                return $left . ' * ' . $right;
-            case 'Div':
-                return $left . ' / ' . $right;
-            default:
-                return '$operator->' . strtolower($op) . '(' . $left . ' , ' . $right . ')';
+        $op_str = $this->parseOp($op);
+        if ($op_str) {
+            return $left . ' ' . $op_str . ' ' . $right;
+        } else {
+            return '$operator->' . strtolower($op) . '(' . $left . ' , ' . $right . ')';
         }
     }
 
