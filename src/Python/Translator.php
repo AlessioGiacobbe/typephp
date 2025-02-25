@@ -679,9 +679,9 @@ class Translator extends \PhpAot\Core\Translator
         $right = $this->parseValue($value->value);
         $op_str = $this->parseOp($op);
         if ($op_str) {
-            return $left . ' ' . $op_str . '= ' . $right;
+            return $left . ' ' . $op_str . '= ' . $right . ';';
         } else {
-            return $left .' = $operator->' . strtolower($op) . '(' . $left . ' , ' . $right . ')';
+            return $left . ' = $operator->' . strtolower($op) . '(' . $left . ' , ' . $right . ');';
         }
     }
 
