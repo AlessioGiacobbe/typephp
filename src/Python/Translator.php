@@ -175,7 +175,7 @@ class Translator extends \PhpAot\Core\Translator
         foreach ($tuple->dims as $dim) {
             $ids[] = $this->parseTarget($dim);
         }
-        return '[' . implode(', ', $ids) . ']';
+        return 'PyCore::tuple([' . implode(', ', $ids) . '])';
     }
 
     function parseListComp($listComp)
@@ -243,26 +243,15 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseSlice($slice, $op = 'Load')
+    function parseSlice($slice): string
     {
-        if ($slice->_type == 'Slice') {
-            $_args[] = $slice->lower ? $this->parseTarget($slice->lower) : 'null';
-            $_args[] = $slice->upper ? $this->parseTarget($slice->upper) : 'null';
-            $_args[] = $slice->step ? $this->parseTarget($slice->step) : 'null';
-            $target = 'PyCore::slice(' . implode(', ', $_args) . ')';
-        } else {
-            $target = $this->parseTarget($slice);
-        }
-        if ($op == 'Store') {
-            return $slice->id . '->__setitem__(' . $target . ', $__value)';
-        } elseif ($op == 'Del') {
-            return $slice->id . '->__delitem__(' . $target . ')';
-        } else {
-            return $slice->id . '[' . $target . ']';
-        }
+        $_args[] = $slice->lower ? $this->parseTarget($slice->lower) : 'null';
+        $_args[] = $slice->upper ? $this->parseTarget($slice->upper) : 'null';
+        $_args[] = $slice->step ? $this->parseTarget($slice->step) : 'null';
+        return 'PyCore::slice(' . implode(', ', $_args) . ')';
     }
 
-    function parseImportFrom($node)
+    function parseImportFrom($node): string
     {
         $module = $node->module;
         $imports = [];
@@ -469,7 +458,15 @@ class Translator extends \PhpAot\Core\Translator
             $code .= $this->parseValue($node->value);
         }
         if ($node->slice) {
-            $code .= $this->parseSlice($node->slice, $node->ctx->_type);
+            $target = $this->parseTarget($node->slice);
+            $op = $node->ctx->_type;
+            if ($node->ctx->_type == 'Store') {
+                $code .= $node->slice->id . '->__setitem__(' . $target . ', $__value)';
+            } elseif ($op == 'Del') {
+                $code .= $node->slice->id . '->__delitem__(' . $target . ')';
+            } else {
+                $code .= $node->slice->id . '[' . $target . ']';
+            }
         }
         return $code;
     }
