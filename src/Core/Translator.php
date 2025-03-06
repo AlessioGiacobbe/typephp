@@ -9,12 +9,12 @@ abstract class Translator
     public string $mode = 'cli';
     protected string $lang;
 
-    function setMode($mode): void
+    public function setMode($mode): void
     {
         $this->mode = $mode;
     }
 
-    function setIndent(string $indent): void
+    public function setIndent(string $indent): void
     {
         $this->indentStr = $indent;
     }

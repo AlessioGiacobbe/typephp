@@ -42,13 +42,13 @@ class Translator extends \PhpAot\Core\Translator
         'UnicodeError', 'UnicodeTranslateError', 'UnicodeWarning', 'UserWarning', 'ValueError', 'Warning', 'ZeroDivisionError'
     ];
 
-    function __construct()
+    public function __construct()
     {
         $this->keywordsMap = array_flip($this->keywords);
         $this->builtinTypes = array_flip($this->builtinTypes);
     }
 
-    function prepare($root)
+    public function prepare($root)
     {
         foreach ($root->body as $body) {
             if ($body->_type == 'FunctionDef') {
@@ -57,17 +57,17 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function getLine($node): int
+    public function getLine($node): int
     {
         return $node->lineno;
     }
 
-    function getType($node): string
+    public function getType($node): string
     {
         return $node->_type;
     }
 
-    function parseAttribute($attr)
+    public function parseAttribute($attr)
     {
         switch ($attr->_type) {
             case 'Name':
@@ -88,7 +88,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseFunc($fn)
+    public function parseFunc($fn)
     {
         switch ($fn->_type) {
             case 'Name':
@@ -102,6 +102,7 @@ class Translator extends \PhpAot\Core\Translator
                 } else {
                     return '$' . $id;
                 }
+                // no break
             case 'Attribute':
                 return $this->parseAttribute($fn->value) . '->' . $fn->attr;
             default:
@@ -109,7 +110,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseCall($call): string
+    public function parseCall($call): string
     {
         $fn = $this->parseFunc($call->func);
         if_empty_debug($fn, $call);
@@ -134,13 +135,14 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    static function valueToRepr($v, $python = false)
+    public static function valueToRepr($v, $python = false)
     {
         if (is_string($v)) {
             $v = str_replace(
                 ["\\", "\n", "\r", "\t", "\v", "\x00", "\""],
                 ["\\\\", "\\n", "\\r", "\\t", "\\v", "\\x00", "\\\""],
-                $v);
+                $v
+            );
             return "\"$v\"";
         } elseif ($v === []) {
             return '[]';
@@ -164,12 +166,12 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseConstant($value): string
+    public function parseConstant($value): string
     {
         return self::valueToRepr($value->value);
     }
 
-    function parseTuple($tuple)
+    public function parseTuple($tuple)
     {
         $ids = [];
         foreach ($tuple->dims as $dim) {
@@ -178,7 +180,7 @@ class Translator extends \PhpAot\Core\Translator
         return 'PyCore::tuple([' . implode(', ', $ids) . '])';
     }
 
-    function parseListComp($listComp)
+    public function parseListComp($listComp)
     {
         $code = '';
         $this->indentLevel++;
@@ -192,7 +194,7 @@ class Translator extends \PhpAot\Core\Translator
         return '(function(' . implode(',', $captures) . ') {' . PHP_EOL . $code;
     }
 
-    function parseValue($value)
+    public function parseValue($value)
     {
         switch ($value->_type) {
             case 'Call':
@@ -243,7 +245,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseSlice($slice): string
+    public function parseSlice($slice): string
     {
         if ($slice->_type == 'Constant') {
             return $this->parseConstant($slice);
@@ -259,7 +261,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseImportFrom($node): string
+    public function parseImportFrom($node): string
     {
         $module = $node->module;
         $imports = [];
@@ -272,7 +274,7 @@ class Translator extends \PhpAot\Core\Translator
         return implode(';' . PHP_EOL, $imports);
     }
 
-    function parseImport($node): string
+    public function parseImport($node): string
     {
         $out = '';
         foreach ($node->names as $name) {
@@ -283,7 +285,7 @@ class Translator extends \PhpAot\Core\Translator
         return $out;
     }
 
-    function parseTarget($target)
+    public function parseTarget($target)
     {
         switch ($target->_type) {
             case 'Name':
@@ -332,7 +334,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseIfExp($exp)
+    public function parseIfExp($exp)
     {
         $test = $this->parseTest($exp->test);
         $orelse = $this->parseValue($exp->orelse);
@@ -340,7 +342,7 @@ class Translator extends \PhpAot\Core\Translator
         return $test . ' ? ' . $body . ' : ' . $orelse;
     }
 
-    function parseExpr($node)
+    public function parseExpr($node)
     {
         switch ($node->_type) {
             case 'Expr':
@@ -349,12 +351,13 @@ class Translator extends \PhpAot\Core\Translator
                 } else {
                     return $this->parseValue($node->value) . ';';
                 }
+                // no break
             default:
                 return $this->parseValue($node->value) . ';';
         }
     }
 
-    function parseArguments($args): string
+    public function parseArguments($args): string
     {
         $defaults = $args->defaults ?? [];
         $names = [];
@@ -371,12 +374,12 @@ class Translator extends \PhpAot\Core\Translator
         return implode(', ', $names);
     }
 
-    function parseReturn($node)
+    public function parseReturn($node)
     {
         return 'return ' . $this->parseValue($node->value);
     }
 
-    function parseTest($test)
+    public function parseTest($test)
     {
         $comparator = null;
         $left = $test->left ? $this->parseValue($test->left) : '';
@@ -423,7 +426,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseIf($node)
+    public function parseIf($node)
     {
         $expr = $this->parseTest($node->test);
         $this->indentLevel++;
@@ -437,7 +440,7 @@ class Translator extends \PhpAot\Core\Translator
             PHP_EOL;
     }
 
-    function parseIter($iter)
+    public function parseIter($iter)
     {
         switch ($iter->_type) {
             case 'Call':
@@ -459,7 +462,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseSubscript($node)
+    public function parseSubscript($node)
     {
         if ($node->slice) {
             $op = $node->ctx->_type;
@@ -476,7 +479,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    function parseFor($node)
+    public function parseFor($node)
     {
         $target = $this->parseTarget($node->target);
         $iter = $this->parseIter($node->iter);
@@ -492,13 +495,14 @@ class Translator extends \PhpAot\Core\Translator
         return $code . $this->getIndent() . PHP_EOL . $this->getIndent() . '}';
     }
 
-    function parseFunctionDef($node)
+    public function parseFunctionDef($node)
     {
         $name = $node->name;
         $args = $this->parseArguments($node->args);
         $fn = PHP_EOL . $this->getIndent() . 'function ' . $name . '(' . $args . ') {' . PHP_EOL;
         $this->indentLevel++;
-        $fn .= $this->parseBody($node->body) . PHP_EOL;;
+        $fn .= $this->parseBody($node->body) . PHP_EOL;
+        ;
         $this->indentLevel--;
         $fn .= $this->getIndent() . '}' . PHP_EOL . PHP_EOL;
 
@@ -606,7 +610,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->addLine($line, $lines);
     }
 
-    function parseBody($tree): string
+    public function parseBody($tree): string
     {
         $lines = [];
         foreach ($tree as $node) {
@@ -618,7 +622,7 @@ class Translator extends \PhpAot\Core\Translator
         return implode(PHP_EOL, $lines);
     }
 
-    function convert($tree): void
+    public function convert($tree): void
     {
         $this->prepare($tree);
         $output = '<?php' . PHP_EOL;
@@ -733,7 +737,8 @@ class Translator extends \PhpAot\Core\Translator
         $parseItem = function ($call, $target) use (&$code, &$finally_code) {
             $call = $this->parseCall($call);
             $target = empty($target) ? '$__' : $this->parseTarget($target);
-            $code .= $target . '__object = ' . $call . ';' . PHP_EOL;;
+            $code .= $target . '__object = ' . $call . ';' . PHP_EOL;
+            ;
             $code .= $target . ' = ' . $target . '__object->__enter__();' . PHP_EOL;
             $this->indentLevel++;
             $finally_code .= $this->getIndent() . $target . '__object->__exit__(null, null, null);' . PHP_EOL;
