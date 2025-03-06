@@ -3,3 +3,4 @@
 /vendor
 /tmp
 /examples/wordpress
+/.php-cs-fixer.cache
