@@ -16,12 +16,12 @@ class Translator extends \PhpAot\Core\Translator
         'phpx.h',
     ];
 
-    function __construct(array $stmts)
+    public function __construct(array $stmts)
     {
         $this->stmts = $stmts;
     }
 
-    function parseHeaders(): string
+    public function parseHeaders(): string
     {
         $lines = [];
         foreach ($this->headers as $header) {
@@ -30,12 +30,12 @@ class Translator extends \PhpAot\Core\Translator
         return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
     }
 
-    function setPhpxDir($dir): void
+    public function setPhpxDir($dir): void
     {
         $this->phpxDir = $dir;
     }
 
-    function convert()
+    public function convert()
     {
         $code = '';
         $code .= $this->parseHeaders();
@@ -44,18 +44,18 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
-    function save($code, $file)
+    public function save($code, $file)
     {
         file_put_contents($file, $code);
     }
 
 
-    function getLine($node): int
+    public function getLine($node): int
     {
         return $node->getLine();
     }
 
-    function getType($node): string
+    public function getType($node): string
     {
         return $node->getType();
     }
@@ -311,4 +311,3 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' + ' . $right;
     }
 }
-
