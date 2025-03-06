@@ -245,10 +245,18 @@ class Translator extends \PhpAot\Core\Translator
 
     function parseSlice($slice): string
     {
-        $_args[] = $slice->lower ? $this->parseTarget($slice->lower) : 'null';
-        $_args[] = $slice->upper ? $this->parseTarget($slice->upper) : 'null';
-        $_args[] = $slice->step ? $this->parseTarget($slice->step) : 'null';
-        return 'PyCore::slice(' . implode(', ', $_args) . ')';
+        if ($slice->_type == 'Constant') {
+            return $this->parseConstant($slice);
+        } elseif ($slice->_type === 'Tuple') {
+            return $this->parseTuple($slice);
+        } elseif ($slice->_type === 'Slice') {
+            $_args[] = $slice->lower ? $this->parseTarget($slice->lower) : 'null';
+            $_args[] = $slice->upper ? $this->parseTarget($slice->upper) : 'null';
+            $_args[] = $slice->step ? $this->parseTarget($slice->step) : 'null';
+            return 'PyCore::slice(' . implode(', ', $_args) . ')';
+        } else {
+            debug($slice);
+        }
     }
 
     function parseImportFrom($node): string
@@ -453,22 +461,19 @@ class Translator extends \PhpAot\Core\Translator
 
     function parseSubscript($node)
     {
-        $code = '';
-        if ($node->value) {
-            $code .= $this->parseValue($node->value);
-        }
         if ($node->slice) {
-            $target = $this->parseTarget($node->slice);
             $op = $node->ctx->_type;
+            $value = $this->parseValue($node->value);
             if ($node->ctx->_type == 'Store') {
-                $code .= $node->slice->id . '->__setitem__(' . $target . ', $__value)';
+                return  $value. '[' . $this->parseSlice($node->slice) . '] = $__value';
             } elseif ($op == 'Del') {
-                $code .= $node->slice->id . '->__delitem__(' . $target . ')';
+                return 'unset(' . $value . '[' . $this->parseSlice($node->slice) . '])';
             } else {
-                $code .= $node->slice->id . '[' . $target . ']';
+                return $value . '[' . $this->parseSlice($node->slice) . ']';
             }
+        } else {
+            debug($node);
         }
-        return $code;
     }
 
     function parseFor($node)
