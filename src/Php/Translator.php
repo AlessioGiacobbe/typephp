@@ -12,9 +12,16 @@ class Translator extends \PhpAot\Core\Translator
     protected string $phpxDir = '~/workspace/phpx';
     protected string $lang = 'PHP';
     protected array $typeMap = [];
+    protected array $zendTypeMap = [
+        'int' => 'php::Int',
+        'float' => 'php::Float',
+        'bool' => 'bool',
+    ];
     protected array $headers = [
         'phpx.h',
     ];
+
+    const PREFIX = 'php_';
 
     public function __construct(array $stmts)
     {
@@ -60,12 +67,17 @@ class Translator extends \PhpAot\Core\Translator
         return $node->getType();
     }
 
+    public function getZendType(string $type): string
+    {
+        return $this->zendTypeMap[$type] ?? 'zval *';
+    }
+
     private function parseFunctionDef($v)
     {
         $name = $this->parseIdentifier($v->name);
-        $return = $this->parseIdentifier($v->returnType);
+        $returnType = $this->getZendType($this->parseIdentifier($v->returnType));
         $params = $this->parseParams($v->params);
-        $code = $return . ' ' . $name . '(' . $params . ') {' . PHP_EOL;
+        $code = $returnType . ' ' . self::PREFIX . $name . '(' . $params . ') {' . PHP_EOL;
         $this->indentLevel++;
         $stmts = $this->parseStmts($v->stmts);
         $this->indentLevel--;
@@ -75,28 +87,21 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseIdentifier($node)
+    protected function parseIdentifier($expr)
     {
-        $type = $node->getType();
+        $type = $expr->getType();
         switch ($type) {
+            case 'Name':
             case 'Identifier':
             case 'Expr_Variable':
-                return $node->name;
+                return $expr->name;
             case 'Scalar_Int':
             case 'Scalar_Float':
-                return $node->value;
+                return $expr->value;
             case 'Scalar_String':
-                return '"' . $node->value . '"';
-            case 'Expr_Array':
-                return $this->parseArray($node);
-            case 'Expr_BinaryOp_Mul':
-                return '(' . $this->parseBinaryOpMul($node) . ')';
-            case 'Expr_BinaryOp_Concat':
-                return '(' . $this->parseBinaryOpConcat($node) . ')';
-            case 'Expr_BinaryOp_Plus':
-                return '(' . $this->parseBinaryOpPlus($node) . ')';
+                return '"' . $expr->value . '"';
             default:
-                debug($node);
+                return $this->parseExpr($expr);
         }
     }
 
@@ -112,7 +117,7 @@ class Translator extends \PhpAot\Core\Translator
         return implode(', ', $list);
     }
 
-    private function parseStmts(array $stmts)
+    private function parseStmts(array $stmts): string
     {
         $lines = [];
         foreach ($stmts as $v) {
@@ -129,6 +134,9 @@ class Translator extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Return':
                     $lines[] = $this->parseReturn($v) . ';';
+                    break;
+                case 'Stmt_For':
+                    $lines[] = $this->parseFor($v);
                     break;
                 default:
                     debug($v);
@@ -149,10 +157,39 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseAssign($expr);
             case 'Expr_BinaryOp_Plus':
                 return $this->parseBinaryOpPlus($expr);
+            case 'Expr_BinaryOp_Smaller':
+                return $this->parseBinarySmaller($expr);
+            case 'Expr_PreInc':
+                return $this->parsePreInc($expr);
+            case 'Expr_AssignOp_Plus':
+                return $this->parseAssignOpPlus($expr);
+            case 'Expr_AssignOp_Minus':
+                return $this->parseAssignOpMinus($expr);
+            case 'Expr_AssignOp_Mul':
+                return $this->parseAssignOpMul($expr);
+            case 'Expr_AssignOp_Div':
+                return $this->parseAssignOpDiv($expr);
             case 'Expr_BinaryOp_Mul':
                 return $this->parseBinaryOpMul($expr);
+            case 'Expr_AssignOp_Mod':
+                return $this->parseBinaryOpMod($expr);
             case 'Expr_BinaryOp_Concat':
                 return $this->parseBinaryOpConcat($expr);
+            case 'Expr_Array':
+                return $this->parseArray($expr);
+            case 'Expr_ArrayDimFetch':
+                return $this->parseArrayDimFetch($expr);
+            case 'Expr_BinaryOp_ShiftLeft':
+                return $this->parseBinaryOpShiftLeft($expr);
+            case 'Expr_BinaryOp_ShiftRight':
+                return $this->parseBinaryOpShiftRight($expr);
+            case 'Expr_FuncCall':
+                return $this->parseFuncCall($expr);
+            case 'Scalar_Int':
+            case 'Scalar_Float':
+                return $expr->value;
+            case 'Scalar_String':
+                return '"' . $expr->value . '"';
             default:
                 debug($expr);
         }
@@ -161,7 +198,7 @@ class Translator extends \PhpAot\Core\Translator
     private function parseAssign(mixed $v)
     {
         $var = $this->parseIdentifier($v->var);
-        $expr = $this->parseIdentifier($v->expr);
+        $expr = $this->parseExpr($v->expr);
 
         if (!isset($this->typeMap[$var])) {
             $type = $this->detectType($v->var, $v->expr);
@@ -212,15 +249,16 @@ class Translator extends \PhpAot\Core\Translator
         $exprType = $expr->getType();
         switch ($exprType) {
             case 'Scalar_Int':
-                return 'zend_long';
+                return $this->getZendType('int');
             case 'Scalar_Float':
-                return 'double';
-            case 'Scalar_String':
-                return 'php::Variant';
+                return $this->getZendType('float');
+            case 'Scalar_Bool':
+                return $this->getZendType('bool');
             case 'Expr_Array':
                 return 'php::Array';
+            case 'Scalar_String':
             default:
-                debug($expr);
+                return 'php::Variant';
         }
     }
 
@@ -310,4 +348,130 @@ class Translator extends \PhpAot\Core\Translator
 
         return $left . ' + ' . $right;
     }
+
+    private function parseFor(mixed $v)
+    {
+        $init = $v->init;
+        $cond = $v->cond;
+        $loop = $v->loop;
+        $stmts = $v->stmts;
+
+        $code = 'for (';
+
+        $list_expr = [];
+        foreach ($init as $expr) {
+            $list_expr[] = $this->parseExpr($expr);
+        }
+        $code .= implode(', ', $list_expr);
+        $code .= '; ';
+
+        $list_cond = [];
+        foreach ($cond as $expr) {
+            $list_cond[] = $this->parseExpr($expr);
+        }
+        $code .= implode(', ', $list_cond);
+        $code .= '; ';
+
+        $list_loop = [];
+        foreach ($loop as $expr) {
+            $list_loop[] = $this->parseExpr($expr);
+        }
+        $code .= implode(', ', $list_loop);
+        $code .= ') {' . PHP_EOL;
+
+        $this->indentLevel++;
+        $code .= $this->parseStmts($stmts);
+        $this->indentLevel--;
+
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        return $code;
+    }
+
+    private function parseBinarySmaller(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' < ' . $right;
+    }
+
+    private function parsePreInc(mixed $expr): string
+    {
+        return '++' . $this->parseIdentifier($expr->var);
+    }
+
+    private function parseAssignOpPlus(mixed $expr): string
+    {
+        $var = $this->parseIdentifier($expr->var);
+        return $var . ' += ' . $this->parseIdentifier($expr->expr);
+    }
+
+    private function parseArrayDimFetch($node): string
+    {
+        $var = $this->parseIdentifier($node->var);
+        $dim = $this->parseIdentifier($node->dim);
+        return $var . '[' . $dim . ']';
+    }
+
+    private function parseBinaryOpShiftLeft($node)
+    {
+        $left = $this->parseIdentifier($node->left);
+        $right = $this->parseIdentifier($node->right);
+
+        return $left . ' << ' . $right;
+    }
+
+    private function parseBinaryOpShiftRight($node)
+    {
+        $left = $this->parseIdentifier($node->left);
+        $right = $this->parseIdentifier($node->right);
+
+        return $left . ' >> ' . $right;
+    }
+
+    private function parseAssignOpMinus(mixed $expr): string
+    {
+        $var = $this->parseIdentifier($expr->var);
+        return $var . ' -= ' . $this->parseIdentifier($expr->expr);
+    }
+
+    private function parseAssignOpMul(mixed $expr): string
+    {
+        $var = $this->parseIdentifier($expr->var);
+        return $var . ' *= ' . $this->parseIdentifier($expr->expr);
+    }
+
+    private function parseAssignOpDiv(mixed $expr): string
+    {
+        $var = $this->parseIdentifier($expr->var);
+        return $var . ' /= ' . $this->parseIdentifier($expr->expr);
+    }
+
+    private function parseBinaryOpMod(mixed $expr): string
+    {
+        $var = $this->parseIdentifier($expr->var);
+        return $var . ' %= ' . $this->parseIdentifier($expr->expr);
+    }
+
+    private function parseFuncCall(mixed $expr): string
+    {
+        $name = $this->parseIdentifier($expr->name);
+        return $name . '(' . $this->parseArgs($expr->args) . ')';
+    }
+
+    private function parseArgs($args): string
+    {
+        $list_args = [];
+        foreach ($args as $arg) {
+            $list_args[] = $this->parseArg($arg);
+        }
+        return implode(', ', $list_args);
+    }
+
+    private function parseArg($arg)
+    {
+        return $this->parseIdentifier($arg->value);
+    }
+
+
 }
