@@ -75,7 +75,12 @@ class Translator extends \PhpAot\Core\Translator
     private function parseFunctionDef($v)
     {
         $name = $this->parseIdentifier($v->name);
-        $returnType = $this->getZendType($this->parseIdentifier($v->returnType));
+        if ($v->returnType) {
+            $returnType = $this->getZendType($this->parseIdentifier($v->returnType));
+        } else {
+            $returnType = 'php::Variant';
+        }
+
         $params = $this->parseParams($v->params);
         $code = $returnType . ' ' . self::PREFIX . $name . '(' . $params . ') {' . PHP_EOL;
         $this->indentLevel++;
@@ -99,7 +104,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Scalar_Float':
                 return $expr->value;
             case 'Scalar_String':
-                return '"' . $expr->value . '"';
+                return '"' . str_replace("\n", '\n', $expr->value) . '"';
             default:
                 return $this->parseExpr($expr);
         }
@@ -138,6 +143,21 @@ class Translator extends \PhpAot\Core\Translator
                 case 'Stmt_For':
                     $lines[] = $this->parseFor($v);
                     break;
+                case 'Stmt_While':
+                    $lines[] = $this->parseWhile($v);
+                    break;
+                case 'Stmt_Do':
+                    $lines[] = $this->parseDo($v);
+                    break;
+                case 'Stmt_If':
+                    $lines[] = $this->parseIf($v);
+                    break;
+                case 'Stmt_Break':
+                    $lines[] = 'break;';
+                    break;
+                case 'Stmt_Continue':
+                    $lines[] = 'continue;';
+                    break;
                 default:
                     debug($v);
             }
@@ -155,12 +175,32 @@ class Translator extends \PhpAot\Core\Translator
         switch ($type) {
             case 'Expr_Assign':
                 return $this->parseAssign($expr);
+            case 'Expr_Print':
+                return $this->parsePrint($expr);
+            case 'Expr_BinaryOp_Equal':
+                return $this->parseBinaryOpEqual($expr);
+            case 'Expr_BinaryOp_NotEqual':
+                return $this->parseBinaryOpNotEqual($expr);
+            case 'Expr_BinaryOp_Identical':
+                return $this->parseBinaryOpIdentical($expr);
+            case 'Expr_BooleanNot':
+                return $this->parseBooleanNot($expr);
             case 'Expr_BinaryOp_Plus':
                 return $this->parseBinaryOpPlus($expr);
             case 'Expr_BinaryOp_Smaller':
-                return $this->parseBinarySmaller($expr);
+                return $this->parseBinaryOpSmaller($expr);
+            case 'Expr_BinaryOp_SmallerOrEqual':
+                return $this->parseBinaryOpSmallerOrEqual($expr);
+            case 'Expr_BinaryOp_GreaterOrEqual':
+                return $this->parseBinaryOpGreaterOrEqual($expr);
             case 'Expr_PreInc':
                 return $this->parsePreInc($expr);
+            case 'Expr_PostInc':
+                return $this->parsePostInc($expr);
+            case 'Expr_PreDec':
+                return $this->parsePreDec($expr);
+            case 'Expr_PostDec':
+                return $this->parsePostDec($expr);
             case 'Expr_AssignOp_Plus':
                 return $this->parseAssignOpPlus($expr);
             case 'Expr_AssignOp_Minus':
@@ -172,9 +212,19 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr_BinaryOp_Mul':
                 return $this->parseBinaryOpMul($expr);
             case 'Expr_AssignOp_Mod':
-                return $this->parseBinaryOpMod($expr);
+                return $this->parseAssignOpMod($expr);
             case 'Expr_BinaryOp_Concat':
                 return $this->parseBinaryOpConcat($expr);
+            case 'Expr_BinaryOp_Greater':
+                return $this->parseBinaryOpGreater($expr);
+            case 'Expr_BinaryOp_LogicalAnd':
+            case 'Expr_BinaryOp_BooleanAnd':
+                return $this->parseBinaryOpLogicalAnd($expr);
+            case 'Expr_BinaryOp_LogicalOr':
+            case 'Expr_BinaryOp_BooleanOr':
+                return $this->parseBinaryOpLogicalOr($expr);
+            case 'Expr_BinaryOp_LogicalXor':
+                return $this->parseBinaryOpLogicalXor($expr);
             case 'Expr_Array':
                 return $this->parseArray($expr);
             case 'Expr_ArrayDimFetch':
@@ -183,13 +233,27 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpShiftLeft($expr);
             case 'Expr_BinaryOp_ShiftRight':
                 return $this->parseBinaryOpShiftRight($expr);
+            case 'Expr_BinaryOp_BitwiseAnd':
+                return $this->parseBinaryOpBitwiseAnd($expr);
+            case 'Expr_BinaryOp_BitwiseOr':
+                return $this->parseBinaryOpBitwiseOr($expr);
+            case 'Expr_BinaryOp_BitwiseXor':
+                return $this->parseBinaryOpBitwiseXor($expr);
+            case 'Expr_BitwiseNot':
+                return $this->parseBitwiseNot($expr);
+            case 'Expr_BinaryOp_Mod':
+                return $this->parseBinaryOpMod($expr);
+            case 'Expr_BinaryOp_Pow':
+                return $this->parseBinaryOpPow($expr);
+            case 'Expr_Ternary':
+                return $this->parseTernary($expr);
             case 'Expr_FuncCall':
                 return $this->parseFuncCall($expr);
             case 'Scalar_Int':
             case 'Scalar_Float':
-                return $expr->value;
             case 'Scalar_String':
-                return '"' . $expr->value . '"';
+            case 'Expr_Variable':
+                return $this->parseIdentifier($expr);
             default:
                 debug($expr);
         }
@@ -387,7 +451,7 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
-    private function parseBinarySmaller(mixed $expr): string
+    private function parseBinaryOpSmaller(mixed $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -449,8 +513,9 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpMod(mixed $expr): string
     {
-        $var = $this->parseIdentifier($expr->var);
-        return $var . ' %= ' . $this->parseIdentifier($expr->expr);
+        $left = $this->parseExpr($expr->left);
+        $right = $this->parseExpr($expr->right);
+        return $left . ' % ' . $right;
     }
 
     private function parseFuncCall(mixed $expr): string
@@ -473,5 +538,213 @@ class Translator extends \PhpAot\Core\Translator
         return $this->parseIdentifier($arg->value);
     }
 
+    private function parsePostInc($expr): string
+    {
+        return $this->parseIdentifier($expr->var) . '++';
+    }
 
+    private function parsePostDec($expr): string
+    {
+        return $this->parseIdentifier($expr->var) . '--';
+    }
+
+    private function parseTernary(mixed $expr): string
+    {
+        $cond = $expr->cond;
+        $if = $expr->if;
+        $else = $expr->else;
+        return $this->parseExpr($cond) . ' ? ' . $this->parseExpr($if) . ' : ' . $this->parseExpr($else);
+    }
+
+    private function parseBinaryOpGreater(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' > ' . $right;
+    }
+
+    private function parseAssignOpMod(mixed $expr): string
+    {
+        $var = $this->parseIdentifier($expr->var);
+        return $var . ' % ' . $this->parseIdentifier($expr->expr);
+    }
+
+    private function parseBinaryOpPow(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return 'pow(' . $left . ', ' . $right . ')';
+    }
+
+    private function parsePreDec(mixed $expr): string
+    {
+        return '--' . $this->parseIdentifier($expr->var);
+    }
+
+    private function parseBinaryOpBitwiseAnd(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' & ' . $right;
+    }
+
+    private function parseBinaryOpBitwiseOr(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' | ' . $right;
+    }
+
+    private function parseBinaryOpBitwiseXor(mixed $expr)
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' ^ ' . $right;
+    }
+
+    private function parseBitwiseNot(mixed $expr)
+    {
+        $var = $this->parseIdentifier($expr->expr);
+        return '~' . $var;
+    }
+
+    private function parseIf(mixed $v): string
+    {
+        $cond = $this->parseExpr($v->cond);
+
+        $code = 'if (' . $cond . ') {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->parseStmts($v->stmts);
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}';
+
+        if ($v->elseifs) {
+            foreach ($v->elseifs as $elseif) {
+                $elseifCond = $this->parseExpr($elseif->cond);
+                $code .= ' else if (' . $elseifCond . ') {' . PHP_EOL;
+                $this->indentLevel++;
+                $code .= $this->parseStmts($elseif->stmts);
+                $this->indentLevel--;
+                $code .= $this->getIndent() . '}';
+            }
+        }
+
+        if ($v->else) {
+            $code .= ' else {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->parseStmts($v->else->stmts);
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}';
+        }
+
+        return $code . PHP_EOL;
+    }
+
+    private function parseBinaryOpEqual(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' == ' . $right;
+    }
+
+    private function parseBinaryOpNotEqual(mixed $expr)
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' != ' . $right;
+    }
+
+    private function parseBinaryOpLogicalAnd(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' && ' . $right;
+    }
+
+    private function parseBinaryOpLogicalOr(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' || ' . $right;
+    }
+
+    private function parseBinaryOpLogicalXor(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' ^ ' . $right;
+    }
+
+    private function parseBooleanNot(mixed $expr): string
+    {
+        $expr = $this->parseExpr($expr->expr);
+        return '!' . $expr;
+    }
+
+    private function parseWhile(mixed $v): string
+    {
+        $cond = $this->parseExpr($v->cond);
+        $stmts = $v->stmts;
+
+        $code = 'while (' . $cond . ') {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->parseStmts($stmts);
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+
+        return $code;
+    }
+
+    private function parseBinaryOpSmallerOrEqual(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' <= ' . $right;
+    }
+
+    private function parseBinaryOpGreaterOrEqual(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $left . ' >= ' . $right;
+    }
+
+    private function parsePrint(mixed $expr): string
+    {
+        return 'php::echo(' . $this->parseExpr($expr->expr) . ')';
+    }
+
+    private function parseDo(mixed $v): string
+    {
+        $stmts = $v->stmts;
+        $cond = $this->parseExpr($v->cond);
+
+        $code = 'do {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->parseStmts($stmts);
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '} while (' . $cond . ');' . PHP_EOL;
+
+        return $code;
+    }
+
+    private function parseBinaryOpIdentical(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return 'php::same(' . $left . ', ' . $right . ')';
+    }
 }

@@ -3,6 +3,7 @@
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 use PhpAot\Php\Translator;
+use PhpAot\Php\Visitor;
 use PhpParser\Error;
 use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
@@ -13,13 +14,14 @@ define('DEBUG', true);
 $traverser = new NodeTraverser;
 $prettyPrinter = new PrettyPrinter\Standard;
 
-$traverser->addVisitor(new \PhpAot\Php\Visitor());
+$traverser->addVisitor(new Visitor());
 
 if (empty($argv[1])) {
     die("php compiler.php [file]\n");
 }
 
-$code = file_get_contents($argv[1]);
+$file = $argv[1];
+$code = file_get_contents($file);
 
 $parser = (new ParserFactory())->createForNewestSupportedVersion();
 try {
@@ -28,10 +30,11 @@ try {
     $translator = new Translator($stmts);
     $translator->setIndent('    ');
     $code = $translator->convert();
-    $translator->save($code, './tmp/hello.cc');
-    $translator->compileFile('./tmp/hello.cc');
+    $info = pathinfo($file);
+    $cppFile = './tmp/' . $info['filename'] . '.cc';
+    $translator->save($code, $cppFile);
+    //$translator->compileFile($cppFile);
 } catch (Error $error) {
     echo "Parse error: {$error->getMessage()}\n";
     return;
 }
-
