@@ -333,7 +333,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->indentLevel++;
         foreach ($items as $item) {
             if ($item->key) {
-                $list[] = $this->getIndent() . '{ php::Variant(' . $this->parseIdentifier($item->key) . '), php::Variant(' . $this->parseIdentifier($item->value) . ') }';
+                $list[] = $this->getIndent() . '{ ' . $this->parseIdentifier($item->key) . ', php::Variant(' . $this->parseIdentifier($item->value) . ') }';
             } else {
                 $list[] = $this->getIndent() . 'php::Variant(' . $this->parseIdentifier($item->value) . ')';
             }
@@ -413,22 +413,23 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' + ' . $right;
     }
 
-    private function parseFor(mixed $v)
+    private function parseFor(mixed $v): string
     {
         $init = $v->init;
         $cond = $v->cond;
         $loop = $v->loop;
         $stmts = $v->stmts;
+        $code = '';
 
-        $code = 'for (';
 
         $list_expr = [];
         foreach ($init as $expr) {
             $list_expr[] = $this->parseExpr($expr);
         }
-        $code .= implode(', ', $list_expr);
-        $code .= '; ';
+        $list_expr[] = '';
+        $code .= implode(";\n" . $this->getIndent(), $list_expr);
 
+        $code .= 'for (;';
         $list_cond = [];
         foreach ($cond as $expr) {
             $list_cond[] = $this->parseExpr($expr);
@@ -521,7 +522,11 @@ class Translator extends \PhpAot\Core\Translator
     private function parseFuncCall(mixed $expr): string
     {
         $name = $this->parseIdentifier($expr->name);
-        return $name . '(' . $this->parseArgs($expr->args) . ')';
+        if (empty($expr->args)) {
+            return 'php::exec("' . $name . '")';
+        } else {
+            return 'php::exec("' . $name . '", ' . $this->parseArgs($expr->args) . ')';
+        }
     }
 
     private function parseArgs($args): string
