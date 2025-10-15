@@ -13,4 +13,4 @@ for ($i = 0; $i < strlen($bytes); $i++) {
 
 $out .= '};' . PHP_EOL;
 
-file_put_contents(__DIR__ . '/const_c_array.c', $out);
+file_put_contents(__DIR__ . '/../tmp/const_c_array.c', $out);
