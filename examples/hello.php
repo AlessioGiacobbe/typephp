@@ -27,5 +27,7 @@ function main(int $argc, array $argv): int
 
     echo "value:=" . ($a + $b);
 
+    echo "value:=", $a, $b;
+
     return $a * $b;
 }

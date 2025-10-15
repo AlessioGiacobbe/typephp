@@ -6,7 +6,7 @@ function expr1()
         echo $b . "\n";
     }
 
-    $a = random_int() % 100 > 50 ? 1 : 2;
+    $a = random_int(128, 512) % 100 > 50 ? 1 : 2;
     $c = $a ** $b;
     $c--;
     --$c;

@@ -5,10 +5,14 @@ namespace PhpAot\Php;
 use PhpParser\Node;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
+use PhpAot\Php\Visitor;
+use PhpParser\Error;
+use PhpParser\NodeTraverser;
+use PhpParser\ParserFactory;
+use PhpParser\PrettyPrinter;
 
 class Translator extends \PhpAot\Core\Translator
 {
-    protected array $stmts;
     protected string $phpxDir = '~/workspace/phpx';
     protected string $lang = 'PHP';
     protected array $typeMap = [];
@@ -21,11 +25,14 @@ class Translator extends \PhpAot\Core\Translator
         'phpx.h',
     ];
 
+    protected string $namespace = '';
+    protected array $uses = [];
+    protected string $class = '';
+
     const PREFIX = 'php_';
 
-    public function __construct(array $stmts)
+    public function __construct()
     {
-        $this->stmts = $stmts;
     }
 
     public function parseHeaders(): string
@@ -42,13 +49,37 @@ class Translator extends \PhpAot\Core\Translator
         $this->phpxDir = $dir;
     }
 
-    public function convert()
+    public function convert(string $file)
     {
-        $code = '';
-        $code .= $this->parseHeaders();
-        $code .= $this->parseStmts($this->stmts);
+        $parser = (new ParserFactory())->createForNewestSupportedVersion();
+        $phpCode = file_get_contents($file);
+        $ast = $parser->parse($phpCode);
 
-        return $code;
+        $traverser = new NodeTraverser;
+        $prettyPrinter = new PrettyPrinter\Standard;
+
+        $traverser->addVisitor(new Visitor());
+        $stmts = $traverser->traverse($ast);
+
+        $cppCode = $this->parseHeaders();
+
+        foreach($stmts as $v) {
+            $type = $v->getType();
+            switch ($type) {
+                case 'Stmt_Namespace':
+                    $cppCode .= $this->parseNamespaceDef($v);
+                    break;
+                case 'Stmt_Class':
+                    $cppCode .= $this->parseClassDef($v);
+                    break;
+                case 'Stmt_Function':
+                    $cppCode .= $this->parseFunctionDef($v) . PHP_EOL;
+                    break;
+                default:
+                    debug($v);
+            }
+        }
+        return $cppCode;
     }
 
     public function save($code, $file)
@@ -72,9 +103,18 @@ class Translator extends \PhpAot\Core\Translator
         return $this->zendTypeMap[$type] ?? 'zval *';
     }
 
-    private function parseFunctionDef($v)
+    private function parseFunctionDef($v): string
     {
-        $name = $this->parseIdentifier($v->name);
+        $names[] = $this->parseIdentifier($v->name);
+        if ($this->class) {
+            $names[] = strtolower($this->class);
+        }
+        if ($this->namespace) {
+            $names[] = strtolower(str_replace('\\', '_', $this->namespace));
+        }
+
+        $name = implode('__', array_reverse($names));
+
         if ($v->returnType) {
             $returnType = $this->getZendType($this->parseIdentifier($v->returnType));
         } else {
@@ -90,6 +130,11 @@ class Translator extends \PhpAot\Core\Translator
         $code .= "}";
 
         return $code;
+    }
+
+    protected function writeLog($msg)
+    {
+        echo $msg . PHP_EOL;
     }
 
     protected function parseIdentifier($expr)
@@ -127,15 +172,13 @@ class Translator extends \PhpAot\Core\Translator
         $lines = [];
         foreach ($stmts as $v) {
             $class = $v->getType();
+            $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
             switch ($class) {
-                case 'Stmt_Function':
-                    $lines[] = $this->parseFunctionDef($v);
-                    break;
                 case 'Stmt_Expression':
                     $lines[] = $this->parseExpr($v->expr) . ';';
                     break;
                 case 'Stmt_Echo':
-                    $lines[] = $this->parseEcho($v) . ';';
+                    $this->parseEcho($v, $lines);
                     break;
                 case 'Stmt_Return':
                     $lines[] = $this->parseReturn($v) . ';';
@@ -249,6 +292,12 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseTernary($expr);
             case 'Expr_FuncCall':
                 return $this->parseFuncCall($expr);
+            case 'Expr_New':
+                return $this->parseNew($expr);
+            case 'Expr_Clone':
+                return $this->parseClone($expr);
+            case 'Name_FullyQualified':
+                return $expr->name;
             case 'Scalar_Int':
             case 'Scalar_Float':
             case 'Scalar_String':
@@ -273,21 +322,14 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseEcho(mixed $v)
+    private function parseEcho(mixed $v, &$lines): void
     {
-        return 'php::echo(' . $this->parseExprs($v->exprs) . ')';
-    }
-
-    private function parseExprs($exprs)
-    {
-        $code = '';
-        foreach ($exprs as $expr) {
-            $code .= $this->parseExpr($expr);
+        foreach ($v->exprs as $expr) {
+            $lines[] = 'php::echo(' . $this->parseExpr($expr) . ');';
         }
-        return $code;
     }
 
-    private function parseBinaryOpPlus(mixed $expr)
+    private function parseBinaryOpPlus(mixed $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -295,12 +337,12 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' + ' . $right;
     }
 
-    private function parseReturn(mixed $v)
+    private function parseReturn(mixed $v): string
     {
         return 'return ' . $this->parseExpr($v->expr);
     }
 
-    private function parseBinaryOpMul(mixed $expr)
+    private function parseBinaryOpMul(mixed $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -308,7 +350,7 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' * ' . $right;
     }
 
-    private function detectType($var, $expr)
+    private function detectType($var, $expr): string
     {
         $exprType = $expr->getType();
         switch ($exprType) {
@@ -326,7 +368,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseArray($node)
+    private function parseArray($node): string
     {
         $items = $node->items;
         $list = [];
@@ -350,11 +392,11 @@ class Translator extends \PhpAot\Core\Translator
         $name = $type->name;
         switch ($name) {
             case 'int':
-                return 'zend_long';
+                return 'php::Int';
             case 'array':
                 return 'php::Array';
             case 'float':
-                return 'double';
+                return 'php::Float';
             default:
                 debug($type);
         }
@@ -410,7 +452,7 @@ class Translator extends \PhpAot\Core\Translator
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $left . ' + ' . $right;
+        return 'concat(' . $left . ', ' . $right . ')';
     }
 
     private function parseFor(mixed $v): string
@@ -666,7 +708,7 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' != ' . $right;
     }
 
-    private function parseBinaryOpLogicalAnd(mixed $expr): string
+    private function parseBinaryOpLogicalAnd(Node $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -674,7 +716,7 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' && ' . $right;
     }
 
-    private function parseBinaryOpLogicalOr(mixed $expr): string
+    private function parseBinaryOpLogicalOr(Node $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -682,7 +724,7 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' || ' . $right;
     }
 
-    private function parseBinaryOpLogicalXor(mixed $expr): string
+    private function parseBinaryOpLogicalXor(Node $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -690,13 +732,13 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' ^ ' . $right;
     }
 
-    private function parseBooleanNot(mixed $expr): string
+    private function parseBooleanNot(Node $expr): string
     {
         $expr = $this->parseExpr($expr->expr);
         return '!' . $expr;
     }
 
-    private function parseWhile(mixed $v): string
+    private function parseWhile(Node $v): string
     {
         $cond = $this->parseExpr($v->cond);
         $stmts = $v->stmts;
@@ -710,7 +752,7 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
-    private function parseBinaryOpSmallerOrEqual(mixed $expr): string
+    private function parseBinaryOpSmallerOrEqual(Node $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -718,7 +760,7 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' <= ' . $right;
     }
 
-    private function parseBinaryOpGreaterOrEqual(mixed $expr): string
+    private function parseBinaryOpGreaterOrEqual(Node $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -726,12 +768,12 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' >= ' . $right;
     }
 
-    private function parsePrint(mixed $expr): string
+    private function parsePrint(Node $expr): string
     {
         return 'php::echo(' . $this->parseExpr($expr->expr) . ')';
     }
 
-    private function parseDo(mixed $v): string
+    private function parseDo(Node $v): string
     {
         $stmts = $v->stmts;
         $cond = $this->parseExpr($v->cond);
@@ -745,11 +787,76 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
-    private function parseBinaryOpIdentical(mixed $expr): string
+    private function parseBinaryOpIdentical(Node $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
         return 'php::same(' . $left . ', ' . $right . ')';
+    }
+
+    private function parseNew(Node $expr): string
+    {
+        $className = $this->parseIdentifier($expr->class);
+        $args = $expr->args;
+        if (empty($args)) {
+            return 'new ' . $className . '()';
+        } else {
+            return 'new ' . $className . '(' . $this->parseArgs($args) . ')';
+        }
+    }
+
+    private function parseClone(Node $expr): string
+    {
+        $var = $this->parseIdentifier($expr->expr);
+        return $var . '.clone()';
+    }
+
+    private function parseNamespaceDef(Node $node): string
+    {
+        $this->namespace = $this->parseIdentifier($node->name);
+        $code = '';
+        foreach($node->stmts as $v2) {
+            $type2 = $v2->getType();
+            switch ($type2) {
+                case 'Stmt_Class':
+                    $code .= $this->parseClassDef($v2);
+                    break;
+                case 'Stmt_Function':
+                    $code .= $this->parseFunctionDef($v2) . PHP_EOL;
+                    break;
+                case 'Stmt_Use':
+                    foreach ($v2->uses as $use) {
+                        $this->uses[] = $use->name->toString();
+                    }
+                    break;
+                default:
+                    debug($v2);
+            }
+        }
+        $this->namespace = '';
+        $this->uses = [];
+        return $code;
+    }
+
+    private function parseClassDef(Node $v): string
+    {
+        $this->class = $this->parseIdentifier($v->name);
+        $code = '';
+        foreach($v->stmts as $v) {
+            $type = $v->getType();
+            switch ($type) {
+                case 'Stmt_ClassConst':
+                case 'Stmt_Property':
+                    break;
+                case 'Stmt_ClassMethod':
+                    $code .= $this->parseFunctionDef($v) . PHP_EOL;
+                    break;
+                default:
+                    debug($v);
+            }
+        }
+        $this->class = '';
+        return $code;
     }
 }
