@@ -16,6 +16,7 @@ class Translator extends \PhpAot\Core\Translator
     const TYPE_VAR = 'php::Variant';
     const TYPE_INT = 'php::Int';
     const TYPE_FLOAT = 'php::Float';
+    const TYPE_BOOL = 'bool';
 
     protected string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
@@ -335,7 +336,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseAssign(mixed $v)
+    private function parseAssign(Node $v): string
     {
         $var = $this->parseIdentifier($v->var);
         $expr = $this->parseExpr($v->expr);
@@ -381,17 +382,27 @@ class Translator extends \PhpAot\Core\Translator
     {
         $exprType = $expr->getType();
         switch ($exprType) {
+            case 'Expr_Cast_Int':
             case 'Scalar_Int':
-                return $this->getZendType('int');
+                return self::TYPE_INT;
+            case 'Expr_Cast_Float':
             case 'Scalar_Float':
-                return $this->getZendType('float');
+                return self::TYPE_FLOAT;
             case 'Scalar_Bool':
-                return $this->getZendType('bool');
+                return self::TYPE_BOOL;
             case 'Expr_Array':
                 return 'php::Array';
+            case 'Expr_BinaryOp_Plus':
+                $leftType = $this->detectType($var, $expr->left);
+                $rightType = $this->detectType($var, $expr->right);
+                if ($leftType === self::TYPE_INT || $rightType === self::TYPE_INT) {
+                    return self::TYPE_INT;
+                } else {
+                    return self::TYPE_VAR;
+                }
             case 'Scalar_String':
             default:
-                return 'php::Variant';
+                return self::TYPE_VAR;
         }
     }
 
@@ -469,7 +480,14 @@ class Translator extends \PhpAot\Core\Translator
 
     public function compileFile($file): void
     {
-        $cmd = 'g++ -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
+        $cmd = 'g++ -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes() . ' -O' . $this->optimizeLevel;
+        echo $cmd . PHP_EOL;
+        shell_exec($cmd);
+    }
+
+    public function compileBinary($targetFile, $objectFile): void
+    {
+        $cmd = 'g++ main.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
         $cmd .= ' -O' . $this->optimizeLevel;
         echo $cmd . PHP_EOL;
         shell_exec($cmd);

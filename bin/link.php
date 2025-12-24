@@ -1,10 +1,9 @@
 <?php
 
+
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 use PhpAot\Php\Translator;
-
-define('DEBUG', true);
 
 if (empty($argv[1])) {
     die("php compiler.php [file]\n");
@@ -13,12 +12,9 @@ if (empty($argv[1])) {
 try {
     $file = $argv[1];
     $translator = new Translator();
-    $translator->setIndent('    ');
-    $code = $translator->convert($file);
     $info = pathinfo($file);
-    $cppFile = './tmp/' . $info['filename'] . '.cc';
-    $translator->save($code, $cppFile);
-    $translator->compileFile($cppFile);
+    $objectFile = './tmp/' . $info['filename'] . '.cc.o';
+    $translator->compileBinary($info['filename'], $objectFile);
 } catch (Error $error) {
     echo "Parse error: {$error->getMessage()}\n";
     return;
