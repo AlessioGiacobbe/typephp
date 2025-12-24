@@ -13,23 +13,30 @@ use PhpParser\PrettyPrinter;
 
 class Translator extends \PhpAot\Core\Translator
 {
-    protected string $phpxDir = '~/workspace/phpx';
+    const TYPE_VAR = 'php::Variant';
+    const TYPE_INT = 'php::Int';
+    const TYPE_FLOAT = 'php::Float';
+
+    protected string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     protected array $typeMap = [];
     protected array $zendTypeMap = [
-        'int' => 'php::Int',
-        'float' => 'php::Float',
+        'int' => self::TYPE_INT,
+        'float' => self::TYPE_FLOAT,
         'bool' => 'bool',
     ];
     protected array $headers = [
         'phpx.h',
     ];
 
+    protected int $optimizeLevel = 5;
+
     protected string $namespace = '';
     protected array $uses = [];
     protected string $class = '';
 
     const PREFIX = 'php_';
+
 
     public function __construct()
     {
@@ -98,6 +105,11 @@ class Translator extends \PhpAot\Core\Translator
         return $node->getType();
     }
 
+    protected function getDetectedType($name)
+    {
+        return $this->typeMap[$name] ?? 'php::Variant';
+    }
+
     public function getZendType(string $type): string
     {
         return $this->zendTypeMap[$type] ?? 'zval *';
@@ -118,7 +130,7 @@ class Translator extends \PhpAot\Core\Translator
         if ($v->returnType) {
             $returnType = $this->getZendType($this->parseIdentifier($v->returnType));
         } else {
-            $returnType = 'php::Variant';
+            $returnType = 'void';
         }
 
         $params = $this->parseParams($v->params);
@@ -137,7 +149,7 @@ class Translator extends \PhpAot\Core\Translator
         echo $msg . PHP_EOL;
     }
 
-    protected function parseIdentifier($expr)
+    protected function parseIdentifier(Node $expr)
     {
         $type = $expr->getType();
         switch ($type) {
@@ -146,10 +158,11 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr_Variable':
                 return $expr->name;
             case 'Scalar_Int':
-            case 'Scalar_Float':
                 return $expr->value;
+            case 'Scalar_Float':
+                return $expr->getAttribute('rawValue');
             case 'Scalar_String':
-                return '"' . str_replace("\n", '\n', $expr->value) . '"';
+                return '"' . $this->escapeString($expr->value) . '"';
             default:
                 return $this->parseExpr($expr);
         }
@@ -172,7 +185,7 @@ class Translator extends \PhpAot\Core\Translator
         $lines = [];
         foreach ($stmts as $v) {
             $class = $v->getType();
-            $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
+            // $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
             switch ($class) {
                 case 'Stmt_Expression':
                     $lines[] = $this->parseExpr($v->expr) . ';';
@@ -230,6 +243,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseBooleanNot($expr);
             case 'Expr_BinaryOp_Plus':
                 return $this->parseBinaryOpPlus($expr);
+            case 'Expr_BinaryOp_Div':
+                return $this->parseBinaryOpDiv($expr);
             case 'Expr_BinaryOp_Smaller':
                 return $this->parseBinaryOpSmaller($expr);
             case 'Expr_BinaryOp_SmallerOrEqual':
@@ -268,6 +283,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpLogicalOr($expr);
             case 'Expr_BinaryOp_LogicalXor':
                 return $this->parseBinaryOpLogicalXor($expr);
+            case 'Expr_BinaryOp_Minus':
+                return $this->parseBinaryOpMinus($expr);
             case 'Expr_Array':
                 return $this->parseArray($expr);
             case 'Expr_ArrayDimFetch':
@@ -303,6 +320,16 @@ class Translator extends \PhpAot\Core\Translator
             case 'Scalar_String':
             case 'Expr_Variable':
                 return $this->parseIdentifier($expr);
+            case 'Scalar_InterpolatedString':
+                return $this->parseInterpolatedString($expr);
+            case 'Expr_Cast_Int':
+                return $this->parseCastInt($expr);
+            case 'Expr_ConstFetch':
+                return $this->parseConstFetch($expr);
+            case 'Expr_UnaryMinus':
+                return $this->parseUnaryMinus($expr);
+            case 'InterpolatedStringPart':
+                return $this->parseInterpolatedStringPart($expr);
             default:
                 debug($expr);
         }
@@ -347,7 +374,7 @@ class Translator extends \PhpAot\Core\Translator
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $left . ' * ' . $right;
+        return '(' . $left . ') * (' . $right . ')';
     }
 
     private function detectType($var, $expr): string
@@ -440,19 +467,20 @@ class Translator extends \PhpAot\Core\Translator
         return $out;
     }
 
-    public function compileFile($file)
+    public function compileFile($file): void
     {
         $cmd = 'g++ -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
+        $cmd .= ' -O' . $this->optimizeLevel;
         echo $cmd . PHP_EOL;
         shell_exec($cmd);
     }
 
-    private function parseBinaryOpConcat(mixed $expr)
+    private function parseBinaryOpConcat(mixed $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return 'concat(' . $left . ', ' . $right . ')';
+        return 'php::concat(' . $left . ', ' . $right . ')';
     }
 
     private function parseFor(mixed $v): string
@@ -510,7 +538,7 @@ class Translator extends \PhpAot\Core\Translator
     private function parseAssignOpPlus(mixed $expr): string
     {
         $var = $this->parseIdentifier($expr->var);
-        return $var . ' += ' . $this->parseIdentifier($expr->expr);
+        return $var . ' += (' . $this->parseIdentifier($expr->expr) . ')';
     }
 
     private function parseArrayDimFetch($node): string
@@ -520,7 +548,7 @@ class Translator extends \PhpAot\Core\Translator
         return $var . '[' . $dim . ']';
     }
 
-    private function parseBinaryOpShiftLeft($node)
+    private function parseBinaryOpShiftLeft($node): string
     {
         $left = $this->parseIdentifier($node->left);
         $right = $this->parseIdentifier($node->right);
@@ -528,7 +556,7 @@ class Translator extends \PhpAot\Core\Translator
         return $left . ' << ' . $right;
     }
 
-    private function parseBinaryOpShiftRight($node)
+    private function parseBinaryOpShiftRight($node): string
     {
         $left = $this->parseIdentifier($node->left);
         $right = $this->parseIdentifier($node->right);
@@ -565,9 +593,9 @@ class Translator extends \PhpAot\Core\Translator
     {
         $name = $this->parseIdentifier($expr->name);
         if (empty($expr->args)) {
-            return 'php::exec("' . $name . '")';
+            return 'php::call("' . $name . '")';
         } else {
-            return 'php::exec("' . $name . '", ' . $this->parseArgs($expr->args) . ')';
+            return 'php::call("' . $name . '", {' . $this->parseArgs($expr->args) . '})';
         }
     }
 
@@ -752,12 +780,28 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
+    private function optimizeBinaryOpCompare(string $left, string $right, string $op): string
+    {
+        if ($this->getDetectedType($left) == self::TYPE_INT and $this->getDetectedType($right) == self::TYPE_VAR) {
+            return $left . ' ' . $op . ' ' . $right . '.toInt()';
+        }
+        if ($this->getDetectedType($left) == self::TYPE_FLOAT and $this->getDetectedType($right) == self::TYPE_VAR) {
+            return $left . ' ' . $op . ' ' . $right . '.toFloat()';
+        }
+        return '';
+    }
+
     private function parseBinaryOpSmallerOrEqual(Node $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $left . ' <= ' . $right;
+        $optimized = $this->optimizeBinaryOpCompare($left, $right, '<=');
+        if (!$optimized) {
+            return $left . ' <= ' . $right;
+        } else {
+            return $optimized;
+        }
     }
 
     private function parseBinaryOpGreaterOrEqual(Node $expr): string
@@ -858,5 +902,58 @@ class Translator extends \PhpAot\Core\Translator
         }
         $this->class = '';
         return $code;
+    }
+
+    private function parseCastInt(Node $node): string
+    {
+        $code = $this->parseExpr($node->expr);
+        return '(' . $code . ').toInt()';
+    }
+
+    private function parseConstFetch(Node $expr)
+    {
+        return $this->parseIdentifier($expr->name);
+    }
+
+    private function parseUnaryMinus(Node $expr): string
+    {
+        $code = $this->parseExpr($expr->expr);
+        return '-' . $code;
+    }
+
+    private function parseBinaryOpDiv(Node $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+        return $left . ' / (' . $right . ')';
+    }
+
+    private function parseBinaryOpMinus(Node $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+        return $left . ' - (' . $right . ')';
+    }
+
+    private function parseInterpolatedString(Node $expr): string
+    {
+        $parts = $expr->parts;
+        $list = [];
+        foreach ($parts as $part) {
+            $list[] = $this->parseExpr($part);
+        }
+        return 'php::concat({' . implode(', ', $list) . '})';
+    }
+
+    private function escapeString($str): string
+    {
+        $search = ["\n", "\r", "\t", "\""];
+        $replace = ['\n', '\r', '\t', '\"'];
+        return str_replace($search, $replace, $str);
+    }
+
+    private function parseInterpolatedStringPart(Node $expr): string
+    {
+        return '"' . $this->escapeString($expr->value) . '"';
     }
 }

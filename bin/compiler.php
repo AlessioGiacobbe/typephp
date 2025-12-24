@@ -19,7 +19,7 @@ try {
     $info = pathinfo($file);
     $cppFile = './tmp/' . $info['filename'] . '.cc';
     $translator->save($code, $cppFile);
-//    $translator->compileFile($cppFile);
+    $translator->compileFile($cppFile);
 } catch (Error $error) {
     echo "Parse error: {$error->getMessage()}\n";
     return;
