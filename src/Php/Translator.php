@@ -20,27 +20,29 @@ class Translator extends \PhpAot\Core\Translator
     const TYPE_OBJECT = 'php::Object';
     const TYPE_ARRAY = 'php::Array';
 
-    protected string $phpxDir = '~/workspace/projects/phpx';
+    private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
-    protected array $scope = [];
-    protected array $zendTypeMap = [
+    private array $scope = [];
+    private array $zendTypeMap = [
         'int' => self::TYPE_INT,
         'float' => self::TYPE_FLOAT,
         'bool' => 'bool',
     ];
 
-    protected array $headers = [
+    private array $headers = [
         'phpx.h',
     ];
 
-    protected array $internalFunctions = [];
+    private array $internalFunctions = [];
 
-    protected int $optimizeLevel = 5;
-
-    protected string $namespace = '';
-    protected array $uses = [];
-    protected string $class = '';
-    protected string $returnType = '';
+    private int $optimizeLevel = 5;
+    private bool $verbose = false;
+    private string $file;
+    private string $dir;
+    private string $namespace = '';
+    private array $uses = [];
+    private string $class = '';
+    private string $returnType = '';
 
     const PREFIX = 'php_';
 
@@ -67,6 +69,8 @@ class Translator extends \PhpAot\Core\Translator
     {
         $parser = (new ParserFactory())->createForNewestSupportedVersion();
         $phpCode = file_get_contents($file);
+        $this->file = realpath($file);
+        $this->dir = dirname($this->file);
         $ast = $parser->parse($phpCode);
 
         $traverser = new NodeTraverser;
@@ -112,7 +116,7 @@ class Translator extends \PhpAot\Core\Translator
         return $node->getType();
     }
 
-    protected function getDetectedType($name)
+    private function getDetectedType($name)
     {
         return $this->scope[$name] ?? 'php::Variant';
     }
@@ -162,12 +166,14 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function writeLog($msg)
+    private function writeLog($msg)
     {
-        echo $msg . PHP_EOL;
+        if ($this->verbose) {
+            echo $msg . PHP_EOL;
+        }
     }
 
-    protected function parseIdentifier(Node $expr)
+    private function parseIdentifier(Node $expr)
     {
         $type = $expr->getType();
         switch ($type) {
@@ -302,10 +308,12 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseAssignOpMul($expr);
             case 'Expr_AssignOp_Div':
                 return $this->parseAssignOpDiv($expr);
-            case 'Expr_BinaryOp_Mul':
-                return $this->parseBinaryOpMul($expr);
             case 'Expr_AssignOp_Mod':
                 return $this->parseAssignOpMod($expr);
+            case 'Expr_AssignOp_ShiftRight':
+                return $this->parseAssignOpShiftRight($expr);
+            case 'Expr_BinaryOp_Mul':
+                return $this->parseBinaryOpMul($expr);
             case 'Expr_BinaryOp_Concat':
                 return $this->parseBinaryOpConcat($expr);
             case 'Expr_BinaryOp_Greater':
@@ -318,6 +326,7 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpLogicalOr($expr);
             case 'Expr_BinaryOp_LogicalXor':
                 return $this->parseBinaryOpLogicalXor($expr);
+            // 减法
             case 'Expr_BinaryOp_Minus':
                 return $this->parseBinaryOpMinus($expr);
             case 'Expr_Array':
@@ -357,6 +366,8 @@ class Translator extends \PhpAot\Core\Translator
             case 'Scalar_String':
             case 'Expr_Variable':
                 return $this->parseIdentifier($expr);
+            case 'Scalar_MagicConst_File':
+                return $this->parseMagicConstFile($expr);
             case 'Scalar_InterpolatedString':
                 return $this->parseInterpolatedString($expr);
             case 'Expr_Cast_Int':
@@ -441,12 +452,12 @@ class Translator extends \PhpAot\Core\Translator
         return '(' . $left . ') * (' . $right . ')';
     }
 
-    protected function addVar(string $name, string $type): void
+    private function addVar(string $name, string $type): void
     {
         $this->scope[$name] = $type;
     }
 
-    protected function hasVar(string $name)
+    private function hasVar(string $name)
     {
         return isset($this->scope[$name]);
     }
@@ -1135,8 +1146,19 @@ class Translator extends \PhpAot\Core\Translator
         return implode(PHP_EOL . $this->getIndent(), $lines);
     }
 
-    private function parsePropertyFetch(mixed $expr): string
+    private function parsePropertyFetch(Node $expr): string
     {
         return $this->parseIdentifier($expr->var) . '.getProperty(' . $this->parseIdentifier($expr->name) . ')';
+    }
+
+    private function parseAssignOpShiftRight(Node $node): string
+    {
+        $var = $this->parseIdentifier($node->var);
+        return $var . ' >> ' . $this->parseIdentifier($node->expr);
+    }
+
+    private function parseMagicConstFile(mixed $expr): string
+    {
+        return '"' . $this->escapeString($this->file) . '"';
     }
 }
