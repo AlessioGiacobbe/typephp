@@ -361,6 +361,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseUnaryMinus($expr);
             case 'InterpolatedStringPart':
                 return $this->parseInterpolatedStringPart($expr);
+            case 'Expr_Exit':
+                return $this->parseExit($expr);
             default:
                 debug($expr);
         }
@@ -399,12 +401,7 @@ class Translator extends \PhpAot\Core\Translator
     {
         $type = $this->detectType($v->expr);
         $expr = $this->parseExpr($v->expr);
-        if ($this->returnType == self::TYPE_INT and $type == self::TYPE_VAR) {
-            return 'return (' . $expr . ').toInt()';
-        } elseif ($this->returnType == self::TYPE_FLOAT and $type == self::TYPE_VAR) {
-            return 'return (' . $expr . ').toFloat()';
-        }
-        return 'return ' . $expr;
+        return 'return ' . $this->convertExprType($expr, $this->returnType, $type);
     }
 
     private function parseBinaryOpMul(mixed $expr): string
@@ -1063,15 +1060,25 @@ class Translator extends \PhpAot\Core\Translator
     {
         $expr = $this->parseArg($arg);
         $type = $this->detectType($arg->value);
-        if ($argInfo->type === self::TYPE_INT && $type !== self::TYPE_INT) {
+        return $this->convertExprType($expr, $argInfo->type, $type);
+    }
+
+    private function convertExprType(string $expr, $leftType, $rightType): string
+    {
+        if ($leftType === self::TYPE_INT && $rightType !== self::TYPE_INT) {
             return '(' . $expr . ').toInt()';
         }
-        if ($argInfo->type === self::TYPE_FLOAT && $type !== self::TYPE_FLOAT) {
+        if ($leftType === self::TYPE_FLOAT && $rightType !== self::TYPE_FLOAT) {
             return '(' . $expr . ').toFloat()';
         }
-        if ($argInfo->type === self::TYPE_BOOL && $type !== self::TYPE_BOOL) {
+        if ($leftType === self::TYPE_BOOL && $rightType !== self::TYPE_BOOL) {
             return '(' . $expr . ').toBool()';
         }
         return $expr;
+    }
+
+    private function parseExit(Node $node): string
+    {
+        return 'php::exit(' . $this->parseIdentifier($node->expr) . ')';
     }
 }
