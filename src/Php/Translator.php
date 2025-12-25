@@ -14,21 +14,26 @@ use PhpParser\PrettyPrinter;
 class Translator extends \PhpAot\Core\Translator
 {
     const TYPE_VAR = 'php::Variant';
+    const TYPE_BOOL = 'bool';
     const TYPE_INT = 'php::Int';
     const TYPE_FLOAT = 'php::Float';
-    const TYPE_BOOL = 'bool';
+    const TYPE_OBJECT = 'php::Object';
+    const TYPE_ARRAY = 'php::Array';
 
     protected string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
-    protected array $typeMap = [];
+    protected array $scope = [];
     protected array $zendTypeMap = [
         'int' => self::TYPE_INT,
         'float' => self::TYPE_FLOAT,
         'bool' => 'bool',
     ];
+
     protected array $headers = [
         'phpx.h',
     ];
+
+    protected array $internalFunctions = [];
 
     protected int $optimizeLevel = 5;
 
@@ -109,7 +114,7 @@ class Translator extends \PhpAot\Core\Translator
 
     protected function getDetectedType($name)
     {
-        return $this->typeMap[$name] ?? 'php::Variant';
+        return $this->scope[$name] ?? 'php::Variant';
     }
 
     public function getZendType(string $type): string
@@ -117,8 +122,15 @@ class Translator extends \PhpAot\Core\Translator
         return $this->zendTypeMap[$type] ?? 'zval *';
     }
 
+    public function isInternalFunction(string $name): bool
+    {
+        return isset($this->internalFunctions[$name]);
+    }
+
     private function parseFunctionDef($v): string
     {
+        $this->scope = [];
+        $def = new FunctionDef();
         $names[] = $this->parseIdentifier($v->name);
         if ($this->class) {
             $names[] = strtolower($this->class);
@@ -135,7 +147,11 @@ class Translator extends \PhpAot\Core\Translator
             $this->returnType = 'void';
         }
 
-        $params = $this->parseParams($v->params);
+        $def->name = $name;
+        $def->returnType = $this->returnType;
+        $this->internalFunctions[$name] = $def;
+
+        $params = $this->parseParams($v->params, $def);
         $code = $this->returnType . ' ' . self::PREFIX . $name . '(' . $params . ') {' . PHP_EOL;
         $this->indentLevel++;
         $stmts = $this->parseStmts($v->stmts);
@@ -170,14 +186,24 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseParams($params)
+    private function parseParams($params, FunctionDef $def): string
     {
         $list = [];
+        $def->argumentCountRequired = count($params);
         foreach ($params as $param) {
             $type = $this->parseType($param->type);
             $name = $this->parseIdentifier($param->var);
             $list[] = $type . ' ' . $name;
-            $this->typeMap[$name] = $type;
+            $this->scope[$name] = $type;
+
+            $argInfo = new ArgInfo();
+            $argInfo->name = $name;
+            $argInfo->type = $type;
+            if (isset($param->default)) {
+                $def->argumentCountRequired = count($list) - 1;
+                $argInfo->default = $param->default->getAttribute('rawValue');
+            }
+            $def->arguments[] = $argInfo;
         }
         return implode(', ', $list);
     }
@@ -345,9 +371,9 @@ class Translator extends \PhpAot\Core\Translator
         $var = $this->parseIdentifier($v->var);
         $expr = $this->parseExpr($v->expr);
 
-        if (!isset($this->typeMap[$var])) {
-            $type = $this->detectType($v->var, $v->expr);
-            $this->typeMap[$var] = $type;
+        if (!$this->hasVar($var)) {
+            $type = $this->detectType($v->expr);
+            $this->addVar($var, $type);
             return $type . ' ' . $var . ' = ' . $expr;
         } else {
             return $var . ' = ' . $expr;
@@ -389,6 +415,16 @@ class Translator extends \PhpAot\Core\Translator
         return '(' . $left . ') * (' . $right . ')';
     }
 
+    protected function addVar(string $name, string $type): void
+    {
+        $this->scope[$name] = $type;
+    }
+
+    protected function hasVar(string $name)
+    {
+        return isset($this->scope[$name]);
+    }
+
     private function detectType($expr): string
     {
         $exprType = $expr->getType();
@@ -404,10 +440,18 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr_Array':
                 return 'php::Array';
             case 'Expr_BinaryOp_Plus':
+            case 'Expr_BinaryOp_Minus':
                 $leftType = $this->detectType($expr->left);
                 $rightType = $this->detectType($expr->right);
                 if ($leftType === self::TYPE_INT || $rightType === self::TYPE_INT) {
                     return self::TYPE_INT;
+                } else {
+                    return self::TYPE_VAR;
+                }
+            case 'Expr_FuncCall':
+                $name = $this->parseIdentifier($expr->name);
+                if ($this->isInternalFunction($name)) {
+                    return $this->internalFunctions[$name]->returnType;
                 } else {
                     return self::TYPE_VAR;
                 }
@@ -438,14 +482,19 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseType($type)
     {
+        if ($type == null) {
+            return self::TYPE_VAR;
+        }
         $name = $type->name;
         switch ($name) {
             case 'int':
-                return 'php::Int';
+                return self::TYPE_INT;
             case 'array':
                 return 'php::Array';
             case 'float':
-                return 'php::Float';
+                return self::TYPE_FLOAT;
+            case 'bool':
+                return self::TYPE_BOOL;
             default:
                 debug($type);
         }
@@ -621,18 +670,27 @@ class Translator extends \PhpAot\Core\Translator
     private function parseFuncCall(mixed $expr): string
     {
         $name = $this->parseIdentifier($expr->name);
+        if ($this->isInternalFunction($name)) {
+            return self::PREFIX . $name . '(' . $this->parseArgs($expr->args, $name) . ')';
+        }
         if (empty($expr->args)) {
             return 'php::call("' . $name . '")';
         } else {
-            return 'php::call("' . $name . '", {' . $this->parseArgs($expr->args) . '})';
+            return 'php::call("' . $name . '", {' . $this->parseArgs($expr->args, $name) . '})';
         }
     }
 
-    private function parseArgs($args): string
+    private function parseArgs($args, string $funcName): string
     {
+        $internalFunction = $this->isInternalFunction($funcName);
         $list_args = [];
-        foreach ($args as $arg) {
-            $list_args[] = $this->parseArg($arg);
+        foreach ($args as $i => $arg) {
+            if ($internalFunction) {
+                $argInfo = $this->getArgInfo($funcName, $i);
+                $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
+            } else {
+                $list_args[] = $this->parseArg($arg);
+            }
         }
         return implode(', ', $list_args);
     }
@@ -993,5 +1051,27 @@ class Translator extends \PhpAot\Core\Translator
             $out [] = self::TYPE_VAR . ' ' . $v->name . ' = php::global("' . $v->name . '");';
         }
         return implode(PHP_EOL . $this->getIndent(), $out);
+    }
+
+    private function getArgInfo(string $funcName, int $index): ArgInfo
+    {
+        $funcDef = $this->internalFunctions[$funcName];
+        return $funcDef->arguments[$index];
+    }
+
+    private function getTypeConvertedArg($arg, $argInfo): string
+    {
+        $expr = $this->parseArg($arg);
+        $type = $this->detectType($arg->value);
+        if ($argInfo->type === self::TYPE_INT && $type !== self::TYPE_INT) {
+            return '(' . $expr . ').toInt()';
+        }
+        if ($argInfo->type === self::TYPE_FLOAT && $type !== self::TYPE_FLOAT) {
+            return '(' . $expr . ').toFloat()';
+        }
+        if ($argInfo->type === self::TYPE_BOOL && $type !== self::TYPE_BOOL) {
+            return '(' . $expr . ').toBool()';
+        }
+        return $expr;
     }
 }

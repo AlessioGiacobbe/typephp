@@ -1,4 +1,12 @@
 <?php
+function fib(int $n): int
+{
+    if ($n == 1 || $n == 2) {
+        return 1;
+    } else {
+        return fib($n - 1) + fib($n - 2);
+    }
+}
 
 function main()
 {
@@ -7,13 +15,4 @@ function main()
     $begin = microtime(true);
     echo fib($n) . "\n";
     echo "Time: " . (microtime(true) - $begin) . "\n";
-}
-
-function fib(int $n): int
-{
-    if ($n == 1 || $n == 2) {
-        return 1;
-    } else {
-        return fib($n - 1) + fib($n - 2);
-    }
 }
