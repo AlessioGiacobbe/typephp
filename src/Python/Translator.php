@@ -84,7 +84,7 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseBinOp($attr);
             default:
                 var_dump(__METHOD__, __LINE__);
-                debug($attr);
+                abort($attr);
         }
     }
 
@@ -106,7 +106,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Attribute':
                 return $this->parseAttribute($fn->value) . '->' . $fn->attr;
             default:
-                debug($fn);
+                abort($fn);
         }
     }
 
@@ -240,7 +240,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'GeneratorExp':
                 return $this->parseGeneratorExp($value);
             default:
-                debug($value);
+                abort($value);
                 break;
         }
     }
@@ -257,7 +257,7 @@ class Translator extends \PhpAot\Core\Translator
             $_args[] = $slice->step ? $this->parseTarget($slice->step) : 'null';
             return 'PyCore::slice(' . implode(', ', $_args) . ')';
         } else {
-            debug($slice);
+            abort($slice);
         }
     }
 
@@ -298,7 +298,7 @@ class Translator extends \PhpAot\Core\Translator
                     case 'Not':
                         return '!' . $operand;
                     default:
-                        debug($target);
+                        abort($target);
                         break;
                 }
                 break;
@@ -329,7 +329,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'ListComp':
                 return $this->parseListComp($target);
             default:
-                debug($target);
+                abort($target);
                 break;
         }
     }
@@ -386,7 +386,7 @@ class Translator extends \PhpAot\Core\Translator
         if ($test->ops) {
             $ops = $test->ops;
             if (count($ops) != 1) {
-                debug($test);
+                abort($test);
             }
             $op = $ops[0]->_type;
             $comparators = $test->comparators;
@@ -458,7 +458,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Attribute':
                 return $this->parseAttribute($iter);
             default:
-                debug($iter);
+                abort($iter);
         }
     }
 
@@ -475,7 +475,7 @@ class Translator extends \PhpAot\Core\Translator
                 return $value . '[' . $this->parseSlice($node->slice) . ']';
             }
         } else {
-            debug($node);
+            abort($node);
         }
     }
 
@@ -603,7 +603,7 @@ class Translator extends \PhpAot\Core\Translator
                 $line = $this->parseCall($node) . ';';
                 break;
             default:
-                debug($node);
+                abort($node);
                 $line = '';
                 break;
         }
@@ -772,7 +772,7 @@ class Translator extends \PhpAot\Core\Translator
         $code = '[' . PHP_EOL;
         foreach ($dict->values as $k => $v) {
             if (empty($dict->keys[$k])) {
-                debug($v);
+                abort($v);
             }
             $key = $dict->keys[$k];
             $this->indentLevel++;
@@ -791,7 +791,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Or':
                 return $this->parseOr($value->values);
             default:
-                debug($value);
+                abort($value);
                 break;
         }
     }
@@ -943,7 +943,7 @@ class Translator extends \PhpAot\Core\Translator
         $expr = $this->parseValue($value->value);
         if ($value->format_spec and $value->format_spec->_type == 'JoinedStr') {
             if (count($value->format_spec->values) != 1) {
-                debug($value);
+                abort($value);
             }
             $format = $value->format_spec->values[0]->value;
             if ($format[0] == '.' and $format[-1] == 'f') {
@@ -974,6 +974,6 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseGeneratorExp($value)
     {
-        debug($value);
+        abort($value);
     }
 }

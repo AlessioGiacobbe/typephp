@@ -90,7 +90,7 @@ class Translator extends \PhpAot\Core\Translator
                     $cppCode .= $this->parseFunctionDef($v) . PHP_EOL;
                     break;
                 default:
-                    debug($v);
+                    abort($v);
             }
         }
         return $cppCode;
@@ -213,7 +213,7 @@ class Translator extends \PhpAot\Core\Translator
         $lines = [];
         foreach ($stmts as $v) {
             $class = $v->getType();
-            // $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
+             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
             switch ($class) {
                 case 'Stmt_Expression':
                     $lines[] = $this->parseExpr($v->expr) . ';';
@@ -245,8 +245,11 @@ class Translator extends \PhpAot\Core\Translator
                 case 'Stmt_Global':
                     $lines[] = $this->parseGlobal($v);
                     break;
+                case 'Stmt_Unset':
+                    $lines[] = $this->parseUnset($v);
+                    break;
                 default:
-                    debug($v);
+                    abort($v);
             }
         }
         $code = '';
@@ -259,6 +262,7 @@ class Translator extends \PhpAot\Core\Translator
     private function parseExpr(mixed $expr)
     {
         $type = $expr->getType();
+        $this->writeLog('Line ' . $this->getLine($expr) . ': ' . $type);
         switch ($type) {
             case 'Expr_Assign':
                 return $this->parseAssign($expr);
@@ -320,6 +324,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseArray($expr);
             case 'Expr_ArrayDimFetch':
                 return $this->parseArrayDimFetch($expr);
+            case 'Expr_PropertyFetch':
+                return $this->parsePropertyFetch($expr);
             case 'Expr_BinaryOp_ShiftLeft':
                 return $this->parseBinaryOpShiftLeft($expr);
             case 'Expr_BinaryOp_ShiftRight':
@@ -364,17 +370,40 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr_Exit':
                 return $this->parseExit($expr);
             default:
-                debug($expr);
+                abort($expr);
         }
     }
 
     private function parseAssign(Node $v): string
     {
-        $var = $this->parseIdentifier($v->var);
-        $expr = $this->parseExpr($v->expr);
+        $left = $v->var;
+        $right = $v->expr;
+
+        if ($left->getType() === 'Expr_ArrayDimFetch') {
+            $array = $this->parseIdentifier($left->var);
+            $code = '';
+            // 这是 PHP 的初始化+赋值写法，需要先创建数组
+            if (!$this->hasVar($array)) {
+                $this->addVar($array, self::TYPE_VAR);
+                $code .= self::TYPE_ARRAY . " $array;\n" . $this->getIndent();
+            }
+            $dim = $this->parseIdentifier($left->dim);
+            return $code . "$array.offsetSet($dim, " . $this->parseExpr($right) . ")";
+        } elseif ($left->getType() === 'Expr_PropertyFetch') {
+            $array = $this->parseIdentifier($left->var);
+            $propName = $this->parseIdentifier($left->name);
+            return "$array.setProperty(\"$propName\", " . $this->parseExpr($right) . ")";
+        }
+
+        $var = $this->parseIdentifier($left);
+        $expr = $this->parseExpr($right);
 
         if (!$this->hasVar($var)) {
-            $type = $this->detectType($v->expr);
+            if ($right->getType() === 'Expr_New') {
+                $type = self::TYPE_OBJECT;
+            } else {
+                $type = $this->detectType($right);
+            }
             $this->addVar($var, $type);
             return $type . ' ' . $var . ' = ' . $expr;
         } else {
@@ -493,7 +522,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'bool':
                 return self::TYPE_BOOL;
             default:
-                debug($type);
+                abort($type);
         }
     }
 
@@ -928,9 +957,9 @@ class Translator extends \PhpAot\Core\Translator
         $className = $this->parseIdentifier($expr->class);
         $args = $expr->args;
         if (empty($args)) {
-            return 'new ' . $className . '()';
+            return 'php::newObject("' . $className . '")';
         } else {
-            return 'new ' . $className . '(' . $this->parseArgs($args) . ')';
+            return 'php::newObject("' . $className . '"(' . $this->parseArgs($args) . ')';
         }
     }
 
@@ -959,7 +988,7 @@ class Translator extends \PhpAot\Core\Translator
                     }
                     break;
                 default:
-                    debug($v2);
+                    abort($v2);
             }
         }
         $this->namespace = '';
@@ -981,7 +1010,7 @@ class Translator extends \PhpAot\Core\Translator
                     $code .= $this->parseFunctionDef($v) . PHP_EOL;
                     break;
                 default:
-                    debug($v);
+                    abort($v);
             }
         }
         $this->class = '';
@@ -1080,5 +1109,34 @@ class Translator extends \PhpAot\Core\Translator
     private function parseExit(Node $node): string
     {
         return 'php::exit(' . $this->parseIdentifier($node->expr) . ')';
+    }
+
+    private function parseUnset(Node $node): string
+    {
+        $vars = $node->vars;
+        $lines = [];
+        foreach ($vars as $var) {
+            $type = $var->getType();
+            if ($type === 'Expr_ArrayDimFetch') {
+                $array = $this->parseIdentifier($var->var);
+                $dim = $this->parseIdentifier($var->dim);
+                $lines[] = $array . '.offsetUnset(' . $dim . ');';
+            } elseif ($type === 'Expr_PropertyFetch') {
+                $object = $this->parseIdentifier($var->var);
+                $propName = $this->parseIdentifier($var->name);
+                $lines[] = $object . '.unsetProperty("' . $propName . '");';
+            } elseif ($type === 'Expr_Variable') {
+                $name = $this->parseIdentifier($var);
+                $lines[] = "$name.unset();";
+            } else {
+                abort($var);
+            }
+        }
+        return implode(PHP_EOL . $this->getIndent(), $lines);
+    }
+
+    private function parsePropertyFetch(mixed $expr): string
+    {
+        return $this->parseIdentifier($expr->var) . '.getProperty(' . $this->parseIdentifier($expr->name) . ')';
     }
 }

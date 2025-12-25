@@ -2,7 +2,7 @@
 
 use PhpAot\Core\Translator;
 
-function debug($v)
+function abort($v)
 {
     /**
      * @var $translator Translator
@@ -25,13 +25,13 @@ function debug($v)
 function if_empty_debug($if_expr, $v)
 {
     if (empty($if_expr)) {
-        debug($v);
+        abort($v);
     }
 }
 
 function if_not_empty_debug($if_expr, $v)
 {
     if (!empty($if_expr)) {
-        debug($v);
+        abort($v);
     }
 }

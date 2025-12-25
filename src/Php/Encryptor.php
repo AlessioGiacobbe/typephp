@@ -125,7 +125,7 @@ class Encryptor extends \PhpAot\Core\Translator
             case 'Stmt_Switch':
                 break;
             default:
-                debug($node);
+                abort($node);
         }
     }
 
@@ -172,7 +172,7 @@ class Encryptor extends \PhpAot\Core\Translator
                 case 'Stmt_Switch':
                     break;
                 default:
-                    debug($v);
+                    abort($v);
             }
         }
         $code = '';
@@ -218,7 +218,7 @@ class Encryptor extends \PhpAot\Core\Translator
                 $this->parseConstFetch($expr);
                 break;
             default:
-                debug($expr);
+                abort($expr);
         }
     }
 
@@ -276,7 +276,7 @@ class Encryptor extends \PhpAot\Core\Translator
             case 'Expr_Array':
                 return 'php::Array';
             default:
-                debug($expr);
+                abort($expr);
         }
     }
 
@@ -310,7 +310,7 @@ class Encryptor extends \PhpAot\Core\Translator
             case 'float':
                 return 'double';
             default:
-                debug($type);
+                abort($type);
         }
     }
 
