@@ -1,10 +1,7 @@
 <?php
-
-require dirname(__DIR__) . '/vendor/autoload.php';
+require __DIR__ . '/bootstrap.php';
 
 use PhpAot\Php\Translator;
-
-define('DEBUG', true);
 
 if (empty($argv[1])) {
     die("php compiler.php [file]\n");
@@ -12,7 +9,7 @@ if (empty($argv[1])) {
 
 try {
     $file = $argv[1];
-    $translator = new Translator();
+    $translator = new Translator(ROOT_PATH);
     $translator->setIndent('    ');
     $code = $translator->convert($file);
     $info = pathinfo($file);

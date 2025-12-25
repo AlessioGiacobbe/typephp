@@ -1,5 +1,4 @@
 <?php
-
 /* The Computer Language Benchmarks Game
    https://salsa.debian.org/benchmarksgame-team/benchmarksgame/
 
@@ -36,6 +35,8 @@ function startWorker($depth, $iter, $n, $size, $shmId)
     if ($pid) {
         return $pid;
     } else {
+        var_dump($iter, $n);
+        echo str_repeat('----', 16).PHP_EOL;
         $check = 0;
         for ($i = 1; $i <= $iter; ++$i) {
             $t = createTree($depth);
@@ -52,7 +53,7 @@ function main()
 {
     global $argc, $argv;
     $minDepth = 4;
-    $n = ($argc == 2) ? $argv[1] : 1;
+    $n = ($argc == 3) ? $argv[2] : 1;
     $maxDepth = max($minDepth + 2, $n);
     $stretchDepth = $maxDepth + 1;
 
@@ -89,5 +90,3 @@ function main()
 
     echo "long lived tree of depth $maxDepth\t check: ", checkTree($longLivedTree), PHP_EOL;
 }
-
-main();
