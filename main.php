@@ -1,3 +1,3 @@
 <?php
-include __DIR__ . '/examples/pi.php';
+include __DIR__ . '/examples/' . $argv[1];
 main();

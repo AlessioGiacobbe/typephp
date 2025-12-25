@@ -35,6 +35,7 @@ class Translator extends \PhpAot\Core\Translator
     protected string $namespace = '';
     protected array $uses = [];
     protected string $class = '';
+    protected string $returnType = '';
 
     const PREFIX = 'php_';
 
@@ -129,18 +130,18 @@ class Translator extends \PhpAot\Core\Translator
         $name = implode('__', array_reverse($names));
 
         if ($v->returnType) {
-            $returnType = $this->getZendType($this->parseIdentifier($v->returnType));
+            $this->returnType = $this->getZendType($this->parseIdentifier($v->returnType));
         } else {
-            $returnType = 'void';
+            $this->returnType = 'void';
         }
 
         $params = $this->parseParams($v->params);
-        $code = $returnType . ' ' . self::PREFIX . $name . '(' . $params . ') {' . PHP_EOL;
+        $code = $this->returnType . ' ' . self::PREFIX . $name . '(' . $params . ') {' . PHP_EOL;
         $this->indentLevel++;
         $stmts = $this->parseStmts($v->stmts);
         $this->indentLevel--;
         $code .= $stmts;
-        $code .= "}";
+        $code .= "}\n";
 
         return $code;
     }
@@ -214,6 +215,9 @@ class Translator extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Continue':
                     $lines[] = 'continue;';
+                    break;
+                case 'Stmt_Global':
+                    $lines[] = $this->parseGlobal($v);
                     break;
                 default:
                     debug($v);
@@ -367,7 +371,14 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseReturn(mixed $v): string
     {
-        return 'return ' . $this->parseExpr($v->expr);
+        $type = $this->detectType($v->expr);
+        $expr = $this->parseExpr($v->expr);
+        if ($this->returnType == self::TYPE_INT and $type == self::TYPE_VAR) {
+            return 'return (' . $expr . ').toInt()';
+        } elseif ($this->returnType == self::TYPE_FLOAT and $type == self::TYPE_VAR) {
+            return 'return (' . $expr . ').toFloat()';
+        }
+        return 'return ' . $expr;
     }
 
     private function parseBinaryOpMul(mixed $expr): string
@@ -378,7 +389,7 @@ class Translator extends \PhpAot\Core\Translator
         return '(' . $left . ') * (' . $right . ')';
     }
 
-    private function detectType($var, $expr): string
+    private function detectType($expr): string
     {
         $exprType = $expr->getType();
         switch ($exprType) {
@@ -393,8 +404,8 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr_Array':
                 return 'php::Array';
             case 'Expr_BinaryOp_Plus':
-                $leftType = $this->detectType($var, $expr->left);
-                $rightType = $this->detectType($var, $expr->right);
+                $leftType = $this->detectType($expr->left);
+                $rightType = $this->detectType($expr->right);
                 if ($leftType === self::TYPE_INT || $rightType === self::TYPE_INT) {
                     return self::TYPE_INT;
                 } else {
@@ -563,7 +574,7 @@ class Translator extends \PhpAot\Core\Translator
     {
         $var = $this->parseIdentifier($node->var);
         $dim = $this->parseIdentifier($node->dim);
-        return $var . '[' . $dim . ']';
+        return $var . '.offsetGet(' . $dim . ')';
     }
 
     private function parseBinaryOpShiftLeft($node): string
@@ -973,5 +984,14 @@ class Translator extends \PhpAot\Core\Translator
     private function parseInterpolatedStringPart(Node $expr): string
     {
         return '"' . $this->escapeString($expr->value) . '"';
+    }
+
+    private function parseGlobal(Node $v): string
+    {
+        $out = [];
+        foreach ($v->vars as $v) {
+            $out [] = self::TYPE_VAR . ' ' . $v->name . ' = php::global("' . $v->name . '");';
+        }
+        return implode(PHP_EOL . $this->getIndent(), $out);
     }
 }
