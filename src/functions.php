@@ -35,3 +35,12 @@ function if_not_empty_debug($if_expr, $v)
         abort($v);
     }
 }
+
+
+function debug()
+{
+    foreach(func_get_args() as $arg) {
+        var_dump($arg);
+    }
+    exit;
+}

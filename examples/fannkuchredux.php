@@ -25,11 +25,16 @@ function fannkuch($n)
         while ($i < $n) {
             $perm[$i] = $perm1[$i];
             $i += 1;
+
+            var_dump($perm, $perm1);
+            var_dump('[i] i=' . $i);
         }
 
         // Count flips and update max and checksum
         $f = 0;
         $k = $perm[0];
+        var_dump('[xxx] k=' . $k);
+
         while ($k != 0) {
             $i = 0;
             while (2 * $i < $k) {
@@ -40,9 +45,11 @@ function fannkuch($n)
             }
             $k = $perm[0];
             $f += 1;
+
+            var_dump('[--] r=' . $r . ', checksum=' . $checksum . ', i=' . $i . ', k=' . $k . ', f=' . $f . ', r=' . $r);
         }
 
-        var_dump('r=' . $r . ', nperm=' . $nperm . ', checksum=' . $checksum . ', i=' . $i . ', k=' . $k . ', f=' . $f . ', r=' . $r);
+        var_dump('[2] r=' . $r . ', nperm=' . $nperm . ', checksum=' . $checksum . ', i=' . $i . ', k=' . $k . ', f=' . $f . ', r=' . $r);
 
         if ($f > $flips) $flips = $f;
         if (($nperm & 0x1) == 0) $checksum += $f; else $checksum -= $f;

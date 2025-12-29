@@ -13,7 +13,7 @@ use PhpParser\PrettyPrinter;
 
 class Translator extends \PhpAot\Core\Translator
 {
-    const TYPE_VAR = 'php::Variant';
+    const TYPE_VAR = 'php::Var';
     const TYPE_BOOL = 'php::Bool';
     const TYPE_INT = 'php::Int';
     const TYPE_FLOAT = 'php::Float';
@@ -273,6 +273,9 @@ class Translator extends \PhpAot\Core\Translator
                 case 'Stmt_Foreach':
                     $lines[] = $this->parseForeach($v);
                     break;
+                case 'Stmt_Switch':
+                    $lines[] = $this->parseSwitch($v);
+                    break;
                 case 'Stmt_While':
                     $lines[] = $this->parseWhile($v);
                     break;
@@ -290,6 +293,9 @@ class Translator extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Global':
                     $lines[] = $this->parseGlobal($v);
+                    break;
+                case 'Stmt_Static':
+                    $lines[] = $this->parseStatic($v);
                     break;
                 case 'Stmt_Unset':
                     $lines[] = $this->parseUnset($v);
@@ -1311,5 +1317,44 @@ class Translator extends \PhpAot\Core\Translator
             return self::TYPE_BOOL;
         }
         return $name;
+    }
+
+    private function parseSwitch(mixed $v)
+    {
+        $cond = $v->cond;
+        $tmp_var = $this->addTmpVar();
+        $type = $this->detectExprType($cond);
+        $code = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
+        if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT) {
+            $code .= 'switch (' . $tmp_var . ') {' . PHP_EOL;
+            $this->indentLevel++;
+            foreach ($v->cases as $case) {
+                if (empty($case->cond)) {
+                    $code .= $this->getIndent() . 'default: {' . PHP_EOL;
+                } else {
+                    $code .= $this->getIndent() . 'case ' . $this->parseIdentifier($case->cond) . ': {' . PHP_EOL;
+                }
+                $this->indentLevel++;
+                $code .= $this->parseStmts($case->stmts);
+                $this->indentLevel--;
+                $code .= $this->getIndent() . '}' . PHP_EOL;
+            }
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}';
+            return $code;
+        } else {
+
+        }
+        exit(2);
+    }
+
+    private function parseStatic(mixed $v): string
+    {
+        $list = [];
+        foreach ($v->vars as $var) {
+            $type = $this->detectExprType($var->default);
+            $list[] = 'static ' . $type . ' ' . $this->parseIdentifier($var->var) . ' = ' . $this->parseIdentifier($var->default) . ';';
+        }
+        return implode(PHP_EOL . $this->getIndent(), $list);
     }
 }
