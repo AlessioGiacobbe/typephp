@@ -262,7 +262,7 @@ class Translator extends \PhpAot\Core\Translator
         $lines = [];
         foreach ($stmts as $v) {
             $class = $v->getType();
-             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
+            $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
             switch ($class) {
                 case 'Stmt_Expression':
                     $lines[] = $this->parseExpr($v->expr) . ';';
@@ -588,7 +588,7 @@ class Translator extends \PhpAot\Core\Translator
     {
         $exprType = $expr->getType();
         if ($this->debugLine === $expr->getLine()) {
-            var_dump($expr, $exprType);
+            var_dump($exprType);
         }
         switch ($exprType) {
             case 'Expr_Cast_Int':
@@ -1330,12 +1330,15 @@ class Translator extends \PhpAot\Core\Translator
         return $name;
     }
 
-    private function parseSwitch(mixed $v)
+    private function parseSwitch(mixed $v): string
     {
         $cond = $v->cond;
         $tmp_var = $this->addTmpVar();
         $type = $this->detectExprType($cond);
         $var_def = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
+
+        // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
+        $scope = $this->scope;
 
         if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT) {
             $code = 'switch (' . $tmp_var . ') {' . PHP_EOL;
@@ -1346,6 +1349,7 @@ class Translator extends \PhpAot\Core\Translator
                 } else {
                     $condType = $case->cond->getType();
                     if ($condType !== 'Scalar_Int' and $condType !== 'Scalar_Float') {
+                        $this->scope = $scope;
                         goto _fail;
                     }
                     $code .= $this->getIndent() . 'case ' . $this->parseScalarValue($case->cond) . ': {' . PHP_EOL;
