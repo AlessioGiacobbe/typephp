@@ -14,7 +14,7 @@ use PhpParser\PrettyPrinter;
 class Translator extends \PhpAot\Core\Translator
 {
     const TYPE_VAR = 'php::Variant';
-    const TYPE_BOOL = 'bool';
+    const TYPE_BOOL = 'php::Bool';
     const TYPE_INT = 'php::Int';
     const TYPE_FLOAT = 'php::Float';
     const TYPE_OBJECT = 'php::Object';
@@ -29,7 +29,7 @@ class Translator extends \PhpAot\Core\Translator
     private array $zendTypeMap = [
         'int' => self::TYPE_INT,
         'float' => self::TYPE_FLOAT,
-        'bool' => 'bool',
+        'bool' => self::TYPE_BOOL,
     ];
 
     private array $headers = [
@@ -39,7 +39,7 @@ class Translator extends \PhpAot\Core\Translator
     private array $internalFunctions = [];
 
     private int $optimizeLevel = 5;
-    private bool $verbose = true;
+    private bool $verbose = false;
     private string $file;
     private string $dir;
     private string $namespace = '';
@@ -47,8 +47,9 @@ class Translator extends \PhpAot\Core\Translator
     private string $class = '';
     private FunctionDef $functionDef;
 
-    const PREFIX = 'php_';
+    const string PREFIX = 'php_';
     private string $rootPath;
+    private int $debugLine = 0;
 
 
     public function __construct(string $rootPath)
@@ -309,6 +310,9 @@ class Translator extends \PhpAot\Core\Translator
     {
         $type = $expr->getType();
         $this->writeLog('Line ' . $this->getLine($expr) . ': ' . $type);
+        if ($expr->getLine() === $this->debugLine) {
+            var_dump($expr);
+        }
         switch ($type) {
             case 'Expr_Assign':
                 return $this->parseAssign($expr);
@@ -448,21 +452,42 @@ class Translator extends \PhpAot\Core\Translator
             $array = $this->parseIdentifier($left->var);
             $propName = $this->parseIdentifier($left->name);
             return "$array.setProperty(\"$propName\", " . $this->parseExpr($right) . ")";
+        } elseif ($right->getType() === 'Expr_Assign') {
+            $chain[] = $left;
+            while ($right->getType() === 'Expr_Assign') {
+                $chain[] = $right->var;
+                $right = $right->expr;
+            }
+            // 翻转赋值链
+            $chain = array_reverse($chain);
+            // 取最后一个变量作为第一行的 left，右值为表达式
+            $left = array_shift($chain);
+            $list[] = $this->parseFinallyAssign($left, $right);
+            /**
+             * 构造赋值链
+             * a = b = c = d = (expr) -> d = (expr); c = d; b = c; a = b;
+             */
+            $right = $left;
+            foreach ($chain as $left) {
+                $list[] = $this->getIndent() . $this->parseFinallyAssign($left, $right);
+                $right = $left;
+            }
+            return implode(";\n" . $this->getIndent(), $list);
         }
+        return $this->parseFinallyAssign($left, $right);
+    }
 
+    private function parseFinallyAssign($left, $right): string
+    {
         $var = $this->parseIdentifier($left);
         $expr = $this->parseExpr($right);
 
         if (!$this->hasVar($var)) {
-            if ($right->getType() === 'Expr_New') {
-                $type = self::TYPE_OBJECT;
-            } else {
-                $type = $this->detectType($right);
-            }
+            $type = $this->detectExprType($right);
             $this->addVar($var, $type);
             return $type . ' ' . $var . ' = ' . $expr;
         } else {
-            return $var . ' = ' . $expr;
+            return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
         }
     }
 
@@ -478,8 +503,8 @@ class Translator extends \PhpAot\Core\Translator
         $leftExpr = $this->parseIdentifier($left);
         $rightExpr = $this->parseIdentifier($right);
 
-        $leftType = $this->detectType($left);
-        $rightType = $this->detectType($right);
+        $leftType = $this->detectExprType($left);
+        $rightType = $this->detectExprType($right);
 
         if ($leftType === self::TYPE_FLOAT) {
             $rightExpr = $this->convertExprType($rightExpr, self::TYPE_FLOAT, $rightType);
@@ -505,7 +530,7 @@ class Translator extends \PhpAot\Core\Translator
     private function parseReturn(mixed $v): string
     {
         // 实际函数的返回值
-        $type = $this->detectType($v->expr);
+        $type = $this->detectExprType($v->expr);
         $expr = $this->parseExpr($v->expr);
         // 函数定义时没有声明返回值，但函数体中有返回值，修改为实际的返回值类型
         if ($this->getReturnType() === 'void') {
@@ -538,9 +563,21 @@ class Translator extends \PhpAot\Core\Translator
         throw new ReturnTypeChanged;
     }
 
-    private function detectType($expr): string
+    private function detectVarType($var): string
+    {
+        $name = $this->parseIdentifier($var);
+        if ($this->hasVar($name)) {
+            return $this->scope[$name];
+        }
+        return self::TYPE_VAR;
+    }
+
+    private function detectExprType($expr): string
     {
         $exprType = $expr->getType();
+        if ($this->debugLine === $expr->getLine()) {
+            var_dump($expr, $exprType);
+        }
         switch ($exprType) {
             case 'Expr_Cast_Int':
             case 'Scalar_Int':
@@ -554,29 +591,44 @@ class Translator extends \PhpAot\Core\Translator
                 return 'php::Array';
             case 'Expr_BinaryOp_Plus':
             case 'Expr_BinaryOp_Minus':
-                $leftType = $this->detectType($expr->left);
-                $rightType = $this->detectType($expr->right);
+                $leftType = $this->detectExprType($expr->left);
+                $rightType = $this->detectExprType($expr->right);
                 if ($leftType === self::TYPE_INT || $rightType === self::TYPE_INT) {
                     return self::TYPE_INT;
-                } else {
-                    return self::TYPE_VAR;
                 }
+                break;
             case 'Expr_FuncCall':
                 $name = $this->parseIdentifier($expr->name);
                 if ($this->isInternalFunction($name)) {
                     return $this->internalFunctions[$name]->returnType;
-                } else {
-                    return self::TYPE_VAR;
                 }
+                break;
+            case 'Expr_New':
+                return self::TYPE_OBJECT;
+            case 'Expr_Assign':
+                $var = $this->parseIdentifier($expr->var);
+                if ($this->hasVar($var)) {
+                    return $this->scope[$var];
+                }
+                break;
+            case 'Expr_Variable':
+                return $this->detectVarType($expr);
+            case 'Expr_ConstFetch':
+                return $this->detectConstType($expr);
             case 'Scalar_String':
             default:
-                return self::TYPE_VAR;
+                break;
         }
+        return self::TYPE_VAR;
     }
 
     private function parseArray($node): string
     {
         $items = $node->items;
+        // 优化代码风格，空数组直接返回{}，否则会产生一些空洞内容
+        if (count($items) === 0) {
+            return '{}';
+        }
         $list = [];
         $this->indentLevel++;
         foreach ($items as $item) {
@@ -614,7 +666,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseIncludes()
+    private function parseIncludes(): string
     {
         $list = [
             $this->phpxDir . '/include',
@@ -626,7 +678,7 @@ class Translator extends \PhpAot\Core\Translator
         return $out;
     }
 
-    private function parseLdflags()
+    private function parseLdflags(): string
     {
         $list = [
             '$(php-config --prefix)/lib',
@@ -1212,7 +1264,7 @@ class Translator extends \PhpAot\Core\Translator
     private function getTypeConvertedArg($arg, $argInfo): string
     {
         $expr = $this->parseArg($arg);
-        $type = $this->detectType($arg->value);
+        $type = $this->detectExprType($arg->value);
         return $this->convertExprType($expr, $argInfo->type, $type);
     }
 
@@ -1317,5 +1369,14 @@ class Translator extends \PhpAot\Core\Translator
     private function addTmpVar(): string
     {
         return 'tmp_var_' . $this->tmpVarIndex++;
+    }
+
+    private function detectConstType($expr): string
+    {
+        $name = $this->parseIdentifier($expr->name);
+        if ($name === 'true') {
+            return self::TYPE_BOOL;
+        }
+        return $name;
     }
 }
