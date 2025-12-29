@@ -1169,8 +1169,6 @@ function system_with_timeout(
         $descriptorspec[2] = ['pipe', 'w'];
     }
 
-    var_dump($commandline);
-
     $proc = proc_open($commandline, $descriptorspec, $pipes, TEST_PHP_SRCDIR, $bin_env, ['suppress_errors' => true]);
 
     if (!$proc) {

@@ -24,6 +24,11 @@ class Translator extends \PhpAot\Core\Translator
     private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     private array $scope = [];
+    /**
+     * 插入到语句之前
+     * @var array
+     */
+    private array $beforeStmtLines = [];
     private int $tmpVarIndex = 0;
     // 需要插入到函数头部的变量定义代码
     private array $definitions = [];
@@ -51,6 +56,8 @@ class Translator extends \PhpAot\Core\Translator
     const string PREFIX = 'php_';
     private string $rootPath;
     private int $debugLine = 0;
+    // 回归赋值
+    private bool $regressionDetection = false;
 
 
     public function __construct(string $rootPath)
@@ -230,6 +237,13 @@ class Translator extends \PhpAot\Core\Translator
                 return '"' . $this->escapeString($expr->value) . '"';
             case 'Expr_ConstFetch':
                 return $this->parseConstFetch($expr);
+            case 'Expr_Assign':
+                if ($this->regressionDetection) {
+                    $var = $this->parseIdentifier($expr->var);
+                    $this->beforeStmtLines[] = $this->parseExpr($expr) . ";\n";
+                    return '(' . $var . ')';
+                }
+                return $this->parseExpr($expr);
             default:
                 return $this->parseExpr($expr);
         }
@@ -262,56 +276,61 @@ class Translator extends \PhpAot\Core\Translator
         $lines = [];
         foreach ($stmts as $v) {
             $class = $v->getType();
+            $this->beforeStmtLines = [];
             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
             switch ($class) {
                 case 'Stmt_Expression':
-                    $lines[] = $this->parseExpr($v->expr) . ';';
+                    $result = $this->parseExpr($v->expr) . ';';
                     break;
                 case 'Stmt_Echo':
-                    $this->parseEcho($v, $lines);
+                    $result = $this->parseEcho($v);
                     break;
                 case 'Stmt_Return':
-                    $lines[] = $this->parseReturn($v) . ';';
+                    $result = $this->parseReturn($v) . ';';
                     break;
                 case 'Stmt_For':
-                    $lines[] = $this->parseFor($v);
+                    $result = $this->parseFor($v);
                     break;
                 case 'Stmt_Foreach':
-                    $lines[] = $this->parseForeach($v);
+                    $result = $this->parseForeach($v);
                     break;
                 case 'Stmt_Switch':
-                    $lines[] = $this->parseSwitch($v);
+                    $result = $this->parseSwitch($v);
                     break;
                 case 'Stmt_While':
-                    $lines[] = $this->parseWhile($v);
+                    $result = $this->parseWhile($v);
                     break;
                 case 'Stmt_Do':
-                    $lines[] = $this->parseDo($v);
+                    $result = $this->parseDo($v);
                     break;
                 case 'Stmt_If':
-                    $lines[] = $this->parseIf($v);
+                    $result = $this->parseIf($v);
                     break;
                 case 'Stmt_Break':
-                    $lines[] = 'break;';
+                    $result = $this->parseBreak($v);
                     break;
                 case 'Stmt_Continue':
-                    $lines[] = 'continue;';
+                    $result = 'continue;';
                     break;
                 case 'Stmt_Global':
-                    $lines[] = $this->parseGlobal($v);
+                    $result = $this->parseGlobal($v);
                     break;
                 case 'Stmt_Static':
-                    $lines[] = $this->parseStatic($v);
+                    $result = $this->parseStatic($v);
                     break;
                 case 'Stmt_Unset':
-                    $lines[] = $this->parseUnset($v);
+                    $result = $this->parseUnset($v);
                     break;
                 default:
                     abort($v);
             }
+            if ($this->beforeStmtLines) {
+                $lines = array_merge($lines, $this->beforeStmtLines);
+            }
+            $lines[] = $result;
         }
-        $code = '';
 
+        $code = '';
         foreach ($lines as $line) {
             $code .= $this->getIndent() . $line . PHP_EOL;
         }
@@ -509,11 +528,12 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseEcho(mixed $v, &$lines): void
+    private function parseEcho(mixed $v): string
     {
         foreach ($v->exprs as $expr) {
             $lines[] = 'php::echo(' . $this->parseExpr($expr) . ');';
         }
+        return implode("\n" . $this->getIndent(), $lines);
     }
 
     private function parseBinaryOp($left, $right, $op): string
@@ -733,8 +753,10 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpConcat(mixed $expr): string
     {
+        $this->regressionDetection = true;
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
+        $this->regressionDetection = false;
 
         return 'php::concat(' . $left . ', ' . $right . ')';
     }
@@ -1406,5 +1428,17 @@ class Translator extends \PhpAot\Core\Translator
     private function parseMagicConstDir(mixed $expr): string
     {
         return '"' . $this->escapeString($this->dir) . '"';
+    }
+
+    private function parseBreak(mixed $v): string
+    {
+        $num = $v->num;
+        if ($num) {
+            $value = $this->parseIdentifier($num);
+            if ($value > 1) {
+                abort($v);
+            }
+        }
+        return 'break;';
     }
 }
