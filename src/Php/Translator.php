@@ -659,20 +659,21 @@ class Translator extends \PhpAot\Core\Translator
         $items = $node->items;
         // 优化代码风格，空数组直接返回{}，否则会产生一些空洞内容
         if (count($items) === 0) {
-            return '{}';
+            return self::TYPE_ARRAY .'{}';
         }
         $list = [];
         $this->indentLevel++;
         foreach ($items as $item) {
             if ($item->key) {
-                $list[] = $this->getIndent() . '{ ' . $this->parseIdentifier($item->key) . ', php::Variant(' . $this->parseIdentifier($item->value) . ') }';
+                $list[] = $this->getIndent() . '{ ' . $this->parseIdentifier($item->key) . ', ' .
+                    self::TYPE_VAR . '(' . $this->parseIdentifier($item->value) . ') }';
             } else {
                 $value = $this->parseIdentifier($item->value);
-                $list[] = $this->getIndent() . 'php::Variant(' . $value . ')';
+                $list[] = $this->getIndent() . self::TYPE_VAR . '(' . $value . ')';
             }
         }
         $this->indentLevel--;
-        return '{' . PHP_EOL .
+        return self::TYPE_ARRAY . '{' . PHP_EOL .
             implode(', ' . PHP_EOL, $list) . PHP_EOL .
             $this->getIndent() .
             '}';
@@ -1202,9 +1203,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function escapeString($str): string
     {
-        $search = ["\n", "\r", "\t", "\""];
-        $replace = ['\n', '\r', '\t', '\"'];
-        return str_replace($search, $replace, $str);
+        return addcslashes($str, "\\\"\n\r\t\v\f\0\x01..\x1f\x7f..\xff");
     }
 
     private function parseInterpolatedStringPart(Node $expr): string
@@ -1320,8 +1319,18 @@ class Translator extends \PhpAot\Core\Translator
             $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
             $this->addVar($keyVar, self::TYPE_VAR);
         }
-        $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
-        $this->addVar($valueVar, self::TYPE_VAR);
+
+        if ($node->valueVar->getType() == 'Expr_ArrayDimFetch') {
+            $array = $this->parseIdentifier($node->valueVar->var);
+            if (!$this->hasVar($array) or $node->valueVar->dim === null) {
+                abort($node->valueVar);
+            }
+            $dim = $this->parseIdentifier($node->valueVar->dim);
+            $code .= $this->getIndent() . "$array.offsetSet($dim, iter.value());";
+        } else {
+            $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
+            $this->addVar($valueVar, self::TYPE_VAR);
+        }
         $code .= $this->parseStmts($stmts);
         $this->indentLevel--;
 
