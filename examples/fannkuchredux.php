@@ -21,6 +21,7 @@ function fannkuch($n)
             $count[$r - 1] = $r;
             $r -= 1;
         }
+
         while ($i < $n) {
             $perm[$i] = $perm1[$i];
             $i += 1;
@@ -40,6 +41,9 @@ function fannkuch($n)
             $k = $perm[0];
             $f += 1;
         }
+
+        var_dump('r=' . $r . ', nperm=' . $nperm . ', checksum=' . $checksum . ', i=' . $i . ', k=' . $k . ', f=' . $f . ', r=' . $r);
+
         if ($f > $flips) $flips = $f;
         if (($nperm & 0x1) == 0) $checksum += $f; else $checksum -= $f;
 
@@ -63,6 +67,8 @@ function fannkuch($n)
             if ($count[$r] > 0) $more = false; else $r += 1;
         }
         $nperm += 1;
+
+        sleep(1);
     }
     return $flips;
 }

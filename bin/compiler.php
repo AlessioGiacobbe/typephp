@@ -1,3 +1,4 @@
+#!/usr/bin/env php
 <?php
 require __DIR__ . '/bootstrap.php';
 
@@ -16,6 +17,9 @@ try {
     $cppFile = './tmp/' . $info['filename'] . '.cc';
     $translator->save($code, $cppFile);
     $translator->compileFile($cppFile);
+
+    $objectFile = './tmp/' . $info['filename'] . '.cc.o';
+    $translator->compileBinary($info['filename'], $objectFile);
 } catch (Error $error) {
     echo "Parse error: {$error->getMessage()}\n";
     return;

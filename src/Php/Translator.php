@@ -514,12 +514,9 @@ class Translator extends \PhpAot\Core\Translator
             $rightExpr = $this->convertExprType($rightExpr, self::TYPE_INT, $rightType);
         } elseif ($rightType === self::TYPE_INT) {
             $leftExpr = $this->convertExprType($leftExpr, self::TYPE_INT, $leftType);
-        } else {
-            $leftExpr = $this->convertExprType($leftExpr, self::TYPE_INT, $leftType);
-            $rightExpr = $this->convertExprType($rightExpr, self::TYPE_INT, $rightType);
         }
 
-        return $leftExpr . ' ' .$op .' ' . $rightExpr;
+        return $leftExpr . ' ' . $op . ' ' . $rightExpr;
     }
 
     private function parseBinaryOpPlus(mixed $expr): string
@@ -541,10 +538,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpMul(mixed $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return '(' . $left . ') * (' . $right . ')';
+        return $this->parseBinaryOp($expr->left, $expr->right, '*');
     }
 
     private function addVar(string $name, string $type): void
@@ -768,10 +762,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpSmaller(mixed $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' < ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '<');
     }
 
     private function parsePreInc(mixed $expr): string
@@ -792,20 +783,14 @@ class Translator extends \PhpAot\Core\Translator
         return $var . '.offsetGet(' . $dim . ')';
     }
 
-    private function parseBinaryOpShiftLeft($node): string
+    private function parseBinaryOpShiftLeft($expr): string
     {
-        $left = $this->parseIdentifier($node->left);
-        $right = $this->parseIdentifier($node->right);
-
-        return $left . ' << ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '<<');
     }
 
-    private function parseBinaryOpShiftRight($node): string
+    private function parseBinaryOpShiftRight($expr): string
     {
-        $left = $this->parseIdentifier($node->left);
-        $right = $this->parseIdentifier($node->right);
-
-        return $left . ' >> ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '>>');
     }
 
     private function parseAssignOpMinus(mixed $expr): string
@@ -828,9 +813,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpMod(mixed $expr): string
     {
-        $left = $this->parseExpr($expr->left);
-        $right = $this->parseExpr($expr->right);
-        return $left . ' % ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '%');
     }
 
     private function parseFuncCall(mixed $expr): string
@@ -889,15 +872,12 @@ class Translator extends \PhpAot\Core\Translator
         $cond = $expr->cond;
         $if = $expr->if;
         $else = $expr->else;
-        return $this->parseExpr($cond) . ' ? ' . $this->parseExpr($if) . ' : ' . $this->parseExpr($else);
+        return '(' . $this->parseExpr($cond) . ') ? (' . $this->parseExpr($if) . ') : (' . $this->parseExpr($else) . ')';
     }
 
     private function parseBinaryOpGreater(mixed $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' > ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '>');
     }
 
     private function parseAssignOpMod(mixed $expr): string
@@ -921,29 +901,20 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpBitwiseAnd(mixed $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' & ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '&');
     }
 
     private function parseBinaryOpBitwiseOr(mixed $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' | ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '|');
     }
 
-    private function parseBinaryOpBitwiseXor(mixed $expr)
+    private function parseBinaryOpBitwiseXor(mixed $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' ^ ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '^');
     }
 
-    private function parseBitwiseNot(mixed $expr)
+    private function parseBitwiseNot(mixed $expr): string
     {
         $var = $this->parseIdentifier($expr->expr);
         return '~' . $var;
@@ -983,42 +954,27 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpEqual(mixed $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' == ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '==');
     }
 
-    private function parseBinaryOpNotEqual(mixed $expr)
+    private function parseBinaryOpNotEqual(mixed $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' != ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '!=');
     }
 
     private function parseBinaryOpLogicalAnd(Node $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' && ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '&&');
     }
 
     private function parseBinaryOpLogicalOr(Node $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' || ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '||');
     }
 
     private function parseBinaryOpLogicalXor(Node $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' ^ ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '^');
     }
 
     private function parseBooleanNot(Node $expr): string
@@ -1056,36 +1012,14 @@ class Translator extends \PhpAot\Core\Translator
         return 'php::to_bool(' . $expr . ')';
     }
 
-    private function optimizeBinaryOpCompare(string $left, string $right, string $op): string
-    {
-        if ($this->getDetectedType($left) == self::TYPE_INT and $this->getDetectedType($right) == self::TYPE_VAR) {
-            return $left . ' ' . $op . ' ' . $this->convertIntExpr($right);
-        }
-        if ($this->getDetectedType($left) == self::TYPE_FLOAT and $this->getDetectedType($right) == self::TYPE_VAR) {
-            return $left . ' ' . $op . ' ' . $this->convertFloatExpr($right);
-        }
-        return '';
-    }
-
     private function parseBinaryOpSmallerOrEqual(Node $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        $optimized = $this->optimizeBinaryOpCompare($left, $right, '<=');
-        if (!$optimized) {
-            return $left . ' <= ' . $right;
-        } else {
-            return $optimized;
-        }
+        return $this->parseBinaryOp($expr->left, $expr->right, '<=');
     }
 
     private function parseBinaryOpGreaterOrEqual(Node $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        return $left . ' >= ' . $right;
+        return $this->parseBinaryOp($expr->left, $expr->right, '>=');
     }
 
     private function parsePrint(Node $expr): string
@@ -1214,9 +1148,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpMinus(Node $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-        return $left . ' - (' . $right . ')';
+        return $this->parseBinaryOp($expr->left, $expr->right, '-');
     }
 
     private function parseInterpolatedString(Node $expr): string
@@ -1245,7 +1177,8 @@ class Translator extends \PhpAot\Core\Translator
     {
         $out = [];
         foreach ($v->vars as $v) {
-            $out [] = self::TYPE_VAR . ' ' . $v->name . ' = php::global("' . $v->name . '");';
+            $out[] = self::TYPE_VAR . ' ' . $v->name . ' = php::global("' . $v->name . '");';
+            $this->addVar($v->name, self::TYPE_VAR);
         }
         return implode(PHP_EOL . $this->getIndent(), $out);
     }
@@ -1270,11 +1203,11 @@ class Translator extends \PhpAot\Core\Translator
 
     private function convertExprType(string $expr, $leftType, $rightType): string
     {
-        if ($leftType === self::TYPE_INT && $rightType !== self::TYPE_INT) {
-            return $this->convertIntExpr($expr);
-        }
         if ($leftType === self::TYPE_FLOAT && $rightType !== self::TYPE_FLOAT) {
             return $this->convertFloatExpr($expr);
+        }
+        if ($leftType === self::TYPE_INT && $rightType !== self::TYPE_INT) {
+            return $this->convertIntExpr($expr);
         }
         if ($leftType === self::TYPE_BOOL && $rightType !== self::TYPE_BOOL) {
             return $this->convertBoolExpr($expr);
