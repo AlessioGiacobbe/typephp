@@ -13,12 +13,13 @@ use PhpParser\PrettyPrinter;
 
 class Translator extends \PhpAot\Core\Translator
 {
-    const TYPE_VAR = 'php::Var';
-    const TYPE_BOOL = 'php::Bool';
-    const TYPE_INT = 'php::Int';
-    const TYPE_FLOAT = 'php::Float';
-    const TYPE_OBJECT = 'php::Object';
-    const TYPE_ARRAY = 'php::Array';
+    const string TYPE_VAR = 'php::Var';
+    const string TYPE_BOOL = 'php::Bool';
+    const string TYPE_INT = 'php::Int';
+    const string TYPE_FLOAT = 'php::Float';
+    const string TYPE_OBJECT = 'php::Object';
+    const string TYPE_ARRAY = 'php::Array';
+    const string TYPE_STR = 'php::Str';
 
     private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
@@ -206,6 +207,11 @@ class Translator extends \PhpAot\Core\Translator
         if ($this->verbose) {
             echo $msg . PHP_EOL;
         }
+    }
+
+    private function parseScalarValue($expr): string
+    {
+        return $expr->getAttribute('rawValue');
     }
 
     private function parseIdentifier(Node $expr)
@@ -405,6 +411,10 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseTernary($expr);
             case 'Expr_FuncCall':
                 return $this->parseFuncCall($expr);
+            case 'Expr_Include':
+                return $this->parseInclude($expr);
+            case 'Expr_Eval':
+                return $this->parseEval($expr);
             case 'Expr_New':
                 return $this->parseNew($expr);
             case 'Expr_Clone':
@@ -418,6 +428,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseIdentifier($expr);
             case 'Scalar_MagicConst_File':
                 return $this->parseMagicConstFile($expr);
+            case 'Scalar_MagicConst_Dir':
+                return $this->parseMagicConstDir($expr);
             case 'Scalar_InterpolatedString':
                 return $this->parseInterpolatedString($expr);
             case 'Expr_Cast_Int':
@@ -734,7 +746,6 @@ class Translator extends \PhpAot\Core\Translator
         $loop = $v->loop;
         $stmts = $v->stmts;
         $code = '';
-
 
         $list_expr = [];
         foreach ($init as $expr) {
@@ -1324,15 +1335,20 @@ class Translator extends \PhpAot\Core\Translator
         $cond = $v->cond;
         $tmp_var = $this->addTmpVar();
         $type = $this->detectExprType($cond);
-        $code = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
+        $var_def = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
+
         if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT) {
-            $code .= 'switch (' . $tmp_var . ') {' . PHP_EOL;
+            $code = 'switch (' . $tmp_var . ') {' . PHP_EOL;
             $this->indentLevel++;
             foreach ($v->cases as $case) {
                 if (empty($case->cond)) {
                     $code .= $this->getIndent() . 'default: {' . PHP_EOL;
                 } else {
-                    $code .= $this->getIndent() . 'case ' . $this->parseIdentifier($case->cond) . ': {' . PHP_EOL;
+                    $condType = $case->cond->getType();
+                    if ($condType !== 'Scalar_Int' and $condType !== 'Scalar_Float') {
+                        goto _fail;
+                    }
+                    $code .= $this->getIndent() . 'case ' . $this->parseScalarValue($case->cond) . ': {' . PHP_EOL;
                 }
                 $this->indentLevel++;
                 $code .= $this->parseStmts($case->stmts);
@@ -1341,11 +1357,26 @@ class Translator extends \PhpAot\Core\Translator
             }
             $this->indentLevel--;
             $code .= $this->getIndent() . '}';
-            return $code;
-        } else {
-
+            return $var_def . $code;
         }
-        exit(2);
+
+        _fail:
+        $code = 'do {' . PHP_EOL;
+        $this->indentLevel++;
+        foreach ($v->cases as $case) {
+            if (empty($case->cond)) {
+                $code .= $this->getIndent() . 'else {' . PHP_EOL;
+            } else {
+                $code .= $this->getIndent() . 'if (' . $tmp_var.'=='. $this->parseIdentifier($case->cond) . ') {' . PHP_EOL;
+            }
+            $this->indentLevel++;
+            $code .= $this->parseStmts($case->stmts);
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        }
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '} while (0);';
+        return $var_def . $code;
     }
 
     private function parseStatic(mixed $v): string
@@ -1356,5 +1387,20 @@ class Translator extends \PhpAot\Core\Translator
             $list[] = 'static ' . $type . ' ' . $this->parseIdentifier($var->var) . ' = ' . $this->parseIdentifier($var->default) . ';';
         }
         return implode(PHP_EOL . $this->getIndent(), $list);
+    }
+
+    private function parseEval(mixed $expr): string
+    {
+        return 'php::eval(' . $this->parseIdentifier($expr->expr) . ')';
+    }
+
+    private function parseInclude(mixed $expr): string
+    {
+        return 'php::include(' . $this->parseIdentifier($expr->expr) . ')';
+    }
+
+    private function parseMagicConstDir(mixed $expr): string
+    {
+        return '"' . $this->escapeString($this->dir) . '"';
     }
 }

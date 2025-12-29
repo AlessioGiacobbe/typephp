@@ -18,4 +18,7 @@ $translator->save($code, $cppFile);
 $translator->compileFile($cppFile);
 
 $objectFile = './tmp/' . $info['filename'] . '.cc.o';
+if (!is_file($objectFile)) {
+    throw new Exception("compile error");
+}
 $translator->compileBinary($info['filename'], $objectFile);
