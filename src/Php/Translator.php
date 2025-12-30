@@ -10,6 +10,7 @@ use PhpParser\Error;
 use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
+use SimplePie\Exception;
 
 class Translator extends \PhpAot\Core\Translator
 {
@@ -27,14 +28,8 @@ class Translator extends \PhpAot\Core\Translator
     private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     private array $scope = [];
-    /**
-     * 插入到语句之前
-     * @var array
-     */
-    private array $beforeStmtLines = [];
+    private array $arguments = [];
     private int $tmpVarIndex = 0;
-    // 需要插入到函数头部的变量定义代码
-    private array $definitions = [];
     private array $zendTypeMap = [
         'int' => self::TYPE_INT,
         'float' => self::TYPE_FLOAT,
@@ -48,7 +43,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private array $internalFunctions = [];
 
-    private int $optimizeLevel = 0;
+    private int $optimizeLevel = 5;
     private int $floatPrecision = 17;
     private bool $debugInfo = true;
     private bool $verbose = false;
@@ -58,13 +53,20 @@ class Translator extends \PhpAot\Core\Translator
     private array $uses = [];
     private string $class = '';
     private FunctionDef $functionDef;
+    private array $globalVars = [
+        '_GET' => self::TYPE_ARRAY,
+        '_POST' => self::TYPE_ARRAY,
+        '_COOKIE' => self::TYPE_ARRAY,
+        '_SERVER' => self::TYPE_ARRAY,
+        '_FILES' => self::TYPE_ARRAY,
+        '_SESSION' => self::TYPE_ARRAY,
+        '_REQUEST' => self::TYPE_ARRAY,
+        'GLOBALS' => self::TYPE_ARRAY,
+    ];
 
     const string PREFIX = 'php_';
     private string $rootPath;
     private int $debugLine = 0;
-    // 回归赋值
-    private bool $regressionDetection = false;
-
 
     public function __construct(string $rootPath)
     {
@@ -98,6 +100,12 @@ class Translator extends \PhpAot\Core\Translator
 
         $this->indentLevel = 0;
         $cppCode = $this->parseHeaders();
+
+        $lines[] = PHP_EOL;
+        foreach ($this->globalVars as $name => $type) {
+            $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
+        }
+        $cppCode .= implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
 
         foreach($stmts as $v) {
             $type = $v->getType();
@@ -151,11 +159,6 @@ class Translator extends \PhpAot\Core\Translator
         return $node->getType();
     }
 
-    private function getDetectedType($name)
-    {
-        return $this->scope[$name] ?? 'php::Variant';
-    }
-
     public function getZendType(string $type): string
     {
         return $this->zendTypeMap[$type] ?? 'zval *';
@@ -169,7 +172,7 @@ class Translator extends \PhpAot\Core\Translator
     private function resetScope(): void
     {
         $this->scope = [];
-        $this->definitions = [];
+        $this->arguments = [];
         $this->tmpVarIndex = 0;
     }
 
@@ -205,9 +208,13 @@ class Translator extends \PhpAot\Core\Translator
 
         $code = $this->getReturnType() . ' ' . self::PREFIX . $name . '(' . $params . ') {' . PHP_EOL;
         $this->indentLevel++;
-        foreach ($this->definitions as $definition) {
-            $code .= $this->getIndent() . $definition . PHP_EOL;
+        foreach ($this->scope as $name => $type) {
+            if (isset($this->arguments[$name])) {
+                continue;
+            }
+            $code .= $this->getIndent() . $type . ' ' . $name . ';' . PHP_EOL;
         }
+        $code .= "\n";
         $this->indentLevel--;
         $code .= $stmts;
         $code .= "}\n";
@@ -243,13 +250,6 @@ class Translator extends \PhpAot\Core\Translator
                 return '"' . $this->escapeString($expr->value) . '"';
             case 'Expr_ConstFetch':
                 return $this->parseConstFetch($expr);
-            case 'Expr_Assign':
-                if ($this->regressionDetection) {
-                    $var = $this->parseIdentifier($expr->var);
-                    $this->beforeStmtLines[] = $this->parseExpr($expr) . ";\n";
-                    return '(' . $var . ')';
-                }
-                return $this->parseExpr($expr);
             default:
                 return $this->parseExpr($expr);
         }
@@ -263,7 +263,8 @@ class Translator extends \PhpAot\Core\Translator
             $type = $this->parseType($param->type);
             $name = $this->parseIdentifier($param->var);
             $list[] = $type . ' ' . $name;
-            $this->scope[$name] = $type;
+            $this->arguments[$name] = $type;
+            $this->addVar($name, $type);
 
             $argInfo = new ArgInfo();
             $argInfo->name = $name;
@@ -280,11 +281,9 @@ class Translator extends \PhpAot\Core\Translator
     private function parseStmts(array $stmts): string
     {
         $lines = [];
-        $scope = $this->scope;
 
         foreach ($stmts as $v) {
             $class = $v->getType();
-            $this->beforeStmtLines = [];
             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
             switch ($class) {
                 case 'Stmt_Expression':
@@ -335,14 +334,9 @@ class Translator extends \PhpAot\Core\Translator
                 default:
                     abort($v);
             }
-            if ($this->beforeStmtLines) {
-                $lines = array_merge($lines, $this->beforeStmtLines);
-            }
             $lines[] = $result;
         }
 
-        // 恢复作用域，清除表达式解析中产生的局部变量
-        $this->scope = $scope;
         $code = '';
         foreach ($lines as $line) {
             $code .= $this->getIndent() . $line . PHP_EOL;
@@ -486,6 +480,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseInterpolatedStringPart($expr);
             case 'Expr_Cast_Array':
                 return $this->parseCastArray($expr);
+            case 'Expr_Cast_Double':
+                return $this->parseCastDouble($expr);
             case 'Expr_Exit':
                 return $this->parseExit($expr);
             default:
@@ -502,9 +498,8 @@ class Translator extends \PhpAot\Core\Translator
             $array = $this->parseIdentifier($left->var);
             $code = '';
             // 这是 PHP 的初始化+赋值写法，需要先创建数组
-            if (!$this->hasVar($array)) {
-                $this->addVar($array, self::TYPE_VAR);
-                $code .= self::TYPE_ARRAY . " $array;\n" . $this->getIndent();
+            if (!$this->hasVar($array) and $left->var->getType() === 'Expr_Variable') {
+                $this->addVar($array, self::TYPE_ARRAY);
             }
             if ($left->dim === null) {
                 return $code . "$array.offsetSet(php::null, " . $this->parseExpr($right) . ")";
@@ -549,11 +544,8 @@ class Translator extends \PhpAot\Core\Translator
         if (!$this->hasVar($var)) {
             $type = $this->detectExprType($right);
             $this->addVar($var, $type);
-            // 右值变量可能是常量获取，虽然可以推断为数值类型，但实际返回依然为 Var ，需要强制转换
-            return $type . ' ' . $var . ' = ' . $this->convertExprType($expr, $type, self::TYPE_VAR);
-        } else {
-            return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
         }
+        return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
     }
 
     private function parseEcho(mixed $v): string
@@ -610,7 +602,7 @@ class Translator extends \PhpAot\Core\Translator
             $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_INT);
         }
 
-        return $leftExpr . ' ' . $op . ' ' . $rightExpr;
+        return '(' . $leftExpr . ' ' . $op . ' ' . $rightExpr . ')';
     }
 
     private function parseBinaryOpPlus(mixed $expr): string
@@ -620,6 +612,9 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseReturn(mixed $v): string
     {
+        if ($v->expr === null) {
+            return 'return;';
+        }
         // 实际函数的返回值
         $type = $this->detectExprType($v->expr);
         $expr = $this->parseExpr($v->expr);
@@ -638,9 +633,17 @@ class Translator extends \PhpAot\Core\Translator
     private function addVar(string $name, string $type): void
     {
         $this->scope[$name] = $type;
+        if (!str_starts_with($type, 'php::')) {
+            throw new Exception("error type: ".$type);
+        }
     }
 
-    private function hasVar(string $name)
+    private function addGlobalVar(string $name, string $type): void
+    {
+        $this->globalVars[$name] = $type;
+    }
+
+    private function hasVar(string $name): bool
     {
         return isset($this->scope[$name]);
     }
@@ -656,6 +659,9 @@ class Translator extends \PhpAot\Core\Translator
         $name = $this->parseIdentifier($var);
         if ($this->hasVar($name)) {
             return $this->scope[$name];
+        }
+        if ($this->hasGlobalVar($name)) {
+            return $this->globalVars[$name];
         }
         return self::TYPE_VAR;
     }
@@ -708,11 +714,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr_New':
                 return self::TYPE_OBJECT;
             case 'Expr_Assign':
-                $var = $this->parseIdentifier($expr->var);
-                if ($this->hasVar($var)) {
-                    return $this->scope[$var];
-                }
-                break;
+                return $this->detectVarType($expr->var);
             case 'Expr_Variable':
                 return $this->detectVarType($expr);
             case 'Expr_ConstFetch':
@@ -744,17 +746,7 @@ class Translator extends \PhpAot\Core\Translator
         $list = [];
         $this->indentLevel++;
         foreach ($items as $item) {
-            /**
-             * 数组赋值语句
-             * $array = [1, 2, $x = 3];
-             */
-            if ($item->value->getType() === 'Expr_Assign') {
-                $left = $item->value->var;
-                $this->beforeStmtLines[] = $this->getIndent() . $this->parseExpr($item->value) . ';';
-                $value = $this->parseIdentifier($left);
-            } else {
-                $value = $this->parseIdentifier($item->value);
-            }
+            $value = $this->parseIdentifier($item->value);
             if ($assocArray) {
                 // TODO 混杂模式数组赋值
                 $key = $item->key ? $this->parseIdentifier($item->key) : 'php::null';
@@ -842,7 +834,9 @@ class Translator extends \PhpAot\Core\Translator
 
     public function compileBinary($targetFile, $objectFile): void
     {
-        $cmd = 'g++ main.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
+        // 生成全局变量
+        $this->generateGlobalVars();
+        $cmd = 'g++ main.cc global_vars.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
         $cmd .= ' -O' . $this->optimizeLevel;
         echo $cmd . PHP_EOL;
         shell_exec($cmd);
@@ -850,10 +844,8 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpConcat(mixed $expr): string
     {
-        $this->regressionDetection = true;
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
-        $this->regressionDetection = false;
 
         return 'php::concat(' . $left . ', ' . $right . ')';
     }
@@ -880,11 +872,20 @@ class Translator extends \PhpAot\Core\Translator
         $list_expr[] = '';
         $code .= implode(";\n" . $this->getIndent(), $list_expr);
 
-        $code .= 'for (;';
         $list_cond = [];
         foreach ($cond as $expr) {
+            if ($expr->getType() === 'Expr_Assign') {
+                $left = $expr->var;
+                $name = $this->parseIdentifier($left);
+                if (!$this->hasVar($name)) {
+                    $type = $this->detectExprType($expr->expr);
+                    $this->addVar($name, $type);
+                }
+            }
             $list_cond[] = $this->parseExpr($expr);
         }
+
+        $code .= 'for (;';
         $code .= implode(', ', $list_cond);
         $code .= '; ';
 
@@ -914,10 +915,21 @@ class Translator extends \PhpAot\Core\Translator
         return '++' . $this->parseIdentifier($expr->var);
     }
 
+    private function parseAssignOp(mixed $node, string $op): string
+    {
+        $var = $this->parseIdentifier($node->var);
+        $expr = $this->parseIdentifier($node->expr);
+        if ($node->var->getType() === 'Expr_Variable') {
+            $type = $this->detectVarType($node->var);
+            return $var . ' ' . $op . ' ' . $this->convertExprType($expr, $type, $this->detectExprType($node->expr));
+        } else {
+            return $var . ' ' . $op . ' (' . $expr . ')';
+        }
+    }
+
     private function parseAssignOpPlus(mixed $expr): string
     {
-        $var = $this->parseIdentifier($expr->var);
-        return $var . ' += (' . $this->parseIdentifier($expr->expr) . ')';
+        return $this->parseAssignOp($expr, '+=');
     }
 
     private function parseArrayDimFetch($node): string
@@ -1348,12 +1360,12 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseGlobal(Node $v): string
     {
-        $out = [];
         foreach ($v->vars as $v) {
-            $out[] = self::TYPE_VAR . ' ' . $v->name . ' = php::global("' . $v->name . '");';
-            $this->addVar($v->name, self::TYPE_VAR);
+            if (!$this->hasGlobalVar($v->name)) {
+                $this->addGlobalVar($v->name, self::TYPE_VAR);
+            }
         }
-        return implode(PHP_EOL . $this->getIndent(), $out);
+        return '';
     }
 
     private function getArgInfo(string $funcName, int $index): ArgInfo
@@ -1445,14 +1457,7 @@ class Translator extends \PhpAot\Core\Translator
         $stmts = $node->stmts;
         $code = '';
 
-        $this->regressionDetection = true;
         $expr = $this->parseIdentifier($node->expr);
-        $this->regressionDetection = false;
-        if ($this->beforeStmtLines) {
-            foreach ($this->beforeStmtLines as $line) {
-                $code .= $line . PHP_EOL;
-            }
-        }
         $code .= self::TYPE_ARRAY . " $iteratorVar = " . $expr . ';' . PHP_EOL;
 
         $code .= 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
@@ -1635,5 +1640,27 @@ class Translator extends \PhpAot\Core\Translator
     private function parseCastArray(mixed $expr): string
     {
         return $this->convertArrayExpr($this->parseIdentifier($expr->expr));
+    }
+
+    private function hasGlobalVar($name): bool
+    {
+        return array_key_exists($name, $this->globalVars);
+    }
+
+    private function generateGlobalVars()
+    {
+        $file = 'global_vars.cc';
+        $code = $this->parseHeaders();
+        // 全局变量只能是 var 类型
+        foreach ($this->globalVars as $name => $type) {
+            $lines[] = self::TYPE_VAR . ' ' . $name . ';';
+        }
+        $code .= implode(PHP_EOL, $lines) . PHP_EOL;
+        file_put_contents($file, $code);
+    }
+
+    private function parseCastDouble(mixed $expr): string
+    {
+        return 'php::to_float(' . $this->parseIdentifier($expr->expr) . ')';
     }
 }

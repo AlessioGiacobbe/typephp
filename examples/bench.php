@@ -28,12 +28,13 @@ function simpleucall() {
 
 /****/
 
+function hallo2($a) {
+}
+
+
 function simpleudcall() {
   for ($i = 0; $i < 1000000; $i++)
     hallo2("hallo");
-}
-
-function hallo2($a) {
 }
 
 /****/
@@ -264,9 +265,9 @@ function mkmatrix ($rows, $cols) {
     $count = 1;
     $mx = array();
     for ($i=0; $i<$rows; $i++) {
-    for ($j=0; $j<$cols; $j++) {
-        $mx[$i][$j] = $count++;
-    }
+        for ($j=0; $j<$cols; $j++) {
+            $mx[$i][$j] = $count++;
+        }
     }
     return($mx);
 }
@@ -343,28 +344,28 @@ function strcat($n) {
 
 function gethrtime()
 {
-  $hrtime = hrtime();
-  return (($hrtime[0]*1000000000 + $hrtime[1]) / 1000000000);
+    $hrtime = hrtime();
+    return (($hrtime[0] * 1000000000 + $hrtime[1]) / 1000000000);
 }
 
 function start_test()
 {
     ob_start();
-  return gethrtime();
+    return gethrtime();
 }
 
 function end_test($start, $name)
 {
-  global $total;
-  $end = gethrtime();
-  ob_end_clean();
-  $total += $end-$start;
-  $num = number_format($end-$start,3);
-  $pad = str_repeat(" ", 24-strlen($name)-strlen($num));
+    global $total;
+    $end = gethrtime();
+    ob_end_clean();
+    $total += $end - $start;
+    $num = number_format($end - $start, 3);
+    $pad = str_repeat(" ", 24 - strlen($name) - strlen($num));
 
-  echo $name.$pad.$num."\n";
+    echo $name . $pad . $num . "\n";
     ob_start();
-  return gethrtime();
+    return gethrtime();
 }
 
 function total()
