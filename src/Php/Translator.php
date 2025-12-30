@@ -40,6 +40,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private array $headers = [
         'phpx.h',
+        'phpx_func.h'
     ];
 
     private array $internalFunctions = [];
@@ -274,6 +275,8 @@ class Translator extends \PhpAot\Core\Translator
     private function parseStmts(array $stmts): string
     {
         $lines = [];
+        $scope = $this->scope;
+
         foreach ($stmts as $v) {
             $class = $v->getType();
             $this->beforeStmtLines = [];
@@ -312,6 +315,9 @@ class Translator extends \PhpAot\Core\Translator
                 case 'Stmt_Continue':
                     $result = 'continue;';
                     break;
+                case 'Stmt_Nop':
+                    $result = '// pass';
+                    break;
                 case 'Stmt_Global':
                     $result = $this->parseGlobal($v);
                     break;
@@ -330,6 +336,8 @@ class Translator extends \PhpAot\Core\Translator
             $lines[] = $result;
         }
 
+        // 恢复作用域，清除表达式解析中产生的局部变量
+        $this->scope = $scope;
         $code = '';
         foreach ($lines as $line) {
             $code .= $this->getIndent() . $line . PHP_EOL;
@@ -355,6 +363,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpNotEqual($expr);
             case 'Expr_BinaryOp_Identical':
                 return $this->parseBinaryOpIdentical($expr);
+            case 'Expr_BinaryOp_NotIdentical':
+                return $this->parseBinaryOpNotIdentical($expr);
             case 'Expr_BooleanNot':
                 return $this->parseBooleanNot($expr);
             case 'Expr_BinaryOp_Plus':
@@ -367,6 +377,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpSmallerOrEqual($expr);
             case 'Expr_BinaryOp_GreaterOrEqual':
                 return $this->parseBinaryOpGreaterOrEqual($expr);
+            case 'Expr_BinaryOp_Spaceship':
+                return $this->parseBinaryOpSpaceship($expr);
             case 'Expr_PreInc':
                 return $this->parsePreInc($expr);
             case 'Expr_PostInc':
@@ -457,6 +469,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseConstFetch($expr);
             case 'Expr_UnaryMinus':
                 return $this->parseUnaryMinus($expr);
+            case 'Expr_UnaryPlus':
+                return $this->parseUnaryPlus($expr);
             case 'InterpolatedStringPart':
                 return $this->parseInterpolatedStringPart($expr);
             case 'Expr_Exit':
@@ -522,7 +536,8 @@ class Translator extends \PhpAot\Core\Translator
         if (!$this->hasVar($var)) {
             $type = $this->detectExprType($right);
             $this->addVar($var, $type);
-            return $type . ' ' . $var . ' = ' . $expr;
+            // 右值变量可能是常量获取，虽然可以推断为数值类型，但实际返回依然为 Var ，需要强制转换
+            return $type . ' ' . $var . ' = ' . $this->convertExprType($expr, $type, self::TYPE_VAR);
         } else {
             return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
         }
@@ -536,10 +551,38 @@ class Translator extends \PhpAot\Core\Translator
         return implode("\n" . $this->getIndent(), $lines);
     }
 
+    private function isFloatStr(string $str)
+    {
+        return filter_var($str, FILTER_VALIDATE_FLOAT);
+    }
+
+    private function isIntStr(string $str)
+    {
+        return filter_var($str, FILTER_VALIDATE_INT);
+    }
+
+    /**
+     * 尽可能转为数字，优先级 浮点 > 整数 > 字符串
+     */
+    private function parseNumericIdentifier($expr)
+    {
+        if ($expr->getType() === 'Scalar_String') {
+            if ($this->isFloatStr($expr->value)) {
+               return floatval($expr->value);
+            } else if ($this->isIntStr($expr->value)) {
+                return intval($expr->value);
+            } else if ($expr->value === '0') {
+                return 0;
+            }
+        }
+        return $this->parseIdentifier($expr);
+    }
+
     private function parseBinaryOp($left, $right, $op): string
     {
-        $leftExpr = $this->parseIdentifier($left);
-        $rightExpr = $this->parseIdentifier($right);
+        // 运算逻辑，优先转为数字
+        $leftExpr = $this->parseNumericIdentifier($left);
+        $rightExpr = $this->parseNumericIdentifier($right);
 
         $leftType = $this->detectExprType($left);
         $rightType = $this->detectExprType($right);
@@ -648,6 +691,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr_ConstFetch':
                 return $this->detectConstType($expr);
             case 'Scalar_String':
+                return self::TYPE_STR;
             default:
                 break;
         }
@@ -797,6 +841,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->indentLevel--;
 
         $code .= $this->getIndent() . '}' . PHP_EOL;
+
         return $code;
     }
 
@@ -1093,6 +1138,18 @@ class Translator extends \PhpAot\Core\Translator
         return 'php::same(' . $left . ', ' . $right . ')';
     }
 
+    private function parseBinaryOpSpaceship(mixed $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+        return 'php::compare(' . $left . ', ' . $right . ')';
+    }
+
+    private function parseBinaryOpNotIdentical(mixed $expr): string
+    {
+        return '!(' . $this->parseBinaryOpIdentical($expr) . ')';
+    }
+
     private function parseNew(Node $expr): string
     {
         $className = $this->parseIdentifier($expr->class);
@@ -1164,19 +1221,28 @@ class Translator extends \PhpAot\Core\Translator
         return '(' . $code . ').toInt()';
     }
 
-    private function parseConstFetch(Node $expr)
+    private function parseConstFetch(Node $expr): string
     {
         $name = $this->parseIdentifier($expr->name);
         if ($name === 'null') {
             return 'nullptr';
+        } elseif ($name === 'true') {
+            return 'true';
+        } elseif ($name === 'false') {
+            return 'false';
         }
-        return $name;
+        return 'php::constant("' . $name . '")';
     }
 
     private function parseUnaryMinus(Node $expr): string
     {
         $code = $this->parseExpr($expr->expr);
         return '-' . $code;
+    }
+
+    private function parseUnaryPlus(mixed $expr)
+    {
+        return $this->parseExpr($expr->expr);
     }
 
     private function parseBinaryOpDiv(Node $expr): string
@@ -1358,7 +1424,13 @@ class Translator extends \PhpAot\Core\Translator
         if ($name === 'true') {
             return self::TYPE_BOOL;
         }
-        return $name;
+        if ($name === 'false') {
+            return self::TYPE_BOOL;
+        }
+        if ($name === 'NAN' or $name === 'INF') {
+            return self::TYPE_FLOAT;
+        }
+        return self::TYPE_VAR;
     }
 
     private function parseSwitch(mixed $v): string

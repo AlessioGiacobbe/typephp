@@ -2624,6 +2624,10 @@ COMMAND $cmd
         if (!$cfg['keep']['php'] && !$leaked) {
             @unlink($test_file);
             @unlink($preload_filename);
+            // 刪除 AOT 编译器生成的 .cc 和 .o 文件
+            $file = substr($test_file, 0, strlen($test_file) - 4);
+            @unlink($file . '.cc');
+            @unlink($file . '.cc.o');
         }
         @unlink($tmp_post);
 

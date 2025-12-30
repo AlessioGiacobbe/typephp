@@ -13,11 +13,11 @@ $translator = new Translator(ROOT_PATH);
 $translator->setIndent('    ');
 $code = $translator->convert($file);
 $info = pathinfo($file);
-$cppFile = './tmp/' . $info['filename'] . '.cc';
+$cppFile = $info['dirname'] . '/' . $info['filename'] . '.cc';
 $translator->save($code, $cppFile);
 $translator->compileFile($cppFile);
 
-$objectFile = './tmp/' . $info['filename'] . '.cc.o';
+$objectFile = $info['dirname'] . '/' . $info['filename'] . '.cc.o';
 if (!is_file($objectFile)) {
     throw new Exception("compile error");
 }
