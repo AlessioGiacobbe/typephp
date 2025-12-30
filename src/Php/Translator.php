@@ -48,7 +48,9 @@ class Translator extends \PhpAot\Core\Translator
 
     private array $internalFunctions = [];
 
-    private int $optimizeLevel = 5;
+    private int $optimizeLevel = 0;
+    private int $floatPrecision = 17;
+    private bool $debugInfo = true;
     private bool $verbose = false;
     private string $file;
     private string $dir;
@@ -406,6 +408,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseAssignOpConcat($expr);
             case 'Expr_AssignOp_ShiftRight':
                 return $this->parseAssignOpShiftRight($expr);
+            case 'Expr_AssignOp_BitwiseAnd':
+                return $this->parseAssignOpBitwiseAnd($expr);
             case 'Expr_BinaryOp_Mul':
                 return $this->parseBinaryOpMul($expr);
             case 'Expr_BinaryOp_Concat':
@@ -480,6 +484,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseUnaryPlus($expr);
             case 'InterpolatedStringPart':
                 return $this->parseInterpolatedStringPart($expr);
+            case 'Expr_Cast_Array':
+                return $this->parseCastArray($expr);
             case 'Expr_Exit':
                 return $this->parseExit($expr);
             default:
@@ -597,11 +603,11 @@ class Translator extends \PhpAot\Core\Translator
         if ($leftType === self::TYPE_FLOAT) {
             $rightExpr = $this->convertExprType($rightExpr, self::TYPE_FLOAT, $rightType);
         } elseif ($rightType === self::TYPE_FLOAT) {
-            $leftExpr = $this->convertExprType($leftExpr, self::TYPE_FLOAT, $leftType);
+            $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_FLOAT);
         } elseif ($leftType === self::TYPE_INT) {
             $rightExpr = $this->convertExprType($rightExpr, self::TYPE_INT, $rightType);
         } elseif ($rightType === self::TYPE_INT) {
-            $leftExpr = $this->convertExprType($leftExpr, self::TYPE_INT, $leftType);
+            $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_INT);
         }
 
         return $leftExpr . ' ' . $op . ' ' . $rightExpr;
@@ -667,14 +673,28 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr_Cast_Float':
             case 'Scalar_Float':
                 return self::TYPE_FLOAT;
+            case 'Expr_Cast_Bool':
             case 'Scalar_Bool':
                 return self::TYPE_BOOL;
             case 'Expr_Array':
                 return 'php::Array';
             case 'Expr_BinaryOp_Plus':
             case 'Expr_BinaryOp_Minus':
+            case 'Expr_BinaryOp_Mul':
+            case 'Expr_BinaryOp_Div':
+            case 'Expr_BinaryOp_Mod':
+            case 'Expr_BinaryOp_Pow':
+            case 'Expr_BinaryOp_ShiftLeft':
+            case 'Expr_BinaryOp_ShiftRight':
+            case 'Expr_BinaryOp_BitwiseAnd':
+            case 'Expr_BinaryOp_BitwiseOr':
+            case 'Expr_BinaryOp_BitwiseXor':
+            case 'Expr_BinaryOp_BooleanAnd':
                 $leftType = $this->detectExprType($expr->left);
                 $rightType = $this->detectExprType($expr->right);
+                if ($leftType === self::TYPE_FLOAT || $rightType === self::TYPE_FLOAT) {
+                    return self::TYPE_FLOAT;
+                }
                 if ($leftType === self::TYPE_INT || $rightType === self::TYPE_INT) {
                     return self::TYPE_INT;
                 }
@@ -713,43 +733,42 @@ class Translator extends \PhpAot\Core\Translator
             return self::TYPE_ARRAY .'{}';
         }
 
-        // 检查一下数组的赋值方式，是否为索引数组或关联数组，若是混杂模式，需要改为多行插入
-        $assocArray = (bool)$items[0]->key;
-        $mixed = false;
+        $assocArray = false;
         foreach ($items as $item) {
             if ($item->key) {
-                if (!$assocArray) {
-                    $mixed = true;
-                    break;
-                }
-            } else {
-                if ($assocArray) {
-                    $mixed = true;
-                    break;
-                }
+                $assocArray = true;
+                break;
             }
         }
 
-        if ($mixed) {
-            abort($node);
-        } else {
-            $list = [];
-            $this->indentLevel++;
-            foreach ($items as $item) {
-                if ($item->key) {
-                    $list[] = $this->getIndent() . '{ ' . $this->parseIdentifier($item->key) . ', ' .
-                        self::TYPE_VAR . '(' . $this->parseIdentifier($item->value) . ') }';
-                } else {
-                    $value = $this->parseIdentifier($item->value);
-                    $list[] = $this->getIndent() . self::TYPE_VAR . '(' . $value . ')';
-                }
+        $list = [];
+        $this->indentLevel++;
+        foreach ($items as $item) {
+            /**
+             * 数组赋值语句
+             * $array = [1, 2, $x = 3];
+             */
+            if ($item->value->getType() === 'Expr_Assign') {
+                $left = $item->value->var;
+                $this->beforeStmtLines[] = $this->getIndent() . $this->parseExpr($item->value) . ';';
+                $value = $this->parseIdentifier($left);
+            } else {
+                $value = $this->parseIdentifier($item->value);
             }
-            $this->indentLevel--;
-            return self::TYPE_ARRAY . '{' . PHP_EOL .
-                implode(', ' . PHP_EOL, $list) . PHP_EOL .
-                $this->getIndent() .
-                '}';
+            if ($assocArray) {
+                // TODO 混杂模式数组赋值
+                $key = $item->key ? $this->parseIdentifier($item->key) : 'php::null';
+                $list[] = $this->getIndent() . '{ ' . $key . ', ' .
+                    self::TYPE_VAR . '(' . $value . ') }';
+            } else {
+                $list[] = $this->getIndent() . self::TYPE_VAR . '(' . $value . ')';
+            }
         }
+        $this->indentLevel--;
+        return self::TYPE_ARRAY . '{' . PHP_EOL .
+            implode(', ' . PHP_EOL, $list) . PHP_EOL .
+            $this->getIndent() .
+            '}';
     }
 
     private function parseType($type)
@@ -812,7 +831,11 @@ class Translator extends \PhpAot\Core\Translator
 
     public function compileFile($file): void
     {
-        $cmd = 'g++ -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes() . ' -O' . $this->optimizeLevel;
+        $cmd = 'g++  -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes();
+        $cmd .= ' -O' . $this->optimizeLevel;
+        if ($this->debugInfo) {
+            $cmd .= ' -g';
+        }
         echo $cmd . PHP_EOL;
         shell_exec($cmd);
     }
@@ -1128,6 +1151,16 @@ class Translator extends \PhpAot\Core\Translator
         return 'php::to_float(' . $expr . ')';
     }
 
+    private function convertStringExpr(string $expr): string
+    {
+        return 'php::to_string(' . $expr . ')';
+    }
+
+    private function convertArrayExpr(string $expr): string
+    {
+        return 'php::to_array(' . $expr . ')';
+    }
+
     private function convertBoolExpr(string $expr): string
     {
         return 'php::to_bool(' . $expr . ')';
@@ -1343,13 +1376,13 @@ class Translator extends \PhpAot\Core\Translator
 
     private function convertExprType(string $expr, $leftType, $rightType): string
     {
-        if ($leftType === self::TYPE_FLOAT && $rightType !== self::TYPE_FLOAT) {
+        if ($leftType === self::TYPE_FLOAT or $rightType === self::TYPE_FLOAT) {
             return $this->convertFloatExpr($expr);
         }
-        if ($leftType === self::TYPE_INT && $rightType !== self::TYPE_INT) {
+        if ($leftType === self::TYPE_INT or $rightType === self::TYPE_INT) {
             return $this->convertIntExpr($expr);
         }
-        if ($leftType === self::TYPE_BOOL && $rightType !== self::TYPE_BOOL) {
+        if ($leftType === self::TYPE_BOOL or $rightType === self::TYPE_BOOL) {
             return $this->convertBoolExpr($expr);
         }
         return $expr;
@@ -1569,6 +1602,7 @@ class Translator extends \PhpAot\Core\Translator
     private function parseScalarFloat(Node $expr): string
     {
         $value = $expr->value;
+
         if (is_nan($value)) {
             return self::VALUE_NAN;
         } elseif (is_infinite($value)) {
@@ -1576,7 +1610,7 @@ class Translator extends \PhpAot\Core\Translator
         } else if (floor($value) == $value && abs($value) < 1e15) {
             return number_format($value, 1, '.', '');
         } else {
-            return $value;
+            return sprintf('%.' . $this->floatPrecision . 'g', $value);
         }
     }
 
@@ -1590,5 +1624,16 @@ class Translator extends \PhpAot\Core\Translator
                 abort($var);
             }
         }
+    }
+
+    private function parseAssignOpBitwiseAnd(mixed $node): string
+    {
+        $var = $this->parseIdentifier($node->var);
+        return $var . ' &= ' . $this->parseIdentifier($node->expr);
+    }
+
+    private function parseCastArray(mixed $expr): string
+    {
+        return $this->convertArrayExpr($this->parseIdentifier($expr->expr));
     }
 }
