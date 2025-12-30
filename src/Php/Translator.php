@@ -356,6 +356,8 @@ class Translator extends \PhpAot\Core\Translator
             var_dump($expr);
         }
         switch ($type) {
+            case 'Expr_Isset':
+                return $this->parseIsset($expr);
             case 'Expr_Assign':
                 return $this->parseAssign($expr);
             case 'Expr_Print':
@@ -400,6 +402,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseAssignOpDiv($expr);
             case 'Expr_AssignOp_Mod':
                 return $this->parseAssignOpMod($expr);
+            case 'Expr_AssignOp_Concat':
+                return $this->parseAssignOpConcat($expr);
             case 'Expr_AssignOp_ShiftRight':
                 return $this->parseAssignOpShiftRight($expr);
             case 'Expr_BinaryOp_Mul':
@@ -708,22 +712,44 @@ class Translator extends \PhpAot\Core\Translator
         if (count($items) === 0) {
             return self::TYPE_ARRAY .'{}';
         }
-        $list = [];
-        $this->indentLevel++;
+
+        // 检查一下数组的赋值方式，是否为索引数组或关联数组，若是混杂模式，需要改为多行插入
+        $assocArray = (bool)$items[0]->key;
+        $mixed = false;
         foreach ($items as $item) {
             if ($item->key) {
-                $list[] = $this->getIndent() . '{ ' . $this->parseIdentifier($item->key) . ', ' .
-                    self::TYPE_VAR . '(' . $this->parseIdentifier($item->value) . ') }';
+                if (!$assocArray) {
+                    $mixed = true;
+                    break;
+                }
             } else {
-                $value = $this->parseIdentifier($item->value);
-                $list[] = $this->getIndent() . self::TYPE_VAR . '(' . $value . ')';
+                if ($assocArray) {
+                    $mixed = true;
+                    break;
+                }
             }
         }
-        $this->indentLevel--;
-        return self::TYPE_ARRAY . '{' . PHP_EOL .
-            implode(', ' . PHP_EOL, $list) . PHP_EOL .
-            $this->getIndent() .
-            '}';
+
+        if ($mixed) {
+            abort($node);
+        } else {
+            $list = [];
+            $this->indentLevel++;
+            foreach ($items as $item) {
+                if ($item->key) {
+                    $list[] = $this->getIndent() . '{ ' . $this->parseIdentifier($item->key) . ', ' .
+                        self::TYPE_VAR . '(' . $this->parseIdentifier($item->value) . ') }';
+                } else {
+                    $value = $this->parseIdentifier($item->value);
+                    $list[] = $this->getIndent() . self::TYPE_VAR . '(' . $value . ')';
+                }
+            }
+            $this->indentLevel--;
+            return self::TYPE_ARRAY . '{' . PHP_EOL .
+                implode(', ' . PHP_EOL, $list) . PHP_EOL .
+                $this->getIndent() .
+                '}';
+        }
     }
 
     private function parseType($type)
@@ -807,6 +833,13 @@ class Translator extends \PhpAot\Core\Translator
         $this->regressionDetection = false;
 
         return 'php::concat(' . $left . ', ' . $right . ')';
+    }
+
+    private function parseAssignOpConcat(mixed $expr): string
+    {
+        $var = $this->parseIdentifier($expr->var);
+        $value = $this->parseIdentifier($expr->expr);
+        return $var . '.append(' . $value . ')';
     }
 
     private function parseFor(mixed $v): string
@@ -1367,9 +1400,8 @@ class Translator extends \PhpAot\Core\Translator
         return '"' . $this->escapeString($this->file) . '"';
     }
 
-    private function parseForeach(Node $node)
+    private function parseForeach(Node $node): string
     {
-        $expr = $this->parseIdentifier($node->expr);
         if ($node->keyVar) {
             $keyVar = $this->parseIdentifier($node->keyVar);
         }
@@ -1380,6 +1412,14 @@ class Translator extends \PhpAot\Core\Translator
         $stmts = $node->stmts;
         $code = '';
 
+        $this->regressionDetection = true;
+        $expr = $this->parseIdentifier($node->expr);
+        $this->regressionDetection = false;
+        if ($this->beforeStmtLines) {
+            foreach ($this->beforeStmtLines as $line) {
+                $code .= $line . PHP_EOL;
+            }
+        }
         $code .= self::TYPE_ARRAY . " $iteratorVar = " . $expr . ';' . PHP_EOL;
 
         $code .= 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
@@ -1528,12 +1568,27 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseScalarFloat(Node $expr): string
     {
-        if (is_nan($expr->value)) {
+        $value = $expr->value;
+        if (is_nan($value)) {
             return self::VALUE_NAN;
-        } elseif (is_infinite($expr->value)) {
-            return $expr->value > 0 ? self::VALUE_INF : '-' . self::VALUE_INF;
+        } elseif (is_infinite($value)) {
+            return $value > 0 ? self::VALUE_INF : '-' . self::VALUE_INF;
+        } else if (floor($value) == $value && abs($value) < 1e15) {
+            return number_format($value, 1, '.', '');
         } else {
-            return number_format($expr->value, 1, '.', '');
+            return $value;
+        }
+    }
+
+    private function parseIsset(mixed $expr)
+    {
+        $vars = $expr->vars;
+        foreach($vars as $var) {
+            if ($var->getType() === 'Expr_Variable') {
+                return $this->hasVar($var->name) ? 'true' : 'false';
+            } else {
+                abort($var);
+            }
         }
     }
 }

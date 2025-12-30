@@ -2467,8 +2467,6 @@ COMMAND $cmd
     $stdin = $test->hasSection('STDIN') ? $test->getSection('STDIN') : null;
     $out = system_with_timeout($cmd, $env, $stdin, $captureStdIn, $captureStdOut, $captureStdErr);
 
-    unlink('./' . $bin_file);
-
     $junit->stopTimer($shortname);
     $hrtime = hrtime();
     $time = $hrtime[0] * 1000000000 + $hrtime[1] - $startTime;
@@ -2628,6 +2626,7 @@ COMMAND $cmd
             $file = substr($test_file, 0, strlen($test_file) - 4);
             @unlink($file . '.cc');
             @unlink($file . '.cc.o');
+            @unlink('./' . $bin_file);
         }
         @unlink($tmp_post);
 
