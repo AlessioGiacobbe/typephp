@@ -21,6 +21,9 @@ class Translator extends \PhpAot\Core\Translator
     const string TYPE_ARRAY = 'php::Array';
     const string TYPE_STR = 'php::Str';
 
+    const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
+    const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
+
     private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     private array $scope = [];
@@ -231,9 +234,9 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr_Variable':
                 return $expr->name;
             case 'Scalar_Int':
-                return $expr->value;
+                return $expr->value . 'L';
             case 'Scalar_Float':
-                return $expr->getAttribute('rawValue');
+                return $this->parseScalarFloat($expr);
             case 'Scalar_String':
                 return '"' . $this->escapeString($expr->value) . '"';
             case 'Expr_ConstFetch':
@@ -1521,5 +1524,16 @@ class Translator extends \PhpAot\Core\Translator
             }
         }
         return 'break;';
+    }
+
+    private function parseScalarFloat(Node $expr): string
+    {
+        if (is_nan($expr->value)) {
+            return self::VALUE_NAN;
+        } elseif (is_infinite($expr->value)) {
+            return $expr->value > 0 ? self::VALUE_INF : '-' . self::VALUE_INF;
+        } else {
+            return number_format($expr->value, 1, '.', '');
+        }
     }
 }
