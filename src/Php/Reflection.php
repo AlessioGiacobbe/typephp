@@ -3,6 +3,8 @@
 namespace PhpAot\Php;
 
 use ReflectionFunction;
+use ReflectionParameter;
+use ReflectionUnionType;
 
 class Reflection
 {
@@ -31,9 +33,22 @@ class Reflection
         if (!$returnType) {
             return null;
         }
-        if ($returnType instanceof \ReflectionUnionType) {
+        if ($returnType instanceof ReflectionUnionType) {
             return null;
         }
         return $returnType->getName();
+    }
+
+    public static function getFunctionParameter(string $fn, int $index): ?ReflectionParameter
+    {
+        $func = self::getFunction($fn);
+        if (!$func) {
+            return null;
+        }
+        $args = $func->getParameters();
+        if ($index >= count($args)) {
+            return null;
+        }
+        return $args[$index];
     }
 }

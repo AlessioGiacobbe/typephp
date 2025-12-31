@@ -114,6 +114,8 @@ class Translator extends \PhpAot\Core\Translator
     private int $debugLine = 0;
     private CLImate $climate;
     private array $definedFunctions = [];
+    private array $beforeStmtLines = [];
+    private array $afterStmtLines = [];
 
     public function __construct(string $rootPath)
     {
@@ -237,6 +239,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function doConvert(string $phpCode)
     {
+        $this->climate->info('do convert');
         $parser = (new ParserFactory())->createForNewestSupportedVersion();
         $ast = $parser->parse($phpCode);
 
@@ -397,10 +400,11 @@ class Translator extends \PhpAot\Core\Translator
     {
         $type = $expr->getType();
         switch ($type) {
-            case 'Name':
-            case 'Identifier':
             case 'Expr_Variable':
                 return $this->escapeVarName($expr->name);
+            case 'Name':
+            case 'Identifier':
+                return $expr->name;
             case 'Scalar_Int':
                 return $expr->value . 'L';
             case 'Scalar_Float':
@@ -440,9 +444,10 @@ class Translator extends \PhpAot\Core\Translator
     private function parseStmts(array $stmts): string
     {
         $lines = [];
-
         foreach ($stmts as $v) {
             $class = $v->getType();
+            $this->beforeStmtLines = [];
+            $this->afterStmtLines = [];
             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
             switch ($class) {
                 case 'Stmt_Expression':
@@ -493,7 +498,9 @@ class Translator extends \PhpAot\Core\Translator
                 default:
                     abort($v);
             }
+            $lines = array_merge($lines, $this->beforeStmtLines);
             $lines[] = $result;
+            $lines = array_merge($lines, $this->afterStmtLines);
         }
 
         $code = '';
@@ -837,6 +844,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Scalar_Int':
                 return self::TYPE_INT;
             case 'Expr_Cast_Float':
+            case 'Expr_Cast_Double':
             case 'Scalar_Float':
                 return self::TYPE_FLOAT;
             case 'Expr_Cast_Bool':
@@ -1169,6 +1177,7 @@ class Translator extends \PhpAot\Core\Translator
                     break;
             }
         }
+
         if (empty($expr->args)) {
             return 'php::call(' . $fn . ')';
         } else {
@@ -1181,19 +1190,29 @@ class Translator extends \PhpAot\Core\Translator
         $internalFunction = $this->isInternalFunction($funcName);
         $list_args = [];
         foreach ($args as $i => $arg) {
+            if ($arg->value->getType() === 'Expr_Variable') {
+                $name = $this->parseIdentifier($arg->value);
+                // 调用了不存在的变量，可能是引用
+                if (!$this->hasVar($name)) {
+                    $this->addLocalVar($name, self::TYPE_REF);
+                } else {
+                    $funcArg = Reflection::getFunctionParameter($funcName, 0);
+                    // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
+                    if ($funcArg and $funcArg->isPassedByReference()) {
+                        $tmpVar = $this->genTmpVarName();
+                        $this->addLocalVar($tmpVar, self::TYPE_REF);
+                        $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
+                        $this->afterStmtLines[] = $name . ' = *' . $tmpVar . ';';
+                        $list_args[] = $tmpVar;
+                        continue;
+                    }
+                }
+            }
             if ($internalFunction) {
                 $argInfo = $this->getArgInfo($funcName, $i);
                 $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
             } else {
                 $list_args[] = $this->parseArg($arg);
-            }
-
-            // 调用了不存在的变量，可能是引用
-            if ($arg->value->getType() === 'Expr_Variable') {
-                $name = $this->parseIdentifier($arg->value);
-                if (!$this->hasVar($name)) {
-                    $this->addLocalVar($name, self::TYPE_REF);
-                }
             }
         }
         return implode(', ', $list_args);
@@ -1670,7 +1689,7 @@ class Translator extends \PhpAot\Core\Translator
         }
         $valueVar = $this->parseIdentifier($node->valueVar);
 
-        $iteratorVar = $this->addTmpVar();
+        $iteratorVar = $this->genTmpVarName();
 
         $stmts = $node->stmts;
         $code = '';
@@ -1712,7 +1731,7 @@ class Translator extends \PhpAot\Core\Translator
         shell_exec($cmd);
     }
 
-    private function addTmpVar(): string
+    private function genTmpVarName(): string
     {
         return 'tmp_var_' . $this->tmpVarIndex++;
     }
@@ -1735,7 +1754,7 @@ class Translator extends \PhpAot\Core\Translator
     private function parseSwitch(mixed $v): string
     {
         $cond = $v->cond;
-        $tmp_var = $this->addTmpVar();
+        $tmp_var = $this->genTmpVarName();
         $type = $this->detectExprType($cond);
         $var_def = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
 
