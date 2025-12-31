@@ -265,9 +265,20 @@ class Translator extends \PhpAot\Core\Translator
         return $node->getType();
     }
 
-    public function getZendType(string $type): string
+    private function getVarType(string $name): string
     {
-        return $this->zendTypeMap[$type] ?? 'zval *';
+        if ($this->hasLocalVar($name)) {
+            return $this->localVars[$name];
+        }
+        if ($this->hasLocalVar($name)) {
+            return $this->globalVars[$name];
+        }
+        return self::TYPE_VAR;
+    }
+
+    public function getTypeFromZendType(string $type): string
+    {
+        return $this->zendTypeMap[$type] ?? self::TYPE_VAR;
     }
 
     public function isInternalFunction(string $name): bool
@@ -300,7 +311,7 @@ class Translator extends \PhpAot\Core\Translator
             $this->functionDef = new FunctionDef();
             $this->functionDef->name = $name;
             if ($v->returnType) {
-                $this->functionDef->returnType = $this->getZendType($this->parseIdentifier($v->returnType));
+                $this->functionDef->returnType = $this->getTypeFromZendType($this->parseIdentifier($v->returnType));
             } else {
                 $this->functionDef->returnType = 'void';
             }
@@ -770,13 +781,7 @@ class Translator extends \PhpAot\Core\Translator
     private function detectVarType($var): string
     {
         $name = $this->parseIdentifier($var);
-        if ($this->hasLocalVar($name)) {
-            return $this->localVars[$name];
-        }
-        if ($this->hasLocalVar($name)) {
-            return $this->globalVars[$name];
-        }
-        return self::TYPE_VAR;
+        return $this->getVarType($name);
     }
 
     private function detectExprType($expr): string
@@ -823,7 +828,7 @@ class Translator extends \PhpAot\Core\Translator
                 if ($this->isInternalFunction($name)) {
                     return $this->internalFunctions[$name]->returnType;
                 }
-                break;
+                return $this->detectFuncCallReturnType($expr);
             case 'Expr_New':
                 return self::TYPE_OBJECT;
             case 'Expr_Assign':
@@ -1029,7 +1034,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpSmaller(mixed $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '<');
+        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '<'));
     }
 
     private function parsePreInc(mixed $expr): string
@@ -1080,7 +1085,7 @@ class Translator extends \PhpAot\Core\Translator
     private function parseAssignOpMul(mixed $expr): string
     {
         $var = $this->parseIdentifier($expr->var);
-        return $var . ' *= ' . $this->parseIdentifier($expr->expr);
+        return $var . ' *= ' . $this->convertVarType($var, $this->parseExpr($expr->expr));
     }
 
     private function parseAssignOpDiv(mixed $expr): string
@@ -1107,6 +1112,18 @@ class Translator extends \PhpAot\Core\Translator
         }
         if ($name === 'strlen' and $expr->args[0]->value->getType() === 'Expr_Variable') {
             return '((php::Int)' . $this->parseIdentifier($expr->args[0]->value) . '.length())';
+        }
+        if (count($expr->args) == 1) {
+            switch ($name) {
+                case 'intval':
+                    return $this->convertIntExpr($this->parseExpr($expr->args[0]->value));
+                case 'floatval':
+                    return $this->convertFloatExpr($this->parseExpr($expr->args[0]->value));
+                case 'boolval':
+                    return $this->convertBoolExpr($this->parseExpr($expr->args[0]->value));
+                default:
+                    break;
+            }
         }
         if (empty($expr->args)) {
             return 'php::call(' . $fn . ')';
@@ -1163,13 +1180,13 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpGreater(mixed $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '>');
+        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>'));
     }
 
     private function parseAssignOpMod(mixed $expr): string
     {
         $var = $this->parseIdentifier($expr->var);
-        return $var . ' % ' . $this->parseIdentifier($expr->expr);
+        return $var . ' %= ' . $this->parseIdentifier($expr->expr);
     }
 
     private function parseBinaryOpPow(mixed $expr): string
@@ -1177,7 +1194,7 @@ class Translator extends \PhpAot\Core\Translator
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return 'pow(' . $left . ', ' . $right . ')';
+        return 'php::pow(' . $left . ', ' . $right . ')';
     }
 
     private function parsePreDec(mixed $expr): string
@@ -1240,27 +1257,30 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBinaryOpEqual(mixed $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '==');
+        return 'php::equals(' . $this->parseExpr($expr->left) . ', ' . $this->parseExpr($expr->right) . ')';
     }
 
     private function parseBinaryOpNotEqual(mixed $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '!=');
+        return '!php::equals(' . $this->parseExpr($expr->left) . ', ' . $this->parseExpr($expr->right) . ')';
     }
 
+    /**
+     * 逻辑比较的运算，必须返回 bool 类型
+     */
     private function parseBinaryOpLogicalAnd(Node $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '&&');
+        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '&&'));
     }
 
     private function parseBinaryOpLogicalOr(Node $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '||');
+        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '||'));
     }
 
     private function parseBinaryOpLogicalXor(Node $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '^');
+        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '^'));
     }
 
     private function parseBooleanNot(Node $expr): string
@@ -1285,37 +1305,52 @@ class Translator extends \PhpAot\Core\Translator
 
     private function convertIntExpr(string $expr): string
     {
-        return 'php::to_int(' . $expr . ')';
+        if (!str_starts_with($expr, 'php::to_int(')) {
+            return 'php::to_int(' . $expr . ')';
+        }
+        return $expr;
     }
 
     private function convertFloatExpr(string $expr): string
     {
-        return 'php::to_float(' . $expr . ')';
+        if (!str_starts_with($expr, 'php::to_float(')) {
+            return 'php::to_float(' . $expr . ')';
+        }
+        return $expr;
     }
 
     private function convertStringExpr(string $expr): string
     {
-        return 'php::to_string(' . $expr . ')';
+        if (!str_starts_with($expr, 'php::to_string(')) {
+            return 'php::to_string(' . $expr . ')';
+        }
+        return $expr;
     }
 
     private function convertArrayExpr(string $expr): string
     {
-        return 'php::to_array(' . $expr . ')';
+        if (!str_starts_with($expr, 'php::to_array(')) {
+            return 'php::to_array(' . $expr . ')';
+        }
+        return $expr;
     }
 
     private function convertBoolExpr(string $expr): string
     {
-        return 'php::to_bool(' . $expr . ')';
+        if (!str_starts_with($expr, 'php::to_bool(')) {
+            return 'php::to_bool(' . $expr . ')';
+        }
+        return $expr;
     }
 
     private function parseBinaryOpSmallerOrEqual(Node $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '<=');
+        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '<='));
     }
 
     private function parseBinaryOpGreaterOrEqual(Node $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '>=');
+        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>='));
     }
 
     private function parsePrint(Node $expr): string
@@ -1793,5 +1828,33 @@ class Translator extends \PhpAot\Core\Translator
     private function parseCastDouble(mixed $expr): string
     {
         return 'php::to_float(' . $this->parseIdentifier($expr->expr) . ')';
+    }
+
+    private function detectFuncCallReturnType($expr): string
+    {
+        $name = $expr->name;
+        $returnType = Reflection::getFunctionReturnType($name);
+        if ($returnType) {
+            return $this->getTypeFromZendType($returnType);
+        } else {
+            return self::TYPE_VAR;
+        }
+    }
+
+    private function convertVarType($var, $expr): string
+    {
+        if ($this->hasVar($var)) {
+            $type = $this->getVarType($var);
+            if ($type === self::TYPE_FLOAT) {
+                return $this->convertFloatExpr($expr);
+            }
+            if ($type === self::TYPE_INT) {
+                return $this->convertIntExpr($expr);
+            }
+            if ($type === self::TYPE_BOOL) {
+                return $this->convertBoolExpr($expr);
+            }
+        }
+        return $expr;
     }
 }

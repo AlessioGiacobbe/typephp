@@ -149,7 +149,7 @@ function main(): void
            $end_time, $environment,
            $exts_skipped, $exts_tested, $exts_to_test, $failed_tests_file,
            $ignored_by_ext, $ini_overwrites, $colorize,
-           $log_format, $no_clean, $no_file_cache,
+           $log_format, $no_clean, $no_aot, $no_file_cache,
            $pass_options, $php, $php_cgi, $preload,
            $result_tests_file, $slow_min_ms, $start_time,
            $temp_source, $temp_target, $test_cnt,
@@ -490,6 +490,9 @@ function main(): void
                     break;
                 case '--no-clean':
                     $no_clean = true;
+                    break;
+                case '--no-aot':
+                    $no_aot = true;
                     break;
                 case '--color':
                     $colorize = true;
@@ -2426,8 +2429,11 @@ TEST $file
 
     $orig_cmd = $cmd;
 
-    $bin_file = compile_php_file($test_file);
-    $cmd = './' . $bin_file . ' ' . $args . $cmdRedirect;
+    global $no_aot;
+    if (!$no_aot) {
+        $bin_file = compile_php_file($test_file);
+        $cmd = './' . $bin_file . ' ' . $args . $cmdRedirect;
+    }
 
     if ($valgrind) {
         $env['USE_ZEND_ALLOC'] = '0';
@@ -2622,11 +2628,13 @@ COMMAND $cmd
         if (!$cfg['keep']['php'] && !$leaked) {
             @unlink($test_file);
             @unlink($preload_filename);
-            // 刪除 AOT 编译器生成的 .cc 和 .o 文件
-            $file = substr($test_file, 0, strlen($test_file) - 4);
-            @unlink($file . '.cc');
-            @unlink($file . '.cc.o');
-            @unlink('./' . $bin_file);
+            if (!$no_aot) {
+                // 刪除 AOT 编译器生成的 .cc 和 .o 文件
+                $file = substr($test_file, 0, strlen($test_file) - 4);
+                @unlink($file . '.cc');
+                @unlink($file . '.cc.o');
+                @unlink('./' . $bin_file);
+            }
         }
         @unlink($tmp_post);
 
