@@ -25,15 +25,15 @@ function fannkuch($n)
         while ($i < $n) {
             $perm[$i] = $perm1[$i];
             $i += 1;
-
-            var_dump($perm, $perm1);
-            var_dump('[i] i=' . $i);
+//
+//            var_dump($perm, $perm1);
+//            var_dump('[i] i=' . $i);
         }
 
         // Count flips and update max and checksum
         $f = 0;
         $k = $perm[0];
-        var_dump('[xxx] k=' . $k);
+//        var_dump('[xxx] k=' . $k);
 
         while ($k != 0) {
             $i = 0;
@@ -46,7 +46,7 @@ function fannkuch($n)
             $k = $perm[0];
             $f += 1;
 
-            var_dump('[--] r=' . $r . ', checksum=' . $checksum . ', i=' . $i . ', k=' . $k . ', f=' . $f . ', r=' . $r);
+//            var_dump('[--] r=' . $r . ', checksum=' . $checksum . ', i=' . $i . ', k=' . $k . ', f=' . $f . ', r=' . $r);
         }
 
         var_dump('[2] r=' . $r . ', nperm=' . $nperm . ', checksum=' . $checksum . ', i=' . $i . ', k=' . $k . ', f=' . $f . ', r=' . $r);
@@ -74,8 +74,6 @@ function fannkuch($n)
             if ($count[$r] > 0) $more = false; else $r += 1;
         }
         $nperm += 1;
-
-        sleep(1);
     }
     return $flips;
 }

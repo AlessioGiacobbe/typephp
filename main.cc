@@ -3,10 +3,15 @@
 
 void php_main();
 
-int main(int argc, char **argv) {
-    php_embed_init(argc, argv);
+extern php::Var argc;
+extern php::Var argv;
+
+int main(int cpp_argc, char **cpp_argv) {
+    php_embed_init(cpp_argc, cpp_argv);
     int rc = 0;
     zend_first_try {
+        argc = php::global("argc");
+        argv = php::global("argv");
         php_main();
     }
     zend_catch {
@@ -14,6 +19,8 @@ int main(int argc, char **argv) {
     }
     zend_end_try();
 
+    argc.unset();
+    argv.unset();
     php_embed_shutdown();
     return rc;
 }

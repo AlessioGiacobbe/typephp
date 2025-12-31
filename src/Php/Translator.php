@@ -2,6 +2,7 @@
 
 namespace PhpAot\Php;
 
+use League\CLImate\CLImate;
 use PhpAot\Php\Visitor;
 use PhpParser\Node;
 use PhpParser\Node\Expr\Variable;
@@ -27,6 +28,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
+    private string $cppCompiler = 'g++';
     private array $scope = [];
     private array $arguments = [];
     private int $tmpVarIndex = 0;
@@ -43,7 +45,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private array $internalFunctions = [];
 
-    private int $optimizeLevel = 5;
+    private int $optimizeLevel = 0;
     private int $floatPrecision = 17;
     private bool $debugInfo = true;
     private bool $verbose = false;
@@ -62,22 +64,73 @@ class Translator extends \PhpAot\Core\Translator
         '_SESSION' => self::TYPE_ARRAY,
         '_REQUEST' => self::TYPE_ARRAY,
         'GLOBALS' => self::TYPE_ARRAY,
+        'argc' => self::TYPE_INT,
+        'argv' => self::TYPE_ARRAY,
     ];
 
     const string PREFIX = 'php_';
     private string $rootPath;
     private int $debugLine = 0;
+    private CLImate $climate;
 
     public function __construct(string $rootPath)
     {
         $this->rootPath = $rootPath;
+        $this->climate = new CLImate;
+        $this->climate->arguments->add([
+            'optimize' => [
+                'prefix'      => 'O',
+                'longPrefix'  => 'optimize',
+                'description' => 'Set the optimization level of the gcc compiler to 0 by default',
+                'required'    => false,
+                'castTo'      => 'int',
+                'defaultValue' => 0,
+            ],
+        ]);
+
+        $this->preprocessArgvAdvanced();
+        $this->climate->arguments->parse();
+        $this->optimizeLevel = $this->climate->arguments->get('optimize');
     }
 
-    public function parseHeaders(): string
+    function preprocessArgvAdvanced(): void
+    {
+        global $argv;
+        $processed = [$argv[0]];
+
+        for ($i = 1; $i < count($argv); $i++) {
+            $arg = $argv[$i];
+            if (preg_match('/^-([a-zA-Z])(.+)$/', $arg, $matches)) {
+                $option = $matches[1];
+                $value = $matches[2];
+                $processed[] = "-{$option}";
+                $processed[] = $value;
+            } elseif (preg_match('/^-([a-zA-Z]{2,})$/', $arg, $matches)) {
+                $options = str_split($matches[1]);
+                foreach ($options as $opt) {
+                    $processed[] = "-{$opt}";
+                }
+            } else {
+                $processed[] = $arg;
+            }
+        }
+        $argv = $processed;
+    }
+
+    public function genIncludeHeaderFiles(): string
     {
         $lines = [];
         foreach ($this->headers as $header) {
             $lines[] = '#include <' . $header . '>';
+        }
+        return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
+    }
+
+    public function genExternGlobalVars(): string
+    {
+        $lines[] = PHP_EOL;
+        foreach ($this->globalVars as $name => $type) {
+            $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
         }
         return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
     }
@@ -99,14 +152,8 @@ class Translator extends \PhpAot\Core\Translator
         $stmts = $traverser->traverse($ast);
 
         $this->indentLevel = 0;
-        $cppCode = $this->parseHeaders();
 
-        $lines[] = PHP_EOL;
-        foreach ($this->globalVars as $name => $type) {
-            $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
-        }
-        $cppCode .= implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
-
+        $cppCode = '';
         foreach($stmts as $v) {
             $type = $v->getType();
             switch ($type) {
@@ -123,7 +170,8 @@ class Translator extends \PhpAot\Core\Translator
                     abort($v);
             }
         }
-        return $cppCode;
+        // include + extern global vars + function impl
+        return $this->genIncludeHeaderFiles() . $this->genExternGlobalVars() . $cppCode;
     }
 
     public function convert(string $file): string
@@ -821,24 +869,28 @@ class Translator extends \PhpAot\Core\Translator
         return $out;
     }
 
+    private function addOptimizeOption(string &$cmd): void
+    {
+        $cmd .= ' -O' . $this->optimizeLevel;
+    }
+
     public function compileFile($file): void
     {
-        $cmd = 'g++  -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes();
-        $cmd .= ' -O' . $this->optimizeLevel;
+        $cmd = $this->cppCompiler . ' -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes();
+        $this->addOptimizeOption($cmd);
         if ($this->debugInfo) {
             $cmd .= ' -g';
         }
-        echo $cmd . PHP_EOL;
+        $this->climate->comment($cmd);
         shell_exec($cmd);
     }
 
     public function compileBinary($targetFile, $objectFile): void
     {
-        // 生成全局变量
-        $this->generateGlobalVars();
-        $cmd = 'g++ main.cc global_vars.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
-        $cmd .= ' -O' . $this->optimizeLevel;
-        echo $cmd . PHP_EOL;
+        $this->genGlobalVars();
+        $cmd = $this->cppCompiler . ' main.cc global_vars.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
+        $this->addOptimizeOption($cmd);
+        $this->climate->comment($cmd);
         shell_exec($cmd);
     }
 
@@ -1363,6 +1415,7 @@ class Translator extends \PhpAot\Core\Translator
         foreach ($v->vars as $v) {
             if (!$this->hasGlobalVar($v->name)) {
                 $this->addGlobalVar($v->name, self::TYPE_VAR);
+                var_dump($this->globalVars);
             }
         }
         return '';
@@ -1647,10 +1700,11 @@ class Translator extends \PhpAot\Core\Translator
         return array_key_exists($name, $this->globalVars);
     }
 
-    private function generateGlobalVars()
+    private function genGlobalVars(): void
     {
         $file = 'global_vars.cc';
-        $code = $this->parseHeaders();
+        $code = $this->genIncludeHeaderFiles();
+        $lines = [];
         // 全局变量只能是 var 类型
         foreach ($this->globalVars as $name => $type) {
             $lines[] = self::TYPE_VAR . ' ' . $name . ';';
