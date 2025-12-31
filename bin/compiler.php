@@ -15,6 +15,7 @@ $code = $translator->convert($file);
 $info = pathinfo($file);
 $cppFile = $info['dirname'] . '/' . $info['filename'] . '.cc';
 $translator->save($code, $cppFile);
+$translator->genFunctionDeclaration("./php_func_decl.h");
 $translator->compileFile($cppFile);
 
 $objectFile = $info['dirname'] . '/' . $info['filename'] . '.cc.o';

@@ -40,8 +40,48 @@ class Translator extends \PhpAot\Core\Translator
 
     private array $headers = [
         'phpx.h',
-        'phpx_func.h'
+        'phpx_func.h',
+        'php_func_decl.h',
     ];
+
+    private array $reservedNames = [
+        'auto',
+        'break',
+        'case',
+        'catch',
+        'class',
+        'struct',
+        'const',
+        'continue',
+        'default',
+        'do',
+        'else',
+        'elseif',
+        'enum',
+        'extends',
+        'final',
+        'finally',
+        'for',
+        'function',
+        'global',
+        'if',
+        'int',
+        'double',
+        'float',
+        'false',
+        'for',
+        'if',
+        'int',
+        'new',
+        'null',
+        'or',
+        'and',
+        'private',
+        'protected',
+        'public',
+        'return',
+        'static',
+     ];
 
     private array $internalFunctions = [];
 
@@ -315,15 +355,17 @@ class Translator extends \PhpAot\Core\Translator
             } else {
                 $this->functionDef->returnType = 'void';
             }
+            $this->parseParams($v->params);
             $this->internalFunctions[$name] = $this->functionDef;
         }
 
-        $params = $this->parseParams($v->params);
         $this->indentLevel++;
         $stmts = $this->parseStmts($v->stmts);
         $this->indentLevel--;
 
-        $code = $this->getReturnType() . ' ' . self::PREFIX . $name . '(' . $params . ') {' . PHP_EOL;
+        $functionDeclCode = $this->getReturnType() . ' ' . self::PREFIX . $name . '(' . $this->functionDef->params . ')';
+
+        $code = $functionDeclCode . ' {' . PHP_EOL;
         $this->indentLevel++;
         foreach ($this->localVars as $name => $type) {
             if (isset($this->arguments[$name])) {
@@ -358,7 +400,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Name':
             case 'Identifier':
             case 'Expr_Variable':
-                return $expr->name;
+                return $this->escapeVarName($expr->name);
             case 'Scalar_Int':
                 return $expr->value . 'L';
             case 'Scalar_Float':
@@ -372,10 +414,10 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseParams($params): string
+    private function parseParams($params): void
     {
         $list = [];
-        $this->functionDef->argumentCountRequired = count($params);
+        $this->functionDef->argCountRequired = count($params);
         foreach ($params as $param) {
             $type = $this->parseType($param->type);
             $name = $this->parseIdentifier($param->var);
@@ -387,12 +429,12 @@ class Translator extends \PhpAot\Core\Translator
             $argInfo->name = $name;
             $argInfo->type = $type;
             if (isset($param->default)) {
-                $this->functionDef->argumentCountRequired = count($list) - 1;
+                $this->functionDef->argCountRequired = count($list) - 1;
                 $argInfo->default = $param->default->getAttribute('rawValue');
             }
-            $this->functionDef->arguments[] = $argInfo;
+            $this->functionDef->argInfoList[] = $argInfo;
         }
-        return implode(', ', $list);
+        $this->functionDef->params = implode(', ', $list);
     }
 
     private function parseStmts(array $stmts): string
@@ -905,6 +947,7 @@ class Translator extends \PhpAot\Core\Translator
     {
         $list = [
             $this->phpxDir . '/include',
+            './',
         ];
         $out = '$(php-config --includes) ';
         foreach ($list as $li) {
@@ -941,6 +984,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function addCompilationOption(string &$cmd): void
     {
+        $cmd .= $this->parseIncludes();
         $cmd .= ' -O' . $this->optimizeLevel;
         $cmd .= ' -g';
         if ($this->climate->arguments->defined('profile')) {
@@ -951,7 +995,7 @@ class Translator extends \PhpAot\Core\Translator
 
     public function compileFile($file): void
     {
-        $cmd = $this->cppCompiler . ' -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes();
+        $cmd = $this->cppCompiler . ' -c ' . $file . ' -o ' . $file . '.o ';
         $this->addCompilationOption($cmd);
         $this->climate->comment($cmd);
         shell_exec($cmd);
@@ -963,7 +1007,7 @@ class Translator extends \PhpAot\Core\Translator
         if ($this->climate->arguments->defined('output')) {
             $targetFile = $this->climate->arguments->get('output');
         }
-        $cmd = $this->cppCompiler . ' main.cc global_vars.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
+        $cmd = $this->cppCompiler . ' main.cc global_vars.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseLdflags() . $this->parseLibs();
         $this->addCompilationOption($cmd);
         $this->climate->comment($cmd);
         shell_exec($cmd);
@@ -1518,6 +1562,15 @@ class Translator extends \PhpAot\Core\Translator
         return addcslashes($str, "\\\"\n\r\t\v\f\0\x01..\x1f\x7f..\xff");
     }
 
+    private function escapeVarName(string $name): string
+    {
+        if (in_array($name, $this->reservedNames)) {
+            return '_php__var__' . $name;
+        } else {
+            return $name;
+        }
+    }
+
     private function parseInterpolatedStringPart(Node $expr): string
     {
         return '"' . $this->escapeString($expr->value) . '"';
@@ -1536,7 +1589,7 @@ class Translator extends \PhpAot\Core\Translator
     private function getArgInfo(string $funcName, int $index): ArgInfo
     {
         $funcDef = $this->internalFunctions[$funcName];
-        return $funcDef->arguments[$index];
+        return $funcDef->argInfoList[$index];
     }
 
     private function getReturnType(): string
@@ -1856,5 +1909,30 @@ class Translator extends \PhpAot\Core\Translator
             }
         }
         return $expr;
+    }
+
+    public function genFunctionDeclaration(string $file): void
+    {
+        $code = '';
+        /**
+         * @var FunctionDef $func
+         */
+        foreach ($this->internalFunctions as $name => $func) {
+            $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
+            $argInfoList = $func->argInfoList;
+            if ($argInfoList) {
+                $list = [];
+                foreach ($argInfoList as $argInfo) {
+                    $arg = $argInfo->type . ' ' . $argInfo->name;
+                    if ($argInfo->default) {
+                        $arg .= ' = ' . $argInfo->default;
+                    }
+                    $list[] = $arg;
+                }
+                $code .= implode(', ', $list);
+            }
+            $code .= ');' . PHP_EOL;
+        }
+        file_put_contents($file, $code);
     }
 }

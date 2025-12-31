@@ -6,5 +6,5 @@ class ArgInfo
 {
     public string $name;
     public string $type;
-    public string $default;
+    public string $default = '';
 }

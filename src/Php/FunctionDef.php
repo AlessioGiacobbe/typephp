@@ -5,7 +5,8 @@ namespace PhpAot\Php;
 class FunctionDef
 {
     public string $name;
-    public array $arguments;
+    public array $argInfoList = [];
+    public string $params;
     public string $returnType;
-    public int $argumentCountRequired = 0;
+    public int $argCountRequired = 0;
 }

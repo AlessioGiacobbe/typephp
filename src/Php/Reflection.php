@@ -11,7 +11,12 @@ class Reflection
     static function getFunction(string $fn)
     {
         if (!isset(self::$functions[$fn])) {
-            self::$functions[$fn] = new ReflectionFunction($fn);
+            try {
+                $ref = new ReflectionFunction($fn);;
+            } catch (\ReflectionException $e) {
+                return null;
+            }
+            self::$functions[$fn] = $ref;
         }
         return self::$functions[$fn];
     }
@@ -19,6 +24,9 @@ class Reflection
     static function getFunctionReturnType(string $fn): ?string
     {
         $func = self::getFunction($fn);
+        if (!$func) {
+            return null;
+        }
         $returnType = $func->getReturnType();
         if (!$returnType) {
             return null;
