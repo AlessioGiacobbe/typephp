@@ -76,8 +76,9 @@ class Translator extends \PhpAot\Core\Translator
     public function __construct(string $rootPath)
     {
         $this->rootPath = $rootPath;
-        $this->climate = new CLImate;
-        $this->climate->arguments->add([
+        $climate = new CLImate;
+        $this->climate = $climate;
+        $climate->arguments->add([
             'optimize' => [
                 'prefix'      => 'O',
                 'longPrefix'  => 'optimize',
@@ -86,11 +87,62 @@ class Translator extends \PhpAot\Core\Translator
                 'castTo'      => 'int',
                 'defaultValue' => 0,
             ],
+            'output' => [
+                'prefix'      => 'o',
+                'longPrefix'  => 'output',
+                'description' => 'Output file',
+            ],
+            'help' => [
+                'prefix'      => 'h',
+                'longPrefix'  => 'help',
+                'description' => 'Show help',
+                'noValue'     => true,
+            ],
+            'profile' => [
+                'longPrefix'  => 'profile',
+                'description' => 'Enable performance profiling',
+                'required'    => false,
+                'noValue'     => true,
+            ],
         ]);
 
         $this->preprocessArgvAdvanced();
-        $this->climate->arguments->parse();
-        $this->optimizeLevel = $this->climate->arguments->get('optimize');
+        $climate->arguments->parse();
+        if ($climate->arguments->defined('help')) {
+            $this->showUsage();
+            exit(0);
+        }
+        $this->optimizeLevel = $climate->arguments->get('optimize');
+    }
+
+    function showUsage(): void
+    {
+        $climate = $this->climate;
+        $climate->bold()->green('PHP AOT Compiler v1.0.0');
+        $climate->br();
+
+        $climate->bold('USAGE:');
+        $climate->tab()->out('./bin/compiler.php <file/dir> [options]');
+        $climate->br();
+
+        $climate->bold('ARGUMENTS:');
+        $climate->tab()->out('<file>    Input PHP file/directory to compile');
+        $climate->br();
+
+        $climate->bold('OPTIONS:');
+        $climate->tab()->out('-O <level>           Optimization level (0-3, default: 0)');
+        $climate->tab()->out('-p, --profile        Enable performance profiling');
+        $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
+        $climate->tab()->out('-v, --verbose        Verbose output');
+        $climate->tab()->out('-h, --help           Show this help message');
+        $climate->br();
+
+        $climate->bold('EXAMPLES:');
+        $climate->tab()->out('./bin/compiler.php examples/hello.php');
+        $climate->tab()->out('./bin/compiler.php examples/bench.php -O2');
+        $climate->tab()->out('./bin/compiler.php examples/bench.php -O2 -p');
+        $climate->tab()->out('./bin/compiler.php examples/app.php -O3 -o myapp -v');
+        $climate->br();
     }
 
     function preprocessArgvAdvanced(): void
@@ -869,18 +921,20 @@ class Translator extends \PhpAot\Core\Translator
         return $out;
     }
 
-    private function addOptimizeOption(string &$cmd): void
+    private function addCompilationOption(string &$cmd): void
     {
         $cmd .= ' -O' . $this->optimizeLevel;
+        $cmd .= ' -g';
+        if ($this->climate->arguments->defined('profile')) {
+            $cmd .= ' -lprofiler';
+            $cmd .= ' -DPPROF_ON=1';
+        }
     }
 
     public function compileFile($file): void
     {
         $cmd = $this->cppCompiler . ' -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes();
-        $this->addOptimizeOption($cmd);
-        if ($this->debugInfo) {
-            $cmd .= ' -g';
-        }
+        $this->addCompilationOption($cmd);
         $this->climate->comment($cmd);
         shell_exec($cmd);
     }
@@ -888,8 +942,11 @@ class Translator extends \PhpAot\Core\Translator
     public function compileBinary($targetFile, $objectFile): void
     {
         $this->genGlobalVars();
+        if ($this->climate->arguments->defined('output')) {
+            $targetFile = $this->climate->arguments->get('output');
+        }
         $cmd = $this->cppCompiler . ' main.cc global_vars.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
-        $this->addOptimizeOption($cmd);
+        $this->addCompilationOption($cmd);
         $this->climate->comment($cmd);
         shell_exec($cmd);
     }
@@ -1415,7 +1472,6 @@ class Translator extends \PhpAot\Core\Translator
         foreach ($v->vars as $v) {
             if (!$this->hasGlobalVar($v->name)) {
                 $this->addGlobalVar($v->name, self::TYPE_VAR);
-                var_dump($this->globalVars);
             }
         }
         return '';
