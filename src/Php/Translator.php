@@ -22,6 +22,7 @@ class Translator extends \PhpAot\Core\Translator
     const string TYPE_OBJECT = 'php::Object';
     const string TYPE_ARRAY = 'php::Array';
     const string TYPE_STR = 'php::Str';
+    const string TYPE_REF = 'php::Var';
 
     const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
     const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
@@ -29,7 +30,6 @@ class Translator extends \PhpAot\Core\Translator
     private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     private string $cppCompiler = 'g++';
-    private array $scope = [];
     private array $arguments = [];
     private int $tmpVarIndex = 0;
     private array $zendTypeMap = [
@@ -67,11 +67,13 @@ class Translator extends \PhpAot\Core\Translator
         'argc' => self::TYPE_INT,
         'argv' => self::TYPE_ARRAY,
     ];
+    private array $localVars = [];
 
     const string PREFIX = 'php_';
     private string $rootPath;
     private int $debugLine = 0;
     private CLImate $climate;
+    private array $definedFunctions = [];
 
     public function __construct(string $rootPath)
     {
@@ -113,6 +115,7 @@ class Translator extends \PhpAot\Core\Translator
             exit(0);
         }
         $this->optimizeLevel = $climate->arguments->get('optimize');
+        $this->definedFunctions = array_flip(get_defined_functions()['internal']);
     }
 
     function showUsage(): void
@@ -228,6 +231,9 @@ class Translator extends \PhpAot\Core\Translator
 
     public function convert(string $file): string
     {
+        if (!file_exists($file)) {
+            throw new \Exception('File not exists: ' . $file);
+        }
         $phpCode = file_get_contents($file);
         $this->file = realpath($file);
         $this->dir = dirname($this->file);
@@ -271,7 +277,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function resetScope(): void
     {
-        $this->scope = [];
+        $this->localVars = [];
         $this->arguments = [];
         $this->tmpVarIndex = 0;
     }
@@ -308,7 +314,7 @@ class Translator extends \PhpAot\Core\Translator
 
         $code = $this->getReturnType() . ' ' . self::PREFIX . $name . '(' . $params . ') {' . PHP_EOL;
         $this->indentLevel++;
-        foreach ($this->scope as $name => $type) {
+        foreach ($this->localVars as $name => $type) {
             if (isset($this->arguments[$name])) {
                 continue;
             }
@@ -364,7 +370,7 @@ class Translator extends \PhpAot\Core\Translator
             $name = $this->parseIdentifier($param->var);
             $list[] = $type . ' ' . $name;
             $this->arguments[$name] = $type;
-            $this->addVar($name, $type);
+            $this->addLocalVar($name, $type);
 
             $argInfo = new ArgInfo();
             $argInfo->name = $name;
@@ -599,7 +605,7 @@ class Translator extends \PhpAot\Core\Translator
             $code = '';
             // 这是 PHP 的初始化+赋值写法，需要先创建数组
             if (!$this->hasVar($array) and $left->var->getType() === 'Expr_Variable') {
-                $this->addVar($array, self::TYPE_ARRAY);
+                $this->addLocalVar($array, self::TYPE_ARRAY);
             }
             if ($left->dim === null) {
                 return $code . "$array.offsetSet(php::null, " . $this->parseExpr($right) . ")";
@@ -643,7 +649,7 @@ class Translator extends \PhpAot\Core\Translator
 
         if (!$this->hasVar($var)) {
             $type = $this->detectExprType($right);
-            $this->addVar($var, $type);
+            $this->addLocalVar($var, $type);
         }
         return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
     }
@@ -664,6 +670,11 @@ class Translator extends \PhpAot\Core\Translator
     private function isIntStr(string $str)
     {
         return filter_var($str, FILTER_VALIDATE_INT);
+    }
+
+    private function isCoreFunction(string $fname)
+    {
+        return array_key_exists($fname, $this->definedFunctions);
     }
 
     /**
@@ -730,12 +741,9 @@ class Translator extends \PhpAot\Core\Translator
         return $this->parseBinaryOp($expr->left, $expr->right, '*');
     }
 
-    private function addVar(string $name, string $type): void
+    private function addLocalVar(string $name, string $type): void
     {
-        $this->scope[$name] = $type;
-        if (!str_starts_with($type, 'php::')) {
-            throw new Exception("error type: ".$type);
-        }
+        $this->localVars[$name] = $type;
     }
 
     private function addGlobalVar(string $name, string $type): void
@@ -745,7 +753,12 @@ class Translator extends \PhpAot\Core\Translator
 
     private function hasVar(string $name): bool
     {
-        return isset($this->scope[$name]);
+        return $this->hasLocalVar($name) || $this->hasGlobalVar($name);
+    }
+
+    private function hasLocalVar(string $name): bool
+    {
+        return isset($this->localVars[$name]);
     }
 
     private function resetReturnType(string $type): void
@@ -757,10 +770,10 @@ class Translator extends \PhpAot\Core\Translator
     private function detectVarType($var): string
     {
         $name = $this->parseIdentifier($var);
-        if ($this->hasVar($name)) {
-            return $this->scope[$name];
+        if ($this->hasLocalVar($name)) {
+            return $this->localVars[$name];
         }
-        if ($this->hasGlobalVar($name)) {
+        if ($this->hasLocalVar($name)) {
             return $this->globalVars[$name];
         }
         return self::TYPE_VAR;
@@ -988,7 +1001,7 @@ class Translator extends \PhpAot\Core\Translator
                 $name = $this->parseIdentifier($left);
                 if (!$this->hasVar($name)) {
                     $type = $this->detectExprType($expr->expr);
-                    $this->addVar($name, $type);
+                    $this->addLocalVar($name, $type);
                 }
             }
             $list_cond[] = $this->parseExpr($expr);
@@ -1087,14 +1100,22 @@ class Translator extends \PhpAot\Core\Translator
         if ($this->isInternalFunction($name)) {
             return self::PREFIX . $name . '(' . $this->parseCallArgs($expr->args, $name) . ')';
         }
-        if (empty($expr->args)) {
-            return 'php::call("' . $name . '")';
+        if ($this->isCoreFunction($name)) {
+            $fn = 'php::' . $name;
         } else {
-            return 'php::call("' . $name . '", {' . $this->parseCallArgs($expr->args, $name) . '})';
+            $fn = '"' . $name . '"';
+        }
+        if ($name === 'strlen' and $expr->args[0]->value->getType() === 'Expr_Variable') {
+            return '((php::Int)' . $this->parseIdentifier($expr->args[0]->value) . '.length())';
+        }
+        if (empty($expr->args)) {
+            return 'php::call(' . $fn . ')';
+        } else {
+            return 'php::call(' . $fn . ', {' . $this->parseCallArgs($expr->args, $name) . '})';
         }
     }
 
-    private function parseCallArgs($args, string $funcName): string
+    private function parseCallArgs(array $args, string $funcName = ''): string
     {
         $internalFunction = $this->isInternalFunction($funcName);
         $list_args = [];
@@ -1110,7 +1131,7 @@ class Translator extends \PhpAot\Core\Translator
             if ($arg->value->getType() === 'Expr_Variable') {
                 $name = $this->parseIdentifier($arg->value);
                 if (!$this->hasVar($name)) {
-                    $this->definitions[] = self::TYPE_VAR . ' ' . $name . ' = php::newReference();';
+                    $this->addLocalVar($name, self::TYPE_REF);
                 }
             }
         }
@@ -1573,7 +1594,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->indentLevel++;
         if ($node->keyVar) {
             $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
-            $this->addVar($keyVar, self::TYPE_VAR);
+            $this->addLocalVar($keyVar, self::TYPE_VAR);
         }
 
         if ($node->valueVar->getType() == 'Expr_ArrayDimFetch') {
@@ -1585,7 +1606,7 @@ class Translator extends \PhpAot\Core\Translator
             $code .= $this->getIndent() . "$array.offsetSet($dim, iter.value());";
         } else {
             $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
-            $this->addVar($valueVar, self::TYPE_VAR);
+            $this->addLocalVar($valueVar, self::TYPE_VAR);
         }
         $code .= $this->parseStmts($stmts);
         $this->indentLevel--;
@@ -1631,7 +1652,7 @@ class Translator extends \PhpAot\Core\Translator
         $var_def = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
 
         // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
-        $scope = $this->scope;
+        $localVars = $this->localVars;
 
         if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT) {
             $code = 'switch (' . $tmp_var . ') {' . PHP_EOL;
@@ -1642,7 +1663,7 @@ class Translator extends \PhpAot\Core\Translator
                 } else {
                     $condType = $case->cond->getType();
                     if ($condType !== 'Scalar_Int' and $condType !== 'Scalar_Float') {
-                        $this->scope = $scope;
+                        $this->localVars = $localVars;
                         goto _fail;
                     }
                     $code .= $this->getIndent() . 'case ' . $this->parseScalarValue($case->cond) . ': {' . PHP_EOL;

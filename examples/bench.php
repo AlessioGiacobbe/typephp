@@ -1,19 +1,25 @@
 <?php
-function simple() {
-  $a = 0;
-  for ($i = 0; $i < 1000000; $i++)
-    $a++;
+function simple()
+{
+    $a = 0;
+    $total_count = 10000000;
+    for ($i = 0; $i < $total_count; $i++)
+        $a++;
 
-  $thisisanotherlongname = 0;
-  for ($thisisalongname = 0; $thisisalongname < 1000000; $thisisalongname++)
-    $thisisanotherlongname++;
+    assert($a == $total_count);
+
+    $thisisanotherlongname = 0;
+    for ($thisisalongname = 0; $thisisalongname < $total_count; $thisisalongname++)
+        $thisisanotherlongname++;
+
+    assert($thisisanotherlongname == $total_count);
 }
 
 /****/
 
 function simplecall() {
   for ($i = 0; $i < 1000000; $i++)
-    strlen("hallo");
+      strlen("hallo" . $i);
 }
 
 /****/
@@ -342,10 +348,10 @@ function strcat($n) {
 
 /*****/
 
-function gethrtime()
+function gethrtime(): float
 {
     $hrtime = hrtime();
-    return (($hrtime[0] * 1000000000 + $hrtime[1]) / 1000000000);
+    return (($hrtime[0] * 1000000000.0 + $hrtime[1]) / 1000000000.0);
 }
 
 function start_test()
@@ -359,7 +365,7 @@ function end_test($start, $name)
     global $total;
     $end = gethrtime();
     ob_end_clean();
-    $total += $end - $start;
+    $total += ($end - $start);
     $num = number_format($end - $start, 3);
     $pad = str_repeat(" ", 24 - strlen($name) - strlen($num));
 
@@ -370,12 +376,12 @@ function end_test($start, $name)
 
 function total()
 {
-  global $total;
-  $pad = str_repeat("-", 24);
-  echo $pad."\n";
-  $num = number_format($total,3);
-  $pad = str_repeat(" ", 24-strlen("Total")-strlen($num));
-  echo "Total".$pad.$num."\n";
+    global $total;
+    $pad = str_repeat("-", 24);
+    echo $pad . "\n";
+    $num = number_format($total, 3);
+    $pad = str_repeat(" ", 24 - strlen("Total") - strlen($num));
+    echo "Total" . $pad . $num . "\n";
 }
 
 function main()
