@@ -10,7 +10,8 @@ function abort($v)
     global $translator;
     $lang = $translator->getLang();
     if ($translator->mode == 'cli') {
-        echo 'Error: Unsupported ' . $lang . ' Syntax, Line: ' . $translator->getLine($v) . ', Type: ' . $translator->getType($v) . PHP_EOL;
+        echo 'Error: Unsupported ' . $lang . ' Syntax,';
+        echo ' Line: ' . $translator->getLine($v) . ', Type: ' . $translator->getType($v) . PHP_EOL;
         if (DEBUG) {
             debug_print_backtrace();
             var_dump($v);

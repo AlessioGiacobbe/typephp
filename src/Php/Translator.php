@@ -26,6 +26,9 @@ class Translator extends \PhpAot\Core\Translator
 
     const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
     const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
+    const string LITERAL_STRINGS = '_literal_strings';
+    const string EXPR_VARIABLE = 'Expr_Variable';
+    const string EXPR_ARRAY_DIM_FETCH = 'Expr_ArrayDimFetch';
 
     private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
@@ -91,6 +94,7 @@ class Translator extends \PhpAot\Core\Translator
     private int $optimizeLevel = 0;
     private int $floatPrecision = 17;
     private bool $debugInfo = true;
+    private bool $noLiteralStrings = false;
     private bool $verbose = false;
     private string $file;
     private string $dir;
@@ -151,6 +155,12 @@ class Translator extends \PhpAot\Core\Translator
                 'required'    => false,
                 'noValue'     => true,
             ],
+            'noLiteralStrings' => [
+                'longPrefix'  => 'no-literal-strings',
+                'description' => 'Disable literal strings optimization',
+                'required'    => false,
+                'noValue'     => true,
+            ],
         ]);
 
         $this->preprocessArgvAdvanced();
@@ -159,6 +169,8 @@ class Translator extends \PhpAot\Core\Translator
             $this->showUsage();
             exit(0);
         }
+//        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
+        $this->noLiteralStrings = true;
         $this->optimizeLevel = $climate->arguments->get('optimize');
         $this->definedFunctions = array_flip(get_defined_functions()['internal']);
     }
@@ -183,6 +195,7 @@ class Translator extends \PhpAot\Core\Translator
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
         $climate->tab()->out('-v, --verbose        Verbose output');
         $climate->tab()->out('-h, --help           Show this help message');
+        $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->br();
 
         $climate->bold('EXAMPLES:');
@@ -234,7 +247,7 @@ class Translator extends \PhpAot\Core\Translator
         }
 
         $literalStringsCount = count($this->literalStrings);
-        $lines[] = 'extern php::Var _literal_strings[' . $literalStringsCount . '];' . PHP_EOL;
+        $lines[] = 'extern php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
         return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
     }
 
@@ -414,7 +427,7 @@ class Translator extends \PhpAot\Core\Translator
     {
         $type = $expr->getType();
         switch ($type) {
-            case 'Expr_Variable':
+            case self::EXPR_VARIABLE:
                 return $this->escapeVarName($expr->name);
             case 'Name':
             case 'Identifier':
@@ -424,8 +437,12 @@ class Translator extends \PhpAot\Core\Translator
             case 'Scalar_Float':
                 return $this->parseScalarFloat($expr);
             case 'Scalar_String':
-                $index = $this->literalStrings[$expr->value] ?? $this->addLiteralString($expr->value);
-                return '_literal_strings[' . $index . ']';
+                if ($this->noLiteralStrings) {
+                    return '"' . $this->escapeString($expr->value) . '"';
+                } else {
+                    $index = $this->literalStrings[$expr->value] ?? $this->addLiteralString($expr->value);
+                    return self::LITERAL_STRINGS . '[' . $index . ']';
+                }
             case 'Expr_ConstFetch':
                 return $this->parseConstFetch($expr);
             default:
@@ -534,6 +551,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseIsset($expr);
             case 'Expr_Assign':
                 return $this->parseAssign($expr);
+            case 'Expr_AssignRef':
+                return $this->parseAssignRef($expr);
             case 'Expr_Print':
                 return $this->parsePrint($expr);
             case 'Expr_BinaryOp_Equal':
@@ -601,7 +620,7 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpMinus($expr);
             case 'Expr_Array':
                 return $this->parseArray($expr);
-            case 'Expr_ArrayDimFetch':
+            case self::EXPR_ARRAY_DIM_FETCH:
                 return $this->parseArrayDimFetch($expr);
             case 'Expr_PropertyFetch':
                 return $this->parsePropertyFetch($expr);
@@ -638,7 +657,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Scalar_Int':
             case 'Scalar_Float':
             case 'Scalar_String':
-            case 'Expr_Variable':
+            case self::EXPR_VARIABLE:
                 return $this->parseIdentifier($expr);
             case 'Scalar_MagicConst_File':
                 return $this->parseMagicConstFile($expr);
@@ -672,23 +691,25 @@ class Translator extends \PhpAot\Core\Translator
         $left = $v->var;
         $right = $v->expr;
 
-        if ($left->getType() === 'Expr_ArrayDimFetch') {
+        if ($left->getType() === self::EXPR_ARRAY_DIM_FETCH) {
             $array = $this->parseIdentifier($left->var);
             $code = '';
             // 这是 PHP 的初始化+赋值写法，需要先创建数组
-            if (!$this->hasVar($array) and $left->var->getType() === 'Expr_Variable') {
+            if (!$this->hasVar($array) and $left->var->getType() === self::EXPR_VARIABLE) {
                 $this->addLocalVar($array, self::TYPE_ARRAY);
             }
+
+            $value = $this->trimBrackets($this->parseExpr($right));
             if ($left->dim === null) {
-                return $code . "$array.offsetSet(php::null, " . $this->parseExpr($right) . ")";
+                return $code . "$array.offsetSet(php::null, $value)";
             } else {
-                $dim = $this->parseIdentifier($left->dim);
-                return $code . "$array.offsetSet($dim, " . $this->parseExpr($right) . ")";
+                $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
+                return $code . "$array.offsetSet($dim, $value)";
             }
         } elseif ($left->getType() === 'Expr_PropertyFetch') {
             $array = $this->parseIdentifier($left->var);
             $propName = $this->parseIdentifier($left->name);
-            return "$array.setProperty(\"$propName\", " . $this->parseExpr($right) . ")";
+            return "$array.setProperty($propName, " . $this->trimBrackets($this->parseExpr($right)) . ")";
         } elseif ($right->getType() === 'Expr_Assign') {
             $chain[] = $left;
             while ($right->getType() === 'Expr_Assign') {
@@ -902,7 +923,7 @@ class Translator extends \PhpAot\Core\Translator
                 return self::TYPE_OBJECT;
             case 'Expr_Assign':
                 return $this->detectVarType($expr->var);
-            case 'Expr_Variable':
+            case self::EXPR_VARIABLE:
                 return $this->detectVarType($expr);
             case 'Expr_ConstFetch':
                 return $this->detectConstType($expr);
@@ -937,6 +958,11 @@ class Translator extends \PhpAot\Core\Translator
             if ($assocArray) {
                 // TODO 混杂模式数组赋值
                 $key = $item->key ? $this->parseIdentifier($item->key) : 'php::null';
+                if (str_starts_with($key, self::LITERAL_STRINGS)) {
+                    $key = "$key.toStdString()";
+                } elseif ($key === '0L') {
+                    $key = 'php::zero';
+                }
                 $list[] = $this->getIndent() . '{ ' . $key . ', ' .
                     self::TYPE_VAR . '(' . $value . ') }';
             } else {
@@ -1048,13 +1074,6 @@ class Translator extends \PhpAot\Core\Translator
         return 'php::concat(' . $left . ', ' . $right . ')';
     }
 
-    private function parseAssignOpConcat(mixed $expr): string
-    {
-        $var = $this->parseIdentifier($expr->var);
-        $value = $this->parseIdentifier($expr->expr);
-        return $var . '.append(' . $value . ')';
-    }
-
     private function parseFor(mixed $v): string
     {
         $init = $v->init;
@@ -1113,16 +1132,54 @@ class Translator extends \PhpAot\Core\Translator
         return '++' . $this->parseIdentifier($expr->var);
     }
 
+    private function removeAssignOp(string $op): string
+    {
+        return str_replace('=', '', $op);
+    }
+
     private function parseAssignOp(mixed $node, string $op): string
     {
         $var = $this->parseIdentifier($node->var);
         $expr = $this->parseIdentifier($node->expr);
-        if ($node->var->getType() === 'Expr_Variable') {
+        $leftExprType = $node->var->getType();
+        if ($leftExprType === self::EXPR_VARIABLE) {
             $type = $this->detectVarType($node->var);
             return $var . ' ' . $op . ' ' . $this->convertExprType($expr, $type, $this->detectExprType($node->expr));
+        } elseif ($leftExprType === self::EXPR_ARRAY_DIM_FETCH) {
+            /**
+             * $count[$r] -= 1;
+             * 需要转为下面语句：
+             * $tmp_var = $count[$r] - 1;
+             * $count[$r] = $tmp_var;
+             */
+            $type = $this->detectVarType($node->var);
+            $rightType = $this->detectExprType($node->expr);
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, $rightType);
+            $dim = $this->parseIdentifier($node->var->dim);
+            $binaryOp = $this->removeAssignOp($op);
+
+            if ($binaryOp === '.') {
+                $this->beforeStmtLines[] = "$tmpVar = php::concat(" .
+                    $this->convertVarType($tmpVar, $var) . ', ' .
+                    $this->convertExprType($expr, $type, $rightType) . ');';
+            } else {
+                $this->beforeStmtLines[] = "$tmpVar = " .
+                    $this->convertVarType($tmpVar, $var) . ' ' .
+                    $binaryOp . ' ' .
+                    $this->convertExprType($expr, $type, $rightType) . ';';
+            }
+            return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
         } else {
             return $var . ' ' . $op . ' (' . $expr . ')';
         }
+
+        // TODO 属性设置
+    }
+
+    private function parseAssignOpConcat(mixed $expr): string
+    {
+        return $this->parseAssignOp($expr, '.=');
     }
 
     private function parseAssignOpPlus(mixed $expr): string
@@ -1130,11 +1187,52 @@ class Translator extends \PhpAot\Core\Translator
         return $this->parseAssignOp($expr, '+=');
     }
 
+    private function parseAssignOpMinus(mixed $expr): string
+    {
+        return $this->parseAssignOp($expr, '-=');
+    }
+
+    private function parseAssignOpMod(mixed $expr): string
+    {
+        return $this->parseAssignOp($expr, '%=');
+    }
+
+    private function parseAssignOpMul(mixed $expr): string
+    {
+        return $this->parseAssignOp($expr, '*=');
+    }
+
+    private function parseAssignOpDiv(mixed $expr): string
+    {
+        return $this->parseAssignOp($expr, '/=');
+    }
+
+    private function parseAssignOpBitwiseAnd(mixed $expr): string
+    {
+        return $this->parseAssignOp($expr, '&=');
+    }
+
+    private function fatalError(Node $node, string $msg): void
+    {
+        $this->climate->red("Fatal error: $msg in {$this->file}:" . $node->getStartLine());
+        debug_print_backtrace();
+        exit(255);
+    }
+
     private function parseArrayDimFetch($node): string
     {
         $var = $this->parseIdentifier($node->var);
+        if ($node->dim === null) {
+            $this->fatalError($node, 'Unsupported operand types: null + array');
+        }
         $dim = $this->parseIdentifier($node->dim);
-        return $var . '.offsetGet(' . $dim . ')';
+        return $var . '.offsetGet(' . $this->trimBrackets($dim) . ')';
+    }
+
+    private function parseArrayDimStore($array, $dim, $var): string
+    {
+        $id = $this->parseIdentifier($array);
+        return $id . '.offsetSet(' . $this->trimBrackets($dim) . ', ' . $this->trimBrackets($var) . ')';
     }
 
     private function parseBinaryOpShiftLeft($expr): string
@@ -1145,24 +1243,6 @@ class Translator extends \PhpAot\Core\Translator
     private function parseBinaryOpShiftRight($expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '>>');
-    }
-
-    private function parseAssignOpMinus(mixed $expr): string
-    {
-        $var = $this->parseIdentifier($expr->var);
-        return $var . ' -= ' . $this->parseIdentifier($expr->expr);
-    }
-
-    private function parseAssignOpMul(mixed $expr): string
-    {
-        $var = $this->parseIdentifier($expr->var);
-        return $var . ' *= ' . $this->convertVarType($var, $this->parseExpr($expr->expr));
-    }
-
-    private function parseAssignOpDiv(mixed $expr): string
-    {
-        $var = $this->parseIdentifier($expr->var);
-        return $var . ' /= ' . $this->parseIdentifier($expr->expr);
     }
 
     private function parseBinaryOpMod(mixed $expr): string
@@ -1209,7 +1289,7 @@ class Translator extends \PhpAot\Core\Translator
         $internalFunction = $this->isInternalFunction($funcName);
         $list_args = [];
         foreach ($args as $i => $arg) {
-            if ($arg->value->getType() === 'Expr_Variable') {
+            if ($arg->value->getType() === self::EXPR_VARIABLE) {
                 $name = $this->parseIdentifier($arg->value);
                 // 调用了不存在的变量，可能是引用
                 if (!$this->hasVar($name)) {
@@ -1263,12 +1343,6 @@ class Translator extends \PhpAot\Core\Translator
     private function parseBinaryOpGreater(mixed $expr): string
     {
         return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>'));
-    }
-
-    private function parseAssignOpMod(mixed $expr): string
-    {
-        $var = $this->parseIdentifier($expr->var);
-        return $var . ' %= ' . $this->parseIdentifier($expr->expr);
     }
 
     private function parseBinaryOpPow(mixed $expr): string
@@ -1675,7 +1749,7 @@ class Translator extends \PhpAot\Core\Translator
         $lines = [];
         foreach ($vars as $var) {
             $type = $var->getType();
-            if ($type === 'Expr_ArrayDimFetch') {
+            if ($type === self::EXPR_ARRAY_DIM_FETCH) {
                 $array = $this->parseIdentifier($var->var);
                 $dim = $this->parseIdentifier($var->dim);
                 $lines[] = $array . '.offsetUnset(' . $dim . ');';
@@ -1683,7 +1757,7 @@ class Translator extends \PhpAot\Core\Translator
                 $object = $this->parseIdentifier($var->var);
                 $propName = $this->parseIdentifier($var->name);
                 $lines[] = $object . '.unsetProperty("' . $propName . '");';
-            } elseif ($type === 'Expr_Variable') {
+            } elseif ($type === self::EXPR_VARIABLE) {
                 $name = $this->parseIdentifier($var);
                 $lines[] = "$name.unset();";
             } else {
@@ -1731,7 +1805,7 @@ class Translator extends \PhpAot\Core\Translator
             $this->addLocalVar($keyVar, self::TYPE_VAR);
         }
 
-        if ($node->valueVar->getType() == 'Expr_ArrayDimFetch') {
+        if ($node->valueVar->getType() == self::EXPR_ARRAY_DIM_FETCH) {
             $array = $this->parseIdentifier($node->valueVar->var);
             if (!$this->hasVar($array) or $node->valueVar->dim === null) {
                 abort($node->valueVar);
@@ -1887,18 +1961,15 @@ class Translator extends \PhpAot\Core\Translator
     {
         $vars = $expr->vars;
         foreach($vars as $var) {
-            if ($var->getType() === 'Expr_Variable') {
+            $type = $var->getType();
+            if ($type === self::EXPR_VARIABLE) {
                 return $this->hasVar($var->name) ? 'true' : 'false';
+            } elseif ($type === self::EXPR_ARRAY_DIM_FETCH) {
+                return $this->parseIdentifier($var->var) . ".offsetExists(" . $this->parseIdentifier($var->dim) . ')';
             } else {
                 abort($var);
             }
         }
-    }
-
-    private function parseAssignOpBitwiseAnd(mixed $node): string
-    {
-        $var = $this->parseIdentifier($node->var);
-        return $var . ' &= ' . $this->parseIdentifier($node->expr);
     }
 
     private function parseCastArray(mixed $expr): string
@@ -1924,7 +1995,7 @@ class Translator extends \PhpAot\Core\Translator
 
         $code .= PHP_EOL;
         $literalStringsCount = count($this->literalStrings);
-        $code .= 'php::Var _literal_strings[' . $literalStringsCount . '] = {' . PHP_EOL;
+        $code .= 'php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '] = {' . PHP_EOL;
         $this->indentLevel++;
         foreach ($this->literalStrings as $str => $index) {
             $code .= $this->getIndent() . 'php::String{ZEND_STRL("' . $this->escapeString($str) . '"), true},' . PHP_EOL;
@@ -1991,5 +2062,13 @@ class Translator extends \PhpAot\Core\Translator
             $code .= ');' . PHP_EOL;
         }
         file_put_contents($file, $code);
+    }
+
+    private function parseAssignRef(mixed $expr)
+    {
+        if ($expr->var->getType() === self::EXPR_VARIABLE && $expr->expr->getType() === self::EXPR_VARIABLE) {
+            return $this->parseIdentifier($expr->var) . ' = &' . $this->parseIdentifier($expr->expr);
+        }
+        abort($expr);
     }
 }

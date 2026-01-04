@@ -32,5 +32,4 @@ abstract class Translator
     {
         return str_repeat($this->indentStr, $this->indentLevel);
     }
-
 }
