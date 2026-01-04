@@ -1,10 +1,13 @@
 <?php
-function main() {
-    $a = 0;
-    for ($i = 0; $i < 1000000; $i++)
-        $a++;
+function Ack($m, $n){
+    if($m == 0) return $n+1;
+    if($n == 0) return Ack($m-1, 1);
+    return Ack($m - 1, Ack($m, ($n - 1)));
+}
 
-    $thisisanotherlongname = 0;
-    for ($thisisalongname = 0; $thisisalongname < 1000000; $thisisalongname++)
-        $thisisanotherlongname++;
+
+function main() {
+    $n = 7;
+    $r = Ack(3, $n);
+    print "Ack(3,$n): $r\n";
 }

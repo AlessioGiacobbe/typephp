@@ -31,6 +31,8 @@ class Translator extends \PhpAot\Core\Translator
     protected string $lang = 'PHP';
     private string $cppCompiler = 'g++';
     private array $arguments = [];
+    private array $literalStrings = [];
+    private int $literalStringIndex = 0;
     private int $tmpVarIndex = 0;
     private array $zendTypeMap = [
         'int' => self::TYPE_INT,
@@ -40,6 +42,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private array $headers = [
         'phpx.h',
+        'phpx_helper.h',
         'phpx_func.h',
         'php_func_decl.h',
     ];
@@ -229,6 +232,9 @@ class Translator extends \PhpAot\Core\Translator
         foreach ($this->globalVars as $name => $type) {
             $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
         }
+
+        $literalStringsCount = count($this->literalStrings);
+        $lines[] = 'extern php::Var _literal_strings[' . $literalStringsCount . '];' . PHP_EOL;
         return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
     }
 
@@ -286,6 +292,7 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->doConvert($phpCode);
             } catch (ReturnTypeChanged $e) {
                 // 某些情况，例如返回值变更，需要重新解析
+                $this->climate->cyan('Return type changed, retrying...');
                 continue;
             }
         }
@@ -362,6 +369,13 @@ class Translator extends \PhpAot\Core\Translator
             $this->internalFunctions[$name] = $this->functionDef;
         }
 
+        foreach ($this->functionDef->argInfoList as $argInfo) {
+            $this->arguments[$argInfo->name] = $argInfo->type;
+            if (!$this->hasLocalVar($argInfo->name)) {
+                $this->addLocalVar($argInfo->name, $argInfo->type);
+            }
+        }
+
         $this->indentLevel++;
         $stmts = $this->parseStmts($v->stmts);
         $this->indentLevel--;
@@ -410,7 +424,8 @@ class Translator extends \PhpAot\Core\Translator
             case 'Scalar_Float':
                 return $this->parseScalarFloat($expr);
             case 'Scalar_String':
-                return '"' . $this->escapeString($expr->value) . '"';
+                $index = $this->literalStrings[$expr->value] ?? $this->addLiteralString($expr->value);
+                return '_literal_strings[' . $index . ']';
             case 'Expr_ConstFetch':
                 return $this->parseConstFetch($expr);
             default:
@@ -426,9 +441,6 @@ class Translator extends \PhpAot\Core\Translator
             $type = $this->parseType($param->type);
             $name = $this->parseIdentifier($param->var);
             $list[] = $type . ' ' . $name;
-            $this->arguments[$name] = $type;
-            $this->addLocalVar($name, $type);
-
             $argInfo = new ArgInfo();
             $argInfo->name = $name;
             $argInfo->type = $type;
@@ -806,6 +818,13 @@ class Translator extends \PhpAot\Core\Translator
         $this->localVars[$name] = $type;
     }
 
+    private function addLiteralString(string $value): int
+    {
+        $index = $this->literalStringIndex++;
+        $this->literalStrings[$value] = $index;
+        return $index;
+    }
+
     private function addGlobalVar(string $name, string $type): void
     {
         $this->globalVars[$name] = $type;
@@ -1162,8 +1181,8 @@ class Translator extends \PhpAot\Core\Translator
         } else {
             $fn = '"' . $name . '"';
         }
-        if ($name === 'strlen' and $expr->args[0]->value->getType() === 'Expr_Variable') {
-            return '((php::Int)' . $this->parseIdentifier($expr->args[0]->value) . '.length())';
+        if ($name === 'strlen') {
+            return 'php::len(' . $this->parseIdentifier($expr->args[0]->value) . ')';
         }
         if (count($expr->args) == 1) {
             switch ($name) {
@@ -1894,6 +1913,17 @@ class Translator extends \PhpAot\Core\Translator
             $lines[] = self::TYPE_VAR . ' ' . $name . ';';
         }
         $code .= implode(PHP_EOL, $lines) . PHP_EOL;
+
+        $code .= PHP_EOL;
+        $literalStringsCount = count($this->literalStrings);
+        $code .= 'php::Var _literal_strings[' . $literalStringsCount . '] = {' . PHP_EOL;
+        $this->indentLevel++;
+        foreach ($this->literalStrings as $str => $index) {
+            $code .= $this->getIndent() . 'php::String{ZEND_STRL("' . $this->escapeString($str) . '"), true},' . PHP_EOL;
+        }
+        $this->indentLevel--;
+        $code .= '};' . PHP_EOL;
+
         file_put_contents($file, $code);
     }
 

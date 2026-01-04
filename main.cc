@@ -29,6 +29,7 @@ int main(int cpp_argc, char **cpp_argv) {
 #endif
     argc.unset();
     argv.unset();
+    php::request_shutdown();
     php_embed_shutdown();
     return rc;
 }
