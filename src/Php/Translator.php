@@ -1385,10 +1385,18 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
+    private function trimBrackets(string $str): string
+    {
+        if (str_starts_with($str, '(') and str_ends_with($str, ')')) {
+            return substr($str, 1, -1);
+        }
+        return $str;
+    }
+
     private function convertIntExpr(string $expr): string
     {
         if (!str_starts_with($expr, 'php::to_int(')) {
-            return 'php::to_int(' . $expr . ')';
+            return 'php::to_int(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
@@ -1396,7 +1404,7 @@ class Translator extends \PhpAot\Core\Translator
     private function convertFloatExpr(string $expr): string
     {
         if (!str_starts_with($expr, 'php::to_float(')) {
-            return 'php::to_float(' . $expr . ')';
+            return 'php::to_float(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
@@ -1404,7 +1412,7 @@ class Translator extends \PhpAot\Core\Translator
     private function convertStringExpr(string $expr): string
     {
         if (!str_starts_with($expr, 'php::to_string(')) {
-            return 'php::to_string(' . $expr . ')';
+            return 'php::to_string(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
@@ -1412,7 +1420,7 @@ class Translator extends \PhpAot\Core\Translator
     private function convertArrayExpr(string $expr): string
     {
         if (!str_starts_with($expr, 'php::to_array(')) {
-            return 'php::to_array(' . $expr . ')';
+            return 'php::to_array(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
@@ -1420,7 +1428,7 @@ class Translator extends \PhpAot\Core\Translator
     private function convertBoolExpr(string $expr): string
     {
         if (!str_starts_with($expr, 'php::to_bool(')) {
-            return 'php::to_bool(' . $expr . ')';
+            return 'php::to_bool(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
