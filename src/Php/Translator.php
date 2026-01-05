@@ -88,10 +88,11 @@ class Translator extends \PhpAot\Core\Translator
         'public',
         'return',
         'static',
+        'pipe',
      ];
 
+    private array $nativeFunctions = [];
     private array $internalFunctions = [];
-
     private int $optimizeLevel = 0;
     private int $floatPrecision = 17;
     private bool $debugInfo = true;
@@ -122,7 +123,6 @@ class Translator extends \PhpAot\Core\Translator
     private string $rootPath;
     private int $debugLine = 0;
     private CLImate $climate;
-    private array $definedFunctions = [];
     private array $beforeStmtLines = [];
     private array $afterStmtLines = [];
 
@@ -174,7 +174,7 @@ class Translator extends \PhpAot\Core\Translator
 //        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
         $this->noLiteralStrings = true;
         $this->optimizeLevel = $climate->arguments->get('optimize');
-        $this->definedFunctions = array_flip(get_defined_functions()['internal']);
+        $this->internalFunctions = array_flip(get_defined_functions()['internal']);
     }
 
     function showUsage(): void
@@ -345,9 +345,9 @@ class Translator extends \PhpAot\Core\Translator
         return $this->zendTypeMap[$type] ?? self::TYPE_VAR;
     }
 
-    public function isInternalFunction(string $name): bool
+    public function isNativeFunction(string $name): bool
     {
-        return isset($this->internalFunctions[$name]);
+        return isset($this->nativeFunctions[$name]);
     }
 
     private function resetScope(): void
@@ -369,8 +369,8 @@ class Translator extends \PhpAot\Core\Translator
         }
 
         $name = implode('__', array_reverse($names));
-        if (isset($this->internalFunctions[$name])) {
-            $this->functionDef = $this->internalFunctions[$name];
+        if (isset($this->nativeFunctions[$name])) {
+            $this->functionDef = $this->nativeFunctions[$name];
         } else {
             $this->functionDef = new FunctionDef();
             $this->functionDef->name = $name;
@@ -380,7 +380,7 @@ class Translator extends \PhpAot\Core\Translator
                 $this->functionDef->returnType = 'void';
             }
             $this->parseParams($v->params);
-            $this->internalFunctions[$name] = $this->functionDef;
+            $this->nativeFunctions[$name] = $this->functionDef;
         }
 
         foreach ($this->functionDef->argInfoList as $argInfo) {
@@ -443,7 +443,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseIdentifier(Node $expr)
+    private function parseIdentifier(Node $expr): string
     {
         $type = $expr->getType();
         switch ($type) {
@@ -541,8 +541,10 @@ class Translator extends \PhpAot\Core\Translator
                     abort($v);
             }
             $lines = array_merge($lines, $this->beforeStmtLines);
+            $this->beforeStmtLines = [];
             $lines[] = $result;
             $lines = array_merge($lines, $this->afterStmtLines);
+            $this->afterStmtLines = [];
         }
 
         $code = '';
@@ -680,6 +682,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseMagicConstFile($expr);
             case 'Scalar_MagicConst_Dir':
                 return $this->parseMagicConstDir($expr);
+            case 'Scalar_MagicConst_Line':
+                return $this->parseMagicConstLine($expr);
             case 'Scalar_InterpolatedString':
                 return $this->parseInterpolatedString($expr);
             case 'Expr_Cast_Int':
@@ -782,9 +786,9 @@ class Translator extends \PhpAot\Core\Translator
         return filter_var($str, FILTER_VALIDATE_INT);
     }
 
-    private function isCoreFunction(string $fname): bool
+    private function isInternalFunction(string $fname): bool
     {
-        return array_key_exists($fname, $this->definedFunctions);
+        return array_key_exists($fname, $this->internalFunctions);
     }
 
     private function isAssignOpConcat(string $op): bool
@@ -937,8 +941,8 @@ class Translator extends \PhpAot\Core\Translator
                 break;
             case 'Expr_FuncCall':
                 $name = $this->parseIdentifier($expr->name);
-                if ($this->isInternalFunction($name)) {
-                    return $this->internalFunctions[$name]->returnType;
+                if ($this->isNativeFunction($name)) {
+                    return $this->nativeFunctions[$name]->returnType;
                 }
                 return $this->detectFuncCallReturnType($expr);
             case 'Expr_New':
@@ -1284,10 +1288,10 @@ class Translator extends \PhpAot\Core\Translator
     private function parseFuncCall(mixed $expr): string
     {
         $name = $this->parseIdentifier($expr->name);
-        if ($this->isInternalFunction($name)) {
+        if ($this->isNativeFunction($name)) {
             return self::PREFIX . $name . '(' . $this->parseCallArgs($expr->args, $name) . ')';
         }
-        if ($this->isCoreFunction($name)) {
+        if ($this->isInternalFunction($name)) {
             $fn = 'php::' . $name;
         } else {
             $fn = '"' . $name . '"';
@@ -1317,9 +1321,9 @@ class Translator extends \PhpAot\Core\Translator
     private function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
     {
         if (!$className) {
-            $internalFunction = $this->isInternalFunction($funcName);
+            $nativeFunction = $this->isNativeFunction($funcName);
         } else {
-            $internalFunction = false;
+            $nativeFunction = false;
         }
 
         $list_args = [];
@@ -1329,6 +1333,7 @@ class Translator extends \PhpAot\Core\Translator
                 // 调用了不存在的变量，可能是引用
                 if (!$this->hasVar($name)) {
                     $this->addLocalVar($name, self::TYPE_REF);
+                    $this->beforeStmtLines[] = $name . ' = php::newReference();';
                 } else if ($funcName) {
                     $funcArg = Reflection::getFunctionParameter($funcName, 0);
                     // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
@@ -1342,7 +1347,10 @@ class Translator extends \PhpAot\Core\Translator
                     }
                 }
             }
-            if ($internalFunction) {
+            if ($arg->unpack) {
+                $this->fatalError($arg, "The syntax for variable parameter expansion is not supported");
+            }
+            if ($nativeFunction) {
                 $argInfo = $this->getArgInfo($funcName, $i);
                 $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
             } else {
@@ -1352,7 +1360,7 @@ class Translator extends \PhpAot\Core\Translator
         return implode(', ', $list_args);
     }
 
-    private function parseArg($arg)
+    private function parseArg($arg): string
     {
         return $this->parseIdentifier($arg->value);
     }
@@ -1662,8 +1670,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseCastInt(Node $node): string
     {
-        $code = $this->parseExpr($node->expr);
-        return '(' . $code . ').toInt()';
+        return $this->convertIntExpr($this->parseExpr($node->expr));
     }
 
     private function parseConstFetch(Node $expr): string
@@ -1734,8 +1741,9 @@ class Translator extends \PhpAot\Core\Translator
     private function parseGlobal(Node $v): string
     {
         foreach ($v->vars as $v) {
-            if (!$this->hasGlobalVar($v->name)) {
-                $this->addGlobalVar($v->name, self::TYPE_VAR);
+            $name = $this->escapeVarName($v->name);
+            if (!$this->hasGlobalVar($name)) {
+                $this->addGlobalVar($name, self::TYPE_VAR);
             }
         }
         return '';
@@ -1743,7 +1751,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function getArgInfo(string $funcName, int $index): ArgInfo
     {
-        $funcDef = $this->internalFunctions[$funcName];
+        $funcDef = $this->nativeFunctions[$funcName];
         return $funcDef->argInfoList[$index];
     }
 
@@ -2042,6 +2050,17 @@ class Translator extends \PhpAot\Core\Translator
         $this->indentLevel--;
         $code .= '};' . PHP_EOL;
 
+        $code .= PHP_EOL;
+        $code .= 'void ' . self::PREFIX . 'unset_all_global_vars() {' . PHP_EOL;
+        $lines = [];
+        $this->indentLevel++;
+        foreach ($this->globalVars as $name => $type) {
+            $lines[] = $this->getIndent() . $name . '.unset();';
+        }
+        $this->indentLevel--;
+        $code .= implode(PHP_EOL, $lines) . PHP_EOL;
+        $code .= '}' . PHP_EOL;
+
         file_put_contents($file, $code);
     }
 
@@ -2108,7 +2127,7 @@ class Translator extends \PhpAot\Core\Translator
         /**
          * @var FunctionDef $func
          */
-        foreach ($this->internalFunctions as $name => $func) {
+        foreach ($this->nativeFunctions as $name => $func) {
             $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
@@ -2156,5 +2175,10 @@ class Translator extends \PhpAot\Core\Translator
         } else {
             return 'php::call("' . $fn . '", {' . $this->parseCallArgs($expr->args) . '})';
         }
+    }
+
+    private function parseMagicConstLine(Node $expr): int
+    {
+        return $expr->getStartLine();
     }
 }
