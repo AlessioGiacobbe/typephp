@@ -1334,8 +1334,8 @@ class Translator extends \PhpAot\Core\Translator
                 if (!$this->hasVar($name)) {
                     $this->addLocalVar($name, self::TYPE_REF);
                     $this->beforeStmtLines[] = $name . ' = php::newReference();';
-                } else if ($funcName) {
-                    $funcArg = Reflection::getFunctionParameter($funcName, 0);
+                } else if (!$nativeFunction and $funcName) {
+                    $funcArg = Reflection::getFunctionParameter($funcName, $i);
                     // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
                     if ($funcArg and $funcArg->isPassedByReference()) {
                         $tmpVar = $this->genTmpVarName();
@@ -1733,6 +1733,11 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
+    private function unescapeVarName(string $name)
+    {
+        return str_replace('_php__var__', '', $name);
+    }
+
     private function parseInterpolatedStringPart(Node $expr): string
     {
         return '"' . $this->escapeString($expr->value) . '"';
@@ -1844,6 +1849,9 @@ class Translator extends \PhpAot\Core\Translator
         $code .= 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
         $this->indentLevel++;
         if ($node->keyVar) {
+            if ($this->hasGlobalVar($keyVar)) {
+                $this->fatalError($node->keyVar, 'Cannot redefine key variable: ' . $this->unescapeVarName($keyVar));
+            }
             $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
             $this->addLocalVar($keyVar, self::TYPE_VAR);
         }
@@ -1856,6 +1864,9 @@ class Translator extends \PhpAot\Core\Translator
             $dim = $this->parseIdentifier($node->valueVar->dim);
             $code .= $this->getIndent() . "$array.offsetSet($dim, iter.value());";
         } else {
+            if ($this->hasGlobalVar($valueVar)) {
+                $this->fatalError($node->valueVar, 'Cannot redefine value variable: ' . $this->unescapeVarName($valueVar));
+            }
             $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
             $this->addLocalVar($valueVar, self::TYPE_VAR);
         }

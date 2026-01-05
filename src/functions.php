@@ -43,5 +43,6 @@ function debug()
     foreach(func_get_args() as $arg) {
         var_dump($arg);
     }
+    debug_print_backtrace();
     exit;
 }
