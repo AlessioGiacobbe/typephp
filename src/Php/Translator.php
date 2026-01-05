@@ -1124,6 +1124,9 @@ class Translator extends \PhpAot\Core\Translator
             if ($expr->getType() === 'Expr_Assign') {
                 $left = $expr->var;
                 $name = $this->parseIdentifier($left);
+                if (!$this->hasGlobalVar($name)) {
+                    $this->fatalError($left, 'Cannot assign to global variable in for loop');
+                }
                 if (!$this->hasVar($name)) {
                     $type = $this->detectExprType($expr->expr);
                     $this->addLocalVar($name, $type);
@@ -1347,6 +1350,7 @@ class Translator extends \PhpAot\Core\Translator
                     }
                 }
             }
+            // 不支持变长参数展开的语法，例如：array_merge(...$arr)
             if ($arg->unpack) {
                 $this->fatalError($arg, "The syntax for variable parameter expansion is not supported");
             }
@@ -1733,7 +1737,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function unescapeVarName(string $name)
+    private function unescapeVarName(string $name): string
     {
         return str_replace('_php__var__', '', $name);
     }
@@ -1849,11 +1853,14 @@ class Translator extends \PhpAot\Core\Translator
         $code .= 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
         $this->indentLevel++;
         if ($node->keyVar) {
+            // foreach 的 key/value 不能与全局变量同名
             if ($this->hasGlobalVar($keyVar)) {
                 $this->fatalError($node->keyVar, 'Cannot redefine key variable: ' . $this->unescapeVarName($keyVar));
             }
             $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
-            $this->addLocalVar($keyVar, self::TYPE_VAR);
+            if (!$this->hasVar($keyVar)) {
+                $this->addLocalVar($keyVar, self::TYPE_VAR);
+            }
         }
 
         if ($node->valueVar->getType() == self::EXPR_ARRAY_DIM_FETCH) {
@@ -1864,11 +1871,14 @@ class Translator extends \PhpAot\Core\Translator
             $dim = $this->parseIdentifier($node->valueVar->dim);
             $code .= $this->getIndent() . "$array.offsetSet($dim, iter.value());";
         } else {
+            // foreach 的 key/value 不能与全局变量同名
             if ($this->hasGlobalVar($valueVar)) {
                 $this->fatalError($node->valueVar, 'Cannot redefine value variable: ' . $this->unescapeVarName($valueVar));
             }
             $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
-            $this->addLocalVar($valueVar, self::TYPE_VAR);
+            if (!$this->hasVar($valueVar)) {
+                $this->addLocalVar($valueVar, self::TYPE_VAR);
+            }
         }
         $code .= $this->parseStmts($stmts);
         $this->indentLevel--;
