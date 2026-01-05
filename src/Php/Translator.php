@@ -8,6 +8,7 @@ use PhpParser\Node;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
 use PhpParser\Error;
+use PhpParser\Node\NullableType;
 use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
@@ -256,9 +257,9 @@ class Translator extends \PhpAot\Core\Translator
         $this->phpxDir = $dir;
     }
 
-    private function doConvert(string $phpCode)
+    private function doConvert(string $phpCode): string
     {
-        $this->climate->info('do convert');
+        $this->climate->info('do convert: ' . $this->file);
         $parser = (new ParserFactory())->createForNewestSupportedVersion();
         $ast = $parser->parse($phpCode);
 
@@ -316,7 +317,6 @@ class Translator extends \PhpAot\Core\Translator
         file_put_contents($file, $code);
         $this->formatCppCode($file);
     }
-
 
     public function getLine($node): int
     {
@@ -389,9 +389,13 @@ class Translator extends \PhpAot\Core\Translator
             }
         }
 
-        $this->indentLevel++;
-        $stmts = $this->parseStmts($v->stmts);
-        $this->indentLevel--;
+        if ($v->stmts) {
+            $this->indentLevel++;
+            $stmts = $this->parseStmts($v->stmts);
+            $this->indentLevel--;
+        } else {
+            $stmts = '';
+        }
 
         $functionDeclCode = $this->getReturnType() . ' ' . self::PREFIX . $name . '(' . $this->functionDef->params . ')';
 
@@ -418,9 +422,24 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseScalarValue($expr): string
+    private function parseScalar(Node $expr)
     {
-        return $expr->getAttribute('rawValue');
+        $type = $expr->getType();
+        switch ($type) {
+            case 'Scalar_Int':
+                return $expr->value . 'L';
+            case 'Scalar_Float':
+                return $this->parseScalarFloat($expr);
+            case 'Scalar_String':
+                if ($this->noLiteralStrings) {
+                    return '"' . $this->escapeString($expr->value) . '"';
+                } else {
+                    $index = $this->literalStrings[$expr->value] ?? $this->addLiteralString($expr->value);
+                    return self::LITERAL_STRINGS . '[' . $index . ']';
+                }
+            default:
+                abort($expr);
+        }
     }
 
     private function parseIdentifier(Node $expr)
@@ -433,16 +452,9 @@ class Translator extends \PhpAot\Core\Translator
             case 'Identifier':
                 return $expr->name;
             case 'Scalar_Int':
-                return $expr->value . 'L';
             case 'Scalar_Float':
-                return $this->parseScalarFloat($expr);
             case 'Scalar_String':
-                if ($this->noLiteralStrings) {
-                    return '"' . $this->escapeString($expr->value) . '"';
-                } else {
-                    $index = $this->literalStrings[$expr->value] ?? $this->addLiteralString($expr->value);
-                    return self::LITERAL_STRINGS . '[' . $index . ']';
-                }
+                return $this->parseScalar($expr);
             case 'Expr_ConstFetch':
                 return $this->parseConstFetch($expr);
             default:
@@ -463,7 +475,7 @@ class Translator extends \PhpAot\Core\Translator
             $argInfo->type = $type;
             if (isset($param->default)) {
                 $this->functionDef->argCountRequired = count($list) - 1;
-                $argInfo->default = $param->default->getAttribute('rawValue');
+                $argInfo->default = $this->parseScalar($param->default);
             }
             $this->functionDef->argInfoList[] = $argInfo;
         }
@@ -981,6 +993,9 @@ class Translator extends \PhpAot\Core\Translator
         if ($type == null) {
             return self::TYPE_VAR;
         }
+        if ($type instanceof NullableType) {
+            return self::TYPE_VAR;
+        }
         $name = $type->name;
         switch ($name) {
             case 'int':
@@ -1054,12 +1069,13 @@ class Translator extends \PhpAot\Core\Translator
         shell_exec($cmd);
     }
 
-    public function compileBinary($targetFile, $objectFile): void
+    public function compileBinary(string $targetFile, array $objectFiles): void
     {
         $this->genGlobalVars();
         if ($this->climate->arguments->defined('output')) {
             $targetFile = $this->climate->arguments->get('output');
         }
+        $objectFile = implode(' ', $objectFiles);
         $cmd = $this->cppCompiler . ' main.cc global_vars.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseLdflags() . $this->parseLibs();
         $this->addCompilationOption($cmd);
         $this->climate->comment($cmd);
@@ -1874,7 +1890,7 @@ class Translator extends \PhpAot\Core\Translator
                         $this->localVars = $localVars;
                         goto _fail;
                     }
-                    $code .= $this->getIndent() . 'case ' . $this->parseScalarValue($case->cond) . ': {' . PHP_EOL;
+                    $code .= $this->getIndent() . 'case ' . $this->parseScalar($case->cond) . ': {' . PHP_EOL;
                 }
                 $this->indentLevel++;
                 $code .= $this->parseStmts($case->stmts);
@@ -1909,8 +1925,12 @@ class Translator extends \PhpAot\Core\Translator
     {
         $list = [];
         foreach ($v->vars as $var) {
-            $type = $this->detectExprType($var->default);
-            $list[] = 'static ' . $type . ' ' . $this->parseIdentifier($var->var) . ' = ' . $this->parseIdentifier($var->default) . ';';
+            if ($var->default) {
+                $type = $this->detectExprType($var->default);
+                $list[] = 'static ' . $type . ' ' . $this->parseIdentifier($var->var) . ' = ' . $this->parseIdentifier($var->default) . ';';
+            } else {
+                $list[] = 'static ' . self::TYPE_VAR . ' ' . $this->parseIdentifier($var->var) . ';';
+            }
         }
         return implode(PHP_EOL . $this->getIndent(), $list);
     }
