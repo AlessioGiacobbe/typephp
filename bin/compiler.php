@@ -39,6 +39,7 @@ foreach ($list as $file) {
         }
         $sourceFiles[] = $cppFile;
     } catch (Unsupported $e) {
+        echo " unsupported syntax: " . $e->getMessage() . "\n";
         echo " skip: " . $file . "\n";
     }
 }

@@ -116,6 +116,7 @@ class Translator extends \PhpAot\Core\Translator
         'argv' => self::TYPE_ARRAY,
     ];
     private array $localVars = [];
+    private array $objectWrappers = [];
 
     const string PREFIX = 'php_';
     private string $rootPath;
@@ -656,6 +657,10 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseTernary($expr);
             case 'Expr_FuncCall':
                 return $this->parseFuncCall($expr);
+            case 'Expr_MethodCall':
+                return $this->parseMethodCall($expr);
+            case 'Expr_StaticCall':
+                return $this->parseStaticCall($expr);
             case 'Expr_Include':
                 return $this->parseInclude($expr);
             case 'Expr_Eval':
@@ -1302,7 +1307,6 @@ class Translator extends \PhpAot\Core\Translator
                     break;
             }
         }
-
         if (empty($expr->args)) {
             return 'php::call(' . $fn . ')';
         } else {
@@ -1310,9 +1314,14 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseCallArgs(array $args, string $funcName = ''): string
+    private function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
     {
-        $internalFunction = $this->isInternalFunction($funcName);
+        if (!$className) {
+            $internalFunction = $this->isInternalFunction($funcName);
+        } else {
+            $internalFunction = false;
+        }
+
         $list_args = [];
         foreach ($args as $i => $arg) {
             if ($arg->value->getType() === self::EXPR_VARIABLE) {
@@ -1320,7 +1329,7 @@ class Translator extends \PhpAot\Core\Translator
                 // 调用了不存在的变量，可能是引用
                 if (!$this->hasVar($name)) {
                     $this->addLocalVar($name, self::TYPE_REF);
-                } else {
+                } else if ($funcName) {
                     $funcArg = Reflection::getFunctionParameter($funcName, 0);
                     // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
                     if ($funcArg and $funcArg->isPassedByReference()) {
@@ -1593,7 +1602,7 @@ class Translator extends \PhpAot\Core\Translator
         if (empty($args)) {
             return 'php::newObject("' . $className . '")';
         } else {
-            return 'php::newObject("' . $className . '"(' . $this->parseCallArgs($args) . ')';
+            return 'php::newObject("' . $className . '", ' . $this->parseCallArgs($args) . ')';
         }
     }
 
@@ -1795,7 +1804,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parsePropertyFetch(Node $expr): string
     {
-        return $this->parseIdentifier($expr->var) . '.getProperty(' . $this->parseIdentifier($expr->name) . ')';
+        return $this->convertToObject($expr->var) . '.getProperty("' . $this->parseIdentifier($expr->name) . '")';
     }
 
     private function parseAssignOpShiftRight(Node $node): string
@@ -2069,6 +2078,30 @@ class Translator extends \PhpAot\Core\Translator
         return $expr;
     }
 
+    private function convertToObject(Node $object): string
+    {
+        $id = $this->parseIdentifier($object);
+        if (!$this->hasVar($id)) {
+            $this->addLocalVar($id, self::TYPE_OBJECT);
+            return $id;
+        }
+
+        $type = $this->getVarType($id);
+        if ($type === self::TYPE_OBJECT) {
+            return $id;
+        }
+
+        if (isset($this->objectWrappers[$id])) {
+            return $this->objectWrappers[$id];
+        }
+
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
+        $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . ' = ' . $id . ';';
+        $this->objectWrappers[$id] = $tmpVar;
+        return $tmpVar;
+    }
+
     public function genFunctionDeclaration(string $file): void
     {
         $code = '';
@@ -2100,5 +2133,28 @@ class Translator extends \PhpAot\Core\Translator
             return $this->parseIdentifier($expr->var) . ' = &' . $this->parseIdentifier($expr->expr);
         }
         abort($expr);
+    }
+
+    private function parseMethodCall(mixed $expr): string
+    {
+        $object = $this->convertToObject($expr->var);
+        $method = $this->parseIdentifier($expr->name);
+        if (empty($expr->args)) {
+            return $object . '.exec("' . $method . '")';
+        } else {
+            return $object . '.exec("' . $method . '", ' . $this->parseCallArgs($expr->args) . ')';
+        }
+    }
+
+    private function parseStaticCall(mixed $expr): string
+    {
+        $class = $this->parseIdentifier($expr->class);
+        $method = $this->parseIdentifier($expr->name);
+        $fn = $class . '::' . $method;
+        if (empty($expr->args)) {
+            return 'php::call("' . $fn . '")';
+        } else {
+            return 'php::call("' . $fn . '", {' . $this->parseCallArgs($expr->args) . '})';
+        }
     }
 }
