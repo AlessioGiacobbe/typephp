@@ -4,3 +4,4 @@
 /tmp
 /examples/wordpress
 /.php-cs-fixer.cache
+*.o

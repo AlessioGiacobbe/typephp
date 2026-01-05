@@ -777,9 +777,14 @@ class Translator extends \PhpAot\Core\Translator
         return filter_var($str, FILTER_VALIDATE_INT);
     }
 
-    private function isCoreFunction(string $fname)
+    private function isCoreFunction(string $fname): bool
     {
         return array_key_exists($fname, $this->definedFunctions);
+    }
+
+    private function isAssignOpConcat(string $op): bool
+    {
+        return $op === '.=';
     }
 
     /**
@@ -1160,7 +1165,12 @@ class Translator extends \PhpAot\Core\Translator
         $leftExprType = $node->var->getType();
         if ($leftExprType === self::EXPR_VARIABLE) {
             $type = $this->detectVarType($node->var);
-            return $var . ' ' . $op . ' ' . $this->convertExprType($expr, $type, $this->detectExprType($node->expr));
+            $rightExprStr = $this->convertExprType($expr, $type, $this->detectExprType($node->expr));
+            if ($this->isAssignOpConcat($op)) {
+                return $var . '.append(' . $rightExprStr . ')';
+            } else {
+                return $var . ' ' . $op . ' ' . $rightExprStr;
+            }
         } elseif ($leftExprType === self::EXPR_ARRAY_DIM_FETCH) {
             /**
              * $count[$r] -= 1;
