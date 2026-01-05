@@ -8,6 +8,7 @@ void php_main();
 
 extern php::Var argc;
 extern php::Var argv;
+extern void php_unset_all_global_vars();
 
 int main(int cpp_argc, char **cpp_argv) {
     php_embed_init(cpp_argc, cpp_argv);
@@ -27,8 +28,7 @@ int main(int cpp_argc, char **cpp_argv) {
 #if PPROF_ON
     ProfilerStop();
 #endif
-    argc.unset();
-    argv.unset();
+    php_unset_all_global_vars();
     php::request_shutdown();
     php_embed_shutdown();
     return rc;
