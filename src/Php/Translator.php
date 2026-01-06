@@ -619,6 +619,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseAssignOpShiftRight($expr);
             case 'Expr_AssignOp_BitwiseAnd':
                 return $this->parseAssignOpBitwiseAnd($expr);
+            case 'Expr_AssignOp_Pow':
+                return $this->parseAssignOpPow($expr);
             case 'Expr_BinaryOp_Mul':
                 return $this->parseBinaryOpMul($expr);
             case 'Expr_BinaryOp_Concat':
@@ -676,6 +678,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseClone($expr);
             case 'Expr_Throw':
                 return $this->parseThrow($expr);
+            case 'Expr_ShellExec':
+                return $this->parseShellExec($expr);
             case 'Name_FullyQualified':
                 return $expr->name;
             case 'Scalar_Int':
@@ -799,6 +803,11 @@ class Translator extends \PhpAot\Core\Translator
     private function isAssignOpConcat(string $op): bool
     {
         return $op === '.=';
+    }
+
+    private function isAssignOpPow(string $op): bool
+    {
+        return $op === '**=';
     }
 
     /**
@@ -1181,10 +1190,16 @@ class Translator extends \PhpAot\Core\Translator
         $expr = $this->parseIdentifier($node->expr);
         $leftExprType = $node->var->getType();
         if ($leftExprType === self::EXPR_VARIABLE) {
+            if (!$this->hasVar($var)) {
+                $this->fatalError($node->var, 'Cannot assign to undefined variable');
+            }
             $type = $this->detectVarType($node->var);
             $rightExprStr = $this->convertExprType($expr, $type, $this->detectExprType($node->expr));
             if ($this->isAssignOpConcat($op)) {
                 return $var . '.append(' . $rightExprStr . ')';
+            } elseif ($this->isAssignOpPow($op)) {
+                $powExpr = 'php::call(php::pow, {' . $var . ', ' . $rightExprStr . '})';
+                return $var . ' = ' . $this->convertVarType($var, $powExpr);
             } else {
                 return $var . ' ' . $op . ' ' . $rightExprStr;
             }
@@ -1253,6 +1268,11 @@ class Translator extends \PhpAot\Core\Translator
     private function parseAssignOpBitwiseAnd(mixed $expr): string
     {
         return $this->parseAssignOp($expr, '&=');
+    }
+
+    private function parseAssignOpPow(mixed $expr): string
+    {
+        return $this->parseAssignOp($expr, '**=');
     }
 
     private function fatalError(Node $node, string $msg): void
@@ -2313,5 +2333,10 @@ class Translator extends \PhpAot\Core\Translator
         $code .= $this->getIndent() . '}';
 
         return $code;
+    }
+
+    private function parseShellExec(mixed $expr): string
+    {
+        return 'php::call("shell_exec", {' . $this->parseInterpolatedString($expr) . '})';
     }
 }
