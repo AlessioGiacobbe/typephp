@@ -29,6 +29,7 @@ class Translator extends \PhpAot\Core\Translator
     const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
     const string LITERAL_STRINGS = '_literal_strings';
     const string EXPR_VARIABLE = 'Expr_Variable';
+    const string EXPR_NEW = 'Expr_New';
     const string EXPR_ARRAY_DIM_FETCH = 'Expr_ArrayDimFetch';
 
     private string $phpxDir = '~/workspace/projects/phpx';
@@ -130,6 +131,8 @@ class Translator extends \PhpAot\Core\Translator
     private CLImate $climate;
     private array $beforeStmtLines = [];
     private array $afterStmtLines = [];
+    private bool $inLoop = false;
+    private bool $inSwitch = false;
 
     public function __construct(string $rootPath)
     {
@@ -507,25 +510,41 @@ class Translator extends \PhpAot\Core\Translator
                     $result = $this->parseReturn($v) . ';';
                     break;
                 case 'Stmt_For':
+                    $this->inLoop = true;
                     $result = $this->parseFor($v);
+                    $this->inLoop = false;
                     break;
                 case 'Stmt_Foreach':
+                    $this->inLoop = true;
                     $result = $this->parseForeach($v);
+                    $this->inLoop = false;
                     break;
                 case 'Stmt_Switch':
+                    $this->inSwitch = true;
                     $result = $this->parseSwitch($v);
+                    $this->inSwitch = false;
                     break;
                 case 'Stmt_While':
+                    $this->inLoop = true;
                     $result = $this->parseWhile($v);
+                    $this->inLoop = false;
                     break;
                 case 'Stmt_Do':
+                    $this->inLoop = true;
                     $result = $this->parseDo($v);
+                    $this->inLoop = false;
                     break;
                 case 'Stmt_If':
                     $result = $this->parseIf($v);
                     break;
                 case 'Stmt_Break':
                     $result = $this->parseBreak($v);
+                    break;
+                case 'Stmt_Goto':
+                    $result = $this->parseGoto($v);
+                    break;
+                case 'Stmt_Label':
+                    $result = $this->parseLabel($v);
                     break;
                 case 'Stmt_Continue':
                     $result = 'continue;';
@@ -624,6 +643,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseAssignOpShiftRight($expr);
             case 'Expr_AssignOp_BitwiseAnd':
                 return $this->parseAssignOpBitwiseAnd($expr);
+            case 'Expr_AssignOp_BitwiseXor':
+                return $this->parseAssignOpBitwiseXor($expr);
             case 'Expr_AssignOp_Pow':
                 return $this->parseAssignOpPow($expr);
             case 'Expr_BinaryOp_Mul':
@@ -681,6 +702,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseNew($expr);
             case 'Expr_Clone':
                 return $this->parseClone($expr);
+            case 'Expr_Instanceof':
+                return $this->parseInstanceof($expr);
             case 'Expr_Throw':
                 return $this->parseThrow($expr);
             case 'Expr_ShellExec':
@@ -710,6 +733,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseCastString($expr);
             case 'Expr_Cast_Array':
                 return $this->parseCastArray($expr);
+            case 'Expr_Cast_Object':
+                return $this->parseCastObject($expr);
             case 'Expr_ConstFetch':
                 return $this->parseConstFetch($expr);
             case 'Expr_UnaryMinus':
@@ -747,7 +772,7 @@ class Translator extends \PhpAot\Core\Translator
             }
         } elseif ($left->getType() === 'Expr_PropertyFetch') {
             $array = $this->parseIdentifier($left->var);
-            $propName = $this->parseIdentifier($left->name);
+            $propName = $this->identifierToStr($left->name);
             return "$array.setProperty($propName, " . $this->trimBrackets($this->parseExpr($right)) . ")";
         } elseif ($right->getType() === 'Expr_Assign') {
             $chain[] = $left;
@@ -1620,6 +1645,14 @@ class Translator extends \PhpAot\Core\Translator
         return $expr;
     }
 
+    private function convertObjectExpr(string $expr): string
+    {
+        if (!$this->isClosedCall($expr, 'php::to_object')) {
+            return 'php::to_object(' . $this->trimBrackets($expr) . ')';
+        }
+        return $expr;
+    }
+
     private function convertArrayExpr(string $expr): string
     {
         if (!$this->isClosedCall($expr, 'php::to_array')) {
@@ -1706,6 +1739,12 @@ class Translator extends \PhpAot\Core\Translator
         return $var . '.clone()';
     }
 
+    private function parseInstanceof(Node $expr): string
+    {
+        $var = $this->parseIdentifier($expr->expr);
+        return $var . '.instanceOf(' . $this->identifierToStr($expr->class) . ')';
+    }
+
     private function parseNamespaceDef(Node $node): string
     {
         $this->namespace = $this->parseIdentifier($node->name);
@@ -1767,6 +1806,11 @@ class Translator extends \PhpAot\Core\Translator
     private function parseCastBool(mixed $node): string
     {
         return $this->convertBoolExpr($this->parseExpr($node->expr));
+    }
+
+    private function parseCastObject(mixed $node): string
+    {
+        return $this->convertObjectExpr($this->parseExpr($node->expr));
     }
 
     private function parseConstFetch(Node $expr): string
@@ -1922,6 +1966,12 @@ class Translator extends \PhpAot\Core\Translator
         return $var . ' >>= ' . $this->parseIdentifier($node->expr);
     }
 
+    private function parseAssignOpBitwiseXor(Node $node): string
+    {
+        $var = $this->parseIdentifier($node->var);
+        return $var . ' ^= ' . $this->parseIdentifier($node->expr);
+    }
+
     private function parseMagicConstFile(mixed $expr): string
     {
         return '"' . $this->escapeString($this->file) . '"';
@@ -1952,7 +2002,7 @@ class Translator extends \PhpAot\Core\Translator
             if ($this->hasGlobalVar($keyVar)) {
                 $this->fatalError($node->keyVar, 'Cannot redefine key variable: ' . $this->unescapeVarName($keyVar));
             }
-            $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
+            $code .= $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
             if (!$this->hasVar($keyVar)) {
                 $this->addLocalVar($keyVar, self::TYPE_VAR);
             }
@@ -1970,7 +2020,7 @@ class Translator extends \PhpAot\Core\Translator
             if ($this->hasGlobalVar($valueVar)) {
                 $this->fatalError($node->valueVar, 'Cannot redefine value variable: ' . $this->unescapeVarName($valueVar));
             }
-            $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
+            $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
             if (!$this->hasVar($valueVar)) {
                 $this->addLocalVar($valueVar, self::TYPE_VAR);
             }
@@ -2095,11 +2145,14 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseBreak(mixed $v): string
     {
+        if (!$this->inLoop and !$this->inSwitch) {
+            $this->fatalError($v, 'Cannot break outside loop');
+        }
         $num = $v->num;
         if ($num) {
             $value = $this->parseIdentifier($num);
             if ($value > 1) {
-                abort($v);
+                $this->fatalError($v, 'Cannot break more than 1 level');
             }
         }
         return 'break;';
@@ -2327,6 +2380,9 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseThrow(mixed $expr): string
     {
+        if ($expr->expr->getType() != self::EXPR_VARIABLE and $expr->expr->getType() != self::EXPR_NEW) {
+            $this->fatalError($expr, 'The throw statement only accepts a object variable');
+        }
         return 'php::throwException(' . $this->parseIdentifier($expr->expr). ')';
     }
 
@@ -2392,5 +2448,17 @@ class Translator extends \PhpAot\Core\Translator
     private function parseShellExec(mixed $expr): string
     {
         return 'php::call("shell_exec", {' . $this->parseInterpolatedString($expr) . '})';
+    }
+
+    private function parseGoto(Node $v): string
+    {
+        $this->fatalError($v, 'Goto statement is not supported');
+        return 'goto ' . $v->name->name . ';';
+    }
+
+    private function parseLabel(Node $v): string
+    {
+        $this->fatalError($v, 'Label statement is not supported');
+        return $v->name->name . ':';
     }
 }
