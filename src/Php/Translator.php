@@ -91,6 +91,11 @@ class Translator extends \PhpAot\Core\Translator
         'pipe',
      ];
 
+    private array $unsupportedFunctions = [
+        'compact',
+        'extract'
+    ];
+
     private array $nativeFunctions = [];
     private array $internalFunctions = [];
     private int $optimizeLevel = 0;
@@ -1315,28 +1320,33 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseFuncCall(mixed $expr): string
     {
-        $name = $this->parseIdentifier($expr->name);
-        if ($this->isNativeFunction($name)) {
-            return self::PREFIX . $name . '(' . $this->parseCallArgs($expr->args, $name) . ')';
-        }
-        if ($this->isInternalFunction($name)) {
-            $fn = 'php::' . $name;
+        if ($expr->name->getType() === self::EXPR_VARIABLE) {
+            $fn = $this->parseIdentifier($expr->name);
+            $name = '';
         } else {
-            $fn = '"' . $name . '"';
-        }
-        if ($name === 'strlen' or $name === 'sizeof' or $name === 'count') {
-            return 'php::len(' . $this->parseIdentifier($expr->args[0]->value) . ')';
-        }
-        if (count($expr->args) == 1) {
-            switch ($name) {
-                case 'intval':
-                    return $this->convertIntExpr($this->parseExpr($expr->args[0]->value));
-                case 'floatval':
-                    return $this->convertFloatExpr($this->parseExpr($expr->args[0]->value));
-                case 'boolval':
-                    return $this->convertBoolExpr($this->parseExpr($expr->args[0]->value));
-                default:
-                    break;
+            $name = $this->parseIdentifier($expr->name);
+            if ($this->isNativeFunction($name)) {
+                return self::PREFIX . $name . '(' . $this->parseCallArgs($expr->args, $name) . ')';
+            }
+            if ($this->isInternalFunction($name)) {
+                $fn = 'php::' . $name;
+            } else {
+                $fn = '"' . $name . '"';
+            }
+            if ($name === 'strlen' or $name === 'sizeof' or $name === 'count') {
+                return 'php::len(' . $this->parseIdentifier($expr->args[0]->value) . ')';
+            }
+            if (count($expr->args) == 1) {
+                switch ($name) {
+                    case 'intval':
+                        return $this->convertIntExpr($this->parseExpr($expr->args[0]->value));
+                    case 'floatval':
+                        return $this->convertFloatExpr($this->parseExpr($expr->args[0]->value));
+                    case 'boolval':
+                        return $this->convertBoolExpr($this->parseExpr($expr->args[0]->value));
+                    default:
+                        break;
+                }
             }
         }
         if (empty($expr->args)) {
@@ -2254,15 +2264,39 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
+    private function identifierToStr(Node $node, bool $require = true): string
+    {
+        $id = $this->parseIdentifier($node);
+        if ($node->getType() === self::EXPR_VARIABLE) {
+            if ($require) {
+                $this->requireVar($node, $id);
+            }
+            return $id;
+        } else {
+            return '"'. $id . '"';
+        }
+    }
+
+    private function requireVar($node, string $var): void
+    {
+        if (!$this->hasVar($var)) {
+            $this->fatalError($node, 'The variable `' . $var . '` is not defined');
+        }
+    }
+
     private function parseStaticCall(mixed $expr): string
     {
-        $class = $this->parseIdentifier($expr->class);
-        $method = $this->parseIdentifier($expr->name);
-        $fn = $class . '::' . $method;
-        if (empty($expr->args)) {
-            return 'php::call("' . $fn . '")';
+        if ($expr->class->getType() === self::EXPR_VARIABLE or $expr->name->getType() === self::EXPR_VARIABLE) {
+            $fn = 'php::concat({' . $this->identifierToStr($expr->class). ', "::", ' . $this->identifierToStr($expr->name) . '})';
         } else {
-            return 'php::call("' . $fn . '", {' . $this->parseCallArgs($expr->args) . '})';
+            $class = $this->parseIdentifier($expr->class);
+            $method = $this->parseIdentifier($expr->name);
+            $fn = '"'. $class . '::' . $method . '"';
+        }
+        if (empty($expr->args)) {
+            return 'php::call(' . $fn . ')';
+        } else {
+            return 'php::call(' . $fn . ', {' . $this->parseCallArgs($expr->args) . '})';
         }
     }
 
@@ -2320,7 +2354,7 @@ class Translator extends \PhpAot\Core\Translator
         }
         $code = $this->getIndent() . $var . ' = ' . $exVar . ';' . PHP_EOL;
 
-        $code .= $this->getIndent() . 'if (';
+        $code .= $this->getIndent() . 'if (' . $var . ' && ';
         foreach ($types as $type) {
             $code .= 'php::instanceOf(' . $var . ', "' . $this->parseIdentifier($type) . '")';
         }

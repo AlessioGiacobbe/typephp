@@ -37,6 +37,9 @@ int main(int cpp_argc, char **cpp_argv) {
     }
     zend_catch {
         rc = EG(exit_status);
+        if (EG(exception)) {
+            zend_exception_error(EG(exception), E_ERROR);
+        }
     }
     zend_end_try();
 #if PPROF_ON
