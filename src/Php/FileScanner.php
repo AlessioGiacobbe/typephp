@@ -7,18 +7,39 @@ use FilesystemIterator;
 class FileScanner
 {
     private string $directory;
-    private array $extensions;
     private array $excludePatterns;
 
-    public function __construct(string $directory, array $extensions = ['.php', '.cc', '.cpp', '.cxx', '.c', '.h', '.hpp'])
+    const array PHP_EXT = ['php'];
+    const array CPP_EXT = ['cpp', 'cxx', 'cc'];
+
+    public function __construct(string $directory)
     {
         if (!is_dir($directory)) {
             throw new \InvalidArgumentException("Directory does not exist: $directory");
         }
         
         $this->directory = rtrim($directory, DIRECTORY_SEPARATOR);
-        $this->extensions = $extensions;
         $this->excludePatterns = [];
+    }
+
+    public static function getFileName(string $path): string
+    {
+        return pathinfo($path, PATHINFO_FILENAME);
+    }
+
+    public static function getFileExt(string $path): string
+    {
+        return pathinfo($path, PATHINFO_EXTENSION);
+    }
+
+    static function isPhpFile(string $file): bool
+    {
+        return in_array(self::getFileExt($file), self::PHP_EXT);
+    }
+
+    static function isCppFile(string $file): bool
+    {
+        return in_array(self::getFileExt($file), self::CPP_EXT);
     }
 
     public function addExcludePattern(string $pattern): self
@@ -36,8 +57,7 @@ class FileScanner
         
         foreach ($iterator as $file) {
             if ($file->isFile()) {
-                $extension = '.' . $file->getExtension();
-                if (in_array($extension, $this->extensions)) {
+                if (self::isPhpFile($file)) {
                     $filePath = $file->getPathname();
                     $excluded = false;
                     foreach ($this->excludePatterns as $pattern) {

@@ -20,7 +20,7 @@ if (is_dir($path)) {
     $targetFile = basename($path);
 } else {
     $list = [$path];
-    $targetFile = basename($path, '.php');
+    $targetFile = FileScanner::getFileName($path);
 }
 
 $sourceFiles = [];
@@ -29,13 +29,15 @@ $objectFiles = [];
 // 分析 PHP 文件，生成 C++ 文件
 foreach ($list as $file) {
     try {
-        if (str_ends_with($file, '.php')) {
+        if (FileScanner::isPhpFile($file)) {
             $code = $translator->convert($file);
             $info = pathinfo($file);
             $cppFile = $info['dirname'] . '/' . $info['filename'] . '.cc';
             $translator->save($code, $cppFile);
-        } else {
+        } elseif (FileScanner::isCppFile($file)) {
             $cppFile = $file;
+        } else {
+            continue;
         }
         $sourceFiles[] = $cppFile;
     } catch (Unsupported $e) {

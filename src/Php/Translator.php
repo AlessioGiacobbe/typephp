@@ -537,6 +537,9 @@ class Translator extends \PhpAot\Core\Translator
                 case 'Stmt_Unset':
                     $result = $this->parseUnset($v);
                     break;
+                case 'Stmt_TryCatch':
+                    $result = $this->parseTryCatch($v);
+                    break;
                 default:
                     abort($v);
             }
@@ -671,6 +674,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseNew($expr);
             case 'Expr_Clone':
                 return $this->parseClone($expr);
+            case 'Expr_Throw':
+                return $this->parseThrow($expr);
             case 'Name_FullyQualified':
                 return $expr->name;
             case 'Scalar_Int':
@@ -2244,5 +2249,69 @@ class Translator extends \PhpAot\Core\Translator
     private function parseMagicConstLine(Node $expr): int
     {
         return $expr->getStartLine();
+    }
+
+    private function parseThrow(mixed $expr): string
+    {
+        return 'php::throwException(' . $this->parseIdentifier($expr->expr). ')';
+    }
+
+    private function parseTryCatch(mixed $v): string
+    {
+        $code = 'zend_try {';
+        $stmts = $v->stmts;
+
+        $code .= PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->parseStmts($stmts);
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+
+        $catches = $v->catches;
+        $finally = $v->finally;
+
+        $exVar = $this->genTmpVarName();
+        $this->addLocalVar($exVar, self::TYPE_OBJECT);
+
+        $code .= 'zend_catch {' . PHP_EOL;
+        if ($catches) {
+            $code .= $this->getIndent() . $exVar . ' = php::catchException();' . PHP_EOL;
+            $this->indentLevel++;
+            foreach ($catches as $catch) {
+                $code .= $this->parseCatch($catch, $exVar);
+            }
+            $this->indentLevel--;
+        }
+        $code .= '}' . PHP_EOL . 'zend_end_try();' . PHP_EOL;
+        if ($finally) {
+            $code .= $this->parseStmts($finally->stmts);
+            $code .= PHP_EOL;
+            $code .= 'if (' . $exVar . ') {' . PHP_EOL . $this->getIndent() . 'php::throwException(' . $exVar . ');' . PHP_EOL . $this->getIndent() . '}';
+        }
+        return $code;
+    }
+
+    private function parseCatch(mixed $catch, string $exVar): string
+    {
+        $types = $catch->types;
+        $var = $this->parseIdentifier($catch->var);
+        if (!$this->hasVar($var)) {
+            $this->addLocalVar($var, self::TYPE_OBJECT);
+        }
+        $code = $this->getIndent() . $var . ' = ' . $exVar . ';' . PHP_EOL;
+
+        $code .= $this->getIndent() . 'if (';
+        foreach ($types as $type) {
+            $code .= 'php::instanceOf(' . $var . ', "' . $this->parseIdentifier($type) . '")';
+        }
+
+        $code .= ') {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->parseStmts($catch->stmts);
+        $code .= $this->getIndent() . "$exVar.unset();" . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}';
+
+        return $code;
     }
 }

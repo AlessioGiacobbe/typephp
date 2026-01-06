@@ -13,9 +13,9 @@ function abort($v)
     $msg = 'Error: Unsupported ' . $lang . ' Syntax,';
     $msg .= ' Line: ' . $translator->getLine($v) . ', Type: ' . $translator->getType($v) . PHP_EOL;
     if ($translator->mode == 'cli') {
-//        if (DEBUG) {
-//            var_dump($v);
-//        }
+        if (DEBUG) {
+            var_dump($v);
+        }
     } else {
         header('Content-Type: application/json');
         echo json_encode($v, JSON_PRETTY_PRINT);

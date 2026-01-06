@@ -10,8 +10,22 @@ extern php::Var argc;
 extern php::Var argv;
 extern void php_unset_all_global_vars();
 
+static void throw_exception(zend_object *ex) {
+    zend_bailout();
+}
+
 int main(int cpp_argc, char **cpp_argv) {
     php_embed_init(cpp_argc, cpp_argv);
+
+    zend_execute_data fake_execute_data;
+    memset(&fake_execute_data, 0, sizeof(zend_execute_data));
+    zend_function fake_func {};
+    fake_func.type = ZEND_INTERNAL_FUNCTION;
+    fake_execute_data.func = &fake_func;
+    EG(current_execute_data) = &fake_execute_data;
+
+    zend_throw_exception_hook = throw_exception;
+
     int rc = 0;
 #if PPROF_ON
     ProfilerStart("myapp.prof");

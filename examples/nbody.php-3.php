@@ -61,7 +61,7 @@ function main()
             -9.51592254519715870E-05 * $days_per_year,
             5.15138902046611451E-05 * $solar_mass));
 
-// offset_momentum
+    // offset_momentum
     $px = $py = $pz = 0.0;
     foreach ($bodies as $e) {
         $px += $e[3] * $e[6];
