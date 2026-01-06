@@ -1299,7 +1299,7 @@ class Translator extends \PhpAot\Core\Translator
         } else {
             $fn = '"' . $name . '"';
         }
-        if ($name === 'strlen') {
+        if ($name === 'strlen' or $name === 'sizeof' or $name === 'count') {
             return 'php::len(' . $this->parseIdentifier($expr->args[0]->value) . ')';
         }
         if (count($expr->args) == 1) {
@@ -1506,9 +1506,40 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
+    function isClosedCall($expr, $call): bool
+    {
+        if ($call === '') {
+            if (!str_starts_with($expr, '(')) {
+                return false;
+            }
+            $startPos = 0;
+        } else {
+            if (!str_starts_with($expr, $call . '(')) {
+                return false;
+            }
+            $startPos = strlen($call);
+        }
+
+        $bracketCount = 0;
+        $length = strlen($expr);
+
+        for ($i = $startPos; $i < $length; $i++) {
+            $char = $expr[$i];
+            if ($char === '(') {
+                $bracketCount++;
+            } elseif ($char === ')') {
+                $bracketCount--;
+                if ($bracketCount === 0) {
+                    return $i === $length - 1;
+                }
+            }
+        }
+        return false;
+    }
+
     private function trimBrackets(string $str): string
     {
-        if (str_starts_with($str, '(') and str_ends_with($str, ')')) {
+        if ($this->isClosedCall($str, '')) {
             return substr($str, 1, -1);
         }
         return $str;
@@ -1516,7 +1547,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function convertIntExpr(string $expr): string
     {
-        if (!str_starts_with($expr, 'php::to_int(')) {
+        if (!$this->isClosedCall($expr, 'php::to_int')) {
             return 'php::to_int(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
@@ -1524,15 +1555,21 @@ class Translator extends \PhpAot\Core\Translator
 
     private function convertFloatExpr(string $expr): string
     {
-        if (!str_starts_with($expr, 'php::to_float(')) {
+        if (!$this->isClosedCall($expr, 'php::to_float')) {
             return 'php::to_float(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
 
+    public function stop(string $string): void
+    {
+        $this->climate->red($string . "\n");
+        exit(1);
+    }
+
     private function convertStringExpr(string $expr): string
     {
-        if (!str_starts_with($expr, 'php::to_string(')) {
+        if (!$this->isClosedCall($expr, 'php::to_string')) {
             return 'php::to_string(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
@@ -1540,7 +1577,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function convertArrayExpr(string $expr): string
     {
-        if (!str_starts_with($expr, 'php::to_array(')) {
+        if (!$this->isClosedCall($expr, 'php::to_array')) {
             return 'php::to_array(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
@@ -1548,7 +1585,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function convertBoolExpr(string $expr): string
     {
-        if (!str_starts_with($expr, 'php::to_bool(')) {
+        if (!$this->isClosedCall($expr, 'php::to_bool')) {
             return 'php::to_bool(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
@@ -1837,6 +1874,9 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseForeach(Node $node): string
     {
+        if ($node->byRef) {
+            $this->fatalError($node, 'Cannot use & with foreach');
+        }
         if ($node->keyVar) {
             $keyVar = $this->parseIdentifier($node->keyVar);
         }
@@ -2169,10 +2209,13 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseAssignRef(mixed $expr)
     {
-        if ($expr->var->getType() === self::EXPR_VARIABLE && $expr->expr->getType() === self::EXPR_VARIABLE) {
-            return $this->parseIdentifier($expr->var) . ' = &' . $this->parseIdentifier($expr->expr);
+        if ($expr->var->getType() === self::EXPR_VARIABLE) {
+            if ($expr->expr->getType() === self::EXPR_VARIABLE) {
+                return $this->parseIdentifier($expr->var) . ' = &' . $this->parseIdentifier($expr->expr);
+            } elseif ($expr->expr->getType() === self::EXPR_ARRAY_DIM_FETCH) {
+                return $this->parseIdentifier($expr->var) . ' = ' . $this->parseIdentifier($expr->expr);
+            }
         }
-        abort($expr);
     }
 
     private function parseMethodCall(mixed $expr): string

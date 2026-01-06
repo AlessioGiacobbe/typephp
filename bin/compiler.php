@@ -44,6 +44,10 @@ foreach ($list as $file) {
     }
 }
 
+if (empty($sourceFiles)) {
+    $translator->stop("No valid source file found");
+}
+
 // 生成所有函数声明
 $translator->genFunctionDeclaration("./php_func_decl.h");
 
