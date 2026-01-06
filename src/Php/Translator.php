@@ -702,6 +702,14 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseInterpolatedString($expr);
             case 'Expr_Cast_Int':
                 return $this->parseCastInt($expr);
+            case 'Expr_Cast_Double':
+                return $this->parseCastDouble($expr);
+            case 'Expr_Cast_Bool':
+                return $this->parseCastBool($expr);
+            case 'Expr_Cast_String':
+                return $this->parseCastString($expr);
+            case 'Expr_Cast_Array':
+                return $this->parseCastArray($expr);
             case 'Expr_ConstFetch':
                 return $this->parseConstFetch($expr);
             case 'Expr_UnaryMinus':
@@ -710,10 +718,6 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseUnaryPlus($expr);
             case 'InterpolatedStringPart':
                 return $this->parseInterpolatedStringPart($expr);
-            case 'Expr_Cast_Array':
-                return $this->parseCastArray($expr);
-            case 'Expr_Cast_Double':
-                return $this->parseCastDouble($expr);
             case 'Expr_Exit':
                 return $this->parseExit($expr);
             default:
@@ -1323,7 +1327,7 @@ class Translator extends \PhpAot\Core\Translator
         if ($expr->name->getType() === self::EXPR_VARIABLE) {
             $fn = $this->parseIdentifier($expr->name);
             $name = '';
-        } else {
+        } elseif ($expr->name->getType() === 'Name') {
             $name = $this->parseIdentifier($expr->name);
             if ($this->isNativeFunction($name)) {
                 return self::PREFIX . $name . '(' . $this->parseCallArgs($expr->args, $name) . ')';
@@ -1348,6 +1352,12 @@ class Translator extends \PhpAot\Core\Translator
                         break;
                 }
             }
+        } else {
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->name) . ';';
+            $fn = $tmpVar;
+            $name = '';
         }
         if (empty($expr->args)) {
             return 'php::call(' . $fn . ')';
@@ -1747,6 +1757,16 @@ class Translator extends \PhpAot\Core\Translator
     private function parseCastInt(Node $node): string
     {
         return $this->convertIntExpr($this->parseExpr($node->expr));
+    }
+
+    private function parseCastString(mixed $node): string
+    {
+        return $this->convertStringExpr($this->parseExpr($node->expr));
+    }
+
+    private function parseCastBool(mixed $node): string
+    {
+        return $this->convertBoolExpr($this->parseExpr($node->expr));
     }
 
     private function parseConstFetch(Node $expr): string
@@ -2162,7 +2182,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseCastDouble(mixed $expr): string
     {
-        return 'php::to_float(' . $this->parseIdentifier($expr->expr) . ')';
+        return $this->convertFloatExpr($this->parseIdentifier($expr->expr));
     }
 
     private function detectFuncCallReturnType($expr): string
