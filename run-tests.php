@@ -2432,6 +2432,7 @@ TEST $file
     global $no_aot;
     if (!$no_aot) {
         $bin_file = compile_php_file($test_file);
+        $args = substr($args, strlen(' -- '));
         $cmd = './' . $bin_file . ' ' . $args . $cmdRedirect;
     }
 

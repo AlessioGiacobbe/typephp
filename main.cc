@@ -10,6 +10,7 @@ extern php::Var argc;
 extern php::Var argv;
 
 extern void php_init_constant_vars();
+extern void php_init_global_vars();
 extern void php_unset_global_vars();
 
 static void throw_exception(zend_object *ex) {
@@ -33,8 +34,7 @@ int main(int cpp_argc, char **cpp_argv) {
     ProfilerStart("myapp.prof");
 #endif
     zend_first_try {
-        argc = php::global("argc");
-        argv = php::global("argv");
+        php_init_global_vars();
         php_init_constant_vars();
         php_main();
     }

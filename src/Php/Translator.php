@@ -1250,6 +1250,9 @@ class Translator extends \PhpAot\Core\Translator
             $type = $this->detectVarType($node->var);
             $rightExprStr = $this->convertExprType($expr, $type, $this->detectExprType($node->expr));
             if ($this->isAssignOpConcat($op)) {
+                if ($this->isArrayVar($node->var)) {
+                    $this->fatalError($node->var, 'Cannot concat string to array');
+                }
                 return $var . '.append(' . $rightExprStr . ')';
             } elseif ($this->isAssignOpPow($op)) {
                 $powExpr = 'php::call(php::pow, {' . $var . ', ' . $rightExprStr . '})';
@@ -2272,6 +2275,17 @@ class Translator extends \PhpAot\Core\Translator
         $this->indentLevel--;
         $code .= $this->genFunction(self::PREFIX . 'init_constant_vars', 'void', [], $lines);
 
+        // 生成全局变量
+        $code .= PHP_EOL;
+        $this->indentLevel++;
+        $lines = [];
+        foreach ($this->globalVars as $name => $type) {
+            $lines[] = $this->getIndent() . $name . ' = php::global("' . $name . '");';
+        }
+        $this->indentLevel--;
+        $code .= $this->genFunction(self::PREFIX . 'init_global_vars', 'void', [], $lines);
+
+        // 销毁全局变量
         $code .= PHP_EOL;
         $this->indentLevel++;
         $lines = [];
@@ -2587,5 +2601,10 @@ class Translator extends \PhpAot\Core\Translator
             return self::TYPE_BOOL;
         }
         return self::TYPE_VAR;
+    }
+
+    private function isArrayVar($var): bool
+    {
+        return $var->getType() == self::EXPR_VARIABLE and $this->hasVar($var->name) and $this->getVarType($var->name) == self::TYPE_ARRAY;
     }
 }
