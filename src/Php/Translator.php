@@ -463,6 +463,7 @@ class Translator extends \PhpAot\Core\Translator
             case self::EXPR_VARIABLE:
                 return $this->escapeVarName($expr->name);
             case 'Name':
+            case 'VarLikeIdentifier':
             case 'Identifier':
                 return $expr->name;
             case 'Scalar_Int':
@@ -667,7 +668,6 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpLogicalOr($expr);
             case 'Expr_BinaryOp_LogicalXor':
                 return $this->parseBinaryOpLogicalXor($expr);
-            // 减法
             case 'Expr_BinaryOp_Minus':
                 return $this->parseBinaryOpMinus($expr);
             case 'Expr_Array':
@@ -700,6 +700,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseMethodCall($expr);
             case 'Expr_StaticCall':
                 return $this->parseStaticCall($expr);
+            case 'Expr_StaticPropertyFetch':
+                return $this->parseStaticPropertyFetch($expr);
             case 'Expr_Include':
                 return $this->parseInclude($expr);
             case 'Expr_Eval':
@@ -780,6 +782,11 @@ class Translator extends \PhpAot\Core\Translator
             $array = $this->parseIdentifier($left->var);
             $propName = $this->identifierToStr($left->name);
             return "$array.setProperty($propName, " . $this->trimBrackets($this->parseExpr($right)) . ")";
+        } elseif ($left->getType() === 'Expr_StaticPropertyFetch') {
+            $class = $this->identifierToStr($left->class);
+            $propName = $this->identifierToStr($left->name);
+            $value = $this->trimBrackets($this->parseExpr($right));
+            return "php::setStaticProperty($class, $propName, $value)";
         } elseif ($right->getType() === 'Expr_Assign') {
             $chain[] = $left;
             while ($right->getType() === 'Expr_Assign') {
@@ -2432,6 +2439,11 @@ class Translator extends \PhpAot\Core\Translator
         } else {
             return 'php::call(' . $fn . ', {' . $this->parseCallArgs($expr->args) . '})';
         }
+    }
+
+    private function parseStaticPropertyFetch(Node $expr): string
+    {
+        return 'php::getStaticProperty(' . $this->identifierToStr($expr->class) . ', ' . $this->identifierToStr($expr->name) . ')';
     }
 
     private function parseMagicConstLine(Node $expr): int
