@@ -598,6 +598,8 @@ class Translator extends \PhpAot\Core\Translator
         switch ($type) {
             case 'Expr_Isset':
                 return $this->parseIsset($expr);
+            case 'Expr_Empty':
+                return $this->parseEmpty($expr);
             case 'Expr_Assign':
                 return $this->parseAssign($expr);
             case 'Expr_AssignRef':
@@ -2216,6 +2218,11 @@ class Translator extends \PhpAot\Core\Translator
                 abort($var);
             }
         }
+    }
+
+    private function parseEmpty(mixed $expr): string
+    {
+        return 'php::empty(' . $this->parseExpr($expr->expr) . ')';
     }
 
     private function parseCastArray(mixed $expr): string
