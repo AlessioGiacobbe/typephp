@@ -9,10 +9,10 @@ use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
 use PhpParser\Error;
 use PhpParser\Node\NullableType;
+use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
-use SimplePie\Exception;
 use stdClass;
 
 class Translator extends \PhpAot\Core\Translator
@@ -101,6 +101,9 @@ class Translator extends \PhpAot\Core\Translator
     private array $nativeFunctions = [];
     private array $internalFunctions = [];
     private array $nativeConstants = [];
+    private array $functionDeclInFile = [];
+    private array $functionCallInFile = [];
+    private array $redoAfterDeclare = [];
     private int $optimizeLevel = 0;
     private int $floatPrecision = 17;
     private bool $debugInfo = true;
@@ -129,16 +132,19 @@ class Translator extends \PhpAot\Core\Translator
 
     const string PREFIX = 'php_';
     private string $rootPath;
+    private string $buildDir;
     private int $debugLine = 0;
     private CLImate $climate;
     private array $beforeStmtLines = [];
     private array $afterStmtLines = [];
     private bool $inLoop = false;
     private bool $inSwitch = false;
+    private bool $stubFile = false;
 
     public function __construct(string $rootPath)
     {
         $this->rootPath = $rootPath;
+        $this->setBuildDir($rootPath . '/build');
         $climate = new CLImate;
         $this->climate = $climate;
         $climate->arguments->add([
@@ -306,21 +312,32 @@ class Translator extends \PhpAot\Core\Translator
         return $this->genIncludeHeaderFiles() . $this->genExternGlobalVars() . $cppCode;
     }
 
+    private function removeCommonPrefix(string $str1, string $str2): string
+    {
+        $len = min(strlen($str1), strlen($str2));
+        $prefixLen = 0;
+
+        for ($i = 0; $i < $len; $i++) {
+            if ($str1[$i] === $str2[$i]) {
+                $prefixLen++;
+            } else {
+                break;
+            }
+        }
+        return substr($str2, $prefixLen);
+    }
+
     public function convert(string $file): string
     {
-        if (!file_exists($file)) {
-            throw new \Exception('File not exists: ' . $file);
-        }
-        $phpCode = file_get_contents($file);
-        $this->file = realpath($file);
-        $this->dir = dirname($this->file);
-
+        $phpCode = $this->loadFile($file);
         while (true) {
             try {
-                return $this->doConvert($phpCode);
-            } catch (ReturnTypeChanged $e) {
-                // 某些情况，例如返回值变更，需要重新解析
-                $this->climate->cyan('Return type changed, retrying...');
+                $cppCode = $this->doConvert($phpCode);
+                $info = pathinfo($file);
+                $cppFile = $this->buildDir . '/' . $this->removeCommonPrefix($this->buildDir, $info['dirname'] . '/' . $info['filename'] . '.cc');
+                $this->save($cppCode, $cppFile);
+                return $cppFile;
+            } catch (RedoException $e) {
                 continue;
             }
         }
@@ -328,6 +345,10 @@ class Translator extends \PhpAot\Core\Translator
 
     public function save(string $code, string $file): void
     {
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
         file_put_contents($file, $code);
         $this->formatCppCode($file);
     }
@@ -370,9 +391,8 @@ class Translator extends \PhpAot\Core\Translator
         $this->tmpVarIndex = 0;
     }
 
-    private function parseFunctionDef($v): string
+    private function getFunctionName(Node $v): string
     {
-        $this->resetScope();
         $names[] = $this->parseIdentifier($v->name);
         if ($this->class) {
             $names[] = strtolower($this->class);
@@ -380,20 +400,40 @@ class Translator extends \PhpAot\Core\Translator
         if ($this->namespace) {
             $names[] = strtolower(str_replace('\\', '_', $this->namespace));
         }
+        return implode('__', array_reverse($names));
+    }
 
-        $name = implode('__', array_reverse($names));
+    private function parseFunctionDeclaration(string $name, Node $v): FunctionDef
+    {
+        $functionDef = new FunctionDef();
+        $this->functionDef = $functionDef;
+        $functionDef->name = $name;
+        if ($v->returnType) {
+            $functionDef->returnType = $this->getTypeFromZendType($this->parseIdentifier($v->returnType));
+        } else {
+            // .stub 存根定义 C++ Native 函数，必须设置返回值类型
+            if ($this->stubFile) {
+                throw new Exception('No return type for ' . $name);
+            }
+            $functionDef->returnType = 'void';
+        }
+        $this->parseParams($v->params);
+        return $functionDef;
+    }
+
+    private function parseFunctionDef(Node $v): string
+    {
+        $this->resetScope();
+        $name = $this->getFunctionName($v);
         if (isset($this->nativeFunctions[$name])) {
             $this->functionDef = $this->nativeFunctions[$name];
         } else {
-            $this->functionDef = new FunctionDef();
-            $this->functionDef->name = $name;
-            if ($v->returnType) {
-                $this->functionDef->returnType = $this->getTypeFromZendType($this->parseIdentifier($v->returnType));
-            } else {
-                $this->functionDef->returnType = 'void';
+            $this->nativeFunctions[$name] = $this->parseFunctionDeclaration($name, $v);
+            if (isset($this->redoAfterDeclare[$name])) {
+                unset($this->redoAfterDeclare[$name]);
+                $this->climate->cyan('Received redo request, retrying...');
+                throw new RedoException;
             }
-            $this->parseParams($v->params);
-            $this->nativeFunctions[$name] = $this->functionDef;
         }
 
         foreach ($this->functionDef->argInfoList as $argInfo) {
@@ -482,6 +522,10 @@ class Translator extends \PhpAot\Core\Translator
         $list = [];
         $this->functionDef->argCountRequired = count($params);
         foreach ($params as $param) {
+            // .stub 存根定义 C++ Native 函数，必须设置函数的参数类型
+            if ($this->stubFile and !$param->type) {
+                throw new \RuntimeException('No type for ' . $this->parseIdentifier($param->var));
+            }
             $type = $this->parseType($param->type);
             $name = $this->parseIdentifier($param->var);
             $list[] = $type . ' ' . $name;
@@ -726,11 +770,10 @@ class Translator extends \PhpAot\Core\Translator
             case self::EXPR_VARIABLE:
                 return $this->parseIdentifier($expr);
             case 'Scalar_MagicConst_File':
-                return $this->parseMagicConstFile($expr);
             case 'Scalar_MagicConst_Dir':
-                return $this->parseMagicConstDir($expr);
             case 'Scalar_MagicConst_Line':
-                return $this->parseMagicConstLine($expr);
+            case 'Scalar_MagicConst_Function':
+                return $this->parseMagicConst($expr);
             case 'Scalar_InterpolatedString':
                 return $this->parseInterpolatedString($expr);
             case 'Expr_Cast_Int':
@@ -958,7 +1001,9 @@ class Translator extends \PhpAot\Core\Translator
     private function resetReturnType(string $type): void
     {
         $this->functionDef->returnType = $type;
-        throw new ReturnTypeChanged;
+        // 返回值变更，需要重新解析
+        $this->climate->cyan('Return type changed, retrying...');
+        throw new RedoException;
     }
 
     private function detectVarType($var): string
@@ -1377,6 +1422,12 @@ class Translator extends \PhpAot\Core\Translator
             $name = '';
         } elseif ($expr->name->getType() === 'Name') {
             $name = $this->parseIdentifier($expr->name);
+            // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
+            if (isset($this->functionDeclInFile[$name])
+                and $this->functionDeclInFile[$name] === $this->file
+                and !$this->isNativeFunction($name)) {
+                $this->redoAfterDeclare[$name] = true;
+            }
             if ($this->isNativeFunction($name)) {
                 return self::PREFIX . $name . '(' . $this->parseCallArgs($expr->args, $name) . ')';
             }
@@ -2004,9 +2055,20 @@ class Translator extends \PhpAot\Core\Translator
         return $var . ' ^= ' . $this->parseIdentifier($node->expr);
     }
 
-    private function parseMagicConstFile(mixed $expr): string
+    private function parseMagicConst(mixed $expr): string
     {
-        return '"' . $this->escapeString($this->file) . '"';
+        switch ($expr->getType()) {
+            case 'Scalar_MagicConst_Dir':
+                return '"' . $this->escapeString($this->dir) . '"';
+            case 'Scalar_MagicConst_File':
+                return '"' . $this->escapeString($this->file) . '"';
+            case 'Scalar_MagicConst_Line':
+                return $expr->getStartLine();
+            case 'Scalar_MagicConst_Function':
+                return '"' . $this->escapeString($this->functionDef->name) . '"';
+            default:
+                abort($expr);
+        }
     }
 
     private function parseForeach(Node $node): string
@@ -2171,11 +2233,6 @@ class Translator extends \PhpAot\Core\Translator
     private function parseInclude(mixed $expr): string
     {
         return 'php::include(' . $this->parseIdentifier($expr->expr) . ')';
-    }
-
-    private function parseMagicConstDir(mixed $expr): string
-    {
-        return '"' . $this->escapeString($this->dir) . '"';
     }
 
     private function parseBreak(mixed $v): string
@@ -2467,11 +2524,6 @@ class Translator extends \PhpAot\Core\Translator
         return 'php::getStaticProperty(' . $this->identifierToStr($expr->class) . ', ' . $this->identifierToStr($expr->name) . ')';
     }
 
-    private function parseMagicConstLine(Node $expr): int
-    {
-        return $expr->getStartLine();
-    }
-
     private function parseThrow(mixed $expr): string
     {
         if ($expr->expr->getType() != self::EXPR_VARIABLE and $expr->expr->getType() != self::EXPR_NEW) {
@@ -2574,7 +2626,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->nativeConstants[$name] = $constInfo;
     }
 
-    private function hasConstant(string $name)
+    private function hasConstant(string $name): bool
     {
         return isset($this->nativeConstants[$name]);
     }
@@ -2606,5 +2658,153 @@ class Translator extends \PhpAot\Core\Translator
     private function isArrayVar($var): bool
     {
         return $var->getType() == self::EXPR_VARIABLE and $this->hasVar($var->name) and $this->getVarType($var->name) == self::TYPE_ARRAY;
+    }
+
+    private function setBuildDir(string $string): void
+    {
+        $this->buildDir = $string;
+        if (!is_dir($this->buildDir)) {
+            mkdir($this->buildDir, 0777, true);
+        }
+    }
+
+    public function prepare(string $file)
+    {
+        $phpCode = $this->loadFile($file);
+
+        $this->climate->info('prepare: ' . $this->file);
+        $parser = (new ParserFactory())->createForNewestSupportedVersion();
+        $ast = $parser->parse($phpCode);
+
+        $traverser = new NodeTraverser;
+        $prettyPrinter = new PrettyPrinter\Standard;
+        $traverser->addVisitor(new Visitor());
+        $stmts = $traverser->traverse($ast);
+
+        foreach ($stmts as $v) {
+            $type = $v->getType();
+            switch ($type) {
+                case 'Stmt_Namespace':
+                    $this->prepareNamespaceDef($v);
+                    break;
+                case 'Stmt_Class':
+                    $this->prepareClassDef($v);
+                    break;
+                case 'Stmt_Function':
+                    $this->prepareFunctionDef($v) . PHP_EOL;
+                    break;
+                case 'Stmt_Const':
+                    break;
+                default:
+                    $this->fatalError($v, 'Unsupported statement: ' . $type);
+                    break;
+            }
+        }
+
+        $nodeFinder = new NodeFinder();
+        $functionCalls = $nodeFinder->findInstanceOf($ast, Node\Expr\FuncCall::class);
+
+        foreach ($functionCalls as $call) {
+            if ($call->name instanceof Node\Name) {
+                $name = $call->name->toString();
+                $this->functionCallInFile[] = [
+                    'name' => $name,
+                    'file' => $this->file,
+                    'line' => $call->getLine(),
+                ];
+            }
+        }
+    }
+
+    private function prepareFunctionDef(Node $v): void
+    {
+        $name = $this->getFunctionName($v);
+        if ($this->stubFile) {
+            $this->nativeFunctions[$name] = $this->parseFunctionDeclaration($name, $v);
+        } else {
+            $this->functionDeclInFile[$name] = $this->file;
+        }
+    }
+
+    private function prepareNamespaceDef(Node $node): void
+    {
+        $this->namespace = $this->parseIdentifier($node->name);
+        foreach($node->stmts as $v2) {
+            $type2 = $v2->getType();
+            switch ($type2) {
+                case 'Stmt_Class':
+                    $this->prepareClassDef($v2);
+                    break;
+                case 'Stmt_Function':
+                    $this->prepareFunctionDef($v2) . PHP_EOL;
+                    break;
+                case 'Stmt_Use':
+                case 'Stmt_Const':
+                    break;
+                default:
+                    abort($v2);
+            }
+        }
+        $this->namespace = '';
+        $this->uses = [];
+    }
+
+    private function prepareClassDef(Node $v): string
+    {
+        $this->class = $this->parseIdentifier($v->name);
+        $code = '';
+        foreach($v->stmts as $v) {
+            $type = $v->getType();
+            switch ($type) {
+                case 'Stmt_ClassConst':
+                case 'Stmt_Property':
+                    break;
+                case 'Stmt_ClassMethod':
+                    $code .= $this->prepareFunctionDef($v) . PHP_EOL;
+                    break;
+                default:
+                    abort($v);
+            }
+        }
+        $this->class = '';
+        return $code;
+    }
+
+    public function sortFiles(array &$list): void
+    {
+        foreach ($this->functionCallInFile as $k => $call) {
+            if (!isset($this->functionDeclInFile[$call['name']])) {
+                unset($this->functionCallInFile[$k]);
+            }
+        }
+        $sorter = new FileSorter($this->functionDeclInFile, $this->functionCallInFile);
+        $sortedFiles = $sorter->sort();
+
+        foreach ($list as $file) {
+            if (!$this->isStubFile($file) and !in_array($file, $sortedFiles)) {
+                $sortedFiles[] = $file;
+            }
+        }
+        $list = $sortedFiles;
+    }
+
+    private function isStubFile(string $file): bool
+    {
+        return str_ends_with($file, '.stub.php');
+    }
+
+    private function loadFile(string $file): string
+    {
+        if (!file_exists($file)) {
+            throw new \Exception('File not exists: ' . $file);
+        }
+        $phpCode = file_get_contents($file);
+        if (!$phpCode) {
+            throw new \Exception('Can not read file: ' . $file);
+        }
+        $this->file = realpath($file);
+        $this->dir = dirname($this->file);
+        $this->stubFile = $this->isStubFile($file);
+        return $phpCode;
     }
 }

@@ -14,6 +14,11 @@ $path = $argv[1];
 $translator = new Translator(ROOT_PATH);
 $translator->setIndent('    ');
 
+$path = realpath($path);
+if ($path === false) {
+    die("path not exists: $path\n");
+}
+
 if (is_dir($path)) {
     $scanner = new FileScanner($path);
     $list = $scanner->scan();
@@ -26,14 +31,26 @@ if (is_dir($path)) {
 $sourceFiles = [];
 $objectFiles = [];
 
-// 分析 PHP 文件，生成 C++ 文件
+// 分析 PHP 文件，预处理
+foreach ($list as $k => $file) {
+    if (FileScanner::isPhpFile($file)) {
+        try {
+            $translator->prepare($file);
+        } catch (Unsupported $e) {
+            echo " unsupported syntax: " . $e->getMessage() . "\n";
+            echo " skip: " . $file . "\n";
+            unset($list[$k]);
+        }
+    }
+}
+
+$translator->sortFiles($list);
+
+// 生成 C++ 文件
 foreach ($list as $file) {
     try {
         if (FileScanner::isPhpFile($file)) {
-            $code = $translator->convert($file);
-            $info = pathinfo($file);
-            $cppFile = $info['dirname'] . '/' . $info['filename'] . '.cc';
-            $translator->save($code, $cppFile);
+            $cppFile = $translator->convert($file);
         } elseif (FileScanner::isCppFile($file)) {
             $cppFile = $file;
         } else {

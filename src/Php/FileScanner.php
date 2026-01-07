@@ -48,6 +48,29 @@ class FileScanner
         return $this;
     }
 
+    public function setExcludePatterns(array $patterns): self
+    {
+        $this->excludePatterns = $patterns;
+        return $this;
+    }
+
+    public function getDirectory(): string
+    {
+        return $this->directory;
+    }
+
+    private function isExcluded(string $filePath): bool
+    {
+        $excluded = false;
+        foreach ($this->excludePatterns as $pattern) {
+            if ($this->matchPattern($pattern, $filePath)) {
+                $excluded = true;
+                break;
+            }
+        }
+        return $excluded;
+    }
+
     public function scan(): array
     {
         $files = [];
@@ -59,20 +82,16 @@ class FileScanner
             if ($file->isFile()) {
                 if (self::isPhpFile($file)) {
                     $filePath = $file->getPathname();
-                    $excluded = false;
-                    foreach ($this->excludePatterns as $pattern) {
-                        if ($this->matchPattern($pattern, $filePath)) {
-                            $excluded = true;
-                            break;
-                        }
-                    }
-                    if (!$excluded) {
-                        $files[] = $filePath;
-                    }
+                } elseif (self::isCppFile($file)) {
+                    $filePath = $file->getPathname();
+                } else {
+                    continue;
+                }
+                if (!$this->isExcluded($filePath)) {
+                    $files[] = $filePath;
                 }
             }
         }
-        sort($files);
         return $files;
     }
 
