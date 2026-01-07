@@ -10,8 +10,9 @@
    modified by anon
 */
 
-function write_mandelbrot_to_stream($w, $h, $stream, $bitmap) {
-    if($bitmap)
+function write_mandelbrot_to_stream($w, $h, $stream, $bitmap)
+{
+    if ($bitmap)
         fprintf($stream, "P4\n%d %d\n", $w, $h);
 
     $bit_num = 128;
@@ -24,78 +25,98 @@ function write_mandelbrot_to_stream($w, $h, $stream, $bitmap) {
     $ochars = ' .:-;!/>)|&IH%*#';
     $pack_format = 'c*';
 
-    for ($y = 0 ; $y < $h ; ++$y) {
-       $Ci = $y * $yfac - 1.0;
-       for ($x = 0 ; $x < $w ; ++$x) {
-          $Zr = 0; $Zi = 0; $Tr = 0; $Ti = 0.0;
-          $Cr = $x * $xfac - 1.5;
-          do {
-             for ($i = 0; $i < $iter; ++$i) {
-                $Zi = 2.0 * $Zr * $Zi + $Ci;
-                $Zr = $Tr - $Ti + $Cr;
-                $Tr = $Zr * $Zr;
-                if (($Tr+($Ti = $Zi * $Zi)) > 4.0) break 2;
-             }
-             $byte_acc += $bit_num;
-          } while (false);
+    for ($y = 0; $y < $h; ++$y) {
+        $Ci = $y * $yfac - 1.0;
+        for ($x = 0; $x < $w; ++$x) {
+            $Zr = 0.0;
+            $Zi = 0.0;
+            $Tr = 0.0;
+            $Ti = 0.0;
+            $Cr = $x * $xfac - 1.5;
 
-          if($bitmap) {
-              if ($bit_num === 1) {
-                 fwrite($stream, pack($pack_format, $byte_acc));
-                 $bit_num = 128;
-                 $byte_acc = 0;
-              } else {
-                 $bit_num >>= 1;
-              }
-          } else {
-              if($i == $iter) {
-                  fwrite($stream, $ochars[0]);
-              } else {
-                  fwrite($stream, $ochars[($i+1) & 15]);
-              }
-          }
-       }
-       if($bitmap) {
-           if ($bit_num !== 128) {
-              fwrite($stream, pack($pack_format, $byte_acc));
-              $bit_num = 128;
-              $byte_acc = 0;
-           }
-       } else {
-          fwrite($stream, "\n");
-       }
+            try {
+                do {
+                    for ($i = 0; $i < $iter; ++$i) {
+                        $Zi = 2.0 * $Zr * $Zi + $Ci;
+                        $Zr = $Tr - $Ti + $Cr;
+                        $Tr = $Zr * $Zr;
+
+                        if (($Tr + ($Ti = $Zi * $Zi)) > 4.0) {
+                            throw new Exception("break 2");
+                        }
+                    }
+                    $byte_acc += $bit_num;
+                } while (false);
+            } catch (Exception $e) {
+            }
+
+            if ($bitmap) {
+                if ($bit_num === 1) {
+                    fwrite($stream, pack($pack_format, $byte_acc));
+                    $bit_num = 128;
+                    $byte_acc = 0;
+                } else {
+                    $bit_num >>= 1;
+                }
+            } else {
+                if ($i == $iter) {
+                    fwrite($stream, $ochars[0]);
+                } else {
+                    fwrite($stream, $ochars[($i + 1) & 15]);
+                }
+            }
+        }
+        if ($bitmap) {
+            if ($bit_num !== 128) {
+                fwrite($stream, pack($pack_format, $byte_acc));
+                $bit_num = 128;
+                $byte_acc = 0;
+            }
+        } else {
+            fwrite($stream, "\n");
+        }
     }
     return true;
 }
 
-function treffynnon_mandelbrot_to_file($filename, $w, $h, $binary_output) {
+function treffynnon_mandelbrot_to_file($filename, $w, $h, $binary_output)
+{
     $file_open_type = 'w';
-    if($binary_output)
+    if ($binary_output)
         $file_open_type = 'wb';
 
-    $stream = fopen((string) $filename, $file_open_type);
-    if(false === $stream)
+    $stream = fopen((string)$filename, $file_open_type);
+    if (false === $stream)
         return false;
 
-    write_mandelbrot_to_stream((int) $w, (int) $h, $stream, (bool) $binary_output);
+    write_mandelbrot_to_stream((int)$w, (int)$h, $stream, (bool)$binary_output);
     fclose($stream);
     return true;
 }
 
-function treffynnon_mandelbrot_to_mem($w, $h, $binary_output) {
+function treffynnon_mandelbrot_to_mem($w, $h, $binary_output)
+{
     $file_open_type = 'w+';
-    if($binary_output)
+    if ($binary_output)
         $file_open_type = 'w+b';
 
     $stream = fopen('php://memory', $file_open_type);
-    if(false === $stream)
+    if (false === $stream)
         return '';
 
-    write_mandelbrot_to_stream((int) $w, (int) $h, $stream, (bool) $binary_output);
+    write_mandelbrot_to_stream((int)$w, (int)$h, $stream, (bool)$binary_output);
     rewind($stream);
     $ret = stream_get_contents($stream);
     fclose($stream);
     return $ret;
 }
 
-echo treffynnon_mandelbrot_to_mem((int) $argv[1], (int) $argv[1], false);
+function main()
+{
+    global $argv;
+    if (count($argv) < 3) {
+        echo "Usage: php mandelbrot.php <width> <height> [<output_file>]\n";
+        exit(1);
+    }
+    echo treffynnon_mandelbrot_to_mem((int)$argv[2], (int)$argv[2], false);
+}

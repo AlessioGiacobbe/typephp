@@ -891,7 +891,7 @@ class Translator extends \PhpAot\Core\Translator
             $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_INT);
         }
 
-        return '(' . $leftExpr . ' ' . $op . ' ' . $rightExpr . ')';
+        return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
     }
 
     private function parseBinaryOpPlus(mixed $expr): string
@@ -2477,8 +2477,8 @@ class Translator extends \PhpAot\Core\Translator
         if ($finally) {
             $code .= $this->parseStmts($finally->stmts);
             $code .= PHP_EOL;
-            $code .= 'if (' . $exVar . ') {' . PHP_EOL . $this->getIndent() . 'php::throwException(' . $exVar . ');' . PHP_EOL . $this->getIndent() . '}';
         }
+        $code .= 'if (' . $exVar . ') {' . PHP_EOL . $this->getIndent() . 'php::throwException(' . $exVar . ');' . PHP_EOL . $this->getIndent() . '}';
         return $code;
     }
 
