@@ -8,7 +8,9 @@ void php_main();
 
 extern php::Var argc;
 extern php::Var argv;
-extern void php_unset_all_global_vars();
+
+extern void php_init_constant_vars();
+extern void php_unset_global_vars();
 
 static void throw_exception(zend_object *ex) {
     zend_bailout();
@@ -33,6 +35,7 @@ int main(int cpp_argc, char **cpp_argv) {
     zend_first_try {
         argc = php::global("argc");
         argv = php::global("argv");
+        php_init_constant_vars();
         php_main();
     }
     zend_catch {
@@ -45,7 +48,7 @@ int main(int cpp_argc, char **cpp_argv) {
 #if PPROF_ON
     ProfilerStop();
 #endif
-    php_unset_all_global_vars();
+    php_unset_global_vars();
     php::request_shutdown();
     php_embed_shutdown();
     return rc;

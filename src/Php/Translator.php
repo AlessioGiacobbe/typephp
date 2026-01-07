@@ -13,6 +13,7 @@ use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
 use SimplePie\Exception;
+use stdClass;
 
 class Translator extends \PhpAot\Core\Translator
 {
@@ -99,6 +100,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private array $nativeFunctions = [];
     private array $internalFunctions = [];
+    private array $nativeConstants = [];
     private int $optimizeLevel = 0;
     private int $floatPrecision = 17;
     private bool $debugInfo = true;
@@ -292,6 +294,9 @@ class Translator extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Function':
                     $cppCode .= $this->parseFunctionDef($v) . PHP_EOL;
+                    break;
+                case 'Stmt_Const':
+                    $this->parseConstDef($v) . PHP_EOL;
                     break;
                 default:
                     abort($v);
@@ -499,6 +504,7 @@ class Translator extends \PhpAot\Core\Translator
             $this->beforeStmtLines = [];
             $this->afterStmtLines = [];
             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
+            $lines[] = $this->getIndent() . '// ' . $class . ' [' . $v->getStartLine() . ':' . $v->getEndLine() . ']';
             switch ($class) {
                 case 'Stmt_Expression':
                     $result = $this->parseExpr($v->expr) . ';';
@@ -819,14 +825,19 @@ class Translator extends \PhpAot\Core\Translator
         return implode("\n" . $this->getIndent(), $lines);
     }
 
-    private function isFloatStr(string $str)
+    private function isFloatStr(string $str): bool
     {
-        return filter_var($str, FILTER_VALIDATE_FLOAT);
+        return filter_var($str, FILTER_VALIDATE_FLOAT) !== false;
     }
 
-    private function isIntStr(string $str)
+    private function isIntStr(string $str): bool
     {
-        return filter_var($str, FILTER_VALIDATE_INT);
+        return filter_var($str, FILTER_VALIDATE_INT) !== false;
+    }
+
+    private function isBoolStr(string $str): bool
+    {
+        return $str === 'true' || $str === 'false';
     }
 
     private function isInternalFunction(string $fname): bool
@@ -1172,7 +1183,7 @@ class Translator extends \PhpAot\Core\Translator
             if ($expr->getType() === 'Expr_Assign') {
                 $left = $expr->var;
                 $name = $this->parseIdentifier($left);
-                if (!$this->hasGlobalVar($name)) {
+                if ($this->hasGlobalVar($name)) {
                     $this->fatalError($left, 'Cannot assign to global variable in for loop');
                 }
                 if (!$this->hasVar($name)) {
@@ -1755,6 +1766,9 @@ class Translator extends \PhpAot\Core\Translator
                 case 'Stmt_Class':
                     $code .= $this->parseClassDef($v2);
                     break;
+                case 'Stmt_Const':
+                    $this->parseConstDef($v2) . PHP_EOL;
+                    break;
                 case 'Stmt_Function':
                     $code .= $this->parseFunctionDef($v2) . PHP_EOL;
                     break;
@@ -1815,7 +1829,13 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseConstFetch(Node $expr): string
     {
+        if ($expr->name->getType() != 'Name') {
+            abort($expr);
+        }
         $name = $this->parseIdentifier($expr->name);
+        if ($this->hasConstant($name)) {
+            return $this->getConstant($name);
+        }
         if ($name === 'null') {
             return 'nullptr';
         } elseif ($name === 'true') {
@@ -2049,6 +2069,9 @@ class Translator extends \PhpAot\Core\Translator
     private function detectConstType($expr): string
     {
         $name = $this->parseIdentifier($expr->name);
+        if ($this->hasConstant($name)) {
+            return $this->getConstantType($name);
+        }
         if ($name === 'true') {
             return self::TYPE_BOOL;
         }
@@ -2219,18 +2242,50 @@ class Translator extends \PhpAot\Core\Translator
         $this->indentLevel--;
         $code .= '};' . PHP_EOL;
 
-        $code .= PHP_EOL;
-        $code .= 'void ' . self::PREFIX . 'unset_all_global_vars() {' . PHP_EOL;
-        $lines = [];
+        // 生成全局常量
         $this->indentLevel++;
+        foreach ($this->nativeConstants as $name => $constant) {
+            $code .= $constant->type . ' ' . $name . ';' . PHP_EOL;
+        }
+        $this->indentLevel--;
+
+        $code .= PHP_EOL;
+        $this->indentLevel++;
+        $lines = [];
+        foreach ($this->nativeConstants as $name => $constant) {
+            $lines[] = $this->getIndent() . $name . ' = ' . $constant->value . ';';
+        }
+        $this->indentLevel--;
+        $code .= $this->genFunction(self::PREFIX . 'init_constant_vars', 'void', [], $lines);
+
+        $code .= PHP_EOL;
+        $this->indentLevel++;
+        $lines = [];
         foreach ($this->globalVars as $name => $type) {
             $lines[] = $this->getIndent() . $name . '.unset();';
         }
+        foreach ($this->nativeConstants as $name => $constant) {
+            if ($constant->type !== self::TYPE_VAR) {
+                continue;
+            }
+            $lines[] = $this->getIndent() . $name . '.unset();';
+        }
         $this->indentLevel--;
-        $code .= implode(PHP_EOL, $lines) . PHP_EOL;
-        $code .= '}' . PHP_EOL;
+        $code .= $this->genFunction(self::PREFIX . 'unset_global_vars', 'void', [], $lines);
 
         file_put_contents($file, $code);
+    }
+
+    private function genFunction(string $name, string $returnType, array $args = [], array $lines = []): string
+    {
+        $_args = [];
+        foreach ($args as $arg => $type) {
+            $_args[] = $type . ' ' . $arg;
+        }
+        $code = $returnType . ' ' . $name . '(' . implode(', ', $_args) . ') {' . PHP_EOL;
+        $code .= implode(PHP_EOL, $lines) . PHP_EOL;
+        $code .= '}' . PHP_EOL;
+        return $code;
     }
 
     private function parseCastDouble(mixed $expr): string
@@ -2312,6 +2367,12 @@ class Translator extends \PhpAot\Core\Translator
             }
             $code .= ');' . PHP_EOL;
         }
+
+        $code .= PHP_EOL;
+        foreach ($this->nativeConstants as $name => $constant) {
+            $code .= 'extern ' . $constant->type . ' ' . $name . ';' . PHP_EOL;
+        }
+
         file_put_contents($file, $code);
     }
 
@@ -2460,5 +2521,52 @@ class Translator extends \PhpAot\Core\Translator
     {
         $this->fatalError($v, 'Label statement is not supported');
         return $v->name->name . ':';
+    }
+
+    private function parseConstDef(mixed $v2): string
+    {
+        foreach($v2->consts as $const) {
+            $name = $this->parseIdentifier($const->name);
+            $value = $this->parseIdentifier($const->value);
+            $this->addConstant($name, $value);
+        }
+        return '';
+    }
+
+    private function addConstant(string $name, string $value): void
+    {
+        $constInfo = new stdClass();
+        $constInfo->value = $value;
+        $constInfo->type = $this->detectStrValueType($value);
+        $this->nativeConstants[$name] = $constInfo;
+    }
+
+    private function hasConstant(string $name)
+    {
+        return isset($this->nativeConstants[$name]);
+    }
+
+    private function getConstant(string $name): string
+    {
+        return $this->nativeConstants[$name]->value;
+    }
+
+    private function getConstantType(string $name): string
+    {
+        return $this->nativeConstants[$name]->type;
+    }
+
+    private function detectStrValueType(mixed $constant): string
+    {
+        if ($this->isIntStr($constant)) {
+            return self::TYPE_INT;
+        }
+        if ($this->isFloatStr($constant)) {
+            return self::TYPE_FLOAT;
+        }
+        if ($this->isBoolStr($constant)) {
+            return self::TYPE_BOOL;
+        }
+        return self::TYPE_VAR;
     }
 }
