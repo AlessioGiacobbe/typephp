@@ -2,5 +2,6 @@
 function main()
 {
     fn1();
-    ext_test(199, 189);
+    $rs = fn_test(199, 189);
+    var_dump(gettype($rs));
 }

@@ -3,7 +3,7 @@
 
 using namespace php;
 
-Int php_ext_test(Int a, Int b) {
+Int php_fn_test(Int a, Int b) {
     auto c = a + b;
     var_dump(c);
     var_dump(php_uname());
