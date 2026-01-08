@@ -1,7 +1,4 @@
 <?php
-
-declare(strict_types=1);
-
 namespace PhpAot\Php;
 
 use League\CLImate\CLImate;
@@ -557,7 +554,7 @@ class Translator extends \PhpAot\Core\Translator
             $argInfo->type = $type;
             if (isset($param->default)) {
                 $this->functionDef->argCountRequired = count($list) - 1;
-                $argInfo->default = $this->parseScalar($param->default);
+                $argInfo->default = $this->parseIdentifier($param->default);
             }
             $this->functionDef->argInfoList[] = $argInfo;
         }
@@ -819,6 +816,8 @@ class Translator extends \PhpAot\Core\Translator
                 return $this->parseUnaryPlus($expr);
             case 'InterpolatedStringPart':
                 return $this->parseInterpolatedStringPart($expr);
+            case 'Expr_ErrorSuppress':
+                return $this->parseErrorSuppress($expr);
             case 'Expr_Exit':
                 return $this->parseExit($expr);
             default:
@@ -1080,7 +1079,7 @@ class Translator extends \PhpAot\Core\Translator
                 if ($this->isNativeFunction($name)) {
                     return $this->nativeFunctions[$name]->returnType;
                 }
-                return $this->detectFuncCallReturnType($expr);
+                return $this->detectFuncCallReturnType($name);
             case 'Expr_New':
                 return self::TYPE_OBJECT;
             case 'Expr_Assign':
@@ -1466,7 +1465,7 @@ class Translator extends \PhpAot\Core\Translator
         return false;
     }
 
-    private function parseFuncCall(mixed $expr): string
+    private function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
     {
         if ($expr->name->getType() === self::EXPR_VARIABLE) {
             $fn = $this->parseIdentifier($expr->name);
@@ -1504,10 +1503,11 @@ class Translator extends \PhpAot\Core\Translator
             $fn = $tmpVar;
             $name = '';
         }
+        $call = $silent ? 'php::silentCall' : 'php::call';
         if (empty($expr->args)) {
-            return 'php::call(' . $fn . ')';
+            return $call . '(' . $fn . ')';
         } else {
-            return 'php::call(' . $fn . ', {' . $this->parseCallArgs($expr->args, $name) . '})';
+            return $call . '(' . $fn . ', {' . $this->parseCallArgs($expr->args, $name) . '})';
         }
     }
 
@@ -2447,9 +2447,8 @@ class Translator extends \PhpAot\Core\Translator
         return $this->convertFloatExpr($this->parseIdentifier($expr->expr));
     }
 
-    private function detectFuncCallReturnType($expr): string
+    private function detectFuncCallReturnType(string $name): string
     {
-        $name = $expr->name;
         $returnType = Reflection::getFunctionReturnType($name);
         if ($returnType) {
             return $this->getTypeFromZendType($returnType);
@@ -2942,5 +2941,13 @@ class Translator extends \PhpAot\Core\Translator
             }
         }
         return $code;
+    }
+
+    private function parseErrorSuppress(Node\Expr\ErrorSuppress $expr): string
+    {
+        if ($expr->expr instanceof Node\Expr\FuncCall) {
+            return $this->parseFuncCall($expr->expr, true);
+        }
+        abort($expr);
     }
 }

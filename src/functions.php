@@ -15,6 +15,7 @@ function abort($v)
     if ($translator->mode == 'cli') {
         if (DEBUG) {
             var_dump($v);
+            debug_print_backtrace();
         }
     } else {
         header('Content-Type: application/json');
