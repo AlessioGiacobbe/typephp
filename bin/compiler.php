@@ -14,10 +14,11 @@ $path = $argv[1];
 $translator = new Translator(ROOT_PATH);
 $translator->setIndent('    ');
 
-$path = realpath($path);
-if ($path === false) {
+$realpath = realpath($path);
+if ($realpath === false) {
     die("path not exists: $path\n");
 }
+$path = $realpath;
 
 if (is_dir($path)) {
     $scanner = new FileScanner($path);
