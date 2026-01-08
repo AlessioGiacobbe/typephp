@@ -13,6 +13,7 @@ use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
+use RuntimeException;
 use stdClass;
 
 class Translator extends \PhpAot\Core\Translator
@@ -276,7 +277,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function doConvert(string $phpCode): string
     {
-        $this->climate->info('do convert: ' . $this->file);
+        $this->climate->info('convert: ' . $this->file);
         $parser = (new ParserFactory())->createForNewestSupportedVersion();
         $ast = $parser->parse($phpCode);
 
@@ -345,11 +346,7 @@ class Translator extends \PhpAot\Core\Translator
 
     public function save(string $code, string $file): void
     {
-        $dir = dirname($file);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
-        }
-        file_put_contents($file, $code);
+        $this->writeFile($file, $code);
         $this->formatCppCode($file);
     }
 
@@ -524,7 +521,7 @@ class Translator extends \PhpAot\Core\Translator
         foreach ($params as $param) {
             // .stub 存根定义 C++ Native 函数，必须设置函数的参数类型
             if ($this->stubFile and !$param->type) {
-                throw new \RuntimeException('No type for ' . $this->parseIdentifier($param->var));
+                throw new RuntimeException('No type for ' . $this->parseIdentifier($param->var));
             }
             $type = $this->parseType($param->type);
             $name = $this->parseIdentifier($param->var);
@@ -1142,7 +1139,7 @@ class Translator extends \PhpAot\Core\Translator
     {
         $list = [
             $this->phpxDir . '/include',
-            './',
+            $this->getBuildDir() . '/include',
         ];
         $out = '$(php-config --includes) ';
         foreach ($list as $li) {
@@ -1198,15 +1195,14 @@ class Translator extends \PhpAot\Core\Translator
 
     public function compileBinary(string $targetFile, array $objectFiles): void
     {
-        $this->genGlobalVars();
         if ($this->climate->arguments->defined('output')) {
             $targetFile = $this->climate->arguments->get('output');
         }
-        $objectFile = implode(' ', $objectFiles);
-        $cmd = $this->cppCompiler . ' main.cc global_vars.cc ' . $objectFile . ' -o ' . $targetFile . ' ' . $this->parseLdflags() . $this->parseLibs();
-        $this->addCompilationOption($cmd);
-        $this->climate->comment($cmd);
-        shell_exec($cmd);
+        $objectList = implode(' ', $objectFiles);
+        $linkCmd = $this->cppCompiler . ' ' . $objectList . ' -o ' . $targetFile . ' ' . $this->parseLdflags() . $this->parseLibs();
+        $this->addCompilationOption($linkCmd);
+        $this->climate->comment($linkCmd);
+        shell_exec($linkCmd);
     }
 
     private function parseBinaryOpConcat(mixed $expr): string
@@ -2295,9 +2291,8 @@ class Translator extends \PhpAot\Core\Translator
         return array_key_exists($name, $this->globalVars);
     }
 
-    private function genGlobalVars(): void
+    public function genGlobalVars(string $file): void
     {
-        $file = 'global_vars.cc';
         $code = $this->genIncludeHeaderFiles();
         $lines = [];
         // 全局变量只能是 var 类型
@@ -2316,7 +2311,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->indentLevel--;
         $code .= '};' . PHP_EOL;
 
-        // 生成全局常量
+        // 生成常量表
         $this->indentLevel++;
         foreach ($this->nativeConstants as $name => $constant) {
             $code .= $constant->type . ' ' . $name . ';' . PHP_EOL;
@@ -2328,6 +2323,8 @@ class Translator extends \PhpAot\Core\Translator
         $lines = [];
         foreach ($this->nativeConstants as $name => $constant) {
             $lines[] = $this->getIndent() . $name . ' = ' . $constant->value . ';';
+            // 注册到 PHP
+            $lines[] = $this->getIndent() . 'php::define("' . $name . '", ' . $name . ');';
         }
         $this->indentLevel--;
         $code .= $this->genFunction(self::PREFIX . 'init_constant_vars', 'void', [], $lines);
@@ -2358,7 +2355,8 @@ class Translator extends \PhpAot\Core\Translator
         $this->indentLevel--;
         $code .= $this->genFunction(self::PREFIX . 'unset_global_vars', 'void', [], $lines);
 
-        file_put_contents($file, $code);
+        $this->writeFile($file, $code);
+        $this->formatCppCode($file);
     }
 
     private function genFunction(string $name, string $returnType, array $args = [], array $lines = []): string
@@ -2458,7 +2456,7 @@ class Translator extends \PhpAot\Core\Translator
             $code .= 'extern ' . $constant->type . ' ' . $name . ';' . PHP_EOL;
         }
 
-        file_put_contents($file, $code);
+        $this->writeFile($file, $code);
     }
 
     private function parseAssignRef(mixed $expr)
@@ -2806,5 +2804,26 @@ class Translator extends \PhpAot\Core\Translator
         $this->dir = dirname($this->file);
         $this->stubFile = $this->isStubFile($file);
         return $phpCode;
+    }
+
+    /**
+     * @param string $file
+     * @param string $content
+     * @return void
+     */
+    private function writeFile(string $file, string $content): void
+    {
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+        if (!file_put_contents($file, $content)) {
+            throw new RuntimeException('Can not write file: ' . $file);
+        }
+    }
+
+    public function getBuildDir(): string
+    {
+        return $this->buildDir;
     }
 }

@@ -68,7 +68,15 @@ if (empty($sourceFiles)) {
 }
 
 // 生成所有函数声明
-$translator->genFunctionDeclaration("./php_func_decl.h");
+$translator->genFunctionDeclaration($translator->getBuildDir() . "/include/php_func_decl.h");
+
+// 生成所有全局变量源文件
+$globalVarsSourceFile = $translator->getBuildDir() . '/global_vars.cc';
+$translator->genGlobalVars($globalVarsSourceFile);
+$sourceFiles[] = $globalVarsSourceFile;
+
+// 添加 main.cc 文件
+$sourceFiles[] = ROOT_PATH . '/src/cpp/main.cc';
 
 // 编译所有 C++ 文件
 foreach ($sourceFiles as $cppFile) {
