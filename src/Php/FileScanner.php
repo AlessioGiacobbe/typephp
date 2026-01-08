@@ -9,15 +9,15 @@ class FileScanner
     private string $directory;
     private array $excludePatterns;
 
-    const array PHP_EXT = ['php'];
-    const array CPP_EXT = ['cpp', 'cxx', 'cc'];
+    public const array PHP_EXT = ['php'];
+    public const array CPP_EXT = ['cpp', 'cxx', 'cc'];
 
     public function __construct(string $directory)
     {
         if (!is_dir($directory)) {
             throw new \InvalidArgumentException("Directory does not exist: $directory");
         }
-        
+
         $this->directory = rtrim($directory, DIRECTORY_SEPARATOR);
         $this->excludePatterns = [];
     }
@@ -32,12 +32,12 @@ class FileScanner
         return pathinfo($path, PATHINFO_EXTENSION);
     }
 
-    static function isPhpFile(string $file): bool
+    public static function isPhpFile(string $file): bool
     {
         return in_array(self::getFileExt($file), self::PHP_EXT);
     }
 
-    static function isCppFile(string $file): bool
+    public static function isCppFile(string $file): bool
     {
         return in_array(self::getFileExt($file), self::CPP_EXT);
     }
@@ -77,7 +77,7 @@ class FileScanner
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->directory, FilesystemIterator::SKIP_DOTS)
         );
-        
+
         foreach ($iterator as $file) {
             if ($file->isFile()) {
                 if (self::isPhpFile($file)) {

@@ -10,11 +10,12 @@ class Reflection
 {
     private static array $functions = [];
 
-    static function getFunction(string $fn)
+    public static function getFunction(string $fn)
     {
         if (!isset(self::$functions[$fn])) {
             try {
-                $ref = new ReflectionFunction($fn);;
+                $ref = new ReflectionFunction($fn);
+                ;
             } catch (\ReflectionException $e) {
                 return null;
             }
@@ -23,7 +24,7 @@ class Reflection
         return self::$functions[$fn];
     }
 
-    static function getFunctionReturnType(string $fn): ?string
+    public static function getFunctionReturnType(string $fn): ?string
     {
         $func = self::getFunction($fn);
         if (!$func) {
