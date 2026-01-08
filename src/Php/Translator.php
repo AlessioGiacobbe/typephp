@@ -57,45 +57,7 @@ class Translator extends \PhpAot\Core\Translator
         'php_func_decl.h',
     ];
 
-    private array $reservedNames = [
-        'auto',
-        'break',
-        'case',
-        'catch',
-        'class',
-        'struct',
-        'const',
-        'continue',
-        'default',
-        'do',
-        'else',
-        'elseif',
-        'enum',
-        'extends',
-        'final',
-        'finally',
-        'for',
-        'function',
-        'global',
-        'if',
-        'int',
-        'double',
-        'float',
-        'false',
-        'for',
-        'if',
-        'int',
-        'new',
-        'null',
-        'or',
-        'and',
-        'private',
-        'protected',
-        'public',
-        'return',
-        'static',
-        'pipe',
-     ];
+    private array $reservedNames;
 
     private array $unsupportedFunctions = [
         'compact',
@@ -1978,7 +1940,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseConstFetch(Node $expr): string
     {
-        if ($expr->name->getType() != 'Name') {
+        if ($expr->name->getType() != 'Name' and !($expr->name instanceof Node\Name\FullyQualified)) {
             abort($expr);
         }
         $name = $this->parseIdentifier($expr->name);
@@ -1991,6 +1953,8 @@ class Translator extends \PhpAot\Core\Translator
             return 'true';
         } elseif ($name === 'false') {
             return 'false';
+        } elseif ($name === 'PHP_EOL') {
+            return '"' . $this->escapeString(PHP_EOL) . '"';
         }
         return 'php::constant("' . $name . '")';
     }
@@ -2035,7 +1999,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function escapeVarName(string $name): string
     {
-        if (in_array($name, $this->reservedNames)) {
+        if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
             return '_php__var__' . $name;
         } else {
             return $name;
