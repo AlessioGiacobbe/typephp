@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace PhpAot\Php;
@@ -10,6 +11,8 @@ use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
 use PhpParser\Error;
 use PhpParser\Node\NullableType;
+use PhpParser\Node\Scalar\MagicConst;
+use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
 use PhpParser\Parser;
@@ -20,22 +23,22 @@ use stdClass;
 
 class Translator extends \PhpAot\Core\Translator
 {
-    const string TYPE_VAR = 'php::Var';
-    const string TYPE_BOOL = 'php::Bool';
-    const string TYPE_INT = 'php::Int';
-    const string TYPE_FLOAT = 'php::Float';
-    const string TYPE_OBJECT = 'php::Object';
-    const string TYPE_ARRAY = 'php::Array';
-    const string TYPE_STR = 'php::Str';
-    const string TYPE_REF = 'php::Var';
+    public const string TYPE_VAR = 'php::Var';
+    public const string TYPE_BOOL = 'php::Bool';
+    public const string TYPE_INT = 'php::Int';
+    public const string TYPE_FLOAT = 'php::Float';
+    public const string TYPE_OBJECT = 'php::Object';
+    public const string TYPE_ARRAY = 'php::Array';
+    public const string TYPE_STR = 'php::Str';
+    public const string TYPE_REF = 'php::Var';
 
-    const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
-    const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
-    const string LITERAL_STRINGS = '_literal_strings';
-    const string EXPR_VARIABLE = 'Expr_Variable';
-    const string EXPR_NEW = 'Expr_New';
-    const string EXPR_ARRAY_DIM_FETCH = 'Expr_ArrayDimFetch';
-    const string NAMESPACE_SEPARATOR = '__';
+    public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
+    public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
+    public const string LITERAL_STRINGS = '_literal_strings';
+    public const string EXPR_VARIABLE = 'Expr_Variable';
+    public const string EXPR_NEW = 'Expr_New';
+    public const string EXPR_ARRAY_DIM_FETCH = 'Expr_ArrayDimFetch';
+    public const string NAMESPACE_SEPARATOR = '__';
 
     private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
@@ -137,7 +140,7 @@ class Translator extends \PhpAot\Core\Translator
     private array $objectWrappers = [];
     private bool $strictTypes = false;
 
-    const string PREFIX = 'php_';
+    public const string PREFIX = 'php_';
     private string $rootPath;
     private string $buildDir;
     private int $debugLine = 0;
@@ -155,7 +158,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->parser = (new ParserFactory())->createForNewestSupportedVersion();
         // $this->prettyPrinter = new PrettyPrinter\Standard;
         $this->setBuildDir($rootPath . '/build');
-        $climate = new CLImate;
+        $climate = new CLImate();
         $this->climate = $climate;
         $climate->arguments->add([
             'optimize' => [
@@ -197,13 +200,13 @@ class Translator extends \PhpAot\Core\Translator
             $this->showUsage();
             exit(0);
         }
-//        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
+        //        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
         $this->noLiteralStrings = true;
         $this->optimizeLevel = $climate->arguments->get('optimize');
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
     }
 
-    function showUsage(): void
+    public function showUsage(): void
     {
         $climate = $this->climate;
         $climate->bold()->green('PHP AOT Compiler v1.0.0');
@@ -234,7 +237,7 @@ class Translator extends \PhpAot\Core\Translator
         $climate->br();
     }
 
-    function preprocessArgvAdvanced(): void
+    public function preprocessArgvAdvanced(): void
     {
         global $argv;
         $processed = [$argv[0]];
@@ -289,7 +292,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->climate->info('convert: ' . $this->file);
 
         $ast = $this->parser->parse($phpCode);
-        $traverser = new NodeTraverser;
+        $traverser = new NodeTraverser();
         $traverser->addVisitor(new Visitor());
 
         $stmts = $traverser->traverse($ast);
@@ -299,7 +302,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->resetNamespace();
 
         $cppCode = '';
-        foreach($stmts as $v) {
+        foreach ($stmts as $v) {
             $type = $v->getType();
             switch ($type) {
                 case 'Stmt_Declare':
@@ -451,7 +454,7 @@ class Translator extends \PhpAot\Core\Translator
             if (isset($this->redoAfterDeclare[$name])) {
                 unset($this->redoAfterDeclare[$name]);
                 $this->climate->cyan('Received redo request, retrying...');
-                throw new RedoException;
+                throw new RedoException();
             }
         }
 
@@ -510,6 +513,7 @@ class Translator extends \PhpAot\Core\Translator
                     $index = $this->literalStrings[$expr->value] ?? $this->addLiteralString($expr->value);
                     return self::LITERAL_STRINGS . '[' . $index . ']';
                 }
+                // no break
             default:
                 abort($expr);
         }
@@ -933,10 +937,10 @@ class Translator extends \PhpAot\Core\Translator
     {
         if ($expr->getType() === 'Scalar_String') {
             if ($this->isFloatStr($expr->value)) {
-               return floatval($expr->value);
-            } else if ($this->isIntStr($expr->value)) {
+                return floatval($expr->value);
+            } elseif ($this->isIntStr($expr->value)) {
                 return intval($expr->value);
-            } else if ($expr->value === '0') {
+            } elseif ($expr->value === '0') {
                 return 0;
             }
         }
@@ -1022,7 +1026,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->functionDef->returnType = $type;
         // 返回值变更，需要重新解析
         $this->climate->cyan('Return type changed, retrying...');
-        throw new RedoException;
+        throw new RedoException();
     }
 
     private function detectVarType($var): string
@@ -1447,7 +1451,7 @@ class Translator extends \PhpAot\Core\Translator
         if (isset($this->useFunctions[$fname])) {
             $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$fname]) . self::NAMESPACE_SEPARATOR . $fname;
         }
-        foreach($possibleFunctionNames as $name) {
+        foreach ($possibleFunctionNames as $name) {
             // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
             if (isset($this->functionDeclInFile[$name])
                 and $this->functionDeclInFile[$name] === $this->file
@@ -1523,7 +1527,7 @@ class Translator extends \PhpAot\Core\Translator
                 if (!$this->hasVar($name)) {
                     $this->addLocalVar($name, self::TYPE_REF);
                     $this->beforeStmtLines[] = $name . ' = php::newReference();';
-                } else if (!$nativeFunction and $funcName) {
+                } elseif (!$nativeFunction and $funcName) {
                     $funcArg = Reflection::getFunctionParameter($funcName, $i);
                     // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
                     if ($funcArg and $funcArg->isPassedByReference()) {
@@ -1692,7 +1696,7 @@ class Translator extends \PhpAot\Core\Translator
         return $code;
     }
 
-    function isClosedCall($expr, $call): bool
+    public function isClosedCall($expr, $call): bool
     {
         if ($call === '') {
             if (!str_starts_with($expr, '(')) {
@@ -1883,7 +1887,7 @@ class Translator extends \PhpAot\Core\Translator
             $ns_end = '';
         }
 
-        foreach($node->stmts as $v2) {
+        foreach ($node->stmts as $v2) {
             $type2 = $v2->getType();
             switch ($type2) {
                 case 'Stmt_Class':
@@ -1911,7 +1915,7 @@ class Translator extends \PhpAot\Core\Translator
     {
         $this->class = $this->parseIdentifier($v->name);
         $code = '';
-        foreach($v->stmts as $v) {
+        foreach ($v->stmts as $v) {
             $type = $v->getType();
             switch ($type) {
                 case 'Stmt_ClassConst':
@@ -2118,7 +2122,7 @@ class Translator extends \PhpAot\Core\Translator
         return $var . ' ^= ' . $this->parseIdentifier($node->expr);
     }
 
-    private function parseMagicConst(mixed $expr): string
+    private function parseMagicConst(MagicConst $expr): string
     {
         switch ($expr->getType()) {
             case 'Scalar_MagicConst_Dir':
@@ -2126,7 +2130,7 @@ class Translator extends \PhpAot\Core\Translator
             case 'Scalar_MagicConst_File':
                 return '"' . $this->escapeString($this->file) . '"';
             case 'Scalar_MagicConst_Line':
-                return $expr->getStartLine();
+                return (string)$expr->getStartLine();
             case 'Scalar_MagicConst_Function':
                 return '"' . $this->escapeString($this->functionDef->name) . '"';
             default:
@@ -2134,7 +2138,7 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    private function parseForeach(Node $node): string
+    private function parseForeach(Foreach_ $node): string
     {
         if ($node->byRef) {
             $this->fatalError($node, 'Cannot use & with foreach');
@@ -2321,7 +2325,7 @@ class Translator extends \PhpAot\Core\Translator
             return self::VALUE_NAN;
         } elseif (is_infinite($value)) {
             return $value > 0 ? self::VALUE_INF : '-' . self::VALUE_INF;
-        } else if (floor($value) == $value && abs($value) < 1e15) {
+        } elseif (floor($value) == $value && abs($value) < 1e15) {
             return number_format($value, 1, '.', '');
         } else {
             return sprintf('%.' . $this->floatPrecision . 'g', $value);
@@ -2331,7 +2335,7 @@ class Translator extends \PhpAot\Core\Translator
     private function parseIsset(mixed $expr)
     {
         $vars = $expr->vars;
-        foreach($vars as $var) {
+        foreach ($vars as $var) {
             $type = $var->getType();
             if ($type === self::EXPR_VARIABLE) {
                 return $this->hasVar($var->name) ? 'true' : 'false';
@@ -2675,7 +2679,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseConstDef(mixed $v2): string
     {
-        foreach($v2->consts as $const) {
+        foreach ($v2->consts as $const) {
             $name = $this->parseIdentifier($const->name);
             $value = $this->parseIdentifier($const->value);
             $this->addConstant($name, $value);
@@ -2740,7 +2744,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->climate->info('prepare: ' . $this->file);
         $ast = $this->parser->parse($phpCode);
 
-        $traverser = new NodeTraverser;
+        $traverser = new NodeTraverser();
         $traverser->addVisitor(new Visitor());
         $stmts = $traverser->traverse($ast);
 
@@ -2818,7 +2822,7 @@ class Translator extends \PhpAot\Core\Translator
     {
         $this->class = $this->parseIdentifier($v->name);
         $code = '';
-        foreach($v->stmts as $v) {
+        foreach ($v->stmts as $v) {
             $type = $v->getType();
             switch ($type) {
                 case 'Stmt_ClassConst':
