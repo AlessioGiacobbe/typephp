@@ -881,6 +881,30 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseFinallyAssign($left, $right): string
     {
+        if ($left instanceof Node\Expr\List_) {
+            $items = $left->items;
+            $code = '{';
+            $this->indentLevel++;
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $code .= $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($right) . '; ';
+            foreach ($items as $k => $item) {
+                if (!$item) {
+                    continue;
+                }
+                if ($item instanceof Node\Expr\ArrayItem) {
+                    $var = $this->parseIdentifier($item->value);
+                    if (!$this->hasVar($var)) {
+                        $this->addLocalVar($var, self::TYPE_VAR);
+                    }
+                    $code .= "$var = $tmpVar.offsetGet($k); ";
+                } else {
+                    abort($item);
+                }
+            }
+            $this->indentLevel--;
+            return $code . '}';
+        }
         $var = $this->parseIdentifier($left);
         $expr = $this->parseExpr($right);
 

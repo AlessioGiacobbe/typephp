@@ -4,6 +4,9 @@
 #endif
 #include <phpx.h>
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_void, 0, 0, IS_VOID, 0)
+ZEND_END_ARG_INFO()
+
 void php_main();
 
 extern php::Var argc;
@@ -13,21 +16,18 @@ extern void php_init_constant_vars();
 extern void php_init_global_vars();
 extern void php_unset_global_vars();
 
-static void throw_exception(zend_object *ex) {
-    zend_bailout();
+static ZEND_FUNCTION(main) {
+	php_main();
 }
+
+static const zend_function_entry ext_functions[] = {
+	ZEND_FE(main, arginfo_void)
+	ZEND_FE_END
+};
 
 int main(int cpp_argc, char **cpp_argv) {
     php_embed_init(cpp_argc, cpp_argv);
-
-    zend_execute_data fake_execute_data;
-    memset(&fake_execute_data, 0, sizeof(zend_execute_data));
-    zend_function fake_func {};
-    fake_func.type = ZEND_INTERNAL_FUNCTION;
-    fake_execute_data.func = &fake_func;
-    EG(current_execute_data) = &fake_execute_data;
-
-    zend_throw_exception_hook = throw_exception;
+	zend_register_functions(nullptr, ext_functions, nullptr, 0);
 
     int rc = 0;
 #if PPROF_ON
@@ -36,7 +36,7 @@ int main(int cpp_argc, char **cpp_argv) {
     zend_first_try {
         php_init_global_vars();
         php_init_constant_vars();
-        php_main();
+        php::eval("main();");
     }
     zend_catch {
         rc = EG(exit_status);
@@ -51,5 +51,6 @@ int main(int cpp_argc, char **cpp_argv) {
     php_unset_global_vars();
     php::request_shutdown();
     php_embed_shutdown();
+
     return rc;
 }
