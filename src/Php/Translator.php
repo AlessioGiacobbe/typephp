@@ -35,6 +35,7 @@ class Translator extends \PhpAot\Core\Translator
     const string EXPR_VARIABLE = 'Expr_Variable';
     const string EXPR_NEW = 'Expr_New';
     const string EXPR_ARRAY_DIM_FETCH = 'Expr_ArrayDimFetch';
+    const string NAMESPACE_SEPARATOR = '__';
 
     private string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
@@ -402,7 +403,7 @@ class Translator extends \PhpAot\Core\Translator
         $this->tmpVarIndex = 0;
     }
 
-    private function resetNamespace()
+    private function resetNamespace(): void
     {
         $this->useNamespaces = [];
         $this->useFunctions = [];
@@ -411,14 +412,14 @@ class Translator extends \PhpAot\Core\Translator
 
     private function getFunctionName(Node $v): string
     {
-        $names[] = $this->parseIdentifier($v->name);
+        $names[] = strtolower($this->parseIdentifier($v->name));
         if ($this->class) {
             $names[] = strtolower($this->class);
         }
         if ($this->namespace) {
             $names[] = $this->escapeNamespace($this->namespace);
         }
-        return implode('__', array_reverse($names));
+        return implode(self::NAMESPACE_SEPARATOR, array_reverse($names));
     }
 
     private function parseFunctionDeclaration(string $name, Node $v): FunctionDef
@@ -1441,10 +1442,10 @@ class Translator extends \PhpAot\Core\Translator
     {
         $possibleFunctionNames = [$fname,];
         if ($this->namespace) {
-            $possibleFunctionNames[] = $this->namespace . '__' . $fname;
+            $possibleFunctionNames[] = $this->namespace . self::NAMESPACE_SEPARATOR . $fname;
         }
         if (isset($this->useFunctions[$fname])) {
-            $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$fname]) . '__' . $fname;
+            $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$fname]) . self::NAMESPACE_SEPARATOR . $fname;
         }
         foreach($possibleFunctionNames as $name) {
             // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
@@ -2015,7 +2016,7 @@ class Translator extends \PhpAot\Core\Translator
 
     private function escapeNamespace(string $ns): string
     {
-        return str_replace('\\', '__', strtolower($ns));
+        return str_replace('\\', self::NAMESPACE_SEPARATOR, strtolower($ns));
     }
 
     private function unescapeVarName(string $name): string
