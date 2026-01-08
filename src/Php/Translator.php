@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
@@ -11,6 +12,7 @@ use PhpParser\Error;
 use PhpParser\Node\NullableType;
 use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
+use PhpParser\Parser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
 use RuntimeException;
@@ -110,10 +112,12 @@ class Translator extends \PhpAot\Core\Translator
     private bool $debugInfo = true;
     private bool $noLiteralStrings = false;
     private bool $verbose = false;
+    private bool $useCppNamespace = false;
     private string $file;
     private string $dir;
     private string $namespace = '';
-    private array $uses = [];
+    private array $useNamespaces = [];
+    private array $useFunctions = [];
     private string $class = '';
     private FunctionDef $functionDef;
     private array $globalVars = [
@@ -130,6 +134,7 @@ class Translator extends \PhpAot\Core\Translator
     ];
     private array $localVars = [];
     private array $objectWrappers = [];
+    private bool $strictTypes = false;
 
     const string PREFIX = 'php_';
     private string $rootPath;
@@ -141,10 +146,13 @@ class Translator extends \PhpAot\Core\Translator
     private bool $inLoop = false;
     private bool $inSwitch = false;
     private bool $stubFile = false;
+    private Parser $parser;
 
     public function __construct(string $rootPath)
     {
         $this->rootPath = $rootPath;
+        $this->parser = (new ParserFactory())->createForNewestSupportedVersion();
+        // $this->prettyPrinter = new PrettyPrinter\Standard;
         $this->setBuildDir($rootPath . '/build');
         $climate = new CLImate;
         $this->climate = $climate;
@@ -278,26 +286,32 @@ class Translator extends \PhpAot\Core\Translator
     private function doConvert(string $phpCode): string
     {
         $this->climate->info('convert: ' . $this->file);
-        $parser = (new ParserFactory())->createForNewestSupportedVersion();
-        $ast = $parser->parse($phpCode);
 
+        $ast = $this->parser->parse($phpCode);
         $traverser = new NodeTraverser;
-        $prettyPrinter = new PrettyPrinter\Standard;
-
         $traverser->addVisitor(new Visitor());
+
         $stmts = $traverser->traverse($ast);
 
         $this->indentLevel = 0;
+        $this->strictTypes = false;
+        $this->resetNamespace();
 
         $cppCode = '';
         foreach($stmts as $v) {
             $type = $v->getType();
             switch ($type) {
+                case 'Stmt_Declare':
+                    $this->parseDeclare($v);
+                    break;
                 case 'Stmt_Namespace':
                     $cppCode .= $this->parseNamespaceDef($v);
                     break;
                 case 'Stmt_Class':
                     $cppCode .= $this->parseClassDef($v);
+                    break;
+                case 'Stmt_Use':
+                    $cppCode .= $this->parseUse($v) . PHP_EOL;
                     break;
                 case 'Stmt_Function':
                     $cppCode .= $this->parseFunctionDef($v) . PHP_EOL;
@@ -388,6 +402,13 @@ class Translator extends \PhpAot\Core\Translator
         $this->tmpVarIndex = 0;
     }
 
+    private function resetNamespace()
+    {
+        $this->useNamespaces = [];
+        $this->useFunctions = [];
+        $this->namespace = '';
+    }
+
     private function getFunctionName(Node $v): string
     {
         $names[] = $this->parseIdentifier($v->name);
@@ -395,7 +416,7 @@ class Translator extends \PhpAot\Core\Translator
             $names[] = strtolower($this->class);
         }
         if ($this->namespace) {
-            $names[] = strtolower(str_replace('\\', '_', $this->namespace));
+            $names[] = $this->escapeNamespace($this->namespace);
         }
         return implode('__', array_reverse($names));
     }
@@ -1161,7 +1182,7 @@ class Translator extends \PhpAot\Core\Translator
         return $out;
     }
 
-    private function parseLibs()
+    private function parseLibs(): string
     {
         $list = [
             'phpx',
@@ -1411,6 +1432,35 @@ class Translator extends \PhpAot\Core\Translator
         return $this->parseBinaryOp($expr->left, $expr->right, '%');
     }
 
+    /**
+     * 查找原生函数
+     * @param string $fname
+     * @return bool
+     */
+    private function findNativeFunction(string $fname): string|false
+    {
+        $possibleFunctionNames = [$fname,];
+        if ($this->namespace) {
+            $possibleFunctionNames[] = $this->namespace . '__' . $fname;
+        }
+        if (isset($this->useFunctions[$fname])) {
+            $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$fname]) . '__' . $fname;
+        }
+        foreach($possibleFunctionNames as $name) {
+            // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
+            if (isset($this->functionDeclInFile[$name])
+                and $this->functionDeclInFile[$name] === $this->file
+                and !$this->isNativeFunction($name)) {
+                $this->redoAfterDeclare[$name] = true;
+                return $name;
+            }
+            if ($this->isNativeFunction($name)) {
+                return $name;
+            }
+        }
+        return false;
+    }
+
     private function parseFuncCall(mixed $expr): string
     {
         if ($expr->name->getType() === self::EXPR_VARIABLE) {
@@ -1418,14 +1468,9 @@ class Translator extends \PhpAot\Core\Translator
             $name = '';
         } elseif ($expr->name->getType() === 'Name') {
             $name = $this->parseIdentifier($expr->name);
-            // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
-            if (isset($this->functionDeclInFile[$name])
-                and $this->functionDeclInFile[$name] === $this->file
-                and !$this->isNativeFunction($name)) {
-                $this->redoAfterDeclare[$name] = true;
-            }
-            if ($this->isNativeFunction($name)) {
-                return self::PREFIX . $name . '(' . $this->parseCallArgs($expr->args, $name) . ')';
+            $nativeFn = $this->findNativeFunction($name);
+            if ($nativeFn) {
+                return self::PREFIX . $nativeFn . '(' . $this->parseCallArgs($expr->args, $name) . ')';
             }
             if ($this->isInternalFunction($name)) {
                 $fn = 'php::' . $name;
@@ -1817,8 +1862,26 @@ class Translator extends \PhpAot\Core\Translator
 
     private function parseNamespaceDef(Node $node): string
     {
-        $this->namespace = $this->parseIdentifier($node->name);
+        $ns = $this->parseIdentifier($node->name);
         $code = '';
+
+        $this->resetNamespace();
+
+        if ($this->useCppNamespace) {
+            $ns = explode('\\', $ns);
+            $ns = array_filter($ns, function ($v) {
+                return $v !== '';
+            });
+            foreach ($ns as $name) {
+                $code .= 'namespace ' . $name . ' {' . PHP_EOL;
+            }
+            $ns_end = str_repeat('}', count($ns));
+            $this->namespace = implode('::', $ns);
+        } else {
+            $this->namespace = $this->escapeNamespace($node->name->toString());
+            $ns_end = '';
+        }
+
         foreach($node->stmts as $v2) {
             $type2 = $v2->getType();
             switch ($type2) {
@@ -1832,16 +1895,14 @@ class Translator extends \PhpAot\Core\Translator
                     $code .= $this->parseFunctionDef($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Use':
-                    foreach ($v2->uses as $use) {
-                        $this->uses[] = $use->name->toString();
-                    }
+                    $code .= $this->parseUse($v2) . PHP_EOL;
                     break;
                 default:
                     abort($v2);
             }
         }
-        $this->namespace = '';
-        $this->uses = [];
+        $code .= $ns_end;
+        $this->resetNamespace();
         return $code;
     }
 
@@ -1950,6 +2011,11 @@ class Translator extends \PhpAot\Core\Translator
         } else {
             return $name;
         }
+    }
+
+    private function escapeNamespace(string $ns): string
+    {
+        return str_replace('\\', '__', strtolower($ns));
     }
 
     private function unescapeVarName(string $name): string
@@ -2666,16 +2732,14 @@ class Translator extends \PhpAot\Core\Translator
         }
     }
 
-    public function prepare(string $file)
+    public function prepare(string $file): void
     {
         $phpCode = $this->loadFile($file);
 
         $this->climate->info('prepare: ' . $this->file);
-        $parser = (new ParserFactory())->createForNewestSupportedVersion();
-        $ast = $parser->parse($phpCode);
+        $ast = $this->parser->parse($phpCode);
 
         $traverser = new NodeTraverser;
-        $prettyPrinter = new PrettyPrinter\Standard;
         $traverser->addVisitor(new Visitor());
         $stmts = $traverser->traverse($ast);
 
@@ -2691,6 +2755,8 @@ class Translator extends \PhpAot\Core\Translator
                 case 'Stmt_Function':
                     $this->prepareFunctionDef($v) . PHP_EOL;
                     break;
+                case 'Stmt_Declare':
+                case 'Stmt_Use':
                 case 'Stmt_Const':
                     break;
                 default:
@@ -2726,8 +2792,9 @@ class Translator extends \PhpAot\Core\Translator
 
     private function prepareNamespaceDef(Node $node): void
     {
-        $this->namespace = $this->parseIdentifier($node->name);
-        foreach($node->stmts as $v2) {
+        $this->resetNamespace();
+        $this->namespace = $this->escapeNamespace($this->parseIdentifier($node->name));
+        foreach ($node->stmts as $v2) {
             $type2 = $v2->getType();
             switch ($type2) {
                 case 'Stmt_Class':
@@ -2743,8 +2810,7 @@ class Translator extends \PhpAot\Core\Translator
                     abort($v2);
             }
         }
-        $this->namespace = '';
-        $this->uses = [];
+        $this->resetNamespace();
     }
 
     private function prepareClassDef(Node $v): string
@@ -2791,6 +2857,11 @@ class Translator extends \PhpAot\Core\Translator
         return str_ends_with($file, '.stub.php');
     }
 
+    /**
+     * @param string $file
+     * @return string
+     * @throws \Exception
+     */
     private function loadFile(string $file): string
     {
         if (!file_exists($file)) {
@@ -2825,5 +2896,46 @@ class Translator extends \PhpAot\Core\Translator
     public function getBuildDir(): string
     {
         return $this->buildDir;
+    }
+
+    private function parseDeclare(mixed $v): void
+    {
+        $declares = $v->declares;
+        foreach ($declares as $declare) {
+            $key = $this->parseIdentifier($declare->key);
+            $value = $this->parseIdentifier($declare->value);
+            if ($key === 'ticks') {
+                $this->fatalError($v, 'declare(ticks=1) is not supported');
+            } elseif ($key === 'encoding') {
+                if (strtolower($value) !== 'utf-8') {
+                    $this->fatalError($v, 'declare(encoding="' . $value . '") is not supported, only UTF-8 is supported');
+                }
+            }
+            $this->strictTypes = boolval(intval($value));
+        }
+    }
+
+    private function parseUse(mixed $v2): string
+    {
+        $code = '';
+        if ($this->useCppNamespace) {
+            foreach ($v2->uses as $use) {
+                $code .= 'using ' . str_replace('\\', '::', $use->name->toString()) . ';' . PHP_EOL;
+            }
+        } else {
+            foreach ($v2->uses as $use) {
+                $id = $this->parseIdentifier($use->name);
+                if ($use->type == Node\Stmt\Use_::TYPE_NORMAL) {
+                    $this->useNamespaces[] = $id;
+                } else {
+                    $rpos = strrpos($id, '\\');
+                    $fn = substr($id, $rpos + 1);
+                    $ns = substr($id, 0, $rpos);
+                    // fn => namespace
+                    $this->useFunctions[$fn] = $ns;
+                }
+            }
+        }
+        return $code;
     }
 }
