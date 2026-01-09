@@ -25,8 +25,13 @@ static const zend_function_entry ext_functions[] = {
 	ZEND_FE_END
 };
 
+static void throw_exception(zend_object *ex) {
+    zend_bailout();
+}
+
 int main(int cpp_argc, char **cpp_argv) {
     php_embed_init(cpp_argc, cpp_argv);
+    zend_throw_exception_hook = throw_exception;
 	zend_register_functions(nullptr, ext_functions, nullptr, 0);
 
     int rc = 0;
@@ -42,6 +47,7 @@ int main(int cpp_argc, char **cpp_argv) {
         rc = EG(exit_status);
         if (EG(exception)) {
             zend_exception_error(EG(exception), E_ERROR);
+            zend_clear_exception();
         }
     }
     zend_end_try();
