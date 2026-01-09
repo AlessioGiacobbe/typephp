@@ -15,6 +15,7 @@ use PhpParser\NodeTraverser;
 use PhpParser\Parser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
+use PhpParser\Modifiers;
 use RuntimeException;
 use stdClass;
 
@@ -83,6 +84,7 @@ class Translator extends \PhpAot\Core\Translator
     private array $useFunctions = [];
     private string $class = '';
     private FunctionDef $functionDef;
+    private ClassDef $classDef;
     private array $globalVars = [
         '_GET' => self::TYPE_ARRAY,
         '_POST' => self::TYPE_ARRAY,
@@ -1900,12 +1902,17 @@ class Translator extends \PhpAot\Core\Translator
     private function parseClassDef(Node $v): string
     {
         $this->class = $this->parseIdentifier($v->name);
-        $code = '';
+        $this->classDef = new ClassDef();
+        $this->classDef->name = $this->class;
+        $code = 'class ' . $this->class . ' { ';
         foreach ($v->stmts as $v) {
             $type = $v->getType();
             switch ($type) {
                 case 'Stmt_ClassConst':
+                    $code .= $this->parseClassConstDef($v);
+                    break;
                 case 'Stmt_Property':
+                    $this->parsePropertyDef($v);
                     break;
                 case 'Stmt_ClassMethod':
                     $code .= $this->parseFunctionDef($v) . PHP_EOL;
@@ -1914,6 +1921,7 @@ class Translator extends \PhpAot\Core\Translator
                     abort($v);
             }
         }
+        $code .= '}';
         $this->class = '';
         return $code;
     }
@@ -2937,5 +2945,29 @@ class Translator extends \PhpAot\Core\Translator
             return $this->parseFuncCall($expr->expr, true);
         }
         abort($expr);
+    }
+
+    private function parsePropertyDef(Node\Stmt\Property $v): void
+    {
+        $flags = $v->flags;
+        $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
+
+        foreach ($v->props as $prop) {
+            $propInfo = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
+            if ($prop->default) {
+                $this->parseIdentifier($prop->default);
+            }
+            $this->classDef->properties[] = $propInfo;
+        }
+    }
+
+    private function parseClassConstDef(Node\Stmt\ClassConst $v): void
+    {
+        $flags = $v->flags;
+        $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
+        foreach ($v->consts as $const) {
+            $constInfo = new ConstDef($this->parseIdentifier($const->name), $flags, $type, $this->parseIdentifier($const->value));
+            $this->classDef->constants[] = $constInfo;
+        }
     }
 }
