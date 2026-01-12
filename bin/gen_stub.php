@@ -4807,7 +4807,7 @@ function parseFunctionLike(
 
         $returnType = $func->getReturnType();
         if ($returnType === null && $docReturnType === null && !$name->isConstructor() && !$name->isDestructor()) {
-            throw new Exception("Missing return type");
+            $docReturnType = "mixed";
         }
 
         $return = new ReturnInfo(
@@ -4899,7 +4899,7 @@ function parseConstLike(
         ) {
             $phpDocType = 'null';
         } else {
-            throw new Exception("Missing type for constant " . $name->__toString());
+            $phpDocType = 'mixed';
         }
     }
 
@@ -4966,7 +4966,7 @@ function parseProperty(
 
     $propertyType = $type ? Type::fromNode($type) : null;
     if ($propertyType === null && !$phpDocType) {
-        throw new Exception("Missing type for property $class::\$$property->name");
+        $propertyType = Type::fromString("mixed");
     }
 
     if ($property->default instanceof Expr\ConstFetch &&
@@ -6084,18 +6084,6 @@ function initPhpParser() {
     }
 
     $isInitialized = true;
-    $version = "5.6.1";
-    $phpParserDir = __DIR__ . "/PHP-Parser-$version";
-    if (!is_dir($phpParserDir)) {
-        installPhpParser($version, $phpParserDir);
-    }
-
-    spl_autoload_register(static function(string $class) use ($phpParserDir) {
-        if (strpos($class, "PhpParser\\") === 0) {
-            $fileName = $phpParserDir . "/lib/" . str_replace("\\", "/", $class) . ".php";
-            require $fileName;
-        }
-    });
 }
 
 $optind = null;
