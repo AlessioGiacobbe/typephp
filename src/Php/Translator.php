@@ -165,22 +165,9 @@ class Translator extends Preprocessor
         }
 
         foreach ($this->classesDefineInFile as $classDef) {
-            $name = $classDef->getNamespacedName();
-
-            if ($classDef->extends) {
-                $parentName = 'zend_class_entry *parent_ce';
-                $param = 'parent_ce';
-            } else {
-                $parentName = '';
-                $param = '';
-            }
-            $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $parentName . ') {' . PHP_EOL;
-            $cppCode .= $this->getIndent() . 'return ' . $this->getRegisterClassFunction($name) . '(' . $param . ');' . PHP_EOL;
-            $cppCode .= '}' . PHP_EOL . PHP_EOL;
+            $cppCode .= $this->genClassWrapper($classDef);
         }
-        $cppCode .= PHP_EOL;
 
-        // include + extern global vars + function impl
         return $this->genIncludeHeaderFiles() . $cppCode;
     }
 
@@ -362,6 +349,11 @@ class Translator extends Preprocessor
         return strtolower($this->parseIdentifier($v->name));
     }
 
+    protected function getNativeMethodName(ClassDef $classDef, MethodDef $methodDef): string
+    {
+        return $this->getNativeFunctionName($methodDef->name, $classDef->namespace, $classDef->name);
+    }
+
     protected function parseNamespace(Node\Stmt\Namespace_ $node): string
     {
         $ns = $this->parseIdentifier($node->name);
@@ -450,7 +442,7 @@ class Translator extends Preprocessor
                     abort($v);
             }
         }
-        $code = $this->genZendClass($methodCodes);
+        $code = $this->genNativeMethod($methodCodes);
         $this->class = '';
         return $code;
     }
@@ -466,7 +458,7 @@ class Translator extends Preprocessor
         }
     }
 
-    protected function genZendClass($methodCodes): string
+    protected function genNativeMethod($methodCodes): string
     {
         $code = '';
         $classDef = $this->classDef;
@@ -474,6 +466,48 @@ class Translator extends Preprocessor
             $code .= $methodCodes[$method->name] . PHP_EOL;
         }
         return $code;
+    }
+
+    protected function genMethodWrapper(ClassDef $classDef, MethodDef $methodDef): string
+    {
+        $name = $classDef->getNamespacedName();
+        $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
+        $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
+        $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
+
+        if ($methodDef->returnType !== self::TYPE_VOID) {
+            $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(this_);' . PHP_EOL;
+            $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
+        } else {
+            $cppCode .= $this->getIndent() . $fn . '(this_);' . PHP_EOL;
+        }
+        $cppCode .= '}' . PHP_EOL . PHP_EOL;
+
+        return $cppCode;
+    }
+
+
+    protected function genClassWrapper(ClassDef $classDef): string
+    {
+        $cppCode = '';
+        $name = $classDef->getNamespacedName();
+
+        if ($classDef->extends) {
+            $parentName = 'zend_class_entry *parent_ce';
+            $param = 'parent_ce';
+        } else {
+            $parentName = '';
+            $param = '';
+        }
+        $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $parentName . ') {' . PHP_EOL;
+        $cppCode .= $this->getIndent() . 'return ' . $this->getRegisterClassFunction($name) . '(' . $param . ');' . PHP_EOL;
+        $cppCode .= '}' . PHP_EOL . PHP_EOL;
+
+        $methods = $classDef->methods;
+        foreach ($methods as $methodDef) {
+            $cppCode .= $this->genMethodWrapper($classDef, $methodDef);
+        }
+        return $cppCode;
     }
 
     private function genClassNative(): string
@@ -624,7 +658,7 @@ class Translator extends Preprocessor
         $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
         foreach ($v->consts as $const) {
             $constInfo = new ConstantDef($this->parseIdentifier($const->name), $flags, $type, $this->parseIdentifier($const->value));
-            $this->classDef->constants[] = $constInfo;
+            $this->classDef->constants[$constInfo->name] = $constInfo;
         }
     }
 
@@ -638,7 +672,7 @@ class Translator extends Preprocessor
             if ($prop->default) {
                 $propDef->default = $this->parseIdentifier($prop->default);
             }
-            $this->classDef->properties[] = $propDef;
+            $this->classDef->properties[$propDef->name] = $propDef;
         }
     }
 
@@ -646,7 +680,8 @@ class Translator extends Preprocessor
     {
         $name = $this->getMethodName($v);
         $flags = $v->flags;
-        $methodDef = new MethodDef($name, $flags);
+        $returnType = $v->returnType ? $this->getTypeFromZendType($this->parseIdentifier($v->returnType)) : self::TYPE_VOID;
+        $methodDef = new MethodDef($name, $flags, $returnType);
         $this->classDef->methods[$name] = $methodDef;
         $methodCodes[$name] = $this->parseFunction($v);
     }

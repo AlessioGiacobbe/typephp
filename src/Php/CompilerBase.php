@@ -31,6 +31,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_ARRAY = 'php::Array';
     public const string TYPE_STR = 'php::Str';
     public const string TYPE_REF = 'php::Var';
+    public const string TYPE_VOID = 'void';
 
     public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
@@ -215,14 +216,19 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->namespace = '';
     }
 
-    protected function getFunctionName(Node $v): string
+    protected function getFunctionName(FunctionLike $v): string
     {
-        $names[] = $this->escapeFunction($this->parseIdentifier($v->name));
-        if ($this->namespace) {
-            $names[] = $this->escapeNamespace($this->namespace);
+        return $this->getNativeFunctionName($this->parseIdentifier($v->name), $this->namespace, $this->class);
+    }
+
+    protected function getNativeFunctionName(string $fn, string $ns = '', string $class = ''): string
+    {
+        $names[] = $this->escapeFunction($fn);
+        if ($ns) {
+            $names[] = $this->escapeNamespace($ns);
         }
-        if ($this->class) {
-            $names[] = $this->escapeClass($this->class);
+        if ($class) {
+            $names[] = $this->escapeClass($class);
         }
         return implode(self::NAMESPACE_SEPARATOR, array_reverse($names));
     }
@@ -1785,7 +1791,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function escapeClass(string $class): string
     {
-        return $class;
+        return strtolower($class);
     }
 
     protected function unescapeVarName(string $name): string
@@ -1950,8 +1956,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function formatCppCode(string $file): void
     {
         $cmd = 'cd ' . $this->rootPath . ' && clang-format -i ' . $file;
-        $this->writeLog('formatting ' . $file . '...');
-        $this->writeLog($cmd);
+        $this->climate->info('formatting ' . $file );
+        $this->climate->comment($cmd);
         shell_exec($cmd);
     }
 

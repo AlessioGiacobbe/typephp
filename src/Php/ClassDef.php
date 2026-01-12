@@ -6,15 +6,15 @@ class ClassDef
 {
     public string $name;
     /**
-     * @var array< MethodDef>
+     * @var array<string, MethodDef>
      */
     public array $methods = [];
     /**
-     * @var array<PropertyDef>
+     * @var array<string, PropertyDef>
      */
     public array $properties = [];
     /**
-     * @var array<ConstantDef>
+     * @var array<string, ConstantDef>
      */
     public array $constants = [];
     public string $namespace = '';
