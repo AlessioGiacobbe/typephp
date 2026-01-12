@@ -26,3 +26,11 @@ class Test
     }
 }
 
+class Test2 extends  Test{
+    function fun(string $name)
+    {
+        var_dump(__CLASS__);
+        var_dump($name);
+    }
+}
+

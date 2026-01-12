@@ -26,6 +26,29 @@ class Preprocessor extends CompilerBase
         $list = $sortedFiles;
     }
 
+    protected function prepareNamespaceDef(Node\Stmt\Namespace_ $node): void
+    {
+        $this->resetNamespace();
+        $this->namespace = $this->parseIdentifier($node->name);
+        foreach ($node->stmts as $v2) {
+            $type2 = $v2->getType();
+            switch ($type2) {
+                case 'Stmt_Class':
+                    $this->prepareClass($v2);
+                    break;
+                case 'Stmt_Function':
+                    $this->prepareFunction($v2) . PHP_EOL;
+                    break;
+                case 'Stmt_Use':
+                case 'Stmt_Const':
+                    break;
+                default:
+                    abort($v2);
+            }
+        }
+        $this->resetNamespace();
+    }
+
     public function prepare(string $file): void
     {
         $phpCode = $this->loadFile($file);
@@ -84,28 +107,6 @@ class Preprocessor extends CompilerBase
         }
     }
 
-    protected function prepareNamespaceDef(Node\Stmt\Namespace_ $node): void
-    {
-        $this->resetNamespace();
-        $this->namespace = $this->escapeNamespace($this->parseIdentifier($node->name));
-        foreach ($node->stmts as $v2) {
-            $type2 = $v2->getType();
-            switch ($type2) {
-                case 'Stmt_Class':
-                    $this->prepareClass($v2);
-                    break;
-                case 'Stmt_Function':
-                    $this->prepareFunction($v2) . PHP_EOL;
-                    break;
-                case 'Stmt_Use':
-                case 'Stmt_Const':
-                    break;
-                default:
-                    abort($v2);
-            }
-        }
-        $this->resetNamespace();
-    }
 
     protected function prepareClass(Node\Stmt\Class_ $class): string
     {

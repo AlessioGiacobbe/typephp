@@ -12,7 +12,6 @@ void php_main();
 extern php::Var argc;
 extern php::Var argv;
 
-extern void php_init_constant_vars();
 extern void php_init_global_vars();
 extern void php_unset_global_vars();
 
@@ -40,7 +39,6 @@ int main(int cpp_argc, char **cpp_argv) {
 #endif
     zend_first_try {
         php_init_global_vars();
-        php_init_constant_vars();
         php::eval("main();");
     }
     zend_catch {

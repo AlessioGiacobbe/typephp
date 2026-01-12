@@ -85,6 +85,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $useNamespaces = [];
     protected array $useFunctions = [];
     protected string $class = '';
+    /**
+     * @var array<ClassDef>
+     */
+    protected array $classes = [];
     protected FunctionDef $functionDef;
     protected ClassDef $classDef;
     protected array $globalVars = [
@@ -197,8 +201,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->indentLevel = 0;
         $this->strictTypes = false;
-        $this->stubFileIncluded = false;
-        $this->localHeaders = [];
     }
 
     protected function resetNamespace(): void
@@ -210,7 +212,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getFunctionName(Node $v): string
     {
-        $names[] = strtolower($this->parseIdentifier($v->name));
+        $names[] = $this->escapeFunction($this->parseIdentifier($v->name));
         if ($this->namespace) {
             $names[] = $this->escapeNamespace($this->namespace);
         }
@@ -602,6 +604,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_MagicConst_Dir':
             case 'Scalar_MagicConst_Line':
             case 'Scalar_MagicConst_Function':
+            case 'Scalar_MagicConst_Class':
                 return $this->parseMagicConst($expr);
             case 'Scalar_InterpolatedString':
                 return $this->parseInterpolatedString($expr);
@@ -1254,9 +1257,9 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function findNativeFunction(string $fname): string|false
     {
-        $possibleFunctionNames = [strtolower($fname),];
+        $possibleFunctionNames = [$this->escapeFunction($fname),];
         if ($this->namespace) {
-            $possibleFunctionNames[] = $this->namespace . self::NAMESPACE_SEPARATOR . $fname;
+            $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $fname;
         }
         if (isset($this->useFunctions[$fname])) {
             $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$fname]) . self::NAMESPACE_SEPARATOR . $fname;
@@ -1676,52 +1679,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $var . '.instanceOf(' . $this->identifierToStr($expr->class) . ')';
     }
 
-    protected function parseNamespaceDef(Node $node): string
-    {
-        $ns = $this->parseIdentifier($node->name);
-        $code = '';
-
-        $this->resetNamespace();
-
-        if ($this->useCppNamespace) {
-            $ns = explode('\\', $ns);
-            $ns = array_filter($ns, function ($v) {
-                return $v !== '';
-            });
-            foreach ($ns as $name) {
-                $code .= 'namespace ' . $name . ' {' . PHP_EOL;
-            }
-            $ns_end = str_repeat('}', count($ns));
-            $this->namespace = implode('::', $ns);
-        } else {
-            $this->namespace = $this->escapeNamespace($node->name->toString());
-            $ns_end = '';
-        }
-
-        foreach ($node->stmts as $v2) {
-            $type2 = $v2->getType();
-            switch ($type2) {
-                case 'Stmt_Class':
-                    $code .= $this->parseClass($v2);
-                    break;
-                case 'Stmt_Const':
-                    $this->parseConstDef($v2) . PHP_EOL;
-                    break;
-                case 'Stmt_Function':
-                    $code .= $this->parseFunction($v2) . PHP_EOL;
-                    break;
-                case 'Stmt_Use':
-                    $code .= $this->parseUse($v2) . PHP_EOL;
-                    break;
-                default:
-                    abort($v2);
-            }
-        }
-        $code .= $ns_end;
-        $this->resetNamespace();
-        return $code;
-    }
-
     protected function parseCastInt(Node $node): string
     {
         return $this->convertIntExpr($this->parseExpr($node->expr));
@@ -1815,6 +1772,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function escapeNamespace(string $ns): string
     {
         return str_replace('\\', self::NAMESPACE_SEPARATOR, strtolower($ns));
+    }
+
+    protected function escapeFunction(string $fname): string
+    {
+        return strtolower($fname);
     }
 
     protected function escapeClass(string $class): string
@@ -1932,6 +1894,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return (string)$expr->getStartLine();
             case 'Scalar_MagicConst_Function':
                 return '"' . $this->escapeString($this->functionDef->name) . '"';
+            case 'Scalar_MagicConst_Class':
+                return '"' . $this->escapeString($this->classDef->name) . '"';
             default:
                 abort($expr);
         }

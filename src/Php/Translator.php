@@ -91,6 +91,8 @@ class Translator extends Preprocessor
     public function convert(string $file): string
     {
         $phpCode = $this->loadFile($file);
+        $this->stubFileIncluded = false;
+        $this->localHeaders = [];
         while (true) {
             try {
                 $cppCode = $this->doConvert($phpCode);
@@ -125,7 +127,7 @@ class Translator extends Preprocessor
                     $this->parseDeclare($v);
                     break;
                 case 'Stmt_Namespace':
-                    $cppCode .= $this->parseNamespaceDef($v);
+                    $cppCode .= $this->parseNamespace($v);
                     break;
                 case 'Stmt_Class':
                     $cppCode .= $this->parseClass($v);
@@ -187,11 +189,26 @@ class Translator extends Preprocessor
 
     public function genGlobalVars(string $file): void
     {
+        $this->localHeaders = [];
         $code = $this->genIncludeHeaderFiles();
         $lines = [];
         // 全局变量只能是 var 类型
         foreach ($this->globalVars as $name => $type) {
             $lines[] = self::TYPE_VAR . ' ' . $name . ';';
+        }
+        // 类定义
+        $lines[] = $this->getIndent() . '// class entries';
+        foreach ($this->classes as $classDef) {
+            $lines[] = $this->getIndent() . 'zend_class_entry *' . self::PREFIX . 'class_entry_' . $classDef->getNamespacedName() . ';';
+        }
+        foreach ($this->classes as $classDef) {
+            $name = $classDef->getNamespacedName();
+            if ($classDef->extends) {
+                $parentName = 'zend_class_entry *parent_ce';
+            } else {
+                $parentName = '';
+            }
+            $lines[] = 'extern zend_class_entry *' . self::PREFIX . 'register_class_' . $name . '(' . $parentName . ');';
         }
         $code .= implode(PHP_EOL, $lines) . PHP_EOL;
 
@@ -199,6 +216,7 @@ class Translator extends Preprocessor
         $literalStringsCount = count($this->literalStrings);
         $code .= 'php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '] = {' . PHP_EOL;
         $this->indentLevel++;
+        $code .= $this->getIndent() . '// literal strings' . PHP_EOL;
         foreach ($this->literalStrings as $str => $index) {
             $code .= $this->getIndent() . 'php::String{ZEND_STRL("' . $this->escapeString($str) . '"), true},' . PHP_EOL;
         }
@@ -215,20 +233,24 @@ class Translator extends Preprocessor
         $code .= PHP_EOL;
         $this->indentLevel++;
         $lines = [];
+        $lines[] = $this->getIndent() . '// constants';
         foreach ($this->nativeConstants as $name => $constant) {
             $lines[] = $this->getIndent() . $name . ' = ' . $constant->value . ';';
-            // 注册到 PHP
             $lines[] = $this->getIndent() . 'php::define("' . $name . '", ' . $name . ');';
         }
-        $this->indentLevel--;
-        $code .= $this->genFunction(self::PREFIX . 'init_constant_vars', 'void', [], $lines);
-
-        // 生成全局变量
-        $code .= PHP_EOL;
-        $this->indentLevel++;
-        $lines = [];
+        $lines[] = $this->getIndent() . '// global vars';
         foreach ($this->globalVars as $name => $type) {
             $lines[] = $this->getIndent() . $name . ' = php::global("' . $name . '");';
+        }
+        $lines[] = $this->getIndent() . '// class entries';
+        foreach ($this->classes as $classDef) {
+            $name = $classDef->getNamespacedName();
+            if ($classDef->extends) {
+                $parentName = self::PREFIX . 'class_entry_' . $classDef->extends;
+            } else {
+                $parentName = '';
+            }
+            $lines[] = $this->getIndent() . self::PREFIX . 'class_entry_' . $name . ' = ' . self::PREFIX . 'register_class_' . $name . '(' . $parentName . ');';
         }
         $this->indentLevel--;
         $code .= $this->genFunction(self::PREFIX . 'init_global_vars', 'void', [], $lines);
@@ -309,17 +331,77 @@ class Translator extends Preprocessor
         return strtolower($this->parseIdentifier($v->name));
     }
 
+    protected function parseNamespace(Node\Stmt\Namespace_ $node): string
+    {
+        $ns = $this->parseIdentifier($node->name);
+        $code = '';
+
+        $this->resetNamespace();
+
+        if ($this->useCppNamespace) {
+            $ns = explode('\\', $ns);
+            $ns = array_filter($ns, function ($v) {
+                return $v !== '';
+            });
+            foreach ($ns as $name) {
+                $code .= 'namespace ' . $name . ' {' . PHP_EOL;
+            }
+            $ns_end = str_repeat('}', count($ns));
+            $this->namespace = implode('::', $ns);
+        } else {
+            $this->namespace = $ns;
+            $ns_end = '';
+        }
+
+        foreach ($node->stmts as $v2) {
+            $type2 = $v2->getType();
+            switch ($type2) {
+                case 'Stmt_Class':
+                    $code .= $this->parseClass($v2);
+                    break;
+                case 'Stmt_Const':
+                    $this->parseConstDef($v2) . PHP_EOL;
+                    break;
+                case 'Stmt_Function':
+                    $code .= $this->parseFunction($v2) . PHP_EOL;
+                    break;
+                case 'Stmt_Use':
+                    $code .= $this->parseUse($v2) . PHP_EOL;
+                    break;
+                default:
+                    abort($v2);
+            }
+        }
+        $code .= $ns_end;
+        $this->resetNamespace();
+        return $code;
+    }
+
     protected function parseClass(Node\Stmt\Class_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
         if (!$this->stubFileIncluded) {
-            shell_exec('php ' . $this->rootPath . '/bin/gen_stub.php -f' . $this->file);
+            $genStubCmd = PHP_BINARY. ' ' . $this->rootPath . '/bin/gen_stub.php -f ' . $this->file;
+            shell_exec($genStubCmd);
+            $this->climate->comment($genStubCmd);
             $stubFilenameWithoutExtension = str_replace([".stub.php", '.php'], "", $this->file);
-            $this->localHeaders[] = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
+            $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
+            $this->localHeaders[] = $headerFile;
             $this->stubFileIncluded = true;
         }
-        $this->classDef = new ClassDef();
-        $this->classDef->name = $this->class;
+
+        if (!isset($this->classes[$this->class])) {
+            $this->classDef = new ClassDef();
+            $this->classDef->name = $this->class;
+            if ($class->extends) {
+                $this->classDef->extends = $this->parseIdentifier($class->extends);
+            }
+            $this->classDef->implements = $this->parseIdentifierList($class->implements);
+            $this->classDef->namespace = $this->namespace;
+
+            $this->classes[$this->class] = $this->classDef;
+        }
+
         $methodCodes = [];
 
         foreach ($class->stmts as $v) {
@@ -535,7 +617,16 @@ class Translator extends Preprocessor
         $name = $this->getMethodName($v);
         $flags = $v->flags;
         $methodDef = new MethodDef($name, $flags);
-        $this->classDef->methods[] = $methodDef;
+        $this->classDef->methods[$name] = $methodDef;
         $methodCodes[$name] = $this->parseFunction($v);
+    }
+
+    private function parseIdentifierList(array $implements): array
+    {
+        $list = [];
+        foreach ($implements as $implement) {
+            $list[] = $this->parseIdentifier($implement);
+        }
+        return $list;
     }
 }
