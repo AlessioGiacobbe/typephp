@@ -475,7 +475,7 @@ class Translator extends Preprocessor
         $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
         $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
 
-        if ($methodDef->returnType !== self::TYPE_VOID) {
+        if ($methodDef->getReturnType() !== self::TYPE_VOID) {
             $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(this_);' . PHP_EOL;
             $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
         } else {
@@ -679,11 +679,9 @@ class Translator extends Preprocessor
     private function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
     {
         $name = $this->getMethodName($v);
-        $flags = $v->flags;
-        $returnType = $v->returnType ? $this->getTypeFromZendType($this->parseIdentifier($v->returnType)) : self::TYPE_VOID;
-        $methodDef = new MethodDef($name, $flags, $returnType);
-        $this->classDef->methods[$name] = $methodDef;
         $methodCodes[$name] = $this->parseFunction($v);
+        $methodDef = new MethodDef($v->flags, $name, $this->functionDef);
+        $this->classDef->methods[$name] = $methodDef;
     }
 
     private function parseIdentifierList(array $implements): array

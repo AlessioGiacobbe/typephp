@@ -4,14 +4,24 @@ namespace PhpAot\Php;
 
 class MethodDef
 {
-    public string $name;
     public int $flags;
-    public string $returnType;
+    public string $name;
+    public FunctionDef $def;
 
-    public function __construct(string $name, int $flags, string $returnType)
+    public function __construct(int $flags, string $name, FunctionDef $def)
     {
-        $this->name = $name;
         $this->flags = $flags;
-        $this->returnType = $returnType;
+        $this->name = $name;
+        $this->def = $def;
+    }
+
+    public function getFlags(): int
+    {
+        return $this->flags;
+    }
+
+    public function getReturnType(): string
+    {
+        return $this->def->returnType;
     }
 }

@@ -233,21 +233,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(self::NAMESPACE_SEPARATOR, array_reverse($names));
     }
 
-    protected function parseFunctionDeclaration(string $name, Node\FunctionLike $v): FunctionDef
+    protected function parseFunctionDeclaration(string $name, Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
     {
-        $functionDef = new FunctionDef();
-        $this->functionDef = $functionDef;
-        $functionDef->name = $name;
-        if ($v->returnType) {
-            $functionDef->returnType = $this->getTypeFromZendType($this->parseIdentifier($v->returnType));
-        } else {
-            // .stub 存根定义 C++ Native 函数，必须设置返回值类型
-            if ($this->stubFile) {
-                throw new Exception('No return type for ' . $name);
-            }
-            $functionDef->returnType = 'void';
+        $returnType = $v->returnType ? $this->getTypeFromZendType($this->parseIdentifier($v->returnType)) : self::TYPE_VOID;
+        // .stub 存根定义 C++ Native 函数，必须设置返回值类型
+        if ($returnType === self::TYPE_VOID && $this->stubFile) {
+            throw new Exception('No return type for ' . $name);
         }
-        $this->parseParams($v->params);
+        $functionDef = new FunctionDef($name, $returnType);
+        $this->functionDef = $functionDef;
+        $this->parseParams($v->params, $functionDef);
         return $functionDef;
     }
 
@@ -359,10 +354,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseParams($params): void
+    protected function parseParams($params, FunctionDef $functionDef): void
     {
         $list = [];
-        $this->functionDef->argCountRequired = count($params);
+        $functionDef->argCountRequired = count($params);
         foreach ($params as $param) {
             // .stub 存根定义 C++ Native 函数，必须设置函数的参数类型
             if ($this->stubFile and !$param->type) {
@@ -375,12 +370,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             $argInfo->name = $name;
             $argInfo->type = $type;
             if (isset($param->default)) {
-                $this->functionDef->argCountRequired = count($list) - 1;
+                $functionDef->argCountRequired = count($list) - 1;
                 $argInfo->default = $this->parseIdentifier($param->default);
             }
-            $this->functionDef->argInfoList[] = $argInfo;
+            $functionDef->argInfoList[] = $argInfo;
         }
-        $this->functionDef->params = implode(', ', $list);
+        $functionDef->params = implode(', ', $list);
     }
 
     protected function parseStmts(array $stmts): string
@@ -1956,7 +1951,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function formatCppCode(string $file): void
     {
         $cmd = 'cd ' . $this->rootPath . ' && clang-format -i ' . $file;
-        $this->climate->info('formatting ' . $file );
+        $this->climate->info('format: ' . $file );
         $this->climate->comment($cmd);
         shell_exec($cmd);
     }
