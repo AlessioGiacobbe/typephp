@@ -48,7 +48,7 @@ foreach ($list as $k => $file) {
 $translator->sortFiles($list);
 
 // 生成 C++ 文件
-foreach ($list as $file) {
+foreach ($list as $k => $file) {
     try {
         if (FileScanner::isPhpFile($file)) {
             $cppFile = $translator->convert($file);
@@ -61,6 +61,7 @@ foreach ($list as $file) {
     } catch (Unsupported $e) {
         echo " unsupported syntax: " . $e->getMessage() . "\n";
         echo " skip: " . $file . "\n";
+        unset($list[$k]);
     }
 }
 

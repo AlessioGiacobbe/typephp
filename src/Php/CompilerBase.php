@@ -100,6 +100,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         'argv' => self::TYPE_ARRAY,
     ];
     protected array $localVars = [];
+    protected array $varTypes = [];
     protected array $objectWrappers = [];
     protected bool $strictTypes = false;
 
@@ -969,7 +970,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             '}';
     }
 
-    protected function parseType($type)
+    protected function parseType($type): string
     {
         if ($type == null) {
             return self::TYPE_VAR;
@@ -990,8 +991,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'string':
                 return self::TYPE_STR;
             default:
-                var_dump($name);
-                abort($type);
+                $this->varTypes[$name] = $name;
+                return self::TYPE_OBJECT;
         }
     }
 
