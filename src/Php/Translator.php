@@ -106,6 +106,24 @@ class Translator extends Preprocessor
         }
     }
 
+    protected function getRegisterClassFunction(string $name): string
+    {
+        return self::PREFIX . 'register_class_' . $name;
+    }
+
+    protected function getClassCe(ClassDef $classDef): string
+    {
+        return self::PREFIX . 'class_entry_' . $classDef->getNamespacedName();
+    }
+
+    protected function getParentClassCe(ClassDef $classDef): string
+    {
+        if (!$classDef->extends) {
+            return '';
+        }
+        return self::PREFIX . 'class_entry_' . $classDef->extends;
+    }
+
     protected function doConvert(string $phpCode): string
     {
         $this->climate->info('convert: ' . $this->file);
@@ -156,8 +174,8 @@ class Translator extends Preprocessor
                 $parentName = '';
                 $param = '';
             }
-            $cppCode .= 'zend_class_entry *' . self::PREFIX . 'register_class_' . $name . '(' . $parentName . ') {' . PHP_EOL;
-            $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
+            $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $parentName . ') {' . PHP_EOL;
+            $cppCode .= $this->getIndent() . 'return ' . $this->getRegisterClassFunction($name) . '(' . $param . ');' . PHP_EOL;
             $cppCode .= '}' . PHP_EOL . PHP_EOL;
         }
         $cppCode .= PHP_EOL;
@@ -216,16 +234,16 @@ class Translator extends Preprocessor
         // 类定义
         $lines[] = $this->getIndent() . '// class entries';
         foreach ($this->classes as $classDef) {
-            $lines[] = $this->getIndent() . 'zend_class_entry *' . self::PREFIX . 'class_entry_' . $classDef->getNamespacedName() . ';';
+            $lines[] = $this->getIndent() . 'zend_class_entry *' . $this->getClassCe($classDef) . ';';
         }
         foreach ($this->classes as $classDef) {
             $name = $classDef->getNamespacedName();
             if ($classDef->extends) {
-                $parentName = 'zend_class_entry *parent_ce';
+                $parentCe = 'zend_class_entry *parent_ce';
             } else {
-                $parentName = '';
+                $parentCe = '';
             }
-            $lines[] = 'extern zend_class_entry *' . self::PREFIX . 'register_class_' . $name . '(' . $parentName . ');';
+            $lines[] = 'extern zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $parentCe . ');';
         }
         $code .= implode(PHP_EOL, $lines) . PHP_EOL;
 
@@ -262,12 +280,8 @@ class Translator extends Preprocessor
         $lines[] = $this->getIndent() . '// class entries';
         foreach ($this->classes as $classDef) {
             $name = $classDef->getNamespacedName();
-            if ($classDef->extends) {
-                $parentName = self::PREFIX . 'class_entry_' . $classDef->extends;
-            } else {
-                $parentName = '';
-            }
-            $lines[] = $this->getIndent() . self::PREFIX . 'class_entry_' . $name . ' = ' . self::PREFIX . 'register_class_' . $name . '(' . $parentName . ');';
+            $parentCe = $this->getParentClassCe($classDef);
+            $lines[] = $this->getIndent() . $this->getClassCe($classDef) . ' = ' . $this->getRegisterClassFunction($name) . '(' . $parentCe . ');';
         }
         $this->indentLevel--;
         $code .= $this->genFunction(self::PREFIX . 'init_global_vars', 'void', [], $lines);
