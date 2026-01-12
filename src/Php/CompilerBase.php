@@ -86,9 +86,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $useFunctions = [];
     protected string $class = '';
     /**
-     * @var array<ClassDef>
+     * @var array<string, ClassDef>
      */
     protected array $classes = [];
+    /**
+     * @var array<string, ClassDef>
+     */
+    protected array $classesDefineInFile = [];
     protected FunctionDef $functionDef;
     protected ClassDef $classDef;
     protected array $globalVars = [
@@ -201,6 +205,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->indentLevel = 0;
         $this->strictTypes = false;
+        $this->classesDefineInFile = [];
     }
 
     protected function resetNamespace(): void

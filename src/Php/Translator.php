@@ -145,6 +145,23 @@ class Translator extends Preprocessor
                     abort($v);
             }
         }
+
+        foreach ($this->classesDefineInFile as $classDef) {
+            $name = $classDef->getNamespacedName();
+
+            if ($classDef->extends) {
+                $parentName = 'zend_class_entry *parent_ce';
+                $param = 'parent_ce';
+            } else {
+                $parentName = '';
+                $param = '';
+            }
+            $cppCode .= 'zend_class_entry *' . self::PREFIX . 'register_class_' . $name . '(' . $parentName . ') {' . PHP_EOL;
+            $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
+            $cppCode .= '}' . PHP_EOL . PHP_EOL;
+        }
+        $cppCode .= PHP_EOL;
+
         // include + extern global vars + function impl
         return $this->genIncludeHeaderFiles() . $cppCode;
     }
@@ -390,17 +407,16 @@ class Translator extends Preprocessor
             $this->stubFileIncluded = true;
         }
 
-        if (!isset($this->classes[$this->class])) {
-            $this->classDef = new ClassDef();
-            $this->classDef->name = $this->class;
-            if ($class->extends) {
-                $this->classDef->extends = $this->parseIdentifier($class->extends);
-            }
-            $this->classDef->implements = $this->parseIdentifierList($class->implements);
-            $this->classDef->namespace = $this->namespace;
-
-            $this->classes[$this->class] = $this->classDef;
+        $this->classDef = new ClassDef();
+        $this->classDef->name = $this->class;
+        if ($class->extends) {
+            $this->classDef->extends = $this->parseIdentifier($class->extends);
         }
+        $this->classDef->implements = $this->parseIdentifierList($class->implements);
+        $this->classDef->namespace = $this->namespace;
+
+        $this->classes[$this->class] = $this->classDef;
+        $this->classesDefineInFile[$this->class] = $this->classDef;
 
         $methodCodes = [];
 
