@@ -1074,9 +1074,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($expr->getType() === 'Expr_Assign') {
                 $left = $expr->var;
                 $name = $this->parseIdentifier($left);
-                if ($this->hasGlobalVar($name)) {
-                    $this->fatalError($left, 'Cannot assign to global variable in for loop');
-                }
                 $type = $this->detectExprType($expr->expr);
                 $code .= $type . ' ' . $name . ' = ' . '(' . $this->parseIdentifier($expr->expr) . ');';
             }
@@ -1961,10 +1958,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code .= 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
         $this->indentLevel++;
         if ($node->keyVar) {
-            // foreach 的 key/value 不能与全局变量同名
-            if ($this->hasGlobalVar($keyVar)) {
-                $this->fatalError($node->keyVar, 'Cannot redefine key variable: ' . $this->unescapeVarName($keyVar));
-            }
             $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
         }
 
@@ -1976,10 +1969,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $dim = $this->parseIdentifier($node->valueVar->dim);
             $code .= $this->getIndent() . "$array.offsetSet($dim, iter.value());";
         } else {
-            // foreach 的 key/value 不能与全局变量同名
-            if ($this->hasGlobalVar($valueVar)) {
-                $this->fatalError($node->valueVar, 'Cannot redefine value variable: ' . $this->unescapeVarName($valueVar));
-            }
             $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
         }
         $code .= $this->parseStmts($stmts);
