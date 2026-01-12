@@ -1077,10 +1077,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->hasGlobalVar($name)) {
                     $this->fatalError($left, 'Cannot assign to global variable in for loop');
                 }
-                if (!$this->hasVar($name)) {
-                    $type = $this->detectExprType($expr->expr);
-                    $this->addLocalVar($name, $type);
-                }
+                $type = $this->detectExprType($expr->expr);
+                $code .= $type . ' ' . $name . ' = ' . '(' . $this->parseIdentifier($expr->expr) . ');';
             }
             $list_cond[] = $this->parseExpr($expr);
         }
@@ -1259,7 +1257,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function findNativeFunction(string $fname): string|false
     {
-        $possibleFunctionNames = [$fname,];
+        $possibleFunctionNames = [strtolower($fname),];
         if ($this->namespace) {
             $possibleFunctionNames[] = $this->namespace . self::NAMESPACE_SEPARATOR . $fname;
         }
@@ -1967,10 +1965,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->hasGlobalVar($keyVar)) {
                 $this->fatalError($node->keyVar, 'Cannot redefine key variable: ' . $this->unescapeVarName($keyVar));
             }
-            $code .= $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
-            if (!$this->hasVar($keyVar)) {
-                $this->addLocalVar($keyVar, self::TYPE_VAR);
-            }
+            $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
         }
 
         if ($node->valueVar->getType() == self::EXPR_ARRAY_DIM_FETCH) {
@@ -1985,10 +1980,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->hasGlobalVar($valueVar)) {
                 $this->fatalError($node->valueVar, 'Cannot redefine value variable: ' . $this->unescapeVarName($valueVar));
             }
-            $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
-            if (!$this->hasVar($valueVar)) {
-                $this->addLocalVar($valueVar, self::TYPE_VAR);
-            }
+            $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
         }
         $code .= $this->parseStmts($stmts);
         $this->indentLevel--;
