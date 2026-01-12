@@ -68,8 +68,9 @@ if (empty($sourceFiles)) {
     $translator->stop("No valid source file found");
 }
 
-// 生成所有函数声明
-$translator->genFunctionDeclaration($translator->getBuildDir() . "/include/php_func_decl.h");
+// 生成所有函数声明、全局变量声明
+$translator->genFunctionDeclaration($translator->getIncludeDir() . '/php_func_decl.h');
+$translator->genExternGlobalVars($translator->getIncludeDir() . '/php_global_var_decl.h');
 
 // 生成所有全局变量源文件
 $globalVarsSourceFile = $translator->getBuildDir() . '/global_vars.cc';

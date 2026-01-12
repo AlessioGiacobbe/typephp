@@ -19,6 +19,11 @@ abstract class Translator
         $this->indentStr = $indent;
     }
 
+    public function setIndentLevel(int $level): void
+    {
+        $this->indentLevel = $level;
+    }
+
     public function getLang(): string
     {
         return $this->lang;

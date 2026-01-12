@@ -44,10 +44,10 @@ class Preprocessor extends CompilerBase
                     $this->prepareNamespaceDef($v);
                     break;
                 case 'Stmt_Class':
-                    $this->prepareClassDef($v);
+                    $this->prepareClass($v);
                     break;
                 case 'Stmt_Function':
-                    $this->prepareFunctionDef($v) . PHP_EOL;
+                    $this->prepareFunction($v) . PHP_EOL;
                     break;
                 case 'Stmt_Declare':
                 case 'Stmt_Use':
@@ -74,7 +74,7 @@ class Preprocessor extends CompilerBase
         }
     }
 
-    protected function prepareFunctionDef(Node $v): void
+    protected function prepareFunction(Node $v): void
     {
         $name = $this->getFunctionName($v);
         if ($this->stubFile) {
@@ -84,7 +84,7 @@ class Preprocessor extends CompilerBase
         }
     }
 
-    protected function prepareNamespaceDef(Node $node): void
+    protected function prepareNamespaceDef(Node\Stmt\Namespace_ $node): void
     {
         $this->resetNamespace();
         $this->namespace = $this->escapeNamespace($this->parseIdentifier($node->name));
@@ -92,10 +92,10 @@ class Preprocessor extends CompilerBase
             $type2 = $v2->getType();
             switch ($type2) {
                 case 'Stmt_Class':
-                    $this->prepareClassDef($v2);
+                    $this->prepareClass($v2);
                     break;
                 case 'Stmt_Function':
-                    $this->prepareFunctionDef($v2) . PHP_EOL;
+                    $this->prepareFunction($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Use':
                 case 'Stmt_Const':
@@ -107,18 +107,18 @@ class Preprocessor extends CompilerBase
         $this->resetNamespace();
     }
 
-    protected function prepareClassDef(Node $v): string
+    protected function prepareClass(Node\Stmt\Class_ $class): string
     {
-        $this->class = $this->parseIdentifier($v->name);
+        $this->class = $this->parseIdentifier($class->name);
         $code = '';
-        foreach ($v->stmts as $v) {
+        foreach ($class->stmts as $v) {
             $type = $v->getType();
             switch ($type) {
                 case 'Stmt_ClassConst':
                 case 'Stmt_Property':
                     break;
                 case 'Stmt_ClassMethod':
-                    $code .= $this->prepareFunctionDef($v) . PHP_EOL;
+                    $code .= $this->prepareFunction($v) . PHP_EOL;
                     break;
                 default:
                     abort($v);

@@ -20,6 +20,10 @@ error_reporting(E_ALL);
 ini_set("precision", "-1");
 require __DIR__ . '/bootstrap.php';
 
+$translator = new PhpAot\Php\Translator(ROOT_PATH);
+$translator->setIndent("\t");
+$translator->setIndentLevel(1);
+
 const PHP_70_VERSION_ID = 70000;
 const PHP_80_VERSION_ID = 80000;
 const PHP_81_VERSION_ID = 80100;
@@ -80,8 +84,9 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
         }
 
         if (!$includeOnly) {
-            $stubFilenameWithoutExtension = str_replace(".stub.php", "", $stubFile);
-            $arginfoFile = "{$stubFilenameWithoutExtension}_arginfo.h";
+            global $translator;
+            $stubFilenameWithoutExtension = str_replace([".stub.php", '.php'], "", $stubFile);
+            $arginfoFile = $translator->getArgInfoHeaderFile($stubFilenameWithoutExtension);
             $legacyFile = "{$stubFilenameWithoutExtension}_legacy_arginfo.h";
 
             $stubCode = file_get_contents($stubFile);
@@ -2399,7 +2404,10 @@ class EvaluatedValue
             if ($cExpr == '[]') {
                 $code .= "\tZVAL_EMPTY_ARRAY(&$zvalName);\n";
             } else {
-                throw new Exception("Unimplemented default value");
+                global $translator;
+                $tmpVar = $translator->genTmpVarName();
+                $code .= "\tauto $tmpVar  = " . $translator->parseExpr($this->expr) . ";\n";
+                $code .= "\t{$tmpVar}.moveTo(&$zvalName);\n";
             }
         } else {
             throw new Exception("Invalid default value: " . print_r($this->value, true) . ", type: " . print_r($this->type, true));
@@ -4192,7 +4200,7 @@ class FileInfo {
     public array $classInfos = [];
     public bool $generateFunctionEntries = false;
     public string $declarationPrefix = "";
-    public bool $generateClassEntries = false;
+    public bool $generateClassEntries = true;
     private bool $isUndocumentable = false;
     private bool $legacyArginfoGeneration = false;
     private ?int $minimumPhpVersionIdCompatibility = null;
@@ -4429,7 +4437,7 @@ class FileInfo {
                         }
                     } else if ($classStmt instanceof Stmt\ClassMethod) {
                         if (!($classStmt->flags & Class_::VISIBILITY_MODIFIER_MASK)) {
-                            throw new Exception("Visibility modifier is required");
+                            $classStmt->flags |= Modifiers::PUBLIC;
                         }
                         $methodInfos[] = parseFunctionLike(
                             $prettyPrinter,

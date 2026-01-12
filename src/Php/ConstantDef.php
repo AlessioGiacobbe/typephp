@@ -2,7 +2,7 @@
 
 namespace PhpAot\Php;
 
-class ConstDef
+class ConstantDef
 {
     public string $name;
     public string $type;

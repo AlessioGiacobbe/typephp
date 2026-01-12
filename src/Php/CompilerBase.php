@@ -6,6 +6,7 @@ use League\CLImate\CLImate;
 use PhpAot\Php\Visitor;
 use PhpParser\Node;
 use PhpParser\Node\Expr\Variable;
+use PhpParser\Node\FunctionLike;
 use PhpParser\Node\Identifier;
 use PhpParser\Error;
 use PhpParser\Node\NullableType;
@@ -52,20 +53,20 @@ class CompilerBase extends \PhpAot\Core\Translator
         'bool' => self::TYPE_BOOL,
     ];
 
-    protected array $headers = [
-        'phpx.h',
-        'phpx_helper.h',
-        'phpx_func.h',
-        'php_func_decl.h',
-    ];
-
     protected array $reservedNames;
 
     protected array $unsupportedFunctions = [
         'compact',
         'extract'
     ];
-
+    protected array $globalHeaders = [
+        'phpx.h',
+        'phpx_helper.h',
+        'phpx_func.h',
+        'php_func_decl.h',
+        'php_global_var_decl.h',
+    ];
+    protected array $localHeaders = [];
     protected array $nativeFunctions = [];
     protected array $internalFunctions = [];
     protected array $nativeConstants = [];
@@ -112,6 +113,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $inLoop = false;
     protected bool $inSwitch = false;
     protected bool $stubFile = false;
+    protected bool $stubFileIncluded = false;
     protected Parser $parser;
 
     public function __construct(string $rootPath)
@@ -126,45 +128,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->noLiteralStrings = true;
     }
 
-    public function genIncludeHeaderFiles(): string
-    {
-        $lines = [];
-        foreach ($this->headers as $header) {
-            $lines[] = '#include <' . $header . '>';
-        }
-        return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
-    }
-
-    public function genExternGlobalVars(): string
-    {
-        $lines[] = PHP_EOL;
-        foreach ($this->globalVars as $name => $type) {
-            $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
-        }
-
-        $literalStringsCount = count($this->literalStrings);
-        $lines[] = 'extern php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
-        return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
-    }
-
     public function setPhpxDir($dir): void
     {
         $this->phpxDir = $dir;
     }
 
-    protected function removeCommonPrefix(string $str1, string $str2): string
+    protected function removeCommonPrefix(string $short, string $long): string
     {
-        $len = min(strlen($str1), strlen($str2));
+        $len = min(strlen($short), strlen($long));
         $prefixLen = 0;
 
         for ($i = 0; $i < $len; $i++) {
-            if ($str1[$i] === $str2[$i]) {
+            if ($short[$i] === $long[$i]) {
                 $prefixLen++;
             } else {
                 break;
             }
         }
-        return substr($str2, $prefixLen);
+        return substr($long, $prefixLen);
     }
 
     public function save(string $code, string $file): void
@@ -211,6 +192,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->tmpVarIndex = 0;
     }
 
+    protected function resetFile(): void
+    {
+        $this->indentLevel = 0;
+        $this->strictTypes = false;
+        $this->stubFileIncluded = false;
+        $this->localHeaders = [];
+    }
+
     protected function resetNamespace(): void
     {
         $this->useNamespaces = [];
@@ -221,16 +210,16 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function getFunctionName(Node $v): string
     {
         $names[] = strtolower($this->parseIdentifier($v->name));
-        if ($this->class) {
-            $names[] = strtolower($this->class);
-        }
         if ($this->namespace) {
             $names[] = $this->escapeNamespace($this->namespace);
+        }
+        if ($this->class) {
+            $names[] = $this->escapeClass($this->class);
         }
         return implode(self::NAMESPACE_SEPARATOR, array_reverse($names));
     }
 
-    protected function parseFunctionDeclaration(string $name, Node $v): FunctionDef
+    protected function parseFunctionDeclaration(string $name, Node\FunctionLike $v): FunctionDef
     {
         $functionDef = new FunctionDef();
         $this->functionDef = $functionDef;
@@ -248,7 +237,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $functionDef;
     }
 
-    protected function parseFunctionDef(Node $v): string
+    protected function parseFunction(Node\FunctionLike $v): string
     {
         $this->resetScope();
         $name = $this->getFunctionName($v);
@@ -270,6 +259,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
+        if ($this->class) {
+            $this->arguments['this_'] = self::TYPE_OBJECT;
+        }
+
         if ($v->stmts) {
             $this->indentLevel++;
             $stmts = $this->parseStmts($v->stmts);
@@ -278,7 +271,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             $stmts = '';
         }
 
-        $functionDeclCode = $this->getReturnType() . ' ' . self::PREFIX . $name . '(' . $this->functionDef->params . ')';
+        $functionDeclCode = $this->getReturnType() . ' ' . self::PREFIX . $name . '(';
+        if ($this->class) {
+            $functionDeclCode .= self::TYPE_OBJECT . ' &this_';
+            if ($this->functionDef->params) {
+                $functionDeclCode .= ', ';
+            }
+        }
+        $functionDeclCode .= $this->functionDef->params . ')';
 
         $code = $functionDeclCode . ' {' . PHP_EOL;
         $this->indentLevel++;
@@ -460,7 +460,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseExpr(mixed $expr)
+    public function parseExpr(mixed $expr)
     {
         $type = $expr->getType();
         $this->writeLog('Line ' . $this->getLine($expr) . ': ' . $type);
@@ -987,7 +987,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return self::TYPE_FLOAT;
             case 'bool':
                 return self::TYPE_BOOL;
+            case 'string':
+                return self::TYPE_STR;
             default:
+                var_dump($name);
                 abort($type);
         }
     }
@@ -1703,13 +1706,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             $type2 = $v2->getType();
             switch ($type2) {
                 case 'Stmt_Class':
-                    $code .= $this->parseClassDef($v2);
+                    $code .= $this->parseClass($v2);
                     break;
                 case 'Stmt_Const':
                     $this->parseConstDef($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Function':
-                    $code .= $this->parseFunctionDef($v2) . PHP_EOL;
+                    $code .= $this->parseFunction($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Use':
                     $code .= $this->parseUse($v2) . PHP_EOL;
@@ -1720,33 +1723,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $code .= $ns_end;
         $this->resetNamespace();
-        return $code;
-    }
-
-    protected function parseClassDef(Node $v): string
-    {
-        $this->class = $this->parseIdentifier($v->name);
-        $this->classDef = new ClassDef();
-        $this->classDef->name = $this->class;
-        $code = 'class ' . $this->class . ' { ';
-        foreach ($v->stmts as $v) {
-            $type = $v->getType();
-            switch ($type) {
-                case 'Stmt_ClassConst':
-                    $code .= $this->parseClassConstDef($v);
-                    break;
-                case 'Stmt_Property':
-                    $this->parsePropertyDef($v);
-                    break;
-                case 'Stmt_ClassMethod':
-                    $code .= $this->parseFunctionDef($v) . PHP_EOL;
-                    break;
-                default:
-                    abort($v);
-            }
-        }
-        $code .= '}';
-        $this->class = '';
         return $code;
     }
 
@@ -1833,6 +1809,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
             return '_php__var__' . $name;
+        } elseif ($name === 'this') {
+            return 'this_';
         } else {
             return $name;
         }
@@ -1841,6 +1819,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function escapeNamespace(string $ns): string
     {
         return str_replace('\\', self::NAMESPACE_SEPARATOR, strtolower($ns));
+    }
+
+    protected function escapeClass(string $class): string
+    {
+        return $class;
     }
 
     protected function unescapeVarName(string $name): string
@@ -2022,7 +2005,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         shell_exec($cmd);
     }
 
-    protected function genTmpVarName(): string
+    public function genTmpVarName(): string
     {
         return 'tmp_var_' . $this->tmpVarIndex++;
     }
@@ -2180,18 +2163,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function hasGlobalVar($name): bool
     {
         return array_key_exists($name, $this->globalVars);
-    }
-
-    protected function genFunction(string $name, string $returnType, array $args = [], array $lines = []): string
-    {
-        $_args = [];
-        foreach ($args as $arg => $type) {
-            $_args[] = $type . ' ' . $arg;
-        }
-        $code = $returnType . ' ' . $name . '(' . implode(', ', $_args) . ') {' . PHP_EOL;
-        $code .= implode(PHP_EOL, $lines) . PHP_EOL;
-        $code .= '}' . PHP_EOL;
-        return $code;
     }
 
     protected function parseCastDouble(mixed $expr): string
@@ -2499,6 +2470,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    public function getIncludeDir(): string
+    {
+        return $this->getBuildDir() . '/include';
+    }
+
     public function getBuildDir(): string
     {
         return $this->buildDir;
@@ -2551,29 +2527,5 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->parseFuncCall($expr->expr, true);
         }
         abort($expr);
-    }
-
-    protected function parsePropertyDef(Node\Stmt\Property $v): void
-    {
-        $flags = $v->flags;
-        $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
-
-        foreach ($v->props as $prop) {
-            $propInfo = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
-            if ($prop->default) {
-                $this->parseIdentifier($prop->default);
-            }
-            $this->classDef->properties[] = $propInfo;
-        }
-    }
-
-    protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
-    {
-        $flags = $v->flags;
-        $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
-        foreach ($v->consts as $const) {
-            $constInfo = new ConstDef($this->parseIdentifier($const->name), $flags, $type, $this->parseIdentifier($const->value));
-            $this->classDef->constants[] = $constInfo;
-        }
     }
 }

@@ -5,10 +5,16 @@ namespace PhpAot\Php;
 class ClassDef
 {
     public string $name;
-    public array $methods;
+    /**
+     * @var array< MethodDef>
+     */
+    public array $methods = [];
     /**
      * @var array<PropertyDef>
      */
-    public array $properties;
-    public array $constants;
+    public array $properties = [];
+    /**
+     * @var array<ConstantDef>
+     */
+    public array $constants = [];
 }

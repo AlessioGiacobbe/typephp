@@ -1,6 +1,6 @@
 {
   "require": {
-    "nikic/php-parser": "^5.0",
+    "nikic/php-parser": "5.6.1",
     "league/climate": "^3.10"
   },
   "require-dev": {

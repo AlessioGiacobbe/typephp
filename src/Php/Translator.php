@@ -2,6 +2,8 @@
 
 namespace PhpAot\Php;
 
+use PhpParser\Modifiers;
+use PhpParser\Node;
 use PhpParser\NodeTraverser;
 
 class Translator extends Preprocessor
@@ -112,8 +114,7 @@ class Translator extends Preprocessor
 
         $stmts = $traverser->traverse($ast);
 
-        $this->indentLevel = 0;
-        $this->strictTypes = false;
+        $this->resetFile();
         $this->resetNamespace();
 
         $cppCode = '';
@@ -127,13 +128,13 @@ class Translator extends Preprocessor
                     $cppCode .= $this->parseNamespaceDef($v);
                     break;
                 case 'Stmt_Class':
-                    $cppCode .= $this->parseClassDef($v);
+                    $cppCode .= $this->parseClass($v);
                     break;
                 case 'Stmt_Use':
                     $cppCode .= $this->parseUse($v) . PHP_EOL;
                     break;
                 case 'Stmt_Function':
-                    $cppCode .= $this->parseFunctionDef($v) . PHP_EOL;
+                    $cppCode .= $this->parseFunction($v) . PHP_EOL;
                     break;
                 case 'Stmt_Const':
                     $this->parseConstDef($v) . PHP_EOL;
@@ -143,7 +144,7 @@ class Translator extends Preprocessor
             }
         }
         // include + extern global vars + function impl
-        return $this->genIncludeHeaderFiles() . $this->genExternGlobalVars() . $cppCode;
+        return $this->genIncludeHeaderFiles() . $cppCode;
     }
 
     public function preprocessArgvAdvanced(): void
@@ -168,6 +169,20 @@ class Translator extends Preprocessor
             }
         }
         $argv = $processed;
+    }
+
+    public function genExternGlobalVars(string $file): void
+    {
+        $lines[] = '#include <phpx.h>';
+        $lines[] = PHP_EOL;
+        foreach ($this->globalVars as $name => $type) {
+            $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
+        }
+
+        $literalStringsCount = count($this->literalStrings);
+        $lines[] = 'extern php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+        $code = implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
+        $this->writeFile($file, $code);
     }
 
     public function genGlobalVars(string $file): void
@@ -260,7 +275,7 @@ class Translator extends Preprocessor
 
     public function genFunctionDeclaration(string $file): void
     {
-        $code = '';
+        $code = '#include <phpx.h>' . PHP_EOL;
         /**
          * @var FunctionDef $func
          */
@@ -287,5 +302,240 @@ class Translator extends Preprocessor
         }
 
         $this->writeFile($file, $code);
+    }
+
+    protected function getMethodName(Node\Stmt\ClassMethod $v): string
+    {
+        return strtolower($this->parseIdentifier($v->name));
+    }
+
+    protected function parseClass(Node\Stmt\Class_ $class): string
+    {
+        $this->class = $this->parseIdentifier($class->name);
+        if (!$this->stubFileIncluded) {
+            shell_exec('php ' . $this->rootPath . '/bin/gen_stub.php -f' . $this->file);
+            $stubFilenameWithoutExtension = str_replace([".stub.php", '.php'], "", $this->file);
+            $this->localHeaders[] = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
+            $this->stubFileIncluded = true;
+        }
+        $this->classDef = new ClassDef();
+        $this->classDef->name = $this->class;
+        $methodCodes = [];
+
+        foreach ($class->stmts as $v) {
+            $type = $v->getType();
+            switch ($type) {
+                case 'Stmt_ClassConst':
+                    $this->parseClassConstDef($v);
+                    break;
+                case 'Stmt_Property':
+                    $this->parsePropertyDef($v);
+                    break;
+                case 'Stmt_ClassMethod':
+                    $this->parseClassMethod($v, $methodCodes);
+                    break;
+                default:
+                    abort($v);
+            }
+        }
+        $code = $this->genZendClass($methodCodes);
+        $this->class = '';
+        return $code;
+    }
+
+    public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string
+    {
+        $basename = basename($stubFilenameWithoutExtension);
+        $absPath = $this->getIncludeDir() . "/{$basename}_arginfo.h";
+        if ($relative) {
+            return ltrim($this->removeCommonPrefix($this->getIncludeDir(), $absPath), '/');
+        } else {
+            return $absPath;
+        }
+    }
+
+    protected function genZendClass($methodCodes): string
+    {
+        $code = '';
+        $classDef = $this->classDef;
+        foreach ($classDef->methods as $method) {
+            $code .= $methodCodes[$method->name] . PHP_EOL;
+        }
+        return $code;
+    }
+
+    private function genClassNative(): string
+    {
+        $code = 'class ' . $this->class . ' { ';
+
+        $publicMethods = [];
+        $protectedMethods = [];
+        $privateMethods = [];
+        $publicConstants = [];
+        $protectedConstants = [];
+        $privateConstants = [];
+        $publicProperties = [];
+        $protectedProperties = [];
+        $privateProperties = [];
+
+        foreach ($this->classDef->constants as $const) {
+            if ($const->flags & Modifiers::PUBLIC) {
+                $publicConstants[] = $const;
+            }
+            if ($const->flags & Modifiers::PROTECTED) {
+                $protectedConstants[] = $const;
+            }
+            if ($const->flags & Modifiers::PRIVATE) {
+                $privateConstants[] = $const;
+            }
+        }
+        foreach ($this->classDef->methods as $method) {
+            if ($method->flags & Modifiers::PUBLIC) {
+                $publicMethods[] = $method;
+            }
+            if ($method->flags & Modifiers::PROTECTED) {
+                $protectedMethods[] = $method;
+            }
+            if ($method->flags & Modifiers::PRIVATE) {
+                $privateMethods[] = $method;
+            }
+        }
+        foreach ($this->classDef->properties as $property) {
+            if ($property->flags & Modifiers::PUBLIC) {
+                $publicProperties[] = $property;
+            }
+            if ($property->flags & Modifiers::PROTECTED) {
+                $protectedProperties[] = $property;
+            }
+            if ($property->flags & Modifiers::PRIVATE) {
+                $privateProperties[] = $property;
+            }
+        }
+
+        if ($privateConstants) {
+            $code .= 'private:' . PHP_EOL;
+            $code .= $this->genClassConstantList($privateConstants);
+        }
+
+        if ($protectedConstants) {
+            $code .= 'protected:' . PHP_EOL;
+            $code .= $this->genClassConstantList($protectedConstants);
+        }
+
+        if ($publicConstants) {
+            $code .= 'public:' . PHP_EOL;
+            $code .= $this->genClassConstantList($publicConstants);
+        }
+
+        if ($privateProperties) {
+            $code .= 'private:' . PHP_EOL;
+            $code .= $this->genClassPropertyList($privateProperties);
+        }
+
+        if ($protectedProperties) {
+            $code .= 'protected:' . PHP_EOL;
+            $code .= $this->genClassPropertyList($protectedProperties);
+        }
+
+        if ($publicProperties) {
+            $code .= 'public:' . PHP_EOL;
+            $code .= $this->genClassPropertyList($publicProperties);
+        }
+
+        $code .= '};' . PHP_EOL . PHP_EOL;
+        return $code;
+    }
+
+    public function genIncludeHeaderFiles(): string
+    {
+        $headers = array_merge($this->globalHeaders, $this->localHeaders);
+        $lines = [];
+        foreach ($headers as $header) {
+            $lines[] = '#include <' . $header . '>';
+        }
+        return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
+    }
+
+    /**
+     * @param array<ConstantDef> $list
+     */
+    protected function genClassConstantList(array $list): string
+    {
+        $code = '';
+        foreach ($list as $const) {
+            $code .= $this->getIndent() . $this->genClassConstant($const);
+        }
+        return $code;
+    }
+
+    protected function genClassConstant(ConstantDef $const): string
+    {
+        return 'static const ' . $const->type . ' ' . $const->name . ';' . PHP_EOL;
+    }
+
+    /**
+     * @param array<PropertyDef> $list
+     */
+    protected function genClassPropertyList(array $list): string
+    {
+        $code = '';
+        foreach ($list as $prop) {
+            $code .= $this->getIndent() . $this->genClassProperty($prop);
+        }
+        return $code;
+    }
+
+    protected function genClassProperty(PropertyDef $prop): string
+    {
+        $code = $prop->type . ' ' . $prop->name;
+        if ($prop->default) {
+            $code .= ' = ' . $prop->default;
+        }
+        return $code . ';' . PHP_EOL;
+    }
+
+    protected function genFunction(string $name, string $returnType, array $args = [], array $lines = []): string
+    {
+        $_args = [];
+        foreach ($args as $arg => $type) {
+            $_args[] = $type . ' ' . $arg;
+        }
+        $code = $returnType . ' ' . $name . '(' . implode(', ', $_args) . ') {' . PHP_EOL;
+        $code .= implode(PHP_EOL, $lines) . PHP_EOL;
+        $code .= '}' . PHP_EOL;
+        return $code;
+    }
+
+    protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
+    {
+        $flags = $v->flags;
+        $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
+        foreach ($v->consts as $const) {
+            $constInfo = new ConstantDef($this->parseIdentifier($const->name), $flags, $type, $this->parseIdentifier($const->value));
+            $this->classDef->constants[] = $constInfo;
+        }
+    }
+
+    protected function parsePropertyDef(Node\Stmt\Property $v): void
+    {
+        $flags = $v->flags;
+        $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
+
+        foreach ($v->props as $prop) {
+            $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
+            if ($prop->default) {
+                $propDef->default = $this->parseIdentifier($prop->default);
+            }
+            $this->classDef->properties[] = $propDef;
+        }
+    }
+
+    private function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
+    {
+        $name = $this->getMethodName($v);
+        $flags = $v->flags;
+        $methodDef = new MethodDef($name, $flags);
+        $this->classDef->methods[] = $methodDef;
+        $methodCodes[$name] = $this->parseFunction($v);
     }
 }
