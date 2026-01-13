@@ -74,9 +74,9 @@ $translator->genFunctionDeclaration($translator->getIncludeDir() . '/php_func_de
 $translator->genExternGlobalVars($translator->getIncludeDir() . '/php_global_var_decl.h');
 
 // 生成所有全局变量源文件
-$globalVarsSourceFile = $translator->getBuildDir() . '/global_vars.cc';
-$translator->genGlobalVars($globalVarsSourceFile);
-$sourceFiles[] = $globalVarsSourceFile;
+$extensionSourceFile = $translator->getBuildDir() . '/extension.cc';
+$translator->genExtension($extensionSourceFile);
+$sourceFiles[] = $extensionSourceFile;
 
 // 添加 main.cc 文件
 $sourceFiles[] = ROOT_PATH . '/src/cpp/main.cc';

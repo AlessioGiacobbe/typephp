@@ -227,7 +227,7 @@ class Translator extends Preprocessor
         return ob_get_clean();
     }
 
-    public function genGlobalVars(string $file): void
+    public function genExtension(string $file): void
     {
         $this->localHeaders = [];
         $code = $this->render('extension.cc.php');
