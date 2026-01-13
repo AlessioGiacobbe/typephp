@@ -64,6 +64,8 @@ class Translator extends Preprocessor
         $this->preprocessArgvAdvanced();
         $this->climate->arguments->parse();
         $this->optimizeLevel = $this->climate->arguments->get('optimize');
+//        $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
+        $this->noLiteralStrings = true;
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
         if ($this->climate->arguments->defined('help')) {
             $this->showUsage();
@@ -661,9 +663,16 @@ class Translator extends Preprocessor
     private function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
     {
         $name = $this->getMethodName($v);
+        $this->method = $name;
         $methodCodes[$name] = $this->parseFunction($v);
         $methodDef = new MethodDef($v->flags, $name, $this->functionDef);
+        if ($name == '__call') {
+            if (count($methodDef->functionDef->argInfoList) != 2) {
+                $this->fatalError($v, 'Method ' . $this->class . '::__call() must take exactly 2 arguments');
+            }
+        }
         $this->classDef->methods[$name] = $methodDef;
+        $this->method = '';
     }
 
     private function parseIdentifierList(array $implements): array

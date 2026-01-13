@@ -77,6 +77,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $file;
     protected string $dir;
     protected string $namespace = '';
+    protected string $method =  '';
+    protected string $function = '';
     protected array $useNamespaces = [];
     protected array $useFunctions = [];
     protected string $class = '';
@@ -242,6 +244,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseFunction(Node\FunctionLike $v): string
     {
         $this->resetScope();
+        $this->function = $this->parseIdentifier($v->name);
         $name = $this->getFunctionName($v);
         if (isset($this->nativeFunctions[$name])) {
             $this->functionDef = $this->nativeFunctions[$name];
@@ -254,15 +257,16 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
+        if ($this->class) {
+            $this->arguments['this_'] = self::TYPE_OBJECT;
+            $this->addLocalVar('this_', self::TYPE_OBJECT);
+        }
+
         foreach ($this->functionDef->argInfoList as $argInfo) {
             $this->arguments[$argInfo->name] = $argInfo->type;
             if (!$this->hasLocalVar($argInfo->name)) {
                 $this->addLocalVar($argInfo->name, $argInfo->type);
             }
-        }
-
-        if ($this->class) {
-            $this->arguments['this_'] = self::TYPE_OBJECT;
         }
 
         if ($v->stmts) {
@@ -294,6 +298,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->indentLevel--;
         $code .= $stmts;
         $code .= "}\n";
+
+        $this->function = '';
 
         return $code;
     }
@@ -371,6 +377,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         $functionDef->params = implode(', ', $list);
     }
 
+    protected function getComment(Node\Stmt $v, string $class): string
+    {
+        if ($class == 'Stmt_Expression') {
+            $class = 'Stmt_Expression(' . $v->expr->getType() . ')';
+        }
+        return $this->getIndent() . '// ' . $class . ' [' . $v->getStartLine() . ':' . $v->getEndLine() . ']';
+    }
+
     protected function parseStmts(array $stmts): string
     {
         $lines = [];
@@ -379,7 +393,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->beforeStmtLines = [];
             $this->afterStmtLines = [];
             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
-            $lines[] = $this->getIndent() . '// ' . $class . ' [' . $v->getStartLine() . ':' . $v->getEndLine() . ']';
+
+            $lines[] = $this->getComment($v, $class);
             switch ($class) {
                 case 'Stmt_Expression':
                     $result = $this->parseExpr($v->expr) . ';';
@@ -605,6 +620,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_MagicConst_Dir':
             case 'Scalar_MagicConst_Line':
             case 'Scalar_MagicConst_Function':
+            case 'Scalar_MagicConst_Method':
             case 'Scalar_MagicConst_Class':
                 return $this->parseMagicConst($expr);
             case 'Scalar_InterpolatedString':
@@ -1905,9 +1921,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_MagicConst_Line':
                 return (string)$expr->getStartLine();
             case 'Scalar_MagicConst_Function':
-                return '"' . $this->escapeString($this->functionDef->name) . '"';
+                return '"' . $this->escapeString($this->function) . '"';
             case 'Scalar_MagicConst_Class':
-                return '"' . $this->escapeString($this->classDef->name) . '"';
+                return '"' . $this->escapeString($this->class) . '"';
+            case 'Scalar_MagicConst_Method':
+                return '"' . $this->escapeString($this->class) . '::' . $this->escapeString($this->method) . '"';
             default:
                 abort($expr);
         }
@@ -2192,10 +2210,14 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseAssignRef(Node\Expr\AssignRef $expr): string
     {
         if ($expr->var->getType() === self::EXPR_VARIABLE) {
+            $var = $this->parseIdentifier($expr->var);
+            if (!$this->hasVar($var)) {
+                $this->addLocalVar($var, self::TYPE_VAR);
+            }
             if ($expr->expr->getType() === self::EXPR_VARIABLE) {
-                return $this->parseIdentifier($expr->var) . ' = &' . $this->parseIdentifier($expr->expr);
+                return $var . ' = &' . $this->parseIdentifier($expr->expr);
             } elseif ($expr->expr->getType() === self::EXPR_ARRAY_DIM_FETCH) {
-                return $this->parseIdentifier($expr->var) . ' = ' . $this->parseIdentifier($expr->expr);
+                return $var . ' = ' . $this->parseIdentifier($expr->expr);
             }
         }
         abort($expr);
@@ -2235,13 +2257,27 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseStaticCall(mixed $expr): string
+    private function parseParentMethodCall(Node\Expr\StaticCall $expr): string
+    {
+        $method = $this->identifierToStr($expr->name);
+        if (empty($expr->args)) {
+            return 'this_.callParentMethod(' . $method . ')';
+        } else {
+            return 'this_.callParentMethod(' . $method . ', {' . $this->parseCallArgs($expr->args) . '})';
+        }
+    }
+
+    protected function parseStaticCall(Node\Expr\StaticCall $expr): string
     {
         if ($expr->class->getType() === self::EXPR_VARIABLE or $expr->name->getType() === self::EXPR_VARIABLE) {
             $fn = 'php::concat({' . $this->identifierToStr($expr->class). ', "::", ' . $this->identifierToStr($expr->name) . '})';
         } else {
             $class = $this->parseIdentifier($expr->class);
-            $class = $class === 'self' ? $this->class : $class;
+            if ($class === 'self') {
+                $class = $this->class;
+            } elseif ($class === 'parent') {
+                return $this->parseParentMethodCall($expr);
+            }
             $method = $this->parseIdentifier($expr->name);
             $fn = '"' . $class . '::' . $method . '"';
         }
@@ -2508,4 +2544,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         abort($expr);
     }
+
+
 }
