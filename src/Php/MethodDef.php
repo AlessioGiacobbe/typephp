@@ -6,22 +6,17 @@ class MethodDef
 {
     public int $flags;
     public string $name;
-    public FunctionDef $def;
+    public FunctionDef $functionDef;
 
     public function __construct(int $flags, string $name, FunctionDef $def)
     {
         $this->flags = $flags;
         $this->name = $name;
-        $this->def = $def;
-    }
-
-    public function getFlags(): int
-    {
-        return $this->flags;
+        $this->functionDef = $def;
     }
 
     public function getReturnType(): string
     {
-        return $this->def->returnType;
+        return $this->functionDef->returnType;
     }
 }

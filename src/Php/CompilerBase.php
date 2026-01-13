@@ -1046,9 +1046,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function addCompilationOption(string &$cmd): void
     {
-        $cmd .= $this->parseIncludes();
+        $cmd .= ' ' . $this->parseIncludes();
         $cmd .= ' -O' . $this->optimizeLevel;
         $cmd .= ' -g';
+        $cmd .= ' -Wall';
         if ($this->climate->arguments->defined('profile')) {
             $cmd .= ' -lprofiler';
             $cmd .= ' -DPPROF_ON=1';
@@ -2131,19 +2132,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function convertExprFromType(string $type, string $expr): string
+    {
+        if ($type === self::TYPE_FLOAT) {
+            return $this->convertFloatExpr($expr);
+        }
+        if ($type === self::TYPE_INT) {
+            return $this->convertIntExpr($expr);
+        }
+        if ($type === self::TYPE_BOOL) {
+            return $this->convertBoolExpr($expr);
+        }
+        return $expr;
+    }
+
     protected function convertVarType($var, $expr): string
     {
         if ($this->hasVar($var)) {
-            $type = $this->getVarType($var);
-            if ($type === self::TYPE_FLOAT) {
-                return $this->convertFloatExpr($expr);
-            }
-            if ($type === self::TYPE_INT) {
-                return $this->convertIntExpr($expr);
-            }
-            if ($type === self::TYPE_BOOL) {
-                return $this->convertBoolExpr($expr);
-            }
+            return $this->convertExprFromType($this->getVarType($var), $expr);
         }
         return $expr;
     }

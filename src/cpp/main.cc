@@ -4,25 +4,14 @@
 #endif
 #include <phpx.h>
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_void, 0, 0, IS_VOID, 0)
-ZEND_END_ARG_INFO()
-
-void php_main();
-
 extern php::Var argc;
 extern php::Var argv;
 
-extern void php_init_global_vars();
-extern void php_unset_global_vars();
-
-static ZEND_FUNCTION(main) {
-	php_main();
-}
-
-static const zend_function_entry ext_functions[] = {
-	ZEND_FE(main, arginfo_void)
-	ZEND_FE_END
-};
+extern void php_app_init();
+extern void php_app_clean();
+BEGIN_EXTERN_C()
+extern zend_module_entry *get_module();
+END_EXTERN_C()
 
 static void throw_exception(zend_object *ex) {
     zend_bailout();
@@ -31,14 +20,17 @@ static void throw_exception(zend_object *ex) {
 int main(int cpp_argc, char **cpp_argv) {
     php_embed_init(cpp_argc, cpp_argv);
     zend_throw_exception_hook = throw_exception;
-	zend_register_functions(nullptr, ext_functions, nullptr, 0);
+
+	if (zend_register_module_ex(get_module(), MODULE_TEMPORARY) == NULL) {
+        zend_error(E_ERROR, "Failed to register module");
+	}
 
     int rc = 0;
 #if PPROF_ON
     ProfilerStart("myapp.prof");
 #endif
     zend_first_try {
-        php_init_global_vars();
+        php_app_init();
         php::eval("main();");
     }
     zend_catch {
@@ -52,7 +44,7 @@ int main(int cpp_argc, char **cpp_argv) {
 #if PPROF_ON
     ProfilerStop();
 #endif
-    php_unset_global_vars();
+    php_app_clean();
     php::request_shutdown();
     php_embed_shutdown();
 

@@ -88,6 +88,18 @@ class Translator extends Preprocessor
         $climate->br();
     }
 
+    public function getCppFile(string $file): string
+    {
+        $info = pathinfo($file);
+        return $this->buildDir . '/' . $this->removeCommonPrefix($this->buildDir, $info['dirname'] . '/' . $info['filename'] . '.cc');
+    }
+
+    public function getObjectFile(string $cppFile): string
+    {
+        $info = pathinfo($cppFile);
+        return $info['dirname'] . '/' . $info['filename'] . '.o';
+    }
+
     public function convert(string $file): string
     {
         $phpCode = $this->loadFile($file);
@@ -96,8 +108,7 @@ class Translator extends Preprocessor
         while (true) {
             try {
                 $cppCode = $this->doConvert($phpCode);
-                $info = pathinfo($file);
-                $cppFile = $this->buildDir . '/' . $this->removeCommonPrefix($this->buildDir, $info['dirname'] . '/' . $info['filename'] . '.cc');
+                $cppFile = $this->getCppFile($file);
                 $this->save($cppCode, $cppFile);
                 return $cppFile;
             } catch (RedoException $e) {
@@ -109,6 +120,17 @@ class Translator extends Preprocessor
     protected function getRegisterClassFunction(string $name): string
     {
         return self::PREFIX . 'register_class_' . $name;
+    }
+
+    public function hasCache(string $file): bool
+    {
+        $cppFile = $this->getCppFile($file);
+        $objectFile = $this->getObjectFile($cppFile);
+        if ((file_exists($cppFile) and filemtime($cppFile) > filemtime($file))
+            and (file_exists($objectFile) and filemtime($objectFile) > filemtime($cppFile))) {
+            return true;
+        }
+        return false;
     }
 
     protected function getClassCe(ClassDef $classDef): string
@@ -209,93 +231,24 @@ class Translator extends Preprocessor
         $this->writeFile($file, $code);
     }
 
+    private function render(string $template): string
+    {
+        ob_start();
+        include __DIR__ . '/../template/' . $template;
+        return ob_get_clean();
+    }
+
     public function genGlobalVars(string $file): void
     {
         $this->localHeaders = [];
-        $code = $this->genIncludeHeaderFiles();
-        $lines = [];
-        // 全局变量只能是 var 类型
-        foreach ($this->globalVars as $name => $type) {
-            $lines[] = self::TYPE_VAR . ' ' . $name . ';';
-        }
-        // 类定义
-        $lines[] = $this->getIndent() . '// class entries';
-        foreach ($this->classes as $classDef) {
-            $lines[] = $this->getIndent() . 'zend_class_entry *' . $this->getClassCe($classDef) . ';';
-        }
-        foreach ($this->classes as $classDef) {
-            $name = $classDef->getNamespacedName();
-            if ($classDef->extends) {
-                $parentCe = 'zend_class_entry *parent_ce';
-            } else {
-                $parentCe = '';
-            }
-            $lines[] = 'extern zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $parentCe . ');';
-        }
-        $code .= implode(PHP_EOL, $lines) . PHP_EOL;
-
-        $code .= PHP_EOL;
-        $literalStringsCount = count($this->literalStrings);
-        $code .= 'php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '] = {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . '// literal strings' . PHP_EOL;
-        foreach ($this->literalStrings as $str => $index) {
-            $code .= $this->getIndent() . 'php::String{ZEND_STRL("' . $this->escapeString($str) . '"), true},' . PHP_EOL;
-        }
-        $this->indentLevel--;
-        $code .= '};' . PHP_EOL;
-
-        // 生成常量表
-        $this->indentLevel++;
-        foreach ($this->nativeConstants as $name => $constant) {
-            $code .= $constant->type . ' ' . $name . ';' . PHP_EOL;
-        }
-        $this->indentLevel--;
-
-        $code .= PHP_EOL;
-        $this->indentLevel++;
-        $lines = [];
-        $lines[] = $this->getIndent() . '// constants';
-        foreach ($this->nativeConstants as $name => $constant) {
-            $lines[] = $this->getIndent() . $name . ' = ' . $constant->value . ';';
-            $lines[] = $this->getIndent() . 'php::define("' . $name . '", ' . $name . ');';
-        }
-        $lines[] = $this->getIndent() . '// global vars';
-        foreach ($this->globalVars as $name => $type) {
-            $lines[] = $this->getIndent() . $name . ' = php::global("' . $name . '");';
-        }
-        $lines[] = $this->getIndent() . '// class entries';
-        foreach ($this->classes as $classDef) {
-            $name = $classDef->getNamespacedName();
-            $parentCe = $this->getParentClassCe($classDef);
-            $lines[] = $this->getIndent() . $this->getClassCe($classDef) . ' = ' . $this->getRegisterClassFunction($name) . '(' . $parentCe . ');';
-        }
-        $this->indentLevel--;
-        $code .= $this->genFunction(self::PREFIX . 'init_global_vars', 'void', [], $lines);
-
-        // 销毁全局变量
-        $code .= PHP_EOL;
-        $this->indentLevel++;
-        $lines = [];
-        foreach ($this->globalVars as $name => $type) {
-            $lines[] = $this->getIndent() . $name . '.unset();';
-        }
-        foreach ($this->nativeConstants as $name => $constant) {
-            if ($constant->type !== self::TYPE_VAR) {
-                continue;
-            }
-            $lines[] = $this->getIndent() . $name . '.unset();';
-        }
-        $this->indentLevel--;
-        $code .= $this->genFunction(self::PREFIX . 'unset_global_vars', 'void', [], $lines);
-
+        $code = $this->render('extension.cc.php');
         $this->writeFile($file, $code);
         $this->formatCppCode($file);
     }
 
-    public function compileFile($file): void
+    public function compileFile(string $file, string $objectFile): void
     {
-        $cmd = $this->cppCompiler . ' -c ' . $file . ' -o ' . $file . '.o ';
+        $cmd = $this->cppCompiler . ' -c ' . $file . ' -o ' . $objectFile;
         $this->addCompilationOption($cmd);
         $this->climate->comment($cmd);
         shell_exec($cmd);
@@ -475,11 +428,19 @@ class Translator extends Preprocessor
         $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
         $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
 
+        $callParams = '';
+        foreach ($methodDef->functionDef->argInfoList as $k => $argInfo) {
+            $expr = $this->convertExprFromType($argInfo->type, 'ZEND_CALL_ARG(EG(current_execute_data), ' . ($k + 1) . ')');
+            $cppCode .= $this->getIndent() . $argInfo->type . ' arg_' . $argInfo->name . ' = ' . $expr . ';' . PHP_EOL;
+            $callParams .= 'arg_' . $argInfo->name . ',';
+        }
+        $callParams = $methodDef->functionDef->argInfoList ? 'this_, ' . rtrim($callParams, ',') : 'this_';
+
         if ($methodDef->getReturnType() !== self::TYPE_VOID) {
-            $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(this_);' . PHP_EOL;
+            $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
             $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
         } else {
-            $cppCode .= $this->getIndent() . $fn . '(this_);' . PHP_EOL;
+            $cppCode .= $this->getIndent() . $fn . '(' . $callParams . ');' . PHP_EOL;
         }
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
@@ -500,7 +461,7 @@ class Translator extends Preprocessor
             $param = '';
         }
         $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $parentName . ') {' . PHP_EOL;
-        $cppCode .= $this->getIndent() . 'return ' . $this->getRegisterClassFunction($name) . '(' . $param . ');' . PHP_EOL;
+        $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
         $methods = $classDef->methods;
