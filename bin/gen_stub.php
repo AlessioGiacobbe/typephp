@@ -4420,7 +4420,7 @@ class FileInfo {
                         }
                     } else if ($classStmt instanceof Stmt\Property) {
                         if (!($classStmt->flags & Class_::VISIBILITY_MODIFIER_MASK)) {
-                            throw new Exception("Visibility modifier is required");
+                            $classStmt->flags |= Modifiers::PUBLIC;
                         }
                         foreach ($classStmt->props as $property) {
                             $propertyInfos[] = parseProperty(
@@ -4776,7 +4776,7 @@ function parseFunctionLike(
 
             $type = $param->type ? Type::fromNode($param->type) : null;
             if ($type === null && !isset($docParamTypes[$varName])) {
-                throw new Exception("Missing parameter type");
+                $type = Type::fromString("mixed");
             }
 
             if ($param->default instanceof Expr\ConstFetch &&
@@ -5269,10 +5269,13 @@ function generateFunctionEntries(?Name $className, array $funcInfos, ?string $co
         return '';
     }
 
-    $functionEntryName = "ext_functions";
     if ($className) {
         $underscoreName = implode("_", $className->getParts());
         $functionEntryName = "class_{$underscoreName}_methods";
+    } else {
+        // 跳过生成 ext_functions
+        $functionEntryName = "ext_functions";
+        return '';
     }
 
     $code = "\nstatic const zend_function_entry {$functionEntryName}[] = {\n";

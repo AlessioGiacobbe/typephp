@@ -585,6 +585,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseStaticCall($expr);
             case 'Expr_StaticPropertyFetch':
                 return $this->parseStaticPropertyFetch($expr);
+            case 'Expr_ClassConstFetch':
+                return $this->parseClassConstFetch($expr);
             case 'Expr_Include':
                 return $this->parseInclude($expr);
             case 'Expr_Eval':
@@ -1366,7 +1368,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($arg, "The syntax for variable parameter expansion is not supported");
             }
             if ($nativeFunction) {
-                $argInfo = $this->getArgInfo($funcName, $i);
+                $argInfo = $this->getArgInfo($arg, $funcName, $i);
                 $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
             } else {
                 $list_args[] = $this->parseArg($arg);
@@ -1395,7 +1397,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         $cond = $expr->cond;
         $if = $expr->if;
         $else = $expr->else;
-        return '(' . $this->parseExpr($cond) . ') ? (' . $this->parseExpr($if) . ') : (' . $this->parseExpr($else) . ')';
+        if ($if === null) {
+            $cond = $this->parseExpr($cond);
+            return '(' . $cond . ') ? (' . $cond . ') : (' . $this->parseExpr($else) . ')';
+        } else {
+            return '(' . $this->parseExpr($cond) . ') ? (' . $this->parseExpr($if) . ') : (' . $this->parseExpr($else) . ')';
+        }
     }
 
     protected function parseBinaryOpGreater(mixed $expr): string
@@ -1716,7 +1723,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->getConstant($name);
         }
         if ($name === 'null') {
-            return 'nullptr';
+            return 'php::null';
         } elseif ($name === 'true') {
             return 'true';
         } elseif ($name === 'false') {
@@ -1811,9 +1818,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '';
     }
 
-    protected function getArgInfo(string $funcName, int $index): ArgInfo
+    protected function getArgInfo(Node $arg, string $funcName, int $index): ArgInfo
     {
         $funcDef = $this->nativeFunctions[$funcName];
+        if (!array_key_exists($index, $funcDef->argInfoList)) {
+            $this->fatalError($arg, "Argument `$index` of function `$funcName` not found");
+        }
         return $funcDef->argInfoList[$index];
     }
 
@@ -2091,11 +2101,19 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $vars = $expr->vars;
         foreach ($vars as $var) {
-            $type = $var->getType();
-            if ($type === self::EXPR_VARIABLE) {
+            if ($var instanceof Node\Expr\Variable) {
                 return $this->hasVar($var->name) ? 'true' : 'false';
-            } elseif ($type === self::EXPR_ARRAY_DIM_FETCH) {
+            } elseif ($var instanceof Node\Expr\ArrayDimFetch) {
                 return $this->parseIdentifier($var->var) . ".offsetExists(" . $this->parseIdentifier($var->dim) . ')';
+            } elseif ($var instanceof Node\Expr\StaticPropertyFetch) {
+                $class = $this->parseIdentifier($var->class);
+                $prop = $var->name;
+                $class = $class === 'self' ? $this->class : $class;
+                return 'php::hasStaticProperty("' . $class . '", ' . $this->identifierToStr($prop) . ')';
+            } elseif ($var instanceof Node\Expr\PropertyFetch) {
+                $object = $var->var;
+                $prop = $var->name;
+                return $this->parseIdentifier($object) . '.propertyExists(' . $this->identifierToStr($prop) . ')';
             } else {
                 abort($var);
             }
@@ -2240,6 +2258,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseStaticPropertyFetch(Node $expr): string
     {
         return 'php::getStaticProperty(' . $this->identifierToStr($expr->class) . ', ' . $this->identifierToStr($expr->name) . ')';
+    }
+
+    protected function parseClassConstFetch(Node\Expr\ClassConstFetch $expr): string
+    {
+        $class = $this->parseIdentifier($expr->class);
+        $const = $this->parseIdentifier($expr->name);
+        return 'php::constant("' . $class . '::' . $const . '")';
     }
 
     protected function parseThrow(mixed $expr): string

@@ -363,10 +363,14 @@ class Translator extends Preprocessor
         $this->class = $this->parseIdentifier($class->name);
         if (!$this->stubFileIncluded) {
             $genStubCmd = PHP_BINARY. ' ' . $this->rootPath . '/bin/gen_stub.php -f ' . $this->file;
-            shell_exec($genStubCmd);
+            $output = shell_exec($genStubCmd);
+            $this->climate->info('generate stub file: ' . $this->file);
             $this->climate->comment($genStubCmd);
             $stubFilenameWithoutExtension = str_replace([".stub.php", '.php'], "", $this->file);
             $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
+            if (!str_starts_with($output, "Saved")) {
+                $this->fatalError($class, "failed to generate arginfo header file: `$headerFile`, output: $output");
+            }
             $this->localHeaders[] = $headerFile;
             $this->stubFileIncluded = true;
         }

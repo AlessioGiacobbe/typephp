@@ -1,4 +1,6 @@
 /.idea
+/.cproject
+/.project
 /logs
 /build
 /vendor
