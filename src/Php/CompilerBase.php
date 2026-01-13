@@ -53,13 +53,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         'float' => self::TYPE_FLOAT,
         'bool' => self::TYPE_BOOL,
     ];
-
     protected array $reservedNames;
-
-    protected array $unsupportedFunctions = [
-        'compact',
-        'extract'
-    ];
     protected array $globalHeaders = [
         'phpx.h',
         'phpx_helper.h',
@@ -135,7 +129,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $climate = new CLImate();
         $this->climate = $climate;
         //        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
-        $this->noLiteralStrings = true;
     }
 
     public function setPhpxDir($dir): void
@@ -1295,6 +1288,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $name = '';
         } elseif ($expr->name->getType() === 'Name') {
             $name = $this->parseIdentifier($expr->name);
+            if (in_array($name, $this->unsupportedFunctions)) {
+                $this->fatalError($expr, 'Unsupported function: `' . $name . '`');
+            }
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
                 return self::PREFIX . $nativeFn . '(' . $this->parseCallArgs($expr->args, $name) . ')';
@@ -2106,10 +2102,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($var instanceof Node\Expr\ArrayDimFetch) {
                 return $this->parseIdentifier($var->var) . ".offsetExists(" . $this->parseIdentifier($var->dim) . ')';
             } elseif ($var instanceof Node\Expr\StaticPropertyFetch) {
-                $class = $this->parseIdentifier($var->class);
-                $prop = $var->name;
-                $class = $class === 'self' ? $this->class : $class;
-                return 'php::hasStaticProperty("' . $class . '", ' . $this->identifierToStr($prop) . ')';
+                return 'php::hasStaticProperty(' . $this->identifierToStr($var->class) . ', ' . $this->identifierToStr($var->name) . ')';
             } elseif ($var instanceof Node\Expr\PropertyFetch) {
                 $object = $var->var;
                 $prop = $var->name;
@@ -2228,6 +2221,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             return $id;
         } else {
+            if ($id === 'self') {
+                $id = $this->class;
+            }
             return '"'. $id . '"';
         }
     }
@@ -2245,8 +2241,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $fn = 'php::concat({' . $this->identifierToStr($expr->class). ', "::", ' . $this->identifierToStr($expr->name) . '})';
         } else {
             $class = $this->parseIdentifier($expr->class);
+            $class = $class === 'self' ? $this->class : $class;
             $method = $this->parseIdentifier($expr->name);
-            $fn = '"'. $class . '::' . $method . '"';
+            $fn = '"' . $class . '::' . $method . '"';
         }
         if (empty($expr->args)) {
             return 'php::call(' . $fn . ')';
@@ -2263,6 +2260,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseClassConstFetch(Node\Expr\ClassConstFetch $expr): string
     {
         $class = $this->parseIdentifier($expr->class);
+        $class = ($class === 'self' or $class === 'this_') ? $this->class : $class;
         $const = $this->parseIdentifier($expr->name);
         return 'php::constant("' . $class . '::' . $const . '")';
     }

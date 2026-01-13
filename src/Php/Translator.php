@@ -9,6 +9,13 @@ use PhpParser\NodeTraverser;
 class Translator extends Preprocessor
 {
     protected bool $verbose = false;
+    protected array $unsupportedFunctions = [
+        'compact',
+        'extract',
+        'func_num_args',
+        'func_get_arg',
+        'func_get_args',
+    ];
 
     public function __construct(string $rootPath)
     {
@@ -358,21 +365,26 @@ class Translator extends Preprocessor
         return $code;
     }
 
+    protected function genClassStubFile(Node\Stmt\Class_ $class, string $file): void
+    {
+        $genStubCmd = PHP_BINARY. ' ' . $this->rootPath . '/bin/gen_stub.php --gen-class-info -f ' . $file;
+        $output = shell_exec($genStubCmd);
+        $this->climate->info('generate stub file: ' . $file);
+        $this->climate->comment($genStubCmd);
+        $stubFilenameWithoutExtension = str_replace([".stub.php", '.php'], "", $file);
+        $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
+        if (!str_starts_with($output, "Saved")) {
+            $this->fatalError($class, "failed to generate arginfo header file: `$headerFile`, output: $output");
+        }
+        $this->localHeaders[] = $headerFile;
+        $this->stubFileIncluded = true;
+    }
+
     protected function parseClass(Node\Stmt\Class_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
         if (!$this->stubFileIncluded) {
-            $genStubCmd = PHP_BINARY. ' ' . $this->rootPath . '/bin/gen_stub.php -f ' . $this->file;
-            $output = shell_exec($genStubCmd);
-            $this->climate->info('generate stub file: ' . $this->file);
-            $this->climate->comment($genStubCmd);
-            $stubFilenameWithoutExtension = str_replace([".stub.php", '.php'], "", $this->file);
-            $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
-            if (!str_starts_with($output, "Saved")) {
-                $this->fatalError($class, "failed to generate arginfo header file: `$headerFile`, output: $output");
-            }
-            $this->localHeaders[] = $headerFile;
-            $this->stubFileIncluded = true;
+            $this->genClassStubFile($class, $this->file);
         }
 
         $this->classDef = new ClassDef();

@@ -16,14 +16,6 @@ use PhpParser\Node\Stmt\Trait_;
 use PhpParser\PrettyPrinter\Standard;
 use PhpParser\PrettyPrinterAbstract;
 
-error_reporting(E_ALL);
-ini_set("precision", "-1");
-require __DIR__ . '/bootstrap.php';
-
-$translator = new PhpAot\Php\Translator(ROOT_PATH);
-$translator->setIndent("\t");
-$translator->setIndentLevel(1);
-
 const PHP_70_VERSION_ID = 70000;
 const PHP_80_VERSION_ID = 80000;
 const PHP_81_VERSION_ID = 80100;
@@ -94,6 +86,7 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
             $oldStubHash = extractStubHash($arginfoFile);
             if ($stubHash === $oldStubHash && !$context->forceParse) {
                 /* Stub file did not change, do not regenerate. */
+                echo "Skipping $stubFile, stub hash unchanged\n";
                 return null;
             }
         }
@@ -4238,10 +4231,15 @@ class FileInfo {
     /**
      * @return iterable<FuncInfo>
      */
-    public function getAllFuncInfos(): iterable {
-        yield from $this->funcInfos;
-        foreach ($this->classInfos as $classInfo) {
-            yield from $classInfo->funcInfos;
+    public function getAllFuncInfos(): iterable
+    {
+        global $genClass;
+        if ($genClass) {
+            foreach ($this->classInfos as $classInfo) {
+                yield from $classInfo->funcInfos;
+            }
+        } else {
+            yield from $this->funcInfos;
         }
     }
 
@@ -5171,6 +5169,8 @@ function generateArgInfoCode(
 
     $generatedFuncInfos = [];
 
+    global $genClass;
+
     $argInfoCode = generateCodeWithConditions(
         $fileInfo->getAllFuncInfos(), "\n",
         static function (FuncInfo $funcInfo) use (&$generatedFuncInfos, $fileInfo) {
@@ -5221,14 +5221,16 @@ function generateArgInfoCode(
 
         $code .= generateFunctionEntries(null, $fileInfo->funcInfos);
 
-        foreach ($fileInfo->classInfos as $classInfo) {
-            $code .= generateFunctionEntries($classInfo->name, $classInfo->funcInfos, $classInfo->cond);
+        if ($genClass) {
+            foreach ($fileInfo->classInfos as $classInfo) {
+                $code .= generateFunctionEntries($classInfo->name, $classInfo->funcInfos, $classInfo->cond);
+            }
         }
     }
 
     $php80MinimumCompatibility = $fileInfo->getMinimumPhpVersionIdCompatibility() === null || $fileInfo->getMinimumPhpVersionIdCompatibility() >= PHP_80_VERSION_ID;
 
-    if ($fileInfo->generateClassEntries) {
+    if ($genClass and $fileInfo->generateClassEntries) {
         $declaredStrings = [];
         $attributeInitializationCode = generateFunctionAttributeInitialization($fileInfo->funcInfos, $allConstInfos, $fileInfo->getMinimumPhpVersionIdCompatibility(), null, $declaredStrings);
         $attributeInitializationCode .= generateGlobalConstantAttributeInitialization($fileInfo->constInfos, $allConstInfos, $fileInfo->getMinimumPhpVersionIdCompatibility(), null, $declaredStrings);
@@ -6097,306 +6099,330 @@ function initPhpParser() {
     $isInitialized = true;
 }
 
-$optind = null;
-$options = getopt(
-    "fh",
-    [
-        "force-regeneration", "parameter-stats", "help", "verify", "verify-manual", "replace-predefined-constants",
-        "generate-classsynopses", "replace-classsynopses", "generate-methodsynopses", "replace-methodsynopses",
-        "generate-optimizer-info",
-    ],
-    $optind
-);
+function main()
+{
+    global $argv, $argc, $genClass, $translator;
 
-$context = new Context;
-$printParameterStats = isset($options["parameter-stats"]);
-$verify = isset($options["verify"]);
-$verifyManual = isset($options["verify-manual"]);
-$replacePredefinedConstants = isset($options["replace-predefined-constants"]);
-$generateClassSynopses = isset($options["generate-classsynopses"]);
-$replaceClassSynopses = isset($options["replace-classsynopses"]);
-$generateMethodSynopses = isset($options["generate-methodsynopses"]);
-$replaceMethodSynopses = isset($options["replace-methodsynopses"]);
-$generateOptimizerInfo = isset($options["generate-optimizer-info"]);
-$context->forceRegeneration = isset($options["f"]) || isset($options["force-regeneration"]);
-$context->forceParse = $context->forceRegeneration || $printParameterStats || $verify || $verifyManual || $replacePredefinedConstants || $generateClassSynopses || $generateOptimizerInfo || $replaceClassSynopses || $generateMethodSynopses || $replaceMethodSynopses;
+    error_reporting(E_ALL);
+    ini_set("precision", "-1");
+    require __DIR__ . '/bootstrap.php';
 
-if (isset($options["h"]) || isset($options["help"])) {
-    die("\nUsage: gen_stub.php [ -f | --force-regeneration ] [ --replace-predefined-constants ] [ --generate-classsynopses ] [ --replace-classsynopses ] [ --generate-methodsynopses ] [ --replace-methodsynopses ] [ --parameter-stats ] [ --verify ]  [ --verify-manual ] [ --generate-optimizer-info ] [ -h | --help ] [ name.stub.php | directory ] [ directory ]\n\n");
-}
+    $translator = new PhpAot\Php\Translator(ROOT_PATH);
+    $translator->setIndent("\t");
+    $translator->setIndentLevel(1);
 
-$locations = array_slice($argv, $optind);
-$locationCount = count($locations);
-if ($replacePredefinedConstants && $locationCount < 2) {
-    die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --replace-predefined-constants ./ ../doc-en/\n");
-}
-if ($replaceClassSynopses && $locationCount < 2) {
-    die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --replace-classsynopses ./ ../doc-en/\n");
-}
-if ($generateMethodSynopses && $locationCount < 2) {
-    die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --generate-methodsynopses ./ ../doc-en/\n");
-}
-if ($replaceMethodSynopses && $locationCount < 2) {
-    die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --replace-methodsynopses ./ ../doc-en/\n");
-}
-if ($verifyManual && $locationCount < 2) {
-    die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --verify-manual ./ ../doc-en/\n");
-}
-$manualTarget = null;
-if ($replacePredefinedConstants || $replaceClassSynopses || $generateMethodSynopses || $replaceMethodSynopses || $verifyManual) {
-    $manualTarget = array_pop($locations);
-}
-if ($locations === []) {
-    $locations = ['.'];
-}
+    $opt_index = 0;
+    $options = getopt(
+        "fh",
+        [
+            "force-regeneration", "parameter-stats", "help", "verify", "verify-manual", "replace-predefined-constants",
+            "generate-classsynopses", "replace-classsynopses", "generate-methodsynopses", "replace-methodsynopses",
+            "generate-optimizer-info", "gen-class-info", "gen-func-info",
+        ],
+        $opt_index
+    );
 
-$fileInfos = [];
-foreach (array_unique($locations) as $location) {
-    if (is_file($location)) {
-        // Generate single file.
-        $fileInfo = processStubFile($location, $context);
-        if ($fileInfo) {
-            $fileInfos[] = $fileInfo;
-        }
-    } else if (is_dir($location)) {
-        array_push($fileInfos, ...processDirectory($location, $context));
+    $context = new Context;
+    $printParameterStats = isset($options["parameter-stats"]);
+    $verify = isset($options["verify"]);
+    $verifyManual = isset($options["verify-manual"]);
+    $replacePredefinedConstants = isset($options["replace-predefined-constants"]);
+    $generateClassSynopses = isset($options["generate-classsynopses"]);
+    $replaceClassSynopses = isset($options["replace-classsynopses"]);
+    $generateMethodSynopses = isset($options["generate-methodsynopses"]);
+    $replaceMethodSynopses = isset($options["replace-methodsynopses"]);
+    $generateOptimizerInfo = isset($options["generate-optimizer-info"]);
+
+    if (isset($options["gen-class-info"])) {
+        $genClass = true;
+    } elseif (isset($options["gen-func-info"])) {
+        $genClass = false;
     } else {
-        echo "$location is neither a file nor a directory.\n";
-        exit(1);
+        die("Please specify whether to generate class or function info\n");
     }
-}
 
-if ($printParameterStats) {
-    $parameterStats = [];
+    $context->forceRegeneration = isset($options["f"]) || isset($options["force-regeneration"]);
+    $context->forceParse = $context->forceRegeneration || $printParameterStats || $verify || $verifyManual || $replacePredefinedConstants || $generateClassSynopses || $generateOptimizerInfo || $replaceClassSynopses || $generateMethodSynopses || $replaceMethodSynopses;
+
+    if (isset($options["h"]) || isset($options["help"])) {
+        die("\nUsage: gen_stub.php [ -f | --force-regeneration ] [ --replace-predefined-constants ] [ --generate-classsynopses ] [ --replace-classsynopses ] [ --generate-methodsynopses ] [ --replace-methodsynopses ] [ --parameter-stats ] [ --verify ]  [ --verify-manual ] [ --generate-optimizer-info ] [ -h | --help ] [ name.stub.php | directory ] [ directory ]\n\n");
+    }
+
+    $locations = array_slice($argv, $opt_index);
+    $locationCount = count($locations);
+    if ($replacePredefinedConstants && $locationCount < 2) {
+        die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --replace-predefined-constants ./ ../doc-en/\n");
+    }
+    if ($replaceClassSynopses && $locationCount < 2) {
+        die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --replace-classsynopses ./ ../doc-en/\n");
+    }
+    if ($generateMethodSynopses && $locationCount < 2) {
+        die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --generate-methodsynopses ./ ../doc-en/\n");
+    }
+    if ($replaceMethodSynopses && $locationCount < 2) {
+        die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --replace-methodsynopses ./ ../doc-en/\n");
+    }
+    if ($verifyManual && $locationCount < 2) {
+        die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --verify-manual ./ ../doc-en/\n");
+    }
+    $manualTarget = null;
+    if ($replacePredefinedConstants || $replaceClassSynopses || $generateMethodSynopses || $replaceMethodSynopses || $verifyManual) {
+        $manualTarget = array_pop($locations);
+    }
+    if ($locations === []) {
+        $locations = ['.'];
+    }
+
+    $fileInfos = [];
+    foreach (array_unique($locations) as $location) {
+        if (is_file($location)) {
+            // Generate single file.
+            $fileInfo = processStubFile($location, $context);
+            if ($fileInfo) {
+                $fileInfos[] = $fileInfo;
+            }
+        } else if (is_dir($location)) {
+            array_push($fileInfos, ...processDirectory($location, $context));
+        } else {
+            echo "$location is neither a file nor a directory.\n";
+            exit(1);
+        }
+    }
+
+    if ($printParameterStats) {
+        $parameterStats = [];
+
+        foreach ($fileInfos as $fileInfo) {
+            foreach ($fileInfo->getAllFuncInfos() as $funcInfo) {
+                foreach ($funcInfo->args as $argInfo) {
+                    if (!isset($parameterStats[$argInfo->name])) {
+                        $parameterStats[$argInfo->name] = 0;
+                    }
+                    $parameterStats[$argInfo->name]++;
+                }
+            }
+        }
+
+        arsort($parameterStats);
+        echo json_encode($parameterStats, JSON_PRETTY_PRINT), "\n";
+    }
+
+    /** @var array<string, ClassInfo> $classMap */
+    $classMap = [];
+    /** @var array<string, FuncInfo> $funcMap */
+    $funcMap = [];
+    /** @var array<string, FuncInfo> $aliasMap */
+    $aliasMap = [];
+
+    /** @var array<string, ConstInfo> $undocumentedConstMap */
+    $undocumentedConstMap = [];
+    /** @var array<string, ClassInfo> $undocumentedClassMap */
+    $undocumentedClassMap = [];
+    /** @var array<string, FuncInfo> $undocumentedFuncMap */
+    $undocumentedFuncMap = [];
+    /** @var array<int, string> $methodSynopsisWarnings */
+    $methodSynopsisWarnings = [];
 
     foreach ($fileInfos as $fileInfo) {
         foreach ($fileInfo->getAllFuncInfos() as $funcInfo) {
-            foreach ($funcInfo->args as $argInfo) {
-                if (!isset($parameterStats[$argInfo->name])) {
-                    $parameterStats[$argInfo->name] = 0;
-                }
-                $parameterStats[$argInfo->name]++;
+            $funcMap[$funcInfo->name->__toString()] = $funcInfo;
+
+            // TODO: Don't use aliasMap for methodsynopsis?
+            if ($funcInfo->aliasType === "alias") {
+                $aliasMap[$funcInfo->alias->__toString()] = $funcInfo;
+            }
+        }
+
+        foreach ($fileInfo->classInfos as $classInfo) {
+            $classMap[$classInfo->name->__toString()] = $classInfo;
+
+            if ($classInfo->alias !== null) {
+                $classMap[$classInfo->alias] = $classInfo;
             }
         }
     }
 
-    arsort($parameterStats);
-    echo json_encode($parameterStats, JSON_PRETTY_PRINT), "\n";
-}
+    if ($verify) {
+        $errors = [];
 
-/** @var array<string, ClassInfo> $classMap */
-$classMap = [];
-/** @var array<string, FuncInfo> $funcMap */
-$funcMap = [];
-/** @var array<string, FuncInfo> $aliasMap */
-$aliasMap = [];
-
-/** @var array<string, ConstInfo> $undocumentedConstMap */
-$undocumentedConstMap = [];
-/** @var array<string, ClassInfo> $undocumentedClassMap */
-$undocumentedClassMap = [];
-/** @var array<string, FuncInfo> $undocumentedFuncMap */
-$undocumentedFuncMap = [];
-/** @var array<int, string> $methodSynopsisWarnings */
-$methodSynopsisWarnings = [];
-
-foreach ($fileInfos as $fileInfo) {
-    foreach ($fileInfo->getAllFuncInfos() as $funcInfo) {
-        $funcMap[$funcInfo->name->__toString()] = $funcInfo;
-
-        // TODO: Don't use aliasMap for methodsynopsis?
-        if ($funcInfo->aliasType === "alias") {
-            $aliasMap[$funcInfo->alias->__toString()] = $funcInfo;
-        }
-    }
-
-    foreach ($fileInfo->classInfos as $classInfo) {
-        $classMap[$classInfo->name->__toString()] = $classInfo;
-
-        if ($classInfo->alias !== null) {
-            $classMap[$classInfo->alias] = $classInfo;
-        }
-    }
-}
-
-if ($verify) {
-    $errors = [];
-
-    foreach ($funcMap as $aliasFunc) {
-        if (!$aliasFunc->alias || $aliasFunc->aliasType !== "alias") {
-            continue;
-        }
-
-        if (!isset($funcMap[$aliasFunc->alias->__toString()])) {
-            $errors[] = "Aliased function {$aliasFunc->alias}() cannot be found";
-            continue;
-        }
-
-        if (!$aliasFunc->verify) {
-            continue;
-        }
-
-        $aliasedFunc = $funcMap[$aliasFunc->alias->__toString()];
-        $aliasedArgs = $aliasedFunc->args;
-        $aliasArgs = $aliasFunc->args;
-
-        if ($aliasFunc->isInstanceMethod() !== $aliasedFunc->isInstanceMethod()) {
-            if ($aliasFunc->isInstanceMethod()) {
-                $aliasedArgs = array_slice($aliasedArgs, 1);
+        foreach ($funcMap as $aliasFunc) {
+            if (!$aliasFunc->alias || $aliasFunc->aliasType !== "alias") {
+                continue;
             }
 
-            if ($aliasedFunc->isInstanceMethod()) {
-                $aliasArgs = array_slice($aliasArgs, 1);
+            if (!isset($funcMap[$aliasFunc->alias->__toString()])) {
+                $errors[] = "Aliased function {$aliasFunc->alias}() cannot be found";
+                continue;
             }
-        }
 
-        array_map(
-            function(?ArgInfo $aliasArg, ?ArgInfo $aliasedArg) use ($aliasFunc, $aliasedFunc, &$errors) {
-                if ($aliasArg === null) {
-                    assert($aliasedArg !== null);
-                    $errors[] = "{$aliasFunc->name}(): Argument \$$aliasedArg->name of aliased function {$aliasedFunc->name}() is missing";
-                    return null;
+            if (!$aliasFunc->verify) {
+                continue;
+            }
+
+            $aliasedFunc = $funcMap[$aliasFunc->alias->__toString()];
+            $aliasedArgs = $aliasedFunc->args;
+            $aliasArgs = $aliasFunc->args;
+
+            if ($aliasFunc->isInstanceMethod() !== $aliasedFunc->isInstanceMethod()) {
+                if ($aliasFunc->isInstanceMethod()) {
+                    $aliasedArgs = array_slice($aliasedArgs, 1);
                 }
 
-                if ($aliasedArg === null) {
-                    $errors[] = "{$aliasedFunc->name}(): Argument \$$aliasArg->name of alias function {$aliasFunc->name}() is missing";
-                    return null;
+                if ($aliasedFunc->isInstanceMethod()) {
+                    $aliasArgs = array_slice($aliasArgs, 1);
                 }
+            }
 
-                if ($aliasArg->name !== $aliasedArg->name) {
-                    $errors[] = "{$aliasFunc->name}(): Argument \$$aliasArg->name and argument \$$aliasedArg->name of aliased function {$aliasedFunc->name}() must have the same name";
-                    return null;
+            array_map(
+                function(?ArgInfo $aliasArg, ?ArgInfo $aliasedArg) use ($aliasFunc, $aliasedFunc, &$errors) {
+                    if ($aliasArg === null) {
+                        assert($aliasedArg !== null);
+                        $errors[] = "{$aliasFunc->name}(): Argument \$$aliasedArg->name of aliased function {$aliasedFunc->name}() is missing";
+                        return null;
+                    }
+
+                    if ($aliasedArg === null) {
+                        $errors[] = "{$aliasedFunc->name}(): Argument \$$aliasArg->name of alias function {$aliasFunc->name}() is missing";
+                        return null;
+                    }
+
+                    if ($aliasArg->name !== $aliasedArg->name) {
+                        $errors[] = "{$aliasFunc->name}(): Argument \$$aliasArg->name and argument \$$aliasedArg->name of aliased function {$aliasedFunc->name}() must have the same name";
+                        return null;
+                    }
+
+                    if ($aliasArg->type != $aliasedArg->type) {
+                        $errors[] = "{$aliasFunc->name}(): Argument \$$aliasArg->name and argument \$$aliasedArg->name of aliased function {$aliasedFunc->name}() must have the same type";
+                    }
+
+                    if ($aliasArg->defaultValue !== $aliasedArg->defaultValue) {
+                        $errors[] = "{$aliasFunc->name}(): Argument \$$aliasArg->name and argument \$$aliasedArg->name of aliased function {$aliasedFunc->name}() must have the same default value";
+                    }
+                },
+                $aliasArgs, $aliasedArgs
+            );
+
+            $aliasedReturn = $aliasedFunc->return;
+            $aliasReturn = $aliasFunc->return;
+
+            if (!$aliasedFunc->name->isConstructor() && !$aliasFunc->name->isConstructor()) {
+                $aliasedReturnType = $aliasedReturn->type ?? $aliasedReturn->phpDocType;
+                $aliasReturnType = $aliasReturn->type ?? $aliasReturn->phpDocType;
+                if ($aliasReturnType != $aliasedReturnType) {
+                    $errors[] = "{$aliasFunc->name}() and {$aliasedFunc->name}() must have the same return type";
                 }
+            }
 
-                if ($aliasArg->type != $aliasedArg->type) {
-                    $errors[] = "{$aliasFunc->name}(): Argument \$$aliasArg->name and argument \$$aliasedArg->name of aliased function {$aliasedFunc->name}() must have the same type";
-                }
-
-                if ($aliasArg->defaultValue !== $aliasedArg->defaultValue) {
-                    $errors[] = "{$aliasFunc->name}(): Argument \$$aliasArg->name and argument \$$aliasedArg->name of aliased function {$aliasedFunc->name}() must have the same default value";
-                }
-            },
-            $aliasArgs, $aliasedArgs
-        );
-
-        $aliasedReturn = $aliasedFunc->return;
-        $aliasReturn = $aliasFunc->return;
-
-        if (!$aliasedFunc->name->isConstructor() && !$aliasFunc->name->isConstructor()) {
-            $aliasedReturnType = $aliasedReturn->type ?? $aliasedReturn->phpDocType;
-            $aliasReturnType = $aliasReturn->type ?? $aliasReturn->phpDocType;
-            if ($aliasReturnType != $aliasedReturnType) {
-                $errors[] = "{$aliasFunc->name}() and {$aliasedFunc->name}() must have the same return type";
+            $aliasedPhpDocReturnType = $aliasedReturn->phpDocType;
+            $aliasPhpDocReturnType = $aliasReturn->phpDocType;
+            if ($aliasedPhpDocReturnType != $aliasPhpDocReturnType && $aliasedPhpDocReturnType != $aliasReturn->type && $aliasPhpDocReturnType != $aliasedReturn->type) {
+                $errors[] = "{$aliasFunc->name}() and {$aliasedFunc->name}() must have the same PHPDoc return type";
             }
         }
 
-        $aliasedPhpDocReturnType = $aliasedReturn->phpDocType;
-        $aliasPhpDocReturnType = $aliasReturn->phpDocType;
-        if ($aliasedPhpDocReturnType != $aliasPhpDocReturnType && $aliasedPhpDocReturnType != $aliasReturn->type && $aliasPhpDocReturnType != $aliasedReturn->type) {
-            $errors[] = "{$aliasFunc->name}() and {$aliasedFunc->name}() must have the same PHPDoc return type";
+        echo implode("\n", $errors);
+        if (!empty($errors)) {
+            echo "\n";
+            exit(1);
         }
     }
 
-    echo implode("\n", $errors);
-    if (!empty($errors)) {
-        echo "\n";
-        exit(1);
-    }
-}
+    if ($replacePredefinedConstants || $verifyManual) {
+        $predefinedConstants = replacePredefinedConstants($manualTarget, $context->allConstInfos, $undocumentedConstMap);
 
-if ($replacePredefinedConstants || $verifyManual) {
-    $predefinedConstants = replacePredefinedConstants($manualTarget, $context->allConstInfos, $undocumentedConstMap);
-
-    if ($replacePredefinedConstants) {
-        foreach ($predefinedConstants as $filename => $content) {
-            reportFilePutContents($filename, $content);
+        if ($replacePredefinedConstants) {
+            foreach ($predefinedConstants as $filename => $content) {
+                reportFilePutContents($filename, $content);
+            }
         }
     }
-}
 
-if ($generateClassSynopses) {
-    $classSynopsesDirectory = getcwd() . "/classsynopses";
+    if ($generateClassSynopses) {
+        $classSynopsesDirectory = getcwd() . "/classsynopses";
 
-    $classSynopses = generateClassSynopses($classMap, $context->allConstInfos);
-    if (!empty($classSynopses)) {
-        if (!file_exists($classSynopsesDirectory)) {
-            mkdir($classSynopsesDirectory);
-        }
-
-        foreach ($classSynopses as $filename => $content) {
-            reportFilePutContents("$classSynopsesDirectory/$filename", $content);
-        }
-    }
-}
-
-if ($replaceClassSynopses || $verifyManual) {
-    $classSynopses = replaceClassSynopses($manualTarget, $classMap, $context->allConstInfos, $undocumentedClassMap);
-
-    if ($replaceClassSynopses) {
-        foreach ($classSynopses as $filename => $content) {
-            reportFilePutContents($filename, $content);
-        }
-    }
-}
-
-if ($generateMethodSynopses) {
-    $methodSynopses = generateMethodSynopses($funcMap);
-    if (!file_exists($manualTarget)) {
-        mkdir($manualTarget);
-    }
-
-    foreach ($methodSynopses as $filename => $content) {
-        $path = "$manualTarget/$filename";
-
-        if (!file_exists($path)) {
-            if (!file_exists(dirname($path))) {
-                mkdir(dirname($path));
+        $classSynopses = generateClassSynopses($classMap, $context->allConstInfos);
+        if (!empty($classSynopses)) {
+            if (!file_exists($classSynopsesDirectory)) {
+                mkdir($classSynopsesDirectory);
             }
 
-            reportFilePutContents($path, $content);
+            foreach ($classSynopses as $filename => $content) {
+                reportFilePutContents("$classSynopsesDirectory/$filename", $content);
+            }
         }
     }
-}
 
-if ($replaceMethodSynopses || $verifyManual) {
-    $methodSynopses = replaceMethodSynopses($manualTarget, $funcMap, $verifyManual, $methodSynopsisWarnings, $undocumentedFuncMap);
+    if ($replaceClassSynopses || $verifyManual) {
+        $classSynopses = replaceClassSynopses($manualTarget, $classMap, $context->allConstInfos, $undocumentedClassMap);
 
-    if ($replaceMethodSynopses) {
+        if ($replaceClassSynopses) {
+            foreach ($classSynopses as $filename => $content) {
+                reportFilePutContents($filename, $content);
+            }
+        }
+    }
+
+    if ($generateMethodSynopses) {
+        $methodSynopses = generateMethodSynopses($funcMap);
+        if (!file_exists($manualTarget)) {
+            mkdir($manualTarget);
+        }
+
         foreach ($methodSynopses as $filename => $content) {
-            reportFilePutContents($filename, $content);
+            $path = "$manualTarget/$filename";
+
+            if (!file_exists($path)) {
+                if (!file_exists(dirname($path))) {
+                    mkdir(dirname($path));
+                }
+
+                reportFilePutContents($path, $content);
+            }
+        }
+    }
+
+    if ($replaceMethodSynopses || $verifyManual) {
+        $methodSynopses = replaceMethodSynopses($manualTarget, $funcMap, $verifyManual, $methodSynopsisWarnings, $undocumentedFuncMap);
+
+        if ($replaceMethodSynopses) {
+            foreach ($methodSynopses as $filename => $content) {
+                reportFilePutContents($filename, $content);
+            }
+        }
+    }
+
+    if ($generateOptimizerInfo) {
+        $filename = dirname(__FILE__, 2) . "/Zend/Optimizer/zend_func_infos.h";
+        $optimizerInfo = generateOptimizerInfo($funcMap);
+
+        reportFilePutContents($filename, $optimizerInfo);
+    }
+
+    if ($verifyManual) {
+        foreach ($undocumentedConstMap as $constName => $info) {
+            if ($info->name instanceof ClassConstName || $info->isUndocumentable) {
+                continue;
+            }
+
+            echo "Warning: Missing predefined constant for $constName\n";
+        }
+
+        foreach ($methodSynopsisWarnings as $warning) {
+            echo "Warning: $warning\n";
+        }
+
+        foreach ($undocumentedClassMap as $className => $info) {
+            if (!$info->isUndocumentable) {
+                echo "Warning: Missing class synopsis for $className\n";
+            }
+        }
+
+        foreach ($undocumentedFuncMap as $functionName => $info) {
+            if (!$info->isUndocumentable) {
+                echo "Warning: Missing method synopsis for $functionName()\n";
+            }
         }
     }
 }
 
-if ($generateOptimizerInfo) {
-    $filename = dirname(__FILE__, 2) . "/Zend/Optimizer/zend_func_infos.h";
-    $optimizerInfo = generateOptimizerInfo($funcMap);
-
-    reportFilePutContents($filename, $optimizerInfo);
-}
-
-if ($verifyManual) {
-    foreach ($undocumentedConstMap as $constName => $info) {
-        if ($info->name instanceof ClassConstName || $info->isUndocumentable) {
-            continue;
-        }
-
-        echo "Warning: Missing predefined constant for $constName\n";
-    }
-
-    foreach ($methodSynopsisWarnings as $warning) {
-        echo "Warning: $warning\n";
-    }
-
-    foreach ($undocumentedClassMap as $className => $info) {
-        if (!$info->isUndocumentable) {
-            echo "Warning: Missing class synopsis for $className\n";
-        }
-    }
-
-    foreach ($undocumentedFuncMap as $functionName => $info) {
-        if (!$info->isUndocumentable) {
-            echo "Warning: Missing method synopsis for $functionName()\n";
-        }
-    }
-}
+main();

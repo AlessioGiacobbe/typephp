@@ -104,7 +104,7 @@ foreach ($this->nativeConstants as $name => $constant):
 <?php endforeach; ?>
 }
 
-static zend_module_entry app_module_entry = {
+zend_module_entry app_module_entry = {
     STANDARD_MODULE_HEADER,
     "app",
     ext_functions,
