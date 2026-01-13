@@ -2360,7 +2360,7 @@ class EvaluatedValue
         $this->isUnknownConstValue = $isUnknownConstValue;
     }
 
-    public function initializeZval(string $zvalName, bool $alreadyExists = false, string $forStringDef = ''): string
+    public function initializeZval(string $zvalName, bool $alreadyExists = false, string $forStringDef = '', string $varName = ''): string
     {
         $cExpr = $this->getCExpr();
 
@@ -2401,6 +2401,8 @@ class EvaluatedValue
                 $tmpVar = $translator->genTmpVarName();
                 $code .= "\tauto $tmpVar  = " . $translator->parseExpr($this->expr) . ";\n";
                 $code .= "\t{$tmpVar}.moveTo(&$zvalName);\n";
+                $code .= "\tphp::global_vars[\"$varName\"] = $zvalName;\n";
+                $code .= "\tZ_TYPE_FLAGS($zvalName) = 0;\n";
             }
         } else {
             throw new Exception("Invalid default value: " . print_r($this->value, true) . ", type: " . print_r($this->type, true));
@@ -3192,7 +3194,7 @@ class PropertyInfo extends VariableLike
         if ($this->defaultValue === null && $this->type !== null) {
             $code .= "\tzval $zvalName;\n\tZVAL_UNDEF(&$zvalName);\n";
         } else {
-            $code .= $defaultValue->initializeZval($zvalName);
+            $code .= $defaultValue->initializeZval($zvalName, varName: $this->name->__toString());
         }
 
         [$stringInit, $nameCode, $stringRelease] = StringBuilder::getString(
