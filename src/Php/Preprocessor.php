@@ -8,6 +8,8 @@ use PhpParser\NodeTraverser;
 
 class Preprocessor extends CompilerBase
 {
+    protected bool $enableCache = false;
+
     public function sortFiles(array &$list): void
     {
         foreach ($this->functionCallInFile as $k => $call) {
@@ -49,8 +51,37 @@ class Preprocessor extends CompilerBase
         $this->resetNamespace();
     }
 
+    public function getCppFile(string $file): string
+    {
+        $info = pathinfo($file);
+        return $this->buildDir . '/' . $this->removeCommonPrefix($this->buildDir, $info['dirname'] . '/' . $info['filename'] . '.cc');
+    }
+
+    public function getObjectFile(string $cppFile): string
+    {
+        $info = pathinfo($cppFile);
+        return $info['dirname'] . '/' . $info['filename'] . '.o';
+    }
+
+    public function hasCppFileCache(string $file): bool
+    {
+        if (!$this->enableCache or $this->climate->arguments->defined('force')) {
+            return false;
+        }
+        $cppFile = $this->getCppFile($file);
+        if (file_exists($cppFile) and filemtime($cppFile) > filemtime($file)) {
+            return true;
+        }
+        return false;
+    }
+
     public function prepare(string $file): void
     {
+        if ($this->hasCppFileCache($file)) {
+            $this->climate->darkGray('skip: ' . $file . ', cache exists');
+            return;
+        }
+
         $phpCode = $this->loadFile($file);
 
         $this->climate->info('prepare: ' . $this->file);

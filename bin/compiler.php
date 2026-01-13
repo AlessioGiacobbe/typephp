@@ -34,11 +34,6 @@ $objectFiles = [];
 
 // 分析 PHP 文件，预处理
 foreach ($list as $k => $file) {
-//    if ($translator->hasCache($file)) {
-//        echo " skip: " . $file . ", cache exists\n";
-//        unset($list[$k]);
-//        continue;
-//    }
     if (FileScanner::isPhpFile($file)) {
         try {
             $translator->prepare($file);

@@ -45,6 +45,13 @@ class Translator extends Preprocessor
                 'required'    => false,
                 'noValue'     => true,
             ],
+            'force' => [
+                'prefix'      => 'f',
+                'longPrefix'  => 'force',
+                'description' => 'Force compile even if cache exists',
+                'required'    => false,
+                'noValue'     => true,
+            ],
         ]);
 
         $this->preprocessArgvAdvanced();
@@ -77,6 +84,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
         $climate->tab()->out('-v, --verbose        Verbose output');
         $climate->tab()->out('-h, --help           Show this help message');
+        $climate->tab()->out('-f, --force          Force compile even if cache exists');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->br();
 
@@ -88,20 +96,12 @@ class Translator extends Preprocessor
         $climate->br();
     }
 
-    public function getCppFile(string $file): string
-    {
-        $info = pathinfo($file);
-        return $this->buildDir . '/' . $this->removeCommonPrefix($this->buildDir, $info['dirname'] . '/' . $info['filename'] . '.cc');
-    }
-
-    public function getObjectFile(string $cppFile): string
-    {
-        $info = pathinfo($cppFile);
-        return $info['dirname'] . '/' . $info['filename'] . '.o';
-    }
-
     public function convert(string $file): string
     {
+        if ($this->hasCppFileCache($file)) {
+            $this->climate->darkGray('skip: ' . $file . ', cache exists');
+            return $this->getCppFile($file);
+        }
         $phpCode = $this->loadFile($file);
         $this->stubFileIncluded = false;
         $this->localHeaders = [];
@@ -120,17 +120,6 @@ class Translator extends Preprocessor
     protected function getRegisterClassFunction(string $name): string
     {
         return self::PREFIX . 'register_class_' . $name;
-    }
-
-    public function hasCache(string $file): bool
-    {
-        $cppFile = $this->getCppFile($file);
-        $objectFile = $this->getObjectFile($cppFile);
-        if ((file_exists($cppFile) and filemtime($cppFile) > filemtime($file))
-            and (file_exists($objectFile) and filemtime($objectFile) > filemtime($cppFile))) {
-            return true;
-        }
-        return false;
     }
 
     protected function getClassCe(ClassDef $classDef): string
@@ -246,9 +235,25 @@ class Translator extends Preprocessor
         $this->formatCppCode($file);
     }
 
-    public function compileFile(string $file, string $objectFile): void
+    public function hasObjectFileCache(string $cppFile): bool
     {
-        $cmd = $this->cppCompiler . ' -c ' . $file . ' -o ' . $objectFile;
+        if (!$this->enableCache or $this->climate->arguments->defined('force')) {
+            return false;
+        }
+        $objectFile = $this->getObjectFile($cppFile);
+        if (file_exists($objectFile) and filemtime($objectFile) > filemtime($cppFile)) {
+            return true;
+        }
+        return false;
+    }
+
+    public function compileFile(string $cppFile, string $objectFile): void
+    {
+        if ($this->hasObjectFileCache($cppFile)) {
+            $this->climate->darkGray('skip: ' . $cppFile . ', cache exists');
+            return;
+        }
+        $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
         $this->addCompilationOption($cmd);
         $this->climate->comment($cmd);
         shell_exec($cmd);
