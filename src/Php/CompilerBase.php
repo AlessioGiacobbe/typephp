@@ -82,6 +82,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $useNamespaces = [];
     protected array $useFunctions = [];
     protected string $class = '';
+    protected string $interface = '';
     /**
      * @var array<string, ClassDef>
      */
@@ -91,8 +92,18 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, ClassDef>
      */
     protected array $classesDefineInFile = [];
+    /**
+     * @var array<string, InterfaceDef>
+     */
+    protected array $interfacesDefineInFile = [];
+    /**
+     * @var array<string>
+     */
+    protected array $classCeList = [];
+    protected array $classCeInfo = [];
     protected FunctionDef $functionDef;
     protected ClassDef $classDef;
+    protected InterfaceDef $interfaceDef;
     protected array $globalVars = [
         '_GET' => self::TYPE_ARRAY,
         '_POST' => self::TYPE_ARRAY,
@@ -203,6 +214,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->indentLevel = 0;
         $this->strictTypes = false;
         $this->classesDefineInFile = [];
+        $this->interfaceDefineInFile = [];
     }
 
     protected function resetNamespace(): void

@@ -14,20 +14,13 @@ foreach ($this->globalVars as $name => $type):
 <?= Translator::TYPE_VAR ?>  <?= $name ?>;
 <?php endforeach; ?>
 
-// class entries
-<?php
-foreach ($this->classes as $classDef) :
-?>
-zend_class_entry * <?= $this->getClassCe($classDef) ?>;
-<?php endforeach; ?>
-
 // class register functions
 <?php
-foreach ($this->classes as $classDef):
-    $name = $classDef->getNamespacedName();
-    $argDef = $this->getRegisterClassFunctionArgDef($classDef);
+foreach ($this->classCeList as $ce):
+    $info = $this->classCeInfo[$ce];
 ?>
-extern zend_class_entry *<?= $this->getRegisterClassFunction($name) ?>(<?= $argDef ?>);
+zend_class_entry * <?= $ce ?>;
+extern zend_class_entry *<?= $info['func'] ?>(<?= $info['argDef'] ?>);
 <?php endforeach; ?>
 
 // literal strings
@@ -59,23 +52,12 @@ static const zend_function_entry ext_functions[] = {
 };
 
 static PHP_MINIT_FUNCTION(app) {
-// class
+// class/interface class entries
 <?php
-foreach ($this->classes as $classDef):
-    $name = $classDef->getNamespacedName();
-    $params = $this->getRegisterClassFunctionArgs($classDef);
-    $fn = $this->getRegisterClassFunction($name);
+foreach ($this->classCeList as $ce):
+    $info = $this->classCeInfo[$ce];
 ?>
-    <?=$this->getClassCe($classDef)?> = <?= $fn ?>(<?= $params ?>);
-<?php endforeach; ?>
-
-
-<?php
-foreach ($this->interfaces as $interfaceDef):
-    $name = $interfaceDef->name;
-    $fn = $this->getRegisterClassFunction($name);
-?>
-    <?=$this->getClassCe($interfaceDef)?> = <?= $fn ?>();
+    <?=$ce?> = <?= $info['func'] ?>(<?= $info['args'] ?>);
 <?php endforeach; ?>
 
     return SUCCESS;

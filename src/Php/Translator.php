@@ -2,6 +2,7 @@
 
 namespace PhpAot\Php;
 
+use MJS\TopSort\Implementations\StringSort;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\NodeTraverser;
@@ -131,25 +132,33 @@ class Translator extends Preprocessor
         return self::PREFIX . 'register_class_' . $name;
     }
 
-    protected function getRegisterClassFunctionCeList(ClassDef $classDef): array
+    protected function getRegisterClassFunctionCeList(ClassDef|InterfaceDef $classDef): array
     {
         $list = [];
         $parentCe = $this->getParentClassCe($classDef);
-        $implements = $this->getImplementCe($classDef);
-        if ($parentCe) {
+        if ($parentCe !== '') {
             $list = [$parentCe];
         }
+        //  interface 没有 implements
+        if ($classDef instanceof InterfaceDef) {
+            return $list;
+        }
+        $implements = $this->getImplementCe($classDef);
         return array_merge($list, $implements);
     }
 
-    public function getRegisterClassFunctionArgs(ClassDef $classDef): string
+    public function getRegisterClassFunctionArgs(ClassDef|InterfaceDef $classDef): string
     {
         return implode(', ', $this->getRegisterClassFunctionCeList($classDef));
     }
 
-    private function getRegisterClassFunctionArgDef(ClassDef $classDef): string
+    private function getRegisterClassFunctionArgDef(ClassDef|InterfaceDef $classDef): string
     {
-        return 'zend_class_entry *' . implode(', zend_class_entry *', $this->getRegisterClassFunctionCeList($classDef));
+        $depsCeList = $this->getRegisterClassFunctionCeList($classDef);
+        if (empty($depsCeList)) {
+            return '';
+        }
+        return 'zend_class_entry *' . implode(', zend_class_entry *', $depsCeList);
     }
 
     protected function getClassCe(ClassLikeDef $classDef): string
@@ -157,7 +166,7 @@ class Translator extends Preprocessor
         return self::PREFIX . 'class_entry_' . $classDef->getNamespacedName();
     }
 
-    protected function getParentClassCe(ClassDef $classDef): string
+    protected function getParentClassCe(ClassLikeDef $classDef): string
     {
         if (!$classDef->extends) {
             return '';
@@ -165,7 +174,7 @@ class Translator extends Preprocessor
         return self::PREFIX . 'class_entry_' . $classDef->extends;
     }
 
-    private function getImplementCe(ClassLikeDef $classDef): array
+    private function getImplementCe(ClassDef $classDef): array
     {
         return array_map(fn($v) => self::PREFIX . 'class_entry_' . $v, $classDef->implements);
     }
@@ -217,6 +226,10 @@ class Translator extends Preprocessor
             $cppCode .= $this->genClassWrapper($classDef);
         }
 
+        foreach ($this->interfacesDefineInFile as $interfaceDef) {
+            $cppCode .= $this->genClassWrapper($interfaceDef);
+        }
+
         return $this->genIncludeHeaderFiles() . $cppCode;
     }
 
@@ -265,9 +278,45 @@ class Translator extends Preprocessor
         return ob_get_clean();
     }
 
+    protected function genClassCeList(): void
+    {
+        $sorter = new StringSort();
+
+        foreach ($this->interfacesDefineInFile as $interfaceDef) {
+            $ce = $this->getClassCe($interfaceDef);
+            $parentCe = $this->getParentClassCe($interfaceDef);
+            $deps = [];
+            if ($parentCe !== '') {
+                $deps[] = $parentCe;
+            }
+            $this->classCeInfo[$ce] = [
+                'deps' => $deps,
+                'func' => $this->getRegisterClassFunction($interfaceDef->getNamespacedName()),
+                'args' => $this->getRegisterClassFunctionArgs($interfaceDef),
+                'argDef' => $this->getRegisterClassFunctionArgDef($interfaceDef),
+            ];
+            $sorter->add($ce, $deps);
+        }
+
+        foreach ($this->classesDefineInFile as $classDef) {
+            $ce = $this->getClassCe($classDef);
+            $depsCeList = $this->getRegisterClassFunctionCeList($classDef);
+            $this->classCeInfo[$ce] = [
+                'deps' => $depsCeList,
+                'func' => $this->getRegisterClassFunction($classDef->getNamespacedName()),
+                'args' => $this->getRegisterClassFunctionArgs($classDef),
+                'argDef' => $this->getRegisterClassFunctionArgDef($classDef),
+            ];
+            $sorter->add($ce, $depsCeList);
+        }
+
+        $this->classCeList = $sorter->sort();
+    }
+
     public function genExtension(string $file): void
     {
         $this->localHeaders = [];
+        $this->genClassCeList();
         $code = $this->render('extension.cc.php');
         $this->writeFile($file, $code);
         $this->formatCppCode($file);
@@ -342,7 +391,7 @@ class Translator extends Preprocessor
 
     protected function getMethodName(Node\Stmt\ClassMethod $v): string
     {
-        return strtolower($this->parseIdentifier($v->name));
+        return $this->parseIdentifier($v->name);
     }
 
     protected function getNativeMethodName(ClassDef $classDef, MethodDef $methodDef): string
@@ -498,7 +547,7 @@ class Translator extends Preprocessor
     }
 
 
-    protected function genClassWrapper(ClassDef $classDef): string
+    protected function genClassWrapper(ClassDef|InterfaceDef $classDef): string
     {
         $cppCode = '';
         $name = $classDef->getNamespacedName();
@@ -508,10 +557,13 @@ class Translator extends Preprocessor
         $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
-        $methods = $classDef->methods;
-        foreach ($methods as $methodDef) {
-            $cppCode .= $this->genMethodWrapper($classDef, $methodDef);
+        if ($classDef instanceof ClassDef) {
+            $methods = $classDef->methods;
+            foreach ($methods as $methodDef) {
+                $cppCode .= $this->genMethodWrapper($classDef, $methodDef);
+            }
         }
+
         return $cppCode;
     }
 
@@ -705,9 +757,12 @@ class Translator extends Preprocessor
         return $list;
     }
 
-    private function parseInterface(Node $v): void
+    private function parseInterface(Node\Stmt\Interface_ $v): void
     {
         $name = $this->parseIdentifier($v->name);
-        $this->interfaces[$name] = new InterfaceDef($name, $this->namespace);
+        $this->interface = $name;
+        $this->interfaceDef = new InterfaceDef($name, $this->namespace);
+        $this->interfaces[$name] = $this->interfaceDef;
+        $this->interfacesDefineInFile[$this->interface] = $this->interfaceDef;
     }
 }
