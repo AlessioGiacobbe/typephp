@@ -292,6 +292,10 @@ class Translator extends Preprocessor
 
     protected function genClassCeList(): void
     {
+        if (empty($this->interfacesDefineInFile) and empty($this->classesDefineInFile)) {
+            return;
+        }
+
         $sorter = new StringSort();
 
         foreach ($this->interfacesDefineInFile as $interfaceDef) {
