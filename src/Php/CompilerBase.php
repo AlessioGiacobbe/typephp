@@ -214,7 +214,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->indentLevel = 0;
         $this->strictTypes = false;
         $this->classesDefineInFile = [];
-        $this->interfaceDefineInFile = [];
+        $this->interfacesDefineInFile = [];
     }
 
     protected function resetNamespace(): void

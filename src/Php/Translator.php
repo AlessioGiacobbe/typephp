@@ -166,6 +166,14 @@ class Translator extends Preprocessor
         return self::PREFIX . 'class_entry_' . $classDef->getNamespacedName();
     }
 
+    protected function getInternalCeInfo(string $ce): array
+    {
+        return [
+            'func' => 'php::getClassEntry',
+            'args' => '"' . substr($ce, strlen(self::PREFIX . 'class_entry_')) . '"',
+        ];
+    }
+
     protected function getParentClassCe(ClassLikeDef $classDef): string
     {
         if (!$classDef->extends) {
@@ -176,7 +184,11 @@ class Translator extends Preprocessor
 
     private function getImplementCe(ClassDef $classDef): array
     {
-        return array_map(fn($v) => self::PREFIX . 'class_entry_' . $v, $classDef->implements);
+        $list = [];
+        foreach ($classDef->implements as $interface) {
+            $list[] = self::PREFIX . 'class_entry_' . $interface;
+        }
+        return $list;
     }
 
     protected function doConvert(string $phpCode): string
@@ -283,12 +295,19 @@ class Translator extends Preprocessor
         $sorter = new StringSort();
 
         foreach ($this->interfacesDefineInFile as $interfaceDef) {
+            $parent = $interfaceDef->extends;
             $ce = $this->getClassCe($interfaceDef);
-            $parentCe = $this->getParentClassCe($interfaceDef);
             $deps = [];
-            if ($parentCe !== '') {
-                $deps[] = $parentCe;
+
+            if ($parent) {
+                // 不存在的接口，说明可能是内置接口
+                $tmpCe = $this->getParentClassCe($interfaceDef);
+                if (!isset($this->interfaces[$parent])) {
+                    $sorter->add($tmpCe);
+                }
+                $deps[] = $tmpCe;
             }
+
             $this->classCeInfo[$ce] = [
                 'deps' => $deps,
                 'func' => $this->getRegisterClassFunction($interfaceDef->getNamespacedName()),
@@ -300,14 +319,35 @@ class Translator extends Preprocessor
 
         foreach ($this->classesDefineInFile as $classDef) {
             $ce = $this->getClassCe($classDef);
-            $depsCeList = $this->getRegisterClassFunctionCeList($classDef);
+            $deps = [];
+            $parent = $classDef->extends;
+            if ($parent) {
+                // 不存在的父类，说明可能是内置类
+                $tmpCe = $this->getParentClassCe($classDef);
+                if (!isset($this->classes[$parent])) {
+                    $sorter->add($tmpCe);
+                }
+                $deps[] = $tmpCe;
+            }
+
+            $implements = $classDef->implements;
+            if ($implements) {
+                foreach ($implements as $interface) {
+                    $tmpCe = self::PREFIX . 'class_entry_' . $interface;
+                    if (!isset($this->interfaces[$interface])) {
+                        $sorter->add($tmpCe);
+                    }
+                    $deps[] = $tmpCe;
+                }
+            }
+
             $this->classCeInfo[$ce] = [
-                'deps' => $depsCeList,
+                'deps' => $deps,
                 'func' => $this->getRegisterClassFunction($classDef->getNamespacedName()),
                 'args' => $this->getRegisterClassFunctionArgs($classDef),
                 'argDef' => $this->getRegisterClassFunctionArgDef($classDef),
             ];
-            $sorter->add($ce, $depsCeList);
+            $sorter->add($ce, $deps);
         }
 
         $this->classCeList = $sorter->sort();
@@ -473,8 +513,9 @@ class Translator extends Preprocessor
         }
         $this->classDef->implements = $this->parseIdentifierList($class->implements);
 
-        $this->classes[$this->class] = $this->classDef;
-        $this->classesDefineInFile[$this->class] = $this->classDef;
+        $className = $this->classDef->getNamespacedName();
+        $this->classes[$className] = $this->classDef;
+        $this->classesDefineInFile[$className] = $this->classDef;
 
         $methodCodes = [];
 
@@ -557,6 +598,7 @@ class Translator extends Preprocessor
         $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
+        // 接口没有方法实体
         if ($classDef instanceof ClassDef) {
             $methods = $classDef->methods;
             foreach ($methods as $methodDef) {
@@ -762,7 +804,8 @@ class Translator extends Preprocessor
         $name = $this->parseIdentifier($v->name);
         $this->interface = $name;
         $this->interfaceDef = new InterfaceDef($name, $this->namespace);
-        $this->interfaces[$name] = $this->interfaceDef;
-        $this->interfacesDefineInFile[$this->interface] = $this->interfaceDef;
+        $interfaceName = $this->interfaceDef->getNamespacedName();
+        $this->interfaces[$interfaceName] = $this->interfaceDef;
+        $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
     }
 }

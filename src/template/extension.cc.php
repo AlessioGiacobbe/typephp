@@ -17,10 +17,14 @@ foreach ($this->globalVars as $name => $type):
 // class register functions
 <?php
 foreach ($this->classCeList as $ce):
-    $info = $this->classCeInfo[$ce];
 ?>
 zend_class_entry * <?= $ce ?>;
+<?php
+if (isset($this->classCeInfo[$ce])):
+    $info = $this->classCeInfo[$ce];
+?>
 extern zend_class_entry *<?= $info['func'] ?>(<?= $info['argDef'] ?>);
+<?php endif; ?>
 <?php endforeach; ?>
 
 // literal strings
@@ -55,7 +59,7 @@ static PHP_MINIT_FUNCTION(app) {
 // class/interface class entries
 <?php
 foreach ($this->classCeList as $ce):
-    $info = $this->classCeInfo[$ce];
+    $info = $this->classCeInfo[$ce] ?? $this->getInternalCeInfo($ce);
 ?>
     <?=$ce?> = <?= $info['func'] ?>(<?= $info['args'] ?>);
 <?php endforeach; ?>
