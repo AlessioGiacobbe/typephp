@@ -25,9 +25,9 @@ zend_class_entry * <?= $this->getClassCe($classDef) ?>;
 <?php
 foreach ($this->classes as $classDef):
     $name = $classDef->getNamespacedName();
-    $parentCe = $classDef->extends ? 'zend_class_entry *parent_ce' : '';
+    $argDef = $this->getRegisterClassFunctionArgDef($classDef);
 ?>
-extern zend_class_entry *<?= $this->getRegisterClassFunction($name) ?>(<?= $parentCe ?>);
+extern zend_class_entry *<?= $this->getRegisterClassFunction($name) ?>(<?= $argDef ?>);
 <?php endforeach; ?>
 
 // literal strings
@@ -59,13 +59,23 @@ static const zend_function_entry ext_functions[] = {
 };
 
 static PHP_MINIT_FUNCTION(app) {
+// class
 <?php
 foreach ($this->classes as $classDef):
     $name = $classDef->getNamespacedName();
-    $parentCe = $this->getParentClassCe($classDef);
+    $params = $this->getRegisterClassFunctionArgs($classDef);
     $fn = $this->getRegisterClassFunction($name);
 ?>
-    <?=$this->getClassCe($classDef)?> = <?= $fn ?>(<?= $parentCe ?>);
+    <?=$this->getClassCe($classDef)?> = <?= $fn ?>(<?= $params ?>);
+<?php endforeach; ?>
+
+
+<?php
+foreach ($this->interfaces as $interfaceDef):
+    $name = $interfaceDef->name;
+    $fn = $this->getRegisterClassFunction($name);
+?>
+    <?=$this->getClassCe($interfaceDef)?> = <?= $fn ?>();
 <?php endforeach; ?>
 
     return SUCCESS;

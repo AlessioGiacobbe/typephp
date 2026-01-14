@@ -131,7 +131,28 @@ class Translator extends Preprocessor
         return self::PREFIX . 'register_class_' . $name;
     }
 
-    protected function getClassCe(ClassDef $classDef): string
+    protected function getRegisterClassFunctionCeList(ClassDef $classDef): array
+    {
+        $list = [];
+        $parentCe = $this->getParentClassCe($classDef);
+        $implements = $this->getImplementCe($classDef);
+        if ($parentCe) {
+            $list = [$parentCe];
+        }
+        return array_merge($list, $implements);
+    }
+
+    public function getRegisterClassFunctionArgs(ClassDef $classDef): string
+    {
+        return implode(', ', $this->getRegisterClassFunctionCeList($classDef));
+    }
+
+    private function getRegisterClassFunctionArgDef(ClassDef $classDef): string
+    {
+        return 'zend_class_entry *' . implode(', zend_class_entry *', $this->getRegisterClassFunctionCeList($classDef));
+    }
+
+    protected function getClassCe(ClassLikeDef $classDef): string
     {
         return self::PREFIX . 'class_entry_' . $classDef->getNamespacedName();
     }
@@ -142,6 +163,11 @@ class Translator extends Preprocessor
             return '';
         }
         return self::PREFIX . 'class_entry_' . $classDef->extends;
+    }
+
+    private function getImplementCe(ClassLikeDef $classDef): array
+    {
+        return array_map(fn($v) => self::PREFIX . 'class_entry_' . $v, $classDef->implements);
     }
 
     protected function doConvert(string $phpCode): string
@@ -178,6 +204,9 @@ class Translator extends Preprocessor
                     break;
                 case 'Stmt_Const':
                     $this->parseConstDef($v) . PHP_EOL;
+                    break;
+                case 'Stmt_Interface':
+                    $this->parseInterface($v) . PHP_EOL;
                     break;
                 default:
                     abort($v);
@@ -389,13 +418,11 @@ class Translator extends Preprocessor
             $this->genClassStubFile($class, $this->file);
         }
 
-        $this->classDef = new ClassDef();
-        $this->classDef->name = $this->class;
+        $this->classDef = new ClassDef($this->class, $this->namespace);
         if ($class->extends) {
             $this->classDef->extends = $this->parseIdentifier($class->extends);
         }
         $this->classDef->implements = $this->parseIdentifierList($class->implements);
-        $this->classDef->namespace = $this->namespace;
 
         $this->classes[$this->class] = $this->classDef;
         $this->classesDefineInFile[$this->class] = $this->classDef;
@@ -475,15 +502,9 @@ class Translator extends Preprocessor
     {
         $cppCode = '';
         $name = $classDef->getNamespacedName();
-
-        if ($classDef->extends) {
-            $parentName = 'zend_class_entry *parent_ce';
-            $param = 'parent_ce';
-        } else {
-            $parentName = '';
-            $param = '';
-        }
-        $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $parentName . ') {' . PHP_EOL;
+        $argsDef = $this->getRegisterClassFunctionArgDef($classDef);
+        $param = $this->getRegisterClassFunctionArgs($classDef);
+        $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $argsDef . ') {' . PHP_EOL;
         $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
@@ -682,5 +703,11 @@ class Translator extends Preprocessor
             $list[] = $this->parseIdentifier($implement);
         }
         return $list;
+    }
+
+    private function parseInterface(Node $v): void
+    {
+        $name = $this->parseIdentifier($v->name);
+        $this->interfaces[$name] = new InterfaceDef($name, $this->namespace);
     }
 }

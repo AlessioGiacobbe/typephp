@@ -86,6 +86,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, ClassDef>
      */
     protected array $classes = [];
+    protected array $interfaces = [];
     /**
      * @var array<string, ClassDef>
      */
@@ -1096,7 +1097,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $left = $expr->var;
                 $name = $this->parseIdentifier($left);
                 $type = $this->detectExprType($expr->expr);
-                $code .= $type . ' ' . $name . ' = ' . '(' . $this->parseIdentifier($expr->expr) . ');';
+                // for 循环的变量声明，必须在循环体之外，不能创建 scope tmp var
+                if ($this->hasVar($name)) {
+                    $this->addLocalVar($name, $type);
+                }
+                $code .= $name . ' = ' . '(' . $this->parseIdentifier($expr->expr) . ');';
             }
             $list_cond[] = $this->parseExpr($expr);
         }

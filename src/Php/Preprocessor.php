@@ -106,6 +106,7 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Declare':
                 case 'Stmt_Use':
                 case 'Stmt_Const':
+                case 'Stmt_Interface':
                     break;
                 default:
                     $this->fatalError($v, 'Unsupported statement: ' . $type);

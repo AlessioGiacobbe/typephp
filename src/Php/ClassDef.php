@@ -2,9 +2,8 @@
 
 namespace PhpAot\Php;
 
-class ClassDef
+class ClassDef extends ClassLikeDef
 {
-    public string $name;
     /**
      * @var array<string, MethodDef>
      */
@@ -17,15 +16,11 @@ class ClassDef
      * @var array<string, ConstantDef>
      */
     public array $constants = [];
-    public string $namespace = '';
     public array $implements = [];
     public string $extends = '';
 
-    public function getNamespacedName(): string
+    public function __construct(string $name, string $namespace = '')
     {
-        if ($this->namespace === '') {
-            return $this->name;
-        }
-        return str_replace('\\', '_', $this->namespace . '_' . $this->name);
+        parent::__construct($name, $namespace);
     }
 }
