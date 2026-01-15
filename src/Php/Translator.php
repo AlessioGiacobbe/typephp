@@ -827,8 +827,8 @@ class Translator extends Preprocessor
         $code .= 'if (' . $tmpVar . ') {'. PHP_EOL;
 
         $this->indentLevel++;
-        $code .=  $this->getIndent() .$tmpVar . '.exec("rewind");' . PHP_EOL;
-        $code .=  $this->getIndent() .'while (' . $tmpVar . '.exec("valid")) {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpVar . '.exec("rewind");' . PHP_EOL;
+        $code .= $this->getIndent() . 'for (;' . $tmpVar . '.exec("valid");  ' . $tmpVar . '.exec("next")) {' . PHP_EOL;
         $this->indentLevel++;
         $valueVar = $this->parseIdentifier($node->valueVar);
         $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = ' . $tmpVar . '.exec("current");' . PHP_EOL;
@@ -837,12 +837,11 @@ class Translator extends Preprocessor
             $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $keyVar . ' = ' . $tmpVar . '.exec("key");' . PHP_EOL;
         }
         $code .= $this->parseStmts($node->stmts);
-        $code .= $this->getIndent() . $tmpVar . '.exec("next");' . PHP_EOL;
-        $code .= '}'. PHP_EOL;
+        $code .= '}' . PHP_EOL;
         $this->indentLevel--;
         $this->indentLevel--;
-        $code .= '}'. PHP_EOL;
-        return $code;
+        $code .= '}' . PHP_EOL;
 
+        return $code;
     }
 }

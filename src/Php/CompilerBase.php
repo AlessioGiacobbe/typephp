@@ -478,7 +478,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $result = $this->parseLabel($v);
                     break;
                 case 'Stmt_Continue':
-                    $result = 'continue;';
+                    $result = $this->parseContinue($v);
                     break;
                 case 'Stmt_Nop':
                     $result = '// pass';
@@ -2606,5 +2606,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->parseFuncCall($expr->expr, true);
         }
         abort($expr);
+    }
+
+    private function parseContinue(mixed $v): string
+    {
+        return 'continue;';
     }
 }
