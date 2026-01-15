@@ -819,6 +819,10 @@ class Translator extends Preprocessor
         $obj = $this->parseIdentifier($node->expr);
         $tmpVar = $this->genTmpVarName();
         $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
+
+        $tmpArrayVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpArrayVar, self::TYPE_ARRAY);
+
         $code = 'if (' . $obj . '.instanceOf("IteratorAggregate")) {' . PHP_EOL;
         $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . '.exec("getIterator");' . PHP_EOL . '}' . PHP_EOL;
         $code .= 'else if (' . $obj . '.instanceOf("Iterator")) {' . PHP_EOL;
@@ -839,6 +843,9 @@ class Translator extends Preprocessor
         $code .= $this->parseStmts($node->stmts);
         $code .= '}' . PHP_EOL;
         $this->indentLevel--;
+        $code .= $this->getIndent() . '} else {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpArrayVar . ' = php::call("get_object_vars", {' . $obj . '});' . PHP_EOL;
+        $code .= $this->parseForeachArray($node, $tmpArrayVar);
         $this->indentLevel--;
         $code .= '}' . PHP_EOL;
 

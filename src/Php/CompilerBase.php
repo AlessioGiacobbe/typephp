@@ -1980,6 +1980,37 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function parseForeachArray(Foreach_ $node, string $iteratorVar): string
+    {
+        if ($node->keyVar) {
+            $keyVar = $this->parseIdentifier($node->keyVar);
+        }
+
+        $code = 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
+        $this->indentLevel++;
+        if ($node->keyVar) {
+            $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
+        }
+
+        if ($node->valueVar->getType() == self::EXPR_ARRAY_DIM_FETCH) {
+            $array = $this->parseIdentifier($node->valueVar->var);
+            if (!$this->hasVar($array) or $node->valueVar->dim === null) {
+                abort($node->valueVar);
+            }
+            $dim = $this->parseIdentifier($node->valueVar->dim);
+            $code .= $this->getIndent() . "$array.offsetSet($dim, iter.value());";
+        } else {
+            $valueVar = $this->parseIdentifier($node->valueVar);
+            $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
+        }
+        $code .= $this->parseStmts($node->stmts);
+        $this->indentLevel--;
+
+        $code .= $this->getIndent() . '}';
+
+        return $code;
+    }
+
     protected function parseForeach(Foreach_ $node): string
     {
         if ($node->byRef) {
@@ -1997,37 +2028,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $iteratorVar = $this->genTmpVarName();
 
-        $stmts = $node->stmts;
         $code = '';
-        if ($node->keyVar) {
-            $keyVar = $this->parseIdentifier($node->keyVar);
-        }
-        $valueVar = $this->parseIdentifier($node->valueVar);
-
         $expr = $this->parseIdentifier($node->expr);
         $code .= self::TYPE_ARRAY . " $iteratorVar = " . $expr . ';' . PHP_EOL;
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
-
-        $code .= 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
-        $this->indentLevel++;
-        if ($node->keyVar) {
-            $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
-        }
-
-        if ($node->valueVar->getType() == self::EXPR_ARRAY_DIM_FETCH) {
-            $array = $this->parseIdentifier($node->valueVar->var);
-            if (!$this->hasVar($array) or $node->valueVar->dim === null) {
-                abort($node->valueVar);
-            }
-            $dim = $this->parseIdentifier($node->valueVar->dim);
-            $code .= $this->getIndent() . "$array.offsetSet($dim, iter.value());";
-        } else {
-            $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
-        }
-        $code .= $this->parseStmts($stmts);
-        $this->indentLevel--;
-
-        $code .= $this->getIndent() . '}';
+        $code .= $this->parseForeachArray($node, $iteratorVar);
 
         return $code;
     }
