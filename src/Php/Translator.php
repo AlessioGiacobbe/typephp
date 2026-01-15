@@ -5,6 +5,7 @@ namespace PhpAot\Php;
 use MJS\TopSort\Implementations\StringSort;
 use PhpParser\Modifiers;
 use PhpParser\Node;
+use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeTraverser;
 
 class Translator extends Preprocessor
@@ -779,7 +780,7 @@ class Translator extends Preprocessor
         }
     }
 
-    private function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
+    protected function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
     {
         $name = $this->getMethodName($v);
         $this->method = $name;
@@ -794,7 +795,7 @@ class Translator extends Preprocessor
         $this->method = '';
     }
 
-    private function parseIdentifierList(array $implements): array
+    protected function parseIdentifierList(array $implements): array
     {
         $list = [];
         foreach ($implements as $implement) {
@@ -803,7 +804,7 @@ class Translator extends Preprocessor
         return $list;
     }
 
-    private function parseInterface(Node\Stmt\Interface_ $v): void
+    protected function parseInterface(Node\Stmt\Interface_ $v): void
     {
         $name = $this->parseIdentifier($v->name);
         $this->interface = $name;
@@ -811,5 +812,37 @@ class Translator extends Preprocessor
         $interfaceName = $this->interfaceDef->getNamespacedName();
         $this->interfaces[$interfaceName] = $this->interfaceDef;
         $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
+    }
+
+    protected function parseForeachObject(Foreach_ $node): string
+    {
+        $obj = $this->parseIdentifier($node->expr);
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
+        $code = 'if (' . $obj . '.instanceOf("IteratorAggregate")) {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . '.exec("getIterator");' . PHP_EOL . '}' . PHP_EOL;
+        $code .= 'else if (' . $obj . '.instanceOf("Iterator")) {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . ';' . PHP_EOL . '}'. PHP_EOL;
+
+        $code .= 'if (' . $tmpVar . ') {'. PHP_EOL;
+
+        $this->indentLevel++;
+        $code .=  $this->getIndent() .$tmpVar . '.exec("rewind");' . PHP_EOL;
+        $code .=  $this->getIndent() .'while (' . $tmpVar . '.exec("valid")) {' . PHP_EOL;
+        $this->indentLevel++;
+        $valueVar = $this->parseIdentifier($node->valueVar);
+        $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = ' . $tmpVar . '.exec("current");' . PHP_EOL;
+        if ($node->keyVar) {
+            $keyVar = $this->parseIdentifier($node->keyVar);
+            $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $keyVar . ' = ' . $tmpVar . '.exec("key");' . PHP_EOL;
+        }
+        $code .= $this->parseStmts($node->stmts);
+        $code .= $this->getIndent() . $tmpVar . '.exec("next");' . PHP_EOL;
+        $code .= '}'. PHP_EOL;
+        $this->indentLevel--;
+        $this->indentLevel--;
+        $code .= '}'. PHP_EOL;
+        return $code;
+
     }
 }

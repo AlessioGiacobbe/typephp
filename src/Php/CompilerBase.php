@@ -134,7 +134,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $beforeStmtLines = [];
     protected array $afterStmtLines = [];
     protected bool $inLoop = false;
-    protected bool $inSwitch = false;
     protected bool $stubFile = false;
     protected bool $stubFileIncluded = false;
     protected Parser $parser;
@@ -207,11 +206,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         return isset($this->nativeFunctions[$name]);
     }
 
-    protected function resetScope(): void
+    protected function resetFunction(): void
     {
         $this->localVars = [];
         $this->arguments = [];
         $this->tmpVarIndex = 0;
+        $this->inLoop = false;
     }
 
     protected function resetFile(): void
@@ -261,7 +261,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseFunction(Node\FunctionLike $v): string
     {
-        $this->resetScope();
+        $this->resetFunction();
         $this->function = $this->parseIdentifier($v->name);
         $name = $this->getFunctionName($v);
         if (isset($this->nativeFunctions[$name])) {
@@ -403,9 +403,26 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->getIndent() . '// ' . $class . ' [' . $v->getStartLine() . ':' . $v->getEndLine() . ']';
     }
 
+    /**
+     * 在 for/foreach 等包含子语句的语句，之前检查当前待添加的代码是否为空，
+     * 如果不为空，需要将语句追加到 {} 作用域符号之前
+     * @return string
+     */
+    protected function parseBeforeStmtLines(): string
+    {
+        if ($this->beforeStmtLines) {
+            $code = implode(PHP_EOL, $this->beforeStmtLines);
+            $this->beforeStmtLines = [];
+            return $code . PHP_EOL;
+        } else {
+            return '';
+        }
+    }
+
     protected function parseStmts(array $stmts): string
     {
         $lines = [];
+        $inLoopTop = $this->inLoop;
         foreach ($stmts as $v) {
             $class = $v->getType();
             $this->beforeStmtLines = [];
@@ -426,27 +443,27 @@ class CompilerBase extends \PhpAot\Core\Translator
                 case 'Stmt_For':
                     $this->inLoop = true;
                     $result = $this->parseFor($v);
-                    $this->inLoop = false;
+                    $this->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_Foreach':
                     $this->inLoop = true;
                     $result = $this->parseForeach($v);
-                    $this->inLoop = false;
+                    $this->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_Switch':
-                    $this->inSwitch = true;
+                    $this->inLoop = true;
                     $result = $this->parseSwitch($v);
-                    $this->inSwitch = false;
+                    $this->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_While':
                     $this->inLoop = true;
                     $result = $this->parseWhile($v);
-                    $this->inLoop = false;
+                    $this->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_Do':
                     $this->inLoop = true;
                     $result = $this->parseDo($v);
-                    $this->inLoop = false;
+                    $this->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_If':
                     $result = $this->parseIf($v);
@@ -1115,7 +1132,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $name = $this->parseIdentifier($left);
                 $type = $this->detectExprType($expr->expr);
                 // for 循环的变量声明，必须在循环体之外，不能创建 scope tmp var
-                if ($this->hasVar($name)) {
+                if (!$this->hasVar($name)) {
                     $this->addLocalVar($name, $type);
                 }
                 $code .= $name . ' = ' . '(' . $this->parseIdentifier($expr->expr) . ');';
@@ -1123,6 +1140,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $list_cond[] = $this->parseExpr($expr);
         }
 
+        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'for (;';
         $code .= implode(', ', $list_cond);
         $code .= '; ';
@@ -1418,7 +1436,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePostInc($expr): string
     {
-        return $this->parseIdentifier($expr->var) . '++';
+        if ($this->isVarExpr($expr->var)) {
+            return $this->parseIdentifier($expr->var) . '++';
+        } elseif ($this->isPropertyFetch($expr->var)) {
+            $obj = $this->parseIdentifier($expr->var->var);
+            $prop = $this->identifierToStr($expr->var->name);
+            return $obj . '.setProperty(' . $prop . ', ' . $obj. '.getProperty(' . $prop . ') + 1)';
+        }
+        abort($expr, "Post-increment operator is not supported for non-variable expressions");
     }
 
     protected function parsePostDec($expr): string
@@ -1482,7 +1507,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $cond = $this->parseExpr($v->cond);
 
-        $code = 'if (' . $cond . ') {' . PHP_EOL;
+        $code = $this->parseBeforeStmtLines() . PHP_EOL;
+        $code .= 'if (' . $cond . ') {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->parseStmts($v->stmts);
         $this->indentLevel--;
@@ -1549,7 +1575,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         $cond = $this->parseExpr($v->cond);
         $stmts = $v->stmts;
 
-        $code = 'while (' . $cond . ') {' . PHP_EOL;
+        $code = $this->parseBeforeStmtLines() . PHP_EOL;
+        $code .= 'while (' . $cond . ') {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->parseStmts($stmts);
         $this->indentLevel--;
@@ -1670,8 +1697,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $stmts = $v->stmts;
         $cond = $this->parseExpr($v->cond);
-
-        $code = 'do {' . PHP_EOL;
+        $code = $this->parseBeforeStmtLines() . PHP_EOL;
+        $code .= 'do {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->parseStmts($stmts);
         $this->indentLevel--;
@@ -1892,7 +1919,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::exit(' . $this->parseIdentifier($node->expr) . ')';
     }
 
-    protected function parseUnset(Node $node): string
+    protected function parseUnset(Node\Stmt\Unset_ $node): string
     {
         $vars = $node->vars;
         $lines = [];
@@ -1916,7 +1943,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(PHP_EOL . $this->getIndent(), $lines);
     }
 
-    protected function parsePropertyFetch(Node $expr): string
+    protected function parsePropertyFetch(Node\Expr\PropertyFetch $expr): string
     {
         return $this->convertToObject($expr->var) . '.getProperty("' . $this->parseIdentifier($expr->name) . '")';
     }
@@ -1958,18 +1985,28 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($node->byRef) {
             $this->fatalError($node, 'Cannot use & with foreach');
         }
-        if ($node->keyVar) {
-            $keyVar = $this->parseIdentifier($node->keyVar);
+        if ($this->isVarExpr($node->expr)) {
+            $name = $this->parseIdentifier($node->expr);
+            if ($this->hasVar($name)) {
+                $type = $this->getVarType($name);
+                if ($type === self::TYPE_OBJECT) {
+                    return $this->parseForeachObject($node);
+                }
+            }
         }
-        $valueVar = $this->parseIdentifier($node->valueVar);
 
         $iteratorVar = $this->genTmpVarName();
 
         $stmts = $node->stmts;
         $code = '';
+        if ($node->keyVar) {
+            $keyVar = $this->parseIdentifier($node->keyVar);
+        }
+        $valueVar = $this->parseIdentifier($node->valueVar);
 
         $expr = $this->parseIdentifier($node->expr);
         $code .= self::TYPE_ARRAY . " $iteratorVar = " . $expr . ';' . PHP_EOL;
+        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
 
         $code .= 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
         $this->indentLevel++;
@@ -2035,9 +2072,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
         $localVars = $this->localVars;
+        $code = $this->parseBeforeStmtLines() . PHP_EOL;
 
         if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT) {
-            $code = 'switch (' . $tmp_var . ') {' . PHP_EOL;
+            $code .= 'switch (' . $tmp_var . ') {' . PHP_EOL;
             $this->indentLevel++;
             foreach ($v->cases as $case) {
                 if (empty($case->cond)) {
@@ -2105,7 +2143,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseBreak(mixed $v): string
     {
-        if (!$this->inLoop and !$this->inSwitch) {
+        if (!$this->inLoop) {
             $this->fatalError($v, 'Cannot break outside loop');
         }
         $num = $v->num;
@@ -2208,7 +2246,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function convertToObject(Node $object): string
     {
         $id = $this->parseIdentifier($object);
-        if (!$this->hasVar($id)) {
+        if ($this->isVarExpr($object) and !$this->hasVar($id)) {
             $this->addLocalVar($id, self::TYPE_OBJECT);
             return $id;
         }
@@ -2245,7 +2283,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         abort($expr);
     }
 
-    protected function parseMethodCall(mixed $expr): string
+    protected function parseMethodCall(Node\Expr\MethodCall $expr): string
     {
         $object = $this->convertToObject($expr->var);
         $method = $this->parseIdentifier($expr->name);
@@ -2333,7 +2371,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseTryCatch(mixed $v): string
     {
-        $code = 'zend_try {';
+        $code = $this->parseBeforeStmtLines() . PHP_EOL;
+        $code .= 'zend_try {';
         $stmts = $v->stmts;
 
         $code .= PHP_EOL;
@@ -2374,6 +2413,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->addLocalVar($var, self::TYPE_OBJECT);
         }
         $code = $this->getIndent() . $var . ' = ' . $exVar . ';' . PHP_EOL;
+
+        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
 
         $code .= $this->getIndent() . 'if (' . $var . ' && ';
         foreach ($types as $type) {
@@ -2566,6 +2607,4 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         abort($expr);
     }
-
-
 }
