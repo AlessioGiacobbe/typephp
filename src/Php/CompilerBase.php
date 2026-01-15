@@ -23,6 +23,7 @@ use stdClass;
 
 class CompilerBase extends \PhpAot\Core\Translator
 {
+    use AstNodeType;
     public const string TYPE_VAR = 'php::Var';
     public const string TYPE_BOOL = 'php::Bool';
     public const string TYPE_INT = 'php::Int';
@@ -52,8 +53,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         'int' => self::TYPE_INT,
         'float' => self::TYPE_FLOAT,
         'bool' => self::TYPE_BOOL,
+        'void' => self::TYPE_VOID,
+        'string' => self::TYPE_STR,
+        'array' => self::TYPE_ARRAY,
+        'object' => self::TYPE_OBJECT,
+        'mixed' => self::TYPE_VAR,
     ];
-    protected array $reservedNames;
     protected array $globalHeaders = [
         'phpx.h',
         'phpx_helper.h',
@@ -676,7 +681,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $array = $this->parseIdentifier($left->var);
             $code = '';
             // 这是 PHP 的初始化+赋值写法，需要先创建数组
-            if (!$this->hasVar($array) and $left->var->getType() === self::EXPR_VARIABLE) {
+            if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
                 $this->addLocalVar($array, self::TYPE_ARRAY);
             }
 
@@ -1158,7 +1163,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $var = $this->parseIdentifier($node->var);
         $expr = $this->parseIdentifier($node->expr);
         $leftExprType = $node->var->getType();
-        if ($leftExprType === self::EXPR_VARIABLE) {
+        if ($this->isVarExpr($node->var)) {
             if (!$this->hasVar($var)) {
                 $this->fatalError($node->var, 'Cannot assign to undefined variable');
             }
@@ -1316,7 +1321,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
     {
-        if ($expr->name->getType() === self::EXPR_VARIABLE) {
+        if ($this->isVarExpr($expr->name)) {
             $fn = $this->parseIdentifier($expr->name);
             $name = '';
         } elseif ($expr->name->getType() === 'Name') {
@@ -1373,7 +1378,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $list_args = [];
         foreach ($args as $i => $arg) {
-            if ($arg->value->getType() === self::EXPR_VARIABLE) {
+            if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
                 // 调用了不存在的变量，可能是引用
                 if (!$this->hasVar($name)) {
@@ -2226,12 +2231,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseAssignRef(Node\Expr\AssignRef $expr): string
     {
-        if ($expr->var->getType() === self::EXPR_VARIABLE) {
+        if ($this->isVarExpr($expr->var)) {
             $var = $this->parseIdentifier($expr->var);
             if (!$this->hasVar($var)) {
                 $this->addLocalVar($var, self::TYPE_VAR);
             }
-            if ($expr->expr->getType() === self::EXPR_VARIABLE) {
+            if ($this->isVarExpr($expr->expr)) {
                 return $var . ' = &' . $this->parseIdentifier($expr->expr);
             } elseif ($expr->expr->getType() === self::EXPR_ARRAY_DIM_FETCH) {
                 return $var . ' = ' . $this->parseIdentifier($expr->expr);
@@ -2254,7 +2259,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function identifierToStr(Node $node, bool $require = true): string
     {
         $id = $this->parseIdentifier($node);
-        if ($node->getType() === self::EXPR_VARIABLE) {
+        if ($this->isVarExpr($node)) {
             if ($require) {
                 $this->requireVar($node, $id);
             }
@@ -2286,7 +2291,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseStaticCall(Node\Expr\StaticCall $expr): string
     {
-        if ($expr->class->getType() === self::EXPR_VARIABLE or $expr->name->getType() === self::EXPR_VARIABLE) {
+        if ($this->isVarExpr($expr->class) or $this->isVarExpr($expr->name)) {
             $fn = 'php::concat({' . $this->identifierToStr($expr->class). ', "::", ' . $this->identifierToStr($expr->name) . '})';
         } else {
             $class = $this->parseIdentifier($expr->class);
@@ -2320,7 +2325,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseThrow(mixed $expr): string
     {
-        if ($expr->expr->getType() != self::EXPR_VARIABLE and $expr->expr->getType() != self::EXPR_NEW) {
+        if (!$this->isVarExpr($expr->expr) and $expr->expr->getType() != self::EXPR_NEW) {
             $this->fatalError($expr, 'The throw statement only accepts a object variable');
         }
         return 'php::throwException(' . $this->parseIdentifier($expr->expr). ')';
@@ -2451,7 +2456,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function isArrayVar($var): bool
     {
-        return $var->getType() == self::EXPR_VARIABLE and $this->hasVar($var->name) and $this->getVarType($var->name) == self::TYPE_ARRAY;
+        return $this->isVarExpr($var) and $this->hasVar($var->name) and $this->getVarType($var->name) == self::TYPE_ARRAY;
     }
 
     protected function setBuildDir(string $string): void
