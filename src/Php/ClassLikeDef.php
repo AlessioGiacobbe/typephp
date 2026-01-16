@@ -8,6 +8,7 @@ class ClassLikeDef
     public string $namespace;
     public string $extends = '';
 
+
     public function __construct(string $name, string $namespace = '')
     {
         $this->name = $name;

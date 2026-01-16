@@ -512,9 +512,15 @@ class Translator extends Preprocessor
             $this->genClassStubFile($class, $this->file);
         }
 
-        $this->classDef = new ClassDef($this->class, $this->namespace);
+        $this->classDef = new ClassDef($this->class, $class->flags, $this->namespace);
         if ($class->extends) {
             $this->classDef->extends = $this->parseIdentifier($class->extends);
+            if (isset($this->classes[$this->classDef->extends])) {
+                $parent = $this->classes[$this->classDef->extends];
+                if ($parent->flags & Modifiers::FINAL) {
+                    $this->fatalError($class, "Class `{$this->class}` cannot extend final class `{$this->classDef->extends}`");
+                }
+            }
         }
         $this->classDef->implements = $this->parseIdentifierList($class->implements);
 

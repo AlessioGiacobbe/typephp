@@ -210,6 +210,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->localVars = [];
         $this->arguments = [];
+        $this->objectWrappers = [];
         $this->tmpVarIndex = 0;
         $this->inLoop = false;
     }
@@ -494,6 +495,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_TryCatch':
                     $result = $this->parseTryCatch($v);
+                    break;
+                case 'Stmt_Class':
+                    $this->fatalError($v, 'Cannot declare class in function');
                     break;
                 default:
                     abort($v);
@@ -1437,21 +1441,38 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseIdentifier($arg->value);
     }
 
-    protected function parsePostInc($expr): string
+    protected function parsePostOp($expr, string $op): string
     {
         if ($this->isVarExpr($expr->var)) {
             return $this->parseIdentifier($expr->var) . '++';
         } elseif ($this->isPropertyFetch($expr->var)) {
             $obj = $this->parseIdentifier($expr->var->var);
             $prop = $this->identifierToStr($expr->var->name);
-            return $obj . '.setProperty(' . $prop . ', ' . $obj. '.getProperty(' . $prop . ') + 1)';
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $this->beforeStmtLines[] = $tmpVar . ' = ' . $obj. '.getProperty(' . $prop . ');';
+            $this->afterStmtLines[] = $obj . '.setProperty(' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
+            return $tmpVar;
+        } elseif ($this->isStaticPropertyFetch($expr->var)) {
+            $class = $this->identifierToStr($expr->var->class);
+            $prop = $this->identifierToStr($expr->var->name);
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $this->beforeStmtLines[] = $tmpVar . ' = ' . 'php::getStaticProperty(' . $class . ', ' . $prop . ');';
+            $this->afterStmtLines[] = 'php::setStaticProperty(' . $class . ', ' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
+            return $tmpVar;
         }
         abort($expr, "Post-increment operator is not supported for non-variable expressions");
     }
 
     protected function parsePostDec($expr): string
     {
-        return $this->parseIdentifier($expr->var) . '--';
+        return $this->parsePostOp($expr, '-');
+    }
+
+    protected function parsePostInc($expr): string
+    {
+        return $this->parsePostOp($expr, '+');
     }
 
     protected function parseTernary(mixed $expr): string
@@ -2254,6 +2275,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function convertToObject(Node $object): string
     {
         $id = $this->parseIdentifier($object);
+        // TODO 这里的逻辑是不是错误
         if ($this->isVarExpr($object) and !$this->hasVar($id)) {
             $this->addLocalVar($id, self::TYPE_OBJECT);
             return $id;

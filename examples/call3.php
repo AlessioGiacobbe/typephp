@@ -1,21 +1,33 @@
 <?php
-class C
+
+class Circle
 {
-    function __call($name, $values)
+    function draw()
     {
-        $values[0][0] = 'changed';
+        echo "Circle\n";
     }
 }
-function main() {
-    $a = array('original');
-    $b = array('original');
 
-     $hack =& $b[0];
-
-    $c = new C;
-    $c->f($a);
-    $c->f($b);
-
-    var_dump($a, $b);
+class Square
+{
+    function draw()
+    {
+        print "Square\n";
+    }
 }
 
+function ShapeFactoryMethod($shape)
+{
+    switch ($shape) {
+        case "Circle":
+            return new Circle();
+        case "Square":
+            return new Square();
+    }
+}
+
+function main()
+{
+    ShapeFactoryMethod("Circle")->draw();
+    ShapeFactoryMethod("Square")->draw();
+}

@@ -16,4 +16,9 @@ trait AstNodeType
     {
         return $expr instanceof Expr\PropertyFetch;
     }
+
+    protected function isStaticPropertyFetch(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Expr\StaticPropertyFetch;
+    }
 }
