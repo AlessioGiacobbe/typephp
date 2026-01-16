@@ -1402,17 +1402,20 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$this->hasVar($name)) {
                     $this->addLocalVar($name, self::TYPE_REF);
                     $this->beforeStmtLines[] = $name . ' = php::newReference();';
-                } elseif (!$nativeFunction and $funcName) {
-                    $funcArg = Reflection::getFunctionParameter($funcName, $i);
+                } elseif (!$nativeFunction and $funcName and Reflection::isReferenceArg($funcName, $i)) {
                     // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
-                    if ($funcArg and $funcArg->isPassedByReference()) {
-                        $tmpVar = $this->genTmpVarName();
-                        $this->addLocalVar($tmpVar, self::TYPE_REF);
-                        $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
-                        $this->afterStmtLines[] = $name . ' = *' . $tmpVar . ';';
-                        $list_args[] = $tmpVar;
-                        continue;
-                    }
+                    $tmpVar = $this->genTmpVarName();
+                    $this->addLocalVar($tmpVar, self::TYPE_REF);
+                    $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
+                    $this->afterStmtLines[] = $name . ' = *' . $tmpVar . ';';
+                    $list_args[] = $tmpVar;
+                    continue;
+                }
+            } elseif ($this->isPropertyFetch($arg->value)) {
+                if (!$nativeFunction and $funcName and Reflection::isReferenceArg($funcName, $i)) {
+                    $obj = $this->parseIdentifier($arg->value->var);
+                    $list_args[] = $obj . '.getPropertyReference(' . $this->identifierToStr($arg->value->name) . ')';
+                    continue;
                 }
             }
             // 不支持变长参数展开的语法，例如：array_merge(...$arr)

@@ -52,4 +52,13 @@ class Reflection
         }
         return $args[$index];
     }
+
+    public static function isReferenceArg(string $fn, int $index): ?string
+    {
+        $param = self::getFunctionParameter($fn, $index);
+        if (!$param) {
+            return null;
+        }
+        return $param->isPassedByReference() ? $param->getName() : null;
+    }
 }
