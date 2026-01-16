@@ -10,6 +10,8 @@ use PhpParser\NodeTraverser;
 
 class Translator extends Preprocessor
 {
+    use MagicMethodDetector;
+
     protected bool $verbose = false;
     protected array $unsupportedFunctions = [
         'compact',
@@ -798,11 +800,7 @@ class Translator extends Preprocessor
         $this->method = $name;
         $methodCodes[$name] = $this->parseFunction($v);
         $methodDef = new MethodDef($v->flags, $name, $this->functionDef);
-        if ($name == '__call') {
-            if (count($methodDef->functionDef->argInfoList) != 2) {
-                $this->fatalError($v, 'Method ' . $this->class . '::__call() must take exactly 2 arguments');
-            }
-        }
+        $this->checkRequiredArgNum($name, $methodDef, $v);
         $this->classDef->methods[$name] = $methodDef;
         $this->method = '';
     }

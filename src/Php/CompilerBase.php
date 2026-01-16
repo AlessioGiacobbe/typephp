@@ -790,7 +790,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseEcho(mixed $v): string
     {
         foreach ($v->exprs as $expr) {
-            $lines[] = 'php::echo(' . $this->parseExpr($expr) . ');';
+            if ($expr instanceof Node\Expr\Assign) {
+                $this->fatalError($expr, 'Cannot echo assign expression');
+            } else {
+                $lines[] = 'php::echo(' . $this->parseExpr($expr) . ');';
+            }
         }
         return implode("\n" . $this->getIndent(), $lines);
     }
@@ -1231,11 +1235,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->convertExprType($expr, $type, $rightType) . ';';
             }
             return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
+        } elseif ($this->isPropertyFetch($node->var)) {
+            $obj = $this->parseIdentifier($node->var->var);
+            $prop = $this->identifierToStr($node->var->name);
+            return $obj . '.setProperty(' . $prop . ', ' . $obj . '.getProperty(' . $prop . ') ' . $this->removeAssignOp($op) . ' ' . $expr . ')';
         } else {
             return $var . ' ' . $op . ' (' . $expr . ')';
         }
-
-        // TODO 属性设置
     }
 
     protected function parseAssignOpConcat(mixed $expr): string
