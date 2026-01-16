@@ -775,6 +775,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $code . '}';
         }
         $var = $this->parseIdentifier($left);
+        if ($var === 'this_') {
+            $this->fatalError($left, 'Cannot re-assign $this');
+        }
         $expr = $this->parseExpr($right);
 
         if (!$this->hasVar($var)) {
