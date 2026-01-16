@@ -3,6 +3,7 @@
 require __DIR__ . '/bootstrap.php';
 
 use PhpAot\Php\FileScanner;
+use PhpAot\Php\SyntaxError;
 use PhpAot\Php\Translator;
 use PhpAot\Php\Unsupported;
 
@@ -40,6 +41,8 @@ foreach ($list as $k => $file) {
         } catch (Unsupported $e) {
             echo " unsupported syntax: " . $e->getMessage() . "\n";
             echo " skip: " . $file . "\n";
+            unset($list[$k]);
+        } catch (SyntaxError $e) {
             unset($list[$k]);
         }
     }

@@ -769,7 +769,11 @@ class Translator extends Preprocessor
         $flags = $v->flags;
         $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
         foreach ($v->consts as $const) {
-            $constInfo = new ConstantDef($this->parseIdentifier($const->name), $flags, $type, $this->parseIdentifier($const->value));
+            $constName = $this->parseIdentifier($const->name);
+            if (isset($this->classDef->constants[$constName])) {
+                $this->fatalError($const, 'Cannot redefine class constant ' . $this->class . '::' . $constName);
+            }
+            $constInfo = new ConstantDef($constName, $flags, $type, $this->parseIdentifier($const->value));
             $this->classDef->constants[$constInfo->name] = $constInfo;
         }
     }

@@ -85,7 +85,12 @@ class Preprocessor extends CompilerBase
         $phpCode = $this->loadFile($file);
 
         $this->climate->info('prepare: ' . $this->file);
-        $ast = $this->parser->parse($phpCode);
+        try {
+            $ast = $this->parser->parse($phpCode);
+        } catch (\PhpParser\Error $e) {
+            $this->climate->red("Fatal error: {$e->getMessage()} in {$this->file}");
+            throw new SyntaxError($e->getMessage(), $e->getCode());
+        }
 
         $traverser = new NodeTraverser();
         $traverser->addVisitor(new Visitor());
