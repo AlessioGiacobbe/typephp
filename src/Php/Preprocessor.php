@@ -149,6 +149,7 @@ class Preprocessor extends CompilerBase
             switch ($type) {
                 case 'Stmt_ClassConst':
                 case 'Stmt_Property':
+                case 'Stmt_Nop':
                     break;
                 case 'Stmt_ClassMethod':
                     $code .= $this->prepareFunction($v) . PHP_EOL;

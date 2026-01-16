@@ -542,6 +542,8 @@ class Translator extends Preprocessor
                 case 'Stmt_ClassMethod':
                     $this->parseClassMethod($v, $methodCodes);
                     break;
+                case 'Stmt_Nop':
+                    break;
                 default:
                     abort($v);
             }

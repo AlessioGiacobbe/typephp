@@ -12,6 +12,7 @@ use PhpParser\Error;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\Scalar\MagicConst;
 use PhpParser\Node\Stmt\Foreach_;
+use PhpParser\NodeAbstract;
 use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
 use PhpParser\Parser;
@@ -482,7 +483,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $result = $this->parseContinue($v);
                     break;
                 case 'Stmt_Nop':
-                    $result = '// pass';
+                    $result = '';
                     break;
                 case 'Stmt_Global':
                     $result = $this->parseGlobal($v);
@@ -2027,8 +2028,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             $valueVar = $this->parseIdentifier($node->valueVar);
             $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
         }
-        $code .= $this->parseStmts($node->stmts);
+
+        $body = $this->parseStmts($node->stmts);
         $this->indentLevel--;
+
+        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
+        $code .= $body . PHP_EOL;
 
         $code .= $this->getIndent() . '}';
 
@@ -2272,17 +2277,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $expr;
     }
 
-    protected function convertToObject(Node $object): string
+    protected function convertToObject(NodeAbstract $object): string
     {
         $id = $this->parseIdentifier($object);
-        // TODO 这里的逻辑是不是错误
-        if ($this->isVarExpr($object) and !$this->hasVar($id)) {
-            $this->addLocalVar($id, self::TYPE_OBJECT);
-            return $id;
-        }
-
-        $type = $this->getVarType($id);
-        if ($type === self::TYPE_OBJECT) {
+        if ($this->isVarExpr($object) and $this->getVarType($id) === self::TYPE_OBJECT) {
             return $id;
         }
 
