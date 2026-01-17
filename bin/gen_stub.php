@@ -4581,6 +4581,7 @@ class DocCommentTag {
 
     /** @return DocCommentTag[] */
     public static function parseDocComments(array $comments): array {
+        return [];
         $tags = [];
         foreach ($comments as $comment) {
             if (!($comment instanceof DocComment)) {
