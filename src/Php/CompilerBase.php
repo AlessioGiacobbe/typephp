@@ -429,6 +429,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $class = $v->getType();
             $this->beforeStmtLines = [];
             $this->afterStmtLines = [];
+            $result = '';
             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
 
             $lines[] = $this->getComment($v, $class);
@@ -483,7 +484,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $result = $this->parseContinue($v);
                     break;
                 case 'Stmt_Nop':
-                    $result = '';
                     break;
                 case 'Stmt_Global':
                     $result = $this->parseGlobal($v);
@@ -505,9 +505,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $lines = array_merge($lines, $this->beforeStmtLines);
             $this->beforeStmtLines = [];
-            $lines[] = $result;
-            $lines = array_merge($lines, $this->afterStmtLines);
-            $this->afterStmtLines = [];
+            if ($result) {
+                $lines[] = $result;
+            }
+            if ($this->afterStmtLines) {
+                $lines = array_merge($lines, $this->afterStmtLines);
+                $this->afterStmtLines = [];
+            }
         }
 
         $code = '';
@@ -694,6 +698,20 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    private function parseAssignPropertyArrayDim(Node $left, Node $right): string
+    {
+        $obj = $this->parseIdentifier($left->var->var);
+        $propName = $this->identifierToStr($left->var->name);
+        $code = '';
+        $value = $this->trimBrackets($this->parseExpr($right));
+        if ($left->dim === null) {
+            return $code . "$obj.appendArrayProperty($propName, $value)";
+        } else {
+            $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
+            return $code . "$obj.updateArrayProperty($propName, $dim, $value)";
+        }
+    }
+
     protected function parseAssign(Node $v): string
     {
         $left = $v->var;
@@ -705,6 +723,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 这是 PHP 的初始化+赋值写法，需要先创建数组
             if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
                 $this->addLocalVar($array, self::TYPE_ARRAY);
+            }
+
+            // 这是属性赋值操作
+            if ($this->isPropertyFetch($left->var)) {
+                return $this->parseAssignPropertyArrayDim($left, $right);
             }
 
             $value = $this->trimBrackets($this->parseExpr($right));
@@ -1289,6 +1312,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->climate->red("Fatal error: $msg in {$this->file}:" . $node->getStartLine());
         debug_print_backtrace();
         exit(255);
+    }
+
+    protected function dump(NodeAbstract $v): void
+    {
+        if ($this->debugLine == $v->getStartLine()) {
+            var_dump($v);
+        }
     }
 
     protected function parseArrayDimFetch($node): string

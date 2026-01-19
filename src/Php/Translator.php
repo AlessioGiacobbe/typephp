@@ -218,6 +218,7 @@ class Translator extends Preprocessor
                     $cppCode .= $this->parseNamespace($v);
                     break;
                 case 'Stmt_Class':
+                case 'Stmt_Trait':
                     $cppCode .= $this->parseClass($v);
                     break;
                 case 'Stmt_Use':
@@ -494,7 +495,7 @@ class Translator extends Preprocessor
         return $code;
     }
 
-    protected function genClassStubFile(Node\Stmt\Class_ $class, string $file): void
+    protected function genClassStubFile(Node\Stmt\Class_|Node\Stmt\Trait_ $class, string $file): void
     {
         $genStubCmd = PHP_BINARY. ' ' . $this->rootPath . '/bin/gen_stub.php --gen-class-info -f ' . $file;
         $output = shell_exec($genStubCmd);
@@ -509,7 +510,7 @@ class Translator extends Preprocessor
         $this->stubFileIncluded = true;
     }
 
-    protected function parseClass(Node\Stmt\Class_ $class): string
+    protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
         if (!$this->stubFileIncluded) {
