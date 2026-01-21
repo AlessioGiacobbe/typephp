@@ -2064,7 +2064,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code = 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
         $this->indentLevel++;
         if ($node->keyVar) {
-            $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
+            if (!$this->hasVar($keyVar)) {
+                $this->addLocalVar($keyVar, self::TYPE_VAR);
+            }
+            $code .= $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
         }
 
         if ($node->valueVar->getType() == self::EXPR_ARRAY_DIM_FETCH) {
@@ -2076,7 +2079,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->getIndent() . "$array.offsetSet($dim, iter.value());";
         } else {
             $valueVar = $this->parseIdentifier($node->valueVar);
-            $code .= self::TYPE_VAR . ' ' . $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
+            if (!$this->hasVar($valueVar)) {
+                $this->addLocalVar($valueVar, self::TYPE_VAR);
+            }
+            $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
         }
 
         $body = $this->parseStmts($node->stmts);
@@ -2356,6 +2362,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $var . ' = &' . $this->parseIdentifier($expr->expr);
             } elseif ($expr->expr->getType() === self::EXPR_ARRAY_DIM_FETCH) {
                 return $var . ' = ' . $this->parseIdentifier($expr->expr);
+            } elseif ($this->isPropertyFetch($expr->expr)) {
+                $var = $this->parseIdentifier($expr->var);
+                $object = $this->convertToObject($expr->expr->var);
+                $prop = $this->identifierToStr($expr->expr->name);
+                return $var . ' = ' . $object . '.getPropertyReference(' . $prop . ')';
             }
         }
         abort($expr);
