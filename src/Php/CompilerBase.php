@@ -135,6 +135,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $beforeStmtLines = [];
     protected array $afterStmtLines = [];
     protected bool $inLoop = false;
+    protected bool $inAssignExpr = false;
     protected bool $stubFile = false;
     protected bool $stubFileIncluded = false;
     protected Parser $parser;
@@ -534,9 +535,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_Empty':
                 return $this->parseEmpty($expr);
             case 'Expr_Assign':
-                return $this->parseAssign($expr);
+                $this->inAssignExpr = true;
+                $result = $this->parseAssign($expr);
+                $this->inAssignExpr = false;
+                return $result;
             case 'Expr_AssignRef':
-                return $this->parseAssignRef($expr);
+                $this->inAssignExpr = true;
+                $result = $this->parseAssignRef($expr);
+                $this->inAssignExpr = false;
+                return $result;
             case 'Expr_Print':
                 return $this->parsePrint($expr);
             case 'Expr_BinaryOp_Equal':
@@ -712,35 +719,43 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseAssign(Node $v): string
+    protected function parseAssignArrayDim(Node $left, Node $right): string
+    {
+        if ($this->isPropertyFetch($left)) {
+            return $this->parseAssignPropertyArrayDim($left, $right);
+        }
+        $array = $this->parseIdentifier($left->var);
+        $code = '';
+        // 这是 PHP 的初始化+赋值写法，需要先创建数组
+        if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
+            $this->addLocalVar($array, self::TYPE_ARRAY);
+        }
+
+        $value = $this->trimBrackets($this->parseExpr($right));
+        if ($left->dim === null) {
+            return $code . "$array.offsetSet(php::null, $value)";
+        } else {
+            $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
+            return $code . "$array.offsetSet($dim, $value)";
+        }
+    }
+
+    protected function parseAssignPropertyFetch(Node $left, Node $right): string
+    {
+        $array = $this->parseIdentifier($left->var);
+        $propName = $this->identifierToStr($left->name);
+        return "$array.setProperty($propName, " . $this->trimBrackets($this->parseExpr($right)) . ")";
+    }
+
+    protected function parseAssign(Node\Expr\Assign $v): string
     {
         $left = $v->var;
         $right = $v->expr;
 
         if ($left->getType() === self::EXPR_ARRAY_DIM_FETCH) {
-            $array = $this->parseIdentifier($left->var);
-            $code = '';
-            // 这是 PHP 的初始化+赋值写法，需要先创建数组
-            if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
-                $this->addLocalVar($array, self::TYPE_ARRAY);
-            }
-
-            // 这是属性赋值操作
-            if ($this->isPropertyFetch($left->var)) {
-                return $this->parseAssignPropertyArrayDim($left, $right);
-            }
-
-            $value = $this->trimBrackets($this->parseExpr($right));
-            if ($left->dim === null) {
-                return $code . "$array.offsetSet(php::null, $value)";
-            } else {
-                $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
-                return $code . "$array.offsetSet($dim, $value)";
-            }
+            return $this->parseAssignArrayDim($left, $right);
         } elseif ($left->getType() === 'Expr_PropertyFetch') {
-            $array = $this->parseIdentifier($left->var);
-            $propName = $this->identifierToStr($left->name);
-            return "$array.setProperty($propName, " . $this->trimBrackets($this->parseExpr($right)) . ")";
+            return $this->parseAssignPropertyFetch($left, $right);
         } elseif ($left->getType() === 'Expr_StaticPropertyFetch') {
             $class = $this->identifierToStr($left->class);
             $propName = $this->identifierToStr($left->name);
@@ -789,7 +804,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if (!$this->hasVar($var)) {
                         $this->addLocalVar($var, self::TYPE_VAR);
                     }
-                    $code .= "$var = $tmpVar.offsetGet($k); ";
+                    $code .= "$var = $tmpVar.offsetGetIndirect($k); ";
                 } else {
                     abort($item);
                 }
@@ -1258,10 +1273,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->convertExprType($expr, $type, $rightType) . ';';
             }
             return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
-        } elseif ($this->isPropertyFetch($node->var)) {
-            $obj = $this->parseIdentifier($node->var->var);
-            $prop = $this->identifierToStr($node->var->name);
-            return $obj . '.setProperty(' . $prop . ', ' . $obj . '.getProperty(' . $prop . ') ' . $this->removeAssignOp($op) . ' ' . $expr . ')';
         } else {
             return $var . ' ' . $op . ' (' . $expr . ')';
         }
@@ -1328,7 +1339,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->fatalError($node, 'Unsupported operand types: null + array');
         }
         $dim = $this->parseIdentifier($node->dim);
-        return $var . '.offsetGet(' . $this->trimBrackets($dim) . ')';
+        return $var . '.offsetGetIndirect(' . $this->trimBrackets($dim) . ')';
     }
 
     protected function parseArrayDimStore($array, $dim, $var): string
@@ -2009,7 +2020,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePropertyFetch(Node\Expr\PropertyFetch $expr): string
     {
-        return $this->convertToObject($expr->var) . '.getProperty("' . $this->parseIdentifier($expr->name) . '")';
+        return $this->convertToObject($expr->var) . '.getPropertyIndirect("' . $this->parseIdentifier($expr->name) . '")';
     }
 
     protected function parseAssignOpShiftRight(Node $node): string
