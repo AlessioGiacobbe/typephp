@@ -25,6 +25,7 @@ use stdClass;
 class CompilerBase extends \PhpAot\Core\Translator
 {
     use AstNodeType;
+    use FuncCallOptimizer;
     public const string TYPE_VAR = 'php::Var';
     public const string TYPE_BOOL = 'php::Bool';
     public const string TYPE_INT = 'php::Int';
@@ -1411,20 +1412,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             } else {
                 $fn = '"' . $name . '"';
             }
-            if ($name === 'strlen' or $name === 'sizeof' or $name === 'count') {
-                return 'php::len(' . $this->parseIdentifier($expr->args[0]->value) . ')';
-            }
-            if (count($expr->args) == 1) {
-                switch ($name) {
-                    case 'intval':
-                        return $this->convertIntExpr($this->parseExpr($expr->args[0]->value));
-                    case 'floatval':
-                        return $this->convertFloatExpr($this->parseExpr($expr->args[0]->value));
-                    case 'boolval':
-                        return $this->convertBoolExpr($this->parseExpr($expr->args[0]->value));
-                    default:
-                        break;
-                }
+            $code = $this->parseFuncCallWithOptimizer($name, $expr);
+            if ($code) {
+                return $code;
             }
         } else {
             $tmpVar = $this->genTmpVarName();
