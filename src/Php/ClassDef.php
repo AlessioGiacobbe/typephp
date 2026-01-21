@@ -25,4 +25,9 @@ class ClassDef extends ClassLikeDef
         $this->flags = $flags;
         parent::__construct($name, $namespace);
     }
+
+    public function hasMethod(string $method): bool
+    {
+        return isset($this->methods[$method]);
+    }
 }

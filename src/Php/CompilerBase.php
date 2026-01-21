@@ -1441,12 +1441,22 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function parseNativeCallArgs(array $args, string $nativeFunc): string
+    {
+        $list_args = [];
+        foreach ($args as $i => $arg) {
+            $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
+            $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
+        }
+        return implode(', ', $list_args);
+    }
+
     protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
     {
         if (!$className) {
-            $nativeFunction = $this->isNativeFunction($funcName);
-        } else {
-            $nativeFunction = false;
+            if ($this->isNativeFunction($funcName)) {
+                return $this->parseNativeCallArgs($args, $funcName);
+            }
         }
 
         $list_args = [];
@@ -1457,7 +1467,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$this->hasVar($name)) {
                     $this->addLocalVar($name, self::TYPE_REF);
                     $this->beforeStmtLines[] = $name . ' = php::newReference();';
-                } elseif (!$nativeFunction and $funcName and Reflection::isReferenceArg($funcName, $i)) {
+                } elseif ($funcName and Reflection::isReferenceArg($funcName, $i)) {
                     // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
                     $tmpVar = $this->genTmpVarName();
                     $this->addLocalVar($tmpVar, self::TYPE_REF);
@@ -1467,7 +1477,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     continue;
                 }
             } elseif ($this->isPropertyFetch($arg->value)) {
-                if (!$nativeFunction and $funcName and Reflection::isReferenceArg($funcName, $i)) {
+                if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
                     $obj = $this->parseIdentifier($arg->value->var);
                     $list_args[] = $obj . '.getPropertyReference(' . $this->identifierToStr($arg->value->name) . ')';
                     continue;
@@ -1477,12 +1487,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($arg->unpack) {
                 $this->fatalError($arg, "The syntax for variable parameter expansion is not supported");
             }
-            if ($nativeFunction) {
-                $argInfo = $this->getArgInfo($arg, $funcName, $i);
-                $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
-            } else {
-                $list_args[] = $this->parseArg($arg);
-            }
+            $list_args[] = $this->parseArg($arg);
         }
         return implode(', ', $list_args);
     }
@@ -2376,6 +2381,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $object = $this->convertToObject($expr->var);
         $method = $this->parseIdentifier($expr->name);
+        $nativeFunc = $this->getNativeFunctionName($method, $this->namespace, $this->class);
+        if ($this->isNativeMethod($object, $nativeFunc)) {
+            return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
+        }
         if (empty($expr->args)) {
             return $object . '.exec("' . $method . '")';
         } else {
@@ -2697,8 +2706,26 @@ class CompilerBase extends \PhpAot\Core\Translator
         abort($expr);
     }
 
-    private function parseContinue(mixed $v): string
+    protected function parseContinue(mixed $v): string
     {
         return 'continue;';
+    }
+
+    protected function isNativeMethod(string $object, string $nativeFunc): bool
+    {
+        if ($object === 'this_') {
+            return $this->isNativeFunction($nativeFunc);
+        }
+        return false;
+    }
+
+    protected function parseNativeMethodCall(string $object, string $nativeFunc, array $args): string
+    {
+
+        if (count($args) === 0) {
+            return self::PREFIX . $nativeFunc . '(' . $object . ')';
+        } else {
+            return  self::PREFIX .$nativeFunc . '(' . $object . ', ' . $this->parseNativeCallArgs($args, $nativeFunc) . ')';
+        }
     }
 }
