@@ -113,11 +113,13 @@ function main()
         echo "\n";
     }
 
-// 测试不同规模
+    // 测试不同规模
+    $begin = microtime(true);
     echo "\n=== 不同规模的皇后问题 ===\n";
     for ($n = 4; $n <= 10; $n++) {
         $q = new EightQueensOptimized($n);
         $count = $q->countSolutions();
         echo "{$n} 皇后问题有 {$count} 个解\n";
     }
+    echo "耗时: " . (microtime(true) - $begin) . " 秒\n";
 }

@@ -283,6 +283,13 @@ class Translator extends Preprocessor
             $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
         }
 
+        // property offset
+        foreach ($this->classes as $classDef) {
+            foreach ($classDef->properties as $propertyDef) {
+                $lines[] = 'extern uint32_t ' . self::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace) . ';';
+            }
+        }
+
         $literalStringsCount = count($this->literalStrings);
         $lines[] = 'extern php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
         $code = implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
@@ -446,7 +453,7 @@ class Translator extends Preprocessor
 
     protected function getNativeMethodName(ClassDef $classDef, MethodDef $methodDef): string
     {
-        return $this->getNativeFunctionName($methodDef->name, $classDef->namespace, $classDef->name);
+        return $this->getNativeName($methodDef->name, $classDef->namespace, $classDef->name);
     }
 
     protected function parseNamespace(Node\Stmt\Namespace_ $node): string
@@ -576,6 +583,8 @@ class Translator extends Preprocessor
         foreach ($classDef->methods as $method) {
             $code .= $methodCodes[$method->name] . PHP_EOL;
         }
+        $code .= PHP_EOL;
+
         return $code;
     }
 

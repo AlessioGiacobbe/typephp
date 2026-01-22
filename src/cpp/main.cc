@@ -29,7 +29,7 @@ int main(int cpp_argc, char **cpp_argv) {
 
     int rc = 0;
 #if PPROF_ON
-    ProfilerStart("myapp.prof");
+    ProfilerStart("profile.out");
 #endif
     zend_first_try {
         php_app_init();

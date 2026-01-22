@@ -43,6 +43,17 @@ foreach ($this->nativeConstants as $name => $constant):
 <?=$constant->type?> <?=$name?>;
 <?php endforeach; ?>
 
+// property offset
+<?php
+foreach ($this->classes as $classDef):
+    foreach ($classDef->properties as $propertyDef):
+?>
+uint32_t <?=Translator::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace)?>;
+<?php
+    endforeach;
+endforeach;
+?>
+
 static ZEND_FUNCTION(main) {
     php_main();
 }
@@ -82,6 +93,17 @@ foreach ($this->globalVars as $name => $type):
 ?>
     <?= $name ?> = php::global("<?=$name?>");
 <?php endforeach; ?>
+
+    // property offset
+<?php
+foreach ($this->classes as $classDef):
+    foreach ($classDef->properties as $propertyDef):
+        ?>
+    <?=Translator::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace)?> = php::getPropertyOffset("<?=$classDef->getNamespacedName()?>", "<?=$propertyDef->name?>");
+    <?php
+    endforeach;
+endforeach;
+?>
 }
 
 void php_app_clean() {

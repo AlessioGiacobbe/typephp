@@ -39,6 +39,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
     public const string LITERAL_STRINGS = '_literal_strings';
+    public const string PROPERTY_OFFSETS = '_property_offsets';
     public const string EXPR_VARIABLE = 'Expr_Variable';
     public const string EXPR_NEW = 'Expr_New';
     public const string EXPR_ARRAY_DIM_FETCH = 'Expr_ArrayDimFetch';
@@ -235,12 +236,17 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getFunctionName(FunctionLike $v): string
     {
-        return $this->getNativeFunctionName($this->parseIdentifier($v->name), $this->namespace, $this->class);
+        return $this->getNativeName($this->parseIdentifier($v->name), $this->namespace, $this->class);
     }
 
-    protected function getNativeFunctionName(string $fn, string $ns = '', string $class = ''): string
+    protected function getPropertyOffset(string $property, string $class, string $namespace = ''): string
     {
-        $names[] = $this->escapeFunction($fn);
+        return $this->getNativeName('property_offset_' . $property, $namespace, $class);
+    }
+
+    protected function getNativeName(string $fn, string $ns = '', string $class = ''): string
+    {
+        $names[] = $this->escapeName($fn);
         if ($ns) {
             $names[] = $this->escapeNamespace($ns);
         }
@@ -1371,7 +1377,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function findNativeFunction(string $fname): string|false
     {
-        $possibleFunctionNames = [$this->escapeFunction($fname),];
+        $possibleFunctionNames = [$this->escapeName($fname),];
         if ($this->namespace) {
             $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $fname;
         }
@@ -1918,9 +1924,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         return str_replace('\\', self::NAMESPACE_SEPARATOR, strtolower($ns));
     }
 
-    protected function escapeFunction(string $fname): string
+    protected function escapeName(string $name): string
     {
-        return strtolower($fname);
+        return strtolower($name);
     }
 
     protected function escapeClass(string $class): string
@@ -2015,7 +2021,15 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePropertyFetch(Node\Expr\PropertyFetch $expr): string
     {
-        return $this->convertToObject($expr->var) . '.getPropertyIndirect("' . $this->parseIdentifier($expr->name) . '")';
+        $object = $expr->var;
+        $property = $expr->name;
+        $id = $this->identifierToStr($property);
+        if ($this->isVarExpr($object) and $this->isIdExpr($property)) {
+            if ($this->parseIdentifier($object) === 'this_') {
+                $id = self::PREFIX . $this->getPropertyOffset($property, $this->class, $this->namespace);
+            }
+        }
+        return $this->convertToObject($object) . '.getPropertyIndirect(' . $id . ')';
     }
 
     protected function parseAssignOpShiftRight(Node $node): string
@@ -2371,7 +2385,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $object = $this->convertToObject($expr->var);
         $method = $this->parseIdentifier($expr->name);
-        $nativeFunc = $this->getNativeFunctionName($method, $this->namespace, $this->class);
+        $nativeFunc = $this->getNativeName($method, $this->namespace, $this->class);
         if ($this->isNativeMethod($object, $nativeFunc)) {
             return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
         }
