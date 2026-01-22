@@ -1,0 +1,27 @@
+<?php
+
+class Test
+{
+    public int $a;
+    public int $b;
+
+    public function test()
+    {
+        return $this->a + $this->b;
+    }
+}
+
+function main()
+{
+    $obj = new Test();
+    $obj->a = 1;
+    $obj->b = 2;
+
+    $arr = array();
+    $arr['obj'] = $obj;
+    var_dump($obj->test());
+
+    $obj2 = objval($arr['obj'], 'Test');
+    var_dump($obj2);
+    var_dump($obj2->test());
+}

@@ -39,7 +39,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
     public const string LITERAL_STRINGS = '_literal_strings';
-    public const string PROPERTY_OFFSETS = '_property_offsets';
     public const string EXPR_VARIABLE = 'Expr_Variable';
     public const string EXPR_NEW = 'Expr_New';
     public const string EXPR_ARRAY_DIM_FETCH = 'Expr_ArrayDimFetch';
@@ -84,11 +83,19 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $useCppNamespace = false;
     protected string $file;
     protected string $dir;
+    /**
+     * 原始值，可能包含 `\\` 多层空间
+     * @var string
+     */
     protected string $namespace = '';
     protected string $method =  '';
     protected string $function = '';
     protected array $useNamespaces = [];
     protected array $useFunctions = [];
+    /**
+     * 原始类名，不包含命名空间
+     * @var string
+     */
     protected string $class = '';
     protected string $interface = '';
     /**
@@ -124,6 +131,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         'argc' => self::TYPE_INT,
         'argv' => self::TYPE_ARRAY,
     ];
+    /**
+     * @var array<string, string>
+     */
+    protected array $objects = [];
     protected array $localVars = [];
     protected array $varTypes = [];
     protected array $objectWrappers = [];
@@ -823,11 +834,28 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($var === 'this_') {
             $this->fatalError($left, 'Cannot re-assign $this');
         }
-        $expr = $this->parseExpr($right);
 
-        if (!$this->hasVar($var)) {
-            $type = $this->detectExprType($right);
-            $this->addLocalVar($var, $type);
+        $expr = $this->parseExpr($right);
+        $type = $this->detectExprType($right);
+
+        if ($this->isVarExpr($left)) {
+            // 类型推断，获取对象的类名
+            if ($this->isNewExpr($right) and $this->isNameExpr($right->class)) {
+                $class = $this->parseIdentifier($right->class);
+                $this->objects[$var] = $class;
+                $type = self::TYPE_OBJECT;
+            } elseif ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
+                $fn = $this->parseIdentifier($right->name);
+                $arg2 = $right->args[1]->value;
+                if (count($right->args) === 2 and $fn === 'objval' and $this->isScalarString($arg2)) {
+                    $this->objects[$var] = $arg2->value;
+                }
+                $type = self::TYPE_OBJECT;
+            }
+
+            if (!$this->hasVar($var)) {
+                $this->addLocalVar($var, $type);
+            }
         }
         return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
     }
@@ -1730,10 +1758,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $expr;
     }
 
-    protected function convertObjectExpr(string $expr): string
+    protected function convertObjectExpr(string $expr, string $class = ''): string
     {
         if (!$this->isClosedCall($expr, 'php::to_object')) {
-            return 'php::to_object(' . $this->trimBrackets($expr) . ')';
+            if ($class === '') {
+                return 'php::to_object(' . $this->trimBrackets($expr) . ')';
+            } else {
+                return 'php::to_object(' . $this->trimBrackets($expr) . ', ' . $class . ')';
+            }
         }
         return $expr;
     }
@@ -2385,8 +2417,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $object = $this->convertToObject($expr->var);
         $method = $this->parseIdentifier($expr->name);
-        $nativeFunc = $this->getNativeName($method, $this->namespace, $this->class);
-        if ($this->isNativeMethod($object, $nativeFunc)) {
+        $nativeFunc = $this->findNativeMethod($expr, $object, $method);
+        if ($nativeFunc) {
             return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
         }
         if (empty($expr->args)) {
@@ -2715,17 +2747,45 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'continue;';
     }
 
-    protected function isNativeMethod(string $object, string $nativeFunc): bool
+    protected function checkAccessible(ClassDef $classDef, MethodDef $methodDef): bool
     {
-        if ($object === 'this_') {
-            return $this->isNativeFunction($nativeFunc);
+        // 在当前类中，允许调用所有方法
+        if ($classDef->namespace === $this->namespace and $classDef->name == $this->class) {
+            return true;
         }
-        return false;
+        // 类外部调用，只允许调用 public 方法
+        return $methodDef->flags & Modifiers::PUBLIC;
+    }
+
+    protected function findNativeMethod(NodeAbstract $expr, string $object, string $method): string|false
+    {
+        $nativeFunc = '';
+        if ($object === 'this_') {
+            $nativeFunc = $this->getNativeName($method, $this->namespace, $this->class);
+        } elseif (isset($this->objects[$object])) {
+            $class = $this->objects[$object];
+            if (!isset($this->classes[$class])) {
+                return false;
+            }
+            $classDef = $this->classes[$class];
+            if (!isset($classDef->methods[$method])) {
+                return false;
+            }
+            $methodDef = $classDef->methods[$method];
+            if (!$this->checkAccessible($classDef, $methodDef)) {
+                $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` is not accessible');
+            }
+            $nativeFunc = $this->getNativeName($method, $classDef->namespace, $classDef->name);
+        }
+        if ($nativeFunc and $this->isNativeFunction($nativeFunc)) {
+            return $nativeFunc;
+        } else {
+            return false;
+        }
     }
 
     protected function parseNativeMethodCall(string $object, string $nativeFunc, array $args): string
     {
-
         if (count($args) === 0) {
             return self::PREFIX . $nativeFunc . '(' . $object . ')';
         } else {

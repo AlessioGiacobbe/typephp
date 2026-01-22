@@ -19,6 +19,17 @@ trait FuncCallOptimizer
                     return $this->convertFloatExpr($this->parseExpr($expr->args[0]->value));
                 case 'boolval':
                     return $this->convertBoolExpr($this->parseExpr($expr->args[0]->value));
+                case 'strval':
+                    return $this->convertStringExpr($this->parseExpr($expr->args[0]->value));
+                default:
+                    break;
+            }
+        } elseif (count($expr->args) == 2) {
+            switch ($name) {
+                case 'objval':
+                    $arg1 = $expr->args[0]->value;
+                    $arg2 = $expr->args[1]->value;
+                    return $this->convertObjectExpr($this->parseExpr($arg1), $this->parseExpr($arg2));
                 default:
                     break;
             }
