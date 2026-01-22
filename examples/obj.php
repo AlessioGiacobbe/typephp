@@ -5,6 +5,12 @@ class Test
     public int $a;
     public int $b;
 
+    public function __construct(int $a, int $b)
+    {
+        $this->a = $a;
+        $this->b = $b;
+    }
+
     public function test()
     {
         return $this->a + $this->b;
@@ -13,9 +19,7 @@ class Test
 
 function main()
 {
-    $obj = new Test();
-    $obj->a = 1;
-    $obj->b = 2;
+    $obj = new Test(1, 2);
 
     $arr = array();
     $arr['obj'] = $obj;

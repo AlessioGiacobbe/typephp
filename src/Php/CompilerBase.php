@@ -772,8 +772,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         if ($left->getType() === self::EXPR_ARRAY_DIM_FETCH) {
             return $this->parseAssignArrayDim($left, $right);
-        } elseif ($left->getType() === 'Expr_PropertyFetch') {
-            return $this->parseAssignPropertyFetch($left, $right);
         } elseif ($left->getType() === 'Expr_StaticPropertyFetch') {
             $class = $this->identifierToStr($left->class);
             $propName = $this->identifierToStr($left->name);
