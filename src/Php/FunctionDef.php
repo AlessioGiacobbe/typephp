@@ -6,6 +6,9 @@ class FunctionDef
 {
     public string $name;
     public string $returnType;
+    /**
+     * @var array<ArgInfo>
+     */
     public array $argInfoList = [];
     public int $argCountRequired = 0;
     public string $params = '';

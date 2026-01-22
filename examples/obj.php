@@ -11,6 +11,11 @@ class Test
         $this->b = $b;
     }
 
+    public function testArg(int $a, int $b = 3, string $s = 'hello'): int
+    {
+        return $a + $b + strlen($s);
+    }
+
     public function test()
     {
         return $this->a + $this->b;

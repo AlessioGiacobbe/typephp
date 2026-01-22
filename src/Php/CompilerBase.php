@@ -845,7 +845,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
                 $fn = $this->parseIdentifier($right->name);
                 if (count($right->args) === 2 and $fn === 'objval' and $this->isScalarString($right->args[1]->value)) {
-                    $this->objects[$var] = $right->args[1]->value;
+                    $this->objects[$var] = $this->parseIdentifier($right->args[1]->value);
                     $type = self::TYPE_OBJECT;
                 }
             }

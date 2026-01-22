@@ -600,7 +600,12 @@ class Translator extends Preprocessor
 
         $callParams = '';
         foreach ($methodDef->functionDef->argInfoList as $k => $argInfo) {
-            $expr = $this->convertExprFromType($argInfo->type, 'ZEND_CALL_ARG(EG(current_execute_data), ' . ($k + 1) . ')');
+            if ($argInfo->default) {
+                $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
+            } else {
+                $argExpr = 'php::getCallArg(' . $k . ')';
+            }
+            $expr = $this->convertExprFromType($argInfo->type, $argExpr);
             $cppCode .= $this->getIndent() . $argInfo->type . ' arg_' . $argInfo->name . ' = ' . $expr . ';' . PHP_EOL;
             $callParams .= 'arg_' . $argInfo->name . ',';
         }
