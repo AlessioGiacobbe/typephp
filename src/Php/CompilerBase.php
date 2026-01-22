@@ -1521,7 +1521,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parsePostOp($expr, string $op): string
     {
         if ($this->isVarExpr($expr->var)) {
-            return $this->parseIdentifier($expr->var) . '++';
+            return $this->parseIdentifier($expr->var) . str_repeat($op, 2);
         } elseif ($this->isPropertyFetch($expr->var)) {
             $obj = $this->parseIdentifier($expr->var->var);
             $prop = $this->identifierToStr($expr->var->name);
@@ -1539,7 +1539,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->afterStmtLines[] = 'php::setStaticProperty(' . $class . ', ' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
             return $tmpVar;
         }
-        abort($expr, "Post-increment operator is not supported for non-variable expressions");
+        $this->parsePostOp($expr, "Post-increment operator is not supported for non-variable expressions");
     }
 
     protected function parsePostDec($expr): string
