@@ -13,6 +13,7 @@ class MethodDef
         $this->flags = $flags;
         $this->name = $name;
         $this->functionDef = $def;
+        $this->functionDef->method = true;
     }
 
     public function getReturnType(): string

@@ -426,6 +426,9 @@ class Translator extends Preprocessor
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
                 $list = [];
+                if ($func->method) {
+                    $list[] = 'php::Object &this_';
+                }
                 foreach ($argInfoList as $argInfo) {
                     $arg = $argInfo->type . ' ' . $argInfo->name;
                     if ($argInfo->default) {

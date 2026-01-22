@@ -9,6 +9,7 @@ class FunctionDef
     public array $argInfoList = [];
     public int $argCountRequired = 0;
     public string $params = '';
+    public bool $method = false;
 
 
     public function __construct(string $name, string $returnType)
