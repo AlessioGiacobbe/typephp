@@ -387,6 +387,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseScalar($expr);
             case 'Expr_ConstFetch':
                 return $this->parseConstFetch($expr);
+            case 'Expr_Assign':
+            case 'Expr_AssignRef':
+                if (!$this->isVarExpr($expr->var)) {
+                    $this->fatalError($expr, 'When an assignment expression serves as an rvalue, it must be an assignment of a variable');
+                }
+                return $this->parseExpr($expr);
             default:
                 return $this->parseExpr($expr);
         }
