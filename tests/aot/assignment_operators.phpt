@@ -61,8 +61,8 @@ var_dump($z);
 // Test assignment with function results
 $numbers = [1, 2, 3, 4, 5];
 $sum = 0;
-foreach ($numbers as $num) {
-    $sum += $num;
+foreach ($numbers as $_num) {
+    $sum += $_num;
 }
 var_dump($sum);
 

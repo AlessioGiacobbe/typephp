@@ -853,6 +853,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (!$this->hasVar($var)) {
                 $this->addLocalVar($var, $type);
             }
+        } elseif ($this->isPropertyFetch($left)) {
+            $var = $this->parsePropertyFetch($left, true);
         }
         return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
     }
@@ -933,6 +935,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             $rightExpr = $this->convertExprType($rightExpr, self::TYPE_INT, $rightType);
         } elseif ($rightType === self::TYPE_INT) {
             $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_INT);
+        }
+
+        if ($op === '%' and !($leftType === self::TYPE_INT and $rightType === self::TYPE_INT)) {
+            return 'php::math::mod(' . $leftExpr . ', ' . $rightExpr . ')';
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
@@ -1936,6 +1942,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return addcslashes($str, "\\\"\n\r\t\v\f\0\x01..\x1f\x7f..\xff");
     }
 
+    protected function escapeBool(bool $bool): string
+    {
+        return $bool ? 'true' : 'false';
+    }
+
     protected function escapeVarName(string $name): string
     {
         if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
@@ -2047,7 +2058,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(PHP_EOL . $this->getIndent(), $lines);
     }
 
-    protected function parsePropertyFetch(Node\Expr\PropertyFetch $expr): string
+    protected function parsePropertyFetch(Node\Expr\PropertyFetch $expr, bool $assign = false): string
     {
         $object = $expr->var;
         $property = $expr->name;
@@ -2057,7 +2068,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $id = self::PREFIX . $this->getPropertyOffset($property, $this->class, $this->namespace);
             }
         }
-        return $this->convertToObject($object) . '.getPropertyIndirect(' . $id . ')';
+
+        return $this->convertToObject($object) . '.getPropertyIndirect(' . $id . ', ' . $this->escapeBool($assign) . ')';
     }
 
     protected function parseAssignOpShiftRight(Node $node): string
@@ -2101,9 +2113,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code = 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
         $this->indentLevel++;
         if ($node->keyVar) {
-            if (!$this->hasVar($keyVar)) {
-                $this->addLocalVar($keyVar, self::TYPE_VAR);
-            }
+            $this->checkVar($node, $keyVar);
             $code .= $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
         }
 
@@ -2116,9 +2126,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->getIndent() . "$array.offsetSet($dim, iter.value());";
         } else {
             $valueVar = $this->parseIdentifier($node->valueVar);
-            if (!$this->hasVar($valueVar)) {
-                $this->addLocalVar($valueVar, self::TYPE_VAR);
-            }
+            $this->checkVar($node, $valueVar);
             $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
         }
 
@@ -2394,6 +2402,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $var = $this->parseIdentifier($expr->var);
             if (!$this->hasVar($var)) {
                 $this->addLocalVar($var, self::TYPE_REF);
+            } else {
+                $type = $this->getVarType($var);
+                if ($type !== self::TYPE_REF) {
+                    $this->fatalError($expr, 'Cannot assign reference to variable of type ' . $type);
+                }
             }
             if ($this->isVarExpr($expr->expr)) {
                 return $var . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
@@ -2668,7 +2681,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @param string $content
      * @return void
      */
-    protected function writeFile(string $file, string $content): void
+    public function writeFile(string $file, string $content): void
     {
         $dir = dirname($file);
         if (!is_dir($dir)) {
@@ -2741,6 +2754,17 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseContinue(mixed $v): string
     {
         return 'continue;';
+    }
+
+    protected function checkVar(NodeAbstract $node, string $name): void
+    {
+        if (!$this->hasVar($name)) {
+            $this->addLocalVar($name, self::TYPE_VAR);
+        } else {
+            if ($this->getVarType($name) !== self::TYPE_VAR) {
+                $this->fatalError($node, 'Cannot assign value to variable of type ' . $this->getVarType($name));
+            }
+        }
     }
 
     protected function checkAccessible(ClassDef $classDef, MethodDef $methodDef): bool

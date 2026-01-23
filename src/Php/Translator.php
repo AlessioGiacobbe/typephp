@@ -6,6 +6,7 @@ use MJS\TopSort\Implementations\StringSort;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Foreach_;
+use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
 
 class Translator extends Preprocessor
@@ -864,11 +865,15 @@ class Translator extends Preprocessor
         $code .= $this->getIndent() . $tmpVar . '.exec("rewind");' . PHP_EOL;
         $code .= $this->getIndent() . 'for (;' . $tmpVar . '.exec("valid");  ' . $tmpVar . '.exec("next")) {' . PHP_EOL;
         $this->indentLevel++;
+
         $valueVar = $this->parseIdentifier($node->valueVar);
-        $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = ' . $tmpVar . '.exec("current");' . PHP_EOL;
+        $this->checkVar($node, $valueVar);
+
+        $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.exec("current");' . PHP_EOL;
         if ($node->keyVar) {
             $keyVar = $this->parseIdentifier($node->keyVar);
-            $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $keyVar . ' = ' . $tmpVar . '.exec("key");' . PHP_EOL;
+            $this->checkVar($node, $keyVar);
+            $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.exec("key");' . PHP_EOL;
         }
         $code .= $this->parseStmts($node->stmts);
         $code .= '}' . PHP_EOL;

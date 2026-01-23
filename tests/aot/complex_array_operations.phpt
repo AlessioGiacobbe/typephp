@@ -115,8 +115,8 @@ function main() {
 
     // Test with array references
     $original = ['value' => 50];
-    $ref =& $original;
-    $ref['value'] += 25;
+    $xref =& $original;
+    $xref['value'] += 25;
     var_dump($original['value']); // 75
 
     echo "All complex array operation tests passed!\n";

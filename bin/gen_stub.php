@@ -35,9 +35,9 @@ const ALL_PHP_VERSION_IDS = [
 
 // file_put_contents() but with a success message printed after saving
 function reportFilePutContents(string $filename, string $content): void {
-    if (file_put_contents($filename, $content)) {
-        echo "Saved $filename\n";
-    }
+    global $translator;
+    $translator->writeFile($filename, $content);
+    echo "Saved $filename\n";
 }
 
 /**
