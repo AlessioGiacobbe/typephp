@@ -1726,16 +1726,16 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function convertIntExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::to_int')) {
-            return 'php::to_int(' . $this->trimBrackets($expr) . ')';
+        if (!$this->isClosedCall($expr, 'php::toInt')) {
+            return 'php::toInt(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
 
     protected function convertFloatExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::to_float')) {
-            return 'php::to_float(' . $this->trimBrackets($expr) . ')';
+        if (!$this->isClosedCall($expr, 'php::toFloat')) {
+            return 'php::toFloat(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
@@ -1748,19 +1748,19 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function convertStringExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::to_string')) {
-            return 'php::to_string(' . $this->trimBrackets($expr) . ')';
+        if (!$this->isClosedCall($expr, 'php::toString')) {
+            return 'php::toString(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
 
     protected function convertObjectExpr(string $expr, string $class = ''): string
     {
-        if (!$this->isClosedCall($expr, 'php::to_object')) {
+        if (!$this->isClosedCall($expr, 'php::toObject')) {
             if ($class === '') {
-                return 'php::to_object(' . $this->trimBrackets($expr) . ')';
+                return 'php::toObject(' . $this->trimBrackets($expr) . ')';
             } else {
-                return 'php::to_object(' . $this->trimBrackets($expr) . ', ' . $class . ')';
+                return 'php::toObject(' . $this->trimBrackets($expr) . ', ' . $class . ')';
             }
         }
         return $expr;
@@ -1768,16 +1768,16 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function convertArrayExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::to_array')) {
-            return 'php::to_array(' . $this->trimBrackets($expr) . ')';
+        if (!$this->isClosedCall($expr, 'php::toArray')) {
+            return 'php::toArray(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
 
     protected function convertBoolExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::to_bool')) {
-            return 'php::to_bool(' . $this->trimBrackets($expr) . ')';
+        if (!$this->isClosedCall($expr, 'php::toBool')) {
+            return 'php::toBool(' . $this->trimBrackets($expr) . ')';
         }
         return $expr;
     }
