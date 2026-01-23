@@ -33,7 +33,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_OBJECT = 'php::Object';
     public const string TYPE_ARRAY = 'php::Array';
     public const string TYPE_STR = 'php::Str';
-    public const string TYPE_REF = 'php::Var';
+    public const string TYPE_REF = 'php::Ref';
     public const string TYPE_VOID = 'void';
 
     public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
@@ -1493,8 +1493,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $tmpVar = $this->genTmpVarName();
                     $this->addLocalVar($tmpVar, self::TYPE_REF);
                     $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
-                    $this->afterStmtLines[] = $name . ' = *' . $tmpVar . ';';
-                    $list_args[] = $tmpVar;
+                    $list_args[] = '&' . $tmpVar;
                     continue;
                 }
             } elseif ($this->isPropertyFetch($arg->value)) {
@@ -1539,7 +1538,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->afterStmtLines[] = 'php::setStaticProperty(' . $class . ', ' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
             return $tmpVar;
         }
-        $this->parsePostOp($expr, "Post-increment operator is not supported for non-variable expressions");
+        $this->fatalError($expr, "Post-increment operator is not supported for non-variable expressions");
     }
 
     protected function parsePostDec($expr): string
@@ -2394,10 +2393,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isVarExpr($expr->var)) {
             $var = $this->parseIdentifier($expr->var);
             if (!$this->hasVar($var)) {
-                $this->addLocalVar($var, self::TYPE_VAR);
+                $this->addLocalVar($var, self::TYPE_REF);
             }
             if ($this->isVarExpr($expr->expr)) {
-                return $var . ' = &' . $this->parseIdentifier($expr->expr);
+                return $var . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
             } elseif ($expr->expr->getType() === self::EXPR_ARRAY_DIM_FETCH) {
                 return $var . ' = ' . $this->parseIdentifier($expr->expr);
             } elseif ($this->isPropertyFetch($expr->expr)) {
