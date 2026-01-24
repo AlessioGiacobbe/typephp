@@ -24,11 +24,12 @@ $path = $realpath;
 if (is_dir($path)) {
     $scanner = new FileScanner($path);
     $list = $scanner->scan();
-    $targetFile = basename($path);
+    $targetName = basename($path);
 } else {
     $list = [$path];
-    $targetFile = FileScanner::getFileName($path);
+    $targetName = FileScanner::getFileName($path);
 }
+$translator->setTargetName($targetName);
 
 $sourceFiles = [];
 $objectFiles = [];
@@ -78,11 +79,13 @@ $translator->genExternGlobalVars($translator->getIncludeDir() . '/php_global_var
 
 // 生成所有全局变量源文件
 $extensionSourceFile = $translator->getBuildDir() . '/extension.cc';
-$translator->genExtension($extensionSourceFile);
+$translator->genExtension($extensionSourceFile, $targetName);
 $sourceFiles[] = $extensionSourceFile;
 
 // 添加 main.cc 文件
-$sourceFiles[] = ROOT_PATH . '/src/cpp/main.cc';
+if ($translator->getBuildMode() == 'bin') {
+    $sourceFiles[] = ROOT_PATH . '/src/cpp/main.cc';
+}
 
 // 编译所有 C++ 文件
 foreach ($sourceFiles as $cppFile) {
@@ -95,4 +98,4 @@ foreach ($sourceFiles as $cppFile) {
 }
 
 // 连接所有目标文件，生成可执行文件
-$translator->compileBinary($targetFile, $objectFiles);
+$translator->build($objectFiles);

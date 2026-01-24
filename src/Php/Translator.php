@@ -13,6 +13,7 @@ class Translator extends Preprocessor
 {
     use MagicMethodDetector;
 
+    protected string $targetName = 'app';
     protected bool $verbose = false;
     protected array $unsupportedFunctions = [
         'compact',
@@ -64,13 +65,22 @@ class Translator extends Preprocessor
                 'required'    => false,
                 'noValue'     => true,
             ],
+            'mode' => [
+                'longPrefix'  => 'mode',
+                'prefix'      => 'm',
+                'description' => 'Build mode, -m bin(binary) or -m ext(extension), default: bin',
+                'required'    => false,
+                'defaultValue' => 'bin',
+            ],
         ]);
 
         $this->preprocessArgvAdvanced();
         $this->climate->arguments->parse();
         $this->optimizeLevel = $this->climate->arguments->get('optimize');
+        $this->buildMode = $this->climate->arguments->get('mode');
 //        $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
         $this->noLiteralStrings = true;
+        $this->enableProfiler = $this->climate->arguments->defined('profile');
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
         if ($this->climate->arguments->defined('help')) {
             $this->showUsage();
@@ -99,13 +109,15 @@ class Translator extends Preprocessor
         $climate->tab()->out('-v, --verbose        Verbose output');
         $climate->tab()->out('-h, --help           Show this help message');
         $climate->tab()->out('-f, --force          Force compile even if cache exists');
+        $climate->tab()->out('-m, --mode <mode>    Compilation mode, -m bin(binary) or -m ext(extension), default: bin');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->br();
 
         $climate->bold('EXAMPLES:');
         $climate->tab()->out('./bin/compiler.php examples/hello.php');
         $climate->tab()->out('./bin/compiler.php examples/bench.php -O2');
-        $climate->tab()->out('./bin/compiler.php examples/bench.php -O2 -p');
+        $climate->tab()->out('./bin/compiler.php examples/bench.php -O2 ');
+        $climate->tab()->out('./bin/compiler.php examples/extension -O2 -o myapp -m ext');
         $climate->tab()->out('./bin/compiler.php examples/app.php -O3 -o myapp -v');
         $climate->br();
     }
@@ -168,6 +180,18 @@ class Translator extends Preprocessor
     protected function getClassCe(ClassLikeDef $classDef): string
     {
         return self::PREFIX . 'class_entry_' . $classDef->getNamespacedName();
+    }
+
+    public function setTargetName(string $name): void
+    {
+        if ($this->climate->arguments->defined('output')) {
+            $name = $this->climate->arguments->get('output');
+        }
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $name)) {
+            $this->climate->red('The target name must be a valid identifier');
+            exit(1);
+        }
+        $this->targetName = $name;
     }
 
     protected function getInternalCeInfo(string $ce): array
@@ -373,6 +397,12 @@ class Translator extends Preprocessor
 
     public function genExtension(string $file): void
     {
+        if ($this->buildMode == 'bin') {
+            if (!isset($this->nativeFunctions['main'])) {
+                $this->climate->red('When the build mode is a binary executable file, the `main()` function must be defined');
+                exit(1);
+            }
+        }
         $this->localHeaders = [];
         $this->genClassCeList();
         $code = $this->render('extension.cc.php');
@@ -399,19 +429,20 @@ class Translator extends Preprocessor
             return;
         }
         $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
-        $this->addCompilationOption($cmd);
+        $this->addCompilationOption($cmd, false);
         $this->climate->comment($cmd);
         shell_exec($cmd);
     }
 
-    public function compileBinary(string $targetFile, array $objectFiles): void
+    public function build(array $objectFiles): void
     {
-        if ($this->climate->arguments->defined('output')) {
-            $targetFile = $this->climate->arguments->get('output');
-        }
         $objectList = implode(' ', $objectFiles);
+        $targetFile = $this->targetName;
+        if ($this->buildMode == 'ext' and !str_ends_with($targetFile, '.so')) {
+            $targetFile .= '.so';
+        }
         $linkCmd = $this->cppCompiler . ' ' . $objectList . ' -o ' . $targetFile . ' ' . $this->parseLdflags() . $this->parseLibs();
-        $this->addCompilationOption($linkCmd);
+        $this->addCompilationOption($linkCmd, true);
         $this->climate->comment($linkCmd);
         shell_exec($linkCmd);
     }
@@ -567,6 +598,11 @@ class Translator extends Preprocessor
         $code = $this->genNativeMethod($methodCodes);
         $this->class = '';
         return $code;
+    }
+
+    public function getBuildMode(): string
+    {
+        return $this->buildMode;
     }
 
     public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string

@@ -76,6 +76,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $functionCallInFile = [];
     protected array $redoAfterDeclare = [];
     protected int $optimizeLevel = 0;
+    protected string $buildMode = 'bin';
     protected int $floatPrecision = 17;
     protected bool $debugInfo = true;
     protected bool $noLiteralStrings = false;
@@ -151,6 +152,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $inAssignExpr = false;
     protected bool $stubFile = false;
     protected bool $stubFileIncluded = false;
+    protected bool $enableProfiler = false;
     protected Parser $parser;
 
     public function __construct(string $rootPath)
@@ -1184,15 +1186,23 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $out;
     }
 
-    protected function addCompilationOption(string &$cmd): void
+    protected function addCompilationOption(string &$cmd, bool $link): void
     {
         $cmd .= ' ' . $this->parseIncludes();
         $cmd .= ' -O' . $this->optimizeLevel;
         $cmd .= ' -g';
         $cmd .= ' -Wall';
-        if ($this->climate->arguments->defined('profile')) {
+        if ($this->enableProfiler) {
             $cmd .= ' -lprofiler';
             $cmd .= ' -DPPROF_ON=1';
+        }
+
+        if ($this->buildMode === 'ext') {
+            if ($link) {
+                $cmd .= ' -shared';
+            } else {
+                $cmd .= ' -fPIC -D BUILD_PHP_EXTENSION=1';
+            }
         }
     }
 

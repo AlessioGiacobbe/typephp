@@ -66,7 +66,7 @@ static const zend_function_entry ext_functions[] = {
     ZEND_FE_END
 };
 
-static PHP_MINIT_FUNCTION(app) {
+static PHP_MINIT_FUNCTION(<?=$this->targetName?>) {
 // class/interface class entries
 <?php
 foreach ($this->classCeList as $ce):
@@ -122,11 +122,11 @@ foreach ($this->nativeConstants as $name => $constant):
 <?php endforeach; ?>
 }
 
-zend_module_entry app_module_entry = {
+zend_module_entry <?=$this->targetName?>_module_entry = {
     STANDARD_MODULE_HEADER,
-    "app",
+    "<?=$this->targetName?>",
     ext_functions,
-    PHP_MINIT(app),
+    PHP_MINIT(<?=$this->targetName?>),
     nullptr,
     nullptr,
     nullptr,
@@ -135,4 +135,6 @@ zend_module_entry app_module_entry = {
     STANDARD_MODULE_PROPERTIES,
 };
 
-ZEND_GET_MODULE(app);
+#ifdef BUILD_PHP_EXTENSION
+ZEND_GET_MODULE(<?=$this->targetName?>);
+#endif
