@@ -474,7 +474,7 @@ class Translator extends Preprocessor
         if ($this->buildMode == 'ext' and !str_ends_with($targetFile, '.so')) {
             $targetFile .= '.so';
         }
-        $linkCmd = $this->cppCompiler . ' ' . $objectList . ' -o ' . $targetFile . ' ' . $this->parseLdflags() . $this->parseLibs();
+        $linkCmd = $this->cppCompiler . ' ' . $objectList . ' -o ' . $targetFile;
         $this->addCompilationOption($linkCmd, true);
         $this->climate->comment($linkCmd);
         shell_exec($linkCmd);
@@ -578,7 +578,7 @@ class Translator extends Preprocessor
         $this->climate->comment($genStubCmd);
         $stubFilenameWithoutExtension = str_replace([".stub.php", '.php'], "", $file);
         $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
-        if (!str_starts_with($output, "Saved")) {
+        if (!str_contains($output, "Saved")) {
             $this->error("failed to generate arginfo header file: `$headerFile`, output: $output");
         }
         $this->argInfoHeaderFiles[] = $headerFile;

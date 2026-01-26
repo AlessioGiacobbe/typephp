@@ -6095,7 +6095,7 @@ function main()
 {
     global $argv, $argc, $translator;
 
-    error_reporting(E_ALL);
+    error_reporting(E_ALL & ~E_DEPRECATED);
     ini_set("precision", "-1");
     require __DIR__ . '/bootstrap.php';
 

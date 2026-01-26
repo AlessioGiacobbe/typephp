@@ -1186,10 +1186,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseLibs(): string
     {
-        $list = [
-            'phpx',
-            'php',
-        ];
+        $list = ['phpx'];
+        if ($this->buildMode === 'bin') {
+            $list[] = 'php';
+        }
         $out = '';
         foreach ($list as $li) {
             $out .= '-l' . $li . ' ';
@@ -1214,6 +1214,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             } else {
                 $cmd .= ' -fPIC -D BUILD_PHP_EXTENSION=1';
             }
+        }
+
+        if ($link) {
+            $cmd .= ' ' . $this->parseLdflags();
+            $cmd .= ' ' . $this->parseLibs();
         }
     }
 
