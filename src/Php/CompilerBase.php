@@ -105,6 +105,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $classes = [];
     protected array $interfaces = [];
     /**
+     * @var array<string, FunctionDef>
+     */
+    protected array $functions = [];
+    /**
      * @var array<string, ClassDef>
      */
     protected array $classesDefineInFile = [];
@@ -112,6 +116,10 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, InterfaceDef>
      */
     protected array $interfacesDefineInFile = [];
+    /**
+     * @var array<string, FunctionDef>
+     */
+    protected array $functionDefineInFile = [];
     /**
      * @var array<string>
      */
@@ -151,7 +159,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $inLoop = false;
     protected bool $inAssignExpr = false;
     protected bool $stubFile = false;
-    protected bool $stubFileIncluded = false;
     protected bool $enableProfiler = false;
     protected Parser $parser;
 
@@ -238,6 +245,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->strictTypes = false;
         $this->classesDefineInFile = [];
         $this->interfacesDefineInFile = [];
+        $this->functionDefineInFile = [];
     }
 
     protected function resetNamespace(): void
@@ -301,6 +309,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->class) {
             $this->arguments['this_'] = self::TYPE_OBJECT;
             $this->addLocalVar('this_', self::TYPE_OBJECT);
+        } else {
+            $this->functions[$name] = $this->functionDef;
+            $this->functionDefineInFile[$name] = $this->functionDef;
         }
 
         foreach ($this->functionDef->argInfoList as $argInfo) {
@@ -1372,11 +1383,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseAssignOp($expr, '**=');
     }
 
-    protected function fatalError(Node $node, string $msg): void
+    protected function error(string $msg): void
     {
-        $this->climate->red("Fatal error: $msg in {$this->file}:" . $node->getStartLine());
+        $this->climate->red("Fatal error: $msg");
         debug_print_backtrace();
         exit(255);
+    }
+
+    protected function fatalError(Node $node, string $msg): void
+    {
+        $this->error("$msg in {$this->file}:{$node->getStartLine()}");
     }
 
     protected function dump(NodeAbstract $v): void

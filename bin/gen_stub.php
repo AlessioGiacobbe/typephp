@@ -1,6 +1,7 @@
 #!/usr/bin/env php
 <?php declare(strict_types=1);
 
+use PhpAot\Php\Translator;
 use PhpParser\Comment\Doc as DocComment;
 use PhpParser\ConstExprEvaluator;
 use PhpParser\Modifiers;
@@ -3504,7 +3505,7 @@ class ClassInfo {
             $code .= "#if {$this->cond}\n";
         }
 
-        $code .= "static zend_class_entry *register_class_$escapedName(" . (empty($params) ? "void" : implode(", ", $params)) . ")\n";
+        $code .= "static zend_class_entry *" . Translator::PREFIX . "register_class_$escapedName(" . (empty($params) ? "void" : implode(", ", $params)) . ")\n";
 
         $code .= "{\n";
 
@@ -4231,14 +4232,10 @@ class FileInfo {
      */
     public function getAllFuncInfos(): iterable
     {
-        global $genClass;
-        if ($genClass) {
-            foreach ($this->classInfos as $classInfo) {
-                yield from $classInfo->funcInfos;
-            }
-        } else {
-            yield from $this->funcInfos;
+        foreach ($this->classInfos as $classInfo) {
+            yield from $classInfo->funcInfos;
         }
+        yield from $this->funcInfos;
     }
 
     /** @return array<string, ConstInfo> */
@@ -5168,8 +5165,6 @@ function generateArgInfoCode(
 
     $generatedFuncInfos = [];
 
-    global $genClass;
-
     $argInfoCode = generateCodeWithConditions(
         $fileInfo->getAllFuncInfos(), "\n",
         static function (FuncInfo $funcInfo) use (&$generatedFuncInfos, $fileInfo) {
@@ -5220,16 +5215,14 @@ function generateArgInfoCode(
 
         $code .= generateFunctionEntries(null, $fileInfo->funcInfos);
 
-        if ($genClass) {
-            foreach ($fileInfo->classInfos as $classInfo) {
-                $code .= generateFunctionEntries($classInfo->name, $classInfo->funcInfos, $classInfo->cond);
-            }
+        foreach ($fileInfo->classInfos as $classInfo) {
+            $code .= generateFunctionEntries($classInfo->name, $classInfo->funcInfos, $classInfo->cond);
         }
     }
 
     $php80MinimumCompatibility = $fileInfo->getMinimumPhpVersionIdCompatibility() === null || $fileInfo->getMinimumPhpVersionIdCompatibility() >= PHP_80_VERSION_ID;
 
-    if ($genClass and $fileInfo->generateClassEntries) {
+    if ($fileInfo->generateClassEntries) {
         $declaredStrings = [];
         $attributeInitializationCode = generateFunctionAttributeInitialization($fileInfo->funcInfos, $allConstInfos, $fileInfo->getMinimumPhpVersionIdCompatibility(), null, $declaredStrings);
         $attributeInitializationCode .= generateGlobalConstantAttributeInitialization($fileInfo->constInfos, $allConstInfos, $fileInfo->getMinimumPhpVersionIdCompatibility(), null, $declaredStrings);
@@ -6100,7 +6093,7 @@ function initPhpParser() {
 
 function main()
 {
-    global $argv, $argc, $genClass, $translator;
+    global $argv, $argc, $translator;
 
     error_reporting(E_ALL);
     ini_set("precision", "-1");
@@ -6116,7 +6109,7 @@ function main()
         [
             "force-regeneration", "parameter-stats", "help", "verify", "verify-manual", "replace-predefined-constants",
             "generate-classsynopses", "replace-classsynopses", "generate-methodsynopses", "replace-methodsynopses",
-            "generate-optimizer-info", "gen-class-info", "gen-func-info",
+            "generate-optimizer-info",
         ],
         $opt_index
     );
@@ -6131,14 +6124,6 @@ function main()
     $generateMethodSynopses = isset($options["generate-methodsynopses"]);
     $replaceMethodSynopses = isset($options["replace-methodsynopses"]);
     $generateOptimizerInfo = isset($options["generate-optimizer-info"]);
-
-    if (isset($options["gen-class-info"])) {
-        $genClass = true;
-    } elseif (isset($options["gen-func-info"])) {
-        $genClass = false;
-    } else {
-        die("Please specify whether to generate class or function info\n");
-    }
 
     $context->forceRegeneration = isset($options["f"]) || isset($options["force-regeneration"]);
     $context->forceParse = $context->forceRegeneration || $printParameterStats || $verify || $verifyManual || $replacePredefinedConstants || $generateClassSynopses || $generateOptimizerInfo || $replaceClassSynopses || $generateMethodSynopses || $replaceMethodSynopses;

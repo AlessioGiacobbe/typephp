@@ -14,22 +14,7 @@ if (empty($argv[1])) {
 $path = $argv[1];
 $translator = new Translator(ROOT_PATH);
 $translator->setIndent('    ');
-
-$realpath = realpath($path);
-if ($realpath === false) {
-    die("path not exists: $path\n");
-}
-$path = $realpath;
-
-if (is_dir($path)) {
-    $scanner = new FileScanner($path);
-    $list = $scanner->scan();
-    $targetName = basename($path);
-} else {
-    $list = [$path];
-    $targetName = FileScanner::getFileName($path);
-}
-$translator->setTargetName($targetName);
+$list = $translator->getFiles($path);
 
 $sourceFiles = [];
 $objectFiles = [];
@@ -79,7 +64,7 @@ $translator->genExternGlobalVars($translator->getIncludeDir() . '/php_global_var
 
 // 生成所有全局变量源文件
 $extensionSourceFile = $translator->getBuildDir() . '/extension.cc';
-$translator->genExtension($extensionSourceFile, $targetName);
+$translator->genExtension($extensionSourceFile);
 $sourceFiles[] = $extensionSourceFile;
 
 // 添加 main.cc 文件

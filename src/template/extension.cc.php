@@ -19,12 +19,6 @@ foreach ($this->globalVars as $name => $type):
 foreach ($this->classCeList as $ce):
 ?>
 zend_class_entry * <?= $ce ?>;
-<?php
-if (isset($this->classCeInfo[$ce])):
-    $info = $this->classCeInfo[$ce];
-?>
-extern zend_class_entry *<?= $info['func'] ?>(<?= $info['argDef'] ?>);
-<?php endif; ?>
 <?php endforeach; ?>
 
 // literal strings
@@ -54,17 +48,16 @@ uint32_t <?=Translator::PREFIX . $this->getPropertyOffset($propertyDef->name, $c
 endforeach;
 ?>
 
-static ZEND_FUNCTION(main) {
-    php_main();
-}
-
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_void, 0, 0, IS_VOID, 0)
-ZEND_END_ARG_INFO()
-
+// clang-format off
 static const zend_function_entry ext_functions[] = {
-    ZEND_FE(main, arginfo_void)
+<?php
+foreach ($this->functions as $functionDef):
+?>
+    ZEND_FE(<?=$functionDef->name?>, arginfo_<?=$functionDef->name?>)
+<?php endforeach;?>
     ZEND_FE_END
 };
+// clang-format on
 
 static PHP_MINIT_FUNCTION(<?=$this->targetName?>) {
 // class/interface class entries
@@ -99,7 +92,7 @@ foreach ($this->globalVars as $name => $type):
 foreach ($this->classes as $classDef):
     foreach ($classDef->properties as $propertyDef):
         ?>
-    <?=Translator::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace)?> = php::getPropertyOffset("<?=$classDef->getNamespacedName()?>", "<?=$propertyDef->name?>");
+    <?=Translator::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace)?> = php::getPropertyOffset("<?=$classDef->getNamespacedName(false)?>", "<?=$propertyDef->name?>");
     <?php
     endforeach;
 endforeach;
@@ -137,4 +130,8 @@ zend_module_entry <?=$this->targetName?>_module_entry = {
 
 #ifdef BUILD_PHP_EXTENSION
 ZEND_GET_MODULE(<?=$this->targetName?>);
+#else
+zend_module_entry *<?= self::PREFIX . 'embed_' ?>get_module() {
+    return &<?= $this->targetName ?>_module_entry;
+}
 #endif

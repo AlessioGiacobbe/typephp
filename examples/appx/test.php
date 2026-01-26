@@ -37,3 +37,10 @@ class Test
     }
 }
 
+const TEST_CONST = 1.001;
+
+function my_sum(int $a, int $b)
+{
+    return $a + $b;
+}
+

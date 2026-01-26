@@ -9,7 +9,7 @@ extern php::Var argv;
 
 extern void php_app_init();
 extern void php_app_clean();
-extern zend_module_entry app_module_entry;
+extern zend_module_entry *php_embed_get_module();
 
 static void throw_exception(zend_object *ex) {
     zend_bailout();
@@ -18,13 +18,14 @@ static void throw_exception(zend_object *ex) {
 int main(int cpp_argc, char **cpp_argv) {
     php_embed_init(cpp_argc, cpp_argv);
     zend_throw_exception_hook = throw_exception;
+    zend_module_entry *module = php_embed_get_module();
 
-	if (zend_register_module_ex(&app_module_entry, MODULE_TEMPORARY) == NULL) {
-        zend_error(E_ERROR, "Failed to register module");
+	if (zend_register_module_ex(module, MODULE_TEMPORARY) == NULL) {
+        zend_error(E_ERROR, "Failed to register module [%s]", module->name);
 	}
 
-	if (zend_startup_module_ex(&app_module_entry) == FAILURE) {
-        zend_error(E_ERROR, "Failed to startup module");
+	if (zend_startup_module_ex(module) == FAILURE) {
+        zend_error(E_ERROR, "Failed to startup module [%s]", module->name);
 	}
 
     int rc = 0;

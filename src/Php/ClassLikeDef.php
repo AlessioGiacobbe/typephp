@@ -15,11 +15,14 @@ class ClassLikeDef
         $this->namespace = $namespace;
     }
 
-    public function getNamespacedName(): string
+    public function getNamespacedName(bool $symbolic = true): string
     {
         if ($this->namespace === '') {
             return $this->name;
         }
-        return str_replace('\\', '_', $this->namespace . '_' . $this->name);
+        if ($symbolic) {
+            return str_replace('\\', '_', $this->namespace . '_' . $this->name);
+        }
+        return $this->namespace . '\\\\' . $this->name;
     }
 }

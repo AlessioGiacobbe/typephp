@@ -15,6 +15,9 @@ class Translator extends Preprocessor
 
     protected string $targetName = 'app';
     protected bool $verbose = false;
+    protected array $phpSrcFiles = [];
+    protected array $argInfoHeaderFiles = [];
+
     protected array $unsupportedFunctions = [
         'compact',
         'extract',
@@ -129,13 +132,14 @@ class Translator extends Preprocessor
             return $this->getCppFile($file);
         }
         $phpCode = $this->loadFile($file);
-        $this->stubFileIncluded = false;
+        $this->genStubFile($this->file);
         $this->localHeaders = [];
         while (true) {
             try {
                 $cppCode = $this->doConvert($phpCode);
                 $cppFile = $this->getCppFile($file);
                 $this->save($cppCode, $cppFile);
+                $this->phpSrcFiles[] = $file;
                 return $cppFile;
             } catch (RedoException $e) {
                 continue;
@@ -191,7 +195,31 @@ class Translator extends Preprocessor
             $this->climate->red('The target name must be a valid identifier');
             exit(1);
         }
+        if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
+            $this->climate->red('The target name must not be a reserved keyword');
+            exit(1);
+        }
         $this->targetName = $name;
+    }
+
+    public function getFiles(string $path): array
+    {
+        $realpath = realpath($path);
+        if ($realpath === false) {
+            die("path not exists: $path\n");
+        }
+        $path = $realpath;
+
+        if (is_dir($path)) {
+            $scanner = new FileScanner($path);
+            $list = $scanner->scan();
+            $targetName = basename($path);
+        } else {
+            $list = [$path];
+            $targetName = FileScanner::getFileName($path);
+        }
+        $this->setTargetName($targetName);
+        return $list;
     }
 
     protected function getInternalCeInfo(string $ce): array
@@ -273,6 +301,10 @@ class Translator extends Preprocessor
             $cppCode .= $this->genClassWrapper($interfaceDef);
         }
 
+        foreach ($this->functionDefineInFile as $functionDef) {
+            $cppCode .= $this->genFunctionWrapper($functionDef);
+        }
+
         return $this->genIncludeHeaderFiles() . $cppCode;
     }
 
@@ -330,13 +362,13 @@ class Translator extends Preprocessor
 
     protected function genClassCeList(): void
     {
-        if (empty($this->interfacesDefineInFile) and empty($this->classesDefineInFile)) {
+        if (empty($this->interfaces) and empty($this->classes)) {
             return;
         }
 
         $sorter = new StringSort();
 
-        foreach ($this->interfacesDefineInFile as $interfaceDef) {
+        foreach ($this->interfaces as $interfaceDef) {
             $parent = $interfaceDef->extends;
             $ce = $this->getClassCe($interfaceDef);
             $deps = [];
@@ -359,7 +391,7 @@ class Translator extends Preprocessor
             $sorter->add($ce, $deps);
         }
 
-        foreach ($this->classesDefineInFile as $classDef) {
+        foreach ($this->classes as $classDef) {
             $ce = $this->getClassCe($classDef);
             $deps = [];
             $parent = $classDef->extends;
@@ -403,11 +435,12 @@ class Translator extends Preprocessor
                 exit(1);
             }
         }
-        $this->localHeaders = [];
+        $this->localHeaders = $this->argInfoHeaderFiles;
         $this->genClassCeList();
         $code = $this->render('extension.cc.php');
         $this->writeFile($file, $code);
         $this->formatCppCode($file);
+        $this->localHeaders = [];
     }
 
     public function hasObjectFileCache(string $cppFile): bool
@@ -537,28 +570,23 @@ class Translator extends Preprocessor
         return $code;
     }
 
-    protected function genClassStubFile(Node\Stmt\Class_|Node\Stmt\Trait_ $class, string $file): void
+    protected function genStubFile(string $file): void
     {
-        $genStubCmd = PHP_BINARY. ' ' . $this->rootPath . '/bin/gen_stub.php --gen-class-info -f ' . $file;
+        $genStubCmd = PHP_BINARY. ' ' . $this->rootPath . '/bin/gen_stub.php -f ' . $file;
         $output = shell_exec($genStubCmd);
         $this->climate->info('generate stub file: ' . $file);
         $this->climate->comment($genStubCmd);
         $stubFilenameWithoutExtension = str_replace([".stub.php", '.php'], "", $file);
         $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
         if (!str_starts_with($output, "Saved")) {
-            $this->fatalError($class, "failed to generate arginfo header file: `$headerFile`, output: $output");
+            $this->error("failed to generate arginfo header file: `$headerFile`, output: $output");
         }
-        $this->localHeaders[] = $headerFile;
-        $this->stubFileIncluded = true;
+        $this->argInfoHeaderFiles[] = $headerFile;
     }
 
     protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
-        if (!$this->stubFileIncluded) {
-            $this->genClassStubFile($class, $this->file);
-        }
-
         $this->classDef = new ClassDef($this->class, $class->flags, $this->namespace);
         if ($class->extends) {
             $this->classDef->extends = $this->parseIdentifier($class->extends);
@@ -607,7 +635,7 @@ class Translator extends Preprocessor
 
     public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string
     {
-        $basename = basename($stubFilenameWithoutExtension);
+        $basename = self::PREFIX . basename($stubFilenameWithoutExtension);
         $absPath = $this->getIncludeDir() . "/{$basename}_arginfo.h";
         if ($relative) {
             return ltrim($this->removeCommonPrefix($this->getIncludeDir(), $absPath), '/');
@@ -659,8 +687,37 @@ class Translator extends Preprocessor
         return $cppCode;
     }
 
+    private function genFunctionWrapper(FunctionDef $functionDef)
+    {
+        $name = $functionDef->name;
+        $cppCode = 'ZEND_FUNCTION(' . $name . '){' . PHP_EOL;
+        $fn = self::PREFIX . $this->getNativeName($functionDef->name);
 
-    protected function genClassWrapper(ClassDef|InterfaceDef $classDef): string
+        $callParams = '';
+        foreach ($functionDef->argInfoList as $k => $argInfo) {
+            if ($argInfo->default) {
+                $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
+            } else {
+                $argExpr = 'php::getCallArg(' . $k . ')';
+            }
+            $expr = $this->convertExprFromType($argInfo->type, $argExpr);
+            $cppCode .= $this->getIndent() . $argInfo->type . ' arg_' . $argInfo->name . ' = ' . $expr . ';' . PHP_EOL;
+            $callParams .= 'arg_' . $argInfo->name . ',';
+        }
+        $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
+
+        if ($functionDef->returnType !== self::TYPE_VOID) {
+            $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
+            $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
+        } else {
+            $cppCode .= $this->getIndent() . $fn . '(' . $callParams . ');' . PHP_EOL;
+        }
+        $cppCode .= '}' . PHP_EOL . PHP_EOL;
+
+        return $cppCode;
+    }
+
+    protected function getClassRegisterCeFunc(ClassDef|InterfaceDef $classDef): void
     {
         $cppCode = '';
         $name = $classDef->getNamespacedName();
@@ -669,6 +726,12 @@ class Translator extends Preprocessor
         $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $argsDef . ') {' . PHP_EOL;
         $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
+    }
+
+
+    protected function genClassWrapper(ClassDef|InterfaceDef $classDef): string
+    {
+        $cppCode = '';
 
         // 接口没有方法实体
         if ($classDef instanceof ClassDef) {
