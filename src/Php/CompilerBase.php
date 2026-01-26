@@ -1052,7 +1052,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_Bool':
                 return self::TYPE_BOOL;
             case 'Expr_Array':
-                return 'php::Array';
+                return self::TYPE_ARRAY;
             case 'Expr_BinaryOp_Plus':
             case 'Expr_BinaryOp_Minus':
             case 'Expr_BinaryOp_Mul':
@@ -1151,7 +1151,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'int':
                 return self::TYPE_INT;
             case 'array':
-                return 'php::Array';
+                return self::TYPE_ARRAY;
             case 'float':
                 return self::TYPE_FLOAT;
             case 'bool':
@@ -2317,9 +2317,25 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::eval(' . $this->parseIdentifier($expr->expr) . ')';
     }
 
-    protected function parseInclude(mixed $expr): string
+    protected function parseInclude(Node\Expr\Include_ $expr): string
     {
-        return 'php::include(' . $this->parseIdentifier($expr->expr) . ')';
+        switch ($expr->type) {
+            case Node\Expr\Include_::TYPE_INCLUDE:
+                $type = 'php::INCLUDE';
+                break;
+            case Node\Expr\Include_::TYPE_INCLUDE_ONCE:
+                $type = 'php::INCLUDE_ONCE';
+                break;
+            case Node\Expr\Include_::TYPE_REQUIRE:
+                $type = 'php::REQUIRE';
+                break;
+            case Node\Expr\Include_::TYPE_REQUIRE_ONCE:
+                $type = 'php::REQUIRE_ONCE';
+                break;
+            default:
+                $this->fatalError($expr, 'Invalid include type');
+        }
+        return 'php::include(' . $this->parseIdentifier($expr->expr) . ', '. $type . ')';
     }
 
     protected function parseBreak(mixed $v): string
