@@ -145,7 +145,6 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected array $objects = [];
     protected array $localVars = [];
-    protected array $varTypes = [];
     protected array $objectWrappers = [];
     protected bool $strictTypes = false;
 
@@ -420,8 +419,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->stubFile and !$param->type) {
                 throw new RuntimeException('No type for ' . $this->parseIdentifier($param->var));
             }
-            $type = $this->parseType($param->type);
             $name = $this->parseIdentifier($param->var);
+            $type = $this->parseParameterType($param, $name);
             $list[] = $type . ' ' . $name;
             $argInfo = new ArgInfo();
             $argInfo->name = $name;
@@ -1138,8 +1137,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             '}';
     }
 
-    protected function parseType($type): string
+    protected function parseParameterType(Node\Param $param, string $var): string
     {
+        $type = $param->type;
         if ($type == null) {
             return self::TYPE_VAR;
         }
@@ -1158,8 +1158,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return self::TYPE_BOOL;
             case 'string':
                 return self::TYPE_STR;
+            case 'void':
+                $this->fatalError($param, 'Cannot use `void` as a parameter type.');
+                break;
             default:
-                $this->varTypes[$name] = $name;
+                $this->objects[$var] = $name;
                 return self::TYPE_OBJECT;
         }
     }

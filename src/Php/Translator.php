@@ -191,6 +191,7 @@ class Translator extends Preprocessor
         if ($this->climate->arguments->defined('output')) {
             $name = $this->climate->arguments->get('output');
         }
+        $name = str_replace(['-', '*'], '_', $name);
         if (!preg_match('/^[a-zA-Z0-9_]+$/', $name)) {
             $this->climate->red('The target name must be a valid identifier');
             exit(1);

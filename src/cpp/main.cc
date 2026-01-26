@@ -20,7 +20,7 @@ int main(int cpp_argc, char **cpp_argv) {
     zend_throw_exception_hook = throw_exception;
     zend_module_entry *module = php_embed_get_module();
 
-	if (zend_register_module_ex(module, MODULE_TEMPORARY) == NULL) {
+	if (zend_register_module_ex(module, MODULE_PERSISTENT) == NULL) {
         zend_error(E_ERROR, "Failed to register module [%s]", module->name);
 	}
 
