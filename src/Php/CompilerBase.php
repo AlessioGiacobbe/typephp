@@ -866,6 +866,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (count($right->args) === 2 and $fn === 'objval' and $this->isScalarString($right->args[1]->value)) {
                     $this->objects[$var] = $this->parseIdentifier($right->args[1]->value);
                     $type = self::TYPE_OBJECT;
+                } elseif (count($right->args) === 1 and $fn === 'any') {
+                    $type = self::TYPE_VAR;
+                    if (!$this->hasVar($var)) {
+                        $this->addLocalVar($var, $type);
+                    }
+                    return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
                 }
             }
 

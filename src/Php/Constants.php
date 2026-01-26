@@ -34,6 +34,7 @@ class Constants
         'int',
         'new',
         'null',
+        'var',
         'or',
         'and',
         'private',
