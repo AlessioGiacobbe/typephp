@@ -35,6 +35,7 @@ class Constants
         'new',
         'null',
         'var',
+        'char',
         'or',
         'and',
         'private',

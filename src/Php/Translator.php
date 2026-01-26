@@ -657,43 +657,9 @@ class Translator extends Preprocessor
         return $code;
     }
 
-    protected function genMethodWrapper(ClassDef $classDef, MethodDef $methodDef): string
+    protected function genWrapperFunctionArgs(string $fn, FunctionDef $functionDef): string
     {
-        $name = $classDef->getNamespacedName();
-        $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
-        $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
-        $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
-
-        $callParams = '';
-        foreach ($methodDef->functionDef->argInfoList as $k => $argInfo) {
-            if ($argInfo->default) {
-                $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
-            } else {
-                $argExpr = 'php::getCallArg(' . $k . ')';
-            }
-            $expr = $this->convertExprFromType($argInfo->type, $argExpr);
-            $cppCode .= $this->getIndent() . $argInfo->type . ' arg_' . $argInfo->name . ' = ' . $expr . ';' . PHP_EOL;
-            $callParams .= 'arg_' . $argInfo->name . ',';
-        }
-        $callParams = $methodDef->functionDef->argInfoList ? 'this_, ' . rtrim($callParams, ',') : 'this_';
-
-        if ($methodDef->getReturnType() !== self::TYPE_VOID) {
-            $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
-            $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
-        } else {
-            $cppCode .= $this->getIndent() . $fn . '(' . $callParams . ');' . PHP_EOL;
-        }
-        $cppCode .= '}' . PHP_EOL . PHP_EOL;
-
-        return $cppCode;
-    }
-
-    private function genFunctionWrapper(FunctionDef $functionDef)
-    {
-        $name = $functionDef->name;
-        $cppCode = 'ZEND_FUNCTION(' . $name . '){' . PHP_EOL;
-        $fn = self::PREFIX . $this->getNativeName($functionDef->name);
-
+        $cppCode = '';
         $callParams = '';
         foreach ($functionDef->argInfoList as $k => $argInfo) {
             if ($argInfo->default) {
@@ -705,7 +671,12 @@ class Translator extends Preprocessor
             $cppCode .= $this->getIndent() . $argInfo->type . ' arg_' . $argInfo->name . ' = ' . $expr . ';' . PHP_EOL;
             $callParams .= 'arg_' . $argInfo->name . ',';
         }
-        $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
+
+        if ($functionDef->method) {
+            $callParams = $functionDef->argInfoList ? 'this_, ' . rtrim($callParams, ',') : 'this_';
+        } else {
+            $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
+        }
 
         if ($functionDef->returnType !== self::TYPE_VOID) {
             $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
@@ -715,6 +686,25 @@ class Translator extends Preprocessor
         }
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
+        return $cppCode;
+    }
+
+    protected function genMethodWrapper(ClassDef $classDef, MethodDef $methodDef): string
+    {
+        $name = $classDef->getNamespacedName();
+        $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
+        $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
+        $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
+        $cppCode .= $this->genWrapperFunctionArgs($fn, $methodDef->functionDef);
+        return $cppCode;
+    }
+
+    private function genFunctionWrapper(FunctionDef $functionDef): string
+    {
+        $name = $functionDef->name;
+        $cppCode = 'ZEND_FUNCTION(' . $name . '){' . PHP_EOL;
+        $fn = self::PREFIX . $this->getNativeName($functionDef->name);
+        $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef);
         return $cppCode;
     }
 

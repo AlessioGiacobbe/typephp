@@ -276,14 +276,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(self::NAMESPACE_SEPARATOR, array_reverse($names));
     }
 
-    protected function parseFunctionDeclaration(string $name, Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
+    protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
     {
         $returnType = $v->returnType ? $this->getTypeFromZendType($this->parseIdentifier($v->returnType)) : self::TYPE_VOID;
         // .stub 存根定义 C++ Native 函数，必须设置返回值类型
         if ($returnType === self::TYPE_VOID && $this->stubFile) {
-            throw new Exception('No return type for ' . $name);
+            throw new Exception('No return type for ' . $v->name);
         }
-        $functionDef = new FunctionDef($name, $returnType);
+        $functionDef = new FunctionDef($this->parseIdentifier($v->name), $returnType);
         $this->functionDef = $functionDef;
         $this->parseParams($v->params, $functionDef);
         return $functionDef;
@@ -297,7 +297,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (isset($this->nativeFunctions[$name])) {
             $this->functionDef = $this->nativeFunctions[$name];
         } else {
-            $this->nativeFunctions[$name] = $this->parseFunctionDeclaration($name, $v);
+            $this->nativeFunctions[$name] = $this->parseFunctionDeclaration($v);
             if (isset($this->redoAfterDeclare[$name])) {
                 unset($this->redoAfterDeclare[$name]);
                 $this->climate->cyan('Received redo request, retrying...');
