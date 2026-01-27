@@ -993,6 +993,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 函数定义时没有声明返回值，但函数体中有返回值，修改为实际的返回值类型
         if ($this->getReturnType() === 'void') {
             $this->resetReturnType($type);
+        } elseif ($this->getReturnType() !== self::TYPE_VAR and $this->getReturnType() !== $type) {
+            // 返回值类型不一致，说明存在多种类型的返回值，修改为 var 表示 any
+            $this->resetReturnType(self::TYPE_VAR);
         }
         $exprCode = $this->convertExprType($expr, $this->getReturnType(), $type);
         // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
@@ -2138,14 +2141,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseAssignOpShiftRight(Node $node): string
     {
-        $var = $this->parseIdentifier($node->var);
-        return $var . ' >>= ' . $this->parseIdentifier($node->expr);
+        return $this->parseAssignOp($node, '>>=');
     }
 
     protected function parseAssignOpBitwiseXor(Node $node): string
     {
-        $var = $this->parseIdentifier($node->var);
-        return $var . ' ^= ' . $this->parseIdentifier($node->expr);
+        return $this->parseAssignOp($node, '^=');
     }
 
     protected function parseMagicConst(MagicConst $expr): string
