@@ -284,11 +284,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
     {
-        $returnType = $v->returnType ? $this->getTypeFromZendType($this->parseIdentifier($v->returnType)) : self::TYPE_VOID;
         // .stub 存根定义 C++ Native 函数，必须设置返回值类型
-        if ($returnType === self::TYPE_VOID && $this->stubFile) {
+        if (!$v->returnType && $this->stubFile) {
             throw new Exception('No return type for ' . $v->name);
         }
+        $returnType = $v->returnType ? $this->getTypeFromZendType($this->parseIdentifier($v->returnType)) : self::TYPE_VOID;
         $functionDef = new FunctionDef($this->parseIdentifier($v->name), $returnType);
         $this->functionDef = $functionDef;
         $this->parseParams($v->params, $functionDef);
@@ -1182,6 +1182,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'void':
                 $this->fatalError($param, 'Cannot use `void` as a parameter type.');
                 break;
+            case 'mixed':
+                return self::TYPE_VAR;
+            case 'resource':
+                $this->fatalError($param, 'Cannot use `resource` as a parameter type.');
+                break;
             default:
                 $this->objects[$var] = $name;
                 return self::TYPE_OBJECT;
@@ -1509,7 +1514,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
-                return self::PREFIX . $nativeFn . '(' . $this->parseCallArgs($expr->args, $name) . ')';
+                return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
             }
             if ($this->isInternalFunction($name)) {
                 $fn = 'php::' . $name;

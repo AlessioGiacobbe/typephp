@@ -35,6 +35,7 @@ int main(int cpp_argc, char **cpp_argv) {
     ProfilerStart("profile.out");
 #endif
     zend_first_try {
+        php::request_init();
         php_app_init();
         php::eval("main();");
     }
