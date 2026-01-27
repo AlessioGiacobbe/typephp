@@ -3,6 +3,7 @@
 namespace PhpAot\Php;
 
 use MJS\TopSort\Implementations\StringSort;
+use Symfony\Component\Yaml\Yaml;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Foreach_;
@@ -158,6 +159,39 @@ class Translator extends Preprocessor
         $this->targetName = $name;
     }
 
+    protected function getFilesFromDir(string $path): array
+    {
+        $scanner = new FileScanner($path);
+        return $scanner->scan();
+    }
+
+    protected function parseProjectYaml(string $path): array
+    {
+        $cfg = Yaml::parseFile($path);
+
+        if (!empty($cfg['sources'])) {
+            $dirs = $cfg['sources'];
+            $list = [];
+            foreach ($dirs as $dir) {
+                $tmp = $this->getFilesFromDir($dir);
+                $list = array_merge($list, $tmp);
+            }
+        } else {
+            $dir = dirname($path);
+            $list = $this->getFilesFromDir($dir);
+        }
+        if (!empty($cfg['cxxflags'])) {
+            $this->cxxflags = str_replace("\n", " ", $cfg['cxxflags']);
+        }
+        if (!empty($cfg['ldflags'])) {
+            $this->ldflags = str_replace("\n", " ", $cfg['ldflags']);
+        }
+        if (!empty($cfg['name'])) {
+            $this->setTargetName($cfg['name']);
+        }
+        return $list;
+    }
+
     public function getFiles(string $path): array
     {
         $realpath = realpath($path);
@@ -167,14 +201,21 @@ class Translator extends Preprocessor
         $path = $realpath;
 
         if (is_dir($path)) {
-            $scanner = new FileScanner($path);
-            $list = $scanner->scan();
+            $list = $this->getFilesFromDir($path);
             $targetName = basename($path);
+            $this->setTargetName($targetName);
         } else {
-            $list = [$path];
-            $targetName = FileScanner::getFileName($path);
+            $ext = pathinfo($path, PATHINFO_EXTENSION);
+            if ($ext === 'yml') {
+                $list = $this->parseProjectYaml($path);
+            } elseif ($ext === 'php') {
+                $list = [$path];
+                $targetName = FileScanner::getFileName($path);
+                $this->setTargetName($targetName);
+            } else {
+                $this->error('Unsupported file type: ' . $path);
+            }
         }
-        $this->setTargetName($targetName);
         return $list;
     }
 

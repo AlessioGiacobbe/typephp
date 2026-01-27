@@ -79,6 +79,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $redoAfterDeclare = [];
     protected int $optimizeLevel = 0;
     protected string $buildMode = 'bin';
+    protected string $cxxflags = '';
+    protected string $ldflags = '';
     protected int $floatPrecision = 17;
     protected bool $debugInfo = true;
     protected bool $noLiteralStrings = false;
@@ -1254,6 +1256,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($link) {
             $cmd .= ' ' . $this->parseLdflags();
             $cmd .= ' ' . $this->parseLibs();
+            if ($this->ldflags) {
+                $cmd .= ' ' . $this->ldflags;
+            }
+        } else {
+            if ($this->cxxflags) {
+                $cmd .= ' ' . $this->cxxflags;
+            }
         }
     }
 
