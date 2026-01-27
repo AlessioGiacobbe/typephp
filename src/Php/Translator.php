@@ -168,17 +168,26 @@ class Translator extends Preprocessor
     protected function parseProjectYaml(string $path): array
     {
         $cfg = Yaml::parseFile($path);
+        $projectDir = dirname($path);
 
         if (!empty($cfg['sources'])) {
-            $dirs = $cfg['sources'];
+            $sources = $cfg['sources'];
             $list = [];
-            foreach ($dirs as $dir) {
-                $tmp = $this->getFilesFromDir($dir);
-                $list = array_merge($list, $tmp);
+            foreach ($sources as $src) {
+                $src = trim($src);
+                if ($src[0] != '/') {
+                    $src = $projectDir . '/' . $src;
+                }
+                $src = realpath($src);
+                if (is_file($src)) {
+                    $list[] = $src;
+                } else {
+                    $tmp = $this->getFilesFromDir($src);
+                    $list = array_merge($list, $tmp);
+                }
             }
         } else {
-            $dir = dirname($path);
-            $list = $this->getFilesFromDir($dir);
+            $list = $this->getFilesFromDir($projectDir);
         }
         if (!empty($cfg['cxxflags'])) {
             $this->cxxflags = str_replace("\n", " ", $cfg['cxxflags']);
