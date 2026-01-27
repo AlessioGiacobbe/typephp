@@ -277,6 +277,8 @@ class Translator extends Preprocessor
         $stmts = $traverser->traverse($ast);
 
         $this->resetFile();
+        $this->resetFunction();
+        $this->resetClass();
         $this->resetNamespace();
 
         $cppCode = '';
@@ -643,7 +645,7 @@ class Translator extends Preprocessor
             }
         }
         $code = $this->genNativeMethod($methodCodes);
-        $this->class = '';
+        $this->resetClass();
         return $code;
     }
 
@@ -928,7 +930,11 @@ class Translator extends Preprocessor
         $name = $this->getMethodName($v);
         $this->method = $name;
         $methodCodes[$name] = $this->parseFunction($v);
-        $methodDef = new MethodDef($v->flags, $name, $this->functionDef);
+        $flags = $v->flags;
+        if (!($flags & Modifiers::PRIVATE) and !($flags & Modifiers::PROTECTED)) {
+            $flags |= Modifiers::PUBLIC;
+        }
+        $methodDef = new MethodDef($flags, $name, $this->functionDef);
         $this->checkRequiredArgNum($name, $methodDef, $v);
         $this->classDef->methods[$name] = $methodDef;
         $this->method = '';

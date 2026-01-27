@@ -12,6 +12,7 @@ use PhpParser\Error;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\Scalar\MagicConst;
 use PhpParser\Node\Stmt\Foreach_;
+use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
@@ -244,6 +245,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->objectWrappers = [];
         $this->tmpVarIndex = 0;
         $this->inLoop = false;
+        $this->function = '';
+    }
+
+    protected function resetClass(): void
+    {
+        $this->class = '';
+        $this->interface = '';
+        $this->method = '';
     }
 
     protected function resetFile(): void
@@ -358,7 +367,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code .= $stmts;
         $code .= "}\n";
 
-        $this->function = '';
+        $this->resetFunction();
 
         return $code;
     }
@@ -1166,7 +1175,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($type == null) {
             return self::TYPE_VAR;
         }
-        if ($type instanceof NullableType) {
+        if ($type instanceof NullableType or $type instanceof UnionType) {
             return self::TYPE_VAR;
         }
         $name = $type->name;

@@ -4,7 +4,7 @@ function foo(int $a, int $b): int {
 }
 
 class A {
-    function foo(int $a, int $b): int
+    function foo(int|float $a, int|float $b): int
     {
         return $a + $b;
     }
@@ -13,6 +13,8 @@ class A {
 
 //foo(1, 2);
 //max(1, 2, 3);
-
-$o = new A;
-$o->foo(1, 2);
+function main()
+{
+    $o = new A;
+    $o->foo(1, 2);
+}
