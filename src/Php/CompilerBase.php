@@ -653,7 +653,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_Array':
                 return $this->parseArray($expr);
             case self::EXPR_ARRAY_DIM_FETCH:
-                return $this->parseArrayDimFetch($expr);
+                return $this->parseArrayDimFetch($expr, $this->inAssignExpr);
             case 'Expr_PropertyFetch':
                 return $this->parsePropertyFetch($expr, $this->inAssignExpr);
             case 'Expr_BinaryOp_ShiftLeft':
@@ -1437,14 +1437,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseArrayDimFetch($node): string
+    protected function parseArrayDimFetch($node, bool $write): string
     {
         $var = $this->parseIdentifier($node->var);
         if ($node->dim === null) {
             $this->fatalError($node, 'Unsupported operand types: null + array');
         }
         $dim = $this->parseIdentifier($node->dim);
-        return $var . '.offsetGetIndirect(' . $this->trimBrackets($dim) . ')';
+        return $var . '.offsetGetIndirect(' . $this->trimBrackets($dim) . ', ' . $this->escapeBool($write) . ')';
     }
 
     protected function parseArrayDimStore($array, $dim, $var): string
