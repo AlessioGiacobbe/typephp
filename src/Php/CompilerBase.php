@@ -22,6 +22,8 @@ use PhpParser\Modifiers;
 use RuntimeException;
 use stdClass;
 
+use Symfony\Component\VarDumper\Dump;
+
 class CompilerBase extends \PhpAot\Core\Translator
 {
     use AstNodeType;
@@ -156,6 +158,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $beforeStmtLines = [];
     protected array $afterStmtLines = [];
     protected bool $inLoop = false;
+    /**
+     * 赋值表达式的左值，写操作，右值为读操作
+     * @var bool
+     */
     protected bool $inAssignExpr = false;
     protected bool $stubFile = false;
     protected bool $enableProfiler = false;
@@ -563,7 +569,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $type = $expr->getType();
         $this->writeLog('Line ' . $this->getLine($expr) . ': ' . $type);
         if ($expr->getLine() === $this->debugLine) {
-            var_dump($expr);
+            dump($expr);
         }
         switch ($type) {
             case 'Expr_Isset':
@@ -571,14 +577,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_Empty':
                 return $this->parseEmpty($expr);
             case 'Expr_Assign':
-                $this->inAssignExpr = true;
                 $result = $this->parseAssign($expr);
-                $this->inAssignExpr = false;
                 return $result;
             case 'Expr_AssignRef':
-                $this->inAssignExpr = true;
                 $result = $this->parseAssignRef($expr);
-                $this->inAssignExpr = false;
                 return $result;
             case 'Expr_Print':
                 return $this->parsePrint($expr);
@@ -653,7 +655,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case self::EXPR_ARRAY_DIM_FETCH:
                 return $this->parseArrayDimFetch($expr);
             case 'Expr_PropertyFetch':
-                return $this->parsePropertyFetch($expr);
+                return $this->parsePropertyFetch($expr, $this->inAssignExpr);
             case 'Expr_BinaryOp_ShiftLeft':
                 return $this->parseBinaryOpShiftLeft($expr);
             case 'Expr_BinaryOp_ShiftRight':
@@ -760,7 +762,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isPropertyFetch($left)) {
             return $this->parseAssignPropertyArrayDim($left, $right);
         }
+        $oriInAssignExpr = $this->inAssignExpr;
+        $this->inAssignExpr = true;
         $array = $this->parseIdentifier($left->var);
+        $this->inAssignExpr = $oriInAssignExpr;
         $code = '';
         // 这是 PHP 的初始化+赋值写法，需要先创建数组
         if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
@@ -846,7 +851,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->indentLevel--;
             return $code . '}';
         }
+        $this->inAssignExpr = true;
         $var = $this->parseIdentifier($left);
+        $this->inAssignExpr = false;
         if ($var === 'this_') {
             $this->fatalError($left, 'Cannot re-assign $this');
         }
@@ -871,6 +878,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $this->addLocalVar($var, $type);
                     }
                     return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
+                } else {
+                    $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
                 }
             }
 
@@ -985,7 +994,19 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->getReturnType() === 'void') {
             $this->resetReturnType($type);
         }
-        return 'return ' . $this->convertExprType($expr, $this->getReturnType(), $type);
+        $exprCode = $this->convertExprType($expr, $this->getReturnType(), $type);
+        // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
+        // 将 Indirect 赋值给临时变量后，使用 Ctor::Copy 解除了 Indirect，保证内存安全
+        if (!$this->isVarExpr($v->expr)) {
+            $tmpVar = $this->genTmpVarName();
+            // 必须提前声明变量，否则在末尾声明并 return 可能会被 gcc 优化掉
+            $this->addLocalVar($tmpVar, $type);
+            $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
+            $code .= $this->getIndent() . 'return ' . $tmpVar;
+        } else {
+            $code = 'return ' . $exprCode;
+        }
+        return $code;
     }
 
     protected function parseBinaryOpMul(mixed $expr): string
@@ -1037,9 +1058,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function detectExprType($expr): string
     {
         $exprType = $expr->getType();
-        if ($this->debugLine === $expr->getLine()) {
-            var_dump($exprType);
-        }
         switch ($exprType) {
             case 'Expr_Cast_Int':
             case 'Scalar_Int':
@@ -2461,24 +2479,26 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseAssignRef(Node\Expr\AssignRef $expr): string
     {
         if ($this->isVarExpr($expr->var)) {
-            $var = $this->parseIdentifier($expr->var);
-            if (!$this->hasVar($var)) {
-                $this->addLocalVar($var, self::TYPE_REF);
+            $this->inAssignExpr = true;
+            $left = $this->parseIdentifier($expr->var);
+            $this->inAssignExpr = false;
+            if (!$this->hasVar($left)) {
+                $this->addLocalVar($left, self::TYPE_REF);
             } else {
-                $type = $this->getVarType($var);
+                $type = $this->getVarType($left);
                 if ($type !== self::TYPE_REF) {
                     $this->fatalError($expr, 'Cannot assign reference to variable of type ' . $type);
                 }
             }
             if ($this->isVarExpr($expr->expr)) {
-                return $var . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
+                return $left . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
             } elseif ($expr->expr->getType() === self::EXPR_ARRAY_DIM_FETCH) {
-                return $var . ' = ' . $this->parseIdentifier($expr->expr);
+                return $left . ' = ' . $this->parseIdentifier($expr->expr);
             } elseif ($this->isPropertyFetch($expr->expr)) {
-                $var = $this->parseIdentifier($expr->var);
+                $left = $this->parseIdentifier($expr->var);
                 $object = $this->convertToObject($expr->expr->var);
                 $prop = $this->identifierToStr($expr->expr->name);
-                return $var . ' = ' . $object . '.getPropertyReference(' . $prop . ')';
+                return $left . ' = ' . $object . '.getPropertyReference(' . $prop . ')';
             }
         }
         abort($expr);

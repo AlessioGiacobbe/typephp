@@ -29,58 +29,13 @@ class Translator extends Preprocessor
     public function __construct(string $rootPath)
     {
         parent::__construct($rootPath);
-        $this->climate->arguments->add([
-            'optimize' => [
-                'prefix'      => 'O',
-                'longPrefix'  => 'optimize',
-                'description' => 'Set the optimization level of the gcc compiler to 0 by default',
-                'required'    => false,
-                'castTo'      => 'int',
-                'defaultValue' => 0,
-            ],
-            'output' => [
-                'prefix'      => 'o',
-                'longPrefix'  => 'output',
-                'description' => 'Output file',
-            ],
-            'help' => [
-                'prefix'      => 'h',
-                'longPrefix'  => 'help',
-                'description' => 'Show help',
-                'noValue'     => true,
-            ],
-            'profile' => [
-                'longPrefix'  => 'profile',
-                'description' => 'Enable performance profiling',
-                'required'    => false,
-                'noValue'     => true,
-            ],
-            'noLiteralStrings' => [
-                'longPrefix'  => 'no-literal-strings',
-                'description' => 'Disable literal strings optimization',
-                'required'    => false,
-                'noValue'     => true,
-            ],
-            'force' => [
-                'prefix'      => 'f',
-                'longPrefix'  => 'force',
-                'description' => 'Force compile even if cache exists',
-                'required'    => false,
-                'noValue'     => true,
-            ],
-            'mode' => [
-                'longPrefix'  => 'mode',
-                'prefix'      => 'm',
-                'description' => 'Build mode, -m bin(binary) or -m ext(extension), default: bin',
-                'required'    => false,
-                'defaultValue' => 'bin',
-            ],
-        ]);
-
+        $this->climate->arguments->add(require __DIR__ . '/../config/compiler_options.php');
         $this->preprocessArgvAdvanced();
         $this->climate->arguments->parse();
+
         $this->optimizeLevel = $this->climate->arguments->get('optimize');
         $this->buildMode = $this->climate->arguments->get('mode');
+        $this->debugLine = intval($this->climate->arguments->get('debug-line'));
 //        $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
         $this->noLiteralStrings = true;
         $this->enableProfiler = $this->climate->arguments->defined('profile');
