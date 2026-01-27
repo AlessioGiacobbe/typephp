@@ -8,6 +8,6 @@ ldflags: |
   -L/usr/lib/x86_64-linux-gnu/
   -lssl
 sources:
-  - php-src
+  - php-src*
   - ./cpp-src
   - main.php

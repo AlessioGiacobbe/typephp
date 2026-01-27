@@ -176,13 +176,18 @@ class Translator extends Preprocessor
             foreach ($sources as $src) {
                 $src = trim($src);
                 if ($src[0] != '/') {
-                    $src = $projectDir . '/' . $src;
-                }
-                $src = realpath($src);
-                if (is_file($src)) {
-                    $list[] = $src;
+                    $absPath = $projectDir . '/' . $src;
                 } else {
-                    $tmp = $this->getFilesFromDir($src);
+                    $absPath = $src;
+                }
+                $realPath = realpath($absPath);
+                if (!$realPath) {
+                    $this->error('Source file not exists: `' . $src . '`');
+                }
+                if (is_file($realPath)) {
+                    $list[] = $realPath;
+                } else {
+                    $tmp = $this->getFilesFromDir($realPath);
                     $list = array_merge($list, $tmp);
                 }
             }
@@ -190,10 +195,18 @@ class Translator extends Preprocessor
             $list = $this->getFilesFromDir($projectDir);
         }
         if (!empty($cfg['cxxflags'])) {
-            $this->cxxflags = str_replace("\n", " ", $cfg['cxxflags']);
+            if (is_array($cfg['cxxflags'])) {
+                $this->cxxflags = implode(' ', $cfg['cxxflags']);
+            } else {
+                $this->cxxflags = str_replace("\n", " ", $cfg['cxxflags']);
+            }
         }
         if (!empty($cfg['ldflags'])) {
-            $this->ldflags = str_replace("\n", " ", $cfg['ldflags']);
+            if (is_array($cfg['ldflags'])) {
+                $this->ldflags = implode(' ', $cfg['ldflags']);
+            } else {
+                $this->ldflags = str_replace("\n", " ", $cfg['ldflags']);
+            }
         }
         if (!empty($cfg['name'])) {
             $this->setTargetName($cfg['name']);
