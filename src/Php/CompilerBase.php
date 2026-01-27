@@ -405,6 +405,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $type = $expr->getType();
         switch ($type) {
             case self::EXPR_VARIABLE:
+                if (is_object($expr->name) and $this->isVarExpr($expr->name)) {
+                    $this->fatalError($expr, 'The `$$` syntax is not supported');
+                }
                 return $this->escapeVarName($expr->name);
             case 'Name':
             case 'VarLikeIdentifier':
