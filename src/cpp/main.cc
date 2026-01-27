@@ -49,6 +49,12 @@ int main(int cpp_argc, char **cpp_argv) {
 #endif
     php_app_clean();
     php::request_shutdown();
+
+    auto name_len = strlen(module->name);
+	auto lcname = zend_string_alloc(name_len, module->type == MODULE_PERSISTENT);
+	zend_str_tolower_copy(ZSTR_VAL(lcname), module->name, name_len);
+	zend_hash_del(&module_registry, lcname);
+
     php_embed_shutdown();
 
     return rc;
