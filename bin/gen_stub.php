@@ -2395,12 +2395,7 @@ class EvaluatedValue
                 $code .= "\tZVAL_STR(&$zvalName, $forStringDef);\n";
             }
         } elseif ($this->type->isArray()) {
-            global $translator;
-            $tmpVar = $translator->genTmpVarName();
-            $code .= "\tauto $tmpVar  = " . $translator->parseExpr($this->expr) . ";\n";
-            $code .= "\t{$tmpVar}.moveTo(&$zvalName);\n";
-            $code .= "\tphp::global_vars[\"$varName\"] = $zvalName;\n";
-            $code .= "\tZ_TYPE_FLAGS($zvalName) = 0;\n";
+            $code .= "\tZVAL_EMPTY_ARRAY(&$zvalName);\n";
         } else {
             throw new Exception("Invalid default value: " . print_r($this->value, true) . ", type: " . print_r($this->type, true));
         }

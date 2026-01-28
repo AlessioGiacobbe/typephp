@@ -645,6 +645,9 @@ class Translator extends Preprocessor
             }
         }
         $code = $this->genNativeMethod($methodCodes);
+        if ($this->classDef->requireCtor and !$this->classDef->hasMethod('__construct')) {
+            $this->fatalError($class, "Class `{$this->class}` uses a non-empty array as the default value for an property, and the constructor must be set.");
+        }
         $this->resetClass();
         return $code;
     }
@@ -714,6 +717,14 @@ class Translator extends Preprocessor
         $name = $classDef->getNamespacedName();
         $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
         $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
+
+        foreach ($classDef->properties as $property) {
+            if ($property->type === self::TYPE_ARRAY and $property->default and $property->default !== self::TYPE_ARRAY . '{}') {
+                $propOffset = self::PREFIX . $this->getPropertyOffset($property->name, $classDef->name, $classDef->namespace);
+                $cppCode .= $this->getIndent() . 'this_.getPropertyIndirect(' . $propOffset . ') = ' . $property->default . ';' . PHP_EOL;
+            }
+        }
+
         $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
         $cppCode .= $this->genWrapperFunctionArgs($fn, $methodDef->functionDef);
         return $cppCode;
@@ -919,6 +930,10 @@ class Translator extends Preprocessor
         foreach ($v->props as $prop) {
             $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
             if ($prop->default) {
+                if ($prop->default->getType() == 'Expr_Array' and count($prop->default->items) > 0) {
+                    $this->classDef->requireCtor = true;
+                    $propDef->type = self::TYPE_ARRAY;
+                }
                 $propDef->default = $this->parseIdentifier($prop->default);
             }
             $this->classDef->properties[$propDef->name] = $propDef;
