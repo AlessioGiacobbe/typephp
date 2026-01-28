@@ -2624,7 +2624,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseTryCatch(mixed $v): string
     {
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= 'zend_try {';
+        $code .= 'try {';
         $stmts = $v->stmts;
 
         $code .= PHP_EOL;
@@ -2639,7 +2639,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $exVar = $this->genTmpVarName();
         $this->addLocalVar($exVar, self::TYPE_OBJECT);
 
-        $code .= 'zend_catch {' . PHP_EOL;
+        $code .= 'catch(zend_object *_ex) {' . PHP_EOL;
         if ($catches) {
             $code .= $this->getIndent() . $exVar . ' = php::catchException();' . PHP_EOL;
             $this->indentLevel++;
@@ -2648,7 +2648,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $this->indentLevel--;
         }
-        $code .= '}' . PHP_EOL . 'zend_end_try();' . PHP_EOL;
+        $code .= '}' . PHP_EOL;
         if ($finally) {
             $code .= $this->parseStmts($finally->stmts);
             $code .= PHP_EOL;

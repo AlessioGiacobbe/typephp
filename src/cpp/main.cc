@@ -11,13 +11,9 @@ extern void php_app_init();
 extern void php_app_clean();
 extern zend_module_entry *php_embed_get_module();
 
-static void throw_exception(zend_object *ex) {
-    zend_bailout();
-}
-
 int main(int cpp_argc, char **cpp_argv) {
     php_embed_init(cpp_argc, cpp_argv);
-    zend_throw_exception_hook = throw_exception;
+    php::throw_impl = [](zend_object *ex) { throw ex; };
     zend_module_entry *module = php_embed_get_module();
 
     if (zend_register_module_ex(module, MODULE_PERSISTENT) == NULL) {
@@ -34,19 +30,14 @@ int main(int cpp_argc, char **cpp_argv) {
 #if PPROF_ON
     ProfilerStart("profile.out");
 #endif
-    zend_first_try {
+    try {
         php::request_init();
         php_app_init();
         php::eval("main();");
-    }
-    zend_catch {
+    } catch (zend_object *e) {
         rc = EG(exit_status);
-        if (EG(exception)) {
-            zend_exception_error(EG(exception), E_ERROR);
-            zend_clear_exception();
-        }
+        zend_exception_error(e, E_ERROR);
     }
-    zend_end_try();
 #if PPROF_ON
     ProfilerStop();
 #endif

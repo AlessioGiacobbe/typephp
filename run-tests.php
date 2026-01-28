@@ -4204,7 +4204,7 @@ function compile_php_file(string $file): string
         file_put_contents($file, "<?php\nfunction main() {\n" . substr($data, 5, -2) . "\n}\n");
     }
     system('./bin/compiler.php ' . $file);
-    $binary_file = basename($file, '.php');
+    $binary_file = str_replace('-', '_', basename($file, '.php'));
     if (!file_exists($binary_file)) {
         throw new Exception('Compilation failed');
     }
