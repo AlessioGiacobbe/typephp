@@ -1,4 +1,12 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
@@ -8,10 +16,10 @@ trait FuncCallOptimizer
 {
     protected function parseFuncCallWithOptimizer(string $name, Node\Expr\FuncCall $expr): string|false
     {
-        if ('strlen' === $name or 'sizeof' === $name or 'count' === $name) {
-            return 'php::len('.$this->parseIdentifier($expr->args[0]->value).')';
+        if ($name === 'strlen' or $name === 'sizeof' or $name === 'count') {
+            return 'php::len(' . $this->parseIdentifier($expr->args[0]->value) . ')';
         }
-        if (1 == count($expr->args)) {
+        if (count($expr->args) == 1) {
             switch ($name) {
                 case 'intval':
                     return $this->convertIntExpr($this->parseExpr($expr->args[0]->value));
@@ -24,7 +32,7 @@ trait FuncCallOptimizer
                 default:
                     break;
             }
-        } elseif (2 == count($expr->args)) {
+        } elseif (count($expr->args) == 2) {
             switch ($name) {
                 case 'objval':
                     $arg1 = $expr->args[0]->value;
@@ -35,8 +43,8 @@ trait FuncCallOptimizer
                     break;
             }
         }
-        if ('abs' === $name) {
-            return 'php::math::abs('.$this->parseIdentifier($expr->args[0]->value).')';
+        if ($name === 'abs') {
+            return 'php::math::abs(' . $this->parseIdentifier($expr->args[0]->value) . ')';
         }
 
         return false;

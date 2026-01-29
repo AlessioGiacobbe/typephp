@@ -1,22 +1,32 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
 class FileScanner
 {
-    private string $directory;
-    private array $excludePatterns;
-
     public const array PHP_EXT = ['php'];
+
     public const array CPP_EXT = ['cpp', 'cxx', 'cc'];
+
+    private string $directory;
+
+    private array $excludePatterns;
 
     public function __construct(string $directory)
     {
         if (!is_dir($directory)) {
-            throw new \InvalidArgumentException("Directory does not exist: $directory");
+            throw new \InvalidArgumentException("Directory does not exist: {$directory}");
         }
 
-        $this->directory = rtrim($directory, DIRECTORY_SEPARATOR);
+        $this->directory       = rtrim($directory, DIRECTORY_SEPARATOR);
         $this->excludePatterns = [];
     }
 
@@ -59,22 +69,9 @@ class FileScanner
         return $this->directory;
     }
 
-    private function isExcluded(string $filePath): bool
-    {
-        $excluded = false;
-        foreach ($this->excludePatterns as $pattern) {
-            if ($this->matchPattern($pattern, $filePath)) {
-                $excluded = true;
-                break;
-            }
-        }
-
-        return $excluded;
-    }
-
     public function scan(): array
     {
-        $files = [];
+        $files    = [];
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->directory, \FilesystemIterator::SKIP_DOTS)
         );
@@ -95,6 +92,19 @@ class FileScanner
         }
 
         return $files;
+    }
+
+    private function isExcluded(string $filePath): bool
+    {
+        $excluded = false;
+        foreach ($this->excludePatterns as $pattern) {
+            if ($this->matchPattern($pattern, $filePath)) {
+                $excluded = true;
+                break;
+            }
+        }
+
+        return $excluded;
     }
 
     private function matchPattern(string $pattern, string $path): bool

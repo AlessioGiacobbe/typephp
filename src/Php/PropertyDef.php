@@ -1,4 +1,12 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
@@ -7,15 +15,18 @@ use PhpParser\Modifiers;
 class PropertyDef
 {
     public string $name;
+
     public string $type;
+
     public int $flags;
+
     public ?string $default = null;
 
     public function __construct(string $name, int $flags, string $type, ?string $default = null)
     {
-        $this->flags = $flags;
-        $this->name = $name;
-        $this->type = $type;
+        $this->flags   = $flags;
+        $this->name    = $name;
+        $this->type    = $type;
         $this->default = $default;
     }
 

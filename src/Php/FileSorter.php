@@ -1,10 +1,19 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
 class FileSorter
 {
     private array $functionDeclInFile;
+
     private array $functionCallInFile;
 
     public function __construct(array $functionDeclInFile, array $functionCallInFile)
@@ -22,26 +31,26 @@ class FileSorter
         $inDegree = array_fill_keys($allFiles, 0);
         foreach ($dependencies as $deps) {
             foreach ($deps as $dep) {
-                ++$inDegree[$dep];
+                $inDegree[$dep]++;
             }
         }
 
         $queue = [];
         foreach ($inDegree as $file => $degree) {
-            if (0 === $degree) {
+            if ($degree === 0) {
                 $queue[] = $file;
             }
         }
 
         $sorted = [];
         while (!empty($queue)) {
-            $current = array_shift($queue);
+            $current  = array_shift($queue);
             $sorted[] = $current;
 
             if (isset($dependencies[$current])) {
                 foreach ($dependencies[$current] as $dep) {
-                    --$inDegree[$dep];
-                    if (0 === $inDegree[$dep]) {
+                    $inDegree[$dep]--;
+                    if ($inDegree[$dep] === 0) {
                         $queue[] = $dep;
                     }
                 }
@@ -60,7 +69,7 @@ class FileSorter
         $dependencies = [];
 
         foreach ($this->functionCallInFile as $call) {
-            $callerFile = $call['file'];
+            $callerFile   = $call['file'];
             $functionName = $call['name'];
 
             if (isset($this->functionDeclInFile[$functionName])) {

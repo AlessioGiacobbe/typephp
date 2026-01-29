@@ -1,4 +1,12 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
@@ -14,8 +22,11 @@ class Translator extends Preprocessor
     use MagicMethodDetector;
 
     protected string $targetName = 'app';
+
     protected bool $verbose = false;
+
     protected array $phpSrcFiles = [];
+
     protected array $argInfoHeaderFiles = [];
 
     protected array $unsupportedFunctions = [
@@ -29,16 +40,16 @@ class Translator extends Preprocessor
     public function __construct(string $rootPath)
     {
         parent::__construct($rootPath);
-        $this->climate->arguments->add(require __DIR__.'/../config/compiler_options.php');
+        $this->climate->arguments->add(require __DIR__ . '/../config/compiler_options.php');
         $this->preprocessArgvAdvanced();
         $this->climate->arguments->parse();
 
         $this->optimizeLevel = $this->climate->arguments->get('optimize');
-        $this->buildMode = $this->climate->arguments->get('mode');
-        $this->debugLine = intval($this->climate->arguments->get('debug-line'));
+        $this->buildMode     = $this->climate->arguments->get('mode');
+        $this->debugLine     = intval($this->climate->arguments->get('debug-line'));
         //        $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
-        $this->noLiteralStrings = true;
-        $this->enableProfiler = $this->climate->arguments->defined('profile');
+        $this->noLiteralStrings  = true;
+        $this->enableProfiler    = $this->climate->arguments->defined('profile');
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
         if ($this->climate->arguments->defined('help')) {
             $this->showUsage();
@@ -83,7 +94,7 @@ class Translator extends Preprocessor
     public function convert(string $file): string
     {
         if ($this->hasCppFileCache($file)) {
-            $this->climate->darkGray('skip: '.$file.', cache exists');
+            $this->climate->darkGray('skip: ' . $file . ', cache exists');
 
             return $this->getCppFile($file);
         }
@@ -104,45 +115,9 @@ class Translator extends Preprocessor
         }
     }
 
-    protected function getRegisterClassFunction(string $name): string
-    {
-        return self::PREFIX.'register_class_'.$name;
-    }
-
-    protected function getRegisterClassFunctionCeList(ClassDef|InterfaceDef $classDef): array
-    {
-        $list = [];
-        $parentCe = $this->getParentClassCe($classDef);
-        if ('' !== $parentCe) {
-            $list = [$parentCe];
-        }
-        //  interface 没有 implements
-        if ($classDef instanceof InterfaceDef) {
-            return $list;
-        }
-        $implements = $this->getImplementCe($classDef);
-
-        return array_merge($list, $implements);
-    }
-
     public function getRegisterClassFunctionArgs(ClassDef|InterfaceDef $classDef): string
     {
         return implode(', ', $this->getRegisterClassFunctionCeList($classDef));
-    }
-
-    private function getRegisterClassFunctionArgDef(ClassDef|InterfaceDef $classDef): string
-    {
-        $depsCeList = $this->getRegisterClassFunctionCeList($classDef);
-        if (empty($depsCeList)) {
-            return '';
-        }
-
-        return 'zend_class_entry *'.implode(', zend_class_entry *', $depsCeList);
-    }
-
-    protected function getClassCe(ClassLikeDef $classDef): string
-    {
-        return self::PREFIX.'class_entry_'.$classDef->getNamespacedName();
     }
 
     public function setTargetName(string $name): void
@@ -162,179 +137,32 @@ class Translator extends Preprocessor
         $this->targetName = $name;
     }
 
-    protected function getFilesFromDir(string $path): array
-    {
-        $scanner = new FileScanner($path);
-
-        return $scanner->scan();
-    }
-
-    protected function parseProjectYaml(string $path): array
-    {
-        $cfg = Yaml::parseFile($path);
-        $projectDir = dirname($path);
-
-        if (!empty($cfg['sources'])) {
-            $sources = $cfg['sources'];
-            $list = [];
-            foreach ($sources as $src) {
-                $src = trim($src);
-                if ('/' != $src[0]) {
-                    $absPath = $projectDir.'/'.$src;
-                } else {
-                    $absPath = $src;
-                }
-                $realPath = realpath($absPath);
-                if (!$realPath) {
-                    $this->error('Source file not exists: `'.$src.'`');
-                }
-                if (is_file($realPath)) {
-                    $list[] = $realPath;
-                } else {
-                    $tmp = $this->getFilesFromDir($realPath);
-                    $list = array_merge($list, $tmp);
-                }
-            }
-        } else {
-            $list = $this->getFilesFromDir($projectDir);
-        }
-        if (!empty($cfg['cxxflags'])) {
-            if (is_array($cfg['cxxflags'])) {
-                $this->cxxflags = implode(' ', $cfg['cxxflags']);
-            } else {
-                $this->cxxflags = str_replace("\n", ' ', $cfg['cxxflags']);
-            }
-        }
-        if (!empty($cfg['ldflags'])) {
-            if (is_array($cfg['ldflags'])) {
-                $this->ldflags = implode(' ', $cfg['ldflags']);
-            } else {
-                $this->ldflags = str_replace("\n", ' ', $cfg['ldflags']);
-            }
-        }
-        if (!empty($cfg['name'])) {
-            $this->setTargetName($cfg['name']);
-        }
-
-        return $list;
-    }
-
     public function getFiles(string $path): array
     {
         $realpath = realpath($path);
-        if (false === $realpath) {
-            exit("path not exists: $path\n");
+        if ($realpath === false) {
+            exit("path not exists: {$path}\n");
         }
         $path = $realpath;
 
         if (is_dir($path)) {
-            $list = $this->getFilesFromDir($path);
+            $list       = $this->getFilesFromDir($path);
             $targetName = basename($path);
             $this->setTargetName($targetName);
         } else {
             $ext = pathinfo($path, PATHINFO_EXTENSION);
-            if ('yml' === $ext) {
+            if ($ext === 'yml') {
                 $list = $this->parseProjectYaml($path);
-            } elseif ('php' === $ext) {
-                $list = [$path];
+            } elseif ($ext === 'php') {
+                $list       = [$path];
                 $targetName = FileScanner::getFileName($path);
                 $this->setTargetName($targetName);
             } else {
-                $this->error('Unsupported file type: '.$path);
+                $this->error('Unsupported file type: ' . $path);
             }
         }
 
         return $list;
-    }
-
-    protected function getInternalCeInfo(string $ce): array
-    {
-        return [
-            'func' => 'php::getClassEntry',
-            'args' => '"'.substr($ce, strlen(self::PREFIX.'class_entry_')).'"',
-        ];
-    }
-
-    protected function getParentClassCe(ClassLikeDef $classDef): string
-    {
-        if (!$classDef->extends) {
-            return '';
-        }
-
-        return self::PREFIX.'class_entry_'.$classDef->extends;
-    }
-
-    private function getImplementCe(ClassDef $classDef): array
-    {
-        $list = [];
-        foreach ($classDef->implements as $interface) {
-            $list[] = self::PREFIX.'class_entry_'.$interface;
-        }
-
-        return $list;
-    }
-
-    protected function doConvert(string $phpCode): string
-    {
-        $this->climate->info('convert: '.$this->file);
-
-        $ast = $this->parser->parse($phpCode);
-        $traverser = new NodeTraverser();
-        $traverser->addVisitor(new Visitor());
-
-        $stmts = $traverser->traverse($ast);
-
-        $this->resetFile();
-        $this->resetFunction();
-        $this->resetClass();
-        $this->resetNamespace();
-
-        $cppCode = '';
-        foreach ($stmts as $v) {
-            $type = $v->getType();
-            switch ($type) {
-                case 'Stmt_Declare':
-                    $this->parseDeclare($v);
-                    break;
-                case 'Stmt_Namespace':
-                    $cppCode .= $this->parseNamespace($v);
-                    break;
-                case 'Stmt_Class':
-                case 'Stmt_Trait':
-                    $cppCode .= $this->parseClass($v);
-                    break;
-                case 'Stmt_Use':
-                    $cppCode .= $this->parseUse($v).PHP_EOL;
-                    break;
-                case 'Stmt_Function':
-                    $cppCode .= $this->parseFunction($v).PHP_EOL;
-                    break;
-                case 'Stmt_Const':
-                    $this->parseConstDef($v).PHP_EOL;
-                    break;
-                case 'Stmt_Interface':
-                    $this->parseInterface($v).PHP_EOL;
-                    break;
-                case 'Stmt_Nop':
-                    break;
-                default:
-                    abort($v);
-            }
-        }
-
-        foreach ($this->classesDefineInFile as $classDef) {
-            $cppCode .= $this->genClassWrapper($classDef);
-        }
-
-        foreach ($this->interfacesDefineInFile as $interfaceDef) {
-            $cppCode .= $this->genClassWrapper($interfaceDef);
-        }
-
-        foreach ($this->functionDefineInFile as $functionDef) {
-            $cppCode .= $this->genFunctionWrapper($functionDef);
-        }
-
-        return $this->genIncludeHeaderFiles().$cppCode;
     }
 
     public function preprocessArgvAdvanced(): void
@@ -342,11 +170,11 @@ class Translator extends Preprocessor
         global $argv;
         $processed = [$argv[0]];
 
-        for ($i = 1; $i < count($argv); ++$i) {
+        for ($i = 1; $i < count($argv); $i++) {
             $arg = $argv[$i];
             if (preg_match('/^-([a-zA-Z])(.+)$/', $arg, $matches)) {
-                $option = $matches[1];
-                $value = $matches[2];
+                $option      = $matches[1];
+                $value       = $matches[2];
                 $processed[] = "-{$option}";
                 $processed[] = $value;
             } elseif (preg_match('/^-([a-zA-Z]{2,})$/', $arg, $matches)) {
@@ -366,104 +194,29 @@ class Translator extends Preprocessor
         $lines[] = '#include <phpx.h>';
         $lines[] = PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
-            $lines[] = 'extern '.self::TYPE_VAR.' '.$name.';';
+            $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
         }
 
         // property offset
         foreach ($this->classes as $classDef) {
             foreach ($classDef->properties as $propertyDef) {
-                $lines[] = 'extern uint32_t '.self::PREFIX.$this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace).';';
+                $lines[] = 'extern uint32_t ' . self::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace) . ';';
             }
         }
 
         $literalStringsCount = count($this->literalStrings);
-        $lines[] = 'extern php::Var '.self::LITERAL_STRINGS.'['.$literalStringsCount.'];'.PHP_EOL;
+        $lines[]             = 'extern php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
 
         $classEntryCount = count($this->classMap);
-        $lines[] = 'extern zend_class_entry *'.self::PREFIX.self::CLASS_ENTRY_MAP.'['.$classEntryCount.'];'.PHP_EOL;
+        $lines[]         = 'extern zend_class_entry *' . self::PREFIX . self::CLASS_ENTRY_MAP . '[' . $classEntryCount . '];' . PHP_EOL;
 
-        $code = implode(PHP_EOL, $lines).PHP_EOL.PHP_EOL;
+        $code = implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
         $this->writeFile($file, $code);
-    }
-
-    private function render(string $template): string
-    {
-        ob_start();
-        include __DIR__.'/../template/'.$template;
-
-        return ob_get_clean();
-    }
-
-    protected function genClassCeList(): void
-    {
-        if (empty($this->interfaces) and empty($this->classes)) {
-            return;
-        }
-
-        $sorter = new StringSort();
-
-        foreach ($this->interfaces as $interfaceDef) {
-            $parent = $interfaceDef->extends;
-            $ce = $this->getClassCe($interfaceDef);
-            $deps = [];
-
-            if ($parent) {
-                // 不存在的接口，说明可能是内置接口
-                $tmpCe = $this->getParentClassCe($interfaceDef);
-                if (!isset($this->interfaces[$parent])) {
-                    $sorter->add($tmpCe);
-                }
-                $deps[] = $tmpCe;
-            }
-
-            $this->classCeInfo[$ce] = [
-                'deps' => $deps,
-                'func' => $this->getRegisterClassFunction($interfaceDef->getNamespacedName()),
-                'args' => $this->getRegisterClassFunctionArgs($interfaceDef),
-                'argDef' => $this->getRegisterClassFunctionArgDef($interfaceDef),
-            ];
-            $sorter->add($ce, $deps);
-        }
-
-        foreach ($this->classes as $classDef) {
-            $ce = $this->getClassCe($classDef);
-            $deps = [];
-            $parent = $classDef->extends;
-            if ($parent) {
-                // 不存在的父类，说明可能是内置类
-                $tmpCe = $this->getParentClassCe($classDef);
-                if (!isset($this->classes[$parent])) {
-                    $sorter->add($tmpCe);
-                }
-                $deps[] = $tmpCe;
-            }
-
-            $implements = $classDef->implements;
-            if ($implements) {
-                foreach ($implements as $interface) {
-                    $tmpCe = self::PREFIX.'class_entry_'.$interface;
-                    if (!isset($this->interfaces[$interface])) {
-                        $sorter->add($tmpCe);
-                    }
-                    $deps[] = $tmpCe;
-                }
-            }
-
-            $this->classCeInfo[$ce] = [
-                'deps' => $deps,
-                'func' => $this->getRegisterClassFunction($classDef->getNamespacedName()),
-                'args' => $this->getRegisterClassFunctionArgs($classDef),
-                'argDef' => $this->getRegisterClassFunctionArgDef($classDef),
-            ];
-            $sorter->add($ce, $deps);
-        }
-
-        $this->classCeList = $sorter->sort();
     }
 
     public function genExtension(string $file): void
     {
-        if ('bin' == $this->buildMode) {
+        if ($this->buildMode == 'bin') {
             if (!isset($this->nativeFunctions['main'])) {
                 $this->climate->red('When the build mode is a binary executable file, the `main()` function must be defined');
                 exit(1);
@@ -493,11 +246,11 @@ class Translator extends Preprocessor
     public function compileFile(string $cppFile, string $objectFile): void
     {
         if ($this->hasObjectFileCache($cppFile)) {
-            $this->climate->darkGray('skip: '.$cppFile.', cache exists');
+            $this->climate->darkGray('skip: ' . $cppFile . ', cache exists');
 
             return;
         }
-        $cmd = $this->cppCompiler.' -c '.$cppFile.' -o '.$objectFile;
+        $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
         $this->addCompilationOption($cmd, false);
         $this->climate->comment($cmd);
         shell_exec($cmd);
@@ -507,10 +260,10 @@ class Translator extends Preprocessor
     {
         $objectList = implode(' ', $objectFiles);
         $targetFile = $this->targetName;
-        if ('ext' == $this->buildMode and !str_ends_with($targetFile, '.so')) {
+        if ($this->buildMode == 'ext' and !str_ends_with($targetFile, '.so')) {
             $targetFile .= '.so';
         }
-        $linkCmd = $this->cppCompiler.' '.$objectList.' -o '.$targetFile;
+        $linkCmd = $this->cppCompiler . ' ' . $objectList . ' -o ' . $targetFile;
         $this->addCompilationOption($linkCmd, true);
         $this->climate->comment($linkCmd);
         shell_exec($linkCmd);
@@ -518,12 +271,12 @@ class Translator extends Preprocessor
 
     public function genFunctionDeclaration(string $file): void
     {
-        $code = '#include <phpx.h>'.PHP_EOL;
+        $code = '#include <phpx.h>' . PHP_EOL;
         /**
          * @var FunctionDef $func
          */
         foreach ($this->nativeFunctions as $name => $func) {
-            $code .= 'extern '.$func->returnType.' '.self::PREFIX.$name.'(';
+            $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
                 $list = [];
@@ -531,25 +284,281 @@ class Translator extends Preprocessor
                     $list[] = 'php::Object &this_';
                 }
                 foreach ($argInfoList as $argInfo) {
-                    $arg = $argInfo->type.' '.$argInfo->name;
+                    $arg = $argInfo->type . ' ' . $argInfo->name;
                     if ($argInfo->default) {
-                        $arg .= ' = '.$argInfo->default;
+                        $arg .= ' = ' . $argInfo->default;
                     }
                     $list[] = $arg;
                 }
                 $code .= implode(', ', $list);
             }
-            $code .= ');'.PHP_EOL;
+            $code .= ');' . PHP_EOL;
         }
 
         $code .= PHP_EOL;
         foreach ($this->nativeConstants as $name => $constant) {
-            $code .= 'extern '.$constant->type.' '.$name.';'.PHP_EOL;
+            $code .= 'extern ' . $constant->type . ' ' . $name . ';' . PHP_EOL;
         }
 
-        $code .= 'extern zend_class_entry *php_get_class_entry(int class_id, const char *class_name);'.PHP_EOL;
+        $code .= 'extern zend_class_entry *php_get_class_entry(int class_id, const char *class_name);' . PHP_EOL;
 
         $this->writeFile($file, $code);
+    }
+
+    public function getBuildMode(): string
+    {
+        return $this->buildMode;
+    }
+
+    public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string
+    {
+        $basename = self::PREFIX . basename($stubFilenameWithoutExtension);
+        $absPath  = $this->getIncludeDir() . "/{$basename}_arginfo.h";
+        if ($relative) {
+            return ltrim($this->removeCommonPrefix($this->getIncludeDir(), $absPath), '/');
+        }
+        return $absPath;
+    }
+
+    public function genIncludeHeaderFiles(): string
+    {
+        $headers = array_merge($this->globalHeaders, $this->localHeaders);
+        $lines   = [];
+        foreach ($headers as $header) {
+            $lines[] = '#include <' . $header . '>';
+        }
+
+        return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
+    }
+
+    protected function getRegisterClassFunction(string $name): string
+    {
+        return self::PREFIX . 'register_class_' . $name;
+    }
+
+    protected function getRegisterClassFunctionCeList(ClassDef|InterfaceDef $classDef): array
+    {
+        $list     = [];
+        $parentCe = $this->getParentClassCe($classDef);
+        if ($parentCe !== '') {
+            $list = [$parentCe];
+        }
+        //  interface 没有 implements
+        if ($classDef instanceof InterfaceDef) {
+            return $list;
+        }
+        $implements = $this->getImplementCe($classDef);
+
+        return array_merge($list, $implements);
+    }
+
+    protected function getClassCe(ClassLikeDef $classDef): string
+    {
+        return self::PREFIX . 'class_entry_' . $classDef->getNamespacedName();
+    }
+
+    protected function getFilesFromDir(string $path): array
+    {
+        $scanner = new FileScanner($path);
+
+        return $scanner->scan();
+    }
+
+    protected function parseProjectYaml(string $path): array
+    {
+        $cfg        = Yaml::parseFile($path);
+        $projectDir = dirname($path);
+
+        if (!empty($cfg['sources'])) {
+            $sources = $cfg['sources'];
+            $list    = [];
+            foreach ($sources as $src) {
+                $src = trim($src);
+                if ($src[0] != '/') {
+                    $absPath = $projectDir . '/' . $src;
+                } else {
+                    $absPath = $src;
+                }
+                $realPath = realpath($absPath);
+                if (!$realPath) {
+                    $this->error('Source file not exists: `' . $src . '`');
+                }
+                if (is_file($realPath)) {
+                    $list[] = $realPath;
+                } else {
+                    $tmp  = $this->getFilesFromDir($realPath);
+                    $list = array_merge($list, $tmp);
+                }
+            }
+        } else {
+            $list = $this->getFilesFromDir($projectDir);
+        }
+        if (!empty($cfg['cxxflags'])) {
+            if (is_array($cfg['cxxflags'])) {
+                $this->cxxflags = implode(' ', $cfg['cxxflags']);
+            } else {
+                $this->cxxflags = str_replace("\n", ' ', $cfg['cxxflags']);
+            }
+        }
+        if (!empty($cfg['ldflags'])) {
+            if (is_array($cfg['ldflags'])) {
+                $this->ldflags = implode(' ', $cfg['ldflags']);
+            } else {
+                $this->ldflags = str_replace("\n", ' ', $cfg['ldflags']);
+            }
+        }
+        if (!empty($cfg['name'])) {
+            $this->setTargetName($cfg['name']);
+        }
+
+        return $list;
+    }
+
+    protected function getInternalCeInfo(string $ce): array
+    {
+        return [
+            'func' => 'php::getClassEntry',
+            'args' => '"' . substr($ce, strlen(self::PREFIX . 'class_entry_')) . '"',
+        ];
+    }
+
+    protected function getParentClassCe(ClassLikeDef $classDef): string
+    {
+        if (!$classDef->extends) {
+            return '';
+        }
+
+        return self::PREFIX . 'class_entry_' . $classDef->extends;
+    }
+
+    protected function doConvert(string $phpCode): string
+    {
+        $this->climate->info('convert: ' . $this->file);
+
+        $ast       = $this->parser->parse($phpCode);
+        $traverser = new NodeTraverser();
+        $traverser->addVisitor(new Visitor());
+
+        $stmts = $traverser->traverse($ast);
+
+        $this->resetFile();
+        $this->resetFunction();
+        $this->resetClass();
+        $this->resetNamespace();
+
+        $cppCode = '';
+        foreach ($stmts as $v) {
+            $type = $v->getType();
+            switch ($type) {
+                case 'Stmt_Declare':
+                    $this->parseDeclare($v);
+                    break;
+                case 'Stmt_Namespace':
+                    $cppCode .= $this->parseNamespace($v);
+                    break;
+                case 'Stmt_Class':
+                case 'Stmt_Trait':
+                    $cppCode .= $this->parseClass($v);
+                    break;
+                case 'Stmt_Use':
+                    $cppCode .= $this->parseUse($v) . PHP_EOL;
+                    break;
+                case 'Stmt_Function':
+                    $cppCode .= $this->parseFunction($v) . PHP_EOL;
+                    break;
+                case 'Stmt_Const':
+                    $this->parseConstDef($v) . PHP_EOL;
+                    break;
+                case 'Stmt_Interface':
+                    $this->parseInterface($v) . PHP_EOL;
+                    break;
+                case 'Stmt_Nop':
+                    break;
+                default:
+                    abort($v);
+            }
+        }
+
+        foreach ($this->classesDefineInFile as $classDef) {
+            $cppCode .= $this->genClassWrapper($classDef);
+        }
+
+        foreach ($this->interfacesDefineInFile as $interfaceDef) {
+            $cppCode .= $this->genClassWrapper($interfaceDef);
+        }
+
+        foreach ($this->functionDefineInFile as $functionDef) {
+            $cppCode .= $this->genFunctionWrapper($functionDef);
+        }
+
+        return $this->genIncludeHeaderFiles() . $cppCode;
+    }
+
+    protected function genClassCeList(): void
+    {
+        if (empty($this->interfaces) and empty($this->classes)) {
+            return;
+        }
+
+        $sorter = new StringSort();
+
+        foreach ($this->interfaces as $interfaceDef) {
+            $parent = $interfaceDef->extends;
+            $ce     = $this->getClassCe($interfaceDef);
+            $deps   = [];
+
+            if ($parent) {
+                // 不存在的接口，说明可能是内置接口
+                $tmpCe = $this->getParentClassCe($interfaceDef);
+                if (!isset($this->interfaces[$parent])) {
+                    $sorter->add($tmpCe);
+                }
+                $deps[] = $tmpCe;
+            }
+
+            $this->classCeInfo[$ce] = [
+                'deps'   => $deps,
+                'func'   => $this->getRegisterClassFunction($interfaceDef->getNamespacedName()),
+                'args'   => $this->getRegisterClassFunctionArgs($interfaceDef),
+                'argDef' => $this->getRegisterClassFunctionArgDef($interfaceDef),
+            ];
+            $sorter->add($ce, $deps);
+        }
+
+        foreach ($this->classes as $classDef) {
+            $ce     = $this->getClassCe($classDef);
+            $deps   = [];
+            $parent = $classDef->extends;
+            if ($parent) {
+                // 不存在的父类，说明可能是内置类
+                $tmpCe = $this->getParentClassCe($classDef);
+                if (!isset($this->classes[$parent])) {
+                    $sorter->add($tmpCe);
+                }
+                $deps[] = $tmpCe;
+            }
+
+            $implements = $classDef->implements;
+            if ($implements) {
+                foreach ($implements as $interface) {
+                    $tmpCe = self::PREFIX . 'class_entry_' . $interface;
+                    if (!isset($this->interfaces[$interface])) {
+                        $sorter->add($tmpCe);
+                    }
+                    $deps[] = $tmpCe;
+                }
+            }
+
+            $this->classCeInfo[$ce] = [
+                'deps'   => $deps,
+                'func'   => $this->getRegisterClassFunction($classDef->getNamespacedName()),
+                'args'   => $this->getRegisterClassFunctionArgs($classDef),
+                'argDef' => $this->getRegisterClassFunctionArgDef($classDef),
+            ];
+            $sorter->add($ce, $deps);
+        }
+
+        $this->classCeList = $sorter->sort();
     }
 
     protected function getMethodName(Node\Stmt\ClassMethod $v): string
@@ -564,7 +573,7 @@ class Translator extends Preprocessor
 
     protected function parseNamespace(Node\Stmt\Namespace_ $node): string
     {
-        $ns = $this->parseIdentifier($node->name);
+        $ns   = $this->parseIdentifier($node->name);
         $code = '';
 
         $this->resetNamespace();
@@ -572,16 +581,16 @@ class Translator extends Preprocessor
         if ($this->useCppNamespace) {
             $ns = explode('\\', $ns);
             $ns = array_filter($ns, function ($v) {
-                return '' !== $v;
+                return $v !== '';
             });
             foreach ($ns as $name) {
-                $code .= 'namespace '.$name.' {'.PHP_EOL;
+                $code .= 'namespace ' . $name . ' {' . PHP_EOL;
             }
-            $ns_end = str_repeat('}', count($ns));
+            $ns_end          = str_repeat('}', count($ns));
             $this->namespace = implode('::', $ns);
         } else {
             $this->namespace = $ns;
-            $ns_end = '';
+            $ns_end          = '';
         }
 
         foreach ($node->stmts as $v2) {
@@ -591,13 +600,13 @@ class Translator extends Preprocessor
                     $code .= $this->parseClass($v2);
                     break;
                 case 'Stmt_Const':
-                    $this->parseConstDef($v2).PHP_EOL;
+                    $this->parseConstDef($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Function':
-                    $code .= $this->parseFunction($v2).PHP_EOL;
+                    $code .= $this->parseFunction($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Use':
-                    $code .= $this->parseUse($v2).PHP_EOL;
+                    $code .= $this->parseUse($v2) . PHP_EOL;
                     break;
                 default:
                     abort($v2);
@@ -611,21 +620,21 @@ class Translator extends Preprocessor
 
     protected function genStubFile(string $file): void
     {
-        $genStubCmd = PHP_BINARY.' '.$this->rootPath.'/bin/gen_stub.php -f '.$file;
-        $output = shell_exec($genStubCmd);
-        $this->climate->info('generate stub file: '.$file);
+        $genStubCmd = PHP_BINARY . ' ' . $this->rootPath . '/bin/gen_stub.php -f ' . $file;
+        $output     = shell_exec($genStubCmd);
+        $this->climate->info('generate stub file: ' . $file);
         $this->climate->comment($genStubCmd);
         $stubFilenameWithoutExtension = str_replace(['.stub.php', '.php'], '', $file);
-        $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
+        $headerFile                   = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
         if (!str_contains($output, 'Saved')) {
-            $this->error("failed to generate arginfo header file: `$headerFile`, output: $output");
+            $this->error("failed to generate arginfo header file: `{$headerFile}`, output: {$output}");
         }
         $this->argInfoHeaderFiles[] = $headerFile;
     }
 
     protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_ $class): string
     {
-        $this->class = $this->parseIdentifier($class->name);
+        $this->class    = $this->parseIdentifier($class->name);
         $this->classDef = new ClassDef($this->class, $class->flags, $this->namespace);
         if ($class->extends) {
             $this->classDef->extends = $this->parseIdentifier($class->extends);
@@ -638,8 +647,8 @@ class Translator extends Preprocessor
         }
         $this->classDef->implements = $this->parseIdentifierList($class->implements);
 
-        $className = $this->classDef->getNamespacedName();
-        $this->classes[$className] = $this->classDef;
+        $className                             = $this->classDef->getNamespacedName();
+        $this->classes[$className]             = $this->classDef;
         $this->classesDefineInFile[$className] = $this->classDef;
 
         $methodCodes = [];
@@ -671,28 +680,12 @@ class Translator extends Preprocessor
         return $code;
     }
 
-    public function getBuildMode(): string
-    {
-        return $this->buildMode;
-    }
-
-    public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string
-    {
-        $basename = self::PREFIX.basename($stubFilenameWithoutExtension);
-        $absPath = $this->getIncludeDir()."/{$basename}_arginfo.h";
-        if ($relative) {
-            return ltrim($this->removeCommonPrefix($this->getIncludeDir(), $absPath), '/');
-        } else {
-            return $absPath;
-        }
-    }
-
     protected function genNativeMethod($methodCodes): string
     {
-        $code = '';
+        $code     = '';
         $classDef = $this->classDef;
         foreach ($classDef->methods as $method) {
-            $code .= $methodCodes[$method->name].PHP_EOL;
+            $code .= $methodCodes[$method->name] . PHP_EOL;
         }
         $code .= PHP_EOL;
 
@@ -701,61 +694,51 @@ class Translator extends Preprocessor
 
     protected function genWrapperFunctionArgs(string $fn, FunctionDef $functionDef): string
     {
-        $cppCode = '';
+        $cppCode    = '';
         $callParams = '';
         foreach ($functionDef->argInfoList as $k => $argInfo) {
             if ($argInfo->default) {
-                $argExpr = 'php::getCallArg('.$k.', '.$argInfo->default.')';
+                $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
             } else {
-                $argExpr = 'php::getCallArg('.$k.')';
+                $argExpr = 'php::getCallArg(' . $k . ')';
             }
             $expr = $this->convertExprFromType($argInfo->type, $argExpr);
-            $cppCode .= $this->getIndent().$argInfo->type.' arg_'.$argInfo->name.' = '.$expr.';'.PHP_EOL;
-            $callParams .= 'arg_'.$argInfo->name.',';
+            $cppCode .= $this->getIndent() . $argInfo->type . ' arg_' . $argInfo->name . ' = ' . $expr . ';' . PHP_EOL;
+            $callParams .= 'arg_' . $argInfo->name . ',';
         }
 
         if ($functionDef->method) {
-            $callParams = $functionDef->argInfoList ? 'this_, '.rtrim($callParams, ',') : 'this_';
+            $callParams = $functionDef->argInfoList ? 'this_, ' . rtrim($callParams, ',') : 'this_';
         } else {
             $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
         }
 
-        if (self::TYPE_VOID !== $functionDef->returnType) {
-            $cppCode .= $this->getIndent().'auto retval = '.$fn.'('.$callParams.');'.PHP_EOL;
-            $cppCode .= $this->getIndent().'php::move(retval, return_value);'.PHP_EOL;
+        if ($functionDef->returnType !== self::TYPE_VOID) {
+            $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
+            $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
         } else {
-            $cppCode .= $this->getIndent().$fn.'('.$callParams.');'.PHP_EOL;
+            $cppCode .= $this->getIndent() . $fn . '(' . $callParams . ');' . PHP_EOL;
         }
-        $cppCode .= '}'.PHP_EOL.PHP_EOL;
+        $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
         return $cppCode;
     }
 
     protected function genMethodWrapper(ClassDef $classDef, MethodDef $methodDef): string
     {
-        $name = $classDef->getNamespacedName();
-        $cppCode = 'ZEND_METHOD('.$name.', '.$methodDef->name.'){'.PHP_EOL;
-        $cppCode .= $this->getIndent().self::TYPE_OBJECT.' this_(&execute_data->This);'.PHP_EOL;
+        $name    = $classDef->getNamespacedName();
+        $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
+        $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
 
         foreach ($classDef->properties as $property) {
-            if (self::TYPE_ARRAY === $property->type and $property->default and $property->default !== self::TYPE_ARRAY.'{}') {
-                $propOffset = self::PREFIX.$this->getPropertyOffset($property->name, $classDef->name, $classDef->namespace);
-                $cppCode .= $this->getIndent().'this_.getPropertyIndirect('.$propOffset.') = '.$property->default.';'.PHP_EOL;
+            if ($property->type === self::TYPE_ARRAY and $property->default and $property->default !== self::TYPE_ARRAY . '{}') {
+                $propOffset = self::PREFIX . $this->getPropertyOffset($property->name, $classDef->name, $classDef->namespace);
+                $cppCode .= $this->getIndent() . 'this_.getPropertyIndirect(' . $propOffset . ') = ' . $property->default . ';' . PHP_EOL;
             }
         }
 
-        $fn = self::PREFIX.$this->getNativeMethodName($classDef, $methodDef);
+        $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
         $cppCode .= $this->genWrapperFunctionArgs($fn, $methodDef->functionDef);
-
-        return $cppCode;
-    }
-
-    private function genFunctionWrapper(FunctionDef $functionDef): string
-    {
-        $name = $functionDef->name;
-        $cppCode = 'ZEND_FUNCTION('.$name.'){'.PHP_EOL;
-        $fn = self::PREFIX.$this->getNativeName($functionDef->name);
-        $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef);
 
         return $cppCode;
     }
@@ -763,12 +746,12 @@ class Translator extends Preprocessor
     protected function getClassRegisterCeFunc(ClassDef|InterfaceDef $classDef): void
     {
         $cppCode = '';
-        $name = $classDef->getNamespacedName();
+        $name    = $classDef->getNamespacedName();
         $argsDef = $this->getRegisterClassFunctionArgDef($classDef);
-        $param = $this->getRegisterClassFunctionArgs($classDef);
-        $cppCode .= 'zend_class_entry *'.$this->getRegisterClassFunction($name).'('.$argsDef.') {'.PHP_EOL;
-        $cppCode .= $this->getIndent().'return register_class_'.$name.'('.$param.');'.PHP_EOL;
-        $cppCode .= '}'.PHP_EOL.PHP_EOL;
+        $param   = $this->getRegisterClassFunctionArgs($classDef);
+        $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $argsDef . ') {' . PHP_EOL;
+        $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
+        $cppCode .= '}' . PHP_EOL . PHP_EOL;
     }
 
     protected function genClassWrapper(ClassDef|InterfaceDef $classDef): string
@@ -786,19 +769,220 @@ class Translator extends Preprocessor
         return $cppCode;
     }
 
+    /**
+     * @param array<ConstantDef> $list
+     */
+    protected function genClassConstantList(array $list): string
+    {
+        $code = '';
+        foreach ($list as $const) {
+            $code .= $this->getIndent() . $this->genClassConstant($const);
+        }
+
+        return $code;
+    }
+
+    protected function genClassConstant(ConstantDef $const): string
+    {
+        return 'static const ' . $const->type . ' ' . $const->name . ';' . PHP_EOL;
+    }
+
+    /**
+     * @param array<PropertyDef> $list
+     */
+    protected function genClassPropertyList(array $list): string
+    {
+        $code = '';
+        foreach ($list as $prop) {
+            $code .= $this->getIndent() . $this->genClassProperty($prop);
+        }
+
+        return $code;
+    }
+
+    protected function genClassProperty(PropertyDef $prop): string
+    {
+        $code = $prop->type . ' ' . $prop->name;
+        if ($prop->default) {
+            $code .= ' = ' . $prop->default;
+        }
+
+        return $code . ';' . PHP_EOL;
+    }
+
+    protected function genFunction(string $name, string $returnType, array $args = [], array $lines = []): string
+    {
+        $_args = [];
+        foreach ($args as $arg => $type) {
+            $_args[] = $type . ' ' . $arg;
+        }
+        $code = $returnType . ' ' . $name . '(' . implode(', ', $_args) . ') {' . PHP_EOL;
+        $code .= implode(PHP_EOL, $lines) . PHP_EOL;
+        $code .= '}' . PHP_EOL;
+
+        return $code;
+    }
+
+    protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
+    {
+        $flags = $v->flags;
+        $type  = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
+        foreach ($v->consts as $const) {
+            $constName = $this->parseIdentifier($const->name);
+            if (isset($this->classDef->constants[$constName])) {
+                $this->fatalError($const, 'Cannot redefine class constant ' . $this->class . '::' . $constName);
+            }
+            $constInfo                                   = new ConstantDef($constName, $flags, $type, $this->parseIdentifier($const->value));
+            $this->classDef->constants[$constInfo->name] = $constInfo;
+        }
+    }
+
+    protected function parsePropertyDef(Node\Stmt\Property $v): void
+    {
+        $flags = $v->flags;
+        $type  = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
+
+        foreach ($v->props as $prop) {
+            $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
+            if ($prop->default) {
+                if ($prop->default->getType() == 'Expr_Array' and count($prop->default->items) > 0) {
+                    $this->classDef->requireCtor = true;
+                    $propDef->type               = self::TYPE_ARRAY;
+                }
+                $propDef->default = $this->parseIdentifier($prop->default);
+            }
+            $this->classDef->properties[$propDef->name] = $propDef;
+        }
+    }
+
+    protected function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
+    {
+        $name               = $this->getMethodName($v);
+        $this->method       = $name;
+        $methodCodes[$name] = $this->parseFunction($v);
+        $flags              = $v->flags;
+        if (!($flags & Modifiers::PRIVATE) and !($flags & Modifiers::PROTECTED)) {
+            $flags |= Modifiers::PUBLIC;
+        }
+        $methodDef = new MethodDef($flags, $name, $this->functionDef);
+        $this->checkRequiredArgNum($name, $methodDef, $v);
+        $this->classDef->methods[$name] = $methodDef;
+        $this->method                   = '';
+    }
+
+    protected function parseIdentifierList(array $implements): array
+    {
+        $list = [];
+        foreach ($implements as $implement) {
+            $list[] = $this->parseIdentifier($implement);
+        }
+
+        return $list;
+    }
+
+    protected function parseInterface(Node\Stmt\Interface_ $v): void
+    {
+        $name                                         = $this->parseIdentifier($v->name);
+        $this->interface                              = $name;
+        $this->interfaceDef                           = new InterfaceDef($name, $this->namespace);
+        $interfaceName                                = $this->interfaceDef->getNamespacedName();
+        $this->interfaces[$interfaceName]             = $this->interfaceDef;
+        $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
+    }
+
+    protected function parseForeachObject(Foreach_ $node): string
+    {
+        $obj    = $this->parseIdentifier($node->expr);
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
+
+        $tmpArrayVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpArrayVar, self::TYPE_ARRAY);
+
+        $code = 'if (' . $obj . '.instanceOf("IteratorAggregate")) {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . '.exec("getIterator");' . PHP_EOL . '}' . PHP_EOL;
+        $code .= 'else if (' . $obj . '.instanceOf("Iterator")) {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . ';' . PHP_EOL . '}' . PHP_EOL;
+
+        $code .= 'if (' . $tmpVar . ') {' . PHP_EOL;
+
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $tmpVar . '.exec("rewind");' . PHP_EOL;
+        $code .= $this->getIndent() . 'for (;' . $tmpVar . '.exec("valid");  ' . $tmpVar . '.exec("next")) {' . PHP_EOL;
+        $this->indentLevel++;
+
+        $valueVar = $this->parseIdentifier($node->valueVar);
+        $this->checkVar($node, $valueVar);
+
+        $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.exec("current");' . PHP_EOL;
+        if ($node->keyVar) {
+            $keyVar = $this->parseIdentifier($node->keyVar);
+            $this->checkVar($node, $keyVar);
+            $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.exec("key");' . PHP_EOL;
+        }
+        $code .= $this->parseStmts($node->stmts);
+        $code .= '}' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '} else {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpArrayVar . ' = php::call("get_object_vars", {' . $obj . '});' . PHP_EOL;
+        $code .= $this->parseForeachArray($node, $tmpArrayVar);
+        $this->indentLevel--;
+        $code .= '}' . PHP_EOL;
+
+        return $code;
+    }
+
+    private function getRegisterClassFunctionArgDef(ClassDef|InterfaceDef $classDef): string
+    {
+        $depsCeList = $this->getRegisterClassFunctionCeList($classDef);
+        if (empty($depsCeList)) {
+            return '';
+        }
+
+        return 'zend_class_entry *' . implode(', zend_class_entry *', $depsCeList);
+    }
+
+    private function getImplementCe(ClassDef $classDef): array
+    {
+        $list = [];
+        foreach ($classDef->implements as $interface) {
+            $list[] = self::PREFIX . 'class_entry_' . $interface;
+        }
+
+        return $list;
+    }
+
+    private function render(string $template): string
+    {
+        ob_start();
+        include __DIR__ . '/../template/' . $template;
+
+        return ob_get_clean();
+    }
+
+    private function genFunctionWrapper(FunctionDef $functionDef): string
+    {
+        $name    = $functionDef->name;
+        $cppCode = 'ZEND_FUNCTION(' . $name . '){' . PHP_EOL;
+        $fn      = self::PREFIX . $this->getNativeName($functionDef->name);
+        $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef);
+
+        return $cppCode;
+    }
+
     private function genClassNative(): string
     {
-        $code = 'class '.$this->class.' { ';
+        $code = 'class ' . $this->class . ' { ';
 
-        $publicMethods = [];
-        $protectedMethods = [];
-        $privateMethods = [];
-        $publicConstants = [];
-        $protectedConstants = [];
-        $privateConstants = [];
-        $publicProperties = [];
+        $publicMethods       = [];
+        $protectedMethods    = [];
+        $privateMethods      = [];
+        $publicConstants     = [];
+        $protectedConstants  = [];
+        $privateConstants    = [];
+        $publicProperties    = [];
         $protectedProperties = [];
-        $privateProperties = [];
+        $privateProperties   = [];
 
         foreach ($this->classDef->constants as $const) {
             if ($const->flags & Modifiers::PUBLIC) {
@@ -835,210 +1019,36 @@ class Translator extends Preprocessor
         }
 
         if ($privateConstants) {
-            $code .= 'private:'.PHP_EOL;
+            $code .= 'private:' . PHP_EOL;
             $code .= $this->genClassConstantList($privateConstants);
         }
 
         if ($protectedConstants) {
-            $code .= 'protected:'.PHP_EOL;
+            $code .= 'protected:' . PHP_EOL;
             $code .= $this->genClassConstantList($protectedConstants);
         }
 
         if ($publicConstants) {
-            $code .= 'public:'.PHP_EOL;
+            $code .= 'public:' . PHP_EOL;
             $code .= $this->genClassConstantList($publicConstants);
         }
 
         if ($privateProperties) {
-            $code .= 'private:'.PHP_EOL;
+            $code .= 'private:' . PHP_EOL;
             $code .= $this->genClassPropertyList($privateProperties);
         }
 
         if ($protectedProperties) {
-            $code .= 'protected:'.PHP_EOL;
+            $code .= 'protected:' . PHP_EOL;
             $code .= $this->genClassPropertyList($protectedProperties);
         }
 
         if ($publicProperties) {
-            $code .= 'public:'.PHP_EOL;
+            $code .= 'public:' . PHP_EOL;
             $code .= $this->genClassPropertyList($publicProperties);
         }
 
-        $code .= '};'.PHP_EOL.PHP_EOL;
-
-        return $code;
-    }
-
-    public function genIncludeHeaderFiles(): string
-    {
-        $headers = array_merge($this->globalHeaders, $this->localHeaders);
-        $lines = [];
-        foreach ($headers as $header) {
-            $lines[] = '#include <'.$header.'>';
-        }
-
-        return implode(PHP_EOL, $lines).PHP_EOL.PHP_EOL;
-    }
-
-    /**
-     * @param array<ConstantDef> $list
-     */
-    protected function genClassConstantList(array $list): string
-    {
-        $code = '';
-        foreach ($list as $const) {
-            $code .= $this->getIndent().$this->genClassConstant($const);
-        }
-
-        return $code;
-    }
-
-    protected function genClassConstant(ConstantDef $const): string
-    {
-        return 'static const '.$const->type.' '.$const->name.';'.PHP_EOL;
-    }
-
-    /**
-     * @param array<PropertyDef> $list
-     */
-    protected function genClassPropertyList(array $list): string
-    {
-        $code = '';
-        foreach ($list as $prop) {
-            $code .= $this->getIndent().$this->genClassProperty($prop);
-        }
-
-        return $code;
-    }
-
-    protected function genClassProperty(PropertyDef $prop): string
-    {
-        $code = $prop->type.' '.$prop->name;
-        if ($prop->default) {
-            $code .= ' = '.$prop->default;
-        }
-
-        return $code.';'.PHP_EOL;
-    }
-
-    protected function genFunction(string $name, string $returnType, array $args = [], array $lines = []): string
-    {
-        $_args = [];
-        foreach ($args as $arg => $type) {
-            $_args[] = $type.' '.$arg;
-        }
-        $code = $returnType.' '.$name.'('.implode(', ', $_args).') {'.PHP_EOL;
-        $code .= implode(PHP_EOL, $lines).PHP_EOL;
-        $code .= '}'.PHP_EOL;
-
-        return $code;
-    }
-
-    protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
-    {
-        $flags = $v->flags;
-        $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
-        foreach ($v->consts as $const) {
-            $constName = $this->parseIdentifier($const->name);
-            if (isset($this->classDef->constants[$constName])) {
-                $this->fatalError($const, 'Cannot redefine class constant '.$this->class.'::'.$constName);
-            }
-            $constInfo = new ConstantDef($constName, $flags, $type, $this->parseIdentifier($const->value));
-            $this->classDef->constants[$constInfo->name] = $constInfo;
-        }
-    }
-
-    protected function parsePropertyDef(Node\Stmt\Property $v): void
-    {
-        $flags = $v->flags;
-        $type = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
-
-        foreach ($v->props as $prop) {
-            $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
-            if ($prop->default) {
-                if ('Expr_Array' == $prop->default->getType() and count($prop->default->items) > 0) {
-                    $this->classDef->requireCtor = true;
-                    $propDef->type = self::TYPE_ARRAY;
-                }
-                $propDef->default = $this->parseIdentifier($prop->default);
-            }
-            $this->classDef->properties[$propDef->name] = $propDef;
-        }
-    }
-
-    protected function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
-    {
-        $name = $this->getMethodName($v);
-        $this->method = $name;
-        $methodCodes[$name] = $this->parseFunction($v);
-        $flags = $v->flags;
-        if (!($flags & Modifiers::PRIVATE) and !($flags & Modifiers::PROTECTED)) {
-            $flags |= Modifiers::PUBLIC;
-        }
-        $methodDef = new MethodDef($flags, $name, $this->functionDef);
-        $this->checkRequiredArgNum($name, $methodDef, $v);
-        $this->classDef->methods[$name] = $methodDef;
-        $this->method = '';
-    }
-
-    protected function parseIdentifierList(array $implements): array
-    {
-        $list = [];
-        foreach ($implements as $implement) {
-            $list[] = $this->parseIdentifier($implement);
-        }
-
-        return $list;
-    }
-
-    protected function parseInterface(Node\Stmt\Interface_ $v): void
-    {
-        $name = $this->parseIdentifier($v->name);
-        $this->interface = $name;
-        $this->interfaceDef = new InterfaceDef($name, $this->namespace);
-        $interfaceName = $this->interfaceDef->getNamespacedName();
-        $this->interfaces[$interfaceName] = $this->interfaceDef;
-        $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
-    }
-
-    protected function parseForeachObject(Foreach_ $node): string
-    {
-        $obj = $this->parseIdentifier($node->expr);
-        $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
-
-        $tmpArrayVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpArrayVar, self::TYPE_ARRAY);
-
-        $code = 'if ('.$obj.'.instanceOf("IteratorAggregate")) {'.PHP_EOL;
-        $code .= $this->getIndent().$tmpVar.' = '.$obj.'.exec("getIterator");'.PHP_EOL.'}'.PHP_EOL;
-        $code .= 'else if ('.$obj.'.instanceOf("Iterator")) {'.PHP_EOL;
-        $code .= $this->getIndent().$tmpVar.' = '.$obj.';'.PHP_EOL.'}'.PHP_EOL;
-
-        $code .= 'if ('.$tmpVar.') {'.PHP_EOL;
-
-        ++$this->indentLevel;
-        $code .= $this->getIndent().$tmpVar.'.exec("rewind");'.PHP_EOL;
-        $code .= $this->getIndent().'for (;'.$tmpVar.'.exec("valid");  '.$tmpVar.'.exec("next")) {'.PHP_EOL;
-        ++$this->indentLevel;
-
-        $valueVar = $this->parseIdentifier($node->valueVar);
-        $this->checkVar($node, $valueVar);
-
-        $code .= $this->getIndent().' '.$valueVar.' = '.$tmpVar.'.exec("current");'.PHP_EOL;
-        if ($node->keyVar) {
-            $keyVar = $this->parseIdentifier($node->keyVar);
-            $this->checkVar($node, $keyVar);
-            $code .= $this->getIndent().' '.$keyVar.' = '.$tmpVar.'.exec("key");'.PHP_EOL;
-        }
-        $code .= $this->parseStmts($node->stmts);
-        $code .= '}'.PHP_EOL;
-        --$this->indentLevel;
-        $code .= $this->getIndent().'} else {'.PHP_EOL;
-        $code .= $this->getIndent().$tmpArrayVar.' = php::call("get_object_vars", {'.$obj.'});'.PHP_EOL;
-        $code .= $this->parseForeachArray($node, $tmpArrayVar);
-        --$this->indentLevel;
-        $code .= '}'.PHP_EOL;
+        $code .= '};' . PHP_EOL . PHP_EOL;
 
         return $code;
     }

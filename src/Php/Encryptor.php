@@ -1,4 +1,12 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
@@ -7,33 +15,40 @@ use PhpParser\PrettyPrinter\Standard;
 class Encryptor extends \PhpAot\Core\Translator
 {
     protected array $stmts;
+
     protected string $phpxDir = '~/workspace/phpx';
+
     protected string $lang = 'PHP';
+
     protected array $typeMap = [];
+
     protected array $headers = [
         'phpx.h',
     ];
+
     protected array $encodeMap;
+
     protected array $decodeMap;
+
     protected array $constants;
 
     public function __construct(array $stmts)
     {
-        $confDir = __DIR__.'/../../config';
-        $this->stmts = $stmts;
-        $this->encodeMap = require $confDir.'/functions.php';
+        $confDir         = __DIR__ . '/../../config';
+        $this->stmts     = $stmts;
+        $this->encodeMap = require $confDir . '/functions.php';
         $this->decodeMap = array_flip($this->encodeMap);
-        $this->constants = require $confDir.'/constants.php';
+        $this->constants = require $confDir . '/constants.php';
     }
 
     public function parseHeaders(): string
     {
         $lines = [];
         foreach ($this->headers as $header) {
-            $lines[] = '#include <'.$header.'>';
+            $lines[] = '#include <' . $header . '>';
         }
 
-        return implode(PHP_EOL, $lines).PHP_EOL.PHP_EOL;
+        return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
     }
 
     public function setPhpxDir($dir): void
@@ -64,34 +79,11 @@ class Encryptor extends \PhpAot\Core\Translator
         return $node->getType();
     }
 
-    private function parseFunctionDef($v)
+    public function compileFile($file)
     {
-        if ($v->name) {
-            $name = $this->parseIdentifier($v->name);
-        } else {
-            $name = '';
-        }
-
-        if ($v->returnType) {
-            $return = $this->parseIdentifier($v->returnType);
-        } else {
-            $return = '';
-        }
-
-        if ($v->params) {
-            $params = $this->parseParams($v->params);
-        } else {
-            $params = '';
-        }
-
-        $code = $return.' '.$name.'('.$params.') {'.PHP_EOL;
-        ++$this->indentLevel;
-        $stmts = $this->parseStmts($v->stmts);
-        --$this->indentLevel;
-        $code .= $stmts;
-        $code .= '}';
-
-        return $code;
+        $cmd = 'g++ -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
+        echo $cmd . PHP_EOL;
+        shell_exec($cmd);
     }
 
     protected function parseIdentifier($node)
@@ -105,7 +97,7 @@ class Encryptor extends \PhpAot\Core\Translator
             case 'Scalar_Float':
                 return $node->value;
             case 'Scalar_String':
-                return '"'.$node->value.'"';
+                return '"' . $node->value . '"';
             case 'Expr_Array':
                 return $this->parseArray($node);
             case 'Expr_FuncCall':
@@ -127,13 +119,43 @@ class Encryptor extends \PhpAot\Core\Translator
         }
     }
 
+    private function parseFunctionDef($v)
+    {
+        if ($v->name) {
+            $name = $this->parseIdentifier($v->name);
+        } else {
+            $name = '';
+        }
+
+        if ($v->returnType) {
+            $return = $this->parseIdentifier($v->returnType);
+        } else {
+            $return = '';
+        }
+
+        if ($v->params) {
+            $params = $this->parseParams($v->params);
+        } else {
+            $params = '';
+        }
+
+        $code = $return . ' ' . $name . '(' . $params . ') {' . PHP_EOL;
+        $this->indentLevel++;
+        $stmts = $this->parseStmts($v->stmts);
+        $this->indentLevel--;
+        $code .= $stmts;
+        $code .= '}';
+
+        return $code;
+    }
+
     private function parseParams($params)
     {
         $list = [];
         foreach ($params as $param) {
-            $type = $param->type ? $this->parseType($param->type) : '';
-            $name = $param->var ? $this->parseIdentifier($param->var) : '';
-            $list[] = $type.' '.$name;
+            $type                 = $param->type ? $this->parseType($param->type) : '';
+            $name                 = $param->var ? $this->parseIdentifier($param->var) : '';
+            $list[]               = $type . ' ' . $name;
             $this->typeMap[$name] = $type;
         }
 
@@ -150,10 +172,10 @@ class Encryptor extends \PhpAot\Core\Translator
                     $lines[] = $this->parseFunctionDef($v);
                     break;
                 case 'Stmt_Expression':
-                    $lines[] = $this->parseExpr($v->expr).';';
+                    $lines[] = $this->parseExpr($v->expr) . ';';
                     break;
                 case 'Stmt_Echo':
-                    $lines[] = $this->parseEcho($v).';';
+                    $lines[] = $this->parseEcho($v) . ';';
                     break;
                 case 'Stmt_Return':
                     $this->parseReturn($v);
@@ -175,7 +197,7 @@ class Encryptor extends \PhpAot\Core\Translator
         }
         $code = '';
         foreach ($lines as $line) {
-            $code .= $this->getIndent().$line.PHP_EOL;
+            $code .= $this->getIndent() . $line . PHP_EOL;
         }
 
         return $code;
@@ -229,7 +251,7 @@ class Encryptor extends \PhpAot\Core\Translator
 
     private function parseEcho(mixed $v)
     {
-        return 'php::echo('.$this->parseExprs($v->exprs).')';
+        return 'php::echo(' . $this->parseExprs($v->exprs) . ')';
     }
 
     private function parseExprs($exprs)
@@ -244,23 +266,23 @@ class Encryptor extends \PhpAot\Core\Translator
 
     private function parseBinaryOpPlus(mixed $expr)
     {
-        $left = $this->parseIdentifier($expr->left);
+        $left  = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $left.' + '.$right;
+        return $left . ' + ' . $right;
     }
 
     private function parseReturn(mixed $v)
     {
-        return 'return '.$this->parseExpr($v->expr);
+        return 'return ' . $this->parseExpr($v->expr);
     }
 
     private function parseBinaryOpMul(mixed $expr)
     {
-        $left = $this->parseIdentifier($expr->left);
+        $left  = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $left.' * '.$right;
+        return $left . ' * ' . $right;
     }
 
     private function detectType($var, $expr)
@@ -283,20 +305,20 @@ class Encryptor extends \PhpAot\Core\Translator
     private function parseArray($node)
     {
         $items = $node->items;
-        $list = [];
-        ++$this->indentLevel;
+        $list  = [];
+        $this->indentLevel++;
         foreach ($items as $item) {
             if ($item->key) {
-                $list[] = $this->getIndent().'{ php::Variant('.$this->parseIdentifier($item->key).'), php::Variant('.$this->parseIdentifier($item->value).') }';
+                $list[] = $this->getIndent() . '{ php::Variant(' . $this->parseIdentifier($item->key) . '), php::Variant(' . $this->parseIdentifier($item->value) . ') }';
             } else {
-                $list[] = $this->getIndent().'php::Variant('.$this->parseIdentifier($item->value).')';
+                $list[] = $this->getIndent() . 'php::Variant(' . $this->parseIdentifier($item->value) . ')';
             }
         }
-        --$this->indentLevel;
+        $this->indentLevel--;
 
-        return '{'.PHP_EOL.
-            implode(', '.PHP_EOL, $list).PHP_EOL.
-            $this->getIndent().
+        return '{' . PHP_EOL .
+            implode(', ' . PHP_EOL, $list) . PHP_EOL .
+            $this->getIndent() .
             '}';
     }
 
@@ -318,11 +340,11 @@ class Encryptor extends \PhpAot\Core\Translator
     private function parseIncludes()
     {
         $list = [
-            $this->phpxDir.'/include',
+            $this->phpxDir . '/include',
         ];
         $out = '$(php-config --includes) ';
         foreach ($list as $li) {
-            $out .= '-I '.$li.' ';
+            $out .= '-I ' . $li . ' ';
         }
 
         return $out;
@@ -332,11 +354,11 @@ class Encryptor extends \PhpAot\Core\Translator
     {
         $list = [
             '$(php-config --prefix)/lib',
-            $this->phpxDir.'/lib',
+            $this->phpxDir . '/lib',
         ];
         $out = '';
         foreach ($list as $li) {
-            $out .= '-L '.$li.' ';
+            $out .= '-L ' . $li . ' ';
         }
 
         return $out;
@@ -350,25 +372,18 @@ class Encryptor extends \PhpAot\Core\Translator
         ];
         $out = '';
         foreach ($list as $li) {
-            $out .= '-l'.$li.' ';
+            $out .= '-l' . $li . ' ';
         }
 
         return $out;
     }
 
-    public function compileFile($file)
-    {
-        $cmd = 'g++ -c '.$file.' -o '.$file.'.o '.$this->parseIncludes().$this->parseLdflags().$this->parseLibs();
-        echo $cmd.PHP_EOL;
-        shell_exec($cmd);
-    }
-
     private function parseBinaryOpConcat(mixed $expr)
     {
-        $left = $this->parseIdentifier($expr->left);
+        $left  = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $left.' + '.$right;
+        return $left . ' + ' . $right;
     }
 
     private function parseFuncCall($expr)

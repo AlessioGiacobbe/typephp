@@ -1,10 +1,19 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
 class Extractor
 {
     private string $ctagsPath = 'ctags';
+
     private bool $isUniversalCtags = false;
 
     public function __construct()
@@ -13,28 +22,10 @@ class Extractor
     }
 
     /**
-     * 检查 ctags 是否可用.
-     */
-    private function checkCtags(): void
-    {
-        $output = shell_exec("{$this->ctagsPath} --version 2>&1");
-
-        if (null === $output) {
-            $this->error("未找到 ctags 命令\n安装: sudo apt install universal-ctags");
-        }
-
-        $this->isUniversalCtags = false !== stripos($output, 'Universal Ctags');
-
-        if (!$this->isUniversalCtags) {
-            $this->warn('建议使用 Universal Ctags 以获得更好的支持');
-        }
-    }
-
-    /**
      * 提取函数定义.
      *
      * @param string $filename 文件路径
-     * @param array  $prefixes 函数名前缀列表
+     * @param array $prefixes 函数名前缀列表
      *
      * @return array 函数列表
      */
@@ -45,7 +36,7 @@ class Extractor
         }
 
         $this->info("分析文件: {$filename}");
-        $this->info('函数前缀: '.implode(', ', $prefixes));
+        $this->info('函数前缀: ' . implode(', ', $prefixes));
 
         // 运行 ctags
         $tags = $this->runCtags($filename);
@@ -53,7 +44,7 @@ class Extractor
         // 过滤和解析函数
         $functions = [];
         foreach ($tags as $tag) {
-            if ('function' !== $tag['kind']) {
+            if ($tag['kind'] !== 'function') {
                 continue;
             }
 
@@ -79,9 +70,154 @@ class Extractor
             }
         }
 
-        $this->info('找到 '.count($functions).' 个函数');
+        $this->info('找到 ' . count($functions) . ' 个函数');
 
         return $functions;
+    }
+
+    /**
+     * 批量提取多个文件.
+     */
+    public function extractFromFiles(array $files, array $prefixes = ['php_']): array
+    {
+        $allFunctions = [];
+
+        foreach ($files as $file) {
+            try {
+                $functions    = $this->extractFunctions($file, $prefixes);
+                $allFunctions = array_merge($allFunctions, $functions);
+            } catch (Exception $e) {
+                $this->error("处理文件 {$file} 失败: " . $e->getMessage());
+            }
+        }
+
+        return $allFunctions;
+    }
+
+    /**
+     * 提取函数并添加额外信息.
+     */
+    public function extractWithMetadata(string $filename, array $prefixes = ['php_']): array
+    {
+        $functions = $this->extractFunctions($filename, $prefixes);
+
+        // 添加额外的元数据
+        foreach ($functions as &$func) {
+            $func['metadata'] = $this->extractMetadata($filename, $func);
+        }
+
+        return $functions;
+    }
+
+    /**
+     * 生成函数统计信息.
+     */
+    public function generateStatistics(array $functions): array
+    {
+        $stats = [
+            'total'            => count($functions),
+            'byReturnType'     => [],
+            'byParameterCount' => [],
+            'byPrefix'         => [],
+            'withComments'     => 0,
+            'isPHPFunction'    => 0,
+        ];
+
+        foreach ($functions as $func) {
+            // 按返回类型统计
+            $returnType                         = $func['returnType'];
+            $stats['byReturnType'][$returnType] =
+                ($stats['byReturnType'][$returnType] ?? 0) + 1;
+
+            // 按参数数量统计
+            $paramCount                             = count($func['parameters']);
+            $stats['byParameterCount'][$paramCount] =
+                ($stats['byParameterCount'][$paramCount] ?? 0) + 1;
+
+            // 按前缀统计
+            $name                       = $func['name'];
+            $prefix                     = preg_match('/^([a-z_]+_)/i', $name, $m) ? $m[1] : 'other';
+            $stats['byPrefix'][$prefix] =
+                ($stats['byPrefix'][$prefix] ?? 0) + 1;
+
+            // 有注释的函数
+            if (!empty($func['metadata']['comments'])) {
+                $stats['withComments']++;
+            }
+
+            // PHP 函数宏
+            if ($func['metadata']['isPHPFunction'] ?? false) {
+                $stats['isPHPFunction']++;
+            }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * 导出为 Markdown 文档.
+     */
+    public function exportToMarkdown(array $functions, string $title = 'API 文档'): string
+    {
+        $md = "# {$title}\n\n";
+        $md .= '生成时间: ' . date('Y-m-d H:i:s') . "\n\n";
+        $md .= '总计: ' . count($functions) . " 个函数\n\n";
+        $md .= "---\n\n";
+
+        foreach ($functions as $func) {
+            $md .= "## {$func['name']}\n\n";
+
+            // 签名
+            $md .= "```c\n{$func['signature']}\n```\n\n";
+
+            // 返回类型
+            $md .= "**返回类型**: `{$func['returnType']}`\n\n";
+
+            // 参数
+            if (!empty($func['parameters'])) {
+                $md .= "**参数**:\n\n";
+                foreach ($func['parameters'] as $param) {
+                    $name = $param['name'] ?: '(unnamed)';
+                    $md .= "- `{$param['type']}` **{$name}**\n";
+                }
+                $md .= "\n";
+            } else {
+                $md .= "**参数**: 无\n\n";
+            }
+
+            // 注释
+            if (!empty($func['metadata']['comments'])) {
+                $md .= "**说明**:\n\n";
+                foreach ($func['metadata']['comments'] as $comment) {
+                    $md .= $comment . "\n\n";
+                }
+            }
+
+            // 位置
+            $md .= "**位置**: {$func['location']['file']}:{$func['location']['line']}\n\n";
+
+            $md .= "---\n\n";
+        }
+
+        return $md;
+    }
+
+    /**
+     * 检查 ctags 是否可用.
+     */
+    private function checkCtags(): void
+    {
+        $output = shell_exec("{$this->ctagsPath} --version 2>&1");
+
+        if ($output === null) {
+            $this->error("未找到 ctags 命令\n安装: sudo apt install universal-ctags");
+        }
+
+        $this->isUniversalCtags = stripos($output, 'Universal Ctags') !== false;
+
+        if (!$this->isUniversalCtags) {
+            $this->warn('建议使用 Universal Ctags 以获得更好的支持');
+        }
     }
 
     /**
@@ -97,12 +233,12 @@ class Extractor
 
         $output = shell_exec($cmd);
 
-        if (null === $output) {
+        if ($output === null) {
             throw new RuntimeException('ctags 执行失败');
         }
 
         // 解析 JSON 输出
-        $tags = [];
+        $tags  = [];
         $lines = explode("\n", trim($output));
 
         foreach ($lines as $line) {
@@ -111,7 +247,7 @@ class Extractor
             }
 
             $tag = json_decode($line, true);
-            if (null === $tag) {
+            if ($tag === null) {
                 continue;
             }
 
@@ -127,7 +263,7 @@ class Extractor
     private function parseFunction(string $filename, array $tag): ?array
     {
         $funcName = $tag['name'] ?? '';
-        $lineNum = $tag['line'] ?? 0;
+        $lineNum  = $tag['line'] ?? 0;
 
         if (empty($funcName) || $lineNum < 1) {
             return null;
@@ -147,15 +283,15 @@ class Extractor
         $parameters = $this->parseParameters($signature, $funcName);
 
         return [
-            'name' => $funcName,
+            'name'       => $funcName,
             'returnType' => $returnType,
-            'signature' => $signature,
+            'signature'  => $signature,
             'parameters' => $parameters,
-            'location' => [
+            'location'   => [
                 'file' => $filename,
                 'line' => $lineNum,
             ],
-            'scope' => $tag['scope'] ?? null,
+            'scope'     => $tag['scope'] ?? null,
             'scopeKind' => $tag['scopeKind'] ?? null,
         ];
     }
@@ -167,20 +303,20 @@ class Extractor
     {
         $lines = file($filename, FILE_IGNORE_NEW_LINES);
 
-        if (false === $lines || $lineNum > count($lines)) {
+        if ($lines === false || $lineNum > count($lines)) {
             return '';
         }
 
         // 从函数声明行开始收集，直到遇到 { 或 ;
         $signatureLines = [];
-        $maxLines = min($lineNum + 20, count($lines));
+        $maxLines       = min($lineNum + 20, count($lines));
 
-        for ($i = $lineNum - 1; $i < $maxLines; ++$i) {
-            $line = $lines[$i];
+        for ($i = $lineNum - 1; $i < $maxLines; $i++) {
+            $line             = $lines[$i];
             $signatureLines[] = $line;
 
             // 检查是否到达函数体或声明结束
-            if (false !== strpos($line, '{') || false !== strpos($line, ';')) {
+            if (strpos($line, '{') !== false || strpos($line, ';') !== false) {
                 break;
             }
         }
@@ -195,9 +331,7 @@ class Extractor
         $signature = preg_replace('/\s+/', ' ', $signature);
 
         // 清理首尾空白
-        $signature = trim($signature);
-
-        return $signature;
+        return trim($signature);
     }
 
     /**
@@ -206,7 +340,7 @@ class Extractor
     private function parseReturnType(string $signature, string $funcName): string
     {
         // 匹配: <返回类型> <函数名>(
-        $pattern = '/^(.+?)\s+'.preg_quote($funcName, '/').'\s*\(/';
+        $pattern = '/^(.+?)\s+' . preg_quote($funcName, '/') . '\s*\(/';
 
         if (preg_match($pattern, $signature, $matches)) {
             $returnType = trim($matches[1]);
@@ -228,7 +362,7 @@ class Extractor
     private function parseParameters(string $signature, string $funcName): array
     {
         // 提取括号内的参数
-        $pattern = '/'.preg_quote($funcName, '/').'\s*\((.*?)\)/s';
+        $pattern = '/' . preg_quote($funcName, '/') . '\s*\((.*?)\)/s';
 
         if (!preg_match($pattern, $signature, $matches)) {
             return [];
@@ -237,7 +371,7 @@ class Extractor
         $paramsStr = trim($matches[1]);
 
         // 空参数或 void
-        if (empty($paramsStr) || 'void' === $paramsStr) {
+        if (empty($paramsStr) || $paramsStr === 'void') {
             return [];
         }
 
@@ -266,23 +400,23 @@ class Extractor
      */
     private function splitParameters(string $paramsStr): array
     {
-        $params = [];
+        $params  = [];
         $current = '';
-        $depth = 0;
-        $length = strlen($paramsStr);
+        $depth   = 0;
+        $length  = strlen($paramsStr);
 
-        for ($i = 0; $i < $length; ++$i) {
+        for ($i = 0; $i < $length; $i++) {
             $char = $paramsStr[$i];
 
-            if ('<' === $char || '(' === $char || '[' === $char) {
-                ++$depth;
+            if ($char === '<' || $char === '(' || $char === '[') {
+                $depth++;
                 $current .= $char;
-            } elseif ('>' === $char || ')' === $char || ']' === $char) {
-                --$depth;
+            } elseif ($char === '>' || $char === ')' || $char === ']') {
+                $depth--;
                 $current .= $char;
-            } elseif (',' === $char && 0 === $depth) {
+            } elseif ($char === ',' && $depth === 0) {
                 $params[] = $current;
-                $current = '';
+                $current  = '';
             } else {
                 $current .= $char;
             }
@@ -322,25 +456,6 @@ class Extractor
     }
 
     /**
-     * 批量提取多个文件.
-     */
-    public function extractFromFiles(array $files, array $prefixes = ['php_']): array
-    {
-        $allFunctions = [];
-
-        foreach ($files as $file) {
-            try {
-                $functions = $this->extractFunctions($file, $prefixes);
-                $allFunctions = array_merge($allFunctions, $functions);
-            } catch (Exception $e) {
-                $this->error("处理文件 {$file} 失败: ".$e->getMessage());
-            }
-        }
-
-        return $allFunctions;
-    }
-
-    /**
      * 输出信息.
      */
     private function info(string $message): void
@@ -366,47 +481,32 @@ class Extractor
     }
 
     /**
-     * 提取函数并添加额外信息.
-     */
-    public function extractWithMetadata(string $filename, array $prefixes = ['php_']): array
-    {
-        $functions = $this->extractFunctions($filename, $prefixes);
-
-        // 添加额外的元数据
-        foreach ($functions as &$func) {
-            $func['metadata'] = $this->extractMetadata($filename, $func);
-        }
-
-        return $functions;
-    }
-
-    /**
      * 提取函数的元数据（注释、属性等）.
      */
     private function extractMetadata(string $filename, array $func): array
     {
         $lineNum = $func['location']['line'];
-        $lines = file($filename, FILE_IGNORE_NEW_LINES);
+        $lines   = file($filename, FILE_IGNORE_NEW_LINES);
 
         $metadata = [
-            'comments' => [],
-            'attributes' => [],
+            'comments'      => [],
+            'attributes'    => [],
             'isPHPFunction' => false,
-            'isStatic' => false,
-            'isInline' => false,
+            'isStatic'      => false,
+            'isInline'      => false,
         ];
 
         // 提取函数前的注释
-        $comments = $this->extractComments($lines, $lineNum);
+        $comments             = $this->extractComments($lines, $lineNum);
         $metadata['comments'] = $comments;
 
         // 检测 PHP 函数宏
         $metadata['isPHPFunction'] = $this->isPHPFunction($func['signature']);
 
         // 检测修饰符
-        $signature = $func['signature'];
-        $metadata['isStatic'] = false !== strpos($signature, 'static');
-        $metadata['isInline'] = false !== strpos($signature, 'inline');
+        $signature            = $func['signature'];
+        $metadata['isStatic'] = strpos($signature, 'static') !== false;
+        $metadata['isInline'] = strpos($signature, 'inline') !== false;
 
         // 提取文档注释中的标签
         $metadata['docTags'] = $this->parseDocTags($comments);
@@ -420,7 +520,7 @@ class Extractor
     private function extractComments(array $lines, int $lineNum): array
     {
         $comments = [];
-        $i = $lineNum - 2; // 从函数声明的前一行开始
+        $i        = $lineNum - 2; // 从函数声明的前一行开始
 
         // 向上查找注释
         while ($i >= 0) {
@@ -428,21 +528,21 @@ class Extractor
 
             // 空行
             if (empty($line)) {
-                --$i;
+                $i--;
                 continue;
             }
 
             // C++ 风格注释
             if (str_starts_with($line, '//')) {
                 array_unshift($comments, substr($line, 2));
-                --$i;
+                $i--;
                 continue;
             }
 
             // C 风格注释结束
             if (str_ends_with($line, '*/')) {
                 $commentLines = [$line];
-                --$i;
+                $i--;
 
                 // 继续向上查找注释开始
                 while ($i >= 0) {
@@ -452,7 +552,7 @@ class Extractor
                     if (str_starts_with($commentLine, '/*')) {
                         break;
                     }
-                    --$i;
+                    $i--;
                 }
 
                 // 解析多行注释
@@ -462,7 +562,7 @@ class Extractor
                 $comment = preg_replace('#^\s*\*\s?#m', '', $comment);
 
                 array_unshift($comments, trim($comment));
-                --$i;
+                $i--;
                 continue;
             }
 
@@ -486,7 +586,7 @@ class Extractor
         ];
 
         foreach ($phpMacros as $macro) {
-            if (false !== strpos($signature, $macro)) {
+            if (strpos($signature, $macro) !== false) {
                 return true;
             }
         }
@@ -505,7 +605,7 @@ class Extractor
             // 匹配 @tag 格式
             if (preg_match_all('/@(\w+)\s+(.*)$/m', $comment, $matches, PREG_SET_ORDER)) {
                 foreach ($matches as $match) {
-                    $tagName = $match[1];
+                    $tagName  = $match[1];
                     $tagValue = trim($match[2]);
 
                     if (!isset($tags[$tagName])) {
@@ -518,98 +618,5 @@ class Extractor
         }
 
         return $tags;
-    }
-
-    /**
-     * 生成函数统计信息.
-     */
-    public function generateStatistics(array $functions): array
-    {
-        $stats = [
-            'total' => count($functions),
-            'byReturnType' => [],
-            'byParameterCount' => [],
-            'byPrefix' => [],
-            'withComments' => 0,
-            'isPHPFunction' => 0,
-        ];
-
-        foreach ($functions as $func) {
-            // 按返回类型统计
-            $returnType = $func['returnType'];
-            $stats['byReturnType'][$returnType] =
-                ($stats['byReturnType'][$returnType] ?? 0) + 1;
-
-            // 按参数数量统计
-            $paramCount = count($func['parameters']);
-            $stats['byParameterCount'][$paramCount] =
-                ($stats['byParameterCount'][$paramCount] ?? 0) + 1;
-
-            // 按前缀统计
-            $name = $func['name'];
-            $prefix = preg_match('/^([a-z_]+_)/i', $name, $m) ? $m[1] : 'other';
-            $stats['byPrefix'][$prefix] =
-                ($stats['byPrefix'][$prefix] ?? 0) + 1;
-
-            // 有注释的函数
-            if (!empty($func['metadata']['comments'])) {
-                ++$stats['withComments'];
-            }
-
-            // PHP 函数宏
-            if ($func['metadata']['isPHPFunction'] ?? false) {
-                ++$stats['isPHPFunction'];
-            }
-        }
-
-        return $stats;
-    }
-
-    /**
-     * 导出为 Markdown 文档.
-     */
-    public function exportToMarkdown(array $functions, string $title = 'API 文档'): string
-    {
-        $md = "# {$title}\n\n";
-        $md .= '生成时间: '.date('Y-m-d H:i:s')."\n\n";
-        $md .= '总计: '.count($functions)." 个函数\n\n";
-        $md .= "---\n\n";
-
-        foreach ($functions as $func) {
-            $md .= "## {$func['name']}\n\n";
-
-            // 签名
-            $md .= "```c\n{$func['signature']}\n```\n\n";
-
-            // 返回类型
-            $md .= "**返回类型**: `{$func['returnType']}`\n\n";
-
-            // 参数
-            if (!empty($func['parameters'])) {
-                $md .= "**参数**:\n\n";
-                foreach ($func['parameters'] as $param) {
-                    $name = $param['name'] ?: '(unnamed)';
-                    $md .= "- `{$param['type']}` **{$name}**\n";
-                }
-                $md .= "\n";
-            } else {
-                $md .= "**参数**: 无\n\n";
-            }
-
-            // 注释
-            if (!empty($func['metadata']['comments'])) {
-                $md .= "**说明**:\n\n";
-                foreach ($func['metadata']['comments'] as $comment) {
-                    $md .= $comment."\n\n";
-                }
-            }
-
-            // 位置
-            $md .= "**位置**: {$func['location']['file']}:{$func['location']['line']}\n\n";
-
-            $md .= "---\n\n";
-        }
-
-        return $md;
     }
 }

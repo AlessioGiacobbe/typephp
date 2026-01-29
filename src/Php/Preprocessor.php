@@ -1,4 +1,12 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
@@ -17,7 +25,7 @@ class Preprocessor extends CompilerBase
                 unset($this->functionCallInFile[$k]);
             }
         }
-        $sorter = new FileSorter($this->functionDeclInFile, $this->functionCallInFile);
+        $sorter      = new FileSorter($this->functionDeclInFile, $this->functionCallInFile);
         $sortedFiles = $sorter->sort();
 
         foreach ($list as $file) {
@@ -28,41 +36,18 @@ class Preprocessor extends CompilerBase
         $list = $sortedFiles;
     }
 
-    protected function prepareNamespaceDef(Node\Stmt\Namespace_ $node): void
-    {
-        $this->resetNamespace();
-        $this->namespace = $this->parseIdentifier($node->name);
-        foreach ($node->stmts as $v2) {
-            $type2 = $v2->getType();
-            switch ($type2) {
-                case 'Stmt_Class':
-                    $this->prepareClass($v2);
-                    break;
-                case 'Stmt_Function':
-                    $this->prepareFunction($v2).PHP_EOL;
-                    break;
-                case 'Stmt_Use':
-                case 'Stmt_Const':
-                    break;
-                default:
-                    abort($v2);
-            }
-        }
-        $this->resetNamespace();
-    }
-
     public function getCppFile(string $file): string
     {
         $info = pathinfo($file);
 
-        return $this->buildDir.'/'.$this->removeCommonPrefix($this->buildDir, $info['dirname'].'/'.$info['filename'].'.cc');
+        return $this->buildDir . '/' . $this->removeCommonPrefix($this->buildDir, $info['dirname'] . '/' . $info['filename'] . '.cc');
     }
 
     public function getObjectFile(string $cppFile): string
     {
         $info = pathinfo($cppFile);
 
-        return $info['dirname'].'/'.$info['filename'].'.o';
+        return $info['dirname'] . '/' . $info['filename'] . '.o';
     }
 
     public function hasCppFileCache(string $file): bool
@@ -81,14 +66,14 @@ class Preprocessor extends CompilerBase
     public function prepare(string $file): void
     {
         if ($this->hasCppFileCache($file)) {
-            $this->climate->darkGray('skip: '.$file.', cache exists');
+            $this->climate->darkGray('skip: ' . $file . ', cache exists');
 
             return;
         }
 
         $phpCode = $this->loadFile($file);
 
-        $this->climate->info('prepare: '.$this->file);
+        $this->climate->info('prepare: ' . $this->file);
         try {
             $ast = $this->parser->parse($phpCode);
         } catch (\PhpParser\Error $e) {
@@ -111,7 +96,7 @@ class Preprocessor extends CompilerBase
                     $this->prepareClass($v);
                     break;
                 case 'Stmt_Function':
-                    $this->prepareFunction($v).PHP_EOL;
+                    $this->prepareFunction($v) . PHP_EOL;
                     break;
                 case 'Stmt_Declare':
                 case 'Stmt_Use':
@@ -120,17 +105,17 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Nop':
                     break;
                 default:
-                    $this->fatalError($v, 'Unsupported statement: '.$type);
+                    $this->fatalError($v, 'Unsupported statement: ' . $type);
                     break;
             }
         }
 
-        $nodeFinder = new NodeFinder();
+        $nodeFinder    = new NodeFinder();
         $functionCalls = $nodeFinder->findInstanceOf($ast, Node\Expr\FuncCall::class);
 
         foreach ($functionCalls as $call) {
             if ($call->name instanceof Node\Name) {
-                $name = $call->name->toString();
+                $name                       = $call->name->toString();
                 $this->functionCallInFile[] = [
                     'name' => $name,
                     'file' => $this->file,
@@ -138,6 +123,29 @@ class Preprocessor extends CompilerBase
                 ];
             }
         }
+    }
+
+    protected function prepareNamespaceDef(Node\Stmt\Namespace_ $node): void
+    {
+        $this->resetNamespace();
+        $this->namespace = $this->parseIdentifier($node->name);
+        foreach ($node->stmts as $v2) {
+            $type2 = $v2->getType();
+            switch ($type2) {
+                case 'Stmt_Class':
+                    $this->prepareClass($v2);
+                    break;
+                case 'Stmt_Function':
+                    $this->prepareFunction($v2) . PHP_EOL;
+                    break;
+                case 'Stmt_Use':
+                case 'Stmt_Const':
+                    break;
+                default:
+                    abort($v2);
+            }
+        }
+        $this->resetNamespace();
     }
 
     protected function prepareFunction(Node $v): void
@@ -153,7 +161,7 @@ class Preprocessor extends CompilerBase
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
-        $code = '';
+        $code        = '';
         foreach ($class->stmts as $v) {
             $type = $v->getType();
             switch ($type) {
@@ -163,7 +171,7 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_TraitUse':
                     break;
                 case 'Stmt_ClassMethod':
-                    $code .= $this->prepareFunction($v).PHP_EOL;
+                    $code .= $this->prepareFunction($v) . PHP_EOL;
                     break;
                 default:
                     abort($v);

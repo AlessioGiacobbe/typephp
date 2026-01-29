@@ -4467,6 +4467,10 @@ class FileInfo {
                 }
             }
 
+            if ($stmt instanceof Stmt\Use_) {
+                continue;
+            }
+
             throw new Exception("Unexpected node {$stmt->getType()}");
         }
         if (!empty($conds)) {

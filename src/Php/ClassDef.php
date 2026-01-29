@@ -1,4 +1,12 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
@@ -8,17 +16,23 @@ class ClassDef extends ClassLikeDef
      * @var array<string, MethodDef>
      */
     public array $methods = [];
+
     /**
      * @var array<string, PropertyDef>
      */
     public array $properties = [];
+
     /**
      * @var array<string, ConstantDef>
      */
     public array $constants = [];
+
     public array $implements = [];
+
     public string $extends = '';
+
     public bool $requireCtor = false;
+
     public int $flags;
 
     public function __construct(string $name, int $flags, string $namespace = '')

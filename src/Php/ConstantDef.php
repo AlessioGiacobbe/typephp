@@ -1,18 +1,29 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+declare(strict_types=1);
 
 namespace PhpAot\Php;
 
 class ConstantDef
 {
     public string $name;
+
     public string $type;
+
     public string $flags;
+
     public string $value;
 
     public function __construct(string $name, string $flags, string $type, string $value)
     {
-        $this->name = $name;
-        $this->type = $type;
+        $this->name  = $name;
+        $this->type  = $type;
         $this->flags = $flags;
         $this->value = $value;
     }
