@@ -8,6 +8,10 @@ use PhpParser\Node;
 
 trait AstNodeType
 {
+    protected function isArrayDimFetch(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Expr\ArrayDimFetch;
+    }
     protected function isVarExpr(NodeAbstract $expr): bool
     {
         return $expr instanceof Expr\Variable;

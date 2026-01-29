@@ -807,39 +807,56 @@ class CompilerBase extends \PhpAot\Core\Translator
         return "$array.setProperty($propName, " . $this->trimBrackets($this->parseExpr($right)) . ")";
     }
 
+    protected function parseRightAssociativeAssign(NodeAbstract $left, Node\Expr\Assign $right): string
+    {
+        $checkVarFn = function ($var) {
+            if ($this->isArrayDimFetch($var)) {
+                $array = $this->parseIdentifier($var->var);
+                if (!$this->hasVar($array)) {
+                    $this->addLocalVar($array, self::TYPE_ARRAY);
+                }
+            }
+        };
+
+        $checkVarFn($left);
+        $chain[] = $left;
+        $next = $right;
+        while ($next->getType() === 'Expr_Assign') {
+            $var = $next->var;
+            $checkVarFn($var);
+            $chain[] = $var;
+            $next = $next->expr;
+        }
+
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+
+        // 翻转赋值链
+        $chain = array_reverse($chain);
+        $list = [];
+
+        $list[] = $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($next);
+        $right = new Variable($tmpVar);
+        foreach ($chain as $var) {
+            $list[] = $this->getIndent() . $this->parseFinallyAssign($var, $right);
+        }
+        return implode(";\n" . $this->getIndent(), $list);
+    }
+
     protected function parseAssign(Node\Expr\Assign $v): string
     {
         $left = $v->var;
         $right = $v->expr;
 
-        if ($left->getType() === self::EXPR_ARRAY_DIM_FETCH) {
+        if ($right->getType() === 'Expr_Assign') {
+            return $this->parseRightAssociativeAssign($left, $right);
+        } elseif ($left->getType() === self::EXPR_ARRAY_DIM_FETCH) {
             return $this->parseAssignArrayDim($left, $right);
         } elseif ($left->getType() === 'Expr_StaticPropertyFetch') {
             $class = $this->identifierToStr($left->class);
             $propName = $this->identifierToStr($left->name);
             $value = $this->trimBrackets($this->parseExpr($right));
             return "php::setStaticProperty($class, $propName, $value)";
-        } elseif ($right->getType() === 'Expr_Assign') {
-            $chain[] = $left;
-            while ($right->getType() === 'Expr_Assign') {
-                $chain[] = $right->var;
-                $right = $right->expr;
-            }
-            // 翻转赋值链
-            $chain = array_reverse($chain);
-            // 取最后一个变量作为第一行的 left，右值为表达式
-            $left = array_shift($chain);
-            $list[] = $this->parseFinallyAssign($left, $right);
-            /**
-             * 构造赋值链
-             * a = b = c = d = (expr) -> d = (expr); c = d; b = c; a = b;
-             */
-            $right = $left;
-            foreach ($chain as $left) {
-                $list[] = $this->getIndent() . $this->parseFinallyAssign($left, $right);
-                $right = $left;
-            }
-            return implode(";\n" . $this->getIndent(), $list);
         }
         return $this->parseFinallyAssign($left, $right);
     }
@@ -870,6 +887,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->indentLevel--;
             return $code . '}';
         }
+
         $this->inAssignExpr = true;
         $var = $this->parseIdentifier($left);
         $this->inAssignExpr = false;
@@ -1472,10 +1490,15 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $var = $this->parseIdentifier($node->var);
         if ($node->dim === null) {
-            $this->fatalError($node, 'Unsupported operand types: null + array');
+            if (!$write) {
+                $this->fatalError($node, 'Cannot use [] for reading');
+            } else {
+                return $var . '.newItem()';
+            }
+        } else {
+            $dim = $this->trimBrackets($this->parseIdentifier($node->dim));
+            return $var . '.item(' . $dim . ', ' . $this->escapeBool($write) . ')';
         }
-        $dim = $this->parseIdentifier($node->dim);
-        return $var . '.item(' . $this->trimBrackets($dim) . ', ' . $this->escapeBool($write) . ')';
     }
 
     protected function parseArrayDimStore($array, $dim, $var): string
