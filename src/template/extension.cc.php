@@ -24,11 +24,21 @@ zend_class_entry * <?= $ce ?>;
 // class entry
 zend_class_entry *<?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP . '[' . count($this->classMap) . ']' ?>;
 
+// func
+zend_function *<?= Translator::PREFIX . Translator::FUNC_MAP . '[' . count($this->funcMap) . ']' ?>;
+
 zend_class_entry *php_get_class_entry(int class_id, const char *class_name) {
     if (UNEXPECTED(<?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP ?>[class_id] == nullptr)) {
         <?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP ?>[class_id] = php::getClassEntrySafe(class_name);
     }
     return <?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP ?>[class_id];
+}
+
+zend_function *php_get_func(int func_id, const char *func_name) {
+    if (UNEXPECTED(<?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id] == nullptr)) {
+        <?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id] = php::getFunction(func_name);
+    }
+    return <?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id];
 }
 
 // literal strings

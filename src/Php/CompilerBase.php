@@ -54,6 +54,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string LITERAL_STRINGS = '_literal_strings';
 
     public const string CLASS_ENTRY_MAP = 'class_entry_map';
+    public const string FUNC_MAP = 'func_map';
 
     public const string EXPR_VARIABLE = 'Expr_Variable';
 
@@ -85,6 +86,8 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, int>
      */
     protected array $classMap = [];
+    protected int $funcIndex = 0;
+    protected array $funcMap = [];
 
     protected array $zendTypeMap = [
         'int'    => self::TYPE_INT,
@@ -666,6 +669,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return 'php_get_class_entry(' . $id . ', "' . $this->escapeString($className) . '")';
+    }
+
+    protected function getFuncPtr(string $funcName): string
+    {
+        if (isset($this->funcMap[$funcName])) {
+            $id = $this->funcMap[$funcName];
+        } else {
+            $id                         = $this->funcIndex++;
+            $this->funcMap[$funcName] = $id;
+        }
+
+        return 'php_get_func(' . $id . ', "' . $this->escapeString($funcName) . '")';
     }
 
     protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
@@ -1777,15 +1792,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($nativeFn) {
                 return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
             }
-            if ($this->isInternalFunction($name)) {
-                $fn = 'php::' . $name;
-            } else {
-                $fn = '"' . $name . '"';
-            }
             $code = $this->parseFuncCallWithOptimizer($name, $expr);
             if ($code) {
                 return $code;
             }
+            $fn = $this->getFuncPtr($name);
         } else {
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
@@ -1794,6 +1805,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $name                    = '';
         }
         $call = $silent ? 'php::silentCall' : 'php::call';
+
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
         }

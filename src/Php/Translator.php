@@ -210,6 +210,9 @@ class Translator extends Preprocessor
         $classEntryCount = count($this->classMap);
         $lines[]         = 'extern zend_class_entry *' . self::PREFIX . self::CLASS_ENTRY_MAP . '[' . $classEntryCount . '];' . PHP_EOL;
 
+        $funcCount = count($this->funcMap);
+        $lines[]         = 'extern zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
+
         $code = implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
         $this->writeFile($file, $code);
     }
@@ -301,6 +304,7 @@ class Translator extends Preprocessor
         }
 
         $code .= 'extern zend_class_entry *php_get_class_entry(int class_id, const char *class_name);' . PHP_EOL;
+        $code .= 'extern zend_function *php_get_func(int func_id, const char *func_name);' . PHP_EOL;
 
         $this->writeFile($file, $code);
     }
