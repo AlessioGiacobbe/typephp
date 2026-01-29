@@ -31,4 +31,14 @@ class ClassDef extends ClassLikeDef
     {
         return isset($this->methods[$method]);
     }
+
+    public function hasProperty(string $property): bool
+    {
+        return isset($this->properties[$property]);
+    }
+
+    public function getProperty($property): PropertyDef
+    {
+        return $this->properties[$property];
+    }
 }

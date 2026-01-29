@@ -238,6 +238,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return isset($this->nativeFunctions[$name]);
     }
 
+    public function isTypedObject(string $object): bool
+    {
+        return isset($this->objects[$object]);
+    }
+
     protected function resetFunction(): void
     {
         $this->localVars = [];
@@ -857,7 +862,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if (!$this->hasVar($var)) {
                         $this->addLocalVar($var, self::TYPE_VAR);
                     }
-                    $code .= "$var = $tmpVar.offsetGetIndirect($k); ";
+                    $code .= "$var = $tmpVar.item($k); ";
                 } else {
                     abort($item);
                 }
@@ -1470,7 +1475,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->fatalError($node, 'Unsupported operand types: null + array');
         }
         $dim = $this->parseIdentifier($node->dim);
-        return $var . '.offsetGetIndirect(' . $this->trimBrackets($dim) . ', ' . $this->escapeBool($write) . ')';
+        return $var . '.item(' . $this->trimBrackets($dim) . ', ' . $this->escapeBool($write) . ')';
     }
 
     protected function parseArrayDimStore($array, $dim, $var): string
@@ -2151,18 +2156,38 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(PHP_EOL . $this->getIndent(), $lines);
     }
 
-    protected function parsePropertyFetch(Node\Expr\PropertyFetch $expr, bool $assign = false): string
+    protected function getPropertyIdentifier(NodeAbstract $object, NodeAbstract $property): string
+    {
+        $id = $this->identifierToStr($property);
+        if ($this->isVarExpr($object) and $this->isIdExpr($property)) {
+            $objectName = $this->parseIdentifier($object);
+            $propertyName = $this->parseIdentifier($property);
+            if ($objectName === 'this_') {
+                $id = self::PREFIX . $this->getPropertyOffset($propertyName, $this->class, $this->namespace);
+            } elseif ($this->isTypedObject($objectName)) {
+                $class = $this->objects[$objectName];
+                if (isset($this->classes[$class])) {
+                    $classDef = $this->classes[$class];
+                    if ($classDef->hasProperty($propertyName)) {
+                        $propertyDef = $classDef->getProperty($propertyName);
+                        if ($propertyDef->isPublic() or $this->class === $class) {
+                            $id = self::PREFIX . $this->getPropertyOffset($propertyName, $class, $classDef->namespace);
+                        } else {
+                            $this->fatalError($property, "Cannot access private/protected property `$propertyName` of class `$class`");
+                        }
+                    }
+                }
+            }
+        }
+        return $id;
+    }
+
+    protected function parsePropertyFetch(Node\Expr\PropertyFetch $expr, bool $update = false): string
     {
         $object = $expr->var;
         $property = $expr->name;
-        $id = $this->identifierToStr($property);
-        if ($this->isVarExpr($object) and $this->isIdExpr($property)) {
-            if ($this->parseIdentifier($object) === 'this_') {
-                $id = self::PREFIX . $this->getPropertyOffset($property, $this->class, $this->namespace);
-            }
-        }
-
-        return $this->convertToObject($object) . '.getPropertyIndirect(' . $id . ', ' . $this->escapeBool($assign) . ')';
+        $id = $this->getPropertyIdentifier($object, $property);
+        return $this->convertToObject($object) . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
     }
 
     protected function parseAssignOpShiftRight(Node $node): string
@@ -2525,7 +2550,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $left = $this->parseIdentifier($expr->var);
                 $object = $this->convertToObject($expr->expr->var);
                 $prop = $this->identifierToStr($expr->expr->name);
-                return $left . ' = ' . $object . '.getPropertyReference(' . $prop . ')';
+                return $left . ' = ' . $object . '.attrRef(' . $prop . ')';
             }
         }
         abort($expr);
@@ -2546,7 +2571,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function identifierToStr(Node $node, bool $require = true): string
+    protected function identifierToStr(NodeAbstract $node, bool $require = true): string
     {
         $id = $this->parseIdentifier($node);
         if ($this->isVarExpr($node)) {
