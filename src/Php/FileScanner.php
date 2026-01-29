@@ -2,8 +2,6 @@
 
 namespace PhpAot\Php;
 
-use FilesystemIterator;
-
 class FileScanner
 {
     private string $directory;
@@ -45,12 +43,14 @@ class FileScanner
     public function addExcludePattern(string $pattern): self
     {
         $this->excludePatterns[] = $pattern;
+
         return $this;
     }
 
     public function setExcludePatterns(array $patterns): self
     {
         $this->excludePatterns = $patterns;
+
         return $this;
     }
 
@@ -68,6 +68,7 @@ class FileScanner
                 break;
             }
         }
+
         return $excluded;
     }
 
@@ -75,7 +76,7 @@ class FileScanner
     {
         $files = [];
         $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->directory, FilesystemIterator::SKIP_DOTS)
+            new \RecursiveDirectoryIterator($this->directory, \FilesystemIterator::SKIP_DOTS)
         );
 
         foreach ($iterator as $file) {
@@ -92,6 +93,7 @@ class FileScanner
                 }
             }
         }
+
         return $files;
     }
 

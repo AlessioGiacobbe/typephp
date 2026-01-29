@@ -6,15 +6,15 @@ use PhpParser\NodeAbstract;
 
 trait MagicMethodDetector
 {
-    function checkRequiredArgNum(string $name, MethodDef $methodDef, NodeAbstract $v): void
+    public function checkRequiredArgNum(string $name, MethodDef $methodDef, NodeAbstract $v): void
     {
-        if ($name == '__call' or $name == '__callStatic' or $name == '__set') {
-            if (count($methodDef->functionDef->argInfoList) != 2) {
-                $this->fatalError($v, 'Method ' . $this->class . "::$name() must take exactly 2 arguments");
+        if ('__call' == $name or '__callStatic' == $name or '__set' == $name) {
+            if (2 != count($methodDef->functionDef->argInfoList)) {
+                $this->fatalError($v, 'Method '.$this->class."::$name() must take exactly 2 arguments");
             }
-        } elseif ($name == '__get') {
-            if (count($methodDef->functionDef->argInfoList) != 1) {
-                $this->fatalError($v, 'Method ' . $this->class . "::$name() must take exactly 1 argument");
+        } elseif ('__get' == $name) {
+            if (1 != count($methodDef->functionDef->argInfoList)) {
+                $this->fatalError($v, 'Method '.$this->class."::$name() must take exactly 1 argument");
             }
         }
     }

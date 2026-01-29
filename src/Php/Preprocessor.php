@@ -39,7 +39,7 @@ class Preprocessor extends CompilerBase
                     $this->prepareClass($v2);
                     break;
                 case 'Stmt_Function':
-                    $this->prepareFunction($v2) . PHP_EOL;
+                    $this->prepareFunction($v2).PHP_EOL;
                     break;
                 case 'Stmt_Use':
                 case 'Stmt_Const':
@@ -54,13 +54,15 @@ class Preprocessor extends CompilerBase
     public function getCppFile(string $file): string
     {
         $info = pathinfo($file);
-        return $this->buildDir . '/' . $this->removeCommonPrefix($this->buildDir, $info['dirname'] . '/' . $info['filename'] . '.cc');
+
+        return $this->buildDir.'/'.$this->removeCommonPrefix($this->buildDir, $info['dirname'].'/'.$info['filename'].'.cc');
     }
 
     public function getObjectFile(string $cppFile): string
     {
         $info = pathinfo($cppFile);
-        return $info['dirname'] . '/' . $info['filename'] . '.o';
+
+        return $info['dirname'].'/'.$info['filename'].'.o';
     }
 
     public function hasCppFileCache(string $file): bool
@@ -72,19 +74,21 @@ class Preprocessor extends CompilerBase
         if (file_exists($cppFile) and filemtime($cppFile) > filemtime($file)) {
             return true;
         }
+
         return false;
     }
 
     public function prepare(string $file): void
     {
         if ($this->hasCppFileCache($file)) {
-            $this->climate->darkGray('skip: ' . $file . ', cache exists');
+            $this->climate->darkGray('skip: '.$file.', cache exists');
+
             return;
         }
 
         $phpCode = $this->loadFile($file);
 
-        $this->climate->info('prepare: ' . $this->file);
+        $this->climate->info('prepare: '.$this->file);
         try {
             $ast = $this->parser->parse($phpCode);
         } catch (\PhpParser\Error $e) {
@@ -107,7 +111,7 @@ class Preprocessor extends CompilerBase
                     $this->prepareClass($v);
                     break;
                 case 'Stmt_Function':
-                    $this->prepareFunction($v) . PHP_EOL;
+                    $this->prepareFunction($v).PHP_EOL;
                     break;
                 case 'Stmt_Declare':
                 case 'Stmt_Use':
@@ -116,7 +120,7 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Nop':
                     break;
                 default:
-                    $this->fatalError($v, 'Unsupported statement: ' . $type);
+                    $this->fatalError($v, 'Unsupported statement: '.$type);
                     break;
             }
         }
@@ -146,7 +150,6 @@ class Preprocessor extends CompilerBase
         }
     }
 
-
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
@@ -160,13 +163,14 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_TraitUse':
                     break;
                 case 'Stmt_ClassMethod':
-                    $code .= $this->prepareFunction($v) . PHP_EOL;
+                    $code .= $this->prepareFunction($v).PHP_EOL;
                     break;
                 default:
                     abort($v);
             }
         }
         $this->class = '';
+
         return $code;
     }
 }

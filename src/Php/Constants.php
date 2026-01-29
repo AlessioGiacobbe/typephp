@@ -4,7 +4,7 @@ namespace PhpAot\Php;
 
 class Constants
 {
-    const array CPP_RESERVED_NAMES = [
+    public const array CPP_RESERVED_NAMES = [
         'auto',
         'break',
         'case',

@@ -2,9 +2,6 @@
 
 namespace PhpAot\Php;
 
-use PhpParser\Node;
-use PhpParser\Node\Expr\Variable;
-use PhpParser\Node\Identifier;
 use PhpParser\PrettyPrinter\Standard;
 
 class Encryptor extends \PhpAot\Core\Translator
@@ -22,20 +19,21 @@ class Encryptor extends \PhpAot\Core\Translator
 
     public function __construct(array $stmts)
     {
-        $confDir = __DIR__ . '/../../config';
+        $confDir = __DIR__.'/../../config';
         $this->stmts = $stmts;
-        $this->encodeMap = require $confDir . '/functions.php';
+        $this->encodeMap = require $confDir.'/functions.php';
         $this->decodeMap = array_flip($this->encodeMap);
-        $this->constants = require $confDir . '/constants.php';
+        $this->constants = require $confDir.'/constants.php';
     }
 
     public function parseHeaders(): string
     {
         $lines = [];
         foreach ($this->headers as $header) {
-            $lines[] = '#include <' . $header . '>';
+            $lines[] = '#include <'.$header.'>';
         }
-        return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
+
+        return implode(PHP_EOL, $lines).PHP_EOL.PHP_EOL;
     }
 
     public function setPhpxDir($dir): void
@@ -47,6 +45,7 @@ class Encryptor extends \PhpAot\Core\Translator
     {
         $this->parseStmts($this->stmts);
         $prettyPrinter = new Standard();
+
         return $prettyPrinter->prettyPrintFile($this->stmts);
     }
 
@@ -54,7 +53,6 @@ class Encryptor extends \PhpAot\Core\Translator
     {
         file_put_contents($file, $code);
     }
-
 
     public function getLine($node): int
     {
@@ -86,12 +84,12 @@ class Encryptor extends \PhpAot\Core\Translator
             $params = '';
         }
 
-        $code = $return . ' ' . $name . '(' . $params . ') {' . PHP_EOL;
-        $this->indentLevel++;
+        $code = $return.' '.$name.'('.$params.') {'.PHP_EOL;
+        ++$this->indentLevel;
         $stmts = $this->parseStmts($v->stmts);
-        $this->indentLevel--;
+        --$this->indentLevel;
         $code .= $stmts;
-        $code .= "}";
+        $code .= '}';
 
         return $code;
     }
@@ -107,7 +105,7 @@ class Encryptor extends \PhpAot\Core\Translator
             case 'Scalar_Float':
                 return $node->value;
             case 'Scalar_String':
-                return '"' . $node->value . '"';
+                return '"'.$node->value.'"';
             case 'Expr_Array':
                 return $this->parseArray($node);
             case 'Expr_FuncCall':
@@ -129,16 +127,16 @@ class Encryptor extends \PhpAot\Core\Translator
         }
     }
 
-
     private function parseParams($params)
     {
         $list = [];
         foreach ($params as $param) {
             $type = $param->type ? $this->parseType($param->type) : '';
             $name = $param->var ? $this->parseIdentifier($param->var) : '';
-            $list[] = $type . ' ' . $name;
+            $list[] = $type.' '.$name;
             $this->typeMap[$name] = $type;
         }
+
         return implode(', ', $list);
     }
 
@@ -152,10 +150,10 @@ class Encryptor extends \PhpAot\Core\Translator
                     $lines[] = $this->parseFunctionDef($v);
                     break;
                 case 'Stmt_Expression':
-                    $lines[] = $this->parseExpr($v->expr) . ';';
+                    $lines[] = $this->parseExpr($v->expr).';';
                     break;
                 case 'Stmt_Echo':
-                    $lines[] = $this->parseEcho($v) . ';';
+                    $lines[] = $this->parseEcho($v).';';
                     break;
                 case 'Stmt_Return':
                     $this->parseReturn($v);
@@ -177,8 +175,9 @@ class Encryptor extends \PhpAot\Core\Translator
         }
         $code = '';
         foreach ($lines as $line) {
-            $code .= $this->getIndent() . $line . PHP_EOL;
+            $code .= $this->getIndent().$line.PHP_EOL;
         }
+
         return $code;
     }
 
@@ -230,7 +229,7 @@ class Encryptor extends \PhpAot\Core\Translator
 
     private function parseEcho(mixed $v)
     {
-        return 'php::echo(' . $this->parseExprs($v->exprs) . ')';
+        return 'php::echo('.$this->parseExprs($v->exprs).')';
     }
 
     private function parseExprs($exprs)
@@ -239,6 +238,7 @@ class Encryptor extends \PhpAot\Core\Translator
         foreach ($exprs as $expr) {
             $code .= $this->parseExpr($expr);
         }
+
         return $code;
     }
 
@@ -247,12 +247,12 @@ class Encryptor extends \PhpAot\Core\Translator
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $left . ' + ' . $right;
+        return $left.' + '.$right;
     }
 
     private function parseReturn(mixed $v)
     {
-        return 'return ' . $this->parseExpr($v->expr);
+        return 'return '.$this->parseExpr($v->expr);
     }
 
     private function parseBinaryOpMul(mixed $expr)
@@ -260,7 +260,7 @@ class Encryptor extends \PhpAot\Core\Translator
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $left . ' * ' . $right;
+        return $left.' * '.$right;
     }
 
     private function detectType($var, $expr)
@@ -284,18 +284,19 @@ class Encryptor extends \PhpAot\Core\Translator
     {
         $items = $node->items;
         $list = [];
-        $this->indentLevel++;
+        ++$this->indentLevel;
         foreach ($items as $item) {
             if ($item->key) {
-                $list[] = $this->getIndent() . '{ php::Variant(' . $this->parseIdentifier($item->key) . '), php::Variant(' . $this->parseIdentifier($item->value) . ') }';
+                $list[] = $this->getIndent().'{ php::Variant('.$this->parseIdentifier($item->key).'), php::Variant('.$this->parseIdentifier($item->value).') }';
             } else {
-                $list[] = $this->getIndent() . 'php::Variant(' . $this->parseIdentifier($item->value) . ')';
+                $list[] = $this->getIndent().'php::Variant('.$this->parseIdentifier($item->value).')';
             }
         }
-        $this->indentLevel--;
-        return '{' . PHP_EOL .
-            implode(', ' . PHP_EOL, $list) . PHP_EOL .
-            $this->getIndent() .
+        --$this->indentLevel;
+
+        return '{'.PHP_EOL.
+            implode(', '.PHP_EOL, $list).PHP_EOL.
+            $this->getIndent().
             '}';
     }
 
@@ -317,12 +318,13 @@ class Encryptor extends \PhpAot\Core\Translator
     private function parseIncludes()
     {
         $list = [
-            $this->phpxDir . '/include',
+            $this->phpxDir.'/include',
         ];
         $out = '$(php-config --includes) ';
         foreach ($list as $li) {
-            $out .= '-I ' . $li . ' ';
+            $out .= '-I '.$li.' ';
         }
+
         return $out;
     }
 
@@ -330,12 +332,13 @@ class Encryptor extends \PhpAot\Core\Translator
     {
         $list = [
             '$(php-config --prefix)/lib',
-            $this->phpxDir . '/lib',
+            $this->phpxDir.'/lib',
         ];
         $out = '';
         foreach ($list as $li) {
-            $out .= '-L ' . $li . ' ';
+            $out .= '-L '.$li.' ';
         }
+
         return $out;
     }
 
@@ -347,15 +350,16 @@ class Encryptor extends \PhpAot\Core\Translator
         ];
         $out = '';
         foreach ($list as $li) {
-            $out .= '-l' . $li . ' ';
+            $out .= '-l'.$li.' ';
         }
+
         return $out;
     }
 
     public function compileFile($file)
     {
-        $cmd = 'g++ -c ' . $file . ' -o ' . $file . '.o ' . $this->parseIncludes() . $this->parseLdflags() . $this->parseLibs();
-        echo $cmd . PHP_EOL;
+        $cmd = 'g++ -c '.$file.' -o '.$file.'.o '.$this->parseIncludes().$this->parseLdflags().$this->parseLibs();
+        echo $cmd.PHP_EOL;
         shell_exec($cmd);
     }
 
@@ -364,7 +368,7 @@ class Encryptor extends \PhpAot\Core\Translator
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $left . ' + ' . $right;
+        return $left.' + '.$right;
     }
 
     private function parseFuncCall($expr)
@@ -372,6 +376,7 @@ class Encryptor extends \PhpAot\Core\Translator
         if (isset($this->decodeMap[$expr->name])) {
             $expr->name = $this->decodeMap[$expr->name];
         }
+
         return $expr;
     }
 
@@ -425,7 +430,6 @@ class Encryptor extends \PhpAot\Core\Translator
     {
         $name = $expr->name->name;
         if (isset($this->constants[$name])) {
-
         }
     }
 }

@@ -13,28 +13,29 @@ class Extractor
     }
 
     /**
-     * 检查 ctags 是否可用
+     * 检查 ctags 是否可用.
      */
     private function checkCtags(): void
     {
         $output = shell_exec("{$this->ctagsPath} --version 2>&1");
 
-        if ($output === null) {
+        if (null === $output) {
             $this->error("未找到 ctags 命令\n安装: sudo apt install universal-ctags");
         }
 
-        $this->isUniversalCtags = stripos($output, 'Universal Ctags') !== false;
+        $this->isUniversalCtags = false !== stripos($output, 'Universal Ctags');
 
         if (!$this->isUniversalCtags) {
-            $this->warn("建议使用 Universal Ctags 以获得更好的支持");
+            $this->warn('建议使用 Universal Ctags 以获得更好的支持');
         }
     }
 
     /**
-     * 提取函数定义
+     * 提取函数定义.
      *
      * @param string $filename 文件路径
-     * @param array $prefixes 函数名前缀列表
+     * @param array  $prefixes 函数名前缀列表
+     *
      * @return array 函数列表
      */
     public function extractFunctions(string $filename, array $prefixes = ['php_']): array
@@ -44,7 +45,7 @@ class Extractor
         }
 
         $this->info("分析文件: {$filename}");
-        $this->info("函数前缀: " . implode(', ', $prefixes));
+        $this->info('函数前缀: '.implode(', ', $prefixes));
 
         // 运行 ctags
         $tags = $this->runCtags($filename);
@@ -52,7 +53,7 @@ class Extractor
         // 过滤和解析函数
         $functions = [];
         foreach ($tags as $tag) {
-            if ($tag['kind'] !== 'function') {
+            if ('function' !== $tag['kind']) {
                 continue;
             }
 
@@ -78,13 +79,13 @@ class Extractor
             }
         }
 
-        $this->info("找到 " . count($functions) . " 个函数");
+        $this->info('找到 '.count($functions).' 个函数');
 
         return $functions;
     }
 
     /**
-     * 运行 ctags 命令
+     * 运行 ctags 命令.
      */
     private function runCtags(string $filename): array
     {
@@ -96,8 +97,8 @@ class Extractor
 
         $output = shell_exec($cmd);
 
-        if ($output === null) {
-            throw new RuntimeException("ctags 执行失败");
+        if (null === $output) {
+            throw new RuntimeException('ctags 执行失败');
         }
 
         // 解析 JSON 输出
@@ -110,7 +111,7 @@ class Extractor
             }
 
             $tag = json_decode($line, true);
-            if ($tag === null) {
+            if (null === $tag) {
                 continue;
             }
 
@@ -121,7 +122,7 @@ class Extractor
     }
 
     /**
-     * 解析单个函数的详细信息
+     * 解析单个函数的详细信息.
      */
     private function parseFunction(string $filename, array $tag): ?array
     {
@@ -152,21 +153,21 @@ class Extractor
             'parameters' => $parameters,
             'location' => [
                 'file' => $filename,
-                'line' => $lineNum
+                'line' => $lineNum,
             ],
             'scope' => $tag['scope'] ?? null,
-            'scopeKind' => $tag['scopeKind'] ?? null
+            'scopeKind' => $tag['scopeKind'] ?? null,
         ];
     }
 
     /**
-     * 从源文件中提取完整的函数签名
+     * 从源文件中提取完整的函数签名.
      */
     private function extractSignature(string $filename, int $lineNum, string $funcName): string
     {
         $lines = file($filename, FILE_IGNORE_NEW_LINES);
 
-        if ($lines === false || $lineNum > count($lines)) {
+        if (false === $lines || $lineNum > count($lines)) {
             return '';
         }
 
@@ -174,12 +175,12 @@ class Extractor
         $signatureLines = [];
         $maxLines = min($lineNum + 20, count($lines));
 
-        for ($i = $lineNum - 1; $i < $maxLines; $i++) {
+        for ($i = $lineNum - 1; $i < $maxLines; ++$i) {
             $line = $lines[$i];
             $signatureLines[] = $line;
 
             // 检查是否到达函数体或声明结束
-            if (strpos($line, '{') !== false || strpos($line, ';') !== false) {
+            if (false !== strpos($line, '{') || false !== strpos($line, ';')) {
                 break;
             }
         }
@@ -200,12 +201,12 @@ class Extractor
     }
 
     /**
-     * 解析返回类型
+     * 解析返回类型.
      */
     private function parseReturnType(string $signature, string $funcName): string
     {
         // 匹配: <返回类型> <函数名>(
-        $pattern = '/^(.+?)\s+' . preg_quote($funcName, '/') . '\s*\(/';
+        $pattern = '/^(.+?)\s+'.preg_quote($funcName, '/').'\s*\(/';
 
         if (preg_match($pattern, $signature, $matches)) {
             $returnType = trim($matches[1]);
@@ -222,12 +223,12 @@ class Extractor
     }
 
     /**
-     * 解析参数列表
+     * 解析参数列表.
      */
     private function parseParameters(string $signature, string $funcName): array
     {
         // 提取括号内的参数
-        $pattern = '/' . preg_quote($funcName, '/') . '\s*\((.*?)\)/s';
+        $pattern = '/'.preg_quote($funcName, '/').'\s*\((.*?)\)/s';
 
         if (!preg_match($pattern, $signature, $matches)) {
             return [];
@@ -236,7 +237,7 @@ class Extractor
         $paramsStr = trim($matches[1]);
 
         // 空参数或 void
-        if (empty($paramsStr) || $paramsStr === 'void') {
+        if (empty($paramsStr) || 'void' === $paramsStr) {
             return [];
         }
 
@@ -261,7 +262,7 @@ class Extractor
     }
 
     /**
-     * 智能分割参数（处理嵌套的模板和括号）
+     * 智能分割参数（处理嵌套的模板和括号）.
      */
     private function splitParameters(string $paramsStr): array
     {
@@ -270,16 +271,16 @@ class Extractor
         $depth = 0;
         $length = strlen($paramsStr);
 
-        for ($i = 0; $i < $length; $i++) {
+        for ($i = 0; $i < $length; ++$i) {
             $char = $paramsStr[$i];
 
-            if ($char === '<' || $char === '(' || $char === '[') {
-                $depth++;
+            if ('<' === $char || '(' === $char || '[' === $char) {
+                ++$depth;
                 $current .= $char;
-            } elseif ($char === '>' || $char === ')' || $char === ']') {
-                $depth--;
+            } elseif ('>' === $char || ')' === $char || ']' === $char) {
+                --$depth;
                 $current .= $char;
-            } elseif ($char === ',' && $depth === 0) {
+            } elseif (',' === $char && 0 === $depth) {
                 $params[] = $current;
                 $current = '';
             } else {
@@ -295,7 +296,7 @@ class Extractor
     }
 
     /**
-     * 解析单个参数
+     * 解析单个参数.
      */
     private function parseParameter(string $param): ?array
     {
@@ -309,19 +310,19 @@ class Extractor
         if (preg_match('/^(.+?)\s+(\w+)\s*$/', $param, $matches)) {
             return [
                 'type' => trim($matches[1]),
-                'name' => trim($matches[2])
+                'name' => trim($matches[2]),
             ];
         }
 
         // 只有类型，没有名称
         return [
             'type' => $param,
-            'name' => ''
+            'name' => '',
         ];
     }
 
     /**
-     * 批量提取多个文件
+     * 批量提取多个文件.
      */
     public function extractFromFiles(array $files, array $prefixes = ['php_']): array
     {
@@ -332,7 +333,7 @@ class Extractor
                 $functions = $this->extractFunctions($file, $prefixes);
                 $allFunctions = array_merge($allFunctions, $functions);
             } catch (Exception $e) {
-                $this->error("处理文件 {$file} 失败: " . $e->getMessage());
+                $this->error("处理文件 {$file} 失败: ".$e->getMessage());
             }
         }
 
@@ -340,7 +341,7 @@ class Extractor
     }
 
     /**
-     * 输出信息
+     * 输出信息.
      */
     private function info(string $message): void
     {
@@ -348,7 +349,7 @@ class Extractor
     }
 
     /**
-     * 输出警告
+     * 输出警告.
      */
     private function warn(string $message): void
     {
@@ -356,7 +357,7 @@ class Extractor
     }
 
     /**
-     * 输出错误并退出
+     * 输出错误并退出.
      */
     private function error(string $message): void
     {
@@ -365,7 +366,7 @@ class Extractor
     }
 
     /**
-     * 提取函数并添加额外信息
+     * 提取函数并添加额外信息.
      */
     public function extractWithMetadata(string $filename, array $prefixes = ['php_']): array
     {
@@ -380,7 +381,7 @@ class Extractor
     }
 
     /**
-     * 提取函数的元数据（注释、属性等）
+     * 提取函数的元数据（注释、属性等）.
      */
     private function extractMetadata(string $filename, array $func): array
     {
@@ -404,8 +405,8 @@ class Extractor
 
         // 检测修饰符
         $signature = $func['signature'];
-        $metadata['isStatic'] = strpos($signature, 'static') !== false;
-        $metadata['isInline'] = strpos($signature, 'inline') !== false;
+        $metadata['isStatic'] = false !== strpos($signature, 'static');
+        $metadata['isInline'] = false !== strpos($signature, 'inline');
 
         // 提取文档注释中的标签
         $metadata['docTags'] = $this->parseDocTags($comments);
@@ -414,7 +415,7 @@ class Extractor
     }
 
     /**
-     * 提取函数前的注释
+     * 提取函数前的注释.
      */
     private function extractComments(array $lines, int $lineNum): array
     {
@@ -427,21 +428,21 @@ class Extractor
 
             // 空行
             if (empty($line)) {
-                $i--;
+                --$i;
                 continue;
             }
 
             // C++ 风格注释
             if (str_starts_with($line, '//')) {
                 array_unshift($comments, substr($line, 2));
-                $i--;
+                --$i;
                 continue;
             }
 
             // C 风格注释结束
             if (str_ends_with($line, '*/')) {
                 $commentLines = [$line];
-                $i--;
+                --$i;
 
                 // 继续向上查找注释开始
                 while ($i >= 0) {
@@ -451,7 +452,7 @@ class Extractor
                     if (str_starts_with($commentLine, '/*')) {
                         break;
                     }
-                    $i--;
+                    --$i;
                 }
 
                 // 解析多行注释
@@ -461,7 +462,7 @@ class Extractor
                 $comment = preg_replace('#^\s*\*\s?#m', '', $comment);
 
                 array_unshift($comments, trim($comment));
-                $i--;
+                --$i;
                 continue;
             }
 
@@ -473,7 +474,7 @@ class Extractor
     }
 
     /**
-     * 检测是否是 PHP 函数宏定义
+     * 检测是否是 PHP 函数宏定义.
      */
     private function isPHPFunction(string $signature): bool
     {
@@ -485,7 +486,7 @@ class Extractor
         ];
 
         foreach ($phpMacros as $macro) {
-            if (strpos($signature, $macro) !== false) {
+            if (false !== strpos($signature, $macro)) {
                 return true;
             }
         }
@@ -494,7 +495,7 @@ class Extractor
     }
 
     /**
-     * 解析文档注释标签
+     * 解析文档注释标签.
      */
     private function parseDocTags(array $comments): array
     {
@@ -520,7 +521,7 @@ class Extractor
     }
 
     /**
-     * 生成函数统计信息
+     * 生成函数统计信息.
      */
     public function generateStatistics(array $functions): array
     {
@@ -552,12 +553,12 @@ class Extractor
 
             // 有注释的函数
             if (!empty($func['metadata']['comments'])) {
-                $stats['withComments']++;
+                ++$stats['withComments'];
             }
 
             // PHP 函数宏
             if ($func['metadata']['isPHPFunction'] ?? false) {
-                $stats['isPHPFunction']++;
+                ++$stats['isPHPFunction'];
             }
         }
 
@@ -565,13 +566,13 @@ class Extractor
     }
 
     /**
-     * 导出为 Markdown 文档
+     * 导出为 Markdown 文档.
      */
     public function exportToMarkdown(array $functions, string $title = 'API 文档'): string
     {
         $md = "# {$title}\n\n";
-        $md .= "生成时间: " . date('Y-m-d H:i:s') . "\n\n";
-        $md .= "总计: " . count($functions) . " 个函数\n\n";
+        $md .= '生成时间: '.date('Y-m-d H:i:s')."\n\n";
+        $md .= '总计: '.count($functions)." 个函数\n\n";
         $md .= "---\n\n";
 
         foreach ($functions as $func) {
@@ -599,7 +600,7 @@ class Extractor
             if (!empty($func['metadata']['comments'])) {
                 $md .= "**说明**:\n\n";
                 foreach ($func['metadata']['comments'] as $comment) {
-                    $md .= $comment . "\n\n";
+                    $md .= $comment."\n\n";
                 }
             }
 

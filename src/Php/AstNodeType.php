@@ -2,9 +2,9 @@
 
 namespace PhpAot\Php;
 
+use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
-use PhpParser\Node;
 
 trait AstNodeType
 {
@@ -12,6 +12,7 @@ trait AstNodeType
     {
         return $expr instanceof Expr\ArrayDimFetch;
     }
+
     protected function isVarExpr(NodeAbstract $expr): bool
     {
         return $expr instanceof Expr\Variable;

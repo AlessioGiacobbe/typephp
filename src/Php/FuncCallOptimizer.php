@@ -8,10 +8,10 @@ trait FuncCallOptimizer
 {
     protected function parseFuncCallWithOptimizer(string $name, Node\Expr\FuncCall $expr): string|false
     {
-        if ($name === 'strlen' or $name === 'sizeof' or $name === 'count') {
-            return 'php::len(' . $this->parseIdentifier($expr->args[0]->value) . ')';
+        if ('strlen' === $name or 'sizeof' === $name or 'count' === $name) {
+            return 'php::len('.$this->parseIdentifier($expr->args[0]->value).')';
         }
-        if (count($expr->args) == 1) {
+        if (1 == count($expr->args)) {
             switch ($name) {
                 case 'intval':
                     return $this->convertIntExpr($this->parseExpr($expr->args[0]->value));
@@ -24,19 +24,21 @@ trait FuncCallOptimizer
                 default:
                     break;
             }
-        } elseif (count($expr->args) == 2) {
+        } elseif (2 == count($expr->args)) {
             switch ($name) {
                 case 'objval':
                     $arg1 = $expr->args[0]->value;
                     $arg2 = $expr->args[1]->value;
+
                     return $this->convertObjectExpr($this->parseExpr($arg1), $this->parseExpr($arg2));
                 default:
                     break;
             }
         }
-        if ($name === 'abs') {
-            return 'php::math::abs(' . $this->parseIdentifier($expr->args[0]->value) . ')';
+        if ('abs' === $name) {
+            return 'php::math::abs('.$this->parseIdentifier($expr->args[0]->value).')';
         }
+
         return false;
     }
 }

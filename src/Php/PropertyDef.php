@@ -9,7 +9,7 @@ class PropertyDef
     public string $name;
     public string $type;
     public int $flags;
-    public ?string $default =  null;
+    public ?string $default = null;
 
     public function __construct(string $name, int $flags, string $type, ?string $default = null)
     {

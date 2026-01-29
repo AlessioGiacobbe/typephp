@@ -21,6 +21,16 @@ foreach ($this->classCeList as $ce):
 zend_class_entry * <?= $ce ?>;
 <?php endforeach; ?>
 
+// class entry
+zend_class_entry *<?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP . '[' . count($this->classMap) . ']' ?>;
+
+zend_class_entry *php_get_class_entry(int class_id, const char *class_name) {
+    if (<?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP ?>[class_id] == nullptr) {
+        <?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP ?>[class_id] = php::getClassEntrySafe(class_name);
+    }
+    return <?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP ?>[class_id];
+}
+
 // literal strings
 php::Var <?=Translator::LITERAL_STRINGS?>[] = {
 <?php
@@ -97,6 +107,13 @@ foreach ($this->classes as $classDef):
     endforeach;
 endforeach;
 ?>
+
+// class entry
+<?php
+foreach ($this->classMap as $class => $id):
+    ?>
+    <?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP . '[' . $id . ']' ?> = php::getClassEntry("<?= $this->escapeString($class) ?>");
+<?php endforeach; ?>
 }
 
 void php_app_clean() {

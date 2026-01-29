@@ -2,10 +2,6 @@
 
 namespace PhpAot\Php;
 
-use ReflectionFunction;
-use ReflectionParameter;
-use ReflectionUnionType;
-
 class Reflection
 {
     private static array $functions = [];
@@ -14,13 +10,13 @@ class Reflection
     {
         if (!isset(self::$functions[$fn])) {
             try {
-                $ref = new ReflectionFunction($fn);
-                ;
+                $ref = new \ReflectionFunction($fn);
             } catch (\ReflectionException $e) {
                 return null;
             }
             self::$functions[$fn] = $ref;
         }
+
         return self::$functions[$fn];
     }
 
@@ -34,13 +30,14 @@ class Reflection
         if (!$returnType) {
             return null;
         }
-        if ($returnType instanceof ReflectionUnionType) {
+        if ($returnType instanceof \ReflectionUnionType) {
             return null;
         }
+
         return $returnType->getName();
     }
 
-    public static function getFunctionParameter(string $fn, int $index): ?ReflectionParameter
+    public static function getFunctionParameter(string $fn, int $index): ?\ReflectionParameter
     {
         $func = self::getFunction($fn);
         if (!$func) {
@@ -50,6 +47,7 @@ class Reflection
         if ($index >= count($args)) {
             return null;
         }
+
         return $args[$index];
     }
 
@@ -59,6 +57,7 @@ class Reflection
         if (!$param) {
             return null;
         }
+
         return $param->isPassedByReference() ? $param->getName() : null;
     }
 }

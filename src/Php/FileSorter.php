@@ -22,13 +22,13 @@ class FileSorter
         $inDegree = array_fill_keys($allFiles, 0);
         foreach ($dependencies as $deps) {
             foreach ($deps as $dep) {
-                $inDegree[$dep]++;
+                ++$inDegree[$dep];
             }
         }
 
         $queue = [];
         foreach ($inDegree as $file => $degree) {
-            if ($degree === 0) {
+            if (0 === $degree) {
                 $queue[] = $file;
             }
         }
@@ -40,8 +40,8 @@ class FileSorter
 
             if (isset($dependencies[$current])) {
                 foreach ($dependencies[$current] as $dep) {
-                    $inDegree[$dep]--;
-                    if ($inDegree[$dep] === 0) {
+                    --$inDegree[$dep];
+                    if (0 === $inDegree[$dep]) {
                         $queue[] = $dep;
                     }
                 }
@@ -49,7 +49,7 @@ class FileSorter
         }
 
         if (count($sorted) !== count($allFiles)) {
-            throw new \RuntimeException("Circular dependency of function call detected");
+            throw new \RuntimeException('Circular dependency of function call detected');
         }
 
         return array_reverse($sorted);

@@ -14,7 +14,6 @@ class FunctionDef
     public string $params = '';
     public bool $method = false;
 
-
     public function __construct(string $name, string $returnType)
     {
         $this->name = $name;
