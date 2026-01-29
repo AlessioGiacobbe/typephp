@@ -16,7 +16,7 @@ return (new PhpCsFixer\Config())
         '@Symfony'                                         => true,
         'align_multiline_comment'                          => ['comment_type' => 'all_multiline'],
         'array_syntax'                                     => ['syntax' => 'short'],
-        'binary_operator_spaces'                           => ['operators' => ['=' => 'align', '=>' => 'align', ]],
+        'binary_operator_spaces'                           => ['operators' => ['=' => null, '=>' => null, ]],
         'blank_line_after_namespace'                       => true,
         'blank_line_before_statement'                      => ['statements' => ['declare']],
         'class_attributes_separation'                      => true,
