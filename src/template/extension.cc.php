@@ -136,14 +136,26 @@ foreach ($this->nativeConstants as $name => $constant):
 <?php endforeach; ?>
 }
 
+static PHP_RINIT_FUNCTION(<?=$this->targetName?>) {
+    php::request_init();
+    php_app_init();
+    return SUCCESS;
+}
+
+static PHP_RSHUTDOWN_FUNCTION(<?=$this->targetName?>) {
+    php_app_clean();
+    php::request_shutdown();
+    return SUCCESS;
+}
+
 zend_module_entry <?=$this->targetName?>_module_entry = {
     STANDARD_MODULE_HEADER,
     "<?=$this->targetName?>",
     ext_functions,
     PHP_MINIT(<?=$this->targetName?>),
     nullptr,
-    nullptr,
-    nullptr,
+    PHP_RINIT(<?=$this->targetName?>),
+    PHP_RSHUTDOWN(<?=$this->targetName?>),
     nullptr,
     nullptr,
     STANDARD_MODULE_PROPERTIES,
