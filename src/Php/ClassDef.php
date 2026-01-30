@@ -45,8 +45,24 @@ class ClassDef extends ClassLikeDef
         return isset($this->properties[$property]);
     }
 
+    public function hasConstant(string $name): bool
+    {
+        return isset($this->constants[$name]);
+    }
+
+
     public function getProperty($property): PropertyDef
     {
         return $this->properties[$property];
+    }
+
+    public function getMethod($method): MethodDef
+    {
+        return $this->methods[$method];
+    }
+
+    public function getConstant($name): ConstantDef
+    {
+        return $this->constants[$name];
     }
 }

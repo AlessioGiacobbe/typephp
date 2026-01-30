@@ -98,9 +98,11 @@ class Preprocessor extends CompilerBase
                     break;
                 case 'Stmt_Declare':
                 case 'Stmt_Use':
-                case 'Stmt_Const':
                 case 'Stmt_Interface':
                 case 'Stmt_Nop':
+                    break;
+                case 'Stmt_Const':
+                    $this->parseConstDef($v);
                     break;
                 default:
                     $this->fatalError($v, 'Unsupported statement: ' . $type);

@@ -39,4 +39,9 @@ class PropertyDef
     {
         return !$this->isPrivate() && !$this->isProtected();
     }
+
+    public function isStatic(): bool
+    {
+        return $this->flags & Modifiers::STATIC;
+    }
 }

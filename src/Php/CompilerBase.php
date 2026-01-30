@@ -121,6 +121,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $interface = '';
 
     /**
+     * key 类名，包含命名空间
      * @var array<string, ClassDef>
      */
     protected array $classes = [];
@@ -614,7 +615,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php_get_class(' . $id . ', ' . $this->getLiteralString($className) . ')';
     }
 
-    protected function getFuncPtr(string $funcName): string
+    protected function getFuncPtr(string $funcName, bool $macro = true): string
     {
         if (isset($this->funcMap[$funcName])) {
             $id = $this->funcMap[$funcName];
@@ -622,7 +623,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $id = $this->funcIndex++;
             $this->funcMap[$funcName] = $id;
         }
-        return $id . ', ' . $this->getLiteralString($funcName);
+        if ($macro) {
+            return $id . ', ' . $this->getLiteralString($funcName);
+        } else {
+            return 'php_get_func(' . $id . ', ' . $this->getLiteralString($funcName) . ')';
+        }
     }
 
     protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
@@ -999,10 +1004,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->parseAssignArrayDim($left, $right);
         }
         if ($left->getType() === 'Expr_StaticPropertyFetch') {
+            $value    = $this->trimBrackets($this->parseExpr($right));
+            $native = $this->parseNativeStaticPropertyFetch($left);
+            if ($native) {
+                return $native . ' = ' . $value;
+            }
             $class    = $this->identifierToStr($left->class);
             $propName = $this->identifierToStr($left->name);
-            $value    = $this->trimBrackets($this->parseExpr($right));
-
             return "php::setStaticProperty({$class}, {$propName}, {$value})";
         }
 
@@ -1237,6 +1245,18 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function hasLocalVar(string $name): bool
     {
         return isset($this->localVars[$name]);
+    }
+
+    protected function hasNativeClass(string $name): bool
+    {
+        $name = trim($name, '\\');
+        return array_key_exists($name, $this->classes);
+    }
+
+    protected function getClassDef(string $name): ClassDef
+    {
+        $name = trim($name, '\\');
+        return $this->classes[$name];
     }
 
     protected function resetReturnType(string $type): void
@@ -1751,6 +1771,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $code;
             }
             $fn = $this->getFuncPtr($name);
+            $this->beforeStmtLines[] = "// Func Call: " . $name;
             $call = $silent ? 'CALL_SILENT' : 'CALL';
         } else {
             $tmpVar = $this->genTmpVarName();
@@ -1827,20 +1848,15 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePostOp($expr, string $op): string
     {
-        if ($this->isVarExpr($expr->var)) {
+        if ($this->isVarExpr($expr->var) or $this->isPropertyFetch($expr->var)) {
             return $this->parseIdentifier($expr->var) . str_repeat($op, 2);
         }
-        if ($this->isPropertyFetch($expr->var)) {
-            $obj    = $this->parseIdentifier($expr->var->var);
-            $prop   = $this->identifierToStr($expr->var->name);
-            $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            $this->beforeStmtLines[] = $tmpVar . ' = ' . $obj . '.getProperty(' . $prop . ');';
-            $this->afterStmtLines[]  = $obj . '.setProperty(' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
-
-            return $tmpVar;
-        }
         if ($this->isStaticPropertyFetch($expr->var)) {
+            $native = $this->parseNativeStaticPropertyFetch($expr->var);
+            if ($native) {
+                return $native . str_repeat($op, 2);
+            }
+
             $class  = $this->identifierToStr($expr->var->class);
             $prop   = $this->identifierToStr($expr->var->name);
             $tmpVar = $this->genTmpVarName();
@@ -2171,7 +2187,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             abort($expr);
         }
         $name = $this->parseIdentifier($expr->name);
-        if ($this->hasConstant($name)) {
+        if ($this->isNameExpr($expr->name) and $this->hasConstant($name)) {
             return $this->getConstant($name);
         }
         if ($name === 'null') {
@@ -2186,7 +2202,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($name === 'PHP_EOL') {
             return '"' . $this->escapeString(PHP_EOL) . '"';
         }
-
+        if ($this->isNameExpr($expr->name)) {
+            if (str_contains($name, '::')) {
+                $ns = explode('::', $name)[0];
+                $ce = $this->getClassEntryPtr($ns[0]);
+                return 'php::constant(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
+            } else {
+                return 'php::constant(nullptr, ' . $this->getLiteralString($name) . ')';
+            }
+        }
         return 'php::constant("' . $this->escapeString($name) . '")';
     }
 
@@ -2654,13 +2678,19 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseIdentifier($var->var) . '.offsetExists(' . $this->parseIdentifier($var->dim) . ')';
             }
             if ($var instanceof Node\Expr\StaticPropertyFetch) {
+                $nativeProp = $this->findNativeStaticProperty($var, $class, $namespace);
+                if ($nativeProp) {
+                    return 'true';
+                }
                 return 'php::hasStaticProperty(' . $this->identifierToStr($var->class) . ', ' . $this->identifierToStr($var->name) . ')';
             }
             if ($var instanceof Node\Expr\PropertyFetch) {
-                $object = $var->var;
-                $prop   = $var->name;
-
-                return $this->parseIdentifier($object) . '.propertyExists(' . $this->identifierToStr($prop) . ')';
+                $prop = $var->name;
+                $object = $this->parseIdentifier($var->var);
+                if ($object === 'this_' and $this->isIdExpr($prop)) {
+                    return $this->escapeBool($this->classDef->hasProperty($this->parseIdentifier($prop)));
+                }
+                return $object . '.propertyExists(' . $this->identifierToStr($prop) . ')';
             }
             abort($var);
         }
@@ -2819,30 +2849,87 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseParentMethodCall($expr);
             }
             $method = $this->parseIdentifier($expr->name);
-            $fn     = '"' . $class . '::' . $method . '"';
+            $ce = $this->getClassEntryPtr($class);
+            $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method, false);
         }
+        $call = 'php::call';
         if (empty($expr->args)) {
-            return 'php::call(' . $fn . ')';
+            return $call . '(' . $fn . ')';
         }
-        return 'php::call(' . $fn . ', {' . $this->parseCallArgs($expr->args) . '})';
+        return $call . '(' . $fn . ', {' . $this->parseCallArgs($expr->args) . '})';
     }
 
-    protected function parseStaticPropertyFetch(Node $expr): string
+    protected function findNativeStaticProperty(Node\Expr\StaticPropertyFetch $expr, ?string &$class, ?string &$namespace): ?PropertyDef
     {
+        if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
+            $class = $this->parseIdentifier($expr->class);
+            $prop = $this->parseIdentifier($expr->name);
+            if ($class === 'self') {
+                $classDef = $this->classDef;
+                $class = $this->class;
+                $namespace = $this->namespace;
+            } else {
+                $classDef = $this->classes[$class];
+                $namespace = $classDef->namespace;
+            }
+            if ($classDef->hasProperty($prop)) {
+                $propDef = $classDef->getProperty($prop);
+                if ($propDef->isStatic()) {
+                    return $propDef;
+                }
+            }
+        }
+        return null;
+    }
+
+    protected function parseNativeStaticPropertyFetch(Node\Expr\StaticPropertyFetch $expr): string|bool
+    {
+        $nativeProp = $this->findNativeStaticProperty($expr, $class, $namespace);
+        if ($nativeProp) {
+            $classPtr = $this->getClassEntryPtr($class);
+            $propOffset = self::PREFIX . $this->getPropertyOffset($nativeProp->name, $class, $namespace);
+            return 'php::getStaticProperty(' . $classPtr . ', ' . $propOffset . ')';
+        }
+        return false;
+    }
+
+    protected function parseStaticPropertyFetch(Node\Expr\StaticPropertyFetch $expr): string
+    {
+        $native = $this->parseNativeStaticPropertyFetch($expr);
+        if ($native) {
+            return $native;
+        }
         return 'php::getStaticProperty(' . $this->identifierToStr($expr->class) . ', ' . $this->identifierToStr($expr->name) . ')';
     }
 
     protected function parseClassConstFetch(Node\Expr\ClassConstFetch $expr): string
     {
         $class = $this->parseIdentifier($expr->class);
-        $class = ($class === 'self' or $class === 'this_') ? $this->class : $class;
-        $const = $this->escapeString($this->parseIdentifier($expr->name));
-        $class = $this->escapeString($this->getNamespacedClassName($class));
-        if ($const === 'class') {
-            return '"' . $class . '"';
+        $self = false;
+        if ($class === 'self' or $class === 'this_') {
+            $self = true;
+            $class = $this->class;
         }
 
-        return 'php::constant("' . $class . '::' . $const . '")';
+        $const = $this->escapeString($this->parseIdentifier($expr->name));
+        $class = $this->getNamespacedClassName($class);
+        if ($const === 'class') {
+            return '"' . $this->escapeString($class) . '"';
+        }
+        if (($self or $this->isNameExpr($expr->class)) and $this->isIdExpr($expr->name)) {
+            if ($this->hasNativeClass($class)) {
+                $classDef = $this->getClassDef($class);
+                if ($classDef->hasConstant($const)) {
+                    return $classDef->getConstant($const)->value;
+                }
+            }
+            $ce = $this->getClassEntryPtr($class);
+            return 'php::constant(' . $ce . ', ' . $this->getLiteralString($const) . ')';
+        } else {
+            $name = $class . '::' . $const;
+            $name = $this->getLiteralString($name);
+            return 'php::constant(' . $name . ')';
+        }
     }
 
     protected function parseThrow(mixed $expr): string
@@ -3109,11 +3196,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $nativeFunc = $this->getNativeName($method, $this->namespace, $this->class);
         } elseif (isset($this->objects[$object])) {
             $class = $this->objects[$object];
-            if (!isset($this->classes[$class])) {
+            if (!$this->hasNativeClass($class)) {
                 return false;
             }
             $classDef = $this->classes[$class];
-            if (!isset($classDef->methods[$method])) {
+            if (!$classDef->hasMethod($method)) {
                 return false;
             }
             $methodDef = $classDef->methods[$method];
