@@ -6,8 +6,6 @@
  * @contact  service@swoole.com
  */
 
-declare(strict_types=1);
-
 namespace PhpAot\Php;
 
 use League\CLImate\CLImate;
@@ -54,6 +52,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string LITERAL_STRINGS = '_literal_strings';
 
     public const string CLASS_ENTRY_MAP = 'class_entry_map';
+
     public const string FUNC_MAP = 'func_map';
 
     public const string EXPR_VARIABLE = 'Expr_Variable';
@@ -86,7 +85,9 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, int>
      */
     protected array $classMap = [];
+
     protected int $funcIndex = 0;
+
     protected array $funcMap = [];
 
     protected array $zendTypeMap = [

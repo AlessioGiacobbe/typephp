@@ -6,8 +6,6 @@
  * @contact  service@swoole.com
  */
 
-declare(strict_types=1);
-
 namespace PhpAot\Php;
 
 class FileSorter

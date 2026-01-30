@@ -6,8 +6,6 @@
  * @contact  service@swoole.com
  */
 
-declare(strict_types=1);
-
 namespace PhpAot\Php;
 
 use MJS\TopSort\Implementations\StringSort;
@@ -47,8 +45,7 @@ class Translator extends Preprocessor
         $this->optimizeLevel = $this->climate->arguments->get('optimize');
         $this->buildMode     = $this->climate->arguments->get('mode');
         $this->debugLine     = intval($this->climate->arguments->get('debug-line'));
-        //        $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
-        $this->noLiteralStrings  = true;
+        $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
         $this->enableProfiler    = $this->climate->arguments->defined('profile');
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
         if ($this->climate->arguments->defined('help')) {

@@ -23,7 +23,7 @@ return (new PhpCsFixer\Config())
         'concat_space'                                     => ['spacing' => 'one'],
         'constant_case'                                    => ['case' => 'lower'],
         'combine_consecutive_unsets'                       => true,
-        'declare_strict_types'                             => true,
+        'declare_strict_types'                             => false,
         'fully_qualified_strict_types'                     => ['phpdoc_tags' => []],
         'general_phpdoc_annotation_remove'                 => ['annotations' => ['author']],
         'header_comment'                                   => ['comment_type' => 'PHPDoc', 'header' => $header, 'location' => 'after_open', 'separate' => 'bottom'],
