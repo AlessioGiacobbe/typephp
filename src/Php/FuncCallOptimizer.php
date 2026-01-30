@@ -44,6 +44,9 @@ trait FuncCallOptimizer
         if ($name === 'abs') {
             return 'php::math::abs(' . $this->parseIdentifier($expr->args[0]->value) . ')';
         }
+        if ($name === 'function_exists') {
+            return 'php::fn::function_exists(' . $this->parseIdentifier($expr->args[0]->value) . ')';
+        }
 
         return false;
     }

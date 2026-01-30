@@ -197,7 +197,7 @@ class Translator extends Preprocessor
         }
 
         $literalStringsCount = count($this->literalStrings);
-        $lines[]             = 'extern php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+        $lines[] = 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
 
         $classCount = count($this->classMap);
         $lines[]         = 'extern zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;

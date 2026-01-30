@@ -27,14 +27,14 @@ zend_class_entry *<?= Translator::PREFIX . Translator::CLASS_MAP . '[' . count($
 // func
 zend_function *<?= Translator::PREFIX . Translator::FUNC_MAP . '[' . count($this->funcMap) . ']' ?>;
 
-zend_class_entry *php_get_class(int class_id, const char *class_name) {
+zend_class_entry *php_get_class(int class_id, const php::String &class_name) {
     if (UNEXPECTED(<?= Translator::PREFIX . Translator::CLASS_MAP ?>[class_id] == nullptr)) {
         <?= Translator::PREFIX . Translator::CLASS_MAP ?>[class_id] = php::getClassEntrySafe(class_name);
     }
     return <?= Translator::PREFIX . Translator::CLASS_MAP ?>[class_id];
 }
 
-zend_function *php_get_func(int func_id, const char *func_name) {
+zend_function *php_get_func(int func_id, const php::String &func_name) {
     if (UNEXPECTED(<?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id] == nullptr)) {
         <?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id] = php::getFunction(func_name);
     }
@@ -42,7 +42,7 @@ zend_function *php_get_func(int func_id, const char *func_name) {
 }
 
 // literal strings
-php::Var <?=Translator::LITERAL_STRINGS?>[] = {
+php::Str <?=Translator::LITERAL_STRINGS?>[] = {
 <?php
 foreach ($this->literalStrings as $str => $index):
 ?>

@@ -607,11 +607,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (isset($this->classMap[$className])) {
             $id = $this->classMap[$className];
         } else {
-            $id                         = $this->classIndex++;
+            $id = $this->classIndex++;
             $this->classMap[$className] = $id;
         }
 
-        return 'php_get_class(' . $id . ', "' . $this->escapeString($className) . '")';
+        return 'php_get_class(' . $id . ', ' . $this->getLiteralString($className) . ')';
     }
 
     protected function getFuncPtr(string $funcName): string
@@ -622,7 +622,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $id = $this->funcIndex++;
             $this->funcMap[$funcName] = $id;
         }
-        return $id . ', "' . $this->escapeString($funcName) . '"';
+        return $id . ', ' . $this->getLiteralString($funcName);
     }
 
     protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
@@ -712,7 +712,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseScalar(Node $expr)
+    protected function getLiteralString(string $string): string
+    {
+        if ($this->noLiteralStrings) {
+            return '"' . $this->escapeString($string) . '"';
+        }
+        $index = $this->literalStrings[$string] ?? $this->addLiteralString($string);
+        return self::LITERAL_STRINGS . '[' . $index . ']';
+    }
+
+    protected function parseScalar(Node\Scalar $expr)
     {
         $type = $expr->getType();
         switch ($type) {
@@ -721,13 +730,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_Float':
                 return $this->parseScalarFloat($expr);
             case 'Scalar_String':
-                if ($this->noLiteralStrings) {
-                    return '"' . $this->escapeString($expr->value) . '"';
-                }
-                $index = $this->literalStrings[$expr->value] ?? $this->addLiteralString($expr->value);
-
-                return self::LITERAL_STRINGS . '[' . $index . ']';
-
+                return $this->getLiteralString($expr->value);
             default:
                 abort($expr);
         }
