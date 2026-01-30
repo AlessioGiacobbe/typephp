@@ -45,7 +45,13 @@ trait FuncCallOptimizer
             return 'php::math::abs(' . $this->parseIdentifier($expr->args[0]->value) . ')';
         }
         if ($name === 'function_exists') {
-            return 'php::fn::function_exists(' . $this->parseIdentifier($expr->args[0]->value) . ')';
+            $funcName = $expr->args[0]->value;
+            if ($this->isScalarString($funcName)) {
+                $funcName = $this->getLiteralString(strtolower(trim($funcName->value, '\\')));
+                return 'php::fn::function_exists(' . $funcName . ', true)';
+            } else {
+                return 'php::fn::function_exists(' . $this->parseIdentifier($funcName) . ')';
+            }
         }
 
         return false;

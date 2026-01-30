@@ -16,9 +16,10 @@ function simpleudcall($n) {
 function hallo2() {
 }
 
-function simpleicall($n) {
-  for ($i = 0; $i < $n; $i++)
-    $ret = function_exists('hallo');
+function simpleicall($n)
+{
+    for ($i = 0; $i < $n; $i++)
+        $ret = function_exists('hallo');
 }
 
 class Foo {
@@ -287,14 +288,14 @@ function main()
     empty_loop(N);
     $t = end_test($t, 'empty_loop');
     $overhead = $last_time;
-//    simpleucall(N);
-//    $t = end_test($t, 'func()', $overhead);
-//    simpleudcall(N);
-//    $t = end_test($t, 'undef_func()', $overhead);
+    simpleucall(N);
+    $t = end_test($t, 'func()', $overhead);
+    simpleudcall(N);
+    $t = end_test($t, 'undef_func()', $overhead);
     simpleicall(N);
     $t = end_test($t, 'int_func()', $overhead);
-//    Foo::read_static(N);
-//    $t = end_test($t, '$x = self::$x', $overhead);
+    Foo::read_static(N);
+    $t = end_test($t, '$x = self::$x', $overhead);
 //    Foo::write_static(N);
 //    $t = end_test($t, 'self::$x = 0', $overhead);
 //    Foo::isset_static(N);

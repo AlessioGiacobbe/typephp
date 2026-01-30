@@ -763,7 +763,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$this->isVarExpr($expr->var)) {
                     $this->fatalError($expr, 'When an assignment expression serves as an rvalue, it must be an assignment of a variable');
                 }
-
                 return $this->parseExpr($expr);
             default:
                 return $this->parseExpr($expr);
