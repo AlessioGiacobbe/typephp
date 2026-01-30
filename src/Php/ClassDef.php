@@ -24,13 +24,9 @@ class ClassDef extends ClassLikeDef
      * @var array<string, ConstantDef>
      */
     public array $constants = [];
-
     public array $implements = [];
-
     public string $extends = '';
-
     public bool $requireCtor = false;
-
     public int $flags;
 
     public function __construct(string $name, int $flags, string $namespace = '')

@@ -18,15 +18,10 @@ use Symfony\Component\Yaml\Yaml;
 class Translator extends Preprocessor
 {
     use MagicMethodDetector;
-
     protected string $targetName = 'app';
-
     protected bool $verbose = false;
-
     protected array $phpSrcFiles = [];
-
     protected array $argInfoHeaderFiles = [];
-
     protected array $unsupportedFunctions = [
         'compact',
         'extract',
@@ -204,8 +199,8 @@ class Translator extends Preprocessor
         $literalStringsCount = count($this->literalStrings);
         $lines[]             = 'extern php::Var ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
 
-        $classEntryCount = count($this->classMap);
-        $lines[]         = 'extern zend_class_entry *' . self::PREFIX . self::CLASS_ENTRY_MAP . '[' . $classEntryCount . '];' . PHP_EOL;
+        $classCount = count($this->classMap);
+        $lines[]         = 'extern zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;
 
         $funcCount = count($this->funcMap);
         $lines[]         = 'extern zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
@@ -300,8 +295,10 @@ class Translator extends Preprocessor
             $code .= 'extern ' . $constant->type . ' ' . $name . ';' . PHP_EOL;
         }
 
-        $code .= 'extern zend_class_entry *php_get_class_entry(int class_id, const char *class_name);' . PHP_EOL;
+        $code .= 'extern zend_class_entry *php_get_class(int class_id, const char *class_name);' . PHP_EOL;
         $code .= 'extern zend_function *php_get_func(int func_id, const char *func_name);' . PHP_EOL;
+        $code .= '#define CALL(id, name, args) php::call(php_get_func(id, name), args)' . PHP_EOL;
+        $code .= '#define CALL_SILENT(id, name, args) php::silentCall(php_get_func(id, name), args)' . PHP_EOL;
 
         $this->writeFile($file, $code);
     }
@@ -314,6 +311,7 @@ class Translator extends Preprocessor
     public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string
     {
         $basename = self::PREFIX . basename($stubFilenameWithoutExtension);
+        $basename = $this->escapeFileName($basename);
         $absPath  = $this->getIncludeDir() . "/{$basename}_arginfo.h";
         if ($relative) {
             return ltrim($this->removeCommonPrefix($this->getIncludeDir(), $absPath), '/');

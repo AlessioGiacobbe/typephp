@@ -11,7 +11,6 @@ namespace PhpAot\Php;
 class Extractor
 {
     private string $ctagsPath = 'ctags';
-
     private bool $isUniversalCtags = false;
 
     public function __construct()

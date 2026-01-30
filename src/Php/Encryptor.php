@@ -13,21 +13,14 @@ use PhpParser\PrettyPrinter\Standard;
 class Encryptor extends \PhpAot\Core\Translator
 {
     protected array $stmts;
-
     protected string $phpxDir = '~/workspace/phpx';
-
     protected string $lang = 'PHP';
-
     protected array $typeMap = [];
-
     protected array $headers = [
         'phpx.h',
     ];
-
     protected array $encodeMap;
-
     protected array $decodeMap;
-
     protected array $constants;
 
     public function __construct(array $stmts)

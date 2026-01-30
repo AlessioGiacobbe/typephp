@@ -19,7 +19,7 @@ return (new PhpCsFixer\Config())
         'binary_operator_spaces'                           => ['operators' => ['=' => null, '=>' => null, ]],
         'blank_line_after_namespace'                       => true,
         'blank_line_before_statement'                      => ['statements' => ['declare']],
-        'class_attributes_separation'                      => true,
+        'class_attributes_separation'                      => ['elements' => ['method' => 'one', 'property' => 'only_if_meta']],
         'concat_space'                                     => ['spacing' => 'one'],
         'constant_case'                                    => ['case' => 'lower'],
         'combine_consecutive_unsets'                       => true,

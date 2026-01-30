@@ -13,9 +13,7 @@ class FileScanner
     public const array PHP_EXT = ['php'];
 
     public const array CPP_EXT = ['cpp', 'cxx', 'cc'];
-
     private string $directory;
-
     private array $excludePatterns;
 
     public function __construct(string $directory)

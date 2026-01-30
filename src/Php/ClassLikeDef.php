@@ -11,9 +11,7 @@ namespace PhpAot\Php;
 class ClassLikeDef
 {
     public string $name;
-
     public string $namespace;
-
     public string $extends = '';
 
     public function __construct(string $name, string $namespace = '')

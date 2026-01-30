@@ -34,27 +34,16 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_INT = 'php::Int';
 
     public const string TYPE_FLOAT = 'php::Float';
-
     public const string TYPE_OBJECT = 'php::Object';
-
     public const string TYPE_ARRAY = 'php::Array';
-
     public const string TYPE_STR = 'php::Str';
-
     public const string TYPE_REF = 'php::Ref';
-
     public const string TYPE_VOID = 'void';
-
     public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
-
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
-
     public const string LITERAL_STRINGS = '_literal_strings';
-
-    public const string CLASS_ENTRY_MAP = 'class_entry_map';
-
+    public const string CLASS_MAP = 'class_map';
     public const string FUNC_MAP = 'func_map';
-
     public const string EXPR_VARIABLE = 'Expr_Variable';
 
     public const string EXPR_NEW = 'Expr_New';
@@ -64,32 +53,21 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string NAMESPACE_SEPARATOR = '__';
 
     public const string PREFIX = 'php_';
-
     protected string $phpxDir = '~/workspace/projects/phpx';
-
     protected string $lang = 'PHP';
-
     protected string $cppCompiler = 'g++';
-
     protected array $arguments = [];
-
     protected array $literalStrings = [];
-
     protected int $literalStringIndex = 0;
-
     protected int $tmpVarIndex = 0;
-
     protected int $classIndex = 0;
 
     /**
      * @var array<string, int>
      */
     protected array $classMap = [];
-
     protected int $funcIndex = 0;
-
     protected array $funcMap = [];
-
     protected array $zendTypeMap = [
         'int'    => self::TYPE_INT,
         'float'  => self::TYPE_FLOAT,
@@ -100,7 +78,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         'object' => self::TYPE_OBJECT,
         'mixed'  => self::TYPE_VAR,
     ];
-
     protected array $globalHeaders = [
         'phpx.h',
         'phpx_helper.h',
@@ -108,68 +85,44 @@ class CompilerBase extends \PhpAot\Core\Translator
         'php_func_decl.h',
         'php_global_var_decl.h',
     ];
-
     protected array $localHeaders = [];
-
     protected array $nativeFunctions = [];
-
     protected array $internalFunctions = [];
-
     protected array $nativeConstants = [];
-
     protected array $functionDeclInFile = [];
-
     protected array $functionCallInFile = [];
-
     protected array $redoAfterDeclare = [];
-
     protected int $optimizeLevel = 0;
-
     protected string $buildMode = 'bin';
-
     protected string $cxxflags = '';
-
     protected string $ldflags = '';
-
     protected int $floatPrecision = 17;
-
     protected bool $debugInfo = true;
-
     protected bool $noLiteralStrings = false;
-
     protected bool $useCppNamespace = false;
-
     protected string $file;
-
     protected string $dir;
 
     /**
      * 原始值，可能包含 `\\` 多层空间.
      */
     protected string $namespace = '';
-
     protected string $method = '';
-
     protected string $function = '';
-
     protected array $useNamespaces = [];
-
     protected array $useAliases = [];
-
     protected array $useFunctions = [];
 
     /**
      * 原始类名，不包含命名空间.
      */
     protected string $class = '';
-
     protected string $interface = '';
 
     /**
      * @var array<string, ClassDef>
      */
     protected array $classes = [];
-
     protected array $interfaces = [];
 
     /**
@@ -196,16 +149,11 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string>
      */
     protected array $classCeList = [];
-
     protected array $classCeInfo = [];
-
     protected FunctionDef $functionDef;
-
     protected ClassDef $classDef;
-
     protected InterfaceDef $interfaceDef;
-
-    protected array $globalVars = [
+    protected array $superGlobalVars = [
         '_GET'     => self::TYPE_ARRAY,
         '_POST'    => self::TYPE_ARRAY,
         '_COOKIE'  => self::TYPE_ARRAY,
@@ -213,45 +161,30 @@ class CompilerBase extends \PhpAot\Core\Translator
         '_FILES'   => self::TYPE_ARRAY,
         '_SESSION' => self::TYPE_ARRAY,
         '_REQUEST' => self::TYPE_ARRAY,
-        'GLOBALS'  => self::TYPE_ARRAY,
-        'argc'     => self::TYPE_INT,
-        'argv'     => self::TYPE_ARRAY,
     ];
+    protected array $globalVars = [];
 
     /**
      * @var array<string, string>
      */
     protected array $objects = [];
-
     protected array $localVars = [];
-
     protected array $objectWrappers = [];
-
     protected bool $strictTypes = false;
-
     protected string $rootPath;
-
     protected string $buildDir;
-
     protected int $debugLine = 0;
-
     protected CLImate $climate;
-
     protected array $beforeStmtLines = [];
-
     protected array $afterStmtLines = [];
-
     protected bool $inLoop = false;
 
     /**
      * 赋值表达式的左值，写操作，右值为读操作.
      */
     protected bool $inAssignExpr = false;
-
     protected bool $stubFile = false;
-
     protected bool $enableProfiler = false;
-
     protected Parser $parser;
 
     public function __construct(string $rootPath)
@@ -299,6 +232,14 @@ class CompilerBase extends \PhpAot\Core\Translator
     public function isTypedObject(string $object): bool
     {
         return isset($this->objects[$object]);
+    }
+
+    protected function isSuperGlobal(string $var): bool
+    {
+        if (isset($this->superGlobalVars[$var])) {
+            return true;
+        }
+        return false;
     }
 
     public function parseExpr(mixed $expr)
@@ -669,7 +610,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->classMap[$className] = $id;
         }
 
-        return 'php_get_class_entry(' . $id . ', "' . $this->escapeString($className) . '")';
+        return 'php_get_class(' . $id . ', "' . $this->escapeString($className) . '")';
     }
 
     protected function getFuncPtr(string $funcName): string
@@ -677,11 +618,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (isset($this->funcMap[$funcName])) {
             $id = $this->funcMap[$funcName];
         } else {
-            $id                         = $this->funcIndex++;
+            $id = $this->funcIndex++;
             $this->funcMap[$funcName] = $id;
         }
-
-        return 'php_get_func(' . $id . ', "' . $this->escapeString($funcName) . '")';
+        return $id . ', "' . $this->escapeString($funcName) . '"';
     }
 
     protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
@@ -800,7 +740,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (is_object($expr->name) and $this->isVarExpr($expr->name)) {
                     $this->fatalError($expr, 'The `$$` syntax is not supported');
                 }
-
+                if ($this->isSuperGlobal($expr->name) and !$this->hasGlobalVar($expr->name)) {
+                    $this->addGlobalVar($expr->name, $this->superGlobalVars[$expr->name]);
+                }
                 return $this->escapeVarName($expr->name);
             case 'Name':
             case 'VarLikeIdentifier':
@@ -1710,9 +1652,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseArrayDimFetch($node, bool $write): string
+    protected function parseArrayDimFetch(Node\Expr\ArrayDimFetch $node, bool $write): string
     {
         $var = $this->parseIdentifier($node->var);
+        if ($this->isVarExpr($node->var) and $var === 'GLOBALS') {
+            if ($node->dim === null) {
+                $this->fatalError($node, 'Cannot use [] for GLOBALS');
+            }
+            return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
+        }
         if ($node->dim === null) {
             if (!$write) {
                 $this->fatalError($node, 'Cannot use [] for reading');
@@ -1781,6 +1729,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
     {
+        $call = '';
         if ($this->isVarExpr($expr->name)) {
             $fn   = $this->parseIdentifier($expr->name);
             $name = '';
@@ -1798,6 +1747,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $code;
             }
             $fn = $this->getFuncPtr($name);
+            $call = $silent ? 'CALL_SILENT' : 'CALL';
         } else {
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
@@ -1805,8 +1755,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $fn                      = $tmpVar;
             $name                    = '';
         }
-        $call = $silent ? 'php::silentCall' : 'php::call';
-
+        if (!$call) {
+            $call = $silent ? 'php::silentCall' : 'php::call';
+        }
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
         }
@@ -2305,6 +2256,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function escapeClass(string $class): string
     {
         return strtolower($class);
+    }
+
+    protected function escapeFileName(string $file): string
+    {
+        return str_replace('-', '_', $file);
     }
 
     protected function unescapeVarName(string $name): string

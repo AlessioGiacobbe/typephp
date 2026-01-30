@@ -11,7 +11,6 @@ namespace PhpAot\Php;
 class FileSorter
 {
     private array $functionDeclInFile;
-
     private array $functionCallInFile;
 
     public function __construct(array $functionDeclInFile, array $functionCallInFile)

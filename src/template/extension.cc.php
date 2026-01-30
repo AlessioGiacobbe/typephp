@@ -22,16 +22,16 @@ zend_class_entry * <?= $ce ?>;
 <?php endforeach; ?>
 
 // class entry
-zend_class_entry *<?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP . '[' . count($this->classMap) . ']' ?>;
+zend_class_entry *<?= Translator::PREFIX . Translator::CLASS_MAP . '[' . count($this->classMap) . ']' ?>;
 
 // func
 zend_function *<?= Translator::PREFIX . Translator::FUNC_MAP . '[' . count($this->funcMap) . ']' ?>;
 
-zend_class_entry *php_get_class_entry(int class_id, const char *class_name) {
-    if (UNEXPECTED(<?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP ?>[class_id] == nullptr)) {
-        <?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP ?>[class_id] = php::getClassEntrySafe(class_name);
+zend_class_entry *php_get_class(int class_id, const char *class_name) {
+    if (UNEXPECTED(<?= Translator::PREFIX . Translator::CLASS_MAP ?>[class_id] == nullptr)) {
+        <?= Translator::PREFIX . Translator::CLASS_MAP ?>[class_id] = php::getClassEntrySafe(class_name);
     }
-    return <?= Translator::PREFIX . Translator::CLASS_ENTRY_MAP ?>[class_id];
+    return <?= Translator::PREFIX . Translator::CLASS_MAP ?>[class_id];
 }
 
 zend_function *php_get_func(int func_id, const char *func_name) {
@@ -104,7 +104,7 @@ foreach ($this->nativeConstants as $name => $constant):
 <?php
 foreach ($this->globalVars as $name => $type):
 ?>
-    <?= $name ?> = php::global("<?=$name?>");
+    php::initGlobal("<?=$name?>", <?= $name ?>);
 <?php endforeach; ?>
 
     // property offset
@@ -124,6 +124,7 @@ void php_app_clean() {
 foreach ($this->globalVars as $name => $type) :
 ?>
     <?= $name ?>.unset();
+    php::unsetGlobal("<?=$name?>");
 <?php endforeach; ?>
 <?php
 foreach ($this->nativeConstants as $name => $constant):

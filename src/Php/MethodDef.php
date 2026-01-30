@@ -11,9 +11,7 @@ namespace PhpAot\Php;
 class MethodDef
 {
     public int $flags;
-
     public string $name;
-
     public FunctionDef $functionDef;
 
     public function __construct(int $flags, string $name, FunctionDef $def)
