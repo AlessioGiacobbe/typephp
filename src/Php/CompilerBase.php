@@ -84,6 +84,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         'phpx_func.h',
         'php_func_decl.h',
         'php_global_var_decl.h',
+        'php_aot_helper.h',
     ];
     protected array $localHeaders = [];
     protected array $nativeFunctions = [];
@@ -1395,6 +1396,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list = [
             $this->phpxDir . '/include',
             $this->getBuildDir() . '/include',
+            $this->rootPath . '/src/cpp',
         ];
         $out = '$(php-config --includes) ';
         foreach ($list as $li) {

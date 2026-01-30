@@ -294,12 +294,6 @@ class Translator extends Preprocessor
         foreach ($this->nativeConstants as $name => $constant) {
             $code .= 'extern ' . $constant->type . ' ' . $name . ';' . PHP_EOL;
         }
-
-        $code .= 'extern zend_class_entry *php_get_class(int class_id, const char *class_name);' . PHP_EOL;
-        $code .= 'extern zend_function *php_get_func(int func_id, const char *func_name);' . PHP_EOL;
-        $code .= '#define CALL(id, name, args) php::call(php_get_func(id, name), args)' . PHP_EOL;
-        $code .= '#define CALL_SILENT(id, name, args) php::silentCall(php_get_func(id, name), args)' . PHP_EOL;
-
         $this->writeFile($file, $code);
     }
 

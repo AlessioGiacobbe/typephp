@@ -52,6 +52,7 @@ int main(int cpp_argc, char **cpp_argv) {
 #endif
 
     module->request_shutdown_func(module->type, module->module_number);
+    module_shutdown(module);
     php_embed_shutdown();
 
     return rc;
