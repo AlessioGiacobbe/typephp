@@ -249,13 +249,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_Empty':
                 return $this->parseEmpty($expr);
             case 'Expr_Assign':
-                $result = $this->parseAssign($expr);
-
-                return $result;
+                return $this->parseAssign($expr);
             case 'Expr_AssignRef':
-                $result = $this->parseAssignRef($expr);
-
-                return $result;
+                return $this->parseAssignRef($expr);
             case 'Expr_Print':
                 return $this->parsePrint($expr);
             case 'Expr_BinaryOp_Equal':
@@ -960,8 +956,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         $checkVarFn = function ($var) {
             if ($this->isArrayDimFetch($var)) {
                 $array = $this->parseIdentifier($var->var);
-                if (!$this->hasVar($array)) {
-                    $this->addLocalVar($array, self::TYPE_ARRAY);
+                if ($this->isVarExpr($var->var)) {
+                    if (!$this->hasVar($array)) {
+                        $this->addLocalVar($array, self::TYPE_ARRAY);
+                    }
                 }
             }
         };
@@ -1011,12 +1009,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         if ($right->getType() === 'Expr_Assign') {
             return $this->parseRightAssociativeAssign($left, $right);
-        }
-        if ($this->isArrayDimFetch($left)) {
-            return $this->parseAssignArrayDim($left, $right);
-        }
-        if ($this->isStaticPropertyFetch($left)) {
-            return $this->parseAssignStaticProperty($left, $right);
         }
         return $this->parseFinallyAssign($left, $right);
     }
@@ -1683,12 +1675,18 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseArrayDimFetch(Node\Expr\ArrayDimFetch $node, bool $write): string
     {
         $var = $this->parseIdentifier($node->var);
-        if ($this->isVarExpr($node->var) and $var === 'GLOBALS') {
-            if ($node->dim === null) {
-                $this->fatalError($node, 'Cannot use [] for GLOBALS');
+        if ($this->isVarExpr($node->var)) {
+            if (!$this->hasVar($var)) {
+                $this->fatalError($node->var, "The variable `{$node->var->name}` is undefined");
             }
-            return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
+            if ($var === 'GLOBALS') {
+                if ($node->dim === null) {
+                    $this->fatalError($node, 'Cannot use [] for GLOBALS');
+                }
+                return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
+            }
         }
+
         if ($node->dim === null) {
             if (!$write) {
                 $this->fatalError($node, 'Cannot use [] for reading');

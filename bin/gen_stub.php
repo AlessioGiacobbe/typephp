@@ -2329,6 +2329,18 @@ class EvaluatedValue
                     return null;
                 }
 
+                global $definedConstants;
+                if (isset($definedConstants[$constName])) {
+                    $constValue = $definedConstants[$constName];
+                    if (is_scalar($constValue)) {
+                        if (is_string($constValue)) {
+                            return '"' . $constValue . '"';
+                        } else {
+                            return $constValue;
+                        }
+                    }
+                }
+
                 throw new Exception("Constant " . $constName . " cannot be found");
             }
         );
@@ -6098,7 +6110,7 @@ function initPhpParser() {
 
 function main()
 {
-    global $argv, $argc, $translator;
+    global $argv, $argc, $translator, $definedConstants;
 
     error_reporting(E_ALL & ~E_DEPRECATED);
     ini_set("precision", "-1");
@@ -6107,6 +6119,8 @@ function main()
     $translator = new PhpAot\Php\Translator(ROOT_PATH);
     $translator->setIndent("\t");
     $translator->setIndentLevel(1);
+
+    $definedConstants = get_defined_constants();
 
     $opt_index = 0;
     $options = getopt(
