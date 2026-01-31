@@ -992,6 +992,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(";\n" . $this->getIndent(), $list);
     }
 
+    protected function parseAssignStaticProperty($left, $right)
+    {
+        $value    = $this->trimBrackets($this->parseExpr($right));
+        $native = $this->parseNativeStaticPropertyFetch($left);
+        if ($native) {
+            return $native . ' = ' . $value;
+        }
+        $class    = $this->identifierToStr($left->class);
+        $propName = $this->identifierToStr($left->name);
+        return "php::setStaticProperty({$class}, {$propName}, {$value})";
+    }
+
     protected function parseAssign(Node\Expr\Assign $v): string
     {
         $left  = $v->var;
@@ -1000,20 +1012,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($right->getType() === 'Expr_Assign') {
             return $this->parseRightAssociativeAssign($left, $right);
         }
-        if ($left->getType() === self::EXPR_ARRAY_DIM_FETCH) {
+        if ($this->isArrayDimFetch($left)) {
             return $this->parseAssignArrayDim($left, $right);
         }
-        if ($left->getType() === 'Expr_StaticPropertyFetch') {
-            $value    = $this->trimBrackets($this->parseExpr($right));
-            $native = $this->parseNativeStaticPropertyFetch($left);
-            if ($native) {
-                return $native . ' = ' . $value;
-            }
-            $class    = $this->identifierToStr($left->class);
-            $propName = $this->identifierToStr($left->name);
-            return "php::setStaticProperty({$class}, {$propName}, {$value})";
+        if ($this->isStaticPropertyFetch($left)) {
+            return $this->parseAssignStaticProperty($left, $right);
         }
-
         return $this->parseFinallyAssign($left, $right);
     }
 
@@ -2315,6 +2319,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getArgInfo(Node $arg, string $funcName, int $index): ArgInfo
     {
+        if (!isset($this->nativeFunctions[$funcName])) {
+            $this->fatalError($arg, "Function `{$funcName}` is undefined, you must adjust the order of function definition");
+        }
         $funcDef = $this->nativeFunctions[$funcName];
         if (!array_key_exists($index, $funcDef->argInfoList)) {
             $this->fatalError($arg, "Argument `{$index}` of function `{$funcName}` not found");
