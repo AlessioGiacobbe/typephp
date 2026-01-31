@@ -14,8 +14,11 @@ trait FuncCallOptimizer
 {
     protected function parseFuncCallWithOptimizer(string $name, Node\Expr\FuncCall $expr): string|false
     {
+        $getArg = function ($i) use ($expr) {
+            return $this->parseIdentifier($expr->args[$i]->value);
+        };
         if ($name === 'strlen' or $name === 'sizeof' or $name === 'count') {
-            return 'php::len(' . $this->parseIdentifier($expr->args[0]->value) . ')';
+            return 'php::len(' . $getArg(0) . ')';
         }
         if (count($expr->args) == 1) {
             switch ($name) {
@@ -42,7 +45,16 @@ trait FuncCallOptimizer
             }
         }
         if ($name === 'abs') {
-            return 'php::math::abs(' . $this->parseIdentifier($expr->args[0]->value) . ')';
+            return 'php::math::abs(' . $getArg(0) . ')';
+        }
+        if ($name === 'ord') {
+            return 'php::fn::ord(' . $getArg(0) . ')';
+        }
+        if ($name === 'chr') {
+            return 'php::fn::chr(' . $this->convertIntExpr($getArg(0)) . ')';
+        }
+        if ($name === 'array_key_exists') {
+            return $getArg(1) . '.offsetExists(' . $getArg(0) . ')';
         }
         if ($name === 'function_exists') {
             $funcName = $expr->args[0]->value;
