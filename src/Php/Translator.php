@@ -248,7 +248,10 @@ class Translator extends Preprocessor
         $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
         $this->addCompilationOption($cmd, false);
         $this->climate->comment($cmd);
-        shell_exec($cmd);
+        passthru($cmd, $ret);
+        if ($ret !== 0) {
+            $this->error('compile failed: ' . $cppFile);
+        }
     }
 
     public function build(array $objectFiles): void

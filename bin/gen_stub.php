@@ -9,6 +9,7 @@ use PhpParser\Node;
 use PhpParser\Node\AttributeGroup;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Name;
+use PhpParser\Node\Scalar\String_;
 use PhpParser\Node\Stmt;
 use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\Enum_;
@@ -2410,7 +2411,12 @@ class EvaluatedValue
         $expr = $prettyPrinter->prettyPrintExpr($this->expr);
         // PHP single-quote to C double-quote string
         if ($this->type->isString()) {
+            if (!($this->expr instanceof String_)) {
+                throw new Exception("Expression at line " . $this->expr->getStartLine() . " must be a scalar string");
+            }
             $expr = preg_replace("/(^'|'$)/", '"', $expr);
+        } else {
+            $expr = $prettyPrinter->prettyPrintExpr($this->expr);
         }
         return $expr[0] == '"' ? $expr : preg_replace('(\bnull\b)', 'NULL', str_replace('\\', '', $expr));
     }
@@ -2784,7 +2790,7 @@ class ConstInfo extends VariableLike
             return $code . "REGISTER_STRING_CONSTANT(\"$constName\", " . ($cExpr ?: '"' . addslashes($constValue) . '"') . ", $flags);\n";
         }
 
-        throw new Exception("Unimplemented constant type");
+        throw new Exception("Unimplemented constant type: " . $value->type->name);
     }
 
     /** @param array<string, ConstInfo> $allConstInfos */
@@ -2889,7 +2895,7 @@ class ConstInfo extends VariableLike
             return "\tZEND_ASSERT(strcmp($cExpr, $cValue) == 0);\n";
         }
 
-        throw new Exception("Unimplemented constant type");
+        throw new Exception("Unimplemented constant type: " . $value->type->name);
     }
 
     protected function getFlagsByPhpVersion(): VersionFlags
@@ -3332,7 +3338,7 @@ class AttributeInfo {
 
         foreach ($this->args as $i => $arg) {
             $initValue = '';
-            if ($arg->value instanceof Node\Scalar\String_) {
+            if ($arg->value instanceof String_) {
                 $strVal = $arg->value->value;
                 [$strInit, $strUse, $strRelease] = StringBuilder::getString(
                     'unused',
@@ -3353,7 +3359,7 @@ class AttributeInfo {
                     true,
                     "attribute_{$escapedAttributeName}_{$nameSuffix}_arg{$i}_str"
                 );
-                if ($arg->value instanceof Node\Scalar\String_) {
+                if ($arg->value instanceof String_) {
                     $declaredStrings[$arg->value->value] = "attribute_{$escapedAttributeName}_{$nameSuffix}_arg{$i}_str";
                 }
             } else {
@@ -4884,7 +4890,7 @@ function parseConstLike(
             )
         ) {
             $phpDocType = 'int';
-        } elseif ($const->value instanceof Node\Scalar\String_) {
+        } elseif ($const->value instanceof String_) {
             $phpDocType = 'string';
         } elseif ($const->value instanceof Expr\ConstFetch
             && $const->value->name instanceof Node\Name\FullyQualified
