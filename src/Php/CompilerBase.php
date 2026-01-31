@@ -236,14 +236,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return isset($this->objects[$object]);
     }
 
-    protected function isSuperGlobal(string $var): bool
-    {
-        if (isset($this->superGlobalVars[$var])) {
-            return true;
-        }
-        return false;
-    }
-
     public function parseExpr(mixed $expr)
     {
         $type = $expr->getType();
@@ -487,6 +479,14 @@ class CompilerBase extends \PhpAot\Core\Translator
     public function getBuildDir(): string
     {
         return $this->buildDir;
+    }
+
+    protected function isSuperGlobal(string $var): bool
+    {
+        if (isset($this->superGlobalVars[$var])) {
+            return true;
+        }
+        return false;
     }
 
     protected function removeCommonPrefix(string $short, string $long): string
@@ -1771,7 +1771,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $code;
             }
             $fn = $this->getFuncPtr($name);
-            $this->beforeStmtLines[] = "// Func Call: " . $name;
+            $this->beforeStmtLines[] = '// Func Call: ' . $name;
             $call = $silent ? 'CALL_SILENT' : 'CALL';
         } else {
             $tmpVar = $this->genTmpVarName();
@@ -2351,8 +2351,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $expr;
     }
 
-    protected function parseExit(Node $node): string
+    protected function parseExit(Node\Expr\Exit_ $node): string
     {
+        if (!$node->expr) {
+            return 'php::exit(0)';
+        }
         return 'php::exit(' . $this->parseIdentifier($node->expr) . ')';
     }
 
@@ -3189,7 +3192,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $methodDef->flags & Modifiers::PUBLIC;
     }
 
-    protected function findNativeMethod(NodeAbstract $expr, string $object, string $method): string|false
+    protected function findNativeMethod(Node\Expr\MethodCall $expr, string $object, string $method): string|false
     {
         $nativeFunc = '';
         if ($object === 'this_') {
@@ -3206,6 +3209,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $methodDef = $classDef->methods[$method];
             if (!$this->checkAccessible($classDef, $methodDef)) {
                 $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` is not accessible');
+            }
+            if (count($expr->args) < $methodDef->functionDef->argCountRequired) {
+                $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` requires ' . $methodDef->functionDef->argCountRequired . ' arguments, ' . count($expr->args) . ' given');
+            } elseif (count($expr->args) > count($methodDef->functionDef->argInfoList)) {
+                $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` accepts ' . count($methodDef->functionDef->argInfoList) . ' arguments, ' . count($expr->args) . ' given');
             }
             $nativeFunc = $this->getNativeName($method, $classDef->namespace, $classDef->name);
         }

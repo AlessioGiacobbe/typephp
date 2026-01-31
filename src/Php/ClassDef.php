@@ -50,7 +50,6 @@ class ClassDef extends ClassLikeDef
         return isset($this->constants[$name]);
     }
 
-
     public function getProperty($property): PropertyDef
     {
         return $this->properties[$property];
