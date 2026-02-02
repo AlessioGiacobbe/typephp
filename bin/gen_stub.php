@@ -2428,7 +2428,21 @@ class EvaluatedValue
             }
             $expr = preg_replace("/(^'|'$)/", '"', $expr);
         } else {
-            $expr = $prettyPrinter->prettyPrintExpr($this->expr);
+            if ($this->expr instanceof Expr\ConstFetch) {
+                $value = constant($this->expr->name->__toString());
+                $expr = strval($value);
+                if (is_int($value)) {
+                    if ($value === PHP_INT_MIN) {
+                        $expr = 'LONG_MIN';
+                    } elseif ($value === PHP_INT_MAX) {
+                        $expr = 'LONG_MAX';
+                    } else {
+                        $expr = $expr . 'L';
+                    }
+                }
+            } else {
+                $expr = $prettyPrinter->prettyPrintExpr($this->expr);
+            }
         }
         return $expr[0] == '"' ? $expr : preg_replace('(\bnull\b)', 'NULL', str_replace('\\', '', $expr));
     }
