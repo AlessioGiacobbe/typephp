@@ -953,27 +953,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseRightAssociativeAssign(NodeAbstract $left, Node\Expr\Assign $right): string
     {
-        $checkVarFn = function ($var) {
-            if ($this->isArrayDimFetch($var)) {
-                $array = $this->parseIdentifier($var->var);
-                if ($this->isVarExpr($var->var)) {
-                    if (!$this->hasVar($array)) {
-                        $this->addLocalVar($array, self::TYPE_ARRAY);
-                    }
-                }
-            }
-        };
-
-        $checkVarFn($left);
         $chain[] = $left;
         $next    = $right;
         while ($next->getType() === 'Expr_Assign') {
             $var = $next->var;
-            $checkVarFn($var);
             $chain[] = $var;
             $next    = $next->expr;
         }
-
         $tmpVar = $this->genTmpVarName();
         $this->addLocalVar($tmpVar, self::TYPE_VAR);
 
@@ -1041,9 +1027,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $code . '}';
         }
 
+        $oriInAssignExpr = $this->inAssignExpr;
         $this->inAssignExpr = true;
         $var                = $this->parseIdentifier($left);
-        $this->inAssignExpr = false;
+        $this->inAssignExpr = $oriInAssignExpr;
         if ($var === 'this_') {
             $this->fatalError($left, 'Cannot re-assign $this');
         }
@@ -1677,7 +1664,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $var = $this->parseIdentifier($node->var);
         if ($this->isVarExpr($node->var)) {
             if (!$this->hasVar($var)) {
-                $this->fatalError($node->var, "The variable `{$node->var->name}` is undefined");
+                if ($write) {
+                    $this->addLocalVar($var, self::TYPE_ARRAY);
+                } else {
+                    $this->fatalError($node->var, "The variable `{$node->var->name}` is undefined");
+                }
             }
             if ($var === 'GLOBALS') {
                 if ($node->dim === null) {
