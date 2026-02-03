@@ -2679,43 +2679,31 @@ class CompilerBase extends \PhpAot\Core\Translator
         return sprintf('%.' . $this->floatPrecision . 'g', $value);
     }
 
-    protected function parseIsset(mixed $expr)
+    protected function parseIsset(mixed $expr): string
     {
         $vars = $expr->vars;
-        foreach ($vars as $var) {
-            if ($var instanceof Variable) {
-                return $this->hasVar($var->name) ? 'true' : 'false';
-            }
-            if ($var instanceof Node\Expr\ArrayDimFetch) {
-                return $this->parseIdentifier($var->var) . '.offsetExists(' . $this->parseIdentifier($var->dim) . ')';
-            }
-            if ($var instanceof Node\Expr\StaticPropertyFetch) {
-                $nativeProp = $this->findNativeStaticProperty($var, $class, $namespace);
-                if ($nativeProp) {
-                    return 'true';
-                }
-                return 'php::hasStaticProperty(' . $this->identifierToStr($var->class) . ', ' . $this->identifierToStr($var->name) . ')';
-            }
-            if ($var instanceof Node\Expr\PropertyFetch) {
-                $prop = $var->name;
-                $object = $this->parseIdentifier($var->var);
-                if ($object === 'this_' and $this->isIdExpr($prop)) {
-                    return $this->escapeBool($this->classDef->hasProperty($this->parseIdentifier($prop)));
-                }
-                return $object . '.propertyExists(' . $this->identifierToStr($prop) . ')';
-            }
-            abort($var);
+        if (count($vars) > 1) {
+            $this->fatalError($expr, 'Cannot check multiple variables with isset');
         }
+        return $this->parseVarCheckExpr($vars[0], 'isset');
     }
 
     protected function parseEmpty(Node\Expr\Empty_ $expr): string
     {
-        if ($this->isVarExpr($expr->expr)) {
-            return 'php::empty(' . $this->parseExpr($expr->expr) . ')';
+        return $this->parseVarCheckExpr($expr->expr, 'empty');
+    }
+
+    protected function parseVarCheckExpr(NodeAbstract $expr, string $op): string
+    {
+        if ($this->isVarExpr($expr)) {
+            if ($op === 'isset') {
+                return $this->hasVar($this->parseIdentifier($expr)) ? 'true' : 'false';
+            } else {
+                return 'php::' . $op . '(' . $this->parseExpr($expr) . ')';
+            }
         }
 
         $list = [];
-        $expr = $expr->expr;
         while (true) {
             if ($this->isArrayDimFetch($expr)) {
                 if ($expr->dim === null) {
@@ -2726,16 +2714,22 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($this->isPropertyFetch($expr)) {
                 $name = $this->identifierToStr($expr->name);
                 $list[] = '{php::PropertyFetch, ' . self::TYPE_VAR . '(' . $name . ')}';
+            } elseif ($this->isStaticPropertyFetch($expr)) {
+                $var = $this->genTmpVarName();
+                $this->addLocalVar($var, self::TYPE_VAR);
+                $this->beforeStmtLines[] = $var . '=' . $this->parseStaticPropertyFetch($expr) . ';';
+                break;
             } elseif ($this->isVarExpr($expr)) {
                 $var = $this->parseIdentifier($expr);
                 break;
             } else {
-                $this->fatalError($expr, 'The empty() only supports variables, array fetch, and property read');
+                $this->fatalError($expr, 'The ' . $op . '() only supports variables, array fetch, and property read');
             }
             $expr = $expr->var;
         }
         $list = array_reverse($list);
-        return 'php::empty(' . $var . ', {' . implode(', ', $list) . '})';
+        $fn = $op === 'isset' ? 'exists' : 'empty';
+        return 'php::' . $fn . '(' . $var . ', {' . implode(', ', $list) . '})';
     }
 
     protected function parseCastArray(Node\Expr\Cast\Array_ $expr): string
