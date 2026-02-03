@@ -1833,7 +1833,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($this->isPropertyFetch($arg->value)) {
                 if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
                     $obj         = $this->parseIdentifier($arg->value->var);
-                    $list_args[] = $obj . '.getPropertyReference(' . $this->identifierToStr($arg->value->name) . ')';
+                    $list_args[] = $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
                     continue;
                 }
             }
