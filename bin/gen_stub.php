@@ -4377,20 +4377,20 @@ class FileInfo {
             }
 
             if ($stmt instanceof Stmt\Const_) {
-                foreach ($stmt->consts as $const) {
-                    $this->constInfos[] = parseConstLike(
-                        $prettyPrinter,
-                        new ConstName($const->namespacedName, $const->name->toString()),
-                        $const,
-                        0,
-                        null,
-                        $stmt->getComments(),
-                        $cond,
-                        $this->isUndocumentable,
-                        $this->getMinimumPhpVersionIdCompatibility(),
-                        AttributeInfo::createFromGroups($stmt->attrGroups)
-                    );
-                }
+//                foreach ($stmt->consts as $const) {
+//                    $this->constInfos[] = parseConstLike(
+//                        $prettyPrinter,
+//                        new ConstName($const->namespacedName, $const->name->toString()),
+//                        $const,
+//                        0,
+//                        null,
+//                        $stmt->getComments(),
+//                        $cond,
+//                        $this->isUndocumentable,
+//                        $this->getMinimumPhpVersionIdCompatibility(),
+//                        AttributeInfo::createFromGroups($stmt->attrGroups)
+//                    );
+//                }
                 continue;
             }
 

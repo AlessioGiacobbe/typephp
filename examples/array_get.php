@@ -9,7 +9,10 @@
 //var_dump($str[99]);
 //var_dump($str[-3]);
 
-
-$o = new ArrayObject();
-$o['hello'] = 'world';
-var_dump($o['hello'], $o);
+function main()
+{
+    $arr = array(
+        array(2, 2)
+    );
+    var_dump(empty($arr[0][0][2][3]->prop[3]));
+}

@@ -123,7 +123,7 @@ class Translator extends Preprocessor
             exit(1);
         }
         if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
-            $this->climate->red('The target name must not be a reserved keyword');
+            $this->climate->red('The target name [' . $name . '] must not be a reserved keyword');
             exit(1);
         }
         $this->targetName = $name;
@@ -270,6 +270,10 @@ class Translator extends Preprocessor
     public function genFunctionDeclaration(string $file): void
     {
         $code = '#include <phpx.h>' . PHP_EOL;
+
+        $literalStringsCount = count($this->literalStrings);
+        $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+
         /**
          * @var FunctionDef $func
          */

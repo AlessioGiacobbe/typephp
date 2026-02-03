@@ -673,7 +673,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         if ($v->stmts) {
             $this->indentLevel++;
-            $stmts = $this->parseStmts($v->stmts);
+            try {
+                $stmts = $this->parseStmts($v->stmts);
+            } catch (SkipException $e) {
+                $stmts = '';
+            }
             $this->indentLevel--;
         } else {
             $stmts = '';
@@ -1663,18 +1667,18 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $var = $this->parseIdentifier($node->var);
         if ($this->isVarExpr($node->var)) {
+            if ($var === 'GLOBALS') {
+                if ($node->dim === null) {
+                    $this->fatalError($node, 'Cannot use [] for GLOBALS');
+                }
+                return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
+            }
             if (!$this->hasVar($var)) {
                 if ($write) {
                     $this->addLocalVar($var, self::TYPE_ARRAY);
                 } else {
                     $this->fatalError($node->var, "The variable `{$node->var->name}` is undefined");
                 }
-            }
-            if ($var === 'GLOBALS') {
-                if ($node->dim === null) {
-                    $this->fatalError($node, 'Cannot use [] for GLOBALS');
-                }
-                return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
             }
         }
 
@@ -1729,12 +1733,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         foreach ($possibleFunctionNames as $name) {
             // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
+            // 跳过，稍后再处理
             if (isset($this->functionDeclInFile[$name])
                 and $this->functionDeclInFile[$name] === $this->file
                 and !$this->isNativeFunction($name)) {
                 $this->redoAfterDeclare[$name] = true;
-
-                return $name;
+                throw new SkipException();
             }
             if ($this->isNativeFunction($name)) {
                 return $name;
@@ -2695,12 +2699,37 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseEmpty(mixed $expr): string
+    protected function parseEmpty(Node\Expr\Empty_ $expr): string
     {
-        return 'php::empty(' . $this->parseExpr($expr->expr) . ')';
+        if ($this->isVarExpr($expr->expr)) {
+            return 'php::empty(' . $this->parseExpr($expr->expr) . ')';
+        }
+
+        $list = [];
+        $expr = $expr->expr;
+        while (true) {
+            if ($this->isArrayDimFetch($expr)) {
+                if ($expr->dim === null) {
+                    $this->fatalError($expr, 'Cannot use [] for reading');
+                }
+                $dim = $this->parseIdentifier($expr->dim);
+                $list[] = '{php::ArrayDimFetch, ' . self::TYPE_VAR . '(' . $dim . ')}';
+            } elseif ($this->isPropertyFetch($expr)) {
+                $name = $this->identifierToStr($expr->name);
+                $list[] = '{php::PropertyFetch, ' . self::TYPE_VAR . '(' . $name . ')}';
+            } elseif ($this->isVarExpr($expr)) {
+                $var = $this->parseIdentifier($expr);
+                break;
+            } else {
+                $this->fatalError($expr, 'The empty() only supports variables, array fetch, and property read');
+            }
+            $expr = $expr->var;
+        }
+        $list = array_reverse($list);
+        return 'php::empty(' . $var . ', {' . implode(', ', $list) . '})';
     }
 
-    protected function parseCastArray(mixed $expr): string
+    protected function parseCastArray(Node\Expr\Cast\Array_ $expr): string
     {
         return $this->convertArrayExpr($this->parseIdentifier($expr->expr));
     }
@@ -2819,14 +2848,16 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($require) {
                 $this->requireVar($node, $id);
             }
-
             return $id;
         }
         if ($id === 'self') {
             $id = $this->class;
         }
-
-        return '"' . $id . '"';
+        if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
+            return '"' . $id . '"';
+        } else {
+            return $id;
+        }
     }
 
     protected function requireVar($node, string $var): void
@@ -2864,13 +2895,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             $class = $this->parseIdentifier($expr->class);
             $prop = $this->parseIdentifier($expr->name);
             if ($class === 'self') {
-                $classDef = $this->classDef;
                 $class = $this->class;
-                $namespace = $this->namespace;
-            } else {
-                $classDef = $this->classes[$class];
-                $namespace = $classDef->namespace;
             }
+
+            if (!$this->hasNativeClass($class)) {
+                return null;
+            }
+
+            $classDef = $this->classes[$class];
+            $namespace = $classDef->namespace;
             if ($classDef->hasProperty($prop)) {
                 $propDef = $classDef->getProperty($prop);
                 if ($propDef->isStatic()) {
