@@ -783,6 +783,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->stubFile and !$param->type) {
                 throw new \RuntimeException('No type for ' . $this->parseIdentifier($param->var));
             }
+            if ($param->byRef) {
+                $this->fatalError($param, 'ByRef parameters are not supported');
+            }
             $name          = $this->parseIdentifier($param->var);
             $type          = $this->parseParameterType($param, $name);
             $list[]        = $type . ' ' . $name;
@@ -1790,6 +1793,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $list_args = [];
         foreach ($args as $i => $arg) {
+            if ($arg->name !== null) {
+                $this->fatalError($arg, 'Named arguments are not supported');
+            }
             $argInfo     = $this->getArgInfo($arg, $nativeFunc, $i);
             $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
         }
@@ -1807,6 +1813,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $list_args = [];
         foreach ($args as $i => $arg) {
+            if ($arg->name !== null) {
+                $this->fatalError($arg, 'Named arguments are not supported');
+            }
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
                 // 调用了不存在的变量，可能是引用
