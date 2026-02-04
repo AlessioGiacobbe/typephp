@@ -8,6 +8,7 @@
 
 namespace PhpAot\Php;
 
+use PhpAot\Php\Exception\SyntaxError;
 use PhpParser\Node;
 use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;

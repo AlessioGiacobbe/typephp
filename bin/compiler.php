@@ -2,10 +2,10 @@
 <?php
 require __DIR__ . '/bootstrap.php';
 
+use PhpAot\Php\Exception\SyntaxError;
+use PhpAot\Php\Exception\Unsupported;
 use PhpAot\Php\FileScanner;
-use PhpAot\Php\SyntaxError;
 use PhpAot\Php\Translator;
-use PhpAot\Php\Unsupported;
 
 if (empty($argv[1])) {
     die("php compiler.php [file]\n");

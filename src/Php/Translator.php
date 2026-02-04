@@ -9,6 +9,7 @@
 namespace PhpAot\Php;
 
 use MJS\TopSort\Implementations\StringSort;
+use PhpAot\Php\Exception\Redo;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Foreach_;
@@ -101,7 +102,7 @@ class Translator extends Preprocessor
                 $this->phpSrcFiles[] = $file;
 
                 return $cppFile;
-            } catch (RedoException $e) {
+            } catch (Redo $e) {
                 continue;
             }
         }

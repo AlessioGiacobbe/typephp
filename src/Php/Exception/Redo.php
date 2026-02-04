@@ -6,8 +6,8 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php;
+namespace PhpAot\Php\Exception;
 
-class SyntaxError extends \RuntimeException
+class Redo extends \RuntimeException
 {
 }

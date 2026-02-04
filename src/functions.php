@@ -1,7 +1,7 @@
 <?php
 
 use PhpAot\Core\Translator;
-use PhpAot\Php\Unsupported;
+use PhpAot\Php\Exception\Unsupported;
 
 function abort($v)
 {

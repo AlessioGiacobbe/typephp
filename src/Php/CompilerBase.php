@@ -9,6 +9,8 @@
 namespace PhpAot\Php;
 
 use League\CLImate\CLImate;
+use PhpAot\Php\Exception\Redo;
+use PhpAot\Php\Exception\Skip;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Expr\Variable;
@@ -20,7 +22,6 @@ use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
 use PhpParser\Parser;
 use PhpParser\ParserFactory;
-use PhpParser\PrettyPrinter;
 
 class CompilerBase extends \PhpAot\Core\Translator
 {
@@ -652,7 +653,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (isset($this->redoAfterDeclare[$name])) {
                 unset($this->redoAfterDeclare[$name]);
                 $this->climate->cyan('Received redo request, retrying...');
-                throw new RedoException();
+                throw new Redo();
             }
         }
 
@@ -675,7 +676,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->indentLevel++;
             try {
                 $stmts = $this->parseStmts($v->stmts);
-            } catch (SkipException $e) {
+            } catch (Skip $e) {
                 $stmts = '';
             }
             $this->indentLevel--;
@@ -1254,7 +1255,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->functionDef->returnType = $type;
         // 返回值变更，需要重新解析
         $this->climate->cyan('Return type changed, retrying...');
-        throw new RedoException();
+        throw new Redo();
     }
 
     protected function detectVarType($var): string
@@ -1741,7 +1742,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 and $this->functionDeclInFile[$name] === $this->file
                 and !$this->isNativeFunction($name)) {
                 $this->redoAfterDeclare[$name] = true;
-                throw new SkipException();
+                throw new Skip();
             }
             if ($this->isNativeFunction($name)) {
                 return $name;
