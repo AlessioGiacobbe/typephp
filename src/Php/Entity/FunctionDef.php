@@ -6,7 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php;
+namespace PhpAot\Php\Entity;
+
+use PhpAot\Php\ArgInfo;
 
 class FunctionDef
 {

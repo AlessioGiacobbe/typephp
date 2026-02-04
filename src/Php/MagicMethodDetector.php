@@ -8,6 +8,7 @@
 
 namespace PhpAot\Php;
 
+use PhpAot\Php\Entity\MethodDef;
 use PhpParser\NodeAbstract;
 
 trait MagicMethodDetector

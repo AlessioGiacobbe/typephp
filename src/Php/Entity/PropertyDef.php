@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php;
+namespace PhpAot\Php\Entity;
 
 use PhpParser\Modifiers;
 

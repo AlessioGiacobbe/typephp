@@ -9,6 +9,11 @@
 namespace PhpAot\Php;
 
 use League\CLImate\CLImate;
+use PhpAot\Php\Entity\ClassDef;
+use PhpAot\Php\Entity\FunctionDef;
+use PhpAot\Php\Entity\InterfaceDef;
+use PhpAot\Php\Entity\MethodDef;
+use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\Redo;
 use PhpAot\Php\Exception\Skip;
 use PhpParser\Modifiers;
