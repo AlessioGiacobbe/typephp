@@ -1079,6 +1079,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         } elseif ($this->isPropertyFetch($left)) {
             $var = $this->parsePropertyFetch($left, true);
+        } elseif ($this->isArrayDimFetch($left)) {
+            $tmp = $this->parseIdentifier($left->var);
+            var_dump($tmp);
+            if ($this->isVarExpr($left->var) and $this->getVarType($tmp) === self::TYPE_STR) {
+                if ($left->dim === null) {
+                    $this->fatalError($left, 'Cannot use [] for strings');
+                }
+                return $tmp . '.offsetSet(' . $this->parseExpr($left->dim) . ', ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right)) . ')';
+            }
         }
 
         return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
@@ -1687,6 +1696,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->addLocalVar($var, self::TYPE_ARRAY);
                 } else {
                     $this->fatalError($node->var, "The variable `{$node->var->name}` is undefined");
+                }
+            }
+            if ($this->getVarType($var) === self::TYPE_STR) {
+                if ($node->dim === null) {
+                    $this->fatalError($node, 'Cannot use [] for strings');
                 }
             }
         }
