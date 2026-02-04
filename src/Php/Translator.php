@@ -20,6 +20,7 @@ use PhpAot\Php\Exception\Redo;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Foreach_;
+use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
 use Symfony\Component\Yaml\Yaml;
 
@@ -50,6 +51,7 @@ class Translator extends Preprocessor
         $this->optimizeLevel = $this->climate->arguments->get('optimize');
         $this->buildMode     = $this->climate->arguments->get('mode');
         $this->debugLine     = intval($this->climate->arguments->get('debug-line'));
+        $this->debugInfo     = $this->climate->arguments->defined('debug-info');
         $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
         $this->enableProfiler    = $this->climate->arguments->defined('profile');
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
@@ -751,7 +753,7 @@ class Translator extends Preprocessor
         foreach ($classDef->properties as $property) {
             if ($property->type === self::TYPE_ARRAY and $property->default and $property->default !== self::TYPE_ARRAY . '{}') {
                 $propOffset = self::PREFIX . $this->getPropertyOffset($property->name, $classDef->name, $classDef->namespace);
-                $cppCode .= $this->getIndent() . 'this_.getPropertyIndirect(' . $propOffset . ') = ' . $property->default . ';' . PHP_EOL;
+                $cppCode .= $this->getIndent() . 'this_.attr(' . $propOffset . ') = ' . $property->default . ';' . PHP_EOL;
             }
         }
 

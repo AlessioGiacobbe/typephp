@@ -708,6 +708,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $code .= "\n";
         $this->indentLevel--;
+        $code .= $this->genDebugInfo();
         $code .= $stmts;
         $code .= "}\n";
 
@@ -841,7 +842,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->afterStmtLines  = [];
             $result                = '';
             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
-
+            $lines[] = $this->genDebugInfo($v);
             $lines[] = $this->getComment($v, $class);
             switch ($class) {
                 case 'Stmt_Expression':
@@ -3285,7 +3286,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return self::PREFIX . $nativeFunc . '(' . $object . ', ' . $this->parseNativeCallArgs($args, $nativeFunc) . ')';
     }
 
-    private function parseAssignPropertyArrayDim(Node $left, Node $right): string
+    protected function parseAssignPropertyArrayDim(Node $left, Node $right): string
     {
         $obj      = $this->parseIdentifier($left->var->var);
         $propName = $this->identifierToStr($left->var->name);
@@ -3299,12 +3300,27 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code . "{$obj}.updateArrayProperty({$propName}, {$dim}, {$value})";
     }
 
-    private function parseParentMethodCall(Node\Expr\StaticCall $expr): string
+    protected function parseParentMethodCall(Node\Expr\StaticCall $expr): string
     {
         $method = $this->identifierToStr($expr->name);
         if (empty($expr->args)) {
             return 'this_.callParentMethod(' . $method . ')';
         }
         return 'this_.callParentMethod(' . $method . ', {' . $this->parseCallArgs($expr->args) . '})';
+    }
+
+    protected function genDebugInfo(?NodeAbstract $stmt = null): string
+    {
+        $code = '';
+        if ($this->debugInfo) {
+            if ($stmt) {
+                $code .= 'php::debug_info.php_line = ' . $stmt->getLine() . ';' . PHP_EOL;
+                $code .= 'php::debug_info.cpp_line = __LINE__;' . PHP_EOL;
+            } else {
+                $code .= 'php::debug_info.enable = true;' . PHP_EOL;
+                $code .= 'php::debug_info.php_file = "' . $this->escapeString($this->file) . '";' . PHP_EOL;
+            }
+        }
+        return $code;
     }
 }

@@ -45,6 +45,7 @@ int main(int cpp_argc, char **cpp_argv) {
         php::eval("main();");
     } catch (zend_object *e) {
         rc = EG(exit_status);
+        CG(unclean_shutdown) = 1;
         zend_exception_error(e, E_ERROR);
     }
 #if PPROF_ON

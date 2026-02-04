@@ -51,4 +51,9 @@ return [
         'required' => false,
         'defaultValue' => 0,
     ],
+    'debug-info' => [
+        'longPrefix' => 'debug-info',
+        'description' => 'Enable debug info',
+        'required' => false,
+    ],
 ];
