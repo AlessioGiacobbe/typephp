@@ -1086,7 +1086,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($left->dim === null) {
                     $this->fatalError($left, 'Cannot use [] for strings');
                 }
-                return $tmp . '.offsetSet(' . $this->parseExpr($left->dim) . ', ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right)) . ')';
             }
         }
 
