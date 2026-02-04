@@ -1081,7 +1081,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $var = $this->parsePropertyFetch($left, true);
         } elseif ($this->isArrayDimFetch($left)) {
             $tmp = $this->parseIdentifier($left->var);
-            var_dump($tmp);
             if ($this->isVarExpr($left->var) and $this->getVarType($tmp) === self::TYPE_STR) {
                 if ($left->dim === null) {
                     $this->fatalError($left, 'Cannot use [] for strings');
@@ -1720,7 +1719,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseArrayDimStore($array, $dim, $var): string
     {
+        $oriInAssignExpr = $this->inAssignExpr;
+        $this->inAssignExpr = true;
         $id = $this->parseIdentifier($array);
+        $this->inAssignExpr = $oriInAssignExpr;
 
         return $id . '.offsetSet(' . $this->trimBrackets($dim) . ', ' . $this->trimBrackets($var) . ')';
     }

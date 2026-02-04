@@ -1,5 +1,5 @@
 --TEST--
-strlen
+string offset set
 --FILE--
 <?php
 $s1 = "hello world";
