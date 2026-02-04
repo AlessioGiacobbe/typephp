@@ -17,9 +17,6 @@ trait FuncCallOptimizer
         $getArg = function ($i) use ($expr) {
             return $this->parseIdentifier($expr->args[$i]->value);
         };
-        if ($name === 'strlen' or $name === 'sizeof' or $name === 'count') {
-            return 'php::len(' . $getArg(0) . ')';
-        }
         if (count($expr->args) == 1) {
             switch ($name) {
                 case 'intval':
