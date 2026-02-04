@@ -88,6 +88,13 @@ foreach ($this->classCeList as $ce):
     <?=$ce?> = <?= $info['func'] ?>(<?= $info['args'] ?>);
 <?php endforeach; ?>
 
+// register symbols
+<?php
+foreach ($this->registerSymbols as $registerSymbolFn):
+?>
+    <?= $registerSymbolFn ?>(module_number);
+<?php endforeach; ?>
+
     return SUCCESS;
 }
 

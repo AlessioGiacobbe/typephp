@@ -30,6 +30,8 @@ class Translator extends Preprocessor
     protected bool $verbose = false;
     protected array $phpSrcFiles = [];
     protected array $argInfoHeaderFiles = [];
+    protected array $registerSymbols = [];
+    protected bool $useRegisterSymbolsFn = false;
     protected array $unsupportedFunctions = [
         'compact',
         'extract',
@@ -633,9 +635,17 @@ class Translator extends Preprocessor
         $this->climate->info('generate stub file: ' . $file);
         $this->climate->comment($genStubCmd);
         $stubFilenameWithoutExtension = str_replace(['.stub.php', '.php'], '', $file);
-        $headerFile                   = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
+        $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
         if (!str_contains($output, 'Saved')) {
             $this->error("failed to generate arginfo header file: `{$headerFile}`, output: {$output}");
+        }
+        if ($this->useRegisterSymbolsFn) {
+            preg_match('/php_(.*)_arginfo.h/', $headerFile, $matches);
+            $registerSymbolFn = 'register_' . $matches[1] . '_symbols';
+            $registerSymbol = PHP_EOL . 'static void ' . $registerSymbolFn . '(int module_number)' . PHP_EOL;
+            if (str_contains(file_get_contents($this->getBuildDir() . '/include/' . $headerFile), $registerSymbol)) {
+                $this->registerSymbols[] = $registerSymbolFn;
+            }
         }
         $this->argInfoHeaderFiles[] = $headerFile;
     }

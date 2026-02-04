@@ -2430,8 +2430,8 @@ class EvaluatedValue
         } else {
             if ($this->expr instanceof Expr\ConstFetch) {
                 $value = constant($this->expr->name->__toString());
-                $expr = strval($value);
                 if (is_int($value)) {
+                    $expr = strval($value);
                     if ($value === PHP_INT_MIN) {
                         $expr = 'LONG_MIN';
                     } elseif ($value === PHP_INT_MAX) {
@@ -2440,8 +2440,6 @@ class EvaluatedValue
                         $expr = $expr . 'L';
                     }
                 }
-            } else {
-                $expr = $prettyPrinter->prettyPrintExpr($this->expr);
             }
         }
         return $expr[0] == '"' ? $expr : preg_replace('(\bnull\b)', 'NULL', str_replace('\\', '', $expr));
@@ -4377,20 +4375,25 @@ class FileInfo {
             }
 
             if ($stmt instanceof Stmt\Const_) {
-//                foreach ($stmt->consts as $const) {
-//                    $this->constInfos[] = parseConstLike(
-//                        $prettyPrinter,
-//                        new ConstName($const->namespacedName, $const->name->toString()),
-//                        $const,
-//                        0,
-//                        null,
-//                        $stmt->getComments(),
-//                        $cond,
-//                        $this->isUndocumentable,
-//                        $this->getMinimumPhpVersionIdCompatibility(),
-//                        AttributeInfo::createFromGroups($stmt->attrGroups)
-//                    );
-//                }
+                foreach ($stmt->consts as $const) {
+                    if ($const->value instanceof PhpParser\Node\Expr\Array_ or
+                        $const->value instanceof PhpParser\Node\Expr\New_
+                    ) {
+                        continue;
+                    }
+                    $this->constInfos[] = parseConstLike(
+                        $prettyPrinter,
+                        new ConstName($const->namespacedName, $const->name->toString()),
+                        $const,
+                        0,
+                        null,
+                        $stmt->getComments(),
+                        $cond,
+                        $this->isUndocumentable,
+                        $this->getMinimumPhpVersionIdCompatibility(),
+                        AttributeInfo::createFromGroups($stmt->attrGroups)
+                    );
+                }
                 continue;
             }
 
