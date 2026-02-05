@@ -20,7 +20,6 @@ use PhpAot\Php\Exception\Redo;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Foreach_;
-use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
 use Symfony\Component\Yaml\Yaml;
 

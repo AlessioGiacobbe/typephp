@@ -451,7 +451,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return false;
     }
 
-    public function stop(string $string): void
+    public function stop(string $string): never
     {
         $this->climate->red($string . "\n");
         exit(1);
@@ -627,9 +627,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if ($macro) {
             return $id . ', ' . $this->getLiteralString($funcName);
-        } else {
-            return 'php_get_func(' . $id . ', ' . $this->getLiteralString($funcName) . ')';
         }
+        return 'php_get_func(' . $id . ', ' . $this->getLiteralString($funcName) . ')';
     }
 
     protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
@@ -646,7 +645,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $functionDef;
     }
 
-    protected function parseFunction(FunctionLike $v): string
+    /**
+     * @throws \Exception
+     */
+    protected function parseFunction(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): string
     {
         $this->resetFunction();
         $this->function = $this->parseIdentifier($v->name);
@@ -748,7 +750,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseIdentifier(Node $expr): string
+    protected function parseIdentifier(NodeAbstract $expr): string
     {
         $type = $expr->getType();
         switch ($type) {
@@ -910,7 +912,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Class':
                     $this->fatalError($v, 'Cannot declare class in function');
-                    break;
+                    // no break
                 default:
                     abort($v);
             }
@@ -1404,15 +1406,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return self::TYPE_STR;
             case 'void':
                 $this->fatalError($param, 'Cannot use `void` as a parameter type.');
-                break;
+                // no break
             case 'mixed':
                 return self::TYPE_VAR;
             case 'resource':
                 $this->fatalError($param, 'Cannot use `resource` as a parameter type.');
-                break;
+                // no break
             default:
                 $this->objects[$var] = $name;
-
                 return self::TYPE_OBJECT;
         }
     }
@@ -1661,14 +1662,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseAssignOp($expr, '**=');
     }
 
-    protected function error(string $msg): void
+    protected function error(string $msg): never
     {
         $this->climate->red("Fatal error: {$msg}");
         debug_print_backtrace();
         exit(255);
     }
 
-    protected function fatalError(Node $node, string $msg): void
+    protected function fatalError(Node $node, string $msg): never
     {
         $this->error("{$msg} in {$this->file}:{$node->getStartLine()}");
     }
@@ -2235,9 +2236,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $ns = explode('::', $name)[0];
                 $ce = $this->getClassEntryPtr($ns[0]);
                 return 'php::constant(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
-            } else {
-                return 'php::constant(nullptr, ' . $this->getLiteralString($name) . ')';
             }
+            return 'php::constant(nullptr, ' . $this->getLiteralString($name) . ')';
         }
         return 'php::constant("' . $this->escapeString($name) . '")';
     }
@@ -2685,6 +2685,17 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'break;';
     }
 
+    protected function parseContinue(Node\Stmt\Continue_ $v): string
+    {
+        if (!$this->inLoop) {
+            $this->fatalError($v, 'Cannot continue outside loop');
+        }
+        if ($v->num and $v->num->value > 1) {
+            $this->fatalError($v, 'Cannot continue more than 1 level');
+        }
+        return 'continue;';
+    }
+
     protected function parseScalarFloat(Node $expr): string
     {
         $value = $expr->value;
@@ -2720,9 +2731,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isVarExpr($expr)) {
             if ($op === 'isset') {
                 return $this->hasVar($this->parseIdentifier($expr)) ? 'true' : 'false';
-            } else {
-                return 'php::' . $op . '(' . $this->parseExpr($expr) . ')';
             }
+            return 'php::' . $op . '(' . $this->parseExpr($expr) . ')';
         }
 
         $list = [];
@@ -2880,9 +2890,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
             return '"' . $id . '"';
-        } else {
-            return $id;
         }
+        return $id;
     }
 
     protected function requireVar($node, string $var): void
@@ -2982,11 +2991,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $ce = $this->getClassEntryPtr($class);
             return 'php::constant(' . $ce . ', ' . $this->getLiteralString($const) . ')';
-        } else {
-            $name = $class . '::' . $const;
-            $name = $this->getLiteralString($name);
-            return 'php::constant(' . $name . ')';
         }
+        $name = $class . '::' . $const;
+        $name = $this->getLiteralString($name);
+        return 'php::constant(' . $name . ')';
     }
 
     protected function parseThrow(mixed $expr): string
@@ -3066,17 +3074,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::call("shell_exec", {' . $this->parseInterpolatedString($expr) . '})';
     }
 
-    protected function parseGoto(Node $v): string
+    protected function parseGoto(Node\Stmt\Goto_ $v): string
     {
-        $this->fatalError($v, 'Goto statement is not supported');
-
         return 'goto ' . $v->name->name . ';';
     }
 
-    protected function parseLabel(Node $v): string
+    protected function parseLabel(Node\Stmt\Label $v): string
     {
-        $this->fatalError($v, 'Label statement is not supported');
-
         return $v->name->name . ':';
     }
 
@@ -3217,11 +3221,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->parseFuncCall($expr->expr, true);
         }
         abort($expr);
-    }
-
-    protected function parseContinue(mixed $v): string
-    {
-        return 'continue;';
     }
 
     protected function checkVar(NodeAbstract $node, string $name): void

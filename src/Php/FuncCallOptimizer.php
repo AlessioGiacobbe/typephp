@@ -58,9 +58,8 @@ trait FuncCallOptimizer
             if ($this->isScalarString($funcName)) {
                 $funcName = $this->getLiteralString(strtolower(trim($funcName->value, '\\')));
                 return 'php::fn::function_exists(' . $funcName . ', true)';
-            } else {
-                return 'php::fn::function_exists(' . $this->parseIdentifier($funcName) . ')';
             }
+            return 'php::fn::function_exists(' . $this->parseIdentifier($funcName) . ')';
         }
 
         return false;
