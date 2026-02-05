@@ -1,5 +1,5 @@
 --TEST--
-mixed/1.phpt
+mixed: 1
 --FILE--
 <?php
 

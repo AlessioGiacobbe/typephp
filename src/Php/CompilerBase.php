@@ -1036,8 +1036,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                     continue;
                 }
                 if ($item instanceof Node\Expr\ArrayItem) {
+                    $oriInAssignExpr = $this->inAssignExpr;
+                    $this->inAssignExpr = true;
                     $var = $this->parseIdentifier($item->value);
-                    if (!$this->hasVar($var)) {
+                    $this->inAssignExpr = $oriInAssignExpr;
+                    if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
                         $this->addLocalVar($var, self::TYPE_VAR);
                     }
                     $code .= "{$var} = {$tmpVar}.item({$k}); ";
@@ -1199,7 +1202,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseReturn(mixed $v): string
     {
         if ($v->expr === null) {
-            return 'return;';
+            if ($this->functionDef->returnType === self::TYPE_VOID) {
+                return 'return;';
+            } else {
+                return 'return php::null;';
+            }
         }
         // 实际函数的返回值
         $type = $this->detectExprType($v->expr);
