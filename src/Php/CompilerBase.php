@@ -1266,6 +1266,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         return array_key_exists($name, $this->classes);
     }
 
+    protected function getNativeStaticMethod(string $class, string $method): string|false
+    {
+        if (!$this->hasNativeClass($class)) {
+            return false;
+        }
+        $class = $this->getClassDef($class);
+        if (!$class->hasMethod($method)) {
+            return false;
+        }
+        return $this->getNativeName($method, $class->name, $class->namespace);
+    }
+
     protected function getClassDef(string $name): ClassDef
     {
         $name = trim($name, '\\');
@@ -1704,6 +1716,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } else {
                     $this->fatalError($node->var, "The variable `{$node->var->name}` is undefined");
                 }
+            } else {
+                $type = $this->getVarType($var);
+                if ($type === self::TYPE_BOOL || $type === self::TYPE_INT || $type === self::TYPE_FLOAT) {
+                    $this->fatalError($node, 'Cannot use [] for numbers');
+                }
             }
             if ($this->getVarType($var) === self::TYPE_STR) {
                 if ($node->dim === null) {
@@ -1864,8 +1881,17 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } elseif ($this->isPropertyFetch($arg->value)) {
                 if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
-                    $obj         = $this->parseIdentifier($arg->value->var);
+                    $obj = $this->parseIdentifier($arg->value->var);
                     $list_args[] = $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
+                    continue;
+                }
+            } elseif ($this->isArrayDimFetch($arg->value)) {
+                if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
+                    $obj = $this->parseIdentifier($arg->value->var);
+                    if ($arg->value->dim === null) {
+                        $this->fatalError($arg, 'Array dimension must be a constant expression');
+                    }
+                    $list_args[] = $obj . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')';
                     continue;
                 }
             }
@@ -2916,12 +2942,22 @@ class CompilerBase extends \PhpAot\Core\Translator
             $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
         } else {
             $class = $this->parseIdentifier($expr->class);
+            $method = $this->parseIdentifier($expr->name);
             if ($class === 'self') {
                 $class = $this->class;
             } elseif ($class === 'parent') {
                 return $this->parseParentMethodCall($expr);
             }
-            $method = $this->parseIdentifier($expr->name);
+
+            if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
+                $nativeFunc = $this->getNativeStaticMethod($class, $method);
+                $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
+                if ($args) {
+                    return self::PREFIX . $nativeFunc . '(php::null_object, ' . $args . ')';
+                } else {
+                    return self::PREFIX . $nativeFunc . '(php::null_object)';
+                }
+            }
             $ce = $this->getClassEntryPtr($class);
             $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method, false);
         }
