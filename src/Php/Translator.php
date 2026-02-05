@@ -137,6 +137,9 @@ class Translator extends Preprocessor
             $this->climate->red('The target name [' . $name . '] must not be a reserved keyword');
             exit(1);
         }
+        if (is_numeric($name)) {
+            $name = 'app_' . $name;
+        }
         $this->targetName = $name;
     }
 
@@ -290,12 +293,12 @@ class Translator extends Preprocessor
          */
         foreach ($this->nativeFunctions as $name => $func) {
             $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
+            $list = [];
+            if ($func->method) {
+                $list[] = 'php::Object &this_';
+            }
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
-                $list = [];
-                if ($func->method) {
-                    $list[] = 'php::Object &this_';
-                }
                 foreach ($argInfoList as $argInfo) {
                     $arg = $argInfo->type . ' ' . $argInfo->name;
                     if ($argInfo->default) {
@@ -303,8 +306,8 @@ class Translator extends Preprocessor
                     }
                     $list[] = $arg;
                 }
-                $code .= implode(', ', $list);
             }
+            $code .= implode(', ', $list);
             $code .= ');' . PHP_EOL;
         }
 
