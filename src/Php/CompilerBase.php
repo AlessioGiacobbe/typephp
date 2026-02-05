@@ -709,7 +709,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (isset($this->arguments[$name])) {
                 continue;
             }
-            $code .= $this->getIndent() . $type . ' ' . $name . ';' . PHP_EOL;
+            $code .= $this->getIndent() . $type . ' ' . $name;
+            if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
+                $code .= ' = 0';
+            }
+            $code .= ';' . PHP_EOL;
         }
         $code .= "\n";
         $this->indentLevel--;
@@ -1715,9 +1719,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $var . '.newItem()';
             }
         } else {
-            $dim = $this->trimBrackets($this->parseIdentifier($node->dim));
-
-            return $var . '.item(' . $dim . ', ' . $this->escapeBool($write) . ')';
+            $oriInAssignExpr = $this->inAssignExpr;
+            $this->inAssignExpr = false;
+            $dim = $this->parseIdentifier($node->dim);
+            $this->inAssignExpr = $oriInAssignExpr;
+            return $var . '.item(' . $this->trimBrackets($dim) . ', ' . $this->escapeBool($write) . ')';
         }
     }
 
