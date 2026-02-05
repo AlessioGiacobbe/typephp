@@ -58,4 +58,9 @@ trait AstNodeType
     {
         return $expr instanceof Expr\FuncCall;
     }
+
+    protected function isScalar(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Scalar;
+    }
 }

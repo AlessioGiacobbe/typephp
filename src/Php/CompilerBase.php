@@ -414,6 +414,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseErrorSuppress($expr);
             case 'Expr_Exit':
                 return $this->parseExit($expr);
+            case 'Expr_Yield':
+            case 'Expr_YieldFrom':
+                $this->fatalError($expr, 'The `' . $type . '` is not supported');
             default:
                 abort($expr);
         }
@@ -1207,7 +1210,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $exprCode = $this->convertExprType($expr, $this->getReturnType(), $type);
         // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
         // 将 Indirect 赋值给临时变量后，使用 Ctor::Copy 解除了 Indirect，保证内存安全
-        if (!$this->isVarExpr($v->expr)) {
+        if (!$this->isVarExpr($v->expr) and !$this->isScalar($v->expr)) {
             $tmpVar = $this->genTmpVarName();
             // 必须提前声明变量，否则在末尾声明并 return 可能会被 gcc 优化掉
             $this->addLocalVar($tmpVar, $type);
