@@ -1544,16 +1544,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $list_cond = [];
         foreach ($cond as $expr) {
-            if ($expr->getType() === 'Expr_Assign') {
-                $left = $expr->var;
-                $name = $this->parseIdentifier($left);
-                $type = $this->detectExprType($expr->expr);
-                // for 循环的变量声明，必须在循环体之外，不能创建 scope tmp var
-                if (!$this->hasVar($name)) {
-                    $this->addLocalVar($name, $type);
-                }
-                $code .= $name . ' = (' . $this->parseIdentifier($expr->expr) . ');';
-            }
             $list_cond[] = $this->parseExpr($expr);
         }
 
