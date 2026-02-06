@@ -282,6 +282,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpGreaterOrEqual($expr);
             case 'Expr_BinaryOp_Spaceship':
                 return $this->parseBinaryOpSpaceship($expr);
+            case 'Expr_BinaryOp_Coalesce':
+                return $this->parseBinaryOpCoalesce($expr);
             case 'Expr_PreInc':
                 return $this->parsePreInc($expr);
             case 'Expr_PostInc':
@@ -2189,6 +2191,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         $right = $this->parseIdentifier($expr->right);
 
         return 'php::compare(' . $left . ', ' . $right . ')';
+    }
+
+    protected function parseBinaryOpCoalesce(Node\Expr\BinaryOp\Coalesce $expr): string
+    {
+        $left = $this->parseIdentifier($expr->left);
+        $right = $this->parseIdentifier($expr->right);
+
+        return $this->parseVarCheckExpr($expr->left, 'isset') . ' ? ' . $left . ' : ' . $right;
     }
 
     protected function parseBinaryOpNotIdentical(Node\Expr\BinaryOp $expr): string
