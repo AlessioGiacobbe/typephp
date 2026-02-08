@@ -1,6 +1,7 @@
 <?php
-function main()
+function main($argc, array $argv)
 {
+    var_dump($argc, $argv);
     fn1();
     $rs = fn_test(199, 189);
     $array = [1, 3, 5];

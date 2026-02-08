@@ -149,6 +149,15 @@ foreach ($this->nativeConstants as $name => $constant):
 static PHP_RINIT_FUNCTION(<?=$this->targetName?>) {
     php::request_init();
     php_app_init();
+
+<?php if ($this->buildMode === 'bin'): ?>
+<?php if (count($this->functions['main']->argInfoList) == 2): ?>
+    php::eval("global $argc, $argv; main($argc, $argv);");
+<?php else:?>
+    php::eval("main();");
+<?php endif; ?>
+<?php endif; ?>
+
     return SUCCESS;
 }
 
@@ -171,10 +180,10 @@ zend_module_entry <?=$this->targetName?>_module_entry = {
     STANDARD_MODULE_PROPERTIES,
 };
 
-#ifdef BUILD_PHP_EXTENSION
+<?php if ($this->buildMode === 'ext'): ?>
 ZEND_GET_MODULE(<?=$this->targetName?>);
-#else
+<?php else: ?>
 zend_module_entry *<?= self::PREFIX . 'embed_' ?>get_module() {
     return &<?= $this->targetName ?>_module_entry;
 }
-#endif
+<?php endif; ?>

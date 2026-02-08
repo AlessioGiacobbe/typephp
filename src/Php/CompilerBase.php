@@ -642,10 +642,30 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$v->returnType && $this->stubFile) {
             throw new \Exception('No return type for ' . $v->name);
         }
+        $fnName = $this->parseIdentifier($v->name);
         $returnType        = $v->returnType ? $this->getTypeFromZendType($this->parseIdentifier($v->returnType)) : self::TYPE_VOID;
-        $functionDef       = new FunctionDef($this->parseIdentifier($v->name), $returnType);
+        $functionDef = new FunctionDef($fnName, $returnType);
         $this->functionDef = $functionDef;
+
         $this->parseParams($v->params, $functionDef);
+
+        // main 函数，返回值必须为 void 类型，参数必须为空或者 argc, argv 两个参数
+        if (!$this->class and !$this->namespace and $fnName === 'main') {
+            if (count($v->params) > 0) {
+                if (count($v->params) != 2) {
+                    $this->fatalError($v, 'The parameters of the main function must be `(int $argc, array $argv)`.');
+                }
+                if ($returnType !== self::TYPE_VOID) {
+                    $this->fatalError($v, 'main function must return void');
+                }
+                if ($functionDef->argInfoList[0]->type !== self::TYPE_VAR and $functionDef->argInfoList[0]->type !== self::TYPE_INT) {
+                    $this->fatalError($v, 'The first parameter of the main function must be of type `int`.');
+                }
+                if ($functionDef->argInfoList[1]->type !== self::TYPE_VAR and $functionDef->argInfoList[1]->type !== self::TYPE_ARRAY) {
+                    $this->fatalError($v, 'The second parameter of the main function must be of type `array`.');
+                }
+            }
+        }
 
         return $functionDef;
     }
@@ -1504,7 +1524,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($link) {
                 $cmd .= ' -shared';
             } else {
-                $cmd .= ' -fPIC -D BUILD_PHP_EXTENSION=1';
+                $cmd .= ' -fPIC';
             }
         }
 

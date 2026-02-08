@@ -42,7 +42,6 @@ int main(int cpp_argc, char **cpp_argv) {
 #endif
     try {
         module->request_startup_func(module->type, module->module_number);
-        php::eval("main();");
     } catch (zend_object *e) {
         rc = EG(exit_status);
         CG(unclean_shutdown) = 1;
