@@ -105,9 +105,10 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Const':
                     $this->parseConstDef($v);
                     break;
+                case 'Stmt_Expression':
+                    $this->foundStrayCode();
                 default:
                     $this->fatalError($v, 'Unsupported statement: ' . $type);
-                    break;
             }
         }
 
@@ -142,6 +143,8 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Use':
                 case 'Stmt_Const':
                     break;
+                case 'Stmt_Expression':
+                    $this->foundStrayCode();
                 default:
                     abort($v2);
             }
@@ -174,6 +177,8 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_ClassMethod':
                     $code .= $this->prepareFunction($v) . PHP_EOL;
                     break;
+                case 'Stmt_Expression':
+                    $this->foundStrayCode();
                 default:
                     abort($v);
             }

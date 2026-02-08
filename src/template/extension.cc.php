@@ -72,6 +72,9 @@ endforeach;
 static const zend_function_entry ext_functions[] = {
 <?php
 foreach ($this->functions as $functionDef):
+    if ($this->buildMode === 'ext' and $functionDef->name === 'main') {
+        continue;
+    }
 ?>
     ZEND_FE(<?=$functionDef->name?>, arginfo_<?=$functionDef->name?>)
 <?php endforeach;?>

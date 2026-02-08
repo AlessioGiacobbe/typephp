@@ -11,3 +11,5 @@ function main()
     $o = new CpuCoreCounter();
     var_dump($o->getCount());
 }
+
+test();

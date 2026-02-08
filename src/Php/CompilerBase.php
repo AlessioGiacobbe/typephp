@@ -1799,6 +1799,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return false;
     }
 
+    protected function foundStrayCode(): never
+    {
+        $this->error("All execution code must be within a function; there is no allowance for stray code.");
+    }
+
     protected function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
     {
         $call = '';
