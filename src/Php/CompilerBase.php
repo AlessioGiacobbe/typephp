@@ -106,7 +106,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected int $floatPrecision = 17;
     protected bool $debugInfo = true;
     protected bool $noLiteralStrings = false;
-    protected bool $useCppNamespace = false;
     protected string $file;
     protected string $dir;
 
@@ -644,7 +643,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $fnName = $this->parseIdentifier($v->name);
         $returnType        = $v->returnType ? $this->getTypeFromZendType($this->parseIdentifier($v->returnType)) : self::TYPE_VOID;
-        $functionDef = new FunctionDef($fnName, $returnType);
+        $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
         $this->functionDef = $functionDef;
 
         $this->parseParams($v->params, $functionDef);
@@ -1796,6 +1795,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function findNativeFunction(string $fname): string|false
     {
         $possibleFunctionNames = [$this->escapeName($fname)];
+        if (isset($this->useAliases[$fname])) {
+            $possibleFunctionNames[] = $this->escapeName($this->escapeNamespace($this->useAliases[$fname]));
+        }
         if ($this->namespace) {
             $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $fname;
         }
@@ -3102,8 +3104,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->addLocalVar($exVar, self::TYPE_OBJECT);
 
         $code .= 'catch(zend_object *_ex) {' . PHP_EOL;
+        $code .= $this->getIndent() . $exVar . ' = php::catchException();' . PHP_EOL;
         if ($catches) {
-            $code .= $this->getIndent() . $exVar . ' = php::catchException();' . PHP_EOL;
             $this->indentLevel++;
             foreach ($catches as $catch) {
                 $code .= $this->parseCatch($catch, $exVar);
@@ -3111,6 +3113,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->indentLevel--;
         }
         $code .= '}' . PHP_EOL;
+
         if ($finally) {
             $code .= $this->parseStmts($finally->stmts);
             $code .= PHP_EOL;
@@ -3267,28 +3270,21 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseUse(mixed $v2): string
     {
         $code = '';
-        if ($this->useCppNamespace) {
-            foreach ($v2->uses as $use) {
-                $code .= 'using ' . str_replace('\\', '::', $use->name->toString()) . ';' . PHP_EOL;
-            }
-        } else {
-            foreach ($v2->uses as $use) {
-                $id = $this->parseIdentifier($use->name);
-                if ($use->type === Node\Stmt\Use_::TYPE_FUNCTION) {
-                    $rpos = strrpos($id, '\\');
-                    $fn   = substr($id, $rpos + 1);
-                    $ns   = substr($id, 0, $rpos);
-                    // fn => namespace
-                    $this->useFunctions[$fn] = $ns;
-                } else {
-                    $this->useNamespaces[] = $id;
-                    if ($use->alias) {
-                        $this->useAliases[$use->alias->toString()] = $id;
-                    }
+        foreach ($v2->uses as $use) {
+            $id = $this->parseIdentifier($use->name);
+            if ($use->type === Node\Stmt\Use_::TYPE_FUNCTION) {
+                $rpos = strrpos($id, '\\');
+                $fn   = substr($id, $rpos + 1);
+                $ns   = substr($id, 0, $rpos);
+                // fn => namespace
+                $this->useFunctions[$fn] = $ns;
+            } else {
+                $this->useNamespaces[] = $id;
+                if ($use->alias) {
+                    $this->useAliases[$use->alias->toString()] = $id;
                 }
             }
         }
-
         return $code;
     }
 

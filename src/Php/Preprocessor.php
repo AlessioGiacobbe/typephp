@@ -130,7 +130,7 @@ class Preprocessor extends CompilerBase
     protected function prepareNamespaceDef(Node\Stmt\Namespace_ $node): void
     {
         $this->resetNamespace();
-        $this->namespace = $this->parseIdentifier($node->name);
+        $this->namespace = $node->name ? $this->parseIdentifier($node->name) : '';
         foreach ($node->stmts as $v2) {
             $type2 = $v2->getType();
             switch ($type2) {

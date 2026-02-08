@@ -587,25 +587,13 @@ class Translator extends Preprocessor
 
     protected function parseNamespace(Node\Stmt\Namespace_ $node): string
     {
-        $ns   = $this->parseIdentifier($node->name);
+        $ns   = $node->name ? $this->parseIdentifier($node->name) : '';
         $code = '';
 
         $this->resetNamespace();
 
-        if ($this->useCppNamespace) {
-            $ns = explode('\\', $ns);
-            $ns = array_filter($ns, function ($v) {
-                return $v !== '';
-            });
-            foreach ($ns as $name) {
-                $code .= 'namespace ' . $name . ' {' . PHP_EOL;
-            }
-            $ns_end          = str_repeat('}', count($ns));
-            $this->namespace = implode('::', $ns);
-        } else {
-            $this->namespace = $ns;
-            $ns_end          = '';
-        }
+        $this->namespace = $ns;
+        $ns_end          = '';
 
         foreach ($node->stmts as $v2) {
             $type2 = $v2->getType();
@@ -984,9 +972,9 @@ class Translator extends Preprocessor
 
     private function genFunctionWrapper(FunctionDef $functionDef): string
     {
-        $name    = $functionDef->name;
+        $name = $functionDef->namespace ? $functionDef->namespace . '_' . $functionDef->name : $functionDef->name;
         $cppCode = 'ZEND_FUNCTION(' . $name . '){' . PHP_EOL;
-        $fn      = self::PREFIX . $this->getNativeName($functionDef->name);
+        $fn = self::PREFIX . $this->getNativeName($functionDef->name, $functionDef->namespace);
         $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef);
 
         return $cppCode;

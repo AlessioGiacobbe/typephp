@@ -76,7 +76,12 @@ foreach ($this->functions as $functionDef):
         continue;
     }
 ?>
+<?php if ($functionDef->namespace): ?>
+<?php $zif_name = $functionDef->namespace . '_' . $functionDef->name; ?>
+    ZEND_NAMED_FE("<?=$this->escapeString($functionDef->getNamespacedName())?>", ZEND_FN(<?= $zif_name ?>), arginfo_<?=$zif_name?>)
+<?php else: ?>
     ZEND_FE(<?=$functionDef->name?>, arginfo_<?=$functionDef->name?>)
+<?php endif; ?>
 <?php endforeach;?>
     ZEND_FE_END
 };

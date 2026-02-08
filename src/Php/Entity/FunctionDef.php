@@ -21,11 +21,18 @@ class FunctionDef
     public array $argInfoList = [];
     public int $argCountRequired = 0;
     public string $params = '';
+    public string $namespace = '';
     public bool $method = false;
 
-    public function __construct(string $name, string $returnType)
+    public function __construct(string $name, string $returnType, string $namespace = '')
     {
         $this->name       = $name;
         $this->returnType = $returnType;
+        $this->namespace  = $namespace;
+    }
+
+    public function getNamespacedName(): string
+    {
+        return $this->namespace ? $this->namespace . '\\' . $this->name : $this->name;
     }
 }
