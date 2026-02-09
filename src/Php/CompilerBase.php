@@ -375,6 +375,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseThrow($expr);
             case 'Expr_ShellExec':
                 return $this->parseShellExec($expr);
+            case 'Expr_Closure':
+                return $this->parseClosure($expr);
             case 'Name_FullyQualified':
                 return $expr->name;
             case 'Scalar_Int':
@@ -3426,5 +3428,42 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
         return $code;
+    }
+
+    protected function parseClosure(Node\Expr\Closure $expr): string
+    {
+        $tmpVar = $this->genTmpVarName();
+
+        $fnCode = $this->getIndent() . 'php::ClosureFn ' . $tmpVar . ' = [](INTERNAL_FUNCTION_PARAMETERS, ' . self::TYPE_OBJECT . ' &this_, ' . self::TYPE_ARRAY . ' &vars_) {' . PHP_EOL;
+        $oriLocalVars = $this->localVars;
+        $this->localVars = [];
+        $this->indentLevel++;
+        foreach ($expr->params as $i => $param) {
+            $var = $this->parseIdentifier($param->var);
+            $fnCode .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
+            $this->addLocalVar($var, self::TYPE_VAR);
+        }
+        foreach ($expr->uses as $i => $useItem) {
+            $var = $this->parseIdentifier($useItem->var);
+            $fnCode .= 'auto ' . $var . ' = vars_.get(' . $i . ');' . PHP_EOL;
+            $this->addLocalVar($var, self::TYPE_VAR);
+        }
+        $fnCode .= $this->parseStmts($expr->stmts);
+        $this->indentLevel--;
+        $fnCode .= '};' . PHP_EOL;
+
+        $this->beforeStmtLines[] = $fnCode;
+        $this->localVars = $oriLocalVars;
+
+        $useVars = [];
+        foreach ($expr->uses as $useItem) {
+            $var = $this->parseIdentifier($useItem->var);
+            if ($this->isVarExpr($useItem->var) and !$this->hasVar($var)) {
+                $this->fatalError($expr, 'Variable `' . $var . '` is not defined');
+            }
+            $useVars [] = $var;
+        }
+
+        return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
     }
 }

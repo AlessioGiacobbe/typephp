@@ -17,4 +17,7 @@ function main()
 {
     $o = new A;
     $o->foo(1, 2);
+    var_dump($xxx);
+//    var_dump($arr2['hello']);
+//    var_dump($o2->null);
 }
