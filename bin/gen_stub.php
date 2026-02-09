@@ -79,7 +79,7 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
 
         if (!$includeOnly) {
             global $translator;
-            $stubFilenameWithoutExtension = str_replace([".stub.php", '.php'], "", $stubFile);
+            $stubFilenameWithoutExtension = $translator->getArgInfoStubFilename($stubFile);
             $arginfoFile = $translator->getArgInfoHeaderFile($stubFilenameWithoutExtension);
             $legacyFile = "{$stubFilenameWithoutExtension}_legacy_arginfo.h";
 

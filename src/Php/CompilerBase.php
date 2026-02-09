@@ -3186,6 +3186,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($v2->consts as $const) {
             $name  = $this->parseIdentifier($const->name);
             $value = $this->parseIdentifier($const->value);
+            if ($this->namespace) {
+                $name = $this->namespace . '\\' . $name;
+            }
             $this->addConstant($name, $value);
         }
 
@@ -3197,22 +3200,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         $constInfo                    = new \stdClass();
         $constInfo->value             = $value;
         $constInfo->type              = $this->detectStrValueType($value);
-        $this->nativeConstants[$name] = $constInfo;
+        $constInfo->namespace = $this->namespace;
+        $constInfo->name = $name;
+        $this->nativeConstants[$this->escapeNamespace($name)] = $constInfo;
     }
 
     protected function hasConstant(string $name): bool
     {
-        return isset($this->nativeConstants[$name]);
+        return isset($this->nativeConstants[$this->escapeNamespace($name)]);
     }
 
     protected function getConstant(string $name): string
     {
-        return $this->nativeConstants[$name]->value;
+        return $this->escapeNamespace($name);
     }
 
     protected function getConstantType(string $name): string
     {
-        return $this->nativeConstants[$name]->type;
+        return $this->nativeConstants[$this->escapeNamespace($name)]->type;
     }
 
     protected function detectStrValueType(mixed $constant): string

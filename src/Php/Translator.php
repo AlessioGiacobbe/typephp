@@ -323,6 +323,13 @@ class Translator extends Preprocessor
         return $this->buildMode;
     }
 
+    public function getArgInfoStubFilename(string $stubFile): string
+    {
+        $rs = str_replace([".stub.php", '.php'], "", $stubFile);
+        $rs = str_replace('-', '_', $rs);
+        return $rs;
+    }
+
     public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string
     {
         $basename = self::PREFIX . basename($stubFilenameWithoutExtension);

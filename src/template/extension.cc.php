@@ -52,9 +52,9 @@ foreach ($this->literalStrings as $str => $index):
 
 // constants
 <?php
-foreach ($this->nativeConstants as $name => $constant):
+foreach ($this->nativeConstants as $name => $const):
 ?>
-<?=$constant->type?> <?=$name?>;
+<?=$const->type?> <?=$name?>;
 <?php endforeach; ?>
 
 // property offset
@@ -109,10 +109,10 @@ foreach ($this->registerSymbols as $registerSymbolFn):
 void php_app_init() {
     // register constants
 <?php
-foreach ($this->nativeConstants as $name => $constant):
+foreach ($this->nativeConstants as $name => $const):
 ?>
-    <?=$name?> = <?= $constant->value ?>;
-    php::define("<?=$name?>", <?= $name ?>);
+    <?=$name?> = <?= $const->value ?>;
+    php::define("<?=$this->escapeString($const->name)?>", <?= $name ?>);
 <?php endforeach; ?>
 
     // global vars
@@ -142,8 +142,8 @@ foreach ($this->globalVars as $name => $type) :
     php::unsetGlobal("<?=$name?>");
 <?php endforeach; ?>
 <?php
-foreach ($this->nativeConstants as $name => $constant):
-    if ($constant->type !== Translator::TYPE_VAR) {
+foreach ($this->nativeConstants as $name => $const):
+    if ($const->type !== Translator::TYPE_VAR) {
         continue;
     }
 ?>
