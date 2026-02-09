@@ -1905,31 +1905,42 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
-                // 调用了不存在的变量，可能是引用
-                if (!$this->hasVar($name)) {
-                    $this->addLocalVar($name, self::TYPE_REF);
-                    $this->beforeStmtLines[] = $name . ' = php::newReference();';
-                } elseif ($funcName and Reflection::isReferenceArg($funcName, $i)) {
-                    // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
-                    $tmpVar = $this->genTmpVarName();
-                    $this->addLocalVar($tmpVar, self::TYPE_REF);
-                    $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
-                    $list_args[]             = '&' . $tmpVar;
+                if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
+                    if (!$this->hasVar($name)) {
+                        // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
+                        $this->addLocalVar($name, self::TYPE_REF);
+                    } else {
+                        // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
+                        $tmpVar = $this->genTmpVarName();
+                        $this->addLocalVar($tmpVar, self::TYPE_REF);
+                        $name = $tmpVar;
+                    }
+                    $this->beforeStmtLines[] = $name . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
+                    $list_args[]             = '&' . $name;
                     continue;
                 }
+                if (!$this->hasVar($name)) {
+                    $this->fatalError($arg, 'Undefined variable `$' . $name . '`');
+                }
             } elseif ($this->isPropertyFetch($arg->value)) {
+                $obj = $this->parseIdentifier($arg->value->var);
+                if (!$this->hasVar($obj)) {
+                    $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
+                }
                 if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
-                    $obj = $this->parseIdentifier($arg->value->var);
                     $list_args[] = $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
                     continue;
                 }
             } elseif ($this->isArrayDimFetch($arg->value)) {
+                $array = $this->parseIdentifier($arg->value->var);
+                if (!$this->hasVar($array)) {
+                    $this->fatalError($arg, 'Undefined variable `$' . $array . '`');
+                }
                 if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
-                    $obj = $this->parseIdentifier($arg->value->var);
                     if ($arg->value->dim === null) {
                         $this->fatalError($arg, 'Array dimension must be a constant expression');
                     }
-                    $list_args[] = $obj . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')';
+                    $list_args[] = $array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')';
                     continue;
                 }
             }
