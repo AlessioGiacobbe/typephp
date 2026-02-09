@@ -75,19 +75,19 @@ foreach ($this->functions as $functionDef):
     if ($this->buildMode === 'ext' and $functionDef->name === 'main') {
         continue;
     }
+    $zif_name = $this->escapeZendFnName($functionDef->getNamespacedName());
 ?>
 <?php if ($functionDef->namespace): ?>
-<?php $zif_name = $functionDef->namespace . '_' . $functionDef->name; ?>
     ZEND_NAMED_FE("<?=$this->escapeString($functionDef->getNamespacedName())?>", ZEND_FN(<?= $zif_name ?>), arginfo_<?=$zif_name?>)
 <?php else: ?>
-    ZEND_FE(<?=$functionDef->name?>, arginfo_<?=$functionDef->name?>)
+    ZEND_FE(<?=$zif_name?>, arginfo_<?=$zif_name?>)
 <?php endif; ?>
 <?php endforeach;?>
     ZEND_FE_END
 };
 // clang-format on
 
-static PHP_MINIT_FUNCTION(<?=$this->targetName?>) {
+PHP_MINIT_FUNCTION(<?=$this->targetName?>) {
 // class/interface class entries
 <?php
 foreach ($this->classCeList as $ce):
@@ -151,7 +151,7 @@ foreach ($this->nativeConstants as $name => $constant):
 <?php endforeach; ?>
 }
 
-static PHP_RINIT_FUNCTION(<?=$this->targetName?>) {
+PHP_RINIT_FUNCTION(<?=$this->targetName?>) {
     php::request_init();
     php_app_init();
 
@@ -166,7 +166,7 @@ static PHP_RINIT_FUNCTION(<?=$this->targetName?>) {
     return SUCCESS;
 }
 
-static PHP_RSHUTDOWN_FUNCTION(<?=$this->targetName?>) {
+PHP_RSHUTDOWN_FUNCTION(<?=$this->targetName?>) {
     php_app_clean();
     php::request_shutdown();
     return SUCCESS;

@@ -972,7 +972,7 @@ class Translator extends Preprocessor
 
     private function genFunctionWrapper(FunctionDef $functionDef): string
     {
-        $name = $functionDef->namespace ? $functionDef->namespace . '_' . $functionDef->name : $functionDef->name;
+        $name = $this->escapeZendFnName($functionDef->getNamespacedName());
         $cppCode = 'ZEND_FUNCTION(' . $name . '){' . PHP_EOL;
         $fn = self::PREFIX . $this->getNativeName($functionDef->name, $functionDef->namespace);
         $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef);
