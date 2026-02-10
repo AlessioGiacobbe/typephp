@@ -513,7 +513,13 @@ class Translator extends Preprocessor
             $cppCode .= $this->genFunctionWrapper($functionDef);
         }
 
-        return $this->genIncludeHeaderFiles() . $cppCode;
+        $constDataCode = '';
+        foreach ($this->constData as $name => $data) {
+            $constDataCode .= 'static const unsigned char ' . $name . '[] = {' . $data . '};' . PHP_EOL;
+        }
+        $constDataCode .= PHP_EOL;
+
+        return $this->genIncludeHeaderFiles() . $constDataCode . $cppCode;
     }
 
     protected function genClassCeList(): void

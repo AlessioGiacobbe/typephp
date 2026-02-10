@@ -62,6 +62,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string NAMESPACE_SEPARATOR = '__';
 
     public const string PREFIX = 'php_';
+    public const string ANON_CLASS = '_anon_class_';
     public const string OP_ISSET = 'isset';
     public const string OP_EMPTY = 'empty';
     public const string OP_NOP = "if (0) {}\n";
@@ -105,6 +106,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $functionDeclInFile = [];
     protected array $functionCallInFile = [];
     protected array $redoAfterDeclare = [];
+    protected array $constData = [];
     protected int $optimizeLevel = 0;
     protected string $buildMode = 'bin';
     protected string $cxxflags = '';
@@ -479,6 +481,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     public function genTmpVarName(): string
     {
         return 'tmp_var_' . $this->tmpVarIndex++;
+    }
+
+    public function genAnonClassName(): string
+    {
+        return self::ANON_CLASS . $this->tmpVarIndex++;
     }
 
     public function writeFile(string $file, string $content): void
@@ -964,7 +971,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Class':
                     $this->fatalError($v, 'Cannot declare class in function');
-                    // no break
+                    break;
                 default:
                     abort($v);
             }
@@ -2001,8 +2008,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePostOp($expr, string $op): string
     {
-        if ($this->isVarExpr($expr->var) or $this->isPropertyFetch($expr->var)) {
-            return $this->parseIdentifier($expr->var) . str_repeat($op, 2);
+        if ($this->isVarExpr($expr->var) or $this->isPropertyFetch($expr->var) or $this->isArrayDimFetch($expr->var)) {
+            $var = $this->parseIdentifier($expr->var);
+            if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
+                $this->errorUndefinedVariable($expr->var);
+            }
+            return $var . str_repeat($op, 2);
         }
         if ($this->isStaticPropertyFetch($expr->var)) {
             $native = $this->parseNativeStaticPropertyFetch($expr->var);
@@ -2334,9 +2345,42 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '!(' . $this->parseBinaryOpIdentical($expr) . ')';
     }
 
+    protected function packData(string $bytes): string
+    {
+        $out = '';
+        for ($i = 0; $i < strlen($bytes); $i++) {
+            $out .= ord($bytes[$i]) . ', ';
+            if ($i % 32 == 0) {
+                $out .= "\n\t";
+            }
+        }
+        return $out;
+    }
+
+    protected function addConstData(string $name, string $bytes): void
+    {
+        $this->constData[$name] = $this->packData($bytes);
+    }
+
     protected function parseNew(Node\Expr\New_ $expr): string
     {
-        $className = $this->parseIdentifier($expr->class);
+        // 匿名类
+        if ($expr->class instanceof Node\Stmt\Class_) {
+            if ($expr->class->name === null) {
+                $classDef = $expr->class;
+                $className = $this->genAnonClassName();
+                $classDef->name = new Node\Identifier($className);
+                $this->beforeStmtLines[] = 'static THREAD_LOCAL bool ' . $className . '_defined = false;';
+                $classCode = $this->genEmbeddedCode($classDef);
+                $this->addConstData($className . '_code', $classCode);
+                $this->beforeStmtLines[] = 'if (!' . $className . '_defined) {'
+                    . $className . '_defined = true; php::eval((const char *)' . $className . '_code);}';
+            } else {
+                $this->fatalError($expr, 'must be anonymous class');
+            }
+        } else {
+            $className = $this->parseIdentifier($expr->class);
+        }
         $className = $this->getNamespacedClassName($className);
         $args      = $expr->args;
         $cePtr     = $this->getClassEntryPtr($className);
