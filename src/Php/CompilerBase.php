@@ -2963,10 +2963,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $tmpVar;
     }
 
-    protected function convertToRef(NodeAbstract $expr): string {
+    protected function convertToRef(NodeAbstract $expr): string
+    {
         $this->checkLeftValue($expr);
-        if ($this->isVarExpr($expr) and $this->isNativeType($this->parseIdentifier($expr))) {
-            $this->fatalError($expr, 'Cannot convert variable of native type to reference');
+        $var = $this->parseIdentifier($expr);
+        if ($this->isVarExpr($expr) and $this->isNativeType($var)) {
+            $this->localVars[$var] = self::TYPE_VAR;
         }
         return $this->parseIdentifier($expr) . '.toReference()';
     }
