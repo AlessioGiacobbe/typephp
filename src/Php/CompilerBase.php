@@ -61,6 +61,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string PREFIX = 'php_';
     public const string OP_ISSET = 'isset';
     public const string OP_EMPTY = 'empty';
+    public const string OP_NOP = "if (0) {}\n";
     protected string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     protected string $cppCompiler = 'g++';
@@ -872,7 +873,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $lines     = [];
         $inLoopTop = $this->inLoop;
-        foreach ($stmts as $v) {
+        $last = array_key_last($stmts);
+        foreach ($stmts as $i => $v) {
             $class                 = $v->getType();
             $this->beforeStmtLines = [];
             $this->afterStmtLines  = [];
@@ -926,6 +928,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Label':
                     $result = $this->parseLabel($v);
+                    if ($i === $last) {
+                        $result .= self::OP_NOP;
+                    }
                     break;
                 case 'Stmt_Continue':
                     $result = $this->parseContinue($v);
