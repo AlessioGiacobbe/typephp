@@ -3203,6 +3203,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($classDef->hasConstant($const)) {
                     return $classDef->getConstant($const)->value;
                 }
+                if ($classDef->enum) {
+                    $ce = $this->getClassEntryPtr($class);
+                    return 'php::getEnumCase(' . $ce . ', ' . $this->getLiteralString($const) . ')';
+                }
             }
             $ce = $this->getClassEntryPtr($class);
             return 'php::constant(' . $ce . ', ' . $this->getLiteralString($const) . ')';

@@ -27,6 +27,7 @@ class ClassDef extends ClassLikeDef
     public array $implements = [];
     public string $extends = '';
     public bool $requireCtor = false;
+    public bool $enum = false;
     public int $flags;
 
     public function __construct(string $name, int $flags, string $namespace = '')

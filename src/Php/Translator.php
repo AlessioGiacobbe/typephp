@@ -660,7 +660,12 @@ class Translator extends Preprocessor
             $flags = $class->flags;
             $extends = $class->extends;
         }
+
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
+        if ($class instanceof Node\Stmt\Enum_) {
+            $this->classDef->enum = true;
+        }
+
         if ($extends) {
             $this->classDef->extends = $this->parseIdentifier($class->extends);
             if (isset($this->classes[$this->classDef->extends])) {

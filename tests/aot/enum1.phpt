@@ -1,3 +1,6 @@
+--TEST--
+enum 2
+--FILE--
 <?php
 interface Colorful {
     public function color(): string;
@@ -24,3 +27,9 @@ function main()
     echo Suit::Clubs->color() . "\n";
     echo Suit::Spades->color() . "\n";
 }
+?>
+--EXPECT--
+Red
+Red
+Black
+Black
