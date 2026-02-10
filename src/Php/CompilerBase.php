@@ -1269,9 +1269,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 必须提前声明变量，否则在末尾声明并 return 可能会被 gcc 优化掉
             $this->addLocalVar($tmpVar, $type);
             $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
-            $code .= $this->getIndent() . 'return ' . $tmpVar;
+            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
         } else {
-            $code = 'return ' . $exprCode;
+            $code = 'return ' . $exprCode . ';';
         }
 
         return $code;
@@ -1741,7 +1741,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function errorUndefinedVariable(Variable $node): never
     {
-        $this->fatalError($node, "The variable `{$node->name}` is undefined");
+        $this->fatalError($node, "The variable `\${$node->name}` is undefined");
     }
 
     protected function dump(NodeAbstract $v): void
@@ -3570,7 +3570,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($expr->uses as $useItem) {
             $var = $this->parseIdentifier($useItem->var);
             if ($this->isVarExpr($useItem->var) and !$this->hasVar($var)) {
-                $this->fatalError($expr, 'Variable `' . $var . '` is not defined');
+                $this->errorUndefinedVariable($useItem->var);
             }
             if ($useItem->byRef) {
                 $useVars [] = $this->convertToRef($useItem->var);
