@@ -48,6 +48,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_VOID = 'void';
     public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
+    public const string VALUE_NULL = 'php::null';
     public const string LITERAL_STRINGS = '_literal_strings';
     public const string CLASS_MAP = 'class_map';
     public const string FUNC_MAP = 'func_map';
@@ -995,7 +996,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $value = $this->trimBrackets($this->parseExpr($right));
         if ($left->dim === null) {
-            return $code . "{$array}.offsetSet(php::null, {$value})";
+            return $code . "{$array}.offsetSet(" . self::VALUE_NULL . ", {$value})";
         }
         $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
 
@@ -1246,7 +1247,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->functionDef->returnType === self::TYPE_VOID) {
                 return 'return;';
             } else {
-                return 'return php::null;';
+                return 'return ' . self::VALUE_NULL . ';';
             }
         }
         // 实际函数的返回值
@@ -1436,7 +1437,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $value = $this->parseIdentifier($item->value);
             if ($assocArray) {
                 // TODO 混杂模式数组赋值
-                $key = $item->key ? $this->parseIdentifier($item->key) : 'php::null';
+                $key = $item->key ? $this->parseIdentifier($item->key) : self::VALUE_NULL;
                 if (str_starts_with($key, self::LITERAL_STRINGS)) {
                     $key = "{$key}.toStdString()";
                 } elseif ($key === '0L') {
@@ -2343,7 +2344,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->getConstant($name);
         }
         if ($name === 'null') {
-            return 'php::null';
+            return self::VALUE_NULL;
         }
         if ($name === 'true') {
             return 'true';
@@ -3507,7 +3508,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             or $this->functionDef->returnType === self::TYPE_BOOL) {
             return $this->getIndent() . 'return 0;';
         } else {
-            return $this->getIndent() . 'return php::null;';
+            return $this->getIndent() . 'return ' . self::VALUE_NULL . ';';
         }
     }
 
@@ -3549,7 +3550,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $fnCode .= $fnBodyCode;
 
         if (!$this->isReturnStmtInLastLine($expr->stmts)) {
-            $fnCode .= $this->genReturnCode();
+            $fnCode .= 'return '.self::VALUE_NAN. ';' . PHP_EOL;
         }
 
         $this->indentLevel--;
