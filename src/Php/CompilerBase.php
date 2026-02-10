@@ -27,6 +27,7 @@ use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
 use PhpParser\Parser;
 use PhpParser\ParserFactory;
+use PhpParser\PrettyPrinter;
 
 class CompilerBase extends \PhpAot\Core\Translator
 {
@@ -200,14 +201,15 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $stubFile = false;
     protected bool $enableProfiler = false;
     protected Parser $parser;
+    protected PrettyPrinter $printer;
 
     public function __construct(string $rootPath)
     {
         $this->rootPath = $rootPath;
-        $this->parser   = (new ParserFactory())->createForNewestSupportedVersion();
-        // $this->prettyPrinter = new PrettyPrinter\Standard;
+        $this->parser = (new ParserFactory())->createForNewestSupportedVersion();
+        $this->printer = new PrettyPrinter\Standard;
         $this->setBuildDir($rootPath . '/build');
-        $climate       = new CLImate();
+        $climate = new CLImate();
         $this->climate = $climate;
         //        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
     }
@@ -947,6 +949,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Global':
                     $result = $this->parseGlobal($v);
+                    break;
+                case 'Stmt_Enum':
+                    $result = $this->parseEnum($v);
                     break;
                 case 'Stmt_Static':
                     $result = $this->parseStatic($v);
@@ -2797,7 +2802,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $var_def . $code;
     }
 
-    protected function parseStatic(mixed $v): string
+    protected function parseStatic(Node\Stmt\Static_ $v): string
     {
         $list = [];
         foreach ($v->vars as $var) {
@@ -2810,6 +2815,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return implode(PHP_EOL . $this->getIndent(), $list);
+    }
+
+    protected function parseEnum(Node\Stmt\Enum_ $v): string
+    {
+        return 'php::eval("' . $this->escapeString($this->genEmbeddedCode($v)) . '");';
     }
 
     protected function parseEval(mixed $expr): string
@@ -3109,11 +3119,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
                 $nativeFunc = $this->getNativeStaticMethod($class, $method);
-                $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
-                if ($args) {
-                    return self::PREFIX . $nativeFunc . '(php::null_object, ' . $args . ')';
-                } else {
-                    return self::PREFIX . $nativeFunc . '(php::null_object)';
+                if ($nativeFunc) {
+                    $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
+                    if ($args) {
+                        return self::PREFIX . $nativeFunc . '(php::null_object, ' . $args . ')';
+                    } else {
+                        return self::PREFIX . $nativeFunc . '(php::null_object)';
+                    }
                 }
             }
             $ce = $this->getClassEntryPtr($class);
@@ -3551,6 +3563,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         } else {
             return $this->getIndent() . 'return ' . self::VALUE_NULL . ';';
         }
+    }
+
+    protected function genEmbeddedCode(NodeAbstract $stmt): string
+    {
+        return $this->printer->prettyPrint([$stmt]);
     }
 
     protected function parseClosure(Node\Expr\Closure $expr): string
