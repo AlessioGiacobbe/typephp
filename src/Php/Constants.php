@@ -31,6 +31,7 @@ class Constants
         'function',
         'global',
         'if',
+        'bool',
         'int',
         'double',
         'float',

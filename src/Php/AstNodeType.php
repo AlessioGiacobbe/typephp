@@ -63,4 +63,9 @@ trait AstNodeType
     {
         return $expr instanceof Node\Scalar;
     }
+
+    protected function isMatchExpr(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Expr\Match_;
+    }
 }

@@ -2042,7 +2042,40 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseMatch(Node\Expr\Match_ $expr): string
     {
-        abort($expr);
+        $var = $this->parseIdentifier($expr->cond);
+        if ($this->isVarExpr($expr->cond) and !$this->hasVar($var)) {
+            $this->errorUndefinedVariable($expr->cond);
+        }
+        $code = '[&]() -> ' . self::TYPE_VAR . '{';
+        $default = null;
+        foreach ($expr->arms as $i => $arm) {
+            if ($arm->conds === null) {
+                $default = $arm->body;
+                continue;
+            }
+            $prefix = $i === 0 ? 'if' : 'else if';
+            $condList = [];
+            foreach ($arm->conds as $cond) {
+                if ($this->isMatchExpr($cond)) {
+                    $this->fatalError($arm, 'Match expression cannot be used as a condition');
+                }
+                $condList[] = 'php::same(' . $var . ', ' . $this->parseExpr($cond) . ')';
+            }
+            $code .= $prefix . '(' . implode(' || ', $condList) . ') {';
+            $code .= 'return ' . $this->parseExpr($arm->body) . ';';
+            $code .= '}';
+        }
+
+        $else = count($expr->arms) === 0 ? '' : 'else ';
+        if ($default) {
+            $code .= $else . ' { return ' . $this->parseExpr($default) . '; }';
+        } else {
+            $code .= $else . ' { php::throwException("UnhandledMatchError", "Unhandled match case");' . PHP_EOL .
+                'return ' . self::VALUE_NULL . '; }';
+        }
+        $code .= '}()';
+
+        return $code;
     }
 
     protected function parseBinaryOpGreater(mixed $expr): string
