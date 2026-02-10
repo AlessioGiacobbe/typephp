@@ -360,6 +360,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpPow($expr);
             case 'Expr_Ternary':
                 return $this->parseTernary($expr);
+            case 'Expr_Match':
+                return $this->parseMatch($expr);
             case 'Expr_FuncCall':
                 return $this->parseFuncCall($expr);
             case 'Expr_MethodCall':
@@ -2025,7 +2027,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parsePostOp($expr, '+');
     }
 
-    protected function parseTernary(mixed $expr): string
+    protected function parseTernary(Node\Expr\Ternary $expr): string
     {
         $cond = $expr->cond;
         $if   = $expr->if;
@@ -2036,6 +2038,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             return '(' . $cond . ') ? (' . $cond . ') : (' . $this->parseExpr($else) . ')';
         }
         return '(' . $this->parseExpr($cond) . ') ? (' . $this->parseExpr($if) . ') : (' . $this->parseExpr($else) . ')';
+    }
+
+    protected function parseMatch(Node\Expr\Match_ $expr): string
+    {
+        abort($expr);
     }
 
     protected function parseBinaryOpGreater(mixed $expr): string

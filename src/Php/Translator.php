@@ -479,6 +479,7 @@ class Translator extends Preprocessor
                     break;
                 case 'Stmt_Class':
                 case 'Stmt_Trait':
+                case 'Stmt_Enum':
                     $cppCode .= $this->parseClass($v);
                     break;
                 case 'Stmt_Use':
@@ -649,11 +650,18 @@ class Translator extends Preprocessor
         $this->argInfoHeaderFiles[] = $headerFile;
     }
 
-    protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_ $class): string
+    protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
-        $this->class    = $this->parseIdentifier($class->name);
-        $this->classDef = new ClassDef($this->class, $class->flags, $this->namespace);
-        if ($class->extends) {
+        $this->class = $this->parseIdentifier($class->name);
+        if ($class instanceof Node\Stmt\Enum_) {
+            $flags = Modifiers::PUBLIC;
+            $extends = '';
+        } else {
+            $flags = $class->flags;
+            $extends = $class->extends;
+        }
+        $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
+        if ($extends) {
             $this->classDef->extends = $this->parseIdentifier($class->extends);
             if (isset($this->classes[$this->classDef->extends])) {
                 $parent = $this->classes[$this->classDef->extends];
@@ -682,6 +690,7 @@ class Translator extends Preprocessor
                 case 'Stmt_ClassMethod':
                     $this->parseClassMethod($v, $methodCodes);
                     break;
+                case 'Stmt_EnumCase':
                 case 'Stmt_Nop':
                     break;
                 default:

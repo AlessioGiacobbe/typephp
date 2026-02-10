@@ -90,6 +90,7 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Namespace':
                     $this->prepareNamespaceDef($v);
                     break;
+                case 'Stmt_Enum':
                 case 'Stmt_Class':
                 case 'Stmt_Trait':
                     $this->prepareClass($v);
@@ -135,6 +136,7 @@ class Preprocessor extends CompilerBase
             $type2 = $v2->getType();
             switch ($type2) {
                 case 'Stmt_Class':
+                case 'Stmt_Enum':
                     $this->prepareClass($v2);
                     break;
                 case 'Stmt_Function':
@@ -162,7 +164,7 @@ class Preprocessor extends CompilerBase
         }
     }
 
-    protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_ $class): string
+    protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
         $code        = '';
@@ -173,6 +175,7 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Property':
                 case 'Stmt_Nop':
                 case 'Stmt_TraitUse':
+                case 'Stmt_EnumCase':
                     break;
                 case 'Stmt_ClassMethod':
                     $code .= $this->prepareFunction($v) . PHP_EOL;
