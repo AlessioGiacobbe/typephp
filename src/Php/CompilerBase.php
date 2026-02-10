@@ -42,6 +42,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_FLOAT = 'php::Float';
     public const string TYPE_OBJECT = 'php::Object';
     public const string TYPE_ARRAY = 'php::Array';
+    public const string TYPE_ARGS = 'php::Args';
     public const string TYPE_STR = 'php::Str';
     public const string TYPE_REF = 'php::Ref';
     public const string TYPE_VOID = 'void';
@@ -1162,6 +1163,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function isBoolStr(string $str): bool
     {
         return $str === 'true' || $str === 'false';
+    }
+
+    protected function isNativeType(string $var): bool
+    {
+        return in_array($this->getVarType($var), [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL]);
     }
 
     protected function isInternalFunction(string $fname): bool
@@ -2957,6 +2963,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $tmpVar;
     }
 
+    protected function convertToRef(NodeAbstract $expr): string {
+        $this->checkLeftValue($expr);
+        if ($this->isVarExpr($expr) and $this->isNativeType($this->parseIdentifier($expr))) {
+            $this->fatalError($expr, 'Cannot convert variable of native type to reference');
+        }
+        return $this->parseIdentifier($expr) . '.toReference()';
+    }
+
     protected function parseAssignRef(Node\Expr\AssignRef $expr): string
     {
         if ($this->isVarExpr($expr->var)) {
@@ -3461,7 +3475,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $tmpVar = $this->genTmpVarName();
 
-        $fnCode = $this->getIndent() . 'php::ClosureFn ' . $tmpVar . ' = [](INTERNAL_FUNCTION_PARAMETERS, ' . self::TYPE_OBJECT . ' &this_, ' . self::TYPE_ARRAY . ' &vars_) {' . PHP_EOL;
+        $fnCode = $this->getIndent() . 'php::ClosureFn ' . $tmpVar . ' = [](INTERNAL_FUNCTION_PARAMETERS, ' . self::TYPE_OBJECT . ' &this_, ' . self::TYPE_ARGS . ' &vars_) {' . PHP_EOL;
         $oriLocalVars = $this->localVars;
         $this->localVars = [];
         $this->indentLevel++;
@@ -3488,7 +3502,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isVarExpr($useItem->var) and !$this->hasVar($var)) {
                 $this->fatalError($expr, 'Variable `' . $var . '` is not defined');
             }
-            $useVars [] = $var;
+            if ($useItem->byRef) {
+                $useVars [] = $this->convertToRef($useItem->var);
+            } else {
+                $useVars [] = $var;
+            }
         }
 
         return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
