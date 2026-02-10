@@ -191,6 +191,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $beforeStmtLines = [];
     protected array $afterStmtLines = [];
     protected bool $inLoop = false;
+    protected bool $inClosure = false;
 
     /**
      * 赋值表达式的左值，写操作，右值为读操作.
@@ -895,7 +896,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $result = $this->parseEcho($v);
                     break;
                 case 'Stmt_Return':
-                    $result = $this->parseReturn($v) . ';';
+                    $result = $this->parseReturn($v);
                     break;
                 case 'Stmt_For':
                     $this->inLoop = true;
@@ -1244,7 +1245,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseReturn(mixed $v): string
     {
         if ($v->expr === null) {
-            if ($this->functionDef->returnType === self::TYPE_VOID) {
+            if ($this->functionDef->returnType === self::TYPE_VOID and !$this->inClosure) {
                 return 'return;';
             } else {
                 return 'return ' . self::VALUE_NULL . ';';
@@ -3522,10 +3523,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             . self::TYPE_OBJECT . ' &this_, '
             . self::TYPE_ARGS . ' &vars_) ' .
             '-> ' . self::TYPE_VAR . ' {' . PHP_EOL;
+
         $oriLocalVars = $this->localVars;
         $this->localVars = [];
         $oriArgs = $this->arguments;
         $this->arguments = [];
+        $oriInClosure = $this->inClosure;
+        $this->inClosure = true;
+
         $this->indentLevel++;
 
         $fnBodyCode = '';
@@ -3550,7 +3555,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $fnCode .= $fnBodyCode;
 
         if (!$this->isReturnStmtInLastLine($expr->stmts)) {
-            $fnCode .= 'return '.self::VALUE_NAN. ';' . PHP_EOL;
+            $fnCode .= 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
         }
 
         $this->indentLevel--;
@@ -3559,6 +3564,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->beforeStmtLines[] = $fnCode;
         $this->localVars = $oriLocalVars;
         $this->arguments = $oriArgs;
+        $this->inClosure = $oriInClosure;
 
         $useVars = [];
         foreach ($expr->uses as $useItem) {
