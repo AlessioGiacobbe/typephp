@@ -59,6 +59,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string NAMESPACE_SEPARATOR = '__';
 
     public const string PREFIX = 'php_';
+    public const string OP_ISSET = 'isset';
+    public const string OP_EMPTY = 'empty';
     protected string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     protected string $cppCompiler = 'g++';
@@ -311,6 +313,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseAssignOpBitwiseXor($expr);
             case 'Expr_AssignOp_Pow':
                 return $this->parseAssignOpPow($expr);
+            case 'Expr_AssignOp_Coalesce':
+                return $this->parseAssignOpCoalesce($expr);
             case 'Expr_BinaryOp_Mul':
                 return $this->parseBinaryOpMul($expr);
             case 'Expr_BinaryOp_Concat':
@@ -1713,6 +1717,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->error("{$msg} in {$this->file}:{$node->getStartLine()}");
     }
 
+    protected function errorUndefinedVariable(Variable $node): never
+    {
+        $this->fatalError($node, "The variable `{$node->name}` is undefined");
+    }
+
     protected function dump(NodeAbstract $v): void
     {
         if ($this->debugLine == $v->getStartLine()) {
@@ -1734,7 +1743,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($write) {
                     $this->addLocalVar($var, self::TYPE_ARRAY);
                 } else {
-                    $this->fatalError($node->var, "The variable `{$node->var->name}` is undefined");
+                    $this->errorUndefinedVariable($node->var);
                 }
             } else {
                 $type = $this->getVarType($var);
@@ -1835,9 +1844,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         return false;
     }
 
-    protected function foundStrayCode(): never
+    protected function foundStrayCode(Node $node): never
     {
-        $this->error("All execution code must be within a function; there is no allowance for stray code.");
+        $this->fatalError($node, "All execution code must be within a function, found stray code");
     }
 
     protected function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
@@ -2825,11 +2834,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseVarCheckExpr($expr->expr, 'empty');
     }
 
+    /**
+     * 左值只能为变量、数组、对象属性、对象静态属性
+     * @param NodeAbstract $expr
+     * @return void
+     */
+    protected function checkLeftValue(NodeAbstract $expr): void
+    {
+        if (!$this->isVarExpr($expr) && !$this->isArrayDimFetch($expr) && !$this->isPropertyFetch($expr) && !$this->isStaticPropertyFetch($expr)) {
+            $this->fatalError($expr, 'The left value of assignment operation can only be variable, array item, object property, class static property');
+        }
+    }
+
     protected function parseVarCheckExpr(NodeAbstract $expr, string $op): string
     {
         if ($this->isVarExpr($expr)) {
             if ($op === 'isset') {
-                return $this->hasVar($this->parseIdentifier($expr)) ? 'true' : 'false';
+                $var = $this->parseIdentifier($expr);
+                return $this->hasVar($var) ? 'php::exists(' . $var . ')' : 'false';
             }
             return 'php::' . $op . '(' . $this->parseExpr($expr) . ')';
         }
@@ -3465,5 +3487,27 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
+    }
+
+    protected function parseAssignOpCoalesce(Node\Expr\AssignOp\Coalesce $expr): string
+    {
+        $this->checkLeftValue($expr->var);
+        $isset = $this->parseVarCheckExpr($expr->var, self::OP_ISSET);
+
+        $inAssignExpr = $this->inAssignExpr;
+        $this->inAssignExpr = true;
+        $var = $this->parseIdentifier($expr->var);
+        $this->inAssignExpr = $inAssignExpr;
+
+        $right = $this->parseExpr($expr->expr);
+        if ($this->isVarExpr($expr->expr) and !$this->hasVar($right)) {
+            $this->errorUndefinedVariable($expr->expr);
+        }
+        if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
+            $this->addLocalVar($var, $this->detectExprType($expr->expr));
+        }
+        return 'if (!' . $isset . ') {' . PHP_EOL .
+            $this->getIndent() . $var . ' = ' . $right . ';' . PHP_EOL .
+            '}' . PHP_EOL;
     }
 }

@@ -6,6 +6,6 @@
 /build
 /vendor
 /tmp
-/examples/wordpress
+/projects/wordpress
 /.php-cs-fixer.cache
 *.o
