@@ -874,17 +874,20 @@ class Translator extends Preprocessor
 
     protected function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
     {
-        $name               = $this->getMethodName($v);
-        $this->method       = $name;
-        $methodCodes[$name] = $this->parseFunction($v);
-        $flags              = $v->flags;
+        $name = $this->getMethodName($v);
+        $this->method = $name;
+
+        $flags = $v->flags;
         if (!($flags & Modifiers::PRIVATE) and !($flags & Modifiers::PROTECTED)) {
             $flags |= Modifiers::PUBLIC;
         }
-        $methodDef = new MethodDef($flags, $name, $this->functionDef);
-        $this->checkRequiredArgNum($name, $methodDef, $v);
-        $this->classDef->methods[$name] = $methodDef;
-        $this->method                   = '';
+
+        $this->methodDef = new MethodDef($flags, $name);
+        $methodCodes[$name] = $this->parseFunction($v);
+
+        $this->checkRequiredArgNum($name, $this->methodDef, $v);
+        $this->classDef->methods[$name] = $this->methodDef;
+        $this->resetMethod();
     }
 
     protected function parseIdentifierList(array $implements): array

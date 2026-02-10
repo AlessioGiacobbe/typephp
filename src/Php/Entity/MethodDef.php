@@ -12,14 +12,12 @@ class MethodDef
 {
     public int $flags;
     public string $name;
-    public FunctionDef $functionDef;
+    public ?FunctionDef $functionDef = null;
 
-    public function __construct(int $flags, string $name, FunctionDef $def)
+    public function __construct(int $flags, string $name)
     {
-        $this->flags               = $flags;
-        $this->name                = $name;
-        $this->functionDef         = $def;
-        $this->functionDef->method = true;
+        $this->flags = $flags;
+        $this->name = $name;
     }
 
     public function getReturnType(): string

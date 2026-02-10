@@ -161,9 +161,10 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected array $classCeList = [];
     protected array $classCeInfo = [];
-    protected FunctionDef $functionDef;
-    protected ClassDef $classDef;
-    protected InterfaceDef $interfaceDef;
+    protected ?FunctionDef $functionDef = null;
+    protected ?ClassDef $classDef = null;
+    protected ?MethodDef $methodDef = null;
+    protected ?InterfaceDef $interfaceDef = null;
     protected array $superGlobalVars = [
         '_GET'     => self::TYPE_ARRAY,
         '_POST'    => self::TYPE_ARRAY,
@@ -539,6 +540,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->tmpVarIndex    = 0;
         $this->inLoop         = false;
         $this->function       = '';
+        $this->functionDef    = null;
+    }
+
+    protected function resetMethod(): void
+    {
+        $this->method = '';
+        $this->methodDef = null;
     }
 
     protected function resetClass(): void
@@ -546,6 +554,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->class     = '';
         $this->interface = '';
         $this->method    = '';
+        $this->classDef  = null;
     }
 
     protected function resetFile(): void
@@ -697,18 +706,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         if ($this->class) {
-            $this->arguments['this_'] = self::TYPE_OBJECT;
-            $this->addLocalVar('this_', self::TYPE_OBJECT);
+            $this->addArgument('this_', self::TYPE_OBJECT);
+            if ($this->methodDef) {
+                $this->functionDef->method = true;
+                $this->methodDef->functionDef = $this->functionDef;
+            }
         } else {
             $this->functions[$name]            = $this->functionDef;
             $this->functionDefineInFile[$name] = $this->functionDef;
         }
 
         foreach ($this->functionDef->argInfoList as $argInfo) {
-            $this->arguments[$argInfo->name] = $argInfo->type;
-            if (!$this->hasLocalVar($argInfo->name)) {
-                $this->addLocalVar($argInfo->name, $argInfo->type);
-            }
+            $this->addArgument($argInfo->name, $argInfo->type);
         }
 
         if ($v->stmts) {
@@ -717,6 +726,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $stmts = $this->parseStmts($v->stmts);
             } catch (Skip $e) {
                 $stmts = '';
+            }
+            if (!$this->isReturnStmtInLastLine($v->stmts)) {
+                $stmts .= $this->genReturnCode();
             }
             $this->indentLevel--;
         } else {
@@ -734,16 +746,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $code = $functionDeclCode . ' {' . PHP_EOL;
         $this->indentLevel++;
-        foreach ($this->localVars as $name => $type) {
-            if (isset($this->arguments[$name])) {
-                continue;
-            }
-            $code .= $this->getIndent() . $type . ' ' . $name;
-            if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
-                $code .= ' = 0';
-            }
-            $code .= ';' . PHP_EOL;
-        }
+        $code .= $this->genLocalVarDecl();
         $code .= "\n";
         $this->indentLevel--;
         $code .= $this->genDebugInfo();
@@ -1280,6 +1283,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function addLocalVar(string $name, string $type): void
     {
         $this->localVars[$name] = $type;
+    }
+
+    protected function addArgument(string $name, string $type): void
+    {
+        $this->arguments[$name] = $type;
+        $this->addLocalVar($name, $type);
     }
 
     protected function addLiteralString(string $value): int
@@ -3473,30 +3482,82 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
+    protected function genLocalVarDecl(): string
+    {
+        $code = '';
+        foreach ($this->localVars as $name => $type) {
+            if (isset($this->arguments[$name])) {
+                continue;
+            }
+            $code .= $this->getIndent() . $type . ' ' . $name;
+            if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
+                $code .= ' = 0';
+            }
+            $code .= ';' . PHP_EOL;
+        }
+        return $code;
+    }
+
+    protected function genReturnCode(): string
+    {
+        if ($this->functionDef->returnType === self::TYPE_VOID) {
+            return '';
+        } elseif ($this->functionDef->returnType === self::TYPE_INT
+            or $this->functionDef->returnType === self::TYPE_FLOAT
+            or $this->functionDef->returnType === self::TYPE_BOOL) {
+            return $this->getIndent() . 'return 0;';
+        } else {
+            return $this->getIndent() . 'return php::null;';
+        }
+    }
+
     protected function parseClosure(Node\Expr\Closure $expr): string
     {
         $tmpVar = $this->genTmpVarName();
 
-        $fnCode = $this->getIndent() . 'php::ClosureFn ' . $tmpVar . ' = [](INTERNAL_FUNCTION_PARAMETERS, ' . self::TYPE_OBJECT . ' &this_, ' . self::TYPE_ARGS . ' &vars_) {' . PHP_EOL;
+        $fnCode = $this->getIndent() .
+            'php::ClosureFn ' . $tmpVar . ' = []('
+            . 'INTERNAL_FUNCTION_PARAMETERS, '
+            . self::TYPE_OBJECT . ' &this_, '
+            . self::TYPE_ARGS . ' &vars_) ' .
+            '-> ' . self::TYPE_VAR . ' {' . PHP_EOL;
         $oriLocalVars = $this->localVars;
         $this->localVars = [];
+        $oriArgs = $this->arguments;
+        $this->arguments = [];
         $this->indentLevel++;
+
+        $fnBodyCode = '';
         foreach ($expr->params as $i => $param) {
             $var = $this->parseIdentifier($param->var);
-            $fnCode .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
-            $this->addLocalVar($var, self::TYPE_VAR);
+            $fnBodyCode .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
+            $this->addArgument($var, self::TYPE_VAR);
         }
+
         foreach ($expr->uses as $i => $useItem) {
             $var = $this->parseIdentifier($useItem->var);
-            $fnCode .= 'auto ' . $var . ' = vars_.get(' . $i . ');' . PHP_EOL;
-            $this->addLocalVar($var, self::TYPE_VAR);
+            $fnBodyCode .= 'auto ' . $var . ' = vars_.get(' . $i . ');' . PHP_EOL;
+            $this->addArgument($var, self::TYPE_VAR);
         }
-        $fnCode .= $this->parseStmts($expr->stmts);
+
+        if ($this->methodDef) {
+            $this->addArgument('this_', self::TYPE_OBJECT);
+        }
+
+        $fnBodyCode .= $this->parseStmts($expr->stmts);;
+        $fnBodyCode = $this->genLocalVarDecl() . $fnBodyCode;
+        $fnCode .= $fnBodyCode;
+
+        if (!$this->isReturnStmtInLastLine($expr->stmts)) {
+            $fnCode .= $this->genReturnCode();
+        }
+
         $this->indentLevel--;
         $fnCode .= '};' . PHP_EOL;
 
         $this->beforeStmtLines[] = $fnCode;
         $this->localVars = $oriLocalVars;
+        $this->arguments = $oriArgs;
 
         $useVars = [];
         foreach ($expr->uses as $useItem) {
@@ -3511,7 +3572,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
-        return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
+        if ($this->methodDef) {
+            return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' }, this_)';
+        } else {
+            return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
+        }
     }
 
     protected function parseAssignOpCoalesce(Node\Expr\AssignOp\Coalesce $expr): string
@@ -3534,5 +3599,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'if (!' . $isset . ') {' . PHP_EOL .
             $this->getIndent() . $var . ' = ' . $right . ';' . PHP_EOL .
             '}' . PHP_EOL;
+    }
+
+    protected function isReturnStmtInLastLine(array $stmts): bool
+    {
+        return $stmts[array_key_last($stmts)] instanceof Node\Stmt\Return_;
     }
 }
