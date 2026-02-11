@@ -73,6 +73,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $literalStrings = [];
     protected int $literalStringIndex = 0;
     protected int $tmpVarIndex = 0;
+    protected int $anonClassIndex = 0;
     protected int $classIndex = 0;
 
     /**
@@ -250,6 +251,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     public function isTypedObject(string $object): bool
     {
         return isset($this->objects[$object]);
+    }
+
+    public function getObjectType(string $object): string
+    {
+        return $this->objects[$object] ?? 'stdClass';
     }
 
     public function parseExpr(mixed $expr)
@@ -485,7 +491,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public function genAnonClassName(): string
     {
-        return self::ANON_CLASS . $this->tmpVarIndex++;
+        return self::ANON_CLASS . $this->anonClassIndex++;
     }
 
     public function writeFile(string $file, string $content): void
@@ -3156,16 +3162,25 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseStaticCall(Node\Expr\StaticCall $expr): string
     {
         if ($this->isVarExpr($expr->class) or $this->isVarExpr($expr->name)) {
-            $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
+            $var = $this->parseIdentifier($expr->class);
+            if ($this->isTypedObject($var)) {
+                $class = $this->getObjectType($var);
+                goto _do_call;
+            } elseif ($this->getVarType($var) == self::TYPE_OBJECT) {
+                $fn = 'php::concat({' . $var . '.getClassName()' . ', "::", ' . $this->identifierToStr($expr->name) . '})';
+            } else {
+                $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
+            }
         } else {
             $class = $this->parseIdentifier($expr->class);
-            $method = $this->parseIdentifier($expr->name);
             if ($class === 'self') {
                 $class = $this->class;
             } elseif ($class === 'parent') {
                 return $this->parseParentMethodCall($expr);
             }
 
+            _do_call:
+            $method = $this->parseIdentifier($expr->name);
             $this->beforeStmtLines[] = '// Static Call: ' . $class . '::' . $method;
 
             if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
