@@ -593,6 +593,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getNamespacedClassName(string $class): string
     {
+        if ($class[0] === '\\') {
+            return $class;
+        }
+
         $ns2 = explode('\\', trim($class, '\\'));
 
         if (isset($this->useAliases[$ns2[0]])) {
@@ -971,7 +975,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Class':
                     $this->fatalError($v, 'Cannot declare class in function');
-                    break;
                 default:
                     abort($v);
             }
@@ -1980,7 +1983,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } elseif ($this->isArrayDimFetch($arg->value)) {
                 $array = $this->parseIdentifier($arg->value->var);
-                if (!$this->hasVar($array)) {
+                if ($this->isVarExpr($arg->value->var) and !$this->hasVar($array)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $array . '`');
                 }
                 if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
@@ -2354,6 +2357,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $out .= "\n\t";
             }
         }
+        $out .= '0,';
         return $out;
     }
 
@@ -2375,6 +2379,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->addConstData($className . '_code', $classCode);
                 $this->beforeStmtLines[] = 'if (!' . $className . '_defined) {'
                     . $className . '_defined = true; php::eval((const char *)' . $className . '_code);}';
+                $className = '\\' . $className;
             } else {
                 $this->fatalError($expr, 'must be anonymous class');
             }
@@ -3160,6 +3165,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($class === 'parent') {
                 return $this->parseParentMethodCall($expr);
             }
+
+            $this->beforeStmtLines[] = '// Static Call: ' . $class . '::' . $method;
 
             if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
                 $nativeFunc = $this->getNativeStaticMethod($class, $method);

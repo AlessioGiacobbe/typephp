@@ -2,14 +2,14 @@
 enum 2
 --FILE--
 <?php
+enum TestEnum2: int {
+    case Hearts = 2;
+    case Diamonds = 1;
+    case Clubs = 4;
+    case Spades = 3;
+}
 function main()
 {
-    enum TestEnum2: int {
-        case Hearts = 2;
-        case Diamonds = 1;
-        case Clubs = 4;
-        case Spades = 3;
-    }
     var_dump(TestEnum2::cases());
 }
 ?>
