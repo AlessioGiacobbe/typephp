@@ -9,7 +9,10 @@
 namespace PhpAot\Php;
 
 use ReflectionClass;
+use ReflectionException;
 use ReflectionFunction;
+use ReflectionParameter;
+use ReflectionUnionType;
 
 class Reflection
 {
@@ -21,7 +24,7 @@ class Reflection
         if (!isset(self::$functions[$fn])) {
             try {
                 $ref = new ReflectionFunction($fn);
-            } catch (\ReflectionException $e) {
+            } catch (ReflectionException $e) {
                 return null;
             }
             self::$functions[$fn] = $ref;
@@ -35,7 +38,7 @@ class Reflection
         if (!isset(self::$classes[$className])) {
             try {
                 $ref = new ReflectionClass($className);
-            } catch (\ReflectionException $e) {
+            } catch (ReflectionException $e) {
                 return null;
             }
             self::$classes[$className] = $ref;
@@ -54,14 +57,14 @@ class Reflection
         if (!$returnType) {
             return null;
         }
-        if ($returnType instanceof \ReflectionUnionType) {
+        if ($returnType instanceof ReflectionUnionType) {
             return null;
         }
 
         return $returnType->getName();
     }
 
-    public static function getFunctionParameter(string $fn, int $index): ?\ReflectionParameter
+    public static function getFunctionParameter(string $fn, int $index): ?ReflectionParameter
     {
         $func = self::getFunction($fn);
         if (!$func) {
@@ -75,16 +78,19 @@ class Reflection
         return $args[$index];
     }
 
-    public static function getClassMethodParameter(string $className, string $fn, int $index): ?\ReflectionParameter
+    public static function getClassMethodParameter(string $className, string $fn, int $index): ?ReflectionParameter
     {
         $classRef = self::getClass($className);
         if (!$classRef) {
             return null;
         }
-        $method = $classRef->getMethod($fn);
-        if (!$method) {
+
+        try {
+            $method = $classRef->getMethod($fn);
+        } catch (ReflectionException $e) {
             return null;
         }
+
         $args = $method->getParameters();
         if ($index >= count($args)) {
             return null;

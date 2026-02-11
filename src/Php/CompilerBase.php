@@ -649,7 +649,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(self::NAMESPACE_SEPARATOR, array_reverse($names));
     }
 
-    protected function getClassEntryPtr(string $className): string
+    protected function getClassId(string $className): int
     {
         if (isset($this->classMap[$className])) {
             $id = $this->classMap[$className];
@@ -657,11 +657,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             $id = $this->classIndex++;
             $this->classMap[$className] = $id;
         }
-
-        return 'php_get_class(' . $id . ', ' . $this->getLiteralString($className) . ')';
+        return $id;
     }
 
-    protected function getFuncPtr(string $funcName, bool $macro = true): string
+    protected function getFuncId($funcName): int
     {
         if (isset($this->funcMap[$funcName])) {
             $id = $this->funcMap[$funcName];
@@ -669,10 +668,29 @@ class CompilerBase extends \PhpAot\Core\Translator
             $id = $this->funcIndex++;
             $this->funcMap[$funcName] = $id;
         }
+        return $id;
+    }
+
+    protected function getClassEntryPtr(string $className): string
+    {
+        $id = $this->getClassId($className);
+        return 'php_get_class(' . $id . ', ' . $this->getLiteralString($className) . ')';
+    }
+
+    protected function getFuncPtr(string $funcName, bool $macro = true): string
+    {
+        $id = $this->getFuncId($funcName);
         if ($macro) {
             return $id . ', ' . $this->getLiteralString($funcName);
         }
         return 'php_get_func(' . $id . ', ' . $this->getLiteralString($funcName) . ')';
+    }
+
+    protected function getMethodPtr(string $class, string $method): string
+    {
+        $funcId = $this->getFuncId($class . '::' . $method);
+        $classId = $this->getClassId($class);
+        return 'php_get_method(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
     protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
@@ -3122,20 +3140,27 @@ class CompilerBase extends \PhpAot\Core\Translator
         } else {
             $class = '';
         }
+
         $method = $this->identifierToStr($expr->name);
         $nativeFunc = $this->findNativeMethod($expr, $object, $method);
         if ($nativeFunc) {
             return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
         }
-        if (empty($expr->args)) {
-            return $object . '.exec(' . $method . ')';
-        }
+
         if ($this->isNamedMethod($expr->name)) {
             $funcName = $this->parseIdentifier($expr->name);
         } else {
             $funcName = '';
         }
-        return $object . '.exec(' . $method . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
+
+        if ($class and $funcName) {
+            $method = $this->getMethodPtr($class, $funcName);
+        }
+
+        if (empty($expr->args)) {
+            return $object . '.exec(' . $method . ')';
+        }
+        return $object . '.exec(' . $method . ', {' . $this->parseCallArgs($expr->args, $funcName, $class) . '})';
     }
 
     protected function identifierToStr(NodeAbstract $node, bool $require = true): string

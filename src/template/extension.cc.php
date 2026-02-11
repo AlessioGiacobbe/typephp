@@ -41,6 +41,14 @@ zend_function *php_get_func(int func_id, const php::String &func_name) {
     return <?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id];
 }
 
+zend_function *php_get_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
+    if (UNEXPECTED(<?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id] == nullptr)) {
+        auto ce = php_get_class(class_id, class_name);
+        <?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id] = php::getMethod(ce, method_name);
+    }
+    return <?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id];
+}
+
 // literal strings
 php::Str <?=Translator::LITERAL_STRINGS?>[] = {
 <?php
