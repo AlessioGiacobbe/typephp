@@ -49,6 +49,11 @@ trait AstNodeType
         return $expr instanceof Node\Name;
     }
 
+    protected function isNamedMethod(NodeAbstract $expr): bool
+    {
+        return $this->isIdExpr($expr);
+    }
+
     protected function isScalarString(NodeAbstract $expr): bool
     {
         return $expr instanceof Node\Scalar\String_;

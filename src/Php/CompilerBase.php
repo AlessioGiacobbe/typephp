@@ -1948,12 +1948,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
     {
-        if (!$className) {
-            if ($this->isNativeFunction($funcName)) {
-                return $this->parseNativeCallArgs($args, $funcName);
-            }
-        }
-
         $list_args = [];
         foreach ($args as $i => $arg) {
             if ($arg->name !== null) {
@@ -1961,7 +1955,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
-                if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
+                if ($funcName and Reflection::isReferenceArg($funcName, $className, $i)) {
                     if (!$this->hasVar($name)) {
                         // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
                         $this->addLocalVar($name, self::TYPE_REF);
@@ -1969,10 +1963,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                         // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
                         $tmpVar = $this->genTmpVarName();
                         $this->addLocalVar($tmpVar, self::TYPE_REF);
+                        $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
                         $name = $tmpVar;
                     }
-                    $this->beforeStmtLines[] = $name . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
-                    $list_args[]             = '&' . $name;
+                    $list_args[] = '&' . $name;
                     continue;
                 }
                 if (!$this->hasVar($name)) {
@@ -1983,7 +1977,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$this->hasVar($obj)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
                 }
-                if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
+                if ($funcName and Reflection::isReferenceArg($funcName, $className, $i)) {
                     $list_args[] = $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
                     continue;
                 }
@@ -1992,7 +1986,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->isVarExpr($arg->value->var) and !$this->hasVar($array)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $array . '`');
                 }
-                if ($funcName and Reflection::isReferenceArg($funcName, $i)) {
+                if ($funcName and Reflection::isReferenceArg($funcName, $className, $i)) {
                     if ($arg->value->dim === null) {
                         $this->fatalError($arg, 'Array dimension must be a constant expression');
                     }
@@ -3122,16 +3116,26 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseMethodCall(Node\Expr\MethodCall $expr): string
     {
-        $object     = $this->convertToObject($expr->var);
-        $method     = $this->parseIdentifier($expr->name);
+        $object = $this->convertToObject($expr->var);
+        if ($this->isTypedObject($object)) {
+            $class = $this->getObjectType($object);
+        } else {
+            $class = '';
+        }
+        $method = $this->identifierToStr($expr->name);
         $nativeFunc = $this->findNativeMethod($expr, $object, $method);
         if ($nativeFunc) {
             return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
         }
         if (empty($expr->args)) {
-            return $object . '.exec("' . $method . '")';
+            return $object . '.exec(' . $method . ')';
         }
-        return $object . '.exec("' . $method . '", ' . $this->parseCallArgs($expr->args) . ')';
+        if ($this->isNamedMethod($expr->name)) {
+            $funcName = $this->parseIdentifier($expr->name);
+        } else {
+            $funcName = '';
+        }
+        return $object . '.exec(' . $method . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
     }
 
     protected function identifierToStr(NodeAbstract $node, bool $require = true): string

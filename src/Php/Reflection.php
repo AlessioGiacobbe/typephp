@@ -8,15 +8,19 @@
 
 namespace PhpAot\Php;
 
+use ReflectionClass;
+use ReflectionFunction;
+
 class Reflection
 {
     private static array $functions = [];
+    private static array $classes = [];
 
-    public static function getFunction(string $fn)
+    public static function getFunction(string $fn): ?ReflectionFunction
     {
         if (!isset(self::$functions[$fn])) {
             try {
-                $ref = new \ReflectionFunction($fn);
+                $ref = new ReflectionFunction($fn);
             } catch (\ReflectionException $e) {
                 return null;
             }
@@ -24,6 +28,20 @@ class Reflection
         }
 
         return self::$functions[$fn];
+    }
+
+    public static function getClass(string $className): ?ReflectionClass
+    {
+        if (!isset(self::$classes[$className])) {
+            try {
+                $ref = new ReflectionClass($className);
+            } catch (\ReflectionException $e) {
+                return null;
+            }
+            self::$classes[$className] = $ref;
+        }
+
+        return self::$classes[$className];
     }
 
     public static function getFunctionReturnType(string $fn): ?string
@@ -57,13 +75,33 @@ class Reflection
         return $args[$index];
     }
 
-    public static function isReferenceArg(string $fn, int $index): ?string
+    public static function getClassMethodParameter(string $className, string $fn, int $index): ?\ReflectionParameter
     {
-        $param = self::getFunctionParameter($fn, $index);
+        $classRef = self::getClass($className);
+        if (!$classRef) {
+            return null;
+        }
+        $method = $classRef->getMethod($fn);
+        if (!$method) {
+            return null;
+        }
+        $args = $method->getParameters();
+        if ($index >= count($args)) {
+            return null;
+        }
+        return $args[$index];
+    }
+
+    public static function isReferenceArg(string $fnName, string $className, int $index): ?string
+    {
+        if ($className) {
+            $param = self::getClassMethodParameter($className, $fnName, $index);
+        } else {
+            $param = self::getFunctionParameter($fnName, $index);
+        }
         if (!$param) {
             return null;
         }
-
         return $param->isPassedByReference() ? $param->getName() : null;
     }
 }
