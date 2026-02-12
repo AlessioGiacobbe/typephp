@@ -687,8 +687,8 @@ class Translator extends Preprocessor
         }
         $this->classDef->implements = $this->parseIdentifierList($class->implements);
 
-        $className                             = $this->classDef->getNamespacedName();
-        $this->classes[$className]             = $this->classDef;
+        $className = $this->classDef->getNamespacedName();
+        $this->addClass($className, $this->classDef);
         $this->classesDefineInFile[$className] = $this->classDef;
 
         $methodCodes = [];

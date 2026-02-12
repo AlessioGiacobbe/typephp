@@ -1356,6 +1356,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->globalVars[$name] = $type;
     }
 
+    protected function addClass(string $name, ClassDef $classDef): void
+    {
+        $this->classes[$this->escapeClass($name)] = $classDef;
+    }
+
     protected function hasVar(string $name): bool
     {
         return $this->hasLocalVar($name) || $this->hasGlobalVar($name);
@@ -1368,8 +1373,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function hasNativeClass(string $name): bool
     {
-        $name = trim($name, '\\');
-        return array_key_exists($name, $this->classes);
+        return array_key_exists($this->escapeClass($name), $this->classes);
     }
 
     protected function getNativeStaticMethod(string $class, string $method): string|false
@@ -1386,8 +1390,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getClassDef(string $name): ClassDef
     {
-        $name = trim($name, '\\');
-        return $this->classes[$name];
+        return $this->classes[$this->escapeClass($name)];
     }
 
     protected function resetReturnType(string $type): void
@@ -2613,7 +2616,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function escapeClass(string $class): string
     {
-        return strtolower($class);
+        return str_replace('\\', '_', trim(strtolower($class), '\\'));
     }
 
     protected function escapeFileName(string $file): string
@@ -2717,39 +2720,29 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(PHP_EOL . $this->getIndent(), $lines);
     }
 
-    protected function getPropertyIdentifier(NodeAbstract $object, NodeAbstract $property): string
+    protected function getPropertyIdentifier(NodeAbstract $object, NodeAbstract $property): ?string
     {
-        $id = $this->identifierToStr($property);
         if ($this->isVarExpr($object) and $this->isIdExpr($property)) {
-            $objectName   = $this->parseIdentifier($object);
+            $objectName = $this->parseIdentifier($object);
             $propertyName = $this->parseIdentifier($property);
+            $nativeProperty = null;
             if ($objectName === 'this_') {
-                $id = self::PREFIX . $this->getPropertyOffset($propertyName, $this->class, $this->namespace);
+                $nativeProperty = $this->findNativeProperty($propertyName, $this->class, $this->namespace);
             } elseif ($this->isTypedObject($objectName)) {
-                $class = $this->objects[$objectName];
-                if (isset($this->classes[$class])) {
-                    $classDef = $this->classes[$class];
-                    if ($classDef->hasProperty($propertyName)) {
-                        $propertyDef = $classDef->getProperty($propertyName);
-                        if ($propertyDef->isPublic() or $this->class === $class) {
-                            $id = self::PREFIX . $this->getPropertyOffset($propertyName, $class, $classDef->namespace);
-                        } else {
-                            $this->fatalError($property, "Cannot access private/protected property `{$propertyName}` of class `{$class}`");
-                        }
-                    }
-                }
+                $nativeProperty = $this->findNativeProperty($propertyName, $this->objects[$objectName]);
+            }
+            if ($nativeProperty) {
+                return $nativeProperty;
             }
         }
-
-        return $id;
+        return $this->identifierToStr($property);
     }
 
     protected function parsePropertyFetch(Node\Expr\PropertyFetch $expr, bool $update = false): string
     {
-        $object   = $expr->var;
+        $object = $expr->var;
         $property = $expr->name;
-        $id       = $this->getPropertyIdentifier($object, $property);
-
+        $id = $this->getPropertyIdentifier($object, $property);
         return $this->convertToObject($object) . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
     }
 
@@ -3314,6 +3307,44 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return $propDef;
                 }
             }
+        }
+        return null;
+    }
+
+    protected function findNativeProperty($property, string $class, string $namespace = ''): ?string
+    {
+        $findClass = $class;
+        if ($namespace) {
+            $findClass = $namespace . '\\' . $class;
+        }
+        $scope = $this->class ? $namespace . '\\' . $class : '';
+
+        while (true) {
+            if ($this->hasNativeClass($findClass)) {
+                $classDef = $this->getClassDef($findClass);
+                if ($classDef->hasProperty($property)) {
+                    $propertyDef = $classDef->getProperty($property);
+                    if ($propertyDef->isPublic()) {
+                        return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
+                    } elseif ($propertyDef->isProtected()) {
+                        if ($scope) {
+                            return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
+                        }
+                        $this->fatalError($property, "Cannot access protected property `{$property}` of class `{$class}`");
+                    } else {
+                        if ($scope === $findClass) {
+                            return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
+                        }
+                        $this->error("Cannot access private property `{$property}` of class `{$class}`");
+                    }
+                } elseif ($classDef->extends) {
+                    $findClass = $classDef->namespace . '\\' . $classDef->extends;
+                    continue;
+                } else {
+                    $this->error("Property `{$property}` does not exist in class `{$class}`");
+                }
+            }
+            break;
         }
         return null;
     }
