@@ -1956,7 +1956,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
         }
-        return $call . '(' . $fn . ', {' . $this->parseCallArgs($expr->args, $name) . '})';
+        return $call . '(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name) . ')';
     }
 
     protected function parseNativeCallArgs(array $callArgs, string $nativeFunc): string
@@ -2005,6 +2005,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
     {
         $list_args = [];
+        $last = array_key_last($args);
         foreach ($args as $i => $arg) {
             if ($arg->name !== null) {
                 $this->fatalError($arg, 'Named arguments are not supported');
@@ -2050,19 +2051,40 @@ class CompilerBase extends \PhpAot\Core\Translator
                     continue;
                 }
             }
-            // 不支持变长参数展开的语法，例如：array_merge(...$arr)
+            // 变长参数展开的语法，例如：array_merge(...$arr)
             if ($arg->unpack) {
-                $this->fatalError($arg, 'The syntax for variable parameter expansion is not supported');
+                if ($i !== $last) {
+                    $this->fatalError($arg, 'The unpack expression for variadic arguments must be the last');
+                }
+                $tmpVar = $this->genTmpVarName();
+                $this->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $tmpVar . '{' . implode(', ', $list_args) . '};';
+                $this->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
+                return $tmpVar;
             }
             $list_args[] = $this->parseArg($arg);
         }
 
-        return implode(', ', $list_args);
+        return '{' . implode(', ', $list_args) . '}';
     }
 
-    protected function parseArg($arg): string
+    protected function parseArg(Node\Arg $arg): string
     {
         return $this->parseIdentifier($arg->value);
+    }
+
+    protected function parseArrayArg(Node\Arg $expr): string
+    {
+        $value = $expr->value;
+        if ($this->isVarExpr($value)) {
+            $var = $this->parseIdentifier($value);
+            if (!$this->hasVar($var)) {
+                $this->errorUndefinedVariable($value);
+            }
+            if ($this->getVarType($var) === self::TYPE_ARRAY) {
+                return $var;
+            }
+        }
+        return $this->parseExpr($value);
     }
 
     protected function parsePostOp($expr, string $op): string
@@ -2448,7 +2470,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($args)) {
             return 'php::newObject(' . $cePtr . ')';
         }
-        return 'php::newObject(' . $cePtr . ', {' . $this->parseCallArgs($args) . '})';
+        return 'php::newObject(' . $cePtr . ', ' . $this->parseCallArgs($args) . ')';
     }
 
     protected function parseClone(Node\Expr\Clone_ $expr): string
@@ -3198,7 +3220,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return $object . '.exec(' . $method . ')';
         }
-        return $object . '.exec(' . $method . ', {' . $this->parseCallArgs($expr->args, $funcName, $class) . '})';
+        return $object . '.exec(' . $method . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
     }
 
     protected function identifierToStr(NodeAbstract $node, bool $require = true): string
@@ -3268,7 +3290,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
         }
-        return $call . '(' . $fn . ', {' . $this->parseCallArgs($expr->args) . '})';
+        return $call . '(' . $fn . ', ' . $this->parseCallArgs($expr->args) . ')';
     }
 
     protected function findNativeStaticProperty(Node\Expr\StaticPropertyFetch $expr, ?string &$class, ?string &$namespace): ?PropertyDef
@@ -3655,7 +3677,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return 'this_.callParentMethod(' . $method . ')';
         }
-        return 'this_.callParentMethod(' . $method . ', {' . $this->parseCallArgs($expr->args) . '})';
+        return 'this_.callParentMethod(' . $method . ', ' . $this->parseCallArgs($expr->args) . ')';
     }
 
     protected function genDebugInfo(?NodeAbstract $stmt = null): string
