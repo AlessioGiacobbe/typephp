@@ -1959,13 +1959,32 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $call . '(' . $fn . ', {' . $this->parseCallArgs($expr->args, $name) . '})';
     }
 
-    protected function parseNativeCallArgs(array $args, string $nativeFunc): string
+    protected function parseNativeCallArgs(array $callArgs, string $nativeFunc): string
     {
-        $list_args = [];
-        foreach ($args as $i => $arg) {
-            if ($arg->name !== null) {
-                $this->fatalError($arg, 'Named arguments are not supported');
+        $argList = [];
+        $functionDef = $this->functions[$nativeFunc];
+        $args = [];
+        $hasNamedArg = false;
+        // 对命名参数进行重排
+        foreach ($callArgs as $i => $arg) {
+            if ($arg->name) {
+                foreach($functionDef->argInfoList as $k => $argInfo) {
+                    if ($argInfo->name === $arg->name->name) {
+                        $args[$k] = $arg;
+                        $hasNamedArg = true;
+                        break;
+                    }
+                }
+            } else {
+                $args[$i] = $arg;
             }
+        }
+        // 对 key 进行排序，确保参数顺序正确
+        if ($hasNamedArg) {
+            ksort($args);
+        }
+
+        foreach ($args as $i => $arg) {
             $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
             if ($argInfo->variadic) {
                 $vargs = array_slice($args, $i);
@@ -1973,14 +1992,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                 foreach ($vargs as $varg) {
                     $list_vargs[] = $this->getTypeConvertedArg($varg, $argInfo);
                 }
-                $list_args[] = '{' . implode(', ', $list_vargs) . '}';
+                $argList[] = '{' . implode(', ', $list_vargs) . '}';
                 break;
             } else {
-                $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
+                $argList[] = $this->getTypeConvertedArg($arg, $argInfo);
             }
         }
 
-        return implode(', ', $list_args);
+        return implode(', ', $argList);
     }
 
     protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
