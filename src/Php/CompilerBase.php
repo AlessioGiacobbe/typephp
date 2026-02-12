@@ -867,7 +867,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $list                          = [];
         $functionDef->argCountRequired = count($params);
-        foreach ($params as $param) {
+        $last = array_key_last($params);
+        foreach ($params as $i => $param) {
             // .stub 存根定义 C++ Native 函数，必须设置函数的参数类型
             if ($this->stubFile and !$param->type) {
                 throw new \RuntimeException('No type for ' . $this->parseIdentifier($param->var));
@@ -875,12 +876,20 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($param->byRef) {
                 $this->fatalError($param, 'ByRef parameters are not supported');
             }
+            if ($param->variadic and $i !== $last) {
+                $this->fatalError($param, 'Variadic parameters must be the last parameter');
+            }
             $name          = $this->parseIdentifier($param->var);
             $type          = $this->parseParameterType($param, $name);
-            $list[]        = $type . ' ' . $name;
+            if ($param->variadic) {
+                $list[]        = self::TYPE_ARRAY . ' ' . $name;
+            } else {
+                $list[]        = $type . ' ' . $name;
+            }
             $argInfo       = new ArgInfo();
             $argInfo->name = $name;
             $argInfo->type = $type;
+            $argInfo->variadic = $param->variadic;
             if (isset($param->default)) {
                 $functionDef->argCountRequired = count($list) - 1;
                 $argInfo->default              = $this->parseIdentifier($param->default);
@@ -1957,8 +1966,18 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($arg->name !== null) {
                 $this->fatalError($arg, 'Named arguments are not supported');
             }
-            $argInfo     = $this->getArgInfo($arg, $nativeFunc, $i);
-            $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
+            $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
+            if ($argInfo->variadic) {
+                $vargs = array_slice($args, $i);
+                $list_vargs = [];
+                foreach ($vargs as $varg) {
+                    $list_vargs[] = $this->getTypeConvertedArg($varg, $argInfo);
+                }
+                $list_args[] = '{' . implode(', ', $list_vargs) . '}';
+                break;
+            } else {
+                $list_args[] = $this->getTypeConvertedArg($arg, $argInfo);
+            }
         }
 
         return implode(', ', $list_args);

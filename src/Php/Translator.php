@@ -300,9 +300,13 @@ class Translator extends Preprocessor
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
                 foreach ($argInfoList as $argInfo) {
-                    $arg = $argInfo->type . ' ' . $argInfo->name;
-                    if ($argInfo->default) {
-                        $arg .= ' = ' . $argInfo->default;
+                    if ($argInfo->variadic) {
+                        $arg = self::TYPE_ARRAY . ' ' . $argInfo->name . '()';
+                    } else {
+                        $arg = $argInfo->type . ' ' . $argInfo->name;
+                        if ($argInfo->default) {
+                            $arg .= ' = ' . $argInfo->default;
+                        }
                     }
                     $list[] = $arg;
                 }
@@ -734,13 +738,23 @@ class Translator extends Preprocessor
         $cppCode    = '';
         $callParams = '';
         foreach ($functionDef->argInfoList as $k => $argInfo) {
-            if ($argInfo->default) {
-                $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
+            $var = 'arg_' . $argInfo->name;
+            if ($argInfo->variadic) {
+                $cppCode .= $this->getIndent() . self::TYPE_ARRAY . ' ' . $var . ';' . PHP_EOL;
+                $cppCode .= $this->getIndent() . 'for (uint32_t i = ' . $k . '; i < php::getCallArgNum(); i++) {' . PHP_EOL;
+                $this->indentLevel++;
+                $cppCode .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
+                $this->indentLevel--;
+                $cppCode .= '}' . PHP_EOL;
             } else {
-                $argExpr = 'php::getCallArg(' . $k . ')';
+                if ($argInfo->default) {
+                    $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
+                } else {
+                    $argExpr = 'php::getCallArg(' . $k . ')';
+                }
+                $expr = $this->convertExprFromType($argInfo->type, $argExpr);
+                $cppCode .= $this->getIndent() . $argInfo->type . ' ' . $var . ' = ' . $expr . ';' . PHP_EOL;
             }
-            $expr = $this->convertExprFromType($argInfo->type, $argExpr);
-            $cppCode .= $this->getIndent() . $argInfo->type . ' arg_' . $argInfo->name . ' = ' . $expr . ';' . PHP_EOL;
             $callParams .= 'arg_' . $argInfo->name . ',';
         }
 
