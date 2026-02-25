@@ -978,7 +978,7 @@ class FunctionName implements FunctionOrMethodName {
     }
 
     public function getDeclarationName(): string {
-        return implode('_', $this->name->getParts());
+        return strtolower(implode('_', $this->name->getParts()));
     }
 
     public function getFunctionName(): string {
@@ -990,7 +990,7 @@ class FunctionName implements FunctionOrMethodName {
     }
 
     public function getArgInfoName(): string {
-        $underscoreName = implode('_', $this->name->getParts());
+        $underscoreName = strtolower(implode('_', $this->name->getParts()));
         return "arginfo_$underscoreName";
     }
 
