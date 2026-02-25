@@ -137,9 +137,6 @@ class Translator extends Preprocessor
             $this->climate->red('The target name [' . $name . '] must not be a reserved keyword');
             exit(1);
         }
-        if (is_numeric($name)) {
-            $name = 'app_' . $name;
-        }
         $this->targetName = $name;
     }
 
@@ -237,6 +234,14 @@ class Translator extends Preprocessor
         $this->writeFile($file, $code);
         $this->formatCppCode($file);
         $this->localHeaders = [];
+    }
+
+    public function getModuleName(): string
+    {
+        if (ctype_digit($this->targetName[0])) {
+            return 'app_' . $this->targetName;
+        }
+        return $this->targetName;
     }
 
     public function hasObjectFileCache(string $cppFile): bool

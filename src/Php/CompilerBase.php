@@ -3659,7 +3659,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (!$this->hasNativeClass($class)) {
                 return false;
             }
-            $classDef = $this->classes[$class];
+            $classDef = $this->getClassDef($class);
             if (!$classDef->hasMethod($method)) {
                 return false;
             }

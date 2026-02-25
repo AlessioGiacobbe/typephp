@@ -95,7 +95,7 @@ foreach ($this->functions as $functionDef):
 };
 // clang-format on
 
-PHP_MINIT_FUNCTION(<?=$this->targetName?>) {
+PHP_MINIT_FUNCTION(<?=$this->getModuleName()?>) {
 // class/interface class entries
 <?php
 foreach ($this->classCeList as $ce):
@@ -159,7 +159,7 @@ foreach ($this->nativeConstants as $name => $const):
 <?php endforeach; ?>
 }
 
-PHP_RINIT_FUNCTION(<?=$this->targetName?>) {
+PHP_RINIT_FUNCTION(<?=$this->getModuleName()?>) {
     php::request_init();
     php_app_init();
 
@@ -174,29 +174,29 @@ PHP_RINIT_FUNCTION(<?=$this->targetName?>) {
     return SUCCESS;
 }
 
-PHP_RSHUTDOWN_FUNCTION(<?=$this->targetName?>) {
+PHP_RSHUTDOWN_FUNCTION(<?=$this->getModuleName()?>) {
     php_app_clean();
     php::request_shutdown();
     return SUCCESS;
 }
 
-zend_module_entry <?=$this->targetName?>_module_entry = {
+zend_module_entry <?=$this->getModuleName()?>_module_entry = {
     STANDARD_MODULE_HEADER,
-    "<?=$this->targetName?>",
+    "<?=$this->getModuleName()?>",
     ext_functions,
-    PHP_MINIT(<?=$this->targetName?>),
+    PHP_MINIT(<?=$this->getModuleName()?>),
     nullptr,
-    PHP_RINIT(<?=$this->targetName?>),
-    PHP_RSHUTDOWN(<?=$this->targetName?>),
+    PHP_RINIT(<?=$this->getModuleName()?>),
+    PHP_RSHUTDOWN(<?=$this->getModuleName()?>),
     nullptr,
     nullptr,
     STANDARD_MODULE_PROPERTIES,
 };
 
 <?php if ($this->buildMode === 'ext'): ?>
-ZEND_GET_MODULE(<?=$this->targetName?>);
+ZEND_GET_MODULE(<?=$this->getModuleName()?>);
 <?php else: ?>
-zend_module_entry *<?= self::PREFIX . 'embed_' ?>get_module() {
-    return &<?= $this->targetName ?>_module_entry;
+zend_module_entry *<?= Translator::PREFIX . 'embed_' ?>get_module() {
+    return &<?= $this->getModuleName() ?>_module_entry;
 }
 <?php endif; ?>
