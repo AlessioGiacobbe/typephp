@@ -4502,7 +4502,7 @@ class FileInfo {
                 }
             }
 
-            if ($stmt instanceof Stmt\Use_) {
+            if ($stmt instanceof Stmt\Use_ or $stmt instanceof Stmt\GroupUse or $stmt instanceof Stmt\Declare_) {
                 continue;
             }
 

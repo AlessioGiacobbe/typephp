@@ -144,6 +144,7 @@ class Preprocessor extends CompilerBase
                     break;
                 case 'Stmt_Use':
                 case 'Stmt_Const':
+                case 'Stmt_Interface':
                     break;
                 case 'Stmt_Expression':
                     $this->foundStrayCode($v2);

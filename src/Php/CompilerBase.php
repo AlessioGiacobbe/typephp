@@ -398,6 +398,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseShellExec($expr);
             case 'Expr_Closure':
                 return $this->parseClosure($expr);
+            case 'Expr_ArrowFunction':
+                return $this->parseArrowFunction($expr);
             case 'Name_FullyQualified':
                 return $expr->name;
             case 'Scalar_Int':
@@ -3758,6 +3760,50 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function genEmbeddedCode(NodeAbstract $stmt): string
     {
         return $this->printer->prettyPrint([$stmt]);
+    }
+
+    protected function parseArrowFunction(Node\Expr\ArrowFunction $expr): string
+    {
+        $tmpVar = $this->genTmpVarName();
+
+        $fnCode = $this->getIndent() .
+            'php::ClosureFn ' . $tmpVar . ' = [&]('
+            . 'INTERNAL_FUNCTION_PARAMETERS, '
+            . self::TYPE_OBJECT . ' &this_, '
+            . self::TYPE_ARGS . ' &vars_) ' .
+            '-> ' . self::TYPE_VAR . ' {' . PHP_EOL;
+
+        $oriArgs = $this->arguments;
+        $this->arguments = [];
+        $oriInClosure = $this->inClosure;
+        $this->inClosure = true;
+
+        $this->indentLevel++;
+
+        foreach ($expr->params as $i => $param) {
+            $var = $this->parseIdentifier($param->var);
+            $fnCode .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
+            $this->addArgument($var, self::TYPE_VAR);
+        }
+
+        if ($this->methodDef) {
+            $this->addArgument('this_', self::TYPE_OBJECT);
+        }
+
+        $fnCode .= 'return ' . $this->parseExpr($expr->expr) . ';';
+
+        $this->indentLevel--;
+        $fnCode .= '};' . PHP_EOL;
+
+        $this->beforeStmtLines[] = $fnCode;
+        $this->arguments = $oriArgs;
+        $this->inClosure = $oriInClosure;
+
+        if ($this->methodDef) {
+            return 'php::newClosure(' . $tmpVar . ', { }, this_)';
+        } else {
+            return 'php::newClosure(' . $tmpVar . ', { })';
+        }
     }
 
     protected function parseClosure(Node\Expr\Closure $expr): string
