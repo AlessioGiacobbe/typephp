@@ -17,8 +17,14 @@ use numpy as np;
 
 function np()
 {
-    var_dump(np::$module);
-    var_dump(np::version->full_version);
+    print(np::$module);
+    print(np::version->full_version);
 }
+
+
+$array["hello"] = $a;
+$array["world"] = $b;
+
+$c = $array["world"];
 
 

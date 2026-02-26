@@ -1156,12 +1156,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 类型推断，获取对象的类名
             if ($this->isNewExpr($right) and $this->isNameExpr($right->class)) {
                 $class               = $this->parseIdentifier($right->class);
-                $this->objects[$var] = $class;
+                $this->objects[$var] = $this->getNamespacedClassName($class);
                 $type                = self::TYPE_OBJECT;
             } elseif ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
                 $fn = $this->parseIdentifier($right->name);
                 if (count($right->args) === 2 and $fn === 'objval' and $this->isScalarString($right->args[1]->value)) {
-                    $this->objects[$var] = $this->parseIdentifier($right->args[1]->value);
+                    $this->objects[$var] = $this->getNamespacedClassName($this->parseIdentifier($right->args[1]->value));
                     $type                = self::TYPE_OBJECT;
                 } elseif (count($right->args) === 1 and $fn === 'any') {
                     $type = self::TYPE_VAR;
@@ -1541,7 +1541,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($param, 'Cannot use `resource` as a parameter type.');
                 // no break
             default:
-                $this->objects[$var] = $name;
+                $this->objects[$var] = $this->getNamespacedClassName($name);
                 return self::TYPE_OBJECT;
         }
     }

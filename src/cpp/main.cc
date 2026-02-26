@@ -41,6 +41,8 @@ int main(int cpp_argc, char **cpp_argv) {
     ProfilerStart("profile.out");
 #endif
     try {
+        char path_translated[] = "embed";
+        SG(request_info).path_translated = path_translated;
         module->request_startup_func(module->type, module->module_number);
     } catch (zend_object *e) {
         rc = EG(exit_status);
