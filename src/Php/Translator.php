@@ -896,7 +896,7 @@ class Translator extends Preprocessor
     protected function parsePropertyDef(Node\Stmt\Property $v): void
     {
         $flags = $v->flags;
-        $type  = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
+        $type  = $this->parseTypeDecl($v->type);
 
         foreach ($v->props as $prop) {
             $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);

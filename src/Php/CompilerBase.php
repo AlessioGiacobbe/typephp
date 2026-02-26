@@ -695,14 +695,25 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php_get_method(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
+    protected function parseTypeDecl(NodeAbstract|null $type): string
+    {
+        // 联合类型暂时不支持，使用 var 类型代替
+        if ($type instanceof Node\UnionType or $type instanceof NullableType) {
+            return self::TYPE_VAR;
+        } else {
+            return $type ? $this->getTypeFromZendType($this->parseIdentifier($type)) : self::TYPE_VOID;
+        }
+    }
+
     protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
     {
         // .stub 存根定义 C++ Native 函数，必须设置返回值类型
         if (!$v->returnType && $this->stubFile) {
             throw new \Exception('No return type for ' . $v->name);
         }
+
         $fnName = $this->parseIdentifier($v->name);
-        $returnType        = $v->returnType ? $this->getTypeFromZendType($this->parseIdentifier($v->returnType)) : self::TYPE_VOID;
+        $returnType = $this->parseTypeDecl($v->returnType);
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
         $this->functionDef = $functionDef;
 
@@ -2034,7 +2045,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$this->hasVar($name)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $name . '`');
                 }
-            } elseif ($this->isPropertyFetch($arg->value)) {
+            } elseif ($this->isPropertyFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
                 $obj = $this->parseIdentifier($arg->value->var);
                 if (!$this->hasVar($obj)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
@@ -2043,7 +2054,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $list_args[] = $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
                     continue;
                 }
-            } elseif ($this->isArrayDimFetch($arg->value)) {
+            } elseif ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
                 $array = $this->parseIdentifier($arg->value->var);
                 if ($this->isVarExpr($arg->value->var) and !$this->hasVar($array)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $array . '`');
@@ -3190,7 +3201,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseMethodCall(Node\Expr\MethodCall $expr): string
     {
         if ($this->isVarExpr($expr->var)) {
-            $this->errorUndefinedVariable($expr->var);
+            $var = $this->parseIdentifier($expr->var);
+            if (!$this->hasVar($var)) {
+                $this->errorUndefinedVariable($expr->var);
+            }
         }
 
         $object = $this->convertToObject($expr->var);
