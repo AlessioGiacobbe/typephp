@@ -2066,6 +2066,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list_args = [];
         $last = array_key_last($args);
         foreach ($args as $i => $arg) {
+            if ($arg instanceof Node\VariadicPlaceholder) {
+                $this->fatalError($arg, 'Variadic place holder are not supported');
+            }
             if ($arg->name !== null) {
                 $this->fatalError($arg, 'Named arguments are not supported');
             }
@@ -3127,16 +3130,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($this->isPropertyFetch($expr)) {
                 $name = $this->identifierToStr($expr->name);
                 $list[] = '{php::PropertyFetch, ' . self::TYPE_VAR . '(' . $name . ')}';
-            } elseif ($this->isStaticPropertyFetch($expr)) {
-                $var = $this->genTmpVarName();
-                $this->addLocalVar($var, self::TYPE_VAR);
-                $this->beforeStmtLines[] = $var . '=' . $this->parseStaticPropertyFetch($expr) . ';';
-                break;
             } elseif ($this->isVarExpr($expr)) {
                 $var = $this->parseIdentifier($expr);
                 break;
             } else {
-                $this->fatalError($expr, 'The ' . $op . '() only supports variables, array fetch, and property read');
+                $var = $this->genTmpVarName();
+                $this->addLocalVar($var, self::TYPE_VAR);
+                $this->beforeStmtLines[] = $var . '=' . $this->parseExpr($expr) . ';';
+                break;
             }
             $expr = $expr->var;
         }
@@ -3987,6 +3988,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function isReturnStmtInLastLine(array $stmts): bool
     {
+        if (count($stmts) === 0) {
+            return false;
+        }
         return $stmts[array_key_last($stmts)] instanceof Node\Stmt\Return_;
     }
 }

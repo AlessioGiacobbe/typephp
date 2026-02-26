@@ -39,6 +39,11 @@ trait AstNodeType
         return $expr instanceof Expr\StaticPropertyFetch;
     }
 
+    protected function isClassConstFetch(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Expr\ClassConstFetch;
+    }
+
     protected function isNewExpr(NodeAbstract $expr): bool
     {
         return $expr instanceof Expr\New_;
