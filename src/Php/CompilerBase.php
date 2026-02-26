@@ -3189,6 +3189,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseMethodCall(Node\Expr\MethodCall $expr): string
     {
+        if ($this->isVarExpr($expr->var)) {
+            $this->errorUndefinedVariable($expr->var);
+        }
+
         $object = $this->convertToObject($expr->var);
         if ($this->isTypedObject($object)) {
             $class = $this->getObjectType($object);
@@ -3451,10 +3455,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseCatch(mixed $catch, string $exVar): string
+    protected function parseCatch(Node\Stmt\Catch_ $catch, string $exVar): string
     {
         $types = $catch->types;
-        $var   = $this->parseIdentifier($catch->var);
+        $var = $catch->var ? $this->parseIdentifier($catch->var) : $this->genTmpVarName();
         if (!$this->hasVar($var)) {
             $this->addLocalVar($var, self::TYPE_OBJECT);
         }

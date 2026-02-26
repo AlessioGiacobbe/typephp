@@ -7,5 +7,6 @@
 /vendor
 /tmp
 /projects/wordpress
+/projects/workerman
 /.php-cs-fixer.cache
 *.o
