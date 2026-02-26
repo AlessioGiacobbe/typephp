@@ -63,6 +63,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public const string PREFIX = 'php_';
     public const string ANON_CLASS = '_anon_class_';
+    public const string STATIC_VAR = '_static_var_';
     public const string OP_ISSET = 'isset';
     public const string OP_EMPTY = 'empty';
     public const string OP_NOP = "if (0) {}\n";
@@ -186,6 +187,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected array $objects = [];
     protected array $localVars = [];
+    protected array $staticVars = [];
     protected array $objectWrappers = [];
     protected bool $strictTypes = false;
     protected string $rootPath;
@@ -556,6 +558,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function resetFunction(): void
     {
         $this->localVars      = [];
+        $this->staticVars     = [];
         $this->arguments      = [];
         $this->objectWrappers = [];
         $this->tmpVarIndex    = 0;
@@ -597,6 +600,25 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function getFunctionName(FunctionLike $v): string
     {
         return $this->getNativeName($this->parseIdentifier($v->name), $this->namespace, $this->class);
+    }
+
+    protected function getStaticVarName(string $name): string
+    {
+        $prefix = self::STATIC_VAR;
+        if ($this->namespace) {
+            $prefix .= $this->namespace . '_';
+        }
+        if ($this->class) {
+            $prefix .= $this->class . '_';
+            if ($this->method) {
+                $prefix .= $this->method . '_';
+            }
+        } else {
+            if ($this->function) {
+                $prefix .= $this->function  . '_';
+            }
+        }
+        return $prefix . $name;
     }
 
     protected function getNamespacedClassName(string $class): string
@@ -843,18 +865,26 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function parseVariable(Variable $expr): string
+    {
+        if (is_object($expr->name) and $this->isVarExpr($expr->name)) {
+            $this->fatalError($expr, 'The `$$` syntax is not supported');
+        }
+        if ($this->isSuperGlobal($expr->name) and !$this->hasGlobalVar($expr->name)) {
+            $this->addGlobalVar($expr->name, $this->superGlobalVars[$expr->name]);
+        }
+        if ($this->hasStaticVar($expr->name)) {
+            return $this->getStaticVarName($expr->name);
+        }
+        return $this->escapeVarName($expr->name);
+    }
+
     protected function parseIdentifier(NodeAbstract $expr): string
     {
         $type = $expr->getType();
         switch ($type) {
             case self::EXPR_VARIABLE:
-                if (is_object($expr->name) and $this->isVarExpr($expr->name)) {
-                    $this->fatalError($expr, 'The `$$` syntax is not supported');
-                }
-                if ($this->isSuperGlobal($expr->name) and !$this->hasGlobalVar($expr->name)) {
-                    $this->addGlobalVar($expr->name, $this->superGlobalVars[$expr->name]);
-                }
-                return $this->escapeVarName($expr->name);
+                return $this->parseVariable($expr);
             case 'Name':
             case 'VarLikeIdentifier':
             case 'Identifier':
@@ -1350,6 +1380,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->localVars[$name] = $type;
     }
 
+    protected function addStaticVar(string $name, string $type):  void
+    {
+        $this->staticVars[$name] = $type;
+        $this->addGlobalVar($this->getStaticVarName($name), $type);
+    }
+
     protected function addArgument(string $name, string $type): void
     {
         $this->arguments[$name] = $type;
@@ -1376,7 +1412,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function hasVar(string $name): bool
     {
-        return $this->hasLocalVar($name) || $this->hasGlobalVar($name);
+        return $this->hasLocalVar($name) || $this->hasGlobalVar($name) || $this->hasStaticVar($name);
     }
 
     protected function hasLocalVar(string $name): bool
@@ -2939,11 +2975,19 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $list = [];
         foreach ($v->vars as $var) {
+            $varName = $var->var->name;
+            $type = $var->default ? $this->detectExprType($var->default) : self::TYPE_VAR;
+            $this->addStaticVar($varName, $type);
             if ($var->default) {
-                $type   = $this->detectExprType($var->default);
-                $list[] = 'static ' . $type . ' ' . $this->parseIdentifier($var->var) . ' = ' . $this->parseIdentifier($var->default) . ';';
-            } else {
-                $list[] = 'static ' . self::TYPE_VAR . ' ' . $this->parseIdentifier($var->var) . ';';
+                $initState = self::STATIC_VAR . $varName . '_initialized';
+                $initCode = $this->getIndent() . 'static bool ' . $initState . ' = false;';
+                $initCode .= $this->getIndent() . "if (!$initState) { \n";
+                $this->indentLevel++;
+                $initCode .= $this->getIndent() . "$initState = true;\n";
+                $initCode .= $this->getIndent() . $this->getStaticVarName($varName) . ' = ' . $this->parseIdentifier($var->default) . ';';
+                $this->indentLevel--;
+                $initCode .= $this->getIndent() . '}';
+                $list[] = $initCode;
             }
         }
 
@@ -3095,9 +3139,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->convertArrayExpr($this->parseIdentifier($expr->expr));
     }
 
-    protected function hasGlobalVar($name): bool
+    protected function hasGlobalVar(string $name): bool
     {
         return array_key_exists($name, $this->globalVars);
+    }
+
+    protected function hasStaticVar(string $name):  bool
+    {
+        return array_key_exists($name, $this->staticVars);
     }
 
     protected function parseCastDouble(mixed $expr): string
