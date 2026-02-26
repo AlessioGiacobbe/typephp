@@ -755,7 +755,11 @@ class Translator extends Preprocessor
                 if ($argInfo->default) {
                     $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
                 } else {
-                    $argExpr = 'php::getCallArg(' . $k . ')';
+                    if ($argInfo->byRef) {
+                        $argExpr = 'php::getCallArgByRef(' . $k . ')';
+                    } else {
+                        $argExpr = 'php::getCallArg(' . $k . ')';
+                    }
                 }
                 $expr = $this->convertExprFromType($argInfo->type, $argExpr);
                 $cppCode .= $this->getIndent() . $argInfo->type . ' ' . $var . ' = ' . $expr . ';' . PHP_EOL;

@@ -727,7 +727,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseFunctionDeclaration(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
+    protected function parseFunctionDecl(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
     {
         // .stub 存根定义 C++ Native 函数，必须设置返回值类型
         if (!$v->returnType && $this->stubFile) {
@@ -773,7 +773,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (isset($this->nativeFunctions[$name])) {
             $this->functionDef = $this->nativeFunctions[$name];
         } else {
-            $this->nativeFunctions[$name] = $this->parseFunctionDeclaration($v);
+            $this->nativeFunctions[$name] = $this->parseFunctionDecl($v);
             if (isset($this->redoAfterDeclare[$name])) {
                 unset($this->redoAfterDeclare[$name]);
                 $this->climate->cyan('Received redo request, retrying...');
@@ -911,13 +911,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list                          = [];
         $functionDef->argCountRequired = count($params);
         $last = array_key_last($params);
+
         foreach ($params as $i => $param) {
             // .stub 存根定义 C++ Native 函数，必须设置函数的参数类型
             if ($this->stubFile and !$param->type) {
                 throw new \RuntimeException('No type for ' . $this->parseIdentifier($param->var));
-            }
-            if ($param->byRef) {
-                $this->fatalError($param, 'ByRef parameters are not supported');
             }
             if ($param->variadic and $i !== $last) {
                 $this->fatalError($param, 'Variadic parameters must be the last parameter');
@@ -932,6 +930,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $argInfo       = new ArgInfo();
             $argInfo->name = $name;
             $argInfo->type = $type;
+            $argInfo->byRef = $param->byRef;
             $argInfo->variadic = $param->variadic;
             if (isset($param->default)) {
                 $functionDef->argCountRequired = count($list) - 1;
@@ -1263,9 +1262,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $str === 'true' || $str === 'false';
     }
 
-    protected function isNativeType(string $var): bool
+    protected function isNativeType(string $type): bool
     {
-        return in_array($this->getVarType($var), [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL]);
+        return in_array($type, [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL]);
+    }
+
+    protected function isNativeTypeVar(string $var): bool
+    {
+        return $this->isNativeType($this->getVarType($var));
     }
 
     protected function isInternalFunction(string $fname): bool
@@ -1335,7 +1339,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseBinaryOp($expr->left, $expr->right, '+');
     }
 
-    protected function parseReturn(mixed $v): string
+    protected function parseReturn(Node\Stmt\Return_ $v): string
     {
         if ($v->expr === null) {
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->inClosure) {
@@ -1349,10 +1353,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         $expr = $this->parseExpr($v->expr);
         // 函数定义时没有声明返回值，但函数体中有返回值，修改为实际的返回值类型
         if ($this->getReturnType() === 'void') {
-            $this->resetReturnType($type);
-        } elseif ($this->getReturnType() !== self::TYPE_VAR and $this->getReturnType() !== $type) {
+            $this->resetReturnType($v, $type);
+        } elseif ($this->isNativeType($type) and $this->getReturnType() !== self::TYPE_VAR and $this->getReturnType() !== $type) {
             // 返回值类型不一致，说明存在多种类型的返回值，修改为 var 表示 any
-            $this->resetReturnType(self::TYPE_VAR);
+            $this->resetReturnType($v, self::TYPE_VAR);
         }
         $exprCode = $this->convertExprType($expr, $this->getReturnType(), $type);
         // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
@@ -1442,11 +1446,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->classes[$this->escapeClass($name)];
     }
 
-    protected function resetReturnType(string $type): void
+    protected function resetReturnType(Node\Stmt\Return_ $node, string $type): void
     {
         $this->functionDef->returnType = $type;
         // 返回值变更，需要重新解析
-        $this->climate->cyan('Return type changed, retrying...');
+        $this->climate->cyan('Return type changed at line ' . $node->getLine() . ', retrying...');
         throw new Redo();
     }
 
@@ -1562,6 +1566,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseParameterType(Node\Param $param, string $var): string
     {
+        if ($param->byRef) {
+            return self::TYPE_REF;
+        }
         $type = $param->type;
         if ($type == null) {
             return self::TYPE_VAR;
@@ -2713,10 +2720,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->functionDef->returnType;
     }
 
-    protected function getTypeConvertedArg($arg, $argInfo): string
+    protected function getTypeConvertedArg($arg, ArgInfo $argInfo): string
     {
         $expr = $this->parseArg($arg);
         $type = $this->detectExprType($arg->value);
+
+        if ($argInfo->byRef) {
+            return $this->convertToRef($arg->value);
+        }
 
         return $this->convertExprType($expr, $argInfo->type, $type);
     }
@@ -3210,7 +3221,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->checkLeftValue($expr);
         $var = $this->parseIdentifier($expr);
-        if ($this->isVarExpr($expr) and $this->isNativeType($var)) {
+        if ($this->isVarExpr($expr) and $this->isNativeTypeVar($var)) {
             $this->localVars[$var] = self::TYPE_VAR;
         }
         return $this->parseIdentifier($expr) . '.toReference()';
@@ -3848,6 +3859,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->indentLevel++;
 
         foreach ($expr->params as $i => $param) {
+            if ($param->byRef) {
+                $this->fatalError($expr, 'Closure cannot use reference parameter');
+            }
             $var = $this->parseIdentifier($param->var);
             $fnCode .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
             $this->addArgument($var, self::TYPE_VAR);
@@ -3895,6 +3909,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $fnBodyCode = '';
         foreach ($expr->params as $i => $param) {
+            if ($param->byRef) {
+                $this->fatalError($expr, 'Closure cannot use reference parameter');
+            }
             $var = $this->parseIdentifier($param->var);
             $fnBodyCode .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
             $this->addArgument($var, self::TYPE_VAR);
