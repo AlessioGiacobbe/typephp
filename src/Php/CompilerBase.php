@@ -14,8 +14,12 @@ use PhpAot\Php\Entity\FunctionDef;
 use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
 use PhpAot\Php\Entity\PropertyDef;
+use PhpAot\Php\Exception\PlaceHolder;
 use PhpAot\Php\Exception\Redo;
 use PhpAot\Php\Exception\Skip;
+use PhpAot\Php\Generator\ClosureGenerator;
+use PhpAot\Php\Generator\PlaceHolderGenerator;
+use PhpAot\Php\Generator\Utils;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Expr\Variable;
@@ -33,6 +37,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 {
     use AstNodeType;
     use FuncCallOptimizer;
+    use ClosureGenerator;
+    use PlaceHolderGenerator;
+    use Utils;
 
     public const string TYPE_VAR = 'php::Var';
 
@@ -1983,8 +1990,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
     {
         $call = '';
+        $placeHolder = '';
         if ($this->isVarExpr($expr->name)) {
             $fn   = $this->parseIdentifier($expr->name);
+            $placeHolder = $fn;
             $name = '';
         } elseif ($expr->name->getType() === 'Name') {
             $name = $this->parseIdentifier($expr->name);
@@ -1999,6 +2008,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($code) {
                 return $code;
             }
+            $placeHolder = $this->identifierToStr($expr->name);
             $fn = $this->getFuncPtr($name);
             $this->beforeStmtLines[] = '// Func Call: ' . $name;
             $call = $silent ? 'CALL_SILENT' : 'CALL';
@@ -2006,8 +2016,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
             $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->name) . ';';
-            $fn                      = $tmpVar;
-            $name                    = '';
+            $placeHolder = $fn = $tmpVar;
+            $name = '';
         }
         if (!$call) {
             $call = $silent ? 'php::silentCall' : 'php::call';
@@ -2015,17 +2025,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
         }
-        return $call . '(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name) . ')';
+        try {
+            return $call . '(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name) . ')';
+        } catch (PlaceHolder) {
+            return $this->genPlaceHolder($placeHolder);
+        }
     }
 
     protected function parseNativeCallArgs(array $callArgs, string $nativeFunc): string
     {
         $argList = [];
-        $functionDef = $this->functions[$nativeFunc];
+        $functionDef = $this->nativeFunctions[$nativeFunc];
         $args = [];
         $hasNamedArg = false;
         // 对命名参数进行重排
         foreach ($callArgs as $i => $arg) {
+            if ($arg instanceof Node\VariadicPlaceholder) {
+                throw new PlaceHolder();
+            }
             if ($arg->name) {
                 foreach($functionDef->argInfoList as $k => $argInfo) {
                     if ($argInfo->name === $arg->name->name) {
@@ -2067,7 +2084,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $last = array_key_last($args);
         foreach ($args as $i => $arg) {
             if ($arg instanceof Node\VariadicPlaceholder) {
-                $this->fatalError($arg, 'Variadic place holder are not supported');
+                throw new PlaceHolder();
             }
             if ($arg->name !== null) {
                 $this->fatalError($arg, 'Named arguments are not supported');
@@ -3288,13 +3305,19 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         if ($class and $funcName) {
-            $method = $this->getMethodPtr($class, $funcName);
+            $methodPtr = $this->getMethodPtr($class, $funcName);
+        } else {
+            $methodPtr = $method;
         }
 
         if (empty($expr->args)) {
-            return $object . '.exec(' . $method . ')';
+            return $object . '.exec(' . $methodPtr . ')';
         }
-        return $object . '.exec(' . $method . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
+        try {
+            return $object . '.exec(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
+        } catch (PlaceHolder) {
+            return $this->genPlaceHolder($this->genArray([$object, $method]));
+        }
     }
 
     protected function identifierToStr(NodeAbstract $node, bool $require = true): string
@@ -3310,7 +3333,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $id = $this->class;
         }
         if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
-            return '"' . $id . '"';
+            return $this->genCharPtr($id);
         }
         return $id;
     }
@@ -3324,6 +3347,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseStaticCall(Node\Expr\StaticCall $expr): string
     {
+        $placeHolder = '';
         if ($this->isVarExpr($expr->class) or $this->isVarExpr($expr->name)) {
             $var = $this->parseIdentifier($expr->class);
             if ($this->isTypedObject($var)) {
@@ -3334,6 +3358,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             } else {
                 $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
             }
+            $placeHolder = $fn;
         } else {
             $class = $this->parseIdentifier($expr->class);
             if ($class === 'self') {
@@ -3349,7 +3374,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
                 $nativeFunc = $this->getNativeStaticMethod($class, $method);
                 if ($nativeFunc) {
-                    $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
+                    try {
+                        $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
+                    } catch (PlaceHolder) {
+                        return $this->genPlaceHolder($this->genArray([$this->genCharPtr($class), $this->genCharPtr($method)]));
+                    }
                     if ($args) {
                         return self::PREFIX . $nativeFunc . '(php::null_object, ' . $args . ')';
                     } else {
@@ -3359,12 +3388,17 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $ce = $this->getClassEntryPtr($class);
             $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method, false);
+            $placeHolder = $this->genArray([$this->genCharPtr($class), $this->genCharPtr($method)]);
         }
         $call = 'php::call';
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
         }
-        return $call . '(' . $fn . ', ' . $this->parseCallArgs($expr->args) . ')';
+        try {
+            return $call . '(' . $fn . ', ' . $this->parseCallArgs($expr->args) . ')';
+        } catch (PlaceHolder) {
+            return $this->genPlaceHolder($placeHolder);
+        }
     }
 
     protected function findNativeStaticProperty(Node\Expr\StaticPropertyFetch $expr, ?string &$class, ?string &$namespace): ?PropertyDef
@@ -3843,125 +3877,23 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseArrowFunction(Node\Expr\ArrowFunction $expr): string
     {
-        $tmpVar = $this->genTmpVarName();
-
-        $fnCode = $this->getIndent() .
-            'php::ClosureFn ' . $tmpVar . ' = [&]('
-            . 'INTERNAL_FUNCTION_PARAMETERS, '
-            . self::TYPE_OBJECT . ' &this_, '
-            . self::TYPE_ARGS . ' &vars_) ' .
-            '-> ' . self::TYPE_VAR . ' {' . PHP_EOL;
-
-        $oriArgs = $this->arguments;
-        $this->arguments = [];
-        $oriInClosure = $this->inClosure;
-        $this->inClosure = true;
-
-        $this->indentLevel++;
-
-        foreach ($expr->params as $i => $param) {
-            if ($param->byRef) {
-                $this->fatalError($expr, 'Closure cannot use reference parameter');
-            }
-            $var = $this->parseIdentifier($param->var);
-            $fnCode .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
-            $this->addArgument($var, self::TYPE_VAR);
-        }
-
-        if ($this->methodDef) {
-            $this->addArgument('this_', self::TYPE_OBJECT);
-        }
-
-        $fnCode .= 'return ' . $this->parseExpr($expr->expr) . ';';
-
-        $this->indentLevel--;
-        $fnCode .= '};' . PHP_EOL;
-
-        $this->beforeStmtLines[] = $fnCode;
-        $this->arguments = $oriArgs;
-        $this->inClosure = $oriInClosure;
-
-        if ($this->methodDef) {
-            return 'php::newClosure(' . $tmpVar . ', { }, this_)';
-        } else {
-            return 'php::newClosure(' . $tmpVar . ', { })';
-        }
+        $cb = function () use ($expr) {
+            return 'return ' . $this->parseExpr($expr->expr) . ';';
+        };
+        return $this->genClosure($expr, $expr->params, $cb, [], true);
     }
 
     protected function parseClosure(Node\Expr\Closure $expr): string
     {
-        $tmpVar = $this->genTmpVarName();
-
-        $fnCode = $this->getIndent() .
-            'php::ClosureFn ' . $tmpVar . ' = []('
-            . 'INTERNAL_FUNCTION_PARAMETERS, '
-            . self::TYPE_OBJECT . ' &this_, '
-            . self::TYPE_ARGS . ' &vars_) ' .
-            '-> ' . self::TYPE_VAR . ' {' . PHP_EOL;
-
-        $oriLocalVars = $this->localVars;
-        $this->localVars = [];
-        $oriArgs = $this->arguments;
-        $this->arguments = [];
-        $oriInClosure = $this->inClosure;
-        $this->inClosure = true;
-
-        $this->indentLevel++;
-
-        $fnBodyCode = '';
-        foreach ($expr->params as $i => $param) {
-            if ($param->byRef) {
-                $this->fatalError($expr, 'Closure cannot use reference parameter');
+        $cb = function () use ($expr) {
+            $fnCode = $this->parseStmts($expr->stmts);
+            $fnCode = $this->genLocalVarDecl() . $fnCode;
+            if (!$this->isReturnStmtInLastLine($expr->stmts)) {
+                $fnCode .= 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
             }
-            $var = $this->parseIdentifier($param->var);
-            $fnBodyCode .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
-            $this->addArgument($var, self::TYPE_VAR);
-        }
-
-        foreach ($expr->uses as $i => $useItem) {
-            $var = $this->parseIdentifier($useItem->var);
-            $fnBodyCode .= 'auto ' . $var . ' = vars_.get(' . $i . ');' . PHP_EOL;
-            $this->addArgument($var, self::TYPE_VAR);
-        }
-
-        if ($this->methodDef) {
-            $this->addArgument('this_', self::TYPE_OBJECT);
-        }
-
-        $fnBodyCode .= $this->parseStmts($expr->stmts);;
-        $fnBodyCode = $this->genLocalVarDecl() . $fnBodyCode;
-        $fnCode .= $fnBodyCode;
-
-        if (!$this->isReturnStmtInLastLine($expr->stmts)) {
-            $fnCode .= 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
-        }
-
-        $this->indentLevel--;
-        $fnCode .= '};' . PHP_EOL;
-
-        $this->beforeStmtLines[] = $fnCode;
-        $this->localVars = $oriLocalVars;
-        $this->arguments = $oriArgs;
-        $this->inClosure = $oriInClosure;
-
-        $useVars = [];
-        foreach ($expr->uses as $useItem) {
-            $var = $this->parseIdentifier($useItem->var);
-            if ($this->isVarExpr($useItem->var) and !$this->hasVar($var)) {
-                $this->errorUndefinedVariable($useItem->var);
-            }
-            if ($useItem->byRef) {
-                $useVars [] = $this->convertToRef($useItem->var);
-            } else {
-                $useVars [] = $var;
-            }
-        }
-
-        if ($this->methodDef) {
-            return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' }, this_)';
-        } else {
-            return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
-        }
+            return $fnCode;
+        };
+        return $this->genClosure($expr, $expr->params, $cb, $expr->uses);
     }
 
     protected function parseAssignOpCoalesce(Node\Expr\AssignOp\Coalesce $expr): string
