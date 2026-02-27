@@ -15,4 +15,5 @@ class ArgInfo
     public string $default = '';
     public bool $byRef = false;
     public bool $variadic = false;
+    public bool $property = false;
 }

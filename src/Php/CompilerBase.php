@@ -19,6 +19,7 @@ use PhpAot\Php\Exception\Redo;
 use PhpAot\Php\Exception\Skip;
 use PhpAot\Php\Generator\ClosureGenerator;
 use PhpAot\Php\Generator\PlaceHolderGenerator;
+use PhpAot\Php\Generator\PropertyPromotion;
 use PhpAot\Php\Generator\Utils;
 use PhpParser\Modifiers;
 use PhpParser\Node;
@@ -39,6 +40,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     use FuncCallOptimizer;
     use ClosureGenerator;
     use PlaceHolderGenerator;
+    use PropertyPromotion;
     use Utils;
 
     public const string TYPE_VAR = 'php::Var';
@@ -831,6 +833,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->indentLevel++;
         $code .= $this->genLocalVarDecl();
         $code .= "\n";
+        // Constructor Property Promotion
+        foreach ($this->functionDef->argInfoList as $argInfo) {
+            if (!$argInfo->property) {
+                continue;
+            }
+            $code .= $this->genPropertyPromotion($argInfo);
+        }
         $this->indentLevel--;
         $code .= $this->genDebugInfo();
         $code .= $stmts;
@@ -924,6 +933,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->stubFile and !$param->type) {
                 throw new \RuntimeException('No type for ' . $this->parseIdentifier($param->var));
             }
+            // 构造方法属性定义语法（Constructor Property Promotion）
+            if ($param->isPromoted()) {
+                if (!$this->classDef or !$this->methodDef or $this->methodDef->name !== '__construct') {
+                    $this->fatalError($param, 'Promoted properties are not supported');
+                }
+                $name = $this->parseIdentifier($param->var);
+                $propertyDef = new PropertyDef($name, $param->flags, $param->type, $param->default);
+                $this->classDef->properties[$name] = $propertyDef;
+            }
             if ($param->variadic and $i !== $last) {
                 $this->fatalError($param, 'Variadic parameters must be the last parameter');
             }
@@ -939,6 +957,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $argInfo->type = $type;
             $argInfo->byRef = $param->byRef;
             $argInfo->variadic = $param->variadic;
+            $argInfo->property = $param->isPromoted();
             if (isset($param->default)) {
                 $functionDef->argCountRequired = count($list) - 1;
                 /**

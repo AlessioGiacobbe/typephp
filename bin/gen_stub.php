@@ -81,7 +81,6 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
             global $translator;
             $stubFilenameWithoutExtension = $translator->getArgInfoStubFilename($stubFile);
             $arginfoFile = $context->objectFile;
-            var_dump($arginfoFile);
             $legacyFile = "{$stubFilenameWithoutExtension}_legacy_arginfo.h";
 
             $stubCode = file_get_contents($stubFile);
@@ -4502,7 +4501,8 @@ class FileInfo {
                             $classStmt,
                             $cond,
                             $this->isUndocumentable,
-                            $this->getMinimumPhpVersionIdCompatibility()
+                            $this->getMinimumPhpVersionIdCompatibility(),
+                            $propertyInfos,
                         );
                     } else if ($classStmt instanceof Stmt\EnumCase) {
                         $enumCaseInfos[] = new EnumCaseInfo(
@@ -4738,7 +4738,8 @@ function parseFunctionLike(
     Node\FunctionLike $func,
     ?string $cond,
     bool $isUndocumentable,
-    ?int $minimumPhpVersionIdCompatibility
+    ?int $minimumPhpVersionIdCompatibility,
+    ?array &$propertyInfos = null,
 ): FuncInfo {
     try {
         $comments = $func->getComments();
@@ -4810,7 +4811,19 @@ function parseFunctionLike(
         $foundVariadic = false;
         foreach ($func->getParams() as $i => $param) {
             if ($param->isPromoted()) {
-                throw new Exception("Promoted properties are not supported");
+                $propertyItem = new Stmt\PropertyProperty($param->var->name, $param->default);
+                $property = new Stmt\Property($param->flags, [$propertyItem], $param->getAttributes(), $param->type, $param->attrGroups);
+                $propertyInfos[] = parseProperty(
+                    $name->className,
+                    $classFlags,
+                    $param->flags,
+                    $propertyItem,
+                    $property->type,
+                    $property->getComments(),
+                    $prettyPrinter,
+                    $minimumPhpVersionIdCompatibility,
+                    AttributeInfo::createFromGroups($property->attrGroups)
+                );
             }
 
             $varName = $param->var->name;
