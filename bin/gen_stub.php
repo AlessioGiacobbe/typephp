@@ -80,7 +80,8 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
         if (!$includeOnly) {
             global $translator;
             $stubFilenameWithoutExtension = $translator->getArgInfoStubFilename($stubFile);
-            $arginfoFile = $translator->getArgInfoHeaderFile($stubFilenameWithoutExtension);
+            $arginfoFile = $context->objectFile;
+            var_dump($arginfoFile);
             $legacyFile = "{$stubFilenameWithoutExtension}_legacy_arginfo.h";
 
             $stubCode = file_get_contents($stubFile);
@@ -174,6 +175,7 @@ class Context {
     public array $allConstInfos = [];
     /** @var FileInfo[] */
     public array $parsedFiles = [];
+    public string $objectFile = '';
 }
 
 class ArrayType extends SimpleType {
@@ -6171,7 +6173,7 @@ function main()
 
     $opt_index = 0;
     $options = getopt(
-        "fh",
+        "fho:",
         [
             "force-regeneration", "parameter-stats", "help", "verify", "verify-manual", "replace-predefined-constants",
             "generate-classsynopses", "replace-classsynopses", "generate-methodsynopses", "replace-methodsynopses",
@@ -6192,6 +6194,7 @@ function main()
     $generateOptimizerInfo = isset($options["generate-optimizer-info"]);
 
     $context->forceRegeneration = isset($options["f"]) || isset($options["force-regeneration"]);
+    $context->objectFile = $options["o"] ?? '';
     $context->forceParse = $context->forceRegeneration || $printParameterStats || $verify || $verifyManual || $replacePredefinedConstants || $generateClassSynopses || $generateOptimizerInfo || $replaceClassSynopses || $generateMethodSynopses || $replaceMethodSynopses;
 
     if (isset($options["h"]) || isset($options["help"])) {

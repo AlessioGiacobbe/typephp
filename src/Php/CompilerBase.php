@@ -1512,7 +1512,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->isNativeFunction($name)) {
                     return $this->nativeFunctions[$name]->returnType;
                 }
-
                 return $this->detectFuncCallReturnType($name);
             case 'Expr_New':
                 return self::TYPE_OBJECT;
@@ -1945,28 +1944,35 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function findNativeFunction(string $fname): string|false
     {
-        $possibleFunctionNames = [$this->escapeName($fname)];
-        if (isset($this->useAliases[$fname])) {
-            $possibleFunctionNames[] = $this->escapeName($this->escapeNamespace($this->useAliases[$fname]));
-        }
-        if ($this->namespace) {
-            $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $fname;
-        }
-        if (isset($this->useFunctions[$fname])) {
-            $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$fname]) . self::NAMESPACE_SEPARATOR . $fname;
-        }
-        // 复杂命名空间规则，组合命名空间
-        // 例子：use foo\bar;  bar\fn();
-        foreach ($this->useNamespaces as $use) {
-            $ns1 = explode('\\', $use);
-            $ns2 = explode('\\', $fname);
-            if ($ns1[array_key_last($ns1)] === $ns2[array_key_first($ns2)]) {
-                $ns = array_merge($ns1, $ns2);
-                array_splice($ns, array_key_last($ns1) + 1);
-                $possibleFunctionNames[] = $this->escapeNamespace(implode('\\', $ns));
-                break;
+        // 绝对命名空间的函数
+        if ($fname[0] == '\\') {
+            $fname = ltrim($fname, '\\');
+            $possibleFunctionNames = [$this->escapeName($fname)];
+        } else {
+            $possibleFunctionNames = [$this->escapeName($fname)];
+            if (isset($this->useAliases[$fname])) {
+                $possibleFunctionNames[] = $this->escapeName($this->escapeNamespace($this->useAliases[$fname]));
+            }
+            if ($this->namespace) {
+                $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $fname;
+            }
+            if (isset($this->useFunctions[$fname])) {
+                $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$fname]) . self::NAMESPACE_SEPARATOR . $fname;
+            }
+            // 复杂命名空间规则，组合命名空间
+            // 例子：use foo\bar;  bar\fn();
+            foreach ($this->useNamespaces as $use) {
+                $ns1 = explode('\\', $use);
+                $ns2 = explode('\\', $fname);
+                if ($ns1[array_key_last($ns1)] === $ns2[array_key_first($ns2)]) {
+                    $ns = array_merge($ns1, $ns2);
+                    array_splice($ns, array_key_last($ns1) + 1);
+                    $possibleFunctionNames[] = $this->escapeNamespace(implode('\\', $ns));
+                    break;
+                }
             }
         }
+
         foreach ($possibleFunctionNames as $name) {
             // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
             // 跳过，稍后再处理
@@ -1992,12 +1998,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
     {
         $call = '';
-        $placeHolder = '';
         if ($this->isVarExpr($expr->name)) {
             $fn   = $this->parseIdentifier($expr->name);
             $placeHolder = $fn;
             $name = '';
-        } elseif ($expr->name->getType() === 'Name') {
+        } elseif ($expr->name->getType() === 'Name' or $expr->name->getType() === 'Name_FullyQualified') {
             $name = $this->parseIdentifier($expr->name);
             if (in_array($name, $this->unsupportedFunctions)) {
                 $this->fatalError($expr, 'Unsupported function: `' . $name . '`');

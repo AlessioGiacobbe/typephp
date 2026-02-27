@@ -27,6 +27,7 @@ class Translator extends Preprocessor
 {
     use MagicMethodDetector;
     protected string $targetName = 'app';
+    protected array $sourceDirs = [];
     protected bool $verbose = false;
     protected array $phpSrcFiles = [];
     protected array $argInfoHeaderFiles = [];
@@ -152,6 +153,7 @@ class Translator extends Preprocessor
             $list       = $this->getFilesFromDir($path);
             $targetName = basename($path);
             $this->setTargetName($targetName);
+            $this->sourceDirs[] = $path;
         } else {
             $ext = pathinfo($path, PATHINFO_EXTENSION);
             if ($ext === 'yml') {
@@ -160,6 +162,7 @@ class Translator extends Preprocessor
                 $list       = [$path];
                 $targetName = FileScanner::getFileName($path);
                 $this->setTargetName($targetName);
+                $this->sourceDirs[] = dirname($path);
             } else {
                 $this->error('Unsupported file type: ' . $path);
             }
@@ -340,9 +343,16 @@ class Translator extends Preprocessor
 
     public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string
     {
-        $basename = self::PREFIX . basename($stubFilenameWithoutExtension);
-        $basename = $this->escapeFileName($basename);
-        $absPath  = $this->getIncludeDir() . "/{$basename}_arginfo.h";
+        foreach ($this->sourceDirs as $srcDir) {
+            if (str_starts_with($stubFilenameWithoutExtension, $srcDir)) {
+                $filePath = ltrim($this->removeCommonPrefix($srcDir, $stubFilenameWithoutExtension), '/');
+                break;
+            }
+        }
+
+        $filename = self::PREFIX . str_replace('/', '_', $filePath);
+        $filename = $this->escapeFileName($filename);
+        $absPath = $this->getIncludeDir() . "/{$filename}_arginfo.h";
         if ($relative) {
             return ltrim($this->removeCommonPrefix($this->getIncludeDir(), $absPath), '/');
         }
@@ -414,9 +424,11 @@ class Translator extends Preprocessor
                 }
                 if (is_file($realPath)) {
                     $list[] = $realPath;
+                    $this->sourceDirs[] = basename($realPath);
                 } else {
-                    $tmp  = $this->getFilesFromDir($realPath);
+                    $tmp = $this->getFilesFromDir($realPath);
                     $list = array_merge($list, $tmp);
+                    $this->sourceDirs[] = $realPath;
                 }
             }
         } else {
@@ -646,12 +658,14 @@ class Translator extends Preprocessor
 
     protected function genStubFile(string $file): void
     {
-        $genStubCmd = PHP_BINARY . ' ' . $this->rootPath . '/bin/gen_stub.php -f ' . $file;
-        $output     = shell_exec($genStubCmd);
-        $this->climate->info('generate stub file: ' . $file);
-        $this->climate->comment($genStubCmd);
         $stubFilenameWithoutExtension = str_replace(['.stub.php', '.php'], '', $file);
         $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
+
+        $genStubCmd = PHP_BINARY . ' ' . $this->rootPath . '/bin/gen_stub.php -f -o ' . $this->getIncludeDir() . '/' . $headerFile . ' ' . $file;
+        $output = shell_exec($genStubCmd);
+        $this->climate->info('generate stub file: ' . $file);
+        $this->climate->comment($genStubCmd);
+
         if (!str_contains($output, 'Saved')) {
             $this->error("failed to generate arginfo header file: `{$headerFile}`, output: {$output}");
         }
