@@ -632,6 +632,8 @@ class Translator extends Preprocessor
                 case 'Stmt_Use':
                     $code .= $this->parseUse($v2) . PHP_EOL;
                     break;
+                case 'Stmt_Interface':
+                    break;
                 default:
                     abort($v2);
             }
