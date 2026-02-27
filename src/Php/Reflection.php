@@ -8,23 +8,17 @@
 
 namespace PhpAot\Php;
 
-use ReflectionClass;
-use ReflectionException;
-use ReflectionFunction;
-use ReflectionParameter;
-use ReflectionUnionType;
-
 class Reflection
 {
     private static array $functions = [];
     private static array $classes = [];
 
-    public static function getFunction(string $fn): ?ReflectionFunction
+    public static function getFunction(string $fn): ?\ReflectionFunction
     {
         if (!isset(self::$functions[$fn])) {
             try {
-                $ref = new ReflectionFunction($fn);
-            } catch (ReflectionException $e) {
+                $ref = new \ReflectionFunction($fn);
+            } catch (\ReflectionException $e) {
                 return null;
             }
             self::$functions[$fn] = $ref;
@@ -33,12 +27,12 @@ class Reflection
         return self::$functions[$fn];
     }
 
-    public static function getClass(string $className): ?ReflectionClass
+    public static function getClass(string $className): ?\ReflectionClass
     {
         if (!isset(self::$classes[$className])) {
             try {
-                $ref = new ReflectionClass($className);
-            } catch (ReflectionException $e) {
+                $ref = new \ReflectionClass($className);
+            } catch (\ReflectionException $e) {
                 return null;
             }
             self::$classes[$className] = $ref;
@@ -57,14 +51,14 @@ class Reflection
         if (!$returnType) {
             return null;
         }
-        if ($returnType instanceof ReflectionUnionType) {
+        if ($returnType instanceof \ReflectionUnionType) {
             return null;
         }
 
         return $returnType->getName();
     }
 
-    public static function getFunctionParameter(string $fn, int $index): ?ReflectionParameter
+    public static function getFunctionParameter(string $fn, int $index): ?\ReflectionParameter
     {
         $func = self::getFunction($fn);
         if (!$func) {
@@ -78,7 +72,7 @@ class Reflection
         return $args[$index];
     }
 
-    public static function getClassMethodParameter(string $className, string $fn, int $index): ?ReflectionParameter
+    public static function getClassMethodParameter(string $className, string $fn, int $index): ?\ReflectionParameter
     {
         $classRef = self::getClass($className);
         if (!$classRef) {
@@ -87,7 +81,7 @@ class Reflection
 
         try {
             $method = $classRef->getMethod($fn);
-        } catch (ReflectionException $e) {
+        } catch (\ReflectionException $e) {
             return null;
         }
 

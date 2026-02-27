@@ -1,12 +1,18 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
 
 namespace PhpAot\Core;
 
 abstract class Translator
 {
+    public string $mode = 'cli';
     protected int $indentLevel = 0;
     protected string $indentStr = "\t";
-    public string $mode = 'cli';
     protected string $lang;
 
     public function setMode($mode): void
