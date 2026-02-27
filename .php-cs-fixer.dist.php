@@ -36,7 +36,7 @@ return (new PhpCsFixer\Config())
         'multiline_whitespace_before_semicolons'           => ['strategy' => 'new_line_for_chained_calls'],
         'no_superfluous_phpdoc_tags'                       => ['allow_mixed' => true, 'allow_unused_params' => true, 'remove_inheritdoc' => false],
         'no_unused_imports'                                => true,
-        'no_useless_else'                                  => true,
+        'no_useless_else'                                  => false,
         'no_useless_return'                                => true,
         'not_operator_with_space'                          => false,
         'not_operator_with_successor_space'                => false,

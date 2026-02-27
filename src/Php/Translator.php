@@ -334,9 +334,8 @@ class Translator extends Preprocessor
 
     public function getArgInfoStubFilename(string $stubFile): string
     {
-        $rs = str_replace([".stub.php", '.php'], "", $stubFile);
-        $rs = str_replace('-', '_', $rs);
-        return $rs;
+        $rs = str_replace(['.stub.php', '.php'], '', $stubFile);
+        return str_replace('-', '_', $rs);
     }
 
     public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string

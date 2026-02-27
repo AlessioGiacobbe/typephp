@@ -219,7 +219,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->rootPath = $rootPath;
         $this->parser = (new ParserFactory())->createForNewestSupportedVersion();
-        $this->printer = new PrettyPrinter\Standard;
+        $this->printer = new PrettyPrinter\Standard();
         $this->setBuildDir($rootPath . '/build');
         $climate = new CLImate();
         $this->climate = $climate;
@@ -452,6 +452,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_Yield':
             case 'Expr_YieldFrom':
                 $this->fatalError($expr, 'The `' . $type . '` is not supported');
+                // no break
             default:
                 abort($expr);
         }
@@ -622,7 +623,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         } else {
             if ($this->function) {
-                $prefix .= $this->function  . '_';
+                $prefix .= $this->function . '_';
             }
         }
         return $prefix . $name;
@@ -724,10 +725,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php_get_method(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
-    protected function parseTypeDecl(NodeAbstract|null $type): string
+    protected function parseTypeDecl(?NodeAbstract $type): string
     {
         // 联合类型暂时不支持，使用 var 类型代替
-        if ($type instanceof Node\UnionType or $type instanceof NullableType) {
+        if ($type instanceof UnionType or $type instanceof NullableType) {
             return self::TYPE_VAR;
         } else {
             return $type ? $this->getTypeFromZendType($this->parseIdentifier($type)) : self::TYPE_VOID;
@@ -1057,6 +1058,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Class':
                     $this->fatalError($v, 'Cannot declare class in function');
+                    // no break
                 default:
                     abort($v);
             }
@@ -1391,7 +1393,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->localVars[$name] = $type;
     }
 
-    protected function addStaticVar(string $name, string $type):  void
+    protected function addStaticVar(string $name, string $type): void
     {
         $this->staticVars[$name] = $type;
         $this->addGlobalVar($this->getStaticVarName($name), $type);
@@ -1984,7 +1986,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function foundStrayCode(Node $node): never
     {
-        $this->fatalError($node, "All execution code must be within a function, found stray code");
+        $this->fatalError($node, 'All execution code must be within a function, found stray code');
     }
 
     protected function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
@@ -2044,7 +2046,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 throw new PlaceHolder();
             }
             if ($arg->name) {
-                foreach($functionDef->argInfoList as $k => $argInfo) {
+                foreach ($functionDef->argInfoList as $k => $argInfo) {
                     if ($argInfo->name === $arg->name->name) {
                         $args[$k] = $arg;
                         $hasNamedArg = true;
@@ -3012,9 +3014,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($var->default) {
                 $initState = self::STATIC_VAR . $varName . '_initialized';
                 $initCode = $this->getIndent() . 'static bool ' . $initState . ' = false;';
-                $initCode .= $this->getIndent() . "if (!$initState) { \n";
+                $initCode .= $this->getIndent() . "if (!{$initState}) { \n";
                 $this->indentLevel++;
-                $initCode .= $this->getIndent() . "$initState = true;\n";
+                $initCode .= $this->getIndent() . "{$initState} = true;\n";
                 $initCode .= $this->getIndent() . $this->getStaticVarName($varName) . ' = ' . $this->parseIdentifier($var->default) . ';';
                 $this->indentLevel--;
                 $initCode .= $this->getIndent() . '}';
@@ -3116,8 +3118,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * 左值只能为变量、数组、对象属性、对象静态属性
-     * @param NodeAbstract $expr
-     * @return void
      */
     protected function checkLeftValue(NodeAbstract $expr): void
     {
@@ -3173,7 +3173,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return array_key_exists($name, $this->globalVars);
     }
 
-    protected function hasStaticVar(string $name):  bool
+    protected function hasStaticVar(string $name): bool
     {
         return array_key_exists($name, $this->staticVars);
     }
@@ -3353,8 +3353,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isTypedObject($var)) {
                 $class = $this->getObjectType($var);
                 goto _do_call;
-            } elseif ($this->getVarType($var) == self::TYPE_OBJECT) {
-                $fn = 'php::concat({' . $var . '.getClassName()' . ', "::", ' . $this->identifierToStr($expr->name) . '})';
+            }
+            if ($this->getVarType($var) == self::TYPE_OBJECT) {
+                $fn = 'php::concat({' . $var . '.getClassName(), "::", ' . $this->identifierToStr($expr->name) . '})';
             } else {
                 $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
             }
@@ -3441,7 +3442,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $propertyDef = $classDef->getProperty($property);
                     if ($propertyDef->isPublic()) {
                         return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
-                    } elseif ($propertyDef->isProtected()) {
+                    }
+                    if ($propertyDef->isProtected()) {
                         if ($scope) {
                             return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
                         }
@@ -3861,7 +3863,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if ($this->functionDef->returnType === self::TYPE_VOID) {
             return '';
-        } elseif ($this->functionDef->returnType === self::TYPE_INT
+        }
+        if ($this->functionDef->returnType === self::TYPE_INT
             or $this->functionDef->returnType === self::TYPE_FLOAT
             or $this->functionDef->returnType === self::TYPE_BOOL) {
             return $this->getIndent() . 'return 0;';
