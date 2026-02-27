@@ -29,6 +29,6 @@ class ClassLikeDef
             return str_replace('\\', '_', $this->namespace . '_' . $this->name);
         }
 
-        return $this->namespace . '\\\\' . $this->name;
+        return $this->namespace . '\\' . $this->name;
     }
 }

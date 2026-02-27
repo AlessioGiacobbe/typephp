@@ -9,16 +9,114 @@
 namespace PhpAot\Php\Generator;
 
 use PhpAot\Php\CompilerBase;
+use PhpAot\Php\Constants;
 
 trait Utils
 {
-    protected function genCharPtr(string $str): string
+    protected function genCharPtr(string $str, bool $escape = false): string
     {
-        return '"' . $str . '"';
+        return '"' . ($escape ? $this->escapeString($str) : $str) . '"';
     }
 
     protected function genArray(array $elements): string
     {
         return CompilerBase::TYPE_ARRAY . '{' . implode(', ', $elements) . ' }';
+    }
+
+    protected function genRawStr(string $str): string
+    {
+        return 'R"(' . $str . ')"';
+    }
+
+    protected function escapeString(string $str): string
+    {
+        return addcslashes($str, "\\\"\n\r\t\v\f\0\x01..\x1f\x7f..\xff");
+    }
+
+    protected function escapeBool(bool $bool): string
+    {
+        return $bool ? 'true' : 'false';
+    }
+
+    protected function escapeVarName(string $name): string
+    {
+        if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
+            return '_php__var__' . $name;
+        }
+        if ($name === 'this') {
+            return 'this_';
+        }
+        return $name;
+    }
+
+    protected function escapeNamespace(string $ns): string
+    {
+        return str_replace('\\', self::NAMESPACE_SEPARATOR, strtolower($ns));
+    }
+
+    protected function escapeZendFnName(string $fn): string
+    {
+        return str_replace('\\', '_', strtolower($fn));
+    }
+
+    protected function escapeName(string $name): string
+    {
+        return strtolower($name);
+    }
+
+    protected function escapeClass(string $class): string
+    {
+        return str_replace('\\', '_', trim(strtolower($class), '\\'));
+    }
+
+    protected function escapeFileName(string $file): string
+    {
+        return str_replace('-', '_', $file);
+    }
+
+    protected function unescapeVarName(string $name): string
+    {
+        return str_replace('_php__var__', '', $name);
+    }
+
+    protected function isClosedExpr($expr, $call): bool
+    {
+        if ($call === '') {
+            if (!str_starts_with($expr, '(')) {
+                return false;
+            }
+            $startPos = 0;
+        } else {
+            if (!str_starts_with($expr, $call . '(')) {
+                return false;
+            }
+            $startPos = strlen($call);
+        }
+
+        $bracketCount = 0;
+        $length       = strlen($expr);
+
+        for ($i = $startPos; $i < $length; $i++) {
+            $char = $expr[$i];
+            if ($char === '(') {
+                $bracketCount++;
+            } elseif ($char === ')') {
+                $bracketCount--;
+                if ($bracketCount === 0) {
+                    return $i === $length - 1;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    protected function trimBrackets(string $str): string
+    {
+        if ($this->isClosedExpr($str, '')) {
+            return substr($str, 1, -1);
+        }
+
+        return $str;
     }
 }

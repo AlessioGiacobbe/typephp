@@ -135,7 +135,7 @@ foreach ($this->globalVars as $name => $type):
 foreach ($this->classes as $classDef):
     foreach ($classDef->properties as $propertyDef):
         ?>
-    <?=Translator::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace)?> = php::getPropertyOffset("<?=$classDef->getNamespacedName(false)?>", "<?=$propertyDef->name?>");
+    <?=Translator::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace)?> = php::getPropertyOffset(<?=$this->genCharPtr($classDef->getNamespacedName(false), true)?>, "<?=$propertyDef->name?>");
     <?php
     endforeach;
 endforeach;

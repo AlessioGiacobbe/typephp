@@ -461,38 +461,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    public function isClosedCall($expr, $call): bool
-    {
-        if ($call === '') {
-            if (!str_starts_with($expr, '(')) {
-                return false;
-            }
-            $startPos = 0;
-        } else {
-            if (!str_starts_with($expr, $call . '(')) {
-                return false;
-            }
-            $startPos = strlen($call);
-        }
-
-        $bracketCount = 0;
-        $length       = strlen($expr);
-
-        for ($i = $startPos; $i < $length; $i++) {
-            $char = $expr[$i];
-            if ($char === '(') {
-                $bracketCount++;
-            } elseif ($char === ')') {
-                $bracketCount--;
-                if ($bracketCount === 0) {
-                    return $i === $length - 1;
-                }
-            }
-        }
-
-        return false;
-    }
-
     public function stop(string $string): never
     {
         $this->climate->red($string . "\n");
@@ -2416,18 +2384,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function trimBrackets(string $str): string
-    {
-        if ($this->isClosedCall($str, '')) {
-            return substr($str, 1, -1);
-        }
-
-        return $str;
-    }
-
     protected function convertIntExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::toInt')) {
+        if (!$this->isClosedExpr($expr, 'php::toInt')) {
             return 'php::toInt(' . $this->trimBrackets($expr) . ')';
         }
 
@@ -2436,7 +2395,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function convertFloatExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::toFloat')) {
+        if (!$this->isClosedExpr($expr, 'php::toFloat')) {
             return 'php::toFloat(' . $this->trimBrackets($expr) . ')';
         }
 
@@ -2445,7 +2404,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function convertStringExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::toString')) {
+        if (!$this->isClosedExpr($expr, 'php::toString')) {
             return 'php::toString(' . $this->trimBrackets($expr) . ')';
         }
 
@@ -2454,7 +2413,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function convertObjectExpr(string $expr, string $class = ''): string
     {
-        if (!$this->isClosedCall($expr, 'php::toObject')) {
+        if (!$this->isClosedExpr($expr, 'php::toObject')) {
             if ($class === '') {
                 return 'php::toObject(' . $this->trimBrackets($expr) . ')';
             }
@@ -2466,7 +2425,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function convertArrayExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::toArray')) {
+        if (!$this->isClosedExpr($expr, 'php::toArray')) {
             return 'php::toArray(' . $this->trimBrackets($expr) . ')';
         }
 
@@ -2475,7 +2434,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function convertBoolExpr(string $expr): string
     {
-        if (!$this->isClosedCall($expr, 'php::toBool')) {
+        if (!$this->isClosedExpr($expr, 'php::toBool')) {
             return 'php::toBool(' . $this->trimBrackets($expr) . ')';
         }
 
@@ -2694,57 +2653,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return 'php::concat({' . implode(', ', $list) . '})';
-    }
-
-    protected function escapeString(string $str): string
-    {
-        return addcslashes($str, "\\\"\n\r\t\v\f\0\x01..\x1f\x7f..\xff");
-    }
-
-    protected function escapeBool(bool $bool): string
-    {
-        return $bool ? 'true' : 'false';
-    }
-
-    protected function escapeVarName(string $name): string
-    {
-        if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
-            return '_php__var__' . $name;
-        }
-        if ($name === 'this') {
-            return 'this_';
-        }
-        return $name;
-    }
-
-    protected function escapeNamespace(string $ns): string
-    {
-        return str_replace('\\', self::NAMESPACE_SEPARATOR, strtolower($ns));
-    }
-
-    protected function escapeZendFnName(string $fn): string
-    {
-        return str_replace('\\', '_', strtolower($fn));
-    }
-
-    protected function escapeName(string $name): string
-    {
-        return strtolower($name);
-    }
-
-    protected function escapeClass(string $class): string
-    {
-        return str_replace('\\', '_', trim(strtolower($class), '\\'));
-    }
-
-    protected function escapeFileName(string $file): string
-    {
-        return str_replace('-', '_', $file);
-    }
-
-    protected function unescapeVarName(string $name): string
-    {
-        return str_replace('_php__var__', '', $name);
     }
 
     protected function parseInterpolatedStringPart(Node $expr): string

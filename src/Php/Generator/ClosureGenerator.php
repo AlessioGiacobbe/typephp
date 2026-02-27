@@ -32,9 +32,14 @@ trait ClosureGenerator
             $this->localVars = [];
         }
 
+        $oriObjects = $this->objects;
+        $oriObjectWrappers = $this->objectWrappers;
         $oriArgs = $this->arguments;
-        $this->arguments = [];
         $oriInClosure = $this->inClosure;
+
+        $this->objects = [];
+        $this->objectWrappers = [];
+        $this->arguments = [];
         $this->inClosure = true;
 
         $this->indentLevel++;
@@ -67,6 +72,9 @@ trait ClosureGenerator
         if (!$useCurrentScope) {
             $this->localVars = $oriLocalVars;
         }
+
+        $this->objects = $oriObjects;
+        $this->objectWrappers = $oriObjectWrappers;
         $this->arguments = $oriArgs;
         $this->inClosure = $oriInClosure;
 
