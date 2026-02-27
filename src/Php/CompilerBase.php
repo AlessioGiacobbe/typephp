@@ -614,10 +614,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $prefix = self::STATIC_VAR;
         if ($this->namespace) {
-            $prefix .= $this->namespace . '_';
+            $prefix .= $this->escapeNamespace($this->namespace) . '_';
         }
         if ($this->class) {
-            $prefix .= $this->class . '_';
+            $prefix .= $this->escapeClass($this->class) . '_';
             if ($this->method) {
                 $prefix .= $this->method . '_';
             }
@@ -626,7 +626,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $prefix .= $this->function . '_';
             }
         }
-        return $prefix . $name;
+        return $this->escapeName($prefix . $name);
     }
 
     protected function getNamespacedClassName(string $class): string
