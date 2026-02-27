@@ -670,15 +670,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getNativeName(string $fn, string $ns = '', string $class = ''): string
     {
-        $names[] = $this->escapeName($fn);
         if ($ns) {
             $names[] = $this->escapeNamespace($ns);
         }
         if ($class) {
             $names[] = $this->escapeClass($class);
         }
-
-        return implode(self::NAMESPACE_SEPARATOR, array_reverse($names));
+        $names[] = $this->escapeName($fn);
+        return implode(self::NAMESPACE_SEPARATOR, $names);
     }
 
     protected function getClassId(string $className): int
@@ -942,7 +941,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             $argInfo->variadic = $param->variadic;
             if (isset($param->default)) {
                 $functionDef->argCountRequired = count($list) - 1;
-                $argInfo->default              = $this->parseIdentifier($param->default);
+                /**
+                 * 函数参数默认值只能为字面量，无法使用表达式获取值
+                 */
+                if ($param->default instanceof Node\Expr\ConstFetch) {
+                    $argInfo->default = $this->parseConstFetch($param->default, true);
+                } else {
+                    $argInfo->default = $this->parseIdentifier($param->default);
+                }
             }
             $functionDef->argInfoList[] = $argInfo;
         }
@@ -1367,15 +1373,17 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 返回值类型不一致，说明存在多种类型的返回值，修改为 var 表示 any
             $this->resetReturnType($v, self::TYPE_VAR);
         }
-        $exprCode = $this->convertExprType($expr, $this->getReturnType(), $type);
+        $returnType = $this->getReturnType();
+        $exprCode = $this->convertExprType($expr, $returnType, $type);
         // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
         // 将 Indirect 赋值给临时变量后，使用 Ctor::Copy 解除了 Indirect，保证内存安全
         if (!$this->isVarExpr($v->expr) and !$this->isScalar($v->expr)) {
             $tmpVar = $this->genTmpVarName();
             // 必须提前声明变量，否则在末尾声明并 return 可能会被 gcc 优化掉
-            $this->addLocalVar($tmpVar, $type);
+            $this->addLocalVar($tmpVar, $returnType);
             $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
-            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+            // 解析表达式后可能会插入语句，因此需要在末尾添加 return 语句，而不是直接返回
+            $this->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
         } else {
             $code = 'return ' . $exprCode . ';';
         }
@@ -2593,7 +2601,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->convertObjectExpr($this->parseExpr($node->expr));
     }
 
-    protected function parseConstFetch(Node\Expr\ConstFetch $expr): string
+    protected function parseConstFetch(Node\Expr\ConstFetch $expr, bool $scalar = false): string
     {
         if ($expr->name->getType() != 'Name' and !($expr->name instanceof Node\Name\FullyQualified)) {
             abort($expr);
@@ -2613,6 +2621,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if ($name === 'PHP_EOL') {
             return '"' . $this->escapeString(PHP_EOL) . '"';
+        }
+        if ($scalar) {
+            return constant($expr->name);
         }
         if ($this->isNameExpr($expr->name)) {
             if (str_contains($name, '::')) {

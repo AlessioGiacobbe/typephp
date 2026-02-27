@@ -307,6 +307,9 @@ class Translator extends Preprocessor
             }
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
+                /**
+                 * @var ArgInfo $argInfo
+                 */
                 foreach ($argInfoList as $argInfo) {
                     if ($argInfo->variadic) {
                         $arg = self::TYPE_ARRAY . ' ' . $argInfo->name . '()';
