@@ -2296,14 +2296,30 @@ class EvaluatedValue
         $evaluator = new ConstExprEvaluator(
             static function (Expr $expr) use ($allConstInfos, &$isUnknownConstValue) {
                 // $expr is a ConstFetch with a name of a C macro here
-                if (!$expr instanceof Expr\ConstFetch) {
-                    throw new Exception("Expression at line " . $expr->getStartLine() . " must be a global, non-magic constant");
+                if (!($expr instanceof Expr\ConstFetch) and !($expr instanceof Expr\ClassConstFetch)) {
+                    _error:
+                    throw new Exception("Expression at line " . $expr->getStartLine() . " must be a global, non-magic constant, " . $expr->getType() . " given");
                 }
 
-                $constName = $expr->name->__toString();
-                if (strtolower($constName) === "unknown") {
-                    $isUnknownConstValue = true;
-                    return null;
+                if ($expr instanceof Expr\ClassConstFetch) {
+                    $class = $expr->class->toString();
+                    if ($class === 'self') {
+                        $constName = ClassInfo::$currentClass->name->toString() . "::" . $expr->name->__toString();
+                        if (isset($allConstInfos[$constName])) {
+                            return $allConstInfos[$constName]->getValue($allConstInfos)->value;
+                        } else {
+                            throw new Exception("Class constant `$constName` not found");
+                        }
+                    } elseif ($expr->name->__toString() === 'class') {
+                        return $class;
+                    }
+                    goto _error;
+                } else {
+                    $constName = $expr->name->__toString();
+                    if (strtolower($constName) === "unknown") {
+                        $isUnknownConstValue = true;
+                        return null;
+                    }
                 }
 
                 foreach ($allConstInfos as $const) {
@@ -2423,10 +2439,22 @@ class EvaluatedValue
         $expr = $prettyPrinter->prettyPrintExpr($this->expr);
         // PHP single-quote to C double-quote string
         if ($this->type->isString()) {
-            if (!($this->expr instanceof String_)) {
+            if (
+                $this->expr instanceof PhpParser\Node\Expr\ClassConstFetch
+            ) {
+                if ($this->expr->class instanceof PhpParser\Node\Name\FullyQualified and
+                    $this->expr->name instanceof PhpParser\Node\Identifier and
+                    $this->expr->name->__toString() === 'class') {
+                    $expr = '"' . addcslashes($this->expr->class->name, '\\') . '"';
+                } else {
+                    var_dump($this->value);
+                }
+            } elseif (!($this->expr instanceof String_)) {
                 throw new Exception("Expression at line " . $this->expr->getStartLine() . " must be a scalar string");
             }
             $expr = preg_replace("/(^'|'$)/", '"', $expr);
+        } elseif ($this->type->isInt() or $this->type->isFloat()) {
+            return strval($this->value);
         } else {
             if ($this->expr instanceof Expr\ConstFetch) {
                 $value = constant($this->expr->name->__toString());
@@ -3425,6 +3453,7 @@ class AttributeInfo {
 }
 
 class ClassInfo {
+    static public ?self $currentClass = null;
     public /* readonly */ Name $name;
     private int $flags;
     public string $type;
@@ -3501,6 +3530,7 @@ class ClassInfo {
         $this->cond = $cond;
         $this->phpVersionIdMinimumCompatibility = $minimumPhpVersionIdCompatibility;
         $this->isUndocumentable = $isUndocumentable;
+        self::$currentClass = $this;
     }
 
     /** @param array<string, ConstInfo> $allConstInfos */
