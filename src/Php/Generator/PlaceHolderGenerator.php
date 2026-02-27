@@ -1,12 +1,9 @@
 <?php
-/**
- * This file is part of Swoole-Compiler(AOT).
- *
- * @link     https://www.swoole.com/
- * @contact  service@swoole.com
- */
 
 namespace PhpAot\Php\Generator;
+
+use PhpParser\Node\Expr\StaticCall;
+use PhpParser\NodeAbstract;
 
 trait PlaceHolderGenerator
 {

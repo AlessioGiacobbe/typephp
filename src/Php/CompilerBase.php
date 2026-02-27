@@ -219,7 +219,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->rootPath = $rootPath;
         $this->parser = (new ParserFactory())->createForNewestSupportedVersion();
-        $this->printer = new PrettyPrinter\Standard();
+        $this->printer = new PrettyPrinter\Standard;
         $this->setBuildDir($rootPath . '/build');
         $climate = new CLImate();
         $this->climate = $climate;
@@ -452,7 +452,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_Yield':
             case 'Expr_YieldFrom':
                 $this->fatalError($expr, 'The `' . $type . '` is not supported');
-                // no break
             default:
                 abort($expr);
         }
@@ -623,7 +622,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         } else {
             if ($this->function) {
-                $prefix .= $this->function . '_';
+                $prefix .= $this->function  . '_';
             }
         }
         return $prefix . $name;
@@ -725,13 +724,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php_get_method(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
-    protected function parseTypeDecl(?NodeAbstract $type): string
+    protected function parseTypeDecl(NodeAbstract|null $type): string
     {
         // 联合类型暂时不支持，使用 var 类型代替
-        if ($type instanceof UnionType or $type instanceof NullableType) {
+        if ($type instanceof Node\UnionType or $type instanceof NullableType) {
             return self::TYPE_VAR;
+        } else {
+            return $type ? $this->getTypeFromZendType($this->parseIdentifier($type)) : self::TYPE_VOID;
         }
-        return $type ? $this->getTypeFromZendType($this->parseIdentifier($type)) : self::TYPE_VOID;
     }
 
     protected function parseFunctionDecl(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
@@ -1057,7 +1057,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Class':
                     $this->fatalError($v, 'Cannot declare class in function');
-                    // no break
                 default:
                     abort($v);
             }
@@ -1352,8 +1351,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($v->expr === null) {
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->inClosure) {
                 return 'return;';
+            } else {
+                return 'return ' . self::VALUE_NULL . ';';
             }
-            return 'return ' . self::VALUE_NULL . ';';
         }
         // 实际函数的返回值
         $type = $this->detectExprType($v->expr);
@@ -1391,7 +1391,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->localVars[$name] = $type;
     }
 
-    protected function addStaticVar(string $name, string $type): void
+    protected function addStaticVar(string $name, string $type):  void
     {
         $this->staticVars[$name] = $type;
         $this->addGlobalVar($this->getStaticVarName($name), $type);
@@ -1984,7 +1984,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function foundStrayCode(Node $node): never
     {
-        $this->fatalError($node, 'All execution code must be within a function, found stray code');
+        $this->fatalError($node, "All execution code must be within a function, found stray code");
     }
 
     protected function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
@@ -2044,7 +2044,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 throw new PlaceHolder();
             }
             if ($arg->name) {
-                foreach ($functionDef->argInfoList as $k => $argInfo) {
+                foreach($functionDef->argInfoList as $k => $argInfo) {
                     if ($argInfo->name === $arg->name->name) {
                         $args[$k] = $arg;
                         $hasNamedArg = true;
@@ -2070,8 +2070,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 $argList[] = '{' . implode(', ', $list_vargs) . '}';
                 break;
+            } else {
+                $argList[] = $this->getTypeConvertedArg($arg, $argInfo);
             }
-            $argList[] = $this->getTypeConvertedArg($arg, $argInfo);
         }
 
         return implode(', ', $argList);
@@ -3011,9 +3012,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($var->default) {
                 $initState = self::STATIC_VAR . $varName . '_initialized';
                 $initCode = $this->getIndent() . 'static bool ' . $initState . ' = false;';
-                $initCode .= $this->getIndent() . "if (!{$initState}) { \n";
+                $initCode .= $this->getIndent() . "if (!$initState) { \n";
                 $this->indentLevel++;
-                $initCode .= $this->getIndent() . "{$initState} = true;\n";
+                $initCode .= $this->getIndent() . "$initState = true;\n";
                 $initCode .= $this->getIndent() . $this->getStaticVarName($varName) . ' = ' . $this->parseIdentifier($var->default) . ';';
                 $this->indentLevel--;
                 $initCode .= $this->getIndent() . '}';
@@ -3115,6 +3116,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * 左值只能为变量、数组、对象属性、对象静态属性
+     * @param NodeAbstract $expr
+     * @return void
      */
     protected function checkLeftValue(NodeAbstract $expr): void
     {
@@ -3170,7 +3173,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return array_key_exists($name, $this->globalVars);
     }
 
-    protected function hasStaticVar(string $name): bool
+    protected function hasStaticVar(string $name):  bool
     {
         return array_key_exists($name, $this->staticVars);
     }
@@ -3350,9 +3353,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isTypedObject($var)) {
                 $class = $this->getObjectType($var);
                 goto _do_call;
-            }
-            if ($this->getVarType($var) == self::TYPE_OBJECT) {
-                $fn = 'php::concat({' . $var . '.getClassName(), "::", ' . $this->identifierToStr($expr->name) . '})';
+            } elseif ($this->getVarType($var) == self::TYPE_OBJECT) {
+                $fn = 'php::concat({' . $var . '.getClassName()' . ', "::", ' . $this->identifierToStr($expr->name) . '})';
             } else {
                 $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
             }
@@ -3379,8 +3381,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                     if ($args) {
                         return self::PREFIX . $nativeFunc . '(php::null_object, ' . $args . ')';
+                    } else {
+                        return self::PREFIX . $nativeFunc . '(php::null_object)';
                     }
-                    return self::PREFIX . $nativeFunc . '(php::null_object)';
                 }
             }
             $ce = $this->getClassEntryPtr($class);
@@ -3438,8 +3441,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $propertyDef = $classDef->getProperty($property);
                     if ($propertyDef->isPublic()) {
                         return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
-                    }
-                    if ($propertyDef->isProtected()) {
+                    } elseif ($propertyDef->isProtected()) {
                         if ($scope) {
                             return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
                         }
@@ -3859,13 +3861,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if ($this->functionDef->returnType === self::TYPE_VOID) {
             return '';
-        }
-        if ($this->functionDef->returnType === self::TYPE_INT
+        } elseif ($this->functionDef->returnType === self::TYPE_INT
             or $this->functionDef->returnType === self::TYPE_FLOAT
             or $this->functionDef->returnType === self::TYPE_BOOL) {
             return $this->getIndent() . 'return 0;';
+        } else {
+            return $this->getIndent() . 'return ' . self::VALUE_NULL . ';';
         }
-        return $this->getIndent() . 'return ' . self::VALUE_NULL . ';';
     }
 
     protected function genEmbeddedCode(NodeAbstract $stmt): string

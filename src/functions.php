@@ -1,17 +1,11 @@
 <?php
-/**
- * This file is part of Swoole-Compiler(AOT).
- *
- * @link     https://www.swoole.com/
- * @contact  service@swoole.com
- */
 
 use PhpAot\Core\Translator;
 use PhpAot\Php\Exception\Unsupported;
 
 function abort($v)
 {
-    /*
+    /**
      * @var $translator Translator
      */
     global $translator;
@@ -44,9 +38,10 @@ function if_not_empty_debug($if_expr, $v)
     }
 }
 
+
 function debug()
 {
-    foreach (func_get_args() as $arg) {
+    foreach(func_get_args() as $arg) {
         var_dump($arg);
     }
     debug_print_backtrace();

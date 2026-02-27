@@ -1,19 +1,13 @@
 <?php
-/**
- * This file is part of Swoole-Compiler(AOT).
- *
- * @link     https://www.swoole.com/
- * @contact  service@swoole.com
- */
 
 namespace PhpAot\Python;
 
 class Translator extends \PhpAot\Core\Translator
 {
-    protected string $lang = 'Python';
     private array $keywords = ['abs', 'aiter', 'all', 'anext', 'any', 'ascii', 'bin', 'bool', 'breakpoint', 'bytearray', 'bytes', 'callable', 'chr', 'classmethod', 'compile', 'complex', 'copyright', 'credits', 'delattr', 'dict', 'dir', 'divmod', 'enumerate', 'eval', 'exec', 'exit', 'filter', 'float', 'format', 'frozenset', 'getattr', 'globals', 'hasattr', 'hash', 'help', 'hex', 'id', 'input', 'int', 'isinstance', 'issubclass', 'iter', 'len', 'license', 'list', 'locals', 'map', 'max', 'memoryview', 'min', 'next', 'object', 'oct', 'open', 'ord', 'pow', 'print', 'property', 'quit', 'range', 'repr', 'reversed', 'round', 'set', 'setattr', 'slice', 'sorted', 'staticmethod', 'str', 'sum', 'super', 'tuple', 'type', 'vars', 'zip'];
     private array $keywordsMap = [];
     private array $definedFunctions = [];
+    protected string $lang = 'Python';
     private array $builtinTypes = [
         'ArithmeticError',
         'AssertionError',
@@ -45,7 +39,7 @@ class Translator extends \PhpAot\Core\Translator
         'StopAsyncIteration', 'StopIteration', 'SyntaxError', 'SyntaxWarning',
         'SystemError', 'SystemExit', 'TabError', 'TimeoutError', 'True', 'TypeError',
         'UnboundLocalError', 'UnicodeDecodeError', 'UnicodeEncodeError',
-        'UnicodeError', 'UnicodeTranslateError', 'UnicodeWarning', 'UserWarning', 'ValueError', 'Warning', 'ZeroDivisionError',
+        'UnicodeError', 'UnicodeTranslateError', 'UnicodeWarning', 'UserWarning', 'ValueError', 'Warning', 'ZeroDivisionError'
     ];
 
     public function __construct()
@@ -101,15 +95,14 @@ class Translator extends \PhpAot\Core\Translator
                 $id = $fn->id;
                 if (isset($this->keywordsMap[$id])) {
                     return 'PyCore::' . $id;
-                }
-                if (isset($this->definedFunctions[$id])) {
+                } elseif (isset($this->definedFunctions[$id])) {
                     return $id;
-                }
-                if (isset($this->builtinTypes[$id])) {
+                } elseif (isset($this->builtinTypes[$id])) {
                     return '$builtins->' . $id;
+                } else {
+                    return '$' . $id;
                 }
-                return '$' . $id;
-
+                // no break
             case 'Attribute':
                 return $this->parseAttribute($fn->value) . '->' . $fn->attr;
             default:
@@ -136,45 +129,41 @@ class Translator extends \PhpAot\Core\Translator
         }
 
         if (empty($args_list)) {
-            return "{$fn}()";
+            return "$fn()";
+        } else {
+            return "$fn(" . implode(', ', $args_list) . ")";
         }
-        return "{$fn}(" . implode(', ', $args_list) . ')';
     }
 
     public static function valueToRepr($v, $python = false)
     {
         if (is_string($v)) {
             $v = str_replace(
-                ['\\', "\n", "\r", "\t", "\v", "\x00", '"'],
-                ['\\\\', '\\n', '\\r', '\\t', '\\v', '\\x00', '\\"'],
+                ["\\", "\n", "\r", "\t", "\v", "\x00", "\""],
+                ["\\\\", "\\n", "\\r", "\\t", "\\v", "\\x00", "\\\""],
                 $v
             );
-            return "\"{$v}\"";
-        }
-        if ($v === []) {
+            return "\"$v\"";
+        } elseif ($v === []) {
             return '[]';
-        }
-        if (is_numeric($v)) {
+        } elseif (is_numeric($v)) {
             if ($python) {
                 if (is_infinite($v)) {
                     return "float('inf')";
-                }
-                if (is_nan($v)) {
+                } elseif (is_nan($v)) {
                     return "float('nan')";
                 }
             }
             return strval($v);
-        }
-        if (is_bool($v)) {
+        } elseif (is_bool($v)) {
             return $python ? ($v ? 'True' : 'False') : ($v ? 'true' : 'false');
-        }
-        if (is_null($v)) {
+        } elseif (is_null($v)) {
+            return $python ? 'None' : 'null';
+        } elseif (is_array($v)) {
+            return var_export($v, true);
+        } else {
             return $python ? 'None' : 'null';
         }
-        if (is_array($v)) {
-            return var_export($v, true);
-        }
-        return $python ? 'None' : 'null';
     }
 
     public function parseConstant($value): string
@@ -260,17 +249,16 @@ class Translator extends \PhpAot\Core\Translator
     {
         if ($slice->_type == 'Constant') {
             return $this->parseConstant($slice);
-        }
-        if ($slice->_type === 'Tuple') {
+        } elseif ($slice->_type === 'Tuple') {
             return $this->parseTuple($slice);
-        }
-        if ($slice->_type === 'Slice') {
+        } elseif ($slice->_type === 'Slice') {
             $_args[] = $slice->lower ? $this->parseTarget($slice->lower) : 'null';
             $_args[] = $slice->upper ? $this->parseTarget($slice->upper) : 'null';
             $_args[] = $slice->step ? $this->parseTarget($slice->step) : 'null';
             return 'PyCore::slice(' . implode(', ', $_args) . ')';
+        } else {
+            abort($slice);
         }
-        abort($slice);
     }
 
     public function parseImportFrom($node): string
@@ -280,7 +268,7 @@ class Translator extends \PhpAot\Core\Translator
         foreach ($node->names as $name) {
             $type = $name->name;
             $as = empty($name->asname) ? $type : $name->asname;
-            $imports[] = "\${$as} = PyCore::import('{$module}')->{$type}";
+            $imports[] = "\$$as = PyCore::import('$module')->$type";
         }
 
         return implode(';' . PHP_EOL, $imports);
@@ -292,7 +280,7 @@ class Translator extends \PhpAot\Core\Translator
         foreach ($node->names as $name) {
             $module = $name->name;
             $as = empty($name->asname) ? $module : $name->asname;
-            $out .= $this->getIndent() . "\${$as} = PyCore::import('{$module}');\n";
+            $out .= $this->getIndent() . "\$$as = PyCore::import('$module');\n";
         }
         return $out;
     }
@@ -360,9 +348,10 @@ class Translator extends \PhpAot\Core\Translator
             case 'Expr':
                 if (is_string($node->value->value)) {
                     return '/** ' . $node->value->value . ' */' . PHP_EOL;
+                } else {
+                    return $this->parseValue($node->value) . ';';
                 }
-                return $this->parseValue($node->value) . ';';
-
+                // no break
             default:
                 return $this->parseValue($node->value) . ';';
         }
@@ -479,14 +468,15 @@ class Translator extends \PhpAot\Core\Translator
             $op = $node->ctx->_type;
             $value = $this->parseValue($node->value);
             if ($node->ctx->_type == 'Store') {
-                return $value . '[' . $this->parseSlice($node->slice) . '] = $__value';
-            }
-            if ($op == 'Del') {
+                return  $value. '[' . $this->parseSlice($node->slice) . '] = $__value';
+            } elseif ($op == 'Del') {
                 return 'unset(' . $value . '[' . $this->parseSlice($node->slice) . '])';
+            } else {
+                return $value . '[' . $this->parseSlice($node->slice) . ']';
             }
-            return $value . '[' . $this->parseSlice($node->slice) . ']';
+        } else {
+            abort($node);
         }
-        abort($node);
     }
 
     public function parseFor($node)
@@ -512,34 +502,11 @@ class Translator extends \PhpAot\Core\Translator
         $fn = PHP_EOL . $this->getIndent() . 'function ' . $name . '(' . $args . ') {' . PHP_EOL;
         $this->indentLevel++;
         $fn .= $this->parseBody($node->body) . PHP_EOL;
-
+        ;
         $this->indentLevel--;
         $fn .= $this->getIndent() . '}' . PHP_EOL . PHP_EOL;
 
         return $fn;
-    }
-
-    public function parseBody($tree): string
-    {
-        $lines = [];
-        foreach ($tree as $node) {
-            $this->parseLine($node, $lines);
-        }
-        foreach ($lines as &$line) {
-            $line = $this->getIndent() . $line;
-        }
-        return implode(PHP_EOL, $lines);
-    }
-
-    public function convert($tree): void
-    {
-        $this->prepare($tree);
-        $output = '<?php' . PHP_EOL;
-        $output .= '$operator = PyCore::import("operator");' . PHP_EOL;
-        $output .= '$builtins = PyCore::import("builtins");' . PHP_EOL;
-        $output .= $this->parseBody($tree->body);
-        echo $output;
-        echo PHP_EOL;
     }
 
     private function addLine($line, array &$lines)
@@ -561,9 +528,9 @@ class Translator extends \PhpAot\Core\Translator
                 $value = $this->parseValue($node->value);
                 if ($node->targets[0]->_type == 'Subscript') {
                     $this->addLine('$__value = ' . $value . ';', $lines);
-                    $line = "{$target};";
+                    $line = "$target;";
                 } else {
-                    $line = "{$target} = {$value};";
+                    $line = "$target = $value;";
                 }
                 break;
             case 'AugAssign':
@@ -643,6 +610,29 @@ class Translator extends \PhpAot\Core\Translator
         $this->addLine($line, $lines);
     }
 
+    public function parseBody($tree): string
+    {
+        $lines = [];
+        foreach ($tree as $node) {
+            $this->parseLine($node, $lines);
+        }
+        foreach ($lines as &$line) {
+            $line = $this->getIndent() . $line;
+        }
+        return implode(PHP_EOL, $lines);
+    }
+
+    public function convert($tree): void
+    {
+        $this->prepare($tree);
+        $output = '<?php' . PHP_EOL;
+        $output .= '$operator = PyCore::import("operator");' . PHP_EOL;
+        $output .= '$builtins = PyCore::import("builtins");' . PHP_EOL;
+        $output .= $this->parseBody($tree->body);
+        echo $output;
+        echo PHP_EOL;
+    }
+
     private function parseGenerators($generators, $recipient, &$captures)
     {
         $captures = [];
@@ -696,8 +686,9 @@ class Translator extends \PhpAot\Core\Translator
         $op_str = $this->parseOp($op);
         if ($op_str) {
             return $left . ' ' . $op_str . '= ' . $right . ';';
+        } else {
+            return $left . ' = $operator->' . strtolower($op) . '(' . $left . ' , ' . $right . ');';
         }
-        return $left . ' = $operator->' . strtolower($op) . '(' . $left . ' , ' . $right . ');';
     }
 
     private function parseBinOp($value)
@@ -708,8 +699,9 @@ class Translator extends \PhpAot\Core\Translator
         $op_str = $this->parseOp($op);
         if ($op_str) {
             return $left . ' ' . $op_str . ' ' . $right;
+        } else {
+            return '$operator->' . strtolower($op) . '(' . $left . ' , ' . $right . ')';
         }
-        return '$operator->' . strtolower($op) . '(' . $left . ' , ' . $right . ')';
     }
 
     private function parseJoinedStr($value)
@@ -746,7 +738,7 @@ class Translator extends \PhpAot\Core\Translator
             $call = $this->parseCall($call);
             $target = empty($target) ? '$__' : $this->parseTarget($target);
             $code .= $target . '__object = ' . $call . ';' . PHP_EOL;
-
+            ;
             $code .= $target . ' = ' . $target . '__object->__enter__();' . PHP_EOL;
             $this->indentLevel++;
             $finally_code .= $this->getIndent() . $target . '__object->__exit__(null, null, null);' . PHP_EOL;
@@ -789,6 +781,7 @@ class Translator extends \PhpAot\Core\Translator
         }
         return 'new PyDict(' . $code . '])';
     }
+
 
     private function parseBoolOp($value)
     {
@@ -955,11 +948,11 @@ class Translator extends \PhpAot\Core\Translator
             $format = $value->format_spec->values[0]->value;
             if ($format[0] == '.' and $format[-1] == 'f') {
                 return 'round(' . $expr . ', ' . substr($format, 1, strlen($format) - 2) . ')';
-            }
-            if (str_contains($format, '%')) {
+            } elseif (str_contains($format, '%')) {
                 return $expr . '->strftime("' . $format . '")';
+            } else {
+                throw new \RuntimeException("Unsupported format: $format");
             }
-            throw new \RuntimeException("Unsupported format: {$format}");
         } else {
             return $expr;
         }

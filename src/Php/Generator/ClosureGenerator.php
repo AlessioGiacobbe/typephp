@@ -1,19 +1,19 @@
 <?php
-/**
- * This file is part of Swoole-Compiler(AOT).
- *
- * @link     https://www.swoole.com/
- * @contact  service@swoole.com
- */
 
 namespace PhpAot\Php\Generator;
 
+use PhpParser\Node\Expr\ArrowFunction;
 use PhpParser\NodeAbstract;
 
 trait ClosureGenerator
 {
     /**
+     * @param NodeAbstract $expr
+     * @param array $params
+     * @param callable $bodyGenCb
+     * @param array $uses
      * @param $useCurrentScope bool 直接使用当前作用域，C++ 函数将使用 & 捕获所有闭包变量
+     * @return string
      */
     protected function genClosure(NodeAbstract $expr, array $params, callable $bodyGenCb, array $uses = [], bool $useCurrentScope = false): string
     {
@@ -78,16 +78,17 @@ trait ClosureGenerator
                     $this->errorUndefinedVariable($useItem->var);
                 }
                 if ($useItem->byRef) {
-                    $useVars[] = $this->convertToRef($useItem->var);
+                    $useVars [] = $this->convertToRef($useItem->var);
                 } else {
-                    $useVars[] = $var;
+                    $useVars [] = $var;
                 }
             }
         }
 
         if ($this->methodDef) {
             return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' }, this_)';
+        } else {
+            return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
         }
-        return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
     }
 }
