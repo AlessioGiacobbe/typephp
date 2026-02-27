@@ -67,6 +67,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string EXPR_NEW = 'Expr_New';
 
     public const string EXPR_ARRAY_DIM_FETCH = 'Expr_ArrayDimFetch';
+    public const string EXPR_PROPERTY_FETCH = 'Expr_PropertyFetch';
 
     public const string NAMESPACE_SEPARATOR = '__';
 
@@ -361,7 +362,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseArray($expr);
             case self::EXPR_ARRAY_DIM_FETCH:
                 return $this->parseArrayDimFetch($expr, $this->inAssignExpr);
-            case 'Expr_PropertyFetch':
+            case self::EXPR_PROPERTY_FETCH:
                 return $this->parsePropertyFetch($expr, $this->inAssignExpr);
             case 'Expr_BinaryOp_ShiftLeft':
                 return $this->parseBinaryOpShiftLeft($expr);
@@ -1828,6 +1829,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
         }
+
+        if ($this->isAssignOpConcat($op)) {
+            return $var . '.append(' . $expr . ')';
+        }
         return $var . ' ' . $op . ' (' . $expr . ')';
     }
 
@@ -2860,7 +2865,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $object = $expr->var;
         $property = $expr->name;
         $id = $this->getPropertyIdentifier($object, $property);
-        return $this->convertToObject($object) . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
+        return $this->parseIdentifier($object) . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
     }
 
     protected function parseAssignOpShiftRight(Node $node): string
