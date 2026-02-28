@@ -690,12 +690,12 @@ class Translator extends Preprocessor
             $extends = $class->extends;
         }
 
-        $nativeName = $this->getNativeName('', $this->class, $this->namespace);
-        if ($this->hasNativeClass($nativeName)) {
-            $this->classDef = $this->classes[$nativeName];
+        $fullName = $this->getNamespacedClassName($this->class);
+        if ($this->hasNativeClass($fullName)) {
+            $this->classDef = $this->classes[$fullName];
         } else {
             $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
-            $this->addClass($nativeName, $this->classDef);
+            $this->addClass($fullName, $this->classDef);
         }
 
         if ($class instanceof Node\Stmt\Enum_) {
@@ -817,7 +817,7 @@ class Translator extends Preprocessor
                     $prop->class = $classDef->getNamespacedName(false);
                     $prop->name = $property->name;
                     $prop->default = $property->default;
-                    $this->staticPropertyList[] = $prop;
+                    $this->staticPropertyList[$name . '::' . $property->name] = $prop;
                 } else {
                     $propOffset = self::PREFIX . $this->getPropertyOffset($property->name, $classDef->name, $classDef->namespace);
                     $cppCode .= $this->getIndent() . 'this_.attr(' . $propOffset . ') = ' . $property->default . ';' . PHP_EOL;

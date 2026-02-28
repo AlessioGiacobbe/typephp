@@ -643,13 +643,16 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getNativeName(string $fn, string $ns = '', string $class = ''): string
     {
+        $names = [];
         if ($ns) {
             $names[] = $this->escapeNamespace($ns);
         }
         if ($class) {
             $names[] = $this->escapeClass($class);
         }
-        $names[] = $this->escapeName($fn);
+        if ($fn) {
+            $names[] = $this->escapeName($fn);
+        }
         return implode(self::NAMESPACE_SEPARATOR, $names);
     }
 
@@ -1452,6 +1455,9 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function hasNativeClass(string $name): bool
     {
+        if (!str_starts_with($name, 'Test')) {
+            debug_print_backtrace();
+        }
         return array_key_exists($this->escapeClass($name), $this->classes);
     }
 
@@ -3360,7 +3366,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $id;
         }
         if ($id === 'self') {
-            $id = $this->classDef->getNamespacedName(false);
+            $id = $this->getNamespacedClassName($this->class);
         }
         if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
             return $this->genCharPtr($id, true);
@@ -3441,11 +3447,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $class = $this->class;
             }
 
-            if (!$this->hasNativeClass($class)) {
+            $fullName = $this->getNamespacedClassName($class);
+            if (!$this->hasNativeClass($fullName)) {
                 return null;
             }
 
-            $classDef = $this->classes[$class];
+            $classDef = $this->getClassDef($fullName);
             $namespace = $classDef->namespace;
             if ($classDef->hasProperty($prop)) {
                 $propDef = $classDef->getProperty($prop);
@@ -3500,7 +3507,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $nativeProp = $this->findNativeStaticProperty($expr, $class, $namespace);
         if ($nativeProp) {
-            $classPtr = $this->getClassEntryPtr($class);
+            $classPtr = $this->getClassEntryPtr($this->getNamespacedClassName($class));
             $propOffset = self::PREFIX . $this->getPropertyOffset($nativeProp->name, $class, $namespace);
             return 'php::getStaticProperty(' . $classPtr . ', ' . $propOffset . ')';
         }
