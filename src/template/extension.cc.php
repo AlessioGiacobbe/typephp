@@ -140,6 +140,14 @@ foreach ($this->classes as $classDef):
     endforeach;
 endforeach;
 ?>
+    // static property
+<?php
+foreach ($this->staticPropertyList as $prop):
+?>
+    php::setStaticProperty(<?=$this->genCharPtr($prop->class, true)?>, <?=$this->genCharPtr($prop->name)?>, <?=$prop->default?>);
+<?php
+endforeach;
+?>
 }
 
 void php_app_clean() {

@@ -32,6 +32,7 @@ class Translator extends Preprocessor
     protected array $phpSrcFiles = [];
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
+    protected array $staticPropertyList = [];
     protected bool $useRegisterSymbolsFn = false;
     protected array $unsupportedFunctions = [
         'compact',
@@ -811,8 +812,16 @@ class Translator extends Preprocessor
 
         foreach ($classDef->properties as $property) {
             if ($property->type === self::TYPE_ARRAY and $property->default and $property->default !== self::TYPE_ARRAY . '{}') {
-                $propOffset = self::PREFIX . $this->getPropertyOffset($property->name, $classDef->name, $classDef->namespace);
-                $cppCode .= $this->getIndent() . 'this_.attr(' . $propOffset . ') = ' . $property->default . ';' . PHP_EOL;
+                if ($property->isStatic()) {
+                    $prop = new \stdClass();
+                    $prop->class = $classDef->getNamespacedName(false);
+                    $prop->name = $property->name;
+                    $prop->default = $property->default;
+                    $this->staticPropertyList[] = $prop;
+                } else {
+                    $propOffset = self::PREFIX . $this->getPropertyOffset($property->name, $classDef->name, $classDef->namespace);
+                    $cppCode .= $this->getIndent() . 'this_.attr(' . $propOffset . ') = ' . $property->default . ';' . PHP_EOL;
+                }
             }
         }
 
@@ -940,11 +949,14 @@ class Translator extends Preprocessor
             $flags |= Modifiers::PUBLIC;
         }
 
-        $this->methodDef = new MethodDef($flags, $name);
-        $methodCodes[$name] = $this->parseFunction($v);
+        if (!($flags & Modifiers::ABSTRACT)) {
+            $this->methodDef = new MethodDef($flags, $name);
+            $methodCodes[$name] = $this->parseFunction($v);
 
-        $this->checkRequiredArgNum($name, $this->methodDef, $v);
-        $this->classDef->methods[$name] = $this->methodDef;
+            $this->checkRequiredArgNum($name, $this->methodDef, $v);
+            $this->classDef->methods[$name] = $this->methodDef;
+        }
+
         $this->resetMethod();
     }
 

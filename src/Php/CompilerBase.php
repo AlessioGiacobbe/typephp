@@ -3360,10 +3360,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $id;
         }
         if ($id === 'self') {
-            $id = $this->class;
+            $id = $this->classDef->getNamespacedName(false);
         }
         if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
-            return $this->genCharPtr($id);
+            return $this->genCharPtr($id, true);
         }
         return $id;
     }
