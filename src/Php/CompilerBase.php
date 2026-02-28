@@ -1455,9 +1455,6 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function hasNativeClass(string $name): bool
     {
-        if (!str_starts_with($name, 'Test')) {
-            debug_print_backtrace();
-        }
         return array_key_exists($this->escapeClass($name), $this->classes);
     }
 
