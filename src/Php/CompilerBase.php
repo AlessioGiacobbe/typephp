@@ -3864,9 +3864,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
             $this->addLocalVar($var, $this->detectExprType($expr->expr));
         }
-        return 'if (!' . $isset . ') {' . PHP_EOL .
-            $this->getIndent() . $var . ' = ' . $right . ';' . PHP_EOL .
-            '}' . PHP_EOL;
+        return '(' . $isset . '?' . $var . ':(' . $var . ' = ' . $right . '))';
     }
 
     protected function isReturnStmtInLastLine(array $stmts): bool

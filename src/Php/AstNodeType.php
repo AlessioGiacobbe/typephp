@@ -78,4 +78,14 @@ trait AstNodeType
     {
         return $expr instanceof Expr\Match_;
     }
+
+    protected function isConstFetch(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Expr\ConstFetch;
+    }
+
+    protected function isAssignOp(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Expr\AssignOp or $expr instanceof Node\Expr\Assign;
+    }
 }
