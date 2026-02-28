@@ -296,9 +296,6 @@ class Translator extends Preprocessor
         $literalStringsCount = count($this->literalStrings);
         $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
 
-        /**
-         * @var FunctionDef $func
-         */
         foreach ($this->nativeFunctions as $name => $func) {
             $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
             $list = [];
@@ -307,9 +304,6 @@ class Translator extends Preprocessor
             }
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
-                /**
-                 * @var ArgInfo $argInfo
-                 */
                 foreach ($argInfoList as $argInfo) {
                     if ($argInfo->variadic) {
                         $arg = self::TYPE_ARRAY . ' ' . $argInfo->name . '()';
@@ -396,7 +390,7 @@ class Translator extends Preprocessor
 
     protected function getClassCe(ClassLikeDef $classDef): string
     {
-        return self::PREFIX . 'class_entry_' . $classDef->getNamespacedName();
+        return self::PREFIX . 'class_entry_' . $this->escapeCeName($classDef->getNamespacedName());
     }
 
     protected function getFilesFromDir(string $path): array
@@ -472,7 +466,7 @@ class Translator extends Preprocessor
             return '';
         }
 
-        return self::PREFIX . 'class_entry_' . $classDef->extends;
+        return self::PREFIX . 'class_entry_' . $this->escapeCeName($classDef->extends);
     }
 
     protected function doConvert(string $phpCode): string
@@ -592,7 +586,7 @@ class Translator extends Preprocessor
             $implements = $classDef->implements;
             if ($implements) {
                 foreach ($implements as $interface) {
-                    $tmpCe = self::PREFIX . 'class_entry_' . $interface;
+                    $tmpCe = self::PREFIX . 'class_entry_' . $this->escapeCeName($interface);
                     if (!isset($this->interfaces[$interface])) {
                         $sorter->add($tmpCe);
                     }
@@ -648,6 +642,7 @@ class Translator extends Preprocessor
                     $code .= $this->parseUse($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Interface':
+                    $code .= $this->parseInterface($v2) . PHP_EOL;
                     break;
                 default:
                     abort($v2);
@@ -694,13 +689,20 @@ class Translator extends Preprocessor
             $extends = $class->extends;
         }
 
-        $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
+        $nativeName = $this->getNativeName('', $this->class, $this->namespace);
+        if ($this->hasNativeClass($nativeName)) {
+            $this->classDef = $this->classes[$nativeName];
+        } else {
+            $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
+            $this->addClass($nativeName, $this->classDef);
+        }
+
         if ($class instanceof Node\Stmt\Enum_) {
             $this->classDef->enum = true;
         }
 
         if ($extends) {
-            $this->classDef->extends = $this->parseIdentifier($class->extends);
+            $this->classDef->extends = $this->getNamespacedClassName($this->parseIdentifier($class->extends));
             if (isset($this->classes[$this->classDef->extends])) {
                 $parent = $this->classes[$this->classDef->extends];
                 if ($parent->flags & Modifiers::FINAL) {
@@ -711,7 +713,6 @@ class Translator extends Preprocessor
         $this->classDef->implements = $this->parseIdentifierList($class->implements);
 
         $className = $this->classDef->getNamespacedName();
-        $this->addClass($className, $this->classDef);
         $this->classesDefineInFile[$className] = $this->classDef;
 
         $methodCodes = [];
@@ -906,10 +907,7 @@ class Translator extends Preprocessor
         $type  = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
         foreach ($v->consts as $const) {
             $constName = $this->parseIdentifier($const->name);
-            if (isset($this->classDef->constants[$constName])) {
-                $this->fatalError($const, 'Cannot redefine class constant ' . $this->class . '::' . $constName);
-            }
-            $constInfo                                   = new ConstantDef($constName, $flags, $type, $this->parseIdentifier($const->value));
+            $constInfo = new ConstantDef($constName, $flags, $type, $this->parseIdentifier($const->value));
             $this->classDef->constants[$constInfo->name] = $constInfo;
         }
     }
@@ -954,7 +952,7 @@ class Translator extends Preprocessor
     {
         $list = [];
         foreach ($implements as $implement) {
-            $list[] = $this->parseIdentifier($implement);
+            $list[] = $this->getNamespacedClassName($implement);
         }
 
         return $list;
@@ -1026,7 +1024,7 @@ class Translator extends Preprocessor
     {
         $list = [];
         foreach ($classDef->implements as $interface) {
-            $list[] = self::PREFIX . 'class_entry_' . $interface;
+            $list[] = self::PREFIX . 'class_entry_' . $this->escapeCeName($interface);
         }
 
         return $list;

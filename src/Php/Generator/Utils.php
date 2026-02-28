@@ -54,9 +54,14 @@ trait Utils
         return str_replace('\\', self::NAMESPACE_SEPARATOR, strtolower($ns));
     }
 
-    protected function escapeZendFnName(string $fn): string
+    protected function escapeZendFnName(string $fn, bool $lower = true): string
     {
-        return str_replace('\\', '_', strtolower($fn));
+        return str_replace('\\', '_', $lower ? strtolower($fn) : $fn);
+    }
+
+    protected function escapeCeName(string $name): string
+    {
+        return $this->escapeZendFnName($name, false);
     }
 
     protected function escapeName(string $name): string
@@ -67,6 +72,11 @@ trait Utils
     protected function escapeClass(string $class): string
     {
         return str_replace('\\', '_', trim(strtolower($class), '\\'));
+    }
+
+    protected function escapeFunction(string $func): string
+    {
+        return $this->escapeClass($func);
     }
 
     protected function escapeFileName(string $file): string

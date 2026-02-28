@@ -69,14 +69,6 @@ trait ClosureGenerator
         $code .= '};' . PHP_EOL;
 
         $this->beforeStmtLines[] = $code;
-        if (!$useCurrentScope) {
-            $this->localVars = $oriLocalVars;
-        }
-
-        $this->objects = $oriObjects;
-        $this->objectWrappers = $oriObjectWrappers;
-        $this->arguments = $oriArgs;
-        $this->inClosure = $oriInClosure;
 
         $useVars = [];
         if ($uses) {
@@ -92,6 +84,14 @@ trait ClosureGenerator
                 }
             }
         }
+
+        if (!$useCurrentScope) {
+            $this->localVars = $oriLocalVars;
+        }
+        $this->objects = $oriObjects;
+        $this->objectWrappers = $oriObjectWrappers;
+        $this->arguments = $oriArgs;
+        $this->inClosure = $oriInClosure;
 
         if ($this->methodDef) {
             return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' }, this_)';

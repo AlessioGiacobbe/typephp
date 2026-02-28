@@ -1,5 +1,7 @@
 #include <phpx.h>
 
+#include <zend_attributes.h>
+
 extern zend_class_entry *php_get_class(int class_id, const php::Str &class_name);
 extern zend_function *php_get_func(int func_id, const php::Str &func_name);
 extern zend_function *php_get_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name);

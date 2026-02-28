@@ -112,6 +112,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         'php_aot_helper.h',
     ];
     protected array $localHeaders = [];
+    /**
+     * 存储所有函数、类方法的定义，key 是 native name，命名空间需要转为 `_`，并且必须为小写
+     * @var array<string, FunctionDef>
+     */
     protected array $nativeFunctions = [];
     protected array $internalFunctions = [];
     protected array $nativeConstants = [];
@@ -150,6 +154,9 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, ClassDef>
      */
     protected array $classes = [];
+    /**
+     * @var array<string, InterfaceDef>
+     */
     protected array $interfaces = [];
 
     /**
@@ -253,11 +260,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     public function getTypeFromZendType(string $type): string
     {
         return $this->zendTypeMap[$type] ?? self::TYPE_VAR;
-    }
-
-    public function isNativeFunction(string $name): bool
-    {
-        return isset($this->nativeFunctions[$name]);
     }
 
     public function isTypedObject(string $object): bool
@@ -544,6 +546,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->inLoop         = false;
         $this->function       = '';
         $this->functionDef    = null;
+        $this->inClosure      = false;
     }
 
     protected function resetMethod(): void
@@ -603,7 +606,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function getNamespacedClassName(string $class): string
     {
         if ($class[0] === '\\') {
-            return $class;
+            return ltrim($class, '\\');
         }
 
         $ns2 = explode('\\', trim($class, '\\'));
@@ -614,8 +617,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (count($ns2) > 1) {
                 $ns .= '\\' . implode('\\', array_slice($ns2, 1));
             }
-
-            return $ns;
+            return ltrim($ns, '\\');
         }
 
         foreach ($this->useNamespaces as $useNamespace) {
@@ -628,10 +630,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $currentNamespace = $this->namespace;
         if (!empty($currentNamespace)) {
-            return '\\' . trim($currentNamespace, '\\') . '\\' . $class;
+            return trim($currentNamespace, '\\') . '\\' . $class;
         }
 
-        return '\\' . $class;
+        return $class;
     }
 
     protected function getPropertyOffset(string $property, string $class, string $namespace = ''): string
@@ -747,7 +749,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->resetFunction();
         $this->function = $this->parseIdentifier($v->name);
-        $name           = $this->getFunctionName($v);
+        $name = $this->getFunctionName($v);
         if (isset($this->nativeFunctions[$name])) {
             $this->functionDef = $this->nativeFunctions[$name];
         } else {
@@ -759,6 +761,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
+        // 类方法不要保存到 functions 中
         if ($this->class) {
             $this->addArgument('this_', self::TYPE_OBJECT);
             if ($this->methodDef) {
@@ -766,7 +769,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->methodDef->functionDef = $this->functionDef;
             }
         } else {
-            $this->functions[$name]            = $this->functionDef;
+            $this->functions[$name] = $this->functionDef;
             $this->functionDefineInFile[$name] = $this->functionDef;
         }
 
@@ -923,7 +926,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($param, 'Promoted properties are not supported');
                 }
                 $name = $this->parseIdentifier($param->var);
-                $propertyDef = new PropertyDef($name, $param->flags, $param->type, $this->parseParamDefaultValue($param->default));
+                $type = $param->type === null ? '' : $param->type;
+                $propertyDef = new PropertyDef($name, $param->flags, $type, $this->parseParamDefaultValue($param->default));
                 $this->classDef->properties[$name] = $propertyDef;
             }
             if ($param->variadic and $i !== $last) {
@@ -1427,6 +1431,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->classes[$this->escapeClass($name)] = $classDef;
     }
 
+    protected function addFunction(string $name, FunctionDef $functionDef): void
+    {
+        $this->functions[$this->escapeFunction($name)] = $functionDef;
+    }
+
     protected function hasVar(string $name): bool
     {
         return $this->hasLocalVar($name) || $this->hasGlobalVar($name) || $this->hasStaticVar($name);
@@ -1437,9 +1446,22 @@ class CompilerBase extends \PhpAot\Core\Translator
         return isset($this->localVars[$name]);
     }
 
+    /**
+     * @param string $name 必须传入带有完整命名空间的类名，将会自动转义为 native name
+     * @return bool
+     */
     protected function hasNativeClass(string $name): bool
     {
         return array_key_exists($this->escapeClass($name), $this->classes);
+    }
+
+    /**
+     * @param string $name 必须传入带有完整命名空间的类名，将会自动转义为 native name
+     * @return bool
+     */
+    protected function hasNativeFunction(string $name): bool
+    {
+        return array_key_exists($this->escapeFunction($name), $this->nativeFunctions);
     }
 
     protected function getNativeStaticMethod(string $class, string $method): string|false
@@ -1513,8 +1535,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 break;
             case 'Expr_FuncCall':
                 $name = $this->parseIdentifier($expr->name);
-                if ($this->isNativeFunction($name)) {
-                    return $this->nativeFunctions[$name]->returnType;
+                if ($this->hasNativeFunction($name)) {
+                    return $this->functions[$name]->returnType;
                 }
                 return $this->detectFuncCallReturnType($name);
             case 'Expr_New':
@@ -2038,11 +2060,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 跳过，稍后再处理
             if (isset($this->functionDeclInFile[$name])
                 and $this->functionDeclInFile[$name] === $this->file
-                and !$this->isNativeFunction($name)) {
+                and !$this->hasNativeFunction($name)) {
                 $this->redoAfterDeclare[$name] = true;
                 throw new Skip();
             }
-            if ($this->isNativeFunction($name)) {
+            if ($this->hasNativeFunction($name)) {
                 return $name;
             }
         }
@@ -2163,6 +2185,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                         // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
                         $this->addLocalVar($name, self::TYPE_REF);
                     } else {
+                        // 本地变量，且是原生类型，则转为普通变量
+                        if ($this->hasLocalVar($name) and $this->isNativeType($this->getVarType($name))) {
+                            $this->localVars[$name] = self::TYPE_VAR;
+                        }
                         // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
                         $tmpVar = $this->genTmpVarName();
                         $this->addLocalVar($tmpVar, self::TYPE_REF);
@@ -2612,16 +2638,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseClone(Node\Expr\Clone_ $expr): string
     {
-        $var = $this->parseIdentifier($expr->expr);
-
-        return $var . '.clone()';
+        return $this->convertToObject($expr->expr) . '.clone()';
     }
 
     protected function parseInstanceof(Node\Expr\Instanceof_ $expr): string
     {
-        $var = $this->parseIdentifier($expr->expr);
-
-        return $var . '.instanceOf(' . $this->identifierToStr($expr->class) . ')';
+        return $this->convertToObject($expr->expr) . '.instanceOf(' . $this->identifierToStr($expr->class) . ')';
     }
 
     protected function parseCastInt(Node\Expr\Cast\Int_ $node): string
@@ -2817,9 +2839,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $propertyName = $this->parseIdentifier($property);
             $nativeProperty = null;
             if ($objectName === 'this_') {
-                $nativeProperty = $this->findNativeProperty($propertyName, $this->class, $this->namespace);
+                $nativeProperty = $this->findNativeProperty($object, $propertyName, $this->class, $this->namespace);
             } elseif ($this->isTypedObject($objectName)) {
-                $nativeProperty = $this->findNativeProperty($propertyName, $this->objects[$objectName]);
+                $nativeProperty = $this->findNativeProperty($object, $propertyName, $this->objects[$objectName]);
             }
             if ($nativeProperty) {
                 return $nativeProperty;
@@ -3435,7 +3457,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return null;
     }
 
-    protected function findNativeProperty($property, string $class, string $namespace = ''): ?string
+    protected function findNativeProperty(NodeAbstract $object, string $property, string $class, string $namespace = ''): ?string
     {
         $findClass = $class;
         if ($namespace) {
@@ -3455,18 +3477,18 @@ class CompilerBase extends \PhpAot\Core\Translator
                         if ($scope) {
                             return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
                         }
-                        $this->fatalError($property, "Cannot access protected property `{$property}` of class `{$class}`");
+                        $this->fatalError($object, "Cannot access protected property `{$property}` of class `{$class}`");
                     } else {
                         if ($scope === $findClass) {
                             return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
                         }
-                        $this->error("Cannot access private property `{$property}` of class `{$class}`");
+                        $this->fatalError($object, "Cannot access private property `{$property}` of class `{$class}`");
                     }
                 } elseif ($classDef->extends) {
-                    $findClass = $classDef->namespace . '\\' . $classDef->extends;
+                    $findClass = $classDef->extends;
                     continue;
                 } else {
-                    $this->error("Property `{$property}` does not exist in class `{$class}`");
+                    $this->fatalError($object, "Property `{$property}` does not exist in class `{$class}`");
                 }
             }
             break;
@@ -3799,7 +3821,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $nativeFunc = $this->getNativeName($method, $classDef->namespace, $classDef->name);
         }
-        if ($nativeFunc and $this->isNativeFunction($nativeFunc)) {
+        if ($nativeFunc and $this->hasNativeFunction($nativeFunc)) {
             return $nativeFunc;
         }
         return false;
