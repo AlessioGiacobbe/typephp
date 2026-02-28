@@ -881,10 +881,9 @@ class Translator extends Preprocessor
     protected function genClassProperty(PropertyDef $prop): string
     {
         $code = $prop->type . ' ' . $prop->name;
-        if ($prop->default) {
+        if ($prop->default !== null) {
             $code .= ' = ' . $prop->default;
         }
-
         return $code . ';' . PHP_EOL;
     }
 

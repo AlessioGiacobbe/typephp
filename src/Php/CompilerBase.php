@@ -891,6 +891,21 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function parseParamDefaultValue(?NodeAbstract $default): ?string
+    {
+        if (!$default) {
+            return null;
+        }
+        /**
+         * 函数参数默认值只能为字面量，无法使用表达式获取值
+         */
+        if ($default instanceof Node\Expr\ConstFetch) {
+            return $this->parseConstFetch($default, true);
+        } else {
+            return $this->parseIdentifier($default);
+        }
+    }
+
     protected function parseParams($params, FunctionDef $functionDef): void
     {
         $list                          = [];
@@ -908,7 +923,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($param, 'Promoted properties are not supported');
                 }
                 $name = $this->parseIdentifier($param->var);
-                $propertyDef = new PropertyDef($name, $param->flags, $param->type, $param->default);
+                $propertyDef = new PropertyDef($name, $param->flags, $param->type, $this->parseParamDefaultValue($param->default));
                 $this->classDef->properties[$name] = $propertyDef;
             }
             if ($param->variadic and $i !== $last) {
@@ -929,14 +944,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $argInfo->property = $param->isPromoted();
             if (isset($param->default)) {
                 $functionDef->argCountRequired = count($list) - 1;
-                /**
-                 * 函数参数默认值只能为字面量，无法使用表达式获取值
-                 */
-                if ($param->default instanceof Node\Expr\ConstFetch) {
-                    $argInfo->default = $this->parseConstFetch($param->default, true);
-                } else {
-                    $argInfo->default = $this->parseIdentifier($param->default);
-                }
+                $argInfo->default = $this->parseParamDefaultValue($param->default);
             }
             $functionDef->argInfoList[] = $argInfo;
         }
@@ -1526,7 +1534,39 @@ class CompilerBase extends \PhpAot\Core\Translator
         return self::TYPE_VAR;
     }
 
-    protected function parseArray($node): string
+    /**
+     * 混杂数组赋值，需要拆分为多行插入
+     */
+    private function parseArrayMixed(Node\Expr\Array_ $node): string
+    {
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_ARRAY);
+
+        $items = $node->items;
+        foreach ($items as $item) {
+            $value = $this->parseIdentifier($item->value);
+            if ($item->unpack) {
+                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
+            } elseif ($item->key) {
+                $key = $this->parseIdentifier($item->key);
+                if (str_starts_with($key, self::LITERAL_STRINGS)) {
+                    $key = "{$key}.toStdString()";
+                } elseif ($key === '0L') {
+                    $key = 'php::zero';
+                }
+                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
+            } else {
+                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
+            }
+        }
+
+        // 释放临时变量，避免修改数组产生数组复制操作
+        $this->afterStmtLines[] = $this->getIndent() . $tmpVar . '.unset();';
+
+        return $tmpVar;
+    }
+
+    protected function parseArray(Node\Expr\Array_ $node): string
     {
         $items = $node->items;
         // 优化代码风格，空数组直接返回{}，否则会产生一些空洞内容
@@ -1534,21 +1574,41 @@ class CompilerBase extends \PhpAot\Core\Translator
             return self::TYPE_ARRAY . '{}';
         }
 
-        $assocArray = false;
+        $hasKey = false;
+        $hasIntKey = false;
+        $hasStrKey = false;
+        $hasUnpack = false;
+        $hasVarKey = false;
+        $hasNextInsert = false;
         foreach ($items as $item) {
-            if ($item->key) {
-                $assocArray = true;
-                break;
+            if ($item->unpack) {
+                $hasUnpack = true;
             }
+            if ($item->key) {
+                if ($item->key instanceof Node\Scalar\LNumber) {
+                    $hasIntKey = true;
+                } elseif ($item->key instanceof Node\Scalar\String_) {
+                    $hasStrKey = true;
+                } else {
+                    $hasVarKey = true;
+                }
+                $hasKey = true;
+            } else {
+                $hasNextInsert = true;
+            }
+        }
+
+        // 存在混合键，则需要拆分为多行插入
+        if ($hasUnpack or $hasVarKey or ($hasNextInsert && $hasKey) or ($hasIntKey and $hasStrKey)) {
+            return $this->parseArrayMixed($node);
         }
 
         $list = [];
         $this->indentLevel++;
         foreach ($items as $item) {
             $value = $this->parseIdentifier($item->value);
-            if ($assocArray) {
-                // TODO 混杂模式数组赋值
-                $key = $item->key ? $this->parseIdentifier($item->key) : self::VALUE_NULL;
+            if ($item->key) {
+                $key = $this->parseIdentifier($item->key);
                 if (str_starts_with($key, self::LITERAL_STRINGS)) {
                     $key = "{$key}.toStdString()";
                 } elseif ($key === '0L') {
