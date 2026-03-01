@@ -1476,7 +1476,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$class->hasMethod($method)) {
             return false;
         }
-        return $this->getNativeName($method, $class->name, $class->namespace);
+        return $this->getNativeName($method, $class->namespace, $class->name);
     }
 
     protected function getClassDef(string $name): ClassDef
@@ -2059,6 +2059,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         foreach ($possibleFunctionNames as $name) {
+            if (str_contains($name, '\\')) {
+                $name = $this->escapeNamespace($name);
+            }
             // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
             // 跳过，稍后再处理
             if (isset($this->functionDeclInFile[$name])
@@ -2696,7 +2699,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isNameExpr($expr->name)) {
             if (str_contains($name, '::')) {
                 $ns = explode('::', $name)[0];
-                $ce = $this->getClassEntryPtr($ns[0]);
+                $fullName = $this->getNamespacedClassName($ns[0]);
+                $ce = $this->getClassEntryPtr($fullName);
                 return 'php::constant(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
             }
             return 'php::constant(nullptr, ' . $this->getLiteralString($name) . ')';
@@ -2873,6 +2877,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseMagicConst(MagicConst $expr): string
     {
+        $class = ($this->namespace ? $this->namespace . '\\'  : '') . $this->class;
+        $function = ($this->namespace ? $this->namespace . '\\'  : '') . $this->function;
         switch ($expr->getType()) {
             case 'Scalar_MagicConst_Dir':
                 return '"' . $this->escapeString($this->dir) . '"';
@@ -2881,11 +2887,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_MagicConst_Line':
                 return (string) $expr->getStartLine();
             case 'Scalar_MagicConst_Function':
-                return '"' . $this->escapeString($this->function) . '"';
+                return '"' . $this->escapeString($function) . '"';
             case 'Scalar_MagicConst_Class':
-                return '"' . $this->escapeString($this->class) . '"';
+                return '"' . $this->escapeString($class) . '"';
             case 'Scalar_MagicConst_Method':
-                return '"' . $this->escapeString($this->class) . '::' . $this->escapeString($this->method) . '"';
+                return '"' . $this->escapeString($class) . '::' . $this->escapeString($this->method) . '"';
             default:
                 abort($expr);
         }
@@ -3362,7 +3368,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             return $id;
         }
-        if ($id === 'self') {
+        /**
+         * 对 static 的支持存在问题，静态编译时无法获得实际运行时的子类名，所以只能使用 self
+         * self 是在编译期确定的，而 static 是运行时确定的，但使用 AOT 编译为可执行文件后，运行时类的名称是无法确定的
+         */
+        if ($id === 'self' or $id === 'static') {
             $id = $this->getNamespacedClassName($this->class);
         }
         if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
@@ -3400,6 +3410,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($class === 'parent') {
                 return $this->parseParentMethodCall($expr);
             }
+            $class = $this->getNamespacedClassName($class);
 
             _do_call:
             $method = $this->parseIdentifier($expr->name);
@@ -3411,7 +3422,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     try {
                         $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
                     } catch (PlaceHolder) {
-                        return $this->genPlaceHolder($this->genArray([$this->genCharPtr($class), $this->genCharPtr($method)]));
+                        return $this->genPlaceHolder($this->genArray([$this->genCharPtr($class, true), $this->genCharPtr($method)]));
                     }
                     if ($args) {
                         return self::PREFIX . $nativeFunc . '(php::null_object, ' . $args . ')';
@@ -3422,7 +3433,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $ce = $this->getClassEntryPtr($class);
             $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method, false);
-            $placeHolder = $this->genArray([$this->genCharPtr($class), $this->genCharPtr($method)]);
+            $placeHolder = $this->genArray([$this->genCharPtr($class, true), $this->genCharPtr($method)]);
         }
         $call = 'php::call';
         if (empty($expr->args)) {
@@ -3524,7 +3535,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $class = $this->parseIdentifier($expr->class);
         $self = false;
-        if ($class === 'self' or $class === 'this_') {
+        if ($class === 'self' or $class === 'this_' or $class === 'static') {
             $self = true;
             $class = $this->class;
         }
