@@ -170,6 +170,11 @@ class Preprocessor extends CompilerBase
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
+        if ($class->extends) {
+            $this->parentClass = $this->getNamespacedClassName($this->parseIdentifier($class->extends));
+            $fullClassName = $this->getNamespacedClassName($this->class);
+            $this->classExtends[$fullClassName] = $this->parentClass;
+        }
         $code        = '';
         foreach ($class->stmts as $v) {
             $type = $v->getType();
@@ -181,7 +186,7 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_EnumCase':
                     break;
                 case 'Stmt_ClassMethod':
-                    $code .= $this->prepareFunction($v) . PHP_EOL;
+                    $this->prepareMethod($v);
                     break;
                 case 'Stmt_Expression':
                     $this->foundStrayCode($v);
@@ -191,7 +196,27 @@ class Preprocessor extends CompilerBase
             }
         }
         $this->class = '';
+        $this->parentClass = '';
 
         return $code;
+    }
+
+    protected function prepareMethod(Node\Stmt\ClassMethod $v): void
+    {
+        $this->prepareFunction($v) . PHP_EOL;
+        if ($this->isIdExpr($v->name) or $this->isNameExpr($v->name)) {
+            $fullClassName = $this->getNamespacedClassName($this->class);
+            $fullName = $fullClassName . '::' . $v->name;
+            $this->classMethodOverride[$fullName] = false;
+            // 查找父类是否有同名方法，递归查找
+            while (isset($this->classExtends[$fullClassName])) {
+                $parentClass = $this->classExtends[$fullClassName];
+                $parentMethod = $parentClass . '::' . $v->name;
+                if (isset($this->classMethodOverride[$parentMethod])) {
+                    $this->classMethodOverride[$parentMethod] = true;
+                }
+                $fullClassName = $parentClass;
+            }
+        }
     }
 }
