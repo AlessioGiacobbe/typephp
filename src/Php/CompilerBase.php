@@ -1480,16 +1480,36 @@ class CompilerBase extends \PhpAot\Core\Translator
         return array_key_exists($this->escapeFunction($name), $this->nativeFunctions);
     }
 
-    protected function getNativeStaticMethod(string $class, string $method): string|false
+    protected function getNativeMethod(Node\Expr\MethodCall|Node\Expr\StaticCall $expr, string $class, string $method): string|false
     {
         if (!$this->hasNativeClass($class)) {
             return false;
         }
-        $class = $this->getClassDef($class);
-        if (!$class->hasMethod($method)) {
-            return false;
+
+        $classDef = $this->getClassDef($class);
+        $methodDef = null;
+        // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
+        while ($classDef) {
+            if (!$classDef->hasMethod($method)) {
+                if (!$classDef->extends) {
+                    return false;
+                }
+                $classDef = $this->getClassDef($classDef->extends);
+            } else {
+                $methodDef = $classDef->methods[$method];
+                break;
+            }
         }
-        return $this->getNativeName($method, $class->namespace, $class->name);
+
+        if (!$this->checkAccessible($classDef, $methodDef)) {
+            $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` is not accessible');
+        }
+        if (count($expr->args) < $methodDef->functionDef->argCountRequired) {
+            $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` requires ' . $methodDef->functionDef->argCountRequired . ' arguments, ' . count($expr->args) . ' given');
+        } elseif (count($expr->args) > count($methodDef->functionDef->argInfoList)) {
+            $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` accepts ' . count($methodDef->functionDef->argInfoList) . ' arguments, ' . count($expr->args) . ' given');
+        }
+        return $this->getNativeName($method, $classDef->namespace, $classDef->name);
     }
 
     protected function getClassDef(string $name): ClassDef
@@ -3391,8 +3411,10 @@ class CompilerBase extends \PhpAot\Core\Translator
          * 对 static 的支持存在问题，静态编译时无法获得实际运行时的子类名，所以只能使用 self
          * self 是在编译期确定的，而 static 是运行时确定的，但使用 AOT 编译为可执行文件后，运行时类的名称是无法确定的
          */
-        if ($id === 'self' or $id === 'static') {
+        if ($id === 'self') {
             $id = $this->getNamespacedClassName($this->class);
+        } elseif ($id === 'static') {
+            return 'php_get_called_class(this_)';
         }
         if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
             return $literal ? $this->getLiteralString($id) : $this->genCharPtr($id, true);
@@ -3409,8 +3431,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseStaticCall(Node\Expr\StaticCall $expr): string
     {
-        $placeHolder = '';
         $self = false;
+        $callScope = [];
         if ($this->isVarExpr($expr->class) or $this->isVarExpr($expr->name)) {
             $var = $this->parseIdentifier($expr->class);
             if ($this->isTypedObject($var)) {
@@ -3438,17 +3460,24 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->beforeStmtLines[] = '// Static Method Call: ' . $class . '::' . $method . '()';
 
             if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
-                $nativeFunc = $this->getNativeStaticMethod($class, $method);
+                $callScope = [$this->genCharPtr($class, true), $this->genCharPtr($method)];
+            }
+
+            if ($callScope) {
+                $nativeFunc = $this->getNativeMethod($expr, $class, $method);
                 if ($nativeFunc) {
                     try {
                         $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
                     } catch (PlaceHolder) {
-                        return $this->genPlaceHolder($this->genArray([$this->genCharPtr($class, true), $this->genCharPtr($method)]));
+                        return $this->genPlaceHolder($this->genArray($callScope));
                     }
-                    $object = 'php::null_object';
                     // 在方法定义中使用了当前类的方法 self::method()，依然应该传递 this_ 指针
                     if ($this->methodDef and $self) {
                         $object = 'this_';
+                    } else {
+                        $object = $this->genTmpVarName();
+                        $this->addLocalVar($object, self::TYPE_OBJECT);
+                        $this->beforeStmtLines[] = 'Z_PTR_P('.$object.'.ptr()) = ' . $this->getClassEntryPtr($class) . ';';
                     }
                     if ($args) {
                         return self::PREFIX . $nativeFunc . '(' . $object . ', ' . $args . ')';
@@ -3459,14 +3488,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $ce = $this->getClassEntryPtr($class);
             $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method, false);
-            $placeHolder = $this->genArray([$this->genCharPtr($class, true), $this->genCharPtr($method)]);
+            $placeHolder = $this->genArray($callScope);
         }
         $call = 'php::call';
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
         }
         try {
-            return $call . '(' . $fn . ', ' . $this->parseCallArgs($expr->args) . ')';
+            $callArgs = $this->parseCallArgs($expr->args);
+            return $call . '(' . $fn . ', ' . $callArgs . ')';
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($placeHolder);
         }
@@ -3561,12 +3591,23 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $class = $this->parseIdentifier($expr->class);
         $self = false;
-        if ($class === 'self' or $class === 'this_' or $class === 'static') {
+        if ($class === 'self' or $class === 'this_') {
             $self = true;
             $class = $this->class;
         }
 
         $const = $this->escapeString($this->parseIdentifier($expr->name));
+        if ($class === 'static') {
+            if (!$this->methodDef) {
+                $this->fatalError($expr, "The 'static' keyword can only be used as the class name in class methods");
+            }
+            if ($const === 'class') {
+                return 'php_get_called_class(this_)';
+            } else {
+                return 'php::constant(php_get_called_ce(), ' . $this->getLiteralString($const) . ')';
+            }
+        }
+
         $class = $this->getNamespacedClassName($class);
         if ($const === 'class') {
             return '"' . $this->escapeString($class) . '"';
@@ -3846,34 +3887,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $classDef = $this->classDef;
         } elseif (isset($this->objects[$object])) {
             $class = $this->objects[$object];
-            if (!$this->hasNativeClass($class)) {
-                return false;
-            }
-
-            $classDef = $this->getClassDef($class);
-            $methodDef = null;
-            // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
-            while ($classDef) {
-                if (!$classDef->hasMethod($method)) {
-                    if (!$classDef->extends) {
-                        return false;
-                    }
-                    $classDef = $this->getClassDef($classDef->extends);
-                } else {
-                    $methodDef = $classDef->methods[$method];
-                    break;
-                }
-            }
-
-            if (!$this->checkAccessible($classDef, $methodDef)) {
-                $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` is not accessible');
-            }
-            if (count($expr->args) < $methodDef->functionDef->argCountRequired) {
-                $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` requires ' . $methodDef->functionDef->argCountRequired . ' arguments, ' . count($expr->args) . ' given');
-            } elseif (count($expr->args) > count($methodDef->functionDef->argInfoList)) {
-                $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` accepts ' . count($methodDef->functionDef->argInfoList) . ' arguments, ' . count($expr->args) . ' given');
-            }
-            $nativeFunc = $this->getNativeName($method, $classDef->namespace, $classDef->name);
+            $nativeFunc = $this->getNativeMethod($expr, $class, $method);
         }
         $fullMethodName = $classDef->getNamespacedName(false) . '::' . $method;
         // 存在子类同名方法，需要转为动态调用

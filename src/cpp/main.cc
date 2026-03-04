@@ -2,7 +2,8 @@
 #if PPROF_ON
 #include <gperftools/profiler.h>
 #endif
-#include <phpx.h>
+
+#include <php_aot_helper.h>
 
 extern zend_module_entry *php_embed_get_module();
 
@@ -14,6 +15,23 @@ void module_init(zend_module_entry *module) {
     if (zend_startup_module_ex(module) == FAILURE) {
         zend_error(E_ERROR, "Failed to startup module [%s]", module->name);
         exit(255);
+    }
+}
+
+const char *php_get_called_class(php::Object &this_) {
+    auto ce = php_get_called_ce(this_);
+    if (ce) {
+        return ce->name->val;
+    } else {
+        return "";
+    }
+}
+
+zend_class_entry *php_get_called_ce(php::Object &this_) {
+    if (this_.isObject()) {
+        return this_.ce();
+    } else {
+        return (zend_class_entry *) Z_PTR_P(this_.ptr());
     }
 }
 

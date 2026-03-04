@@ -54,7 +54,7 @@ php::Str <?=Translator::LITERAL_STRINGS?>[] = {
 <?php
 foreach ($this->literalStrings as $str => $index):
 ?>
-    php::String{ZEND_STRL("<?=$this->escapeString($str)?>"), true},
+    php::String{ZEND_STRL("<?=$this->escapeString($str)?>"), true}, // [<?=$index?>]
 <?php endforeach; ?>
 };
 
