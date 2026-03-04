@@ -3345,7 +3345,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $class = '';
         }
 
-        $method = $this->identifierToStr($expr->name);
+        $method = $this->identifierToStr($expr->name, literal: true);
 
         // 可转为原生调用的 MethodCall
         if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
@@ -3378,7 +3378,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function identifierToStr(NodeAbstract $node, bool $require = true): string
+    protected function identifierToStr(NodeAbstract $node, bool $require = true, bool $literal = false): string
     {
         $id = $this->parseIdentifier($node);
         if ($this->isVarExpr($node)) {
@@ -3395,7 +3395,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $id = $this->getNamespacedClassName($this->class);
         }
         if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
-            return $this->genCharPtr($id, true);
+            return $literal ? $this->getLiteralString($id) : $this->genCharPtr($id, true);
         }
         return $id;
     }
