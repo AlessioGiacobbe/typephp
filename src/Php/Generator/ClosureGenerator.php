@@ -34,11 +34,13 @@ trait ClosureGenerator
 
         $oriObjects = $this->objects;
         $oriObjectWrappers = $this->objectWrappers;
+        $oriCeWrappers = $this->ceWrappers;
         $oriArgs = $this->arguments;
         $oriInClosure = $this->inClosure;
 
         $this->objects = [];
         $this->objectWrappers = [];
+        $this->ceWrappers = [];
         $this->arguments = [];
         $this->inClosure = true;
 
@@ -90,6 +92,7 @@ trait ClosureGenerator
         }
         $this->objects = $oriObjects;
         $this->objectWrappers = $oriObjectWrappers;
+        $this->ceWrappers = $oriCeWrappers;
         $this->arguments = $oriArgs;
         $this->inClosure = $oriInClosure;
 

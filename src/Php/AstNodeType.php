@@ -88,4 +88,11 @@ trait AstNodeType
     {
         return $expr instanceof Expr\AssignOp or $expr instanceof Expr\Assign;
     }
+
+    protected function isCallExpr(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Expr\FuncCall
+            or $expr instanceof Node\Expr\MethodCall
+            or $expr instanceof Node\Expr\StaticCall;
+    }
 }

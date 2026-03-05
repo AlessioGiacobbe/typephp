@@ -191,6 +191,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected ?ClassDef $classDef = null;
     protected ?MethodDef $methodDef = null;
     protected ?InterfaceDef $interfaceDef = null;
+    protected ?FunctionDef $lastNativeCall = null;
     protected array $superGlobalVars = [
         '_GET'     => self::TYPE_ARRAY,
         '_POST'    => self::TYPE_ARRAY,
@@ -295,6 +296,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public function parseExpr(mixed $expr)
     {
+        $this->resetExpr();
         $type = $expr->getType();
         $this->writeLog('Line ' . $this->getLine($expr) . ': ' . $type);
         if ($expr->getLine() === $this->debugLine) {
@@ -563,6 +565,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->staticVars     = [];
         $this->arguments      = [];
         $this->objectWrappers = [];
+        $this->ceWrappers     = [];
         $this->tmpVarIndex    = 0;
         $this->inLoop         = false;
         $this->function       = '';
@@ -598,6 +601,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->useNamespaces = [];
         $this->useFunctions  = [];
         $this->namespace     = '';
+    }
+
+    protected function resetExpr(): void
+    {
+        $this->lastNativeCall = null;
     }
 
     protected function getFunctionName(FunctionLike $v): string
@@ -2164,6 +2172,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $argList = [];
         $functionDef = $this->nativeFunctions[$nativeFunc];
+        $this->lastNativeCall = $functionDef;
         $args = [];
         $hasNamedArg = false;
         // 对命名参数进行重排
@@ -3617,7 +3626,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($const === 'class') {
                 return 'php_get_called_class(this_)';
             } else {
-                return 'php::constant(php_get_called_ce(), ' . $this->getLiteralString($const) . ')';
+                return 'php::constant(php_get_called_ce(this_), ' . $this->getLiteralString($const) . ')';
             }
         }
 
@@ -3921,6 +3930,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseNativeMethodCall(string $object, string $nativeFunc, array $args): string
     {
         if (count($args) === 0) {
+            $this->lastNativeCall = $this->nativeFunctions[$nativeFunc];
             return self::PREFIX . $nativeFunc . '(' . $object . ')';
         }
         return self::PREFIX . $nativeFunc . '(' . $object . ', ' . $this->parseNativeCallArgs($args, $nativeFunc) . ')';
@@ -3957,11 +3967,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code = '';
         if ($this->debugInfo) {
             if ($stmt) {
+                $code .= 'php::debug_info.php_file = "' . $this->escapeString($this->file) . '";' . PHP_EOL;
                 $code .= 'php::debug_info.php_line = ' . $stmt->getLine() . ';' . PHP_EOL;
                 $code .= 'php::debug_info.cpp_line = __LINE__;' . PHP_EOL;
             } else {
                 $code .= 'php::debug_info.enable = true;' . PHP_EOL;
-                $code .= 'php::debug_info.php_file = "' . $this->escapeString($this->file) . '";' . PHP_EOL;
             }
         }
         return $code;
@@ -4005,7 +4015,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseArrowFunction(Node\Expr\ArrowFunction $expr): string
     {
         $cb = function () use ($expr) {
-            return 'return ' . $this->parseExpr($expr->expr) . ';';
+            $code = $this->parseExpr($expr->expr);
+            if ($this->isCallExpr($expr->expr)) {
+                if ($this->lastNativeCall and $this->lastNativeCall->returnType === self::TYPE_VOID) {
+                    return $code . ";\nreturn " . self::VALUE_NULL . ';';
+                }
+            }
+            return 'return ' . $code . ';';
         };
         return $this->genClosure($expr, $expr->params, $cb, [], true);
     }
