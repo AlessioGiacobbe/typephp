@@ -947,10 +947,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseParams($params, FunctionDef $functionDef): void
+    /**
+     * @param $params array<Node\Param>
+     * @param FunctionDef $functionDef
+     * @return void
+     */
+    protected function parseParams(array $params, FunctionDef $functionDef): void
     {
         $list                          = [];
         $functionDef->argCountRequired = count($params);
+        $defaultValueCount = 0;
         $last = array_key_last($params);
 
         foreach ($params as $i => $param) {
@@ -984,13 +990,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             $argInfo->byRef = $param->byRef;
             $argInfo->variadic = $param->variadic;
             $argInfo->property = $param->isPromoted();
-            if (isset($param->default)) {
-                $functionDef->argCountRequired = count($list) - 1;
+            if ($param->default) {
+                $defaultValueCount++;
                 $argInfo->default = $this->parseParamDefaultValue($param->default);
             }
             $functionDef->argInfoList[] = $argInfo;
         }
         $functionDef->params = implode(', ', $list);
+        $functionDef->argCountRequired -= $defaultValueCount;
     }
 
     protected function getComment(Node\Stmt $v, string $class): string
@@ -3895,7 +3902,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             $class = $this->objects[$object];
             $nativeFunc = $this->getNativeMethod($expr, $class, $method);
         }
-        $fullMethodName = $classDef->getNamespacedName(false) . '::' . $method;
+        if ($classDef) {
+            $fullMethodName = $classDef->getNamespacedName(false) . '::' . $method;
+        } else {
+            $fullMethodName = $object . '::' . $method;
+        }
+
         // 存在子类同名方法，需要转为动态调用
         if (isset($this->classMethodOverride[$fullMethodName]) and $this->classMethodOverride[$fullMethodName]) {
             return false;

@@ -1,9 +1,9 @@
-#include "sapi/embed/php_embed.h"
 #if PPROF_ON
 #include <gperftools/profiler.h>
 #endif
 
 #include <php_aot_helper.h>
+#include "sapi/embed/php_embed.h"
 
 extern zend_module_entry *php_embed_get_module();
 
