@@ -2653,15 +2653,25 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->beforeStmtLines[] = 'if (!' . $className . '_defined) {'
                     . $className . '_defined = true; php::eval((const char *)' . $className . '_code);}';
                 $className = '\\' . $className;
+                $cePtr     = $this->getClassEntryPtr($className);
             } else {
                 $this->fatalError($expr, 'must be anonymous class');
             }
         } else {
             $className = $this->parseIdentifier($expr->class);
+            if ($this->isNameExpr($expr->class)) {
+                if ($className === 'static') {
+                    $cePtr = 'php_get_called_ce(this_)';
+                } else {
+                    $className = $this->getNamespacedClassName($className);
+                    $cePtr = $this->getClassEntryPtr($className);
+                }
+            } else {
+                $cePtr = $className;
+            }
         }
-        $className = $this->getNamespacedClassName($className);
-        $args      = $expr->args;
-        $cePtr     = $this->getClassEntryPtr($className);
+
+        $args = $expr->args;
         if (empty($args)) {
             return 'php::newObject(' . $cePtr . ')';
         }
@@ -3440,8 +3450,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $placeHolder = $fn;
         } elseif ($class === 'static') {
-            $methodPtr = $this->identifierToStr($expr->name);
+            $methodPtr = $this->identifierToStr($expr->name, literal: true);
             $fn = 'php_get_called_ce(this_), php::getMethod(php_get_called_ce(this_), ' . $methodPtr . ')';
+            $this->beforeStmtLines[] = '// Static Method Call: static::' . $this->parseIdentifier($expr->name) . '()';
             $placeHolder = $this->genArray(['php_get_called_class(this_)', $methodPtr]);
         } else {
             if ($class === 'self') {
