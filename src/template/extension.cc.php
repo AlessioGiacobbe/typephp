@@ -6,6 +6,10 @@ use PhpAot\Php\Translator;
 echo $this->genIncludeHeaderFiles();
 ?>
 
+#include "ps_title.h"
+#include "php_cli_process_title.h"
+#include "php_cli_process_title_arginfo.h"
+
 // global vars
 <?php
 // 全局变量只能是 var 类型
@@ -78,6 +82,8 @@ endforeach;
 
 // clang-format off
 static const zend_function_entry ext_functions[] = {
+    PHP_FE(cli_set_process_title,        arginfo_cli_set_process_title)
+    PHP_FE(cli_get_process_title,        arginfo_cli_get_process_title)
 <?php
 foreach ($this->functions as $functionDef):
     if ($this->buildMode === 'ext' and $functionDef->name === 'main') {

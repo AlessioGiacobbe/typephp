@@ -70,6 +70,8 @@ $sourceFiles[] = $extensionSourceFile;
 // 添加 main.cc 文件
 if ($translator->getBuildMode() == 'bin') {
     $sourceFiles[] = ROOT_PATH . '/src/cpp/main.cc';
+    $sourceFiles[] = ROOT_PATH . '/src/cpp/php_cli_process_title.c';
+    $sourceFiles[] = ROOT_PATH . '/src/cpp/ps_title.c';
 }
 
 // 编译所有 C++ 文件

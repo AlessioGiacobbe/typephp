@@ -4,6 +4,7 @@
 
 #include <php_aot_helper.h>
 #include "sapi/embed/php_embed.h"
+#include "ps_title.h"
 
 extern zend_module_entry *php_embed_get_module();
 
@@ -53,6 +54,8 @@ int main(int cpp_argc, char **cpp_argv) {
 
     zend_module_entry *module = php_embed_get_module();
     module_init(module);
+
+    save_ps_args(cpp_argc, cpp_argv);
 
     int rc = 0;
 #if PPROF_ON
