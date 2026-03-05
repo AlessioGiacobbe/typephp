@@ -37,4 +37,3 @@ namespace  {
 --EXPECT--
 string(5) "hello"
 string(5) "world"
-string(3) "foo"

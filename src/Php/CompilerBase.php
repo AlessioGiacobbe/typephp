@@ -112,6 +112,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         'php_aot_helper.h',
     ];
     protected array $localHeaders = [];
+
     /**
      * 存储所有函数、类方法的定义，key 是 native name，命名空间需要转为 `_`，并且必须为小写
      * @var array<string, FunctionDef>
@@ -155,6 +156,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, ClassDef>
      */
     protected array $classes = [];
+
     /**
      * @var array<string, InterfaceDef>
      */
@@ -206,7 +208,16 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $objects = [];
     protected array $localVars = [];
     protected array $staticVars = [];
+
+    /**
+     * @var array<string, string>
+     */
     protected array $objectWrappers = [];
+
+    /**
+     * @var array<string, string>
+     */
+    protected array $ceWrappers = [];
     protected bool $strictTypes = false;
     protected string $rootPath;
     protected string $buildDir;
@@ -697,6 +708,17 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php_get_class(' . $id . ', ' . $this->getLiteralString($className) . ')';
     }
 
+    protected function getCeWrapper(string $className): string
+    {
+        if (isset($this->ceWrappers[$className])) {
+            return $this->ceWrappers[$className];
+        }
+        $object = $this->addTmpVar(self::TYPE_OBJECT);
+        $this->beforeStmtLines[] = 'Z_PTR_P(' . $object . '.ptr()) = ' . $this->getClassEntryPtr($className) . ';';
+        $this->ceWrappers[$className] = $object;
+        return $object;
+    }
+
     protected function getFuncPtr(string $funcName, bool $macro = true): string
     {
         $id = $this->getFuncId($funcName);
@@ -915,7 +937,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$default) {
             return null;
         }
-        /**
+        /*
          * 函数参数默认值只能为字面量，无法使用表达式获取值
          */
         if ($default instanceof Node\Expr\ConstFetch) {
@@ -1417,6 +1439,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->localVars[$name] = $type;
     }
 
+    protected function addTmpVar(string $type): string
+    {
+        $var = $this->genTmpVarName();
+        $this->addLocalVar($var, $type);
+        return $var;
+    }
+
     protected function addStaticVar(string $name, string $type): void
     {
         $this->staticVars[$name] = $type;
@@ -1464,7 +1493,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * @param string $name 必须传入带有完整命名空间的类名，将会自动转义为 native name
-     * @return bool
      */
     protected function hasNativeClass(string $name): bool
     {
@@ -1473,7 +1501,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * @param string $name 必须传入带有完整命名空间的类名，将会自动转义为 native name
-     * @return bool
      */
     protected function hasNativeFunction(string $name): bool
     {
@@ -1590,38 +1617,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return self::TYPE_VAR;
-    }
-
-    /**
-     * 混杂数组赋值，需要拆分为多行插入
-     */
-    private function parseArrayMixed(Node\Expr\Array_ $node): string
-    {
-        $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_ARRAY);
-
-        $items = $node->items;
-        foreach ($items as $item) {
-            $value = $this->parseIdentifier($item->value);
-            if ($item->unpack) {
-                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
-            } elseif ($item->key) {
-                $key = $this->parseIdentifier($item->key);
-                if (str_starts_with($key, self::LITERAL_STRINGS)) {
-                    $key = "{$key}.toStdString()";
-                } elseif ($key === '0L') {
-                    $key = 'php::zero';
-                }
-                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
-            } else {
-                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
-            }
-        }
-
-        // 释放临时变量，避免修改数组产生数组复制操作
-        $this->afterStmtLines[] = $this->getIndent() . $tmpVar . '.unset();';
-
-        return $tmpVar;
     }
 
     protected function parseArray(Node\Expr\Array_ $node): string
@@ -2057,9 +2052,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * 查找原生函数.
-     *
-     * @param string $fname
-     * @return string|false
      */
     protected function findNativeFunction(string $fname): string|false
     {
@@ -2911,8 +2903,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseMagicConst(MagicConst $expr): string
     {
-        $class = ($this->namespace ? $this->namespace . '\\'  : '') . $this->class;
-        $function = ($this->namespace ? $this->namespace . '\\'  : '') . $this->function;
+        $class = ($this->namespace ? $this->namespace . '\\' : '') . $this->class;
+        $function = ($this->namespace ? $this->namespace . '\\' : '') . $this->function;
         switch ($expr->getType()) {
             case 'Scalar_MagicConst_Dir':
                 return '"' . $this->escapeString($this->dir) . '"';
@@ -3407,7 +3399,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             return $id;
         }
-        /**
+        /*
          * 对 static 的支持存在问题，静态编译时无法获得实际运行时的子类名，所以只能使用 self
          * self 是在编译期确定的，而 static 是运行时确定的，但使用 AOT 编译为可执行文件后，运行时类的名称是无法确定的
          */
@@ -3433,8 +3425,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $self = false;
         $callScope = [];
+        $class = $this->parseIdentifier($expr->class);
+
         if ($this->isVarExpr($expr->class) or $this->isVarExpr($expr->name)) {
-            $var = $this->parseIdentifier($expr->class);
+            $var = $class;
             if ($this->isTypedObject($var)) {
                 $class = $this->getObjectType($var);
                 goto _do_call;
@@ -3445,8 +3439,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
             }
             $placeHolder = $fn;
+        } elseif ($class === 'static') {
+            $methodPtr = $this->identifierToStr($expr->name);
+            $fn = 'php_get_called_ce(this_), php::getMethod(php_get_called_ce(this_), ' . $methodPtr . ')';
+            $placeHolder = $this->genArray(['php_get_called_class(this_)', $methodPtr]);
         } else {
-            $class = $this->parseIdentifier($expr->class);
             if ($class === 'self') {
                 $class = $this->class;
                 $self = true;
@@ -3475,9 +3472,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($this->methodDef and $self) {
                         $object = 'this_';
                     } else {
-                        $object = $this->genTmpVarName();
-                        $this->addLocalVar($object, self::TYPE_OBJECT);
-                        $this->beforeStmtLines[] = 'Z_PTR_P('.$object.'.ptr()) = ' . $this->getClassEntryPtr($class) . ';';
+                        $object = $this->getCeWrapper($class);
                     }
                     if ($args) {
                         return self::PREFIX . $nativeFunc . '(' . $object . ', ' . $args . ')';
@@ -4031,5 +4026,37 @@ class CompilerBase extends \PhpAot\Core\Translator
             return false;
         }
         return $stmts[array_key_last($stmts)] instanceof Node\Stmt\Return_;
+    }
+
+    /**
+     * 混杂数组赋值，需要拆分为多行插入
+     */
+    private function parseArrayMixed(Node\Expr\Array_ $node): string
+    {
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_ARRAY);
+
+        $items = $node->items;
+        foreach ($items as $item) {
+            $value = $this->parseIdentifier($item->value);
+            if ($item->unpack) {
+                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
+            } elseif ($item->key) {
+                $key = $this->parseIdentifier($item->key);
+                if (str_starts_with($key, self::LITERAL_STRINGS)) {
+                    $key = "{$key}.toStdString()";
+                } elseif ($key === '0L') {
+                    $key = 'php::zero';
+                }
+                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
+            } else {
+                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
+            }
+        }
+
+        // 释放临时变量，避免修改数组产生数组复制操作
+        $this->afterStmtLines[] = $this->getIndent() . $tmpVar . '.unset();';
+
+        return $tmpVar;
     }
 }

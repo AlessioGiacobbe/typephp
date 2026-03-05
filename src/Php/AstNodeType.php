@@ -86,6 +86,6 @@ trait AstNodeType
 
     protected function isAssignOp(NodeAbstract $expr): bool
     {
-        return $expr instanceof Node\Expr\AssignOp or $expr instanceof Node\Expr\Assign;
+        return $expr instanceof Expr\AssignOp or $expr instanceof Expr\Assign;
     }
 }
