@@ -1431,14 +1431,21 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 实际函数的返回值
         $type = $this->detectExprType($v->expr);
         $expr = $this->parseExpr($v->expr);
-        // 函数定义时没有声明返回值，但函数体中有返回值，修改为实际的返回值类型
-        if ($this->getReturnType() === 'void') {
-            $this->resetReturnType($v, $type);
-        } elseif ($this->isNativeType($type) and $this->getReturnType() !== self::TYPE_VAR and $this->getReturnType() !== $type) {
-            // 返回值类型不一致，说明存在多种类型的返回值，修改为 var 表示 any
-            $this->resetReturnType($v, self::TYPE_VAR);
+
+        // 匿名函数的返回值一定是 var
+        if (!$this->inClosure) {
+            // 函数定义时没有声明返回值，但函数体中有返回值，修改为实际的返回值类型
+            if ($this->getReturnType() === 'void') {
+                $this->resetReturnType($v, $type);
+            } elseif ($this->isNativeType($type) and $this->getReturnType() !== self::TYPE_VAR and $this->getReturnType() !== $type) {
+                // 返回值类型不一致，说明存在多种类型的返回值，修改为 var 表示 any
+                $this->resetReturnType($v, self::TYPE_VAR);
+            }
+            $returnType = $this->getReturnType();
+        } else {
+            $returnType = self::TYPE_VAR;
         }
-        $returnType = $this->getReturnType();
+
         $exprCode = $this->convertExprType($expr, $returnType, $type);
         // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
         // 将 Indirect 赋值给临时变量后，使用 Ctor::Copy 解除了 Indirect，保证内存安全
