@@ -3197,7 +3197,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $vars = $expr->vars;
         if (count($vars) > 1) {
-            $this->fatalError($expr, 'Cannot check multiple variables with isset');
+            $list = [];
+            foreach ($vars as $var) {
+                $list[] = $this->parseVarCheckExpr($var, 'isset');
+            }
+            return '(' . implode(' && ', $list) . ')';
         }
         return $this->parseVarCheckExpr($vars[0], 'isset');
     }
