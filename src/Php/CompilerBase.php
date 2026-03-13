@@ -33,6 +33,7 @@ use PhpParser\NodeAbstract;
 use PhpParser\Parser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
+use PhpParser\Node\Expr\CallLike;
 
 class CompilerBase extends \PhpAot\Core\Translator
 {
@@ -389,6 +390,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseArrayDimFetch($expr, $this->inAssignExpr);
             case self::EXPR_PROPERTY_FETCH:
                 return $this->parsePropertyFetch($expr, $this->inAssignExpr);
+            case 'Expr_NullsafePropertyFetch':
+                return $this->parseNullsafePropertyFetch($expr);
+            case 'Expr_NullsafeMethodCall':
+                return $this->parseNullsafeMethodCall($expr);
             case 'Expr_BinaryOp_ShiftLeft':
                 return $this->parseBinaryOpShiftLeft($expr);
             case 'Expr_BinaryOp_ShiftRight':
@@ -978,8 +983,15 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($param, 'Promoted properties are not supported');
                 }
                 $name = $this->parseIdentifier($param->var);
-                $type = $param->type === null ? '' : $param->type;
-                $propertyDef = new PropertyDef($name, $param->flags, $type, $this->parseParamDefaultValue($param->default));
+                if ($param->type instanceof NullableType) {
+                    $type = $param->type->type;
+                    $nullable = true;
+                } else {
+                    $type = $param->type === null ? '' : $param->type;
+                    $nullable = false;
+                }
+                $default = $this->parseParamDefaultValue($param->default);
+                $propertyDef = new PropertyDef($name, $param->flags, $type, $default, $nullable);
                 $this->classDef->properties[$name] = $propertyDef;
             }
             if ($param->variadic and $i !== $last) {
@@ -1522,7 +1534,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return array_key_exists($this->escapeFunction($name), $this->nativeFunctions);
     }
 
-    protected function getNativeMethod(Node\Expr\MethodCall|Node\Expr\StaticCall $expr, string $class, string $method): string|false
+    protected function getNativeMethod(CallLike $expr, string $class, string $method): string|false
     {
         if (!$this->hasNativeClass($class)) {
             return false;
@@ -3904,7 +3916,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $methodDef->flags & Modifiers::PUBLIC;
     }
 
-    protected function findNativeMethod(Node\Expr\MethodCall $expr, string $object, string $method): string|false
+    protected function findNativeMethod(CallLike $expr, string $object, string $method): string|false
     {
         $nativeFunc = '';
         $classDef = null;
@@ -4101,5 +4113,67 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->afterStmtLines[] = $this->getIndent() . $tmpVar . '.unset();';
 
         return $tmpVar;
+    }
+
+    protected function parseNullsafePropertyFetch(Node\Expr\NullsafePropertyFetch $expr): string
+    {
+        return $this->parseNullsafeExpr($expr);
+    }
+
+    protected function parseNullsafeMethodCall(Node\Expr\NullsafeMethodCall $expr): string
+    {
+        return $this->parseNullsafeExpr($expr);
+    }
+
+    protected function parseNullsafeExpr(Node\Expr\NullsafePropertyFetch|Node\Expr\NullsafeMethodCall $expr): string
+    {
+        $list = [];
+        $comment = '// Nullsafe Operator: ' . $this->printer->prettyPrint([$expr]);
+
+        while (1) {
+            if ($expr instanceof Node\Expr\NullsafePropertyFetch) {
+                $list[] = ['property', $this->identifierToStr($expr->name, literal: true)];
+                $expr = $expr->var;
+            } elseif ($expr instanceof Node\Expr\NullsafeMethodCall) {
+                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args];
+                $expr = $expr->var;
+            } else {
+                if ($this->isVarExpr($expr)) {
+                    $object = $this->parseIdentifier($expr);
+                    if (!$this->hasVar($object)) {
+                        $this->errorUndefinedVariable($expr);
+                    }
+                    $type = $this->getVarType($object);
+                    if ($type === self::TYPE_OBJECT) {
+                        break;
+                    }
+                }
+                $object = $this->addTmpVar(self::TYPE_OBJECT);
+                $this->beforeStmtLines[] = $this->getIndent() . $object . ' = ' . $this->parseIdentifier($expr) . ';';
+                break;
+            }
+        }
+
+        $list = array_reverse($list);
+        $last = array_key_last($list);
+        $tmpFn = $this->genTmpVarName();
+
+        $code = $comment . PHP_EOL . 'auto ' . $tmpFn . ' = [&]() -> ' . self::TYPE_VAR . '{' . PHP_EOL;
+        $update = $this->escapeBool($this->inAssignExpr);
+
+        foreach ($list as $key => $item) {
+            $tmpVar = $this->addTmpVar($key !== $last ? self::TYPE_OBJECT : self::TYPE_VAR);
+            $code .= "if ($object.isNull()) { return " . self::VALUE_NULL . "; }";
+            if ($item[0] == 'property') {
+                $code .= $this->getIndent() . "$tmpVar = $object.attr({$item[1]}, $update);";
+            } else {
+                $args = $this->parseCallArgs($item[2]);
+                $code .= $this->getIndent() . "$tmpVar = $object.exec({$item[1]}, $args);";
+            }
+            $object = $tmpVar;
+        }
+        $code .= $this->getIndent() . "return $object; };";
+        $this->beforeStmtLines[] = $code;
+        return "$tmpFn()";
     }
 }

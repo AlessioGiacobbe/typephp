@@ -16,13 +16,15 @@ class PropertyDef
     public string $type;
     public int $flags;
     public ?string $default = null;
+    public bool $nullable = false;
 
-    public function __construct(string $name, int $flags, string $type, ?string $default = null)
+    public function __construct(string $name, int $flags, string $type, ?string $default = null, bool $nullable = false)
     {
         $this->flags   = $flags;
         $this->name    = $name;
         $this->type    = $type;
         $this->default = $default;
+        $this->nullable = $nullable;
     }
 
     public function isPrivate(): bool
