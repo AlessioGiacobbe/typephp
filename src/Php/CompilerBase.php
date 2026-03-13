@@ -1744,6 +1744,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 // no break
             case 'mixed':
                 return self::TYPE_VAR;
+            case 'self':
+                $this->objects[$var] = $this->classDef->getNamespacedName(false);
+                return self::TYPE_OBJECT;
             case 'resource':
                 $this->fatalError($param, 'Cannot use `resource` as a parameter type.');
                 // no break
