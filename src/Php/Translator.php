@@ -132,11 +132,16 @@ class Translator extends Preprocessor
         }
         $name = str_replace(['-', '*'], '_', $name);
         if (!preg_match('/^[a-zA-Z0-9_]+$/', $name)) {
-            $this->climate->red('The target name must be a valid identifier');
+            $this->climate->red('The target name `' . $name . '` must be a valid identifier');
             exit(1);
         }
         if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
-            $this->climate->red('The target name [' . $name . '] must not be a reserved keyword');
+            $this->climate->red('The target name `' . $name . '` must not be a reserved keyword');
+            exit(1);
+        }
+        $realTargetPath = $this->rootPath . '/' . $name;
+        if (is_dir($realTargetPath)) {
+            $this->climate->red('The target name `' . $name . '` must not be a directory');
             exit(1);
         }
         $this->targetName = $name;
