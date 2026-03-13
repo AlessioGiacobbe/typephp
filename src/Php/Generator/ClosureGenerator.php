@@ -37,12 +37,16 @@ trait ClosureGenerator
         $oriCeWrappers = $this->ceWrappers;
         $oriArgs = $this->arguments;
         $oriInClosure = $this->inClosure;
+        $oriBeforeStmtLines = $this->beforeStmtLines;
+        $oriAfterStmtLines = $this->afterStmtLines;
 
         $this->objects = [];
         $this->objectWrappers = [];
         $this->ceWrappers = [];
         $this->arguments = [];
         $this->inClosure = true;
+        $this->beforeStmtLines = [];
+        $this->afterStmtLines = [];
 
         $this->indentLevel++;
 
@@ -70,8 +74,6 @@ trait ClosureGenerator
         $this->indentLevel--;
         $code .= '};' . PHP_EOL;
 
-        $this->beforeStmtLines[] = $code;
-
         $useVars = [];
         if ($uses) {
             foreach ($uses as $useItem) {
@@ -95,6 +97,9 @@ trait ClosureGenerator
         $this->ceWrappers = $oriCeWrappers;
         $this->arguments = $oriArgs;
         $this->inClosure = $oriInClosure;
+        $this->beforeStmtLines = $oriBeforeStmtLines;
+        $this->afterStmtLines = $oriAfterStmtLines;
+        $this->beforeStmtLines[] = $code;
 
         if ($this->methodDef) {
             return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' }, this_)';

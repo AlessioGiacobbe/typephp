@@ -4039,12 +4039,17 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $cb = function () use ($expr) {
             $code = $this->parseExpr($expr->expr);
+            if ($this->beforeStmtLines) {
+                $beforeCode = implode(PHP_EOL, $this->beforeStmtLines);
+            } else {
+                $beforeCode = '';
+            }
             if ($this->isCallExpr($expr->expr)) {
                 if ($this->lastNativeCall and $this->lastNativeCall->returnType === self::TYPE_VOID) {
-                    return $code . ";\nreturn " . self::VALUE_NULL . ';';
+                    return $beforeCode . PHP_EOL . $code . ";" . PHP_EOL . "return " . self::VALUE_NULL . ';';
                 }
             }
-            return 'return ' . $code . ';';
+            return $beforeCode . PHP_EOL . 'return ' . $code . ';';
         };
         return $this->genClosure($expr, $expr->params, $cb, [], true);
     }
