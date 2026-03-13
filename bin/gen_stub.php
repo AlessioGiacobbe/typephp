@@ -228,7 +228,7 @@ class SimpleType {
             }
 
             if ($node->toLowerString() === 'self') {
-                throw new Exception('The exact class name must be used instead of "self"');
+                return new SimpleType(ClassInfo::$currentClassName, false);
             }
 
             assert($node->isFullyQualified());
@@ -3455,6 +3455,7 @@ class AttributeInfo {
 
 class ClassInfo {
     static public ?self $currentClass = null;
+    static public ?string $currentClassName = null;
     public /* readonly */ Name $name;
     private int $flags;
     public string $type;
@@ -4444,6 +4445,7 @@ class FileInfo {
 
             if ($stmt instanceof Stmt\ClassLike) {
                 $className = $stmt->namespacedName;
+                ClassInfo::$currentClassName = $className->toString();
                 $constInfos = [];
                 $propertyInfos = [];
                 $methodInfos = [];
