@@ -11,6 +11,7 @@ namespace PhpAot\Php;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
+use PhpParser\Node\VariadicPlaceholder;
 
 trait AstNodeType
 {
@@ -94,5 +95,10 @@ trait AstNodeType
         return $expr instanceof Node\Expr\FuncCall
             or $expr instanceof Node\Expr\MethodCall
             or $expr instanceof Node\Expr\StaticCall;
+    }
+
+    protected function isPlaceholderExpr(NodeAbstract $expr): bool
+    {
+        return $expr instanceof VariadicPlaceholder;
     }
 }

@@ -14,6 +14,11 @@ trait PlaceHolderGenerator
     {
         $ce = $this->getClassEntryPtr(\Closure::class);
         $fn = $ce . ', ' . $this->getFuncPtr('Closure::fromCallable', false);
+        $tmpVar = $this->genTmpVarName();
+        if ($this->classDef) {
+            $this->beforeStmtLines[] = "auto $tmpVar = php_switch_scope(this_);";
+            $this->afterStmtLines[] = "php_restore_scope($tmpVar);";
+        }
         return 'php::call(' . $fn . ', {' . $callable . '})';
     }
 }

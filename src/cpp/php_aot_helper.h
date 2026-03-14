@@ -9,6 +9,8 @@ extern zend_function *php_get_method(int func_id, const php::Str &method_name, i
 
 extern const char *php_get_called_class(php::Object &this_);
 extern zend_class_entry *php_get_called_ce(php::Object &this_);
+extern zend_class_entry *php_switch_scope(php::Object &this_);
+extern void php_restore_scope(zend_class_entry *ori_scope);
 
 static inline php::Variant CALL(int func_id, const php::Str &func_name) {
     return php::call(php_get_func(func_id, func_name));

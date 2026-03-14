@@ -36,6 +36,25 @@ zend_class_entry *php_get_called_ce(php::Object &this_) {
     }
 }
 
+static zend_execute_data *get_frame() {
+	zend_execute_data *frame = EG(current_execute_data);
+	while (frame && (!frame->func || !ZEND_USER_CODE(frame->func->type))) {
+		frame = frame->prev_execute_data;
+	}
+	return frame;
+}
+
+zend_class_entry *php_switch_scope(php::Object &this_) {
+	auto frame = get_frame();
+	auto ori_scope = frame->func->common.scope;
+	frame->func->common.scope = php_get_called_ce(this_);
+	return ori_scope;
+}
+
+void php_restore_scope(zend_class_entry *ori_scope) {
+	get_frame()->func->common.scope = ori_scope;
+}
+
 void module_shutdown(zend_module_entry *module) {
     /**
      * There is a bug in PHP's handling of internal strings. All interned strings are released in the request shutdown

@@ -1565,6 +1565,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$this->checkAccessible($classDef, $methodDef)) {
             $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` is not accessible');
         }
+        // 函数调用占位符，不是真实的函数调用
+        if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
+            return false;
+        }
         if (count($expr->args) < $methodDef->functionDef->argCountRequired) {
             $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` requires ' . $methodDef->functionDef->argCountRequired . ' arguments, ' . count($expr->args) . ' given');
         } elseif (count($expr->args) > count($methodDef->functionDef->argInfoList)) {
@@ -2199,7 +2203,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $hasNamedArg = false;
         // 对命名参数进行重排
         foreach ($callArgs as $i => $arg) {
-            if ($arg instanceof Node\VariadicPlaceholder) {
+            if ($this->isPlaceholderExpr($arg)) {
                 throw new PlaceHolder();
             }
             if ($arg->name) {
@@ -2242,7 +2246,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list_args = [];
         $last = array_key_last($args);
         foreach ($args as $i => $arg) {
-            if ($arg instanceof Node\VariadicPlaceholder) {
+            if ($this->isPlaceholderExpr($arg)) {
                 throw new PlaceHolder();
             }
             if ($arg->name !== null) {
