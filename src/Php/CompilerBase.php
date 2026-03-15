@@ -3586,7 +3586,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($namespace) {
             $findClass = $namespace . '\\' . $class;
         }
-        $scope = $this->class ? $namespace . '\\' . $class : '';
+        $scope = $this->class ? ltrim($namespace . '\\' . $class, '\\') : '';
 
         while (true) {
             if ($this->hasNativeClass($findClass)) {
