@@ -6,6 +6,7 @@
 extern zend_class_entry *php_get_class(int class_id, const php::Str &class_name);
 extern zend_function *php_get_func(int func_id, const php::Str &func_name);
 extern zend_function *php_get_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name);
+extern uint32_t php_get_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name);
 
 extern const char *php_get_called_class(php::Object &this_);
 extern zend_class_entry *php_get_called_ce(php::Object &this_);

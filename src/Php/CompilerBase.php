@@ -63,6 +63,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string LITERAL_STRINGS = '_literal_strings';
     public const string CLASS_MAP = 'class_map';
     public const string FUNC_MAP = 'func_map';
+    public const string PROP_MAP = 'property_map';
     public const string EXPR_VARIABLE = 'Expr_Variable';
 
     public const string EXPR_NEW = 'Expr_New';
@@ -93,7 +94,12 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected array $classMap = [];
     protected int $funcIndex = 0;
+    /**
+     * @var array<string, int>
+     */
     protected array $funcMap = [];
+    protected int $propIndex = 0;
+    protected array $propMap = [];
     protected array $zendTypeMap = [
         'int'    => self::TYPE_INT,
         'float'  => self::TYPE_FLOAT,
@@ -673,11 +679,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $class;
     }
 
-    protected function getPropertyOffset(string $property, string $class, string $namespace = ''): string
-    {
-        return $this->getNativeName('property_offset_' . $property, $namespace, $class);
-    }
-
     protected function getNativeName(string $fn, string $ns = '', string $class = ''): string
     {
         $names = [];
@@ -704,13 +705,30 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $id;
     }
 
-    protected function getFuncId($funcName): int
+    protected function getFuncId(string $funcName): int
     {
         if (isset($this->funcMap[$funcName])) {
             $id = $this->funcMap[$funcName];
         } else {
             $id = $this->funcIndex++;
             $this->funcMap[$funcName] = $id;
+        }
+        return $id;
+    }
+
+    /**
+     * @param string $propName
+     * @param string $className 必须是带有命名空间的完整类名
+     * @return int
+     */
+    protected function getPropertyId(string $className, string $propName): int
+    {
+        $key = $className . '::' . $propName;
+        if (isset($this->propMap[$key])) {
+            $id = $this->propMap[$key];
+        } else {
+            $id = $this->propIndex++;
+            $this->propMap[$key] = $id;
         }
         return $id;
     }
@@ -746,6 +764,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         $funcId = $this->getFuncId($class . '::' . $method);
         $classId = $this->getClassId($class);
         return 'php_get_method(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
+    }
+
+    protected function getPropertyOffset(string $class, string $prop): string
+    {
+        $funcId = $this->getPropertyId($class, $prop);
+        $classId = $this->getClassId($class);
+        return 'php_get_prop(' . $funcId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
     protected function parseTypeDecl(?NodeAbstract $type): string
@@ -3554,7 +3579,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function findNativeStaticProperty(Node\Expr\StaticPropertyFetch $expr, ?string &$class, ?string &$namespace): ?PropertyDef
+    protected function findNativeStaticProperty(Node\Expr\StaticPropertyFetch $expr, ?string &$class): ?PropertyDef
     {
         if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
             $class = $this->parseIdentifier($expr->class);
@@ -3569,10 +3594,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
 
             $classDef = $this->getClassDef($fullName);
-            $namespace = $classDef->namespace;
             if ($classDef->hasProperty($prop)) {
                 $propDef = $classDef->getProperty($prop);
                 if ($propDef->isStatic()) {
+                    $class = $fullName;
                     return $propDef;
                 }
             }
@@ -3594,16 +3619,16 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($classDef->hasProperty($property)) {
                     $propertyDef = $classDef->getProperty($property);
                     if ($propertyDef->isPublic()) {
-                        return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
+                        return $this->getPropertyOffset($classDef->getNamespacedName(), $property);
                     }
                     if ($propertyDef->isProtected()) {
                         if ($scope) {
-                            return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
+                            return $this->getPropertyOffset($classDef->getNamespacedName(), $property);
                         }
                         $this->fatalError($object, "Cannot access protected property `{$property}` of class `{$class}`");
                     } else {
                         if ($scope === $findClass) {
-                            return self::PREFIX . $this->getPropertyOffset($property, $classDef->name, $classDef->namespace);
+                            return $this->getPropertyOffset($classDef->getNamespacedName(), $property);
                         }
                         $this->fatalError($object, "Cannot access private property `{$property}` of class `{$class}`");
                     }
@@ -3621,10 +3646,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseNativeStaticPropertyFetch(Node\Expr\StaticPropertyFetch $expr): string|bool
     {
-        $nativeProp = $this->findNativeStaticProperty($expr, $class, $namespace);
+        $nativeProp = $this->findNativeStaticProperty($expr, $class);
         if ($nativeProp) {
-            $classPtr = $this->getClassEntryPtr($this->getNamespacedClassName($class));
-            $propOffset = self::PREFIX . $this->getPropertyOffset($nativeProp->name, $class, $namespace);
+            $classPtr = $this->getClassEntryPtr($class);
+            $propOffset = $this->getPropertyOffset($class, $nativeProp->name);
             return 'php::getStaticProperty(' . $classPtr . ', ' . $propOffset . ')';
         }
         return false;

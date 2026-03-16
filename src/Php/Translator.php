@@ -209,21 +209,17 @@ class Translator extends Preprocessor
             $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
         }
 
-        // property offset
-        foreach ($this->classes as $classDef) {
-            foreach ($classDef->properties as $propertyDef) {
-                $lines[] = 'extern uint32_t ' . self::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace) . ';';
-            }
-        }
-
         $literalStringsCount = count($this->literalStrings);
         $lines[] = 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
 
         $classCount = count($this->classMap);
-        $lines[]         = 'extern zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;
+        $lines[] = 'extern zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;
 
         $funcCount = count($this->funcMap);
-        $lines[]         = 'extern zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
+        $lines[] = 'extern zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
+
+        $propCount = count($this->propMap);
+        $lines[] = 'extern uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . $propCount . '];' . PHP_EOL;
 
         $code = implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
         $this->writeFile($file, $code);
@@ -811,7 +807,8 @@ class Translator extends Preprocessor
 
     protected function genMethodWrapper(ClassDef $classDef, MethodDef $methodDef): string
     {
-        $name    = $classDef->getNamespacedName();
+        $name = $classDef->getNamespacedName();
+        $fullClassName = $classDef->getNamespacedName(false);
         $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
         $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
 
@@ -819,12 +816,12 @@ class Translator extends Preprocessor
             if ($property->type === self::TYPE_ARRAY and $property->default and $property->default !== self::TYPE_ARRAY . '{}') {
                 if ($property->isStatic()) {
                     $prop = new \stdClass();
-                    $prop->class = $classDef->getNamespacedName(false);
+                    $prop->class = $fullClassName;
                     $prop->name = $property->name;
                     $prop->default = $property->default;
                     $this->staticPropertyList[$name . '::' . $property->name] = $prop;
                 } else {
-                    $propOffset = self::PREFIX . $this->getPropertyOffset($property->name, $classDef->name, $classDef->namespace);
+                    $propOffset = $this->getPropertyOffset($fullClassName, $property->name);
                     $cppCode .= $this->getIndent() . 'this_.attr(' . $propOffset . ') = ' . $property->default . ';' . PHP_EOL;
                 }
             }

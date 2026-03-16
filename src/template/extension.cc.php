@@ -31,6 +31,9 @@ zend_class_entry *<?= Translator::PREFIX . Translator::CLASS_MAP . '[' . count($
 // func
 zend_function *<?= Translator::PREFIX . Translator::FUNC_MAP . '[' . count($this->funcMap) . ']' ?>;
 
+// property
+uint32_t <?= Translator::PREFIX . Translator::PROP_MAP . '[' . count($this->propMap) . ']' ?>;
+
 zend_class_entry *php_get_class(int class_id, const php::String &class_name) {
     if (UNEXPECTED(<?= Translator::PREFIX . Translator::CLASS_MAP ?>[class_id] == nullptr)) {
         <?= Translator::PREFIX . Translator::CLASS_MAP ?>[class_id] = php::getClassEntrySafe(class_name);
@@ -53,6 +56,13 @@ zend_function *php_get_method(int func_id, const php::Str &method_name, int clas
     return <?= Translator::PREFIX . Translator::FUNC_MAP ?>[func_id];
 }
 
+uint32_t php_get_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name) {
+    if (UNEXPECTED(<?= Translator::PREFIX . Translator::PROP_MAP ?>[prop_id] == 0)) {
+        <?= Translator::PREFIX . Translator::PROP_MAP ?>[prop_id] = php::getPropertyOffset(class_name, prop_name);
+    }
+    return <?= Translator::PREFIX . Translator::PROP_MAP ?>[prop_id];
+}
+
 // literal strings
 php::Str <?=Translator::LITERAL_STRINGS?>[] = {
 <?php
@@ -68,17 +78,6 @@ foreach ($this->nativeConstants as $name => $const):
 ?>
 <?=$const->type?> <?=$name?>;
 <?php endforeach; ?>
-
-// property offset
-<?php
-foreach ($this->classes as $classDef):
-    foreach ($classDef->properties as $propertyDef):
-?>
-uint32_t <?=Translator::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace)?>;
-<?php
-    endforeach;
-endforeach;
-?>
 
 // clang-format off
 static const zend_function_entry ext_functions[] = {
@@ -136,16 +135,6 @@ foreach ($this->globalVars as $name => $type):
     php::initGlobal("<?=$name?>", <?= $name ?>);
 <?php endforeach; ?>
 
-    // property offset
-<?php
-foreach ($this->classes as $classDef):
-    foreach ($classDef->properties as $propertyDef):
-        ?>
-    <?=Translator::PREFIX . $this->getPropertyOffset($propertyDef->name, $classDef->name, $classDef->namespace)?> = php::getPropertyOffset(<?=$this->genCharPtr($classDef->getNamespacedName(false), true)?>, "<?=$propertyDef->name?>");
-    <?php
-    endforeach;
-endforeach;
-?>
     // static property
 <?php
 foreach ($this->staticPropertyList as $prop):
