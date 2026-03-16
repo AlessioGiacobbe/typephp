@@ -3214,8 +3214,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $stmts = $stmts[0]->stmts;
             }
             $lastExpr = end($stmts);
-            if (!($lastExpr instanceof Node\Stmt\Return_ or $lastExpr instanceof Node\Stmt\Break_)) {
-                $this->fatalError($case, 'switch case must end with return or break, given ' . $lastExpr->getType());
+            if (!$this->isReturnExpr($lastExpr) and !$this->isExitExpr($lastExpr) and !$this->isBreakExpr($lastExpr)) {
+                $this->fatalError($case, 'switch case must end with return or break or exit, ' . $lastExpr->getType() . ' given');
             }
 
             if ($condList) {

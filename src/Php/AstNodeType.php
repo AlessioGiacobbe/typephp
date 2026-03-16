@@ -111,4 +111,22 @@ trait AstNodeType
     {
         return $expr instanceof VariadicPlaceholder;
     }
+
+    protected function isReturnExpr(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Stmt\Return_;
+    }
+
+    protected function isBreakExpr(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Stmt\Break_;
+    }
+
+    protected function isExitExpr(NodeAbstract $expr): bool
+    {
+        if ($expr instanceof Node\Stmt) {
+            $expr = $expr->expr;
+        }
+        return $expr instanceof Node\Expr\Exit_;
+    }
 }
