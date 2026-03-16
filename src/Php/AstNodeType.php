@@ -124,7 +124,7 @@ trait AstNodeType
 
     protected function isExitExpr(NodeAbstract $expr): bool
     {
-        if ($expr instanceof Node\Stmt) {
+        if ($expr instanceof Node\Stmt\Expression) {
             $expr = $expr->expr;
         }
         return $expr instanceof Node\Expr\Exit_;

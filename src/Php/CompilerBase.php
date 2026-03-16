@@ -744,13 +744,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $object;
     }
 
-    protected function getFuncPtr(string $funcName, bool $macro = true): string
+    protected function getFuncPtr(string $funcName): string
     {
-        $id = $this->getFuncId($funcName);
-        if ($macro) {
-            return $id . ', ' . $this->getLiteralString($funcName);
-        }
-        return 'php_get_func(' . $id . ', ' . $this->getLiteralString($funcName) . ')';
+        return 'php_get_func(' . $this->getFuncId($funcName) . ', ' . $this->getLiteralString($funcName) . ')';
     }
 
     protected function getMethodPtr(string $class, string $method): string
@@ -2195,7 +2191,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->fatalError($node, 'All execution code must be within a function, found stray code');
     }
 
-    protected function parseFuncCall(Node\Expr\FuncCall $expr, bool $silent = false): string
+    protected function parseFuncCall(Node\Expr\FuncCall $expr): string
     {
         $call = '';
         if ($this->isVarExpr($expr->name)) {
@@ -2219,7 +2215,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $placeHolder = $this->identifierToStr($expr->name);
             $fn = $this->getFuncPtr($name);
             $this->beforeStmtLines[] = '// Func Call: ' . $name . '()';
-            $call = $silent ? 'CALL_SILENT' : 'CALL';
         } else {
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
@@ -2227,14 +2222,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $placeHolder = $fn = $tmpVar;
             $name = '';
         }
-        if (!$call) {
-            $call = $silent ? 'php::silentCall' : 'php::call';
-        }
         if (empty($expr->args)) {
-            return $call . '(' . $fn . ')';
+            return 'php::call(' . $fn . ')';
         }
         try {
-            return $call . '(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name) . ')';
+            return 'php::call(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name) . ')';
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($placeHolder);
         }
@@ -3655,7 +3647,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             }
             $ce = $this->getClassEntryPtr($class);
-            $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method, false);
+            $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method);
             $placeHolder = $this->genArray($callScope);
         }
         $call = 'php::call';
@@ -4018,10 +4010,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseErrorSuppress(Node\Expr\ErrorSuppress $expr): string
     {
-        if ($expr->expr instanceof Node\Expr\FuncCall) {
-            return $this->parseFuncCall($expr->expr, true);
-        }
-        abort($expr);
+        $tmpVar = $this->genTmpVarName();
+        $this->beforeStmtLines[] = 'auto ' . $tmpVar . ' = EG(error_reporting);';
+        $this->beforeStmtLines[] = 'php::call(' . $this->getFuncPtr('error_reporting') . ', {E_FATAL_ERRORS});';
+        $code = $this->parseExpr($expr->expr);
+        $this->afterStmtLines[] = 'php::call(' . $this->getFuncPtr('error_reporting') . ', {' . $tmpVar . '});';
+        return $code;
     }
 
     protected function checkVar(NodeAbstract $node, string $name): void
@@ -4115,11 +4109,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code = '';
         if ($this->debugInfo) {
             if ($stmt) {
-                $code .= 'php::debug_info.php_file = "' . $this->escapeString($this->file) . '";' . PHP_EOL;
-                $code .= 'php::debug_info.php_line = ' . $stmt->getLine() . ';' . PHP_EOL;
-                $code .= 'php::debug_info.cpp_line = __LINE__;' . PHP_EOL;
+                $code .= 'php::traceDebugInfo("' . $this->escapeString($this->file) . '", ' . $stmt->getLine() . ');' . PHP_EOL;
             } else {
-                $code .= 'php::debug_info.enable = true;' . PHP_EOL;
+                $code .= 'php::enableDebugInfo();' . PHP_EOL;
             }
         }
         return $code;
