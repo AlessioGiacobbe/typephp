@@ -3142,18 +3142,21 @@ class CompilerBase extends \PhpAot\Core\Translator
         return self::TYPE_VAR;
     }
 
-    protected function parseSwitch(mixed $v): string
+    protected function parseSwitch(Node\Stmt\Switch_ $v): string
     {
         $cond    = $v->cond;
         $tmp_var = $this->genTmpVarName();
         $type    = $this->detectExprType($cond);
+        if ($this->isVarExpr($cond)) {
+            $this->requireVar($v, $this->parseIdentifier($cond));
+        }
         $var_def = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
 
         // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
         $localVars = $this->localVars;
         $code      = $this->parseBeforeStmtLines() . PHP_EOL;
 
-        if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT) {
+        if ($type === self::TYPE_INT or $type === self::TYPE_BOOL) {
             $code .= 'switch (' . $tmp_var . ') {' . PHP_EOL;
             $this->indentLevel++;
             foreach ($v->cases as $case) {
@@ -3179,16 +3182,50 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         _fail:
+
+        if (count($v->cases) == 1) {
+            if (!empty($v->cases[0]->cond)) {
+                $code = 'if (' . $tmp_var . '==' . $this->parseIdentifier($v->cases[0]->cond) . ') {' . PHP_EOL;
+            } else {
+                $code = 'if (1) {' . PHP_EOL;
+            }
+            $code .= $this->parseStmts($v->cases[0]->stmts);
+            $code .= $this->getIndent() . '}';
+            return $var_def . $code;
+        }
+
         $code = 'do {' . PHP_EOL;
         $this->indentLevel++;
+        $condList = [];
         foreach ($v->cases as $case) {
             if (empty($case->cond)) {
-                $code .= $this->getIndent() . 'else {' . PHP_EOL;
+                if ($condList) {
+                    $this->fatalError($case, 'switch case must be first');
+                }
             } else {
-                $code .= $this->getIndent() . 'if (' . $tmp_var . '==' . $this->parseIdentifier($case->cond) . ') {' . PHP_EOL;
+                $condList[] = $tmp_var . '==' . $this->parseIdentifier($case->cond);
             }
             $this->indentLevel++;
-            $code .= $this->parseStmts($case->stmts);
+            $stmts = $case->stmts;
+            if (empty($stmts)) {
+                continue;
+            }
+            if (count($stmts) === 1 and $stmts[0] instanceof Node\Stmt\Block) {
+                $stmts = $stmts[0]->stmts;
+            }
+            $lastExpr = end($stmts);
+            if (!($lastExpr instanceof Node\Stmt\Return_ or $lastExpr instanceof Node\Stmt\Break_)) {
+                $this->fatalError($case, 'switch case must end with return or break, given ' . $lastExpr->getType());
+            }
+
+            if ($condList) {
+                $code .= $this->getIndent() . 'if (' . implode(' || ', $condList) . ') {' . PHP_EOL;
+                $condList = [];
+            } else {
+                $code .= $this->getIndent() . 'else {' . PHP_EOL;
+            }
+
+            $code .= $this->parseStmts($stmts);
             $this->indentLevel--;
             $code .= $this->getIndent() . '}' . PHP_EOL;
         }
