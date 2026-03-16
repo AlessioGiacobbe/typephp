@@ -12,6 +12,14 @@ use PhpParser\NodeAbstract;
 
 trait ClosureGenerator
 {
+    protected function genScopeSwitchCode(): string
+    {
+        $tmpScope = $this->genTmpVarName();
+        $code = "auto $tmpScope = php_switch_scope(this_);" . PHP_EOL;
+        $code .= "ON_SCOPE_EXIT({ php_restore_scope($tmpScope); });" . PHP_EOL;
+        return $code;
+    }
+
     /**
      * @param $useCurrentScope bool 直接使用当前作用域，C++ 函数将使用 & 捕获所有闭包变量
      */

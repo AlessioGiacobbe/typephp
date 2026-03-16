@@ -198,7 +198,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected ?ClassDef $classDef = null;
     protected ?MethodDef $methodDef = null;
     protected ?InterfaceDef $interfaceDef = null;
-    protected ?FunctionDef $lastNativeCall = null;
     protected array $superGlobalVars = [
         '_GET'     => self::TYPE_ARRAY,
         '_POST'    => self::TYPE_ARRAY,
@@ -235,6 +234,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $afterStmtLines = [];
     protected bool $inLoop = false;
     protected bool $inClosure = false;
+    protected bool $defaultNativeType = false;
 
     /**
      * 赋值表达式的左值，写操作，右值为读操作.
@@ -303,7 +303,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public function parseExpr(mixed $expr)
     {
-        $this->resetExpr();
         $type = $expr->getType();
         $this->writeLog('Line ' . $this->getLine($expr) . ': ' . $type);
         if ($expr->getLine() === $this->debugLine) {
@@ -614,11 +613,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->namespace     = '';
     }
 
-    protected function resetExpr(): void
-    {
-        $this->lastNativeCall = null;
-    }
-
     protected function getFunctionName(FunctionLike $v): string
     {
         return $this->getNativeName($this->parseIdentifier($v->name), $this->namespace, $this->class);
@@ -826,7 +820,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->resetFunction();
         $this->function = $this->parseIdentifier($v->name);
         $name = $this->getFunctionName($v);
-        if (isset($this->nativeFunctions[$name])) {
+        if (!empty($this->nativeFunctions[$name])) {
             $this->functionDef = $this->nativeFunctions[$name];
         } else {
             $this->nativeFunctions[$name] = $this->parseFunctionDecl($v);
@@ -853,19 +847,18 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->addArgument($argInfo->name, $argInfo->type);
         }
 
+        $stmts = '';
         if ($v->stmts) {
             $this->indentLevel++;
             try {
                 $stmts = $this->parseStmts($v->stmts);
-            } catch (Skip $e) {
-                $stmts = '';
-            }
-            if (!$this->isReturnStmtInLastLine($v->stmts)) {
-                $stmts .= $this->genReturnCode();
+                if (!$this->isReturnStmtInLastLine($v->stmts)) {
+                    $stmts .= $this->genReturnCode();
+                }
+            } catch (Skip) {
+                $this->climate->cyan('Skip function ' . $name);
             }
             $this->indentLevel--;
-        } else {
-            $stmts = '';
         }
 
         $functionDeclCode = $this->getReturnType() . ' ' . self::PREFIX . $name . '(';
@@ -1315,10 +1308,32 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if (!$this->hasVar($var)) {
                         $this->addLocalVar($var, $type);
                     }
-
                     return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
                 } else {
                     $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
+                }
+            } elseif ($this->isStaticCall($right) and $this->isIdExpr($right->name)) {
+                $class = $this->parseIdentifier($right->class);
+                if ($class === 'std') {
+                    $func = $this->parseIdentifier($right->name);
+                    $type = match ($func) {
+                        'int' => self::TYPE_INT,
+                        'float' => self::TYPE_FLOAT,
+                        'bool' => self::TYPE_BOOL,
+                        default => '',
+                    };
+                    // Native 类型
+                    if ($type) {
+                        if (!$this->hasVar($var)) {
+                            $this->addLocalVar($var, $type);
+                        } else {
+                            if ($this->getVarType($var) !== $type) {
+                                $this->fatalError($left, "Cannot re-assign {$var} to {$type}");
+                            }
+                        }
+                        $expr = $this->parseExpr($right->args[0]->value);
+                        return $var . ' = ' . $this->convertExprFromType($type, $expr);
+                    }
                 }
             }
 
@@ -1566,6 +1581,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         return array_key_exists($this->escapeFunction($name), $this->nativeFunctions);
     }
 
+    protected function checkNativeFunction(string $name): void
+    {
+        // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
+        // 跳过，稍后再处理
+        if (isset($this->functionDeclInFile[$name])
+            and $this->functionDeclInFile[$name] === $this->file
+            and !$this->hasNativeFunction($name)) {
+            $this->redoAfterDeclare[$name] = true;
+            throw new Skip();
+        }
+    }
+
     protected function getNativeMethod(CallLike $expr, string $class, string $method): string|false
     {
         if (!$this->hasNativeClass($class)) {
@@ -1628,14 +1655,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         switch ($exprType) {
             case 'Expr_Cast_Int':
             case 'Scalar_Int':
-                return self::TYPE_INT;
+                return $this->getNativeType(self::TYPE_INT);
             case 'Expr_Cast_Float':
             case 'Expr_Cast_Double':
             case 'Scalar_Float':
-                return self::TYPE_FLOAT;
+                return $this->getNativeType(self::TYPE_FLOAT);
             case 'Expr_Cast_Bool':
             case 'Scalar_Bool':
-                return self::TYPE_BOOL;
+                return $this->getNativeType(self::TYPE_BOOL);
             case 'Expr_Array':
                 return self::TYPE_ARRAY;
             case 'Expr_BinaryOp_Plus':
@@ -2150,20 +2177,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
-        foreach ($possibleFunctionNames as $name) {
-            if (str_contains($name, '\\')) {
-                $name = $this->escapeNamespace($name);
+        foreach ($possibleFunctionNames as $nativeFunc) {
+            if (str_contains($nativeFunc, '\\')) {
+                $nativeFunc = $this->escapeNamespace($nativeFunc);
             }
-            // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
-            // 跳过，稍后再处理
-            if (isset($this->functionDeclInFile[$name])
-                and $this->functionDeclInFile[$name] === $this->file
-                and !$this->hasNativeFunction($name)) {
-                $this->redoAfterDeclare[$name] = true;
-                throw new Skip();
-            }
-            if ($this->hasNativeFunction($name)) {
-                return $name;
+            $this->checkNativeFunction($nativeFunc);
+            if ($this->hasNativeFunction($nativeFunc)) {
+                return $nativeFunc;
             }
         }
 
@@ -2189,6 +2209,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
+                $expr->setAttribute('nativeCall', $nativeFn);
                 return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
             }
             $code = $this->parseFuncCallWithOptimizer($name, $expr);
@@ -2219,11 +2240,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    /**
+     * @param array<Node\Arg|Node\VariadicPlaceholder> $callArgs
+     * @param string $nativeFunc
+     * @return string
+     */
     protected function parseNativeCallArgs(array $callArgs, string $nativeFunc): string
     {
         $argList = [];
         $functionDef = $this->nativeFunctions[$nativeFunc];
-        $this->lastNativeCall = $functionDef;
         $args = [];
         $hasNamedArg = false;
         // 对命名参数进行重排
@@ -2251,13 +2276,29 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($args as $i => $arg) {
             $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
             if ($argInfo->variadic) {
-                $vargs = array_slice($args, $i);
-                $list_vargs = [];
-                foreach ($vargs as $varg) {
-                    $list_vargs[] = $this->getTypeConvertedArg($varg, $argInfo);
+                $argsSlice = array_slice($args, $i);
+                if (count($argsSlice) === 1 and $argsSlice[0]->unpack) {
+                    if ($this->isVarExpr($arg->value) ) {
+                        $var =$this->parseIdentifier($arg->value);
+                        if ($this->getVarType($var) === self::TYPE_ARRAY) {
+                            $argList[] = $var;
+                            break;
+                        }
+                    }
+                    $argList[] = $this->convertArrayExpr($this->parseExpr($arg->value));
+                } else {
+                    $tmpVar = $this->addTmpVar(self::TYPE_ARRAY);
+                    foreach ($argsSlice as $item) {
+                        if ($item->unpack) {
+                            $this->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArg($item) . ');';
+                            break;
+                        } else {
+                            $this->beforeStmtLines[] = $tmpVar . '.append(' . $this->parseArg($item) . ');';
+                        }
+                    }
+                    $argList[] = $tmpVar;
+                    break;
                 }
-                $argList[] = '{' . implode(', ', $list_vargs) . '}';
-                break;
             } else {
                 $argList[] = $this->getTypeConvertedArg($arg, $argInfo);
             }
@@ -3071,6 +3112,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         shell_exec($cmd);
     }
 
+    /**
+     * 为了兼容已有代码，默认不使用原生类型，而是将整数和浮点数作为 php 变量处理
+     * 原生 int/float/bool 类型，是不支持自动转换的，例如如果 int 计算超过最大值后，会自动转为 float，除法若不能除尽，则会转为 float
+     * 某些情况下高性能计算，可能需要使用原生类型，使用 $a = std::int(0) 来显式地使用原生类型
+     * @param string $type
+     * @return string
+     */
+    protected function getNativeType(string $type): string
+    {
+        return $this->defaultNativeType ? $type : self::TYPE_VAR;
+    }
+
     protected function detectConstType($expr): string
     {
         $name = $this->parseIdentifier($expr->name);
@@ -3078,15 +3131,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->getConstantType($name);
         }
         if ($name === 'true') {
-            return self::TYPE_BOOL;
+            return $this->getNativeType(self::TYPE_BOOL);
         }
         if ($name === 'false') {
-            return self::TYPE_BOOL;
+            return $this->getNativeType(self::TYPE_BOOL);
         }
         if ($name === 'NAN' or $name === 'INF') {
-            return self::TYPE_FLOAT;
+            return $this->getNativeType(self::TYPE_FLOAT);
         }
-
         return self::TYPE_VAR;
     }
 
@@ -3445,6 +3497,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->beforeStmtLines[] = '// Method Call: ' . $object . '->' . $this->parseIdentifier($expr->name) . '()';
             $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
             if ($nativeFunc) {
+                $expr->setAttribute('nativeCall', $nativeFunc);
                 return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
             }
         }
@@ -3547,6 +3600,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($nativeFunc) {
                     try {
                         $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
+                        $expr->setAttribute('nativeCall', $nativeFunc);
                     } catch (PlaceHolder) {
                         return $this->genPlaceHolder($this->genArray($callScope));
                     }
@@ -3619,16 +3673,16 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($classDef->hasProperty($property)) {
                     $propertyDef = $classDef->getProperty($property);
                     if ($propertyDef->isPublic()) {
-                        return $this->getPropertyOffset($classDef->getNamespacedName(), $property);
+                        return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
                     }
                     if ($propertyDef->isProtected()) {
                         if ($scope) {
-                            return $this->getPropertyOffset($classDef->getNamespacedName(), $property);
+                            return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
                         }
                         $this->fatalError($object, "Cannot access protected property `{$property}` of class `{$class}`");
                     } else {
                         if ($scope === $findClass) {
-                            return $this->getPropertyOffset($classDef->getNamespacedName(), $property);
+                            return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
                         }
                         $this->fatalError($object, "Cannot access private property `{$property}` of class `{$class}`");
                     }
@@ -3976,8 +4030,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (isset($this->classMethodOverride[$fullMethodName]) and $this->classMethodOverride[$fullMethodName]) {
             return false;
         }
-        if ($nativeFunc and $this->hasNativeFunction($nativeFunc)) {
-            return $nativeFunc;
+        if ($nativeFunc) {
+            $this->checkNativeFunction($nativeFunc);
+            if ($this->hasNativeFunction($nativeFunc)) {
+                return $nativeFunc;
+            }
         }
         return false;
     }
@@ -3985,7 +4042,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseNativeMethodCall(string $object, string $nativeFunc, array $args): string
     {
         if (count($args) === 0) {
-            $this->lastNativeCall = $this->nativeFunctions[$nativeFunc];
             return self::PREFIX . $nativeFunc . '(' . $object . ')';
         }
         return self::PREFIX . $nativeFunc . '(' . $object . ', ' . $this->parseNativeCallArgs($args, $nativeFunc) . ')';
@@ -4077,7 +4133,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $beforeCode = '';
             }
             if ($this->isCallExpr($expr->expr)) {
-                if ($this->lastNativeCall and $this->lastNativeCall->returnType === self::TYPE_VOID) {
+                $nativeCall = $expr->expr->getAttribute('nativeCall');
+                if ($nativeCall and $this->nativeFunctions[$nativeCall]->returnType === self::TYPE_VOID) {
                     return $beforeCode . PHP_EOL . $code . ";" . PHP_EOL . "return " . self::VALUE_NULL . ';';
                 }
             }

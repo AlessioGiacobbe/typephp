@@ -70,6 +70,16 @@ trait AstNodeType
         return $expr instanceof Expr\FuncCall;
     }
 
+    protected function isMethodCall(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Expr\MethodCall;
+    }
+
+    protected function isStaticCall(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Expr\StaticCall;
+    }
+
     protected function isScalar(NodeAbstract $expr): bool
     {
         return $expr instanceof Node\Scalar;
