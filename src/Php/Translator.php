@@ -50,8 +50,9 @@ class Translator extends Preprocessor
         $this->climate->arguments->parse();
 
         $this->optimizeLevel = $this->climate->arguments->get('optimize');
-        $this->buildMode     = $this->climate->arguments->get('mode');
-        $this->debugLine     = intval($this->climate->arguments->get('debug-line'));
+        $this->buildMode = $this->climate->arguments->get('mode');
+        $this->debugLine = intval($this->climate->arguments->get('debug-line'));
+        $this->maxJob = intval($this->climate->arguments->get('job'));
         $this->debugInfo     = $this->climate->arguments->defined('debug-info');
         $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
         $this->enableProfiler    = $this->climate->arguments->defined('profile');
@@ -84,6 +85,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-h, --help           Show this help message');
         $climate->tab()->out('-f, --force          Force compile even if cache exists');
         $climate->tab()->out('-m, --mode <mode>    Compilation mode, -m bin(binary) or -m ext(extension), default: bin');
+        $climate->tab()->out('-j, --job <num>      Number of parallel compilation jobs (default: 4)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->br();
 
@@ -262,20 +264,132 @@ class Translator extends Preprocessor
         return false;
     }
 
-    public function compileFile(string $cppFile, string $objectFile): void
+    public function compileFile(string $cppFile, string $objectFile, bool $parallel = false): void
     {
         if ($this->hasObjectFileCache($cppFile)) {
-            $this->climate->darkGray('skip: ' . $cppFile . ', cache exists');
+            if (!$parallel) {
+                $this->climate->darkGray('skip: ' . $cppFile . ', cache exists');
+            }
 
             return;
         }
         $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
         $this->addCompilationOption($cmd, false);
-        $this->climate->comment($cmd);
-        passthru($cmd, $ret);
+        if (!$parallel) {
+            $this->climate->comment($cmd);
+        }
+        // 在并行模式下，抑制 passthru 的输出
+        if ($parallel) {
+            exec($cmd . ' 2>&1', $output, $ret);
+        } else {
+            passthru($cmd, $ret);
+        }
         if ($ret !== 0) {
+            if ($parallel && !empty($output)) {
+                foreach ($output as $line) {
+                    $this->climate->red($line);
+                }
+            }
             $this->error('compile failed: ' . $cppFile);
         }
+    }
+
+    public function compile(array $sourceFiles): array
+    {
+        $objectFiles = [];
+        $job = $this->maxJob;
+        
+        // 如果只有一个文件或 job 为 1，则串行编译
+        if (count($sourceFiles) <= 1 || $job <= 1) {
+            foreach ($sourceFiles as $cppFile) {
+                $objectFile = $this->getObjectFile($cppFile);
+                $this->compileFile($cppFile, $objectFile);
+                if (!is_file($objectFile)) {
+                    throw new \Exception("compile error");
+                }
+                $objectFiles[] = $objectFile;
+            }
+            return $objectFiles;
+        }
+        
+        // 并行编译
+        $totalFiles = count($sourceFiles);
+        $runningProcesses = 0;
+        $processPipes = [];
+        $fileQueue = $sourceFiles;
+        $compiledCount = 0;
+        $failedFiles = [];
+        
+        $this->climate->blue("Starting parallel compilation with {$job} jobs for {$totalFiles} files");
+        
+        while ($compiledCount < $totalFiles) {
+            // 启动新进程，直到达到最大并发数
+            while ($runningProcesses < $job && !empty($fileQueue)) {
+                $cppFile = array_shift($fileQueue);
+                $objectFile = $this->getObjectFile($cppFile);
+                
+                $pid = pcntl_fork();
+                if ($pid == -1) {
+                    throw new \Exception("Failed to fork process");
+                } elseif ($pid === 0) {
+                    // 子进程：执行编译
+                    try {
+                        $this->compileFile($cppFile, $objectFile, true);
+                        if (!is_file($objectFile)) {
+                            exit(1);
+                        }
+                        exit(0);
+                    } catch (\Throwable $e) {
+                        // 在子进程中不抛出异常，直接退出
+                        exit(1);
+                    }
+                } else {
+                    // 父进程：记录子进程
+                    $processPipes[$pid] = ['file' => $cppFile, 'object' => $objectFile];
+                    $runningProcesses++;
+                }
+            }
+            
+            // 等待任意一个子进程完成
+            if ($runningProcesses > 0) {
+                $pid = pcntl_wait($status);
+                if ($pid > 0) {
+                    $processInfo = $processPipes[$pid] ?? null;
+                    unset($processPipes[$pid]);
+                    $runningProcesses--;
+                    
+                    $exitCode = pcntl_wexitstatus($status);
+                    if ($exitCode !== 0) {
+                        $failedFile = $processInfo['file'] ?? 'unknown';
+                        $this->climate->red("Compilation failed: {$failedFile}");
+                        $failedFiles[] = $failedFile;
+                    } else {
+                        if ($processInfo) {
+                            $objectFiles[] = $processInfo['object'];
+                        }
+                    }
+                    $compiledCount++;
+                }
+            }
+        }
+        
+        // 确保所有子进程都已结束
+        while ($runningProcesses > 0) {
+            $pid = pcntl_wait($status);
+            if ($pid > 0) {
+                unset($processPipes[$pid]);
+                $runningProcesses--;
+                $compiledCount++;
+            }
+        }
+        
+        if (!empty($failedFiles)) {
+            throw new \Exception("Compilation failed for: " . implode(', ', $failedFiles));
+        }
+        
+        $this->climate->green("Successfully compiled {$totalFiles} files");
+        
+        return $objectFiles;
     }
 
     public function build(array $objectFiles): void

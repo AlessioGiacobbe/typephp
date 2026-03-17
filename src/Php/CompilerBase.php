@@ -132,6 +132,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $redoAfterDeclare = [];
     protected array $constData = [];
     protected int $optimizeLevel = 0;
+    protected int $maxJob = 4;
     protected string $buildMode = 'bin';
     protected string $cxxflags = '';
     protected string $ldflags = '';

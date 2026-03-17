@@ -56,4 +56,11 @@ return [
         'description' => 'Enable debug info',
         'required' => false,
     ],
+    'job' => [
+        'prefix'      => 'j',
+        'longPrefix'  => 'job',
+        'description' => 'Number of jobs to run in parallel',
+        'required'    => false,
+        'defaultValue' => 4,
+    ],
 ];

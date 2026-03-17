@@ -75,14 +75,7 @@ if ($translator->getBuildMode() == 'bin') {
 }
 
 // 编译所有 C++ 文件
-foreach ($sourceFiles as $cppFile) {
-    $objectFile = $translator->getObjectFile($cppFile);
-    $translator->compileFile($cppFile, $objectFile);
-    if (!is_file($objectFile)) {
-        throw new Exception("compile error");
-    }
-    $objectFiles[] = $objectFile;
-}
+$objectFiles = $translator->compile($sourceFiles);
 
 // 连接所有目标文件，生成可执行文件
 $translator->build($objectFiles);
