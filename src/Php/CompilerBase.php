@@ -1606,6 +1606,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$classDef->extends) {
                     return false;
                 }
+                if (!$this->hasNativeClass($classDef->extends)) {
+                    $this->climate->error('Class `' . $classDef->extends . '` is not defined');
+                    return false;
+                }
                 $classDef = $this->getClassDef($classDef->extends);
             } else {
                 $methodDef = $classDef->methods[$method];
@@ -3058,6 +3062,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
         }
 
+        if ($node->byRef and !$this->isVarExpr($node->valueVar)) {
+            $this->fatalError($node, 'Foreach by reference only supports variable as value');
+        }
+
         if ($node->valueVar->getType() == self::EXPR_ARRAY_DIM_FETCH) {
             $array = $this->parseIdentifier($node->valueVar->var);
             if (!$this->hasVar($array) or $node->valueVar->dim === null) {
@@ -3067,8 +3075,17 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->getIndent() . "{$array}.offsetSet({$dim}, iter.value());";
         } else {
             $valueVar = $this->parseIdentifier($node->valueVar);
-            $this->checkVar($node, $valueVar);
-            $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
+            if ($node->byRef) {
+                if (!$this->hasVar($valueVar)) {
+                    $this->addLocalVar($valueVar, self::TYPE_REF);
+                } else if ($this->getVarType($valueVar) !== self::TYPE_REF) {
+                    $this->fatalError($node, 'Cannot assign value to reference of type');
+                }
+                $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.valueRef();' . PHP_EOL;
+            } else {
+                $this->checkVar($node, $valueVar);
+                $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
+            }
         }
 
         $body = $this->parseStmts($node->stmts);
@@ -3084,14 +3101,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseForeach(Foreach_ $node): string
     {
-        if ($node->byRef) {
-            $this->fatalError($node, 'Cannot use & with foreach');
-        }
         if ($this->isVarExpr($node->expr)) {
             $name = $this->parseIdentifier($node->expr);
             if ($this->hasVar($name)) {
                 $type = $this->getVarType($name);
                 if ($type === self::TYPE_OBJECT) {
+                    if ($node->byRef) {
+                        $this->fatalError($node, 'Cannot use & with foreach');
+                    }
                     return $this->parseForeachObject($node);
                 }
             }
