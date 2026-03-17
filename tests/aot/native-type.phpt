@@ -15,4 +15,6 @@ function main()
 }
 ?>
 --EXPECT--
-float(2.5)
+int(100)
+float(100)
+bool(true)

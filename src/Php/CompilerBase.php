@@ -3528,7 +3528,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
             if ($nativeFunc) {
                 $expr->setAttribute('nativeCall', $nativeFunc);
-                return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
+                try {
+                    return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
+                } catch (PlaceHolder) {
+                    return $this->genPlaceHolder($this->genArray([$object, $method]));
+                }
             }
         }
 
