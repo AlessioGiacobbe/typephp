@@ -279,7 +279,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->objects[$object] ?? 'stdClass';
     }
 
-    public function parseExpr(Node\Expr $expr)
+    public function parseExpr(NodeAbstract $expr)
     {
         $type = $expr->getType();
         $this->writeLog('Line ' . $this->getLine($expr) . ': ' . $type);
@@ -1422,7 +1422,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
     }
 
-    protected function parseBinaryOpPlus(mixed $expr): string
+    protected function parseBinaryOpPlus(Node\Expr\BinaryOp\Plus $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '+');
     }
@@ -1908,12 +1908,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseBinaryOpSmaller(mixed $expr): string
+    protected function parseBinaryOpSmaller(Node\Expr\BinaryOp\Smaller $expr): string
     {
         return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '<'));
     }
 
-    protected function parsePreInc(mixed $expr): string
+    protected function parsePreInc(Node\Expr\PreInc $expr): string
     {
         return '++' . $this->parseIdentifier($expr->var);
     }
@@ -2100,17 +2100,17 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $id . '.offsetSet(' . $this->trimBrackets($dim) . ', ' . $this->trimBrackets($var) . ')';
     }
 
-    protected function parseBinaryOpShiftLeft($expr): string
+    protected function parseBinaryOpShiftLeft(Node\Expr\BinaryOp\ShiftLeft $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '<<');
     }
 
-    protected function parseBinaryOpShiftRight($expr): string
+    protected function parseBinaryOpShiftRight(Node\Expr\BinaryOp\ShiftRight $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '>>');
     }
 
-    protected function parseBinaryOpMod(mixed $expr): string
+    protected function parseBinaryOpMod(Node\Expr\BinaryOp\Mod $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '%');
     }
@@ -2375,7 +2375,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseExpr($value);
     }
 
-    protected function parsePostOp($expr, string $op): string
+    protected function parsePostOp(Node\Expr\PostDec|Node\Expr\PostInc $expr, string $op): string
     {
         if ($this->isVarExpr($expr->var) or $this->isPropertyFetch($expr->var) or $this->isArrayDimFetch($expr->var)) {
             $var = $this->parseIdentifier($expr->var);
@@ -2402,12 +2402,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->fatalError($expr, 'Post-increment operator is not supported for non-variable expressions');
     }
 
-    protected function parsePostDec($expr): string
+    protected function parsePostDec(Node\Expr\PostDec $expr): string
     {
         return $this->parsePostOp($expr, '-');
     }
 
-    protected function parsePostInc($expr): string
+    protected function parsePostInc(Node\Expr\PostInc $expr): string
     {
         return $this->parsePostOp($expr, '+');
     }
@@ -2476,34 +2476,34 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::pow(' . $left . ', ' . $right . ')';
     }
 
-    protected function parsePreDec(mixed $expr): string
+    protected function parsePreDec(Node\Expr\PreDec $expr): string
     {
         return '--' . $this->parseIdentifier($expr->var);
     }
 
-    protected function parseBinaryOpBitwiseAnd(mixed $expr): string
+    protected function parseBinaryOpBitwiseAnd(Node\Expr\BinaryOp\BitwiseAnd $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '&');
     }
 
-    protected function parseBinaryOpBitwiseOr(mixed $expr): string
+    protected function parseBinaryOpBitwiseOr(Node\Expr\BinaryOp\BitwiseOr $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '|');
     }
 
-    protected function parseBinaryOpBitwiseXor(mixed $expr): string
+    protected function parseBinaryOpBitwiseXor(Node\Expr\BinaryOp\BitwiseXor $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '^');
     }
 
-    protected function parseBitwiseNot(mixed $expr): string
+    protected function parseBitwiseNot(Node\Expr\BitwiseNot $expr): string
     {
         $var = $this->parseIdentifier($expr->expr);
 
         return '~' . $var;
     }
 
-    protected function parseIf(mixed $v): string
+    protected function parseIf(Node\Stmt\If_ $v): string
     {
         $cond = $this->parseExpr($v->cond);
 
@@ -2536,12 +2536,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code . PHP_EOL;
     }
 
-    protected function parseBinaryOpEqual(mixed $expr): string
+    protected function parseBinaryOpEqual(Node\Expr\BinaryOp\Equal $expr): string
     {
         return 'php::equals(' . $this->parseExpr($expr->left) . ', ' . $this->parseExpr($expr->right) . ')';
     }
 
-    protected function parseBinaryOpNotEqual(mixed $expr): string
+    protected function parseBinaryOpNotEqual(Node\Expr\BinaryOp\NotEqual $expr): string
     {
         return '!php::equals(' . $this->parseExpr($expr->left) . ', ' . $this->parseExpr($expr->right) . ')';
     }
@@ -3249,7 +3249,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::eval("' . $this->escapeString($this->genEmbeddedCode($v)) . '");';
     }
 
-    protected function parseEval(mixed $expr): string
+    protected function parseEval(Node\Expr\Eval_ $expr): string
     {
         return 'php::eval(' . $this->parseIdentifier($expr->expr) . ')';
     }
@@ -3276,7 +3276,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::include(' . $this->parseIdentifier($expr->expr) . ', ' . $type . ')';
     }
 
-    protected function parseBreak(mixed $v): string
+    protected function parseBreak(Node\Stmt\Break_ $v): string
     {
         if (!$this->context->inLoop) {
             $this->fatalError($v, 'Cannot break outside loop');
@@ -3319,7 +3319,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return sprintf('%.' . $this->floatPrecision . 'g', $value);
     }
 
-    protected function parseIsset(mixed $expr): string
+    protected function parseIsset(Node\Expr\Isset_ $expr): string
     {
         $vars = $expr->vars;
         if (count($vars) > 1) {
@@ -4123,7 +4123,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $code = '';
         foreach ($this->context->localVars as $name => $type) {
-            if (isset($this->arguments[$name])) {
+            if (isset($this->context->arguments[$name])) {
                 continue;
             }
             $code .= $this->getIndent() . $type . ' ' . $name;

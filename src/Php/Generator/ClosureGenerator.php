@@ -44,6 +44,7 @@ trait ClosureGenerator
             $this->context = new FunctionContext();
         }
 
+        $this->context->inClosure = true;
         $this->indentLevel++;
 
         foreach ($params as $i => $param) {
@@ -68,6 +69,7 @@ trait ClosureGenerator
         $code .= $bodyGenCb();
 
         $this->indentLevel--;
+        $this->context->inClosure = false;
         $code .= '};' . PHP_EOL;
 
         $useVars = [];
@@ -80,12 +82,12 @@ trait ClosureGenerator
                 if ($useItem->byRef) {
                     // 闭包的 use 语法，若为引用类型，可以就地创建变量
                     if ($useCurrentScope) {
-                        if (!isset($oriLocalVars[$var])) {
-                            $oriLocalVars[$var] = self::TYPE_REF;
-                        }
-                    } else {
                         if (!$this->hasVar($var)) {
                             $this->addLocalVar($var, self::TYPE_REF);
+                        }
+                    } else {
+                        if (!isset($oriContext->localVars[$var])) {
+                            $oriContext->localVars[$var] = self::TYPE_REF;
                         }
                     }
                     $useVars[] = $this->convertToRef($useItem->var);
@@ -99,11 +101,11 @@ trait ClosureGenerator
         }
 
         $this->context = $oriContext;
-        $this->context->beforeStmtLines[] = $code;
         if ($useCurrentScope) {
             $this->context->beforeStmtLines = $oriBeforeStmtLines;
             $this->context->afterStmtLines = $oriAfterStmtLines;
         }
+        $this->context->beforeStmtLines[] = $code;
 
         if ($this->methodDef) {
             return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' }, this_)';
