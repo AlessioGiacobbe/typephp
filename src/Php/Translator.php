@@ -818,7 +818,7 @@ class Translator extends Preprocessor
         }
 
         if ($extends) {
-            $this->classDef->extends = $this->getNamespacedClassName($this->parseIdentifier($class->extends));
+            $this->classDef->extends = $this->getParentClass($class->extends);
             if (isset($this->classes[$this->classDef->extends])) {
                 $parent = $this->classes[$this->classDef->extends];
                 if ($parent->flags & Modifiers::FINAL) {

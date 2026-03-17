@@ -10,6 +10,7 @@ namespace PhpAot\Php;
 
 use PhpAot\Php\Exception\SyntaxError;
 use PhpParser\Node;
+use PhpParser\NodeAbstract;
 use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
 
@@ -167,11 +168,20 @@ class Preprocessor extends CompilerBase
         }
     }
 
+    protected function getParentClass(NodeAbstract $extends): string
+    {
+        if ($extends instanceof Node\Name\FullyQualified) {
+            return $this->parseIdentifier($extends);
+        } else {
+            return $this->getNamespacedClassName($this->parseIdentifier($extends));
+        }
+    }
+
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
         if ($class->extends) {
-            $this->parentClass = $this->getNamespacedClassName($this->parseIdentifier($class->extends));
+            $this->parentClass = $this->getParentClass($class->extends);
             $fullClassName = $this->getNamespacedClassName($this->class);
             $this->classExtends[$fullClassName] = $this->parentClass;
         }
