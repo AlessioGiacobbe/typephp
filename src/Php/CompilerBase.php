@@ -9,6 +9,7 @@
 namespace PhpAot\Php;
 
 use League\CLImate\CLImate;
+use PhpAot\Php\Context\FunctionContext;
 use PhpAot\Php\Entity\ClassDef;
 use PhpAot\Php\Entity\FunctionDef;
 use PhpAot\Php\Entity\InterfaceDef;
@@ -21,9 +22,9 @@ use PhpAot\Php\Generator\ClosureGenerator;
 use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
 use PhpAot\Php\Generator\Utils;
-use PhpAot\Php\Generator\RefGenerator;
 use PhpParser\Modifiers;
 use PhpParser\Node;
+use PhpParser\Node\Expr\CallLike;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\FunctionLike;
 use PhpParser\Node\NullableType;
@@ -34,7 +35,6 @@ use PhpParser\NodeAbstract;
 use PhpParser\Parser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
-use PhpParser\Node\Expr\CallLike;
 
 class CompilerBase extends \PhpAot\Core\Translator
 {
@@ -84,10 +84,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     protected string $cppCompiler = 'g++';
-    protected array $arguments = [];
+
     protected array $literalStrings = [];
     protected int $literalStringIndex = 0;
-    protected int $tmpVarIndex = 0;
+
     protected int $anonClassIndex = 0;
     protected int $classIndex = 0;
 
@@ -201,6 +201,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected ?ClassDef $classDef = null;
     protected ?MethodDef $methodDef = null;
     protected ?InterfaceDef $interfaceDef = null;
+    protected FunctionContext $context;
     protected array $superGlobalVars = [
         '_GET'     => self::TYPE_ARRAY,
         '_POST'    => self::TYPE_ARRAY,
@@ -211,38 +212,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         '_REQUEST' => self::TYPE_ARRAY,
     ];
     protected array $globalVars = [];
-
-    /**
-     * @var array<string, string>
-     */
-    protected array $objects = [];
-    protected array $localVars = [];
-    protected array $staticVars = [];
-
-    /**
-     * @var array<string, string>
-     */
-    protected array $objectWrappers = [];
-
-    /**
-     * @var array<string, string>
-     */
-    protected array $ceWrappers = [];
     protected bool $strictTypes = false;
     protected string $rootPath;
     protected string $buildDir;
     protected int $debugLine = 0;
     protected CLImate $climate;
-    protected array $beforeStmtLines = [];
-    protected array $afterStmtLines = [];
-    protected bool $inLoop = false;
-    protected bool $inClosure = false;
     protected bool $defaultNativeType = false;
-
-    /**
-     * 赋值表达式的左值，写操作，右值为读操作.
-     */
-    protected bool $inAssignExpr = false;
     protected bool $stubFile = false;
     protected bool $enableProfiler = false;
     protected Parser $parser;
@@ -304,7 +279,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->objects[$object] ?? 'stdClass';
     }
 
-    public function parseExpr(mixed $expr)
+    public function parseExpr(Node\Expr $expr)
     {
         $type = $expr->getType();
         $this->writeLog('Line ' . $this->getLine($expr) . ': ' . $type);
@@ -395,9 +370,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_Array':
                 return $this->parseArray($expr);
             case self::EXPR_ARRAY_DIM_FETCH:
-                return $this->parseArrayDimFetch($expr, $this->inAssignExpr);
+                return $this->parseArrayDimFetch($expr, $this->context->inAssignExpr);
             case self::EXPR_PROPERTY_FETCH:
-                return $this->parsePropertyFetch($expr, $this->inAssignExpr);
+                return $this->parsePropertyFetch($expr, $this->context->inAssignExpr);
             case 'Expr_NullsafePropertyFetch':
                 return $this->parseNullsafePropertyFetch($expr);
             case 'Expr_NullsafeMethodCall':
@@ -451,7 +426,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_ArrowFunction':
                 return $this->parseArrowFunction($expr);
             case 'Name_FullyQualified':
-                return $expr->name;
+                return $this->parseFullyQualifiedName($expr);
             case 'Scalar_Int':
             case 'Scalar_Float':
             case 'Scalar_String':
@@ -507,7 +482,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public function genTmpVarName(): string
     {
-        return 'tmp_var_' . $this->tmpVarIndex++;
+        return 'tmp_var_' . $this->context->tmpVarIndex++;
     }
 
     public function genAnonClassName(): string
@@ -563,7 +538,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function getVarType(string $name): string
     {
         if ($this->hasLocalVar($name)) {
-            return $this->localVars[$name];
+            return $this->context->localVars[$name];
         }
         if ($this->hasLocalVar($name)) {
             return $this->globalVars[$name];
@@ -574,17 +549,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function resetFunction(): void
     {
-        $this->localVars = [];
-        $this->staticVars = [];
-        $this->arguments = [];
-        $this->objects = [];
-        $this->objectWrappers = [];
-        $this->ceWrappers = [];
-        $this->tmpVarIndex = 0;
-        $this->inLoop = false;
+        $this->context = new FunctionContext();
         $this->function = '';
         $this->functionDef = null;
-        $this->inClosure = false;
     }
 
     protected function resetMethod(): void
@@ -739,12 +706,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getCeWrapper(string $className): string
     {
-        if (isset($this->ceWrappers[$className])) {
-            return $this->ceWrappers[$className];
+        if (isset($this->context->ceWrappers[$className])) {
+            return $this->context->ceWrappers[$className];
         }
         $object = $this->addTmpVar(self::TYPE_OBJECT);
-        $this->beforeStmtLines[] = 'Z_PTR_P(' . $object . '.ptr()) = ' . $this->getClassEntryPtr($className) . ';';
-        $this->ceWrappers[$className] = $object;
+        $this->context->beforeStmtLines[] = 'Z_PTR_P(' . $object . '.ptr()) = ' . $this->getClassEntryPtr($className) . ';';
+        $this->context->ceWrappers[$className] = $object;
         return $object;
     }
 
@@ -943,6 +910,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case self::EXPR_VARIABLE:
                 return $this->parseVariable($expr);
             case 'Name':
+            case 'Name_FullyQualified':
             case 'VarLikeIdentifier':
             case 'Identifier':
                 return $expr->name;
@@ -1053,9 +1021,9 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function parseBeforeStmtLines(): string
     {
-        if ($this->beforeStmtLines) {
-            $code                  = implode(PHP_EOL, $this->beforeStmtLines);
-            $this->beforeStmtLines = [];
+        if ($this->context->beforeStmtLines) {
+            $code                  = implode(PHP_EOL, $this->context->beforeStmtLines);
+            $this->context->beforeStmtLines = [];
 
             return $code . PHP_EOL;
         }
@@ -1065,12 +1033,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseStmts(array $stmts): string
     {
         $lines     = [];
-        $inLoopTop = $this->inLoop;
+        $inLoopTop = $this->context->inLoop;
         $last = array_key_last($stmts);
         foreach ($stmts as $i => $v) {
             $class                 = $v->getType();
-            $this->beforeStmtLines = [];
-            $this->afterStmtLines  = [];
+            $this->context->beforeStmtLines = [];
+            $this->context->afterStmtLines  = [];
             $result                = '';
             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
             $lines[] = $this->genDebugInfo($v);
@@ -1086,29 +1054,29 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $result = $this->parseReturn($v);
                     break;
                 case 'Stmt_For':
-                    $this->inLoop = true;
+                    $this->context->inLoop = true;
                     $result       = $this->parseFor($v);
-                    $this->inLoop = $inLoopTop;
+                    $this->context->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_Foreach':
-                    $this->inLoop = true;
+                    $this->context->inLoop = true;
                     $result       = $this->parseForeach($v);
-                    $this->inLoop = $inLoopTop;
+                    $this->context->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_Switch':
-                    $this->inLoop = true;
+                    $this->context->inLoop = true;
                     $result       = $this->parseSwitch($v);
-                    $this->inLoop = $inLoopTop;
+                    $this->context->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_While':
-                    $this->inLoop = true;
+                    $this->context->inLoop = true;
                     $result       = $this->parseWhile($v);
-                    $this->inLoop = $inLoopTop;
+                    $this->context->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_Do':
-                    $this->inLoop = true;
+                    $this->context->inLoop = true;
                     $result       = $this->parseDo($v);
-                    $this->inLoop = $inLoopTop;
+                    $this->context->inLoop = $inLoopTop;
                     break;
                 case 'Stmt_If':
                     $result = $this->parseIf($v);
@@ -1151,14 +1119,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                 default:
                     abort($v);
             }
-            $lines                 = array_merge($lines, $this->beforeStmtLines);
-            $this->beforeStmtLines = [];
+            $lines                 = array_merge($lines, $this->context->beforeStmtLines);
+            $this->context->beforeStmtLines = [];
             if ($result) {
                 $lines[] = $result;
             }
-            if ($this->afterStmtLines) {
-                $lines                = array_merge($lines, $this->afterStmtLines);
-                $this->afterStmtLines = [];
+            if ($this->context->afterStmtLines) {
+                $lines                = array_merge($lines, $this->context->afterStmtLines);
+                $this->context->afterStmtLines = [];
             }
         }
 
@@ -1175,10 +1143,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isPropertyFetch($left)) {
             return $this->parseAssignPropertyArrayDim($left, $right);
         }
-        $oriInAssignExpr    = $this->inAssignExpr;
-        $this->inAssignExpr = true;
+        $oriInAssignExpr    = $this->context->inAssignExpr;
+        $this->context->inAssignExpr = true;
         $array              = $this->parseIdentifier($left->var);
-        $this->inAssignExpr = $oriInAssignExpr;
+        $this->context->inAssignExpr = $oriInAssignExpr;
         $code               = '';
         // 这是 PHP 的初始化+赋值写法，需要先创建数组
         if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
@@ -1227,7 +1195,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(";\n" . $this->getIndent(), $list);
     }
 
-    protected function parseAssignStaticProperty($left, $right)
+    protected function parseAssignStaticProperty($left, $right): string
     {
         $value    = $this->trimBrackets($this->parseExpr($right));
         $native = $this->parseNativeStaticPropertyFetch($left);
@@ -1264,10 +1232,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                     continue;
                 }
                 if ($item instanceof Node\Expr\ArrayItem) {
-                    $oriInAssignExpr = $this->inAssignExpr;
-                    $this->inAssignExpr = true;
+                    $oriInAssignExpr = $this->context->inAssignExpr;
+                    $this->context->inAssignExpr = true;
                     $var = $this->parseIdentifier($item->value);
-                    $this->inAssignExpr = $oriInAssignExpr;
+                    $this->context->inAssignExpr = $oriInAssignExpr;
                     if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
                         $this->addLocalVar($var, self::TYPE_VAR);
                     }
@@ -1281,10 +1249,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $code . '}';
         }
 
-        $oriInAssignExpr = $this->inAssignExpr;
-        $this->inAssignExpr = true;
+        $oriInAssignExpr = $this->context->inAssignExpr;
+        $this->context->inAssignExpr = true;
         $var                = $this->parseIdentifier($left);
-        $this->inAssignExpr = $oriInAssignExpr;
+        $this->context->inAssignExpr = $oriInAssignExpr;
         if ($var === 'this_') {
             $this->fatalError($left, 'Cannot re-assign $this');
         }
@@ -1296,12 +1264,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 类型推断，获取对象的类名
             if ($this->isNewExpr($right) and $this->isNameExpr($right->class)) {
                 $class               = $this->parseIdentifier($right->class);
-                $this->objects[$var] = $this->getNamespacedClassName($class);
+                $this->context->objects[$var] = $this->getNamespacedClassName($class);
                 $type                = self::TYPE_OBJECT;
             } elseif ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
                 $fn = $this->parseIdentifier($right->name);
                 if (count($right->args) === 2 and $fn === 'objval' and $this->isScalarString($right->args[1]->value)) {
-                    $this->objects[$var] = $this->getNamespacedClassName($this->parseIdentifier($right->args[1]->value));
+                    $this->context->objects[$var] = $this->getNamespacedClassName($this->parseIdentifier($right->args[1]->value));
                     $type                = self::TYPE_OBJECT;
                 } elseif (count($right->args) === 1 and $fn === 'any') {
                     $type = self::TYPE_VAR;
@@ -1356,6 +1324,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseEcho(mixed $v): string
     {
+        $lines = [];
         foreach ($v->exprs as $expr) {
             if ($expr instanceof Node\Expr\Assign) {
                 $this->fatalError($expr, 'Cannot echo assign expression');
@@ -1409,9 +1378,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * 尽可能转为数字，优先级 浮点 > 整数 > 字符串.
-     * @param mixed $expr
      */
-    protected function parseNumericIdentifier($expr)
+    protected function parseNumericIdentifier(NodeAbstract $expr): float|int|string
     {
         if ($expr->getType() === 'Scalar_String') {
             if ($this->isFloatStr($expr->value)) {
@@ -1462,7 +1430,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseReturn(Node\Stmt\Return_ $v): string
     {
         if ($v->expr === null) {
-            if ($this->functionDef->returnType === self::TYPE_VOID and !$this->inClosure) {
+            if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {
                 return 'return;';
             } else {
                 return 'return ' . self::VALUE_NULL . ';';
@@ -1473,7 +1441,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $expr = $this->parseExpr($v->expr);
 
         // 匿名函数的返回值一定是 var
-        if (!$this->inClosure) {
+        if (!$this->context->inClosure) {
             // 函数定义时没有声明返回值，但函数体中有返回值，修改为实际的返回值类型
             if ($this->getReturnType() === 'void') {
                 $this->resetReturnType($v, $type);
@@ -1495,7 +1463,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->addLocalVar($tmpVar, $returnType);
             $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
             // 解析表达式后可能会插入语句，因此需要在末尾添加 return 语句，而不是直接返回
-            $this->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
+            $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
         } else {
             $code = 'return ' . $exprCode . ';';
         }
@@ -1510,7 +1478,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function addLocalVar(string $name, string $type): void
     {
-        $this->localVars[$name] = $type;
+        $this->context->localVars[$name] = $type;
     }
 
     protected function addTmpVar(string $type): string
@@ -1522,13 +1490,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function addStaticVar(string $name, string $type): void
     {
-        $this->staticVars[$name] = $type;
+        $this->context->staticVars[$name] = $type;
         $this->addGlobalVar($this->getStaticVarName($name), $type);
     }
 
     protected function addArgument(string $name, string $type): void
     {
-        $this->arguments[$name] = $type;
+        $this->context->arguments[$name] = $type;
         $this->addLocalVar($name, $type);
     }
 
@@ -1562,7 +1530,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function hasLocalVar(string $name): bool
     {
-        return isset($this->localVars[$name]);
+        return isset($this->context->localVars[$name]);
     }
 
     /**
@@ -1805,13 +1773,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'mixed':
                 return self::TYPE_VAR;
             case 'self':
-                $this->objects[$var] = $this->classDef->getNamespacedName(false);
+                $this->context->objects[$var] = $this->classDef->getNamespacedName(false);
                 return self::TYPE_OBJECT;
             case 'resource':
                 $this->fatalError($param, 'Cannot use `resource` as a parameter type.');
                 // no break
             default:
-                $this->objects[$var] = $this->getNamespacedClassName($name);
+                $this->context->objects[$var] = $this->getNamespacedClassName($name);
                 return self::TYPE_OBJECT;
         }
     }
@@ -1995,11 +1963,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $binaryOp = $this->removeAssignOp($op);
 
             if ($binaryOp === '.') {
-                $this->beforeStmtLines[] = "{$tmpVar} = php::concat(" .
+                $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat(" .
                     $this->convertVarType($tmpVar, $var) . ', ' .
                     $this->convertExprType($expr, $type, $rightType) . ');';
             } else {
-                $this->beforeStmtLines[] = "{$tmpVar} = " .
+                $this->context->beforeStmtLines[] = "{$tmpVar} = " .
                     $this->convertVarType($tmpVar, $var) . ' ' .
                     $binaryOp . ' ' .
                     $this->convertExprType($expr, $type, $rightType) . ';';
@@ -2114,20 +2082,20 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $var . '.newItem()';
             }
         } else {
-            $oriInAssignExpr = $this->inAssignExpr;
-            $this->inAssignExpr = false;
+            $oriInAssignExpr = $this->context->inAssignExpr;
+            $this->context->inAssignExpr = false;
             $dim = $this->parseIdentifier($node->dim);
-            $this->inAssignExpr = $oriInAssignExpr;
+            $this->context->inAssignExpr = $oriInAssignExpr;
             return $var . '.item(' . $this->trimBrackets($dim) . ', ' . $this->escapeBool($write) . ')';
         }
     }
 
     protected function parseArrayDimStore($array, $dim, $var): string
     {
-        $oriInAssignExpr = $this->inAssignExpr;
-        $this->inAssignExpr = true;
+        $oriInAssignExpr = $this->context->inAssignExpr;
+        $this->context->inAssignExpr = true;
         $id = $this->parseIdentifier($array);
-        $this->inAssignExpr = $oriInAssignExpr;
+        $this->context->inAssignExpr = $oriInAssignExpr;
 
         return $id . '.offsetSet(' . $this->trimBrackets($dim) . ', ' . $this->trimBrackets($var) . ')';
     }
@@ -2201,14 +2169,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseFuncCall(Node\Expr\FuncCall $expr): string
     {
-        $call = '';
         if ($this->isVarExpr($expr->name)) {
             $fn   = $this->parseIdentifier($expr->name);
             $placeHolder = $fn;
             $name = '';
         } elseif ($expr->name->getType() === 'Name' or $expr->name->getType() === 'Name_FullyQualified') {
             $name = $this->parseIdentifier($expr->name);
-            if (in_array($name, $this->unsupportedFunctions)) {
+            if (in_array($name, Constants::UNSUPPORTED_FUNCTIONS)) {
                 $this->fatalError($expr, 'Unsupported function: `' . $name . '`');
             }
             $nativeFn = $this->findNativeFunction($name);
@@ -2226,11 +2193,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $placeHolder = $this->identifierToStr($expr->name);
             $fn = $this->getFuncPtr($name);
-            $this->beforeStmtLines[] = '// Func Call: ' . $name . '()';
+            $this->context->beforeStmtLines[] = '// Func Call: ' . $name . '()';
         } else {
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->name) . ';';
+            $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->name) . ';';
             $placeHolder = $fn = $tmpVar;
             $name = '';
         }
@@ -2294,10 +2261,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $tmpVar = $this->addTmpVar(self::TYPE_ARRAY);
                     foreach ($argsSlice as $item) {
                         if ($item->unpack) {
-                            $this->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArg($item) . ');';
+                            $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArg($item) . ');';
                             break;
                         } else {
-                            $this->beforeStmtLines[] = $tmpVar . '.append(' . $this->parseArg($item) . ');';
+                            $this->context->beforeStmtLines[] = $tmpVar . '.append(' . $this->parseArg($item) . ');';
                         }
                     }
                     $argList[] = $tmpVar;
@@ -2331,12 +2298,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                     } else {
                         // 本地变量，且是原生类型，则转为普通变量
                         if ($this->hasLocalVar($name) and $this->isNativeType($this->getVarType($name))) {
-                            $this->localVars[$name] = self::TYPE_VAR;
+                            $this->context->localVars[$name] = self::TYPE_VAR;
                         }
                         // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
                         $tmpVar = $this->genTmpVarName();
                         $this->addLocalVar($tmpVar, self::TYPE_REF);
-                        $this->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
+                        $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
                         $name = $tmpVar;
                     }
                     $list_args[] = '&' . $name;
@@ -2378,8 +2345,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($arg, 'The unpack expression for variadic arguments must be the last');
                 }
                 $tmpVar = $this->genTmpVarName();
-                $this->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $tmpVar . '{' . implode(', ', $list_args) . '};';
-                $this->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
+                $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $tmpVar . '{' . implode(', ', $list_args) . '};';
+                $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
                 return $tmpVar;
             }
             $list_args[] = $this->parseArg($arg);
@@ -2427,8 +2394,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             $prop   = $this->identifierToStr($expr->var->name);
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            $this->beforeStmtLines[] = $tmpVar . ' = php::getStaticProperty(' . $class . ', ' . $prop . ');';
-            $this->afterStmtLines[]  = 'php::setStaticProperty(' . $class . ', ' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
+            $this->context->beforeStmtLines[] = $tmpVar . ' = php::getStaticProperty(' . $class . ', ' . $prop . ');';
+            $this->context->afterStmtLines[]  = 'php::setStaticProperty(' . $class . ', ' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
 
             return $tmpVar;
         }
@@ -2582,29 +2549,29 @@ class CompilerBase extends \PhpAot\Core\Translator
     /**
      * 逻辑比较的运算，必须返回 bool 类型.
      */
-    protected function parseBinaryOpLogicalAnd(Node $expr): string
+    protected function parseBinaryOpLogicalAnd(Node\Expr\BinaryOp\LogicalAnd|Node\Expr\BinaryOp\BooleanAnd $expr): string
     {
         return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '&&'));
     }
 
-    protected function parseBinaryOpLogicalOr(Node $expr): string
+    protected function parseBinaryOpLogicalOr(Node\Expr\BinaryOp\LogicalOr|Node\Expr\BinaryOp\BooleanOr $expr): string
     {
         return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '||'));
     }
 
-    protected function parseBinaryOpLogicalXor(Node $expr): string
+    protected function parseBinaryOpLogicalXor(Node\Expr\BinaryOp\LogicalXor $expr): string
     {
         return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '^'));
     }
 
-    protected function parseBooleanNot(Node $expr): string
+    protected function parseBooleanNot(Node\Expr\BooleanNot $expr): string
     {
         $expr = $this->parseExpr($expr->expr);
 
         return '!' . $expr;
     }
 
-    protected function parseWhile(Node $v): string
+    protected function parseWhile(Node\Stmt\While_ $v): string
     {
         $cond  = $this->parseExpr($v->cond);
         $stmts = $v->stmts;
@@ -2764,10 +2731,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $classDef = $expr->class;
                 $className = $this->genAnonClassName();
                 $classDef->name = new Node\Identifier($className);
-                $this->beforeStmtLines[] = 'static THREAD_LOCAL bool ' . $className . '_defined = false;';
+                $this->context->beforeStmtLines[] = 'static THREAD_LOCAL bool ' . $className . '_defined = false;';
                 $classCode = $this->genEmbeddedCode($classDef);
                 $this->addConstData($className . '_code', $classCode);
-                $this->beforeStmtLines[] = 'if (!' . $className . '_defined) {'
+                $this->context->beforeStmtLines[] = 'if (!' . $className . '_defined) {'
                     . $className . '_defined = true; php::eval((const char *)' . $className . '_code);}';
                 $className = '\\' . $className;
                 $cePtr     = $this->getClassEntryPtr($className);
@@ -2861,14 +2828,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::constant("' . $this->escapeString($name) . '")';
     }
 
-    protected function parseUnaryMinus(Node $expr): string
+    protected function parseUnaryMinus(Node\Expr\UnaryMinus $expr): string
     {
         $code = $this->parseExpr($expr->expr);
 
         return '-' . $code;
     }
 
-    protected function parseUnaryPlus(mixed $expr)
+    protected function parseUnaryPlus(Node\Expr\UnaryPlus $expr)
     {
         return $this->parseExpr($expr->expr);
     }
@@ -2897,12 +2864,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::concat({' . implode(', ', $list) . '})';
     }
 
-    protected function parseInterpolatedStringPart(Node $expr): string
+    protected function parseInterpolatedStringPart(Node\InterpolatedStringPart $expr): string
     {
         return '"' . $this->escapeString($expr->value) . '"';
     }
 
-    protected function parseGlobal(Node $v): string
+    protected function parseGlobal(Node\Stmt\Global_ $v): string
     {
         foreach ($v->vars as $v) {
             $name = $this->escapeVarName($v->name);
@@ -3001,7 +2968,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($objectName === 'this_') {
                 $nativeProperty = $this->findNativeProperty($object, $propertyName, $this->class, $this->namespace);
             } elseif ($this->isTypedObject($objectName)) {
-                $nativeProperty = $this->findNativeProperty($object, $propertyName, $this->objects[$objectName]);
+                $nativeProperty = $this->findNativeProperty($object, $propertyName, $this->context->objects[$objectName]);
             }
             if ($nativeProperty) {
                 return $nativeProperty;
@@ -3052,13 +3019,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseForeachArray(Foreach_ $node, string $iteratorVar): string
     {
-        if ($node->keyVar) {
-            $keyVar = $this->parseIdentifier($node->keyVar);
-        }
-
         $code = 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
         $this->indentLevel++;
         if ($node->keyVar) {
+            $keyVar = $this->parseIdentifier($node->keyVar);
             $this->checkVar($node, $keyVar);
             $code .= $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
         }
@@ -3175,7 +3139,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $var_def = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
 
         // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
-        $localVars = $this->localVars;
+        $localVars = $this->context->localVars;
         $code      = $this->parseBeforeStmtLines() . PHP_EOL;
 
         if ($type === self::TYPE_INT or $type === self::TYPE_BOOL) {
@@ -3187,7 +3151,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } else {
                     $condType = $case->cond->getType();
                     if ($condType !== 'Scalar_Int' and $condType !== 'Scalar_Float') {
-                        $this->localVars = $localVars;
+                        $this->context->localVars = $localVars;
                         goto _fail;
                     }
                     $code .= $this->getIndent() . 'case ' . $this->parseScalar($case->cond) . ': {' . PHP_EOL;
@@ -3314,7 +3278,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseBreak(mixed $v): string
     {
-        if (!$this->inLoop) {
+        if (!$this->context->inLoop) {
             $this->fatalError($v, 'Cannot break outside loop');
         }
         $num = $v->num;
@@ -3330,7 +3294,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseContinue(Node\Stmt\Continue_ $v): string
     {
-        if (!$this->inLoop) {
+        if (!$this->context->inLoop) {
             $this->fatalError($v, 'Cannot continue outside loop');
         }
         if ($v->num and $v->num->value > 1) {
@@ -3339,7 +3303,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'continue;';
     }
 
-    protected function parseScalarFloat(Node $expr): string
+    protected function parseScalarFloat(Node\Scalar\Float_ $expr): string
     {
         $value = $expr->value;
 
@@ -3361,16 +3325,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (count($vars) > 1) {
             $list = [];
             foreach ($vars as $var) {
-                $list[] = $this->parseChainedExpr($var, 'isset');
+                $list[] = $this->parseChainedExpr($var, self::OP_ISSET);
             }
             return '(' . implode(' && ', $list) . ')';
         }
-        return $this->parseChainedExpr($vars[0], 'isset');
+        return $this->parseChainedExpr($vars[0], self::OP_ISSET);
     }
 
     protected function parseEmpty(Node\Expr\Empty_ $expr): string
     {
-        return $this->parseChainedExpr($expr->expr, 'empty');
+        return $this->parseChainedExpr($expr->expr, self::OP_EMPTY);
     }
 
     /**
@@ -3410,7 +3374,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             } else {
                 $var = $this->genTmpVarName();
                 $this->addLocalVar($var, self::TYPE_VAR);
-                $this->beforeStmtLines[] = $var . '=' . $this->parseExpr($expr) . ';';
+                $this->context->beforeStmtLines[] = $var . '=' . $this->parseExpr($expr) . ';';
                 break;
             }
             $expr = $expr->var;
@@ -3432,7 +3396,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function hasStaticVar(string $name): bool
     {
-        return array_key_exists($name, $this->staticVars);
+        return array_key_exists($name, $this->context->staticVars);
     }
 
     protected function parseCastDouble(mixed $expr): string
@@ -3480,14 +3444,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $id;
         }
 
-        if (isset($this->objectWrappers[$id])) {
-            return $this->objectWrappers[$id];
+        if (isset($this->context->objectWrappers[$id])) {
+            return $this->context->objectWrappers[$id];
         }
 
         $tmpVar = $this->genTmpVarName();
         $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
-        $this->beforeStmtLines[]   = $this->getIndent() . $tmpVar . ' = ' . $id . ';';
-        $this->objectWrappers[$id] = $tmpVar;
+        $this->context->beforeStmtLines[]   = $this->getIndent() . $tmpVar . ' = ' . $id . ';';
+        $this->context->objectWrappers[$id] = $tmpVar;
 
         return $tmpVar;
     }
@@ -3497,7 +3461,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->checkLeftValue($expr);
         $var = $this->parseIdentifier($expr);
         if ($this->isVarExpr($expr) and $this->isNativeTypeVar($var)) {
-            $this->localVars[$var] = self::TYPE_VAR;
+            $this->context->localVars[$var] = self::TYPE_VAR;
         }
         return $this->parseIdentifier($expr) . '.toReference()';
     }
@@ -3505,9 +3469,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseAssignRef(Node\Expr\AssignRef $expr): string
     {
         if ($this->isVarExpr($expr->var)) {
-            $this->inAssignExpr = true;
+            $this->context->inAssignExpr = true;
             $left               = $this->parseIdentifier($expr->var);
-            $this->inAssignExpr = false;
+            $this->context->inAssignExpr = false;
             if (!$this->hasVar($left)) {
                 $this->addLocalVar($left, self::TYPE_REF);
             } else {
@@ -3553,7 +3517,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         // 可转为原生调用的 MethodCall
         if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
-            $this->beforeStmtLines[] = '// Method Call: ' . $object . '->' . $this->parseIdentifier($expr->name) . '()';
+            $this->context->beforeStmtLines[] = '// Method Call: ' . $object . '->' . $this->parseIdentifier($expr->name) . '()';
             $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
             if ($nativeFunc) {
                 $expr->setAttribute('nativeCall', $nativeFunc);
@@ -3639,7 +3603,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         } elseif ($class === 'static') {
             $methodPtr = $this->identifierToStr($expr->name, literal: true);
             $fn = 'php_get_called_ce(this_), php::getMethod(php_get_called_ce(this_), ' . $methodPtr . ')';
-            $this->beforeStmtLines[] = '// Static Method Call: static::' . $this->parseIdentifier($expr->name) . '()';
+            $this->context->beforeStmtLines[] = '// Static Method Call: static::' . $this->parseIdentifier($expr->name) . '()';
             $placeHolder = $this->genArray(['php_get_called_class(this_)', $methodPtr]);
         } elseif ($this->isNameExpr($expr->class)) {
             if ($class === 'self') {
@@ -3652,7 +3616,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             _do_call:
             $method = $this->parseIdentifier($expr->name);
-            $this->beforeStmtLines[] = '// Static Method Call: ' . $class . '::' . $method . '()';
+            $this->context->beforeStmtLines[] = '// Static Method Call: ' . $class . '::' . $method . '()';
 
             if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
                 $callScope = [$this->genCharPtr($class, true), $this->genCharPtr($method)];
@@ -4049,10 +4013,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseErrorSuppress(Node\Expr\ErrorSuppress $expr): string
     {
         $tmpVar = $this->genTmpVarName();
-        $this->beforeStmtLines[] = 'auto ' . $tmpVar . ' = EG(error_reporting);';
-        $this->beforeStmtLines[] = 'php::call(' . $this->getFuncPtr('error_reporting') . ', {E_FATAL_ERRORS});';
+        $this->context->beforeStmtLines[] = 'auto ' . $tmpVar . ' = EG(error_reporting);';
+        $this->context->beforeStmtLines[] = 'php::call(' . $this->getFuncPtr('error_reporting') . ', {E_FATAL_ERRORS});';
         $code = $this->parseExpr($expr->expr);
-        $this->afterStmtLines[] = 'php::call(' . $this->getFuncPtr('error_reporting') . ', {' . $tmpVar . '});';
+        $this->context->afterStmtLines[] = 'php::call(' . $this->getFuncPtr('error_reporting') . ', {' . $tmpVar . '});';
         return $code;
     }
 
@@ -4158,7 +4122,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function genLocalVarDecl(): string
     {
         $code = '';
-        foreach ($this->localVars as $name => $type) {
+        foreach ($this->context->localVars as $name => $type) {
             if (isset($this->arguments[$name])) {
                 continue;
             }
@@ -4194,8 +4158,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $cb = function () use ($expr) {
             $code = $this->parseExpr($expr->expr);
-            if ($this->beforeStmtLines) {
-                $beforeCode = implode(PHP_EOL, $this->beforeStmtLines);
+            if ($this->context->beforeStmtLines) {
+                $beforeCode = implode(PHP_EOL, $this->context->beforeStmtLines);
             } else {
                 $beforeCode = '';
             }
@@ -4228,10 +4192,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->checkLeftValue($expr->var);
         $isset = $this->parseChainedExpr($expr->var, self::OP_ISSET);
 
-        $inAssignExpr = $this->inAssignExpr;
-        $this->inAssignExpr = true;
+        $inAssignExpr = $this->context->inAssignExpr;
+        $this->context->inAssignExpr = true;
         $var = $this->parseIdentifier($expr->var);
-        $this->inAssignExpr = $inAssignExpr;
+        $this->context->inAssignExpr = $inAssignExpr;
 
         $right = $this->parseExpr($expr->expr);
         if ($this->isVarExpr($expr->expr) and !$this->hasVar($right)) {
@@ -4263,7 +4227,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($items as $item) {
             $value = $this->parseIdentifier($item->value);
             if ($item->unpack) {
-                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
             } elseif ($item->key) {
                 $key = $this->parseIdentifier($item->key);
                 if (str_starts_with($key, self::LITERAL_STRINGS)) {
@@ -4271,14 +4235,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } elseif ($key === '0L') {
                     $key = 'php::zero';
                 }
-                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
             } else {
-                $this->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
             }
         }
 
         // 释放临时变量，避免修改数组产生数组复制操作
-        $this->afterStmtLines[] = $this->getIndent() . $tmpVar . '.unset();';
+        $this->context->afterStmtLines[] = $this->getIndent() . $tmpVar . '.unset();';
 
         return $tmpVar;
     }
@@ -4317,7 +4281,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                 }
                 $object = $this->addTmpVar(self::TYPE_OBJECT);
-                $this->beforeStmtLines[] = $this->getIndent() . $object . ' = ' . $this->parseIdentifier($expr) . ';';
+                $this->context->beforeStmtLines[] = $this->getIndent() . $object . ' = ' . $this->parseIdentifier($expr) . ';';
                 break;
             }
         }
@@ -4327,7 +4291,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $tmpFn = $this->genTmpVarName();
 
         $code = $comment . PHP_EOL . 'auto ' . $tmpFn . ' = [&]() -> ' . self::TYPE_VAR . '{' . PHP_EOL;
-        $update = $this->escapeBool($this->inAssignExpr);
+        $update = $this->escapeBool($this->context->inAssignExpr);
 
         foreach ($list as $key => $item) {
             $tmpVar = $this->addTmpVar($key !== $last ? self::TYPE_OBJECT : self::TYPE_VAR);
@@ -4341,7 +4305,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             $object = $tmpVar;
         }
         $code .= $this->getIndent() . "return $object; };";
-        $this->beforeStmtLines[] = $code;
+        $this->context->beforeStmtLines[] = $code;
         return "$tmpFn()";
+    }
+
+    protected function parseFullyQualifiedName(Node\Name\FullyQualified $expr): string
+    {
+        return $expr->name;
     }
 }

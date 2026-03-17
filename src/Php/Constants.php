@@ -54,4 +54,12 @@ class Constants
         'template',
         'errno', // Linux error code
     ];
+
+    public const UNSUPPORTED_FUNCTIONS = [
+        'compact',
+        'extract',
+        'func_num_args',
+        'func_get_arg',
+        'func_get_args',
+    ];
 }

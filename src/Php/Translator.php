@@ -34,13 +34,6 @@ class Translator extends Preprocessor
     protected array $registerSymbols = [];
     protected array $staticPropertyList = [];
     protected bool $useRegisterSymbolsFn = false;
-    protected array $unsupportedFunctions = [
-        'compact',
-        'extract',
-        'func_num_args',
-        'func_get_arg',
-        'func_get_args',
-    ];
 
     public function __construct(string $rootPath)
     {

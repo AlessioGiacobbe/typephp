@@ -8,6 +8,7 @@
 
 namespace PhpAot\Php\Generator;
 
+use PhpAot\Php\Context\FunctionContext;
 use PhpParser\NodeAbstract;
 
 trait ClosureGenerator
@@ -35,26 +36,13 @@ trait ClosureGenerator
             . self::TYPE_ARGS . ' &vars_) ' .
             '-> ' . self::TYPE_VAR . ' {' . PHP_EOL;
 
-        if (!$useCurrentScope) {
-            $oriLocalVars = $this->localVars;
-            $this->localVars = [];
+        $oriContext = $this->context;
+        if ($useCurrentScope) {
+            $oriBeforeStmtLines = $oriContext->beforeStmtLines;
+            $oriAfterStmtLines = $oriContext->afterStmtLines;
+        } else {
+            $this->context = new FunctionContext();
         }
-
-        $oriObjects = $this->objects;
-        $oriObjectWrappers = $this->objectWrappers;
-        $oriCeWrappers = $this->ceWrappers;
-        $oriArgs = $this->arguments;
-        $oriInClosure = $this->inClosure;
-        $oriBeforeStmtLines = $this->beforeStmtLines;
-        $oriAfterStmtLines = $this->afterStmtLines;
-
-        $this->objects = [];
-        $this->objectWrappers = [];
-        $this->ceWrappers = [];
-        $this->arguments = [];
-        $this->inClosure = true;
-        $this->beforeStmtLines = [];
-        $this->afterStmtLines = [];
 
         $this->indentLevel++;
 
@@ -110,17 +98,12 @@ trait ClosureGenerator
             }
         }
 
-        if (!$useCurrentScope) {
-            $this->localVars = $oriLocalVars;
+        $this->context = $oriContext;
+        $this->context->beforeStmtLines[] = $code;
+        if ($useCurrentScope) {
+            $this->context->beforeStmtLines = $oriBeforeStmtLines;
+            $this->context->afterStmtLines = $oriAfterStmtLines;
         }
-        $this->objects = $oriObjects;
-        $this->objectWrappers = $oriObjectWrappers;
-        $this->ceWrappers = $oriCeWrappers;
-        $this->arguments = $oriArgs;
-        $this->inClosure = $oriInClosure;
-        $this->beforeStmtLines = $oriBeforeStmtLines;
-        $this->afterStmtLines = $oriAfterStmtLines;
-        $this->beforeStmtLines[] = $code;
 
         if ($this->methodDef) {
             return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' }, this_)';
