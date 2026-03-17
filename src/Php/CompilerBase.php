@@ -2207,7 +2207,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
                 $expr->setAttribute('nativeCall', $nativeFn);
-                return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
+                try {
+                    return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
+                } catch (PlaceHolder) {
+                    return $this->genPlaceHolder($this->identifierToStr($expr->name));
+                }
             }
             $code = $this->parseFuncCallWithOptimizer($name, $expr);
             if ($code) {
@@ -3612,7 +3616,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $fn = 'php_get_called_ce(this_), php::getMethod(php_get_called_ce(this_), ' . $methodPtr . ')';
             $this->beforeStmtLines[] = '// Static Method Call: static::' . $this->parseIdentifier($expr->name) . '()';
             $placeHolder = $this->genArray(['php_get_called_class(this_)', $methodPtr]);
-        } else {
+        } elseif ($this->isNameExpr($expr->class)) {
             if ($class === 'self') {
                 $class = $this->class;
                 $self = true;
@@ -3654,7 +3658,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $ce = $this->getClassEntryPtr($class);
             $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method);
             $placeHolder = $this->genArray($callScope);
+        } else {
+            $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
+            $placeHolder = $fn;
         }
+
         $call = 'php::call';
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
