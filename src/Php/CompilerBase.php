@@ -21,6 +21,7 @@ use PhpAot\Php\Generator\ClosureGenerator;
 use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
 use PhpAot\Php\Generator\Utils;
+use PhpAot\Php\Generator\RefGenerator;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Expr\Variable;
@@ -78,6 +79,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string STATIC_VAR = '_static_var_';
     public const string OP_ISSET = 'isset';
     public const string OP_EMPTY = 'empty';
+    public const string OP_REFVAL = 'toReference';
     public const string OP_NOP = "if (0) {}\n";
     protected string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
@@ -2359,6 +2361,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $list_args[] = $array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')';
                     continue;
                 }
+            } else {
+                if ($funcName and Reflection::isReferenceArg($funcName, $className, $i)) {
+                    $list_args[] = $this->parseChainedExpr($arg->value, self::OP_REFVAL);
+                    continue;
+                }
             }
             // 变长参数展开的语法，例如：array_merge(...$arr)
             if ($arg->unpack) {
@@ -2718,7 +2725,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return $this->parseVarCheckExpr($expr->left, 'isset') . ' ? ' . $left . ' : ' . $right;
+        return $this->parseChainedExpr($expr->left, 'isset') . ' ? ' . $left . ' : ' . $right;
     }
 
     protected function parseBinaryOpNotIdentical(Node\Expr\BinaryOp $expr): string
@@ -3336,16 +3343,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (count($vars) > 1) {
             $list = [];
             foreach ($vars as $var) {
-                $list[] = $this->parseVarCheckExpr($var, 'isset');
+                $list[] = $this->parseChainedExpr($var, 'isset');
             }
             return '(' . implode(' && ', $list) . ')';
         }
-        return $this->parseVarCheckExpr($vars[0], 'isset');
+        return $this->parseChainedExpr($vars[0], 'isset');
     }
 
     protected function parseEmpty(Node\Expr\Empty_ $expr): string
     {
-        return $this->parseVarCheckExpr($expr->expr, 'empty');
+        return $this->parseChainedExpr($expr->expr, 'empty');
     }
 
     /**
@@ -3358,7 +3365,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseVarCheckExpr(NodeAbstract $expr, string $op): string
+    protected function parseChainedExpr(NodeAbstract $expr, string $op): string
     {
         if ($this->isVarExpr($expr)) {
             if ($op === 'isset') {
@@ -3391,7 +3398,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $expr = $expr->var;
         }
         $list = array_reverse($list);
-        $fn = $op === 'isset' ? 'exists' : 'empty';
+        $fn = $op === 'isset' ? 'exists' : $op;
         return 'php::' . $fn . '(' . $var . ', {' . implode(', ', $list) . '})';
     }
 
@@ -4201,7 +4208,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseAssignOpCoalesce(Node\Expr\AssignOp\Coalesce $expr): string
     {
         $this->checkLeftValue($expr->var);
-        $isset = $this->parseVarCheckExpr($expr->var, self::OP_ISSET);
+        $isset = $this->parseChainedExpr($expr->var, self::OP_ISSET);
 
         $inAssignExpr = $this->inAssignExpr;
         $this->inAssignExpr = true;
