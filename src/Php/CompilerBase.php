@@ -574,16 +574,17 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function resetFunction(): void
     {
-        $this->localVars      = [];
-        $this->staticVars     = [];
-        $this->arguments      = [];
+        $this->localVars = [];
+        $this->staticVars = [];
+        $this->arguments = [];
+        $this->objects = [];
         $this->objectWrappers = [];
-        $this->ceWrappers     = [];
-        $this->tmpVarIndex    = 0;
-        $this->inLoop         = false;
-        $this->function       = '';
-        $this->functionDef    = null;
-        $this->inClosure      = false;
+        $this->ceWrappers = [];
+        $this->tmpVarIndex = 0;
+        $this->inLoop = false;
+        $this->function = '';
+        $this->functionDef = null;
+        $this->inClosure = false;
     }
 
     protected function resetMethod(): void
@@ -1607,7 +1608,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return false;
                 }
                 if (!$this->hasNativeClass($classDef->extends)) {
-                    $this->climate->error('Class `' . $classDef->extends . '` is not defined');
+                    $this->climate->error('Native method `' . $class . '::' . $method . '()` not found, the parent class `' . $classDef->extends . '` is not defined');
                     return false;
                 }
                 $classDef = $this->getClassDef($classDef->extends);
