@@ -86,12 +86,25 @@ trait ClosureGenerator
         if ($uses) {
             foreach ($uses as $useItem) {
                 $var = $this->parseIdentifier($useItem->var);
-                if ($this->isVarExpr($useItem->var) and !$this->hasVar($var)) {
-                    $this->errorUndefinedVariable($useItem->var);
+                if (!$this->isVarExpr($useItem->var)) {
+                    $this->fatalError($useItem->var, 'Incorrect Closure use syntax, only variable names are allowed');
                 }
                 if ($useItem->byRef) {
+                    // 闭包的 use 语法，若为引用类型，可以就地创建变量
+                    if ($useCurrentScope) {
+                        if (!isset($oriLocalVars[$var])) {
+                            $oriLocalVars[$var] = self::TYPE_REF;
+                        }
+                    } else {
+                        if (!$this->hasVar($var)) {
+                            $this->addLocalVar($var, self::TYPE_REF);
+                        }
+                    }
                     $useVars[] = $this->convertToRef($useItem->var);
                 } else {
+                    if (!$this->hasVar($var)) {
+                        $this->errorUndefinedVariable($useItem->var);
+                    }
                     $useVars[] = $var;
                 }
             }
