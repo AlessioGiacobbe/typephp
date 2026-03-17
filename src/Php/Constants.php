@@ -51,6 +51,7 @@ class Constants
         'return',
         'static',
         'pipe',
+        'template',
         'errno', // Linux error code
     ];
 }
