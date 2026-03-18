@@ -1289,10 +1289,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($type) {
                         if (!$this->hasVar($var)) {
                             $this->addLocalVar($var, $type);
-                        } else {
-                            if ($this->getVarType($var) !== $type) {
-                                $this->fatalError($left, "Cannot re-assign {$var} to {$type}");
-                            }
                         }
                         $expr = $this->parseExpr($right->args[0]->value);
                         return $var . ' = ' . $this->convertExprFromType($type, $expr);

@@ -270,6 +270,400 @@ $c = $a + $b;  // 需要类型转换，可能有性能损失
 
 ---
 
+## 🔒 类型系统对比
+
+### 动态类型系统（ZVAL - 默认）
+
+**特点**: 变量可以在运行时自由改变类型
+
+**示例**:
+```php
+<?php
+// ✅ 完全合法：变量可以任意转换类型
+$a = 100;              // 整数
+$a = [1, 2, 3];        // 数组
+$a = "hello";          // 字符串
+$a = new stdClass();   // 对象
+$a = 3.14159;          // 浮点数
+$a = true;             // 布尔值
+
+// ✅ 自动类型转换
+$b = 10;
+$b = $b . " apples";   // 转为字符串："10 apples"
+
+$c = "5";
+$d = $c + 3;           // $c 转为整数：8
+```
+
+**优点**:
+- ✅ 灵活性极高
+- ✅ 代码简洁
+- ✅ 快速原型开发
+- ✅ 多态性好
+
+**缺点**:
+- ❌ 类型不安全
+- ❌ 运行时错误风险
+- ❌ IDE 提示困难
+- ❌ 重构复杂
+- ❌ 性能开销（类型检查）
+
+**典型错误**:
+```php
+function calculate($a, $b) {
+    return $a + $b;
+}
+
+// ❌ 运行时才发现错误
+calculate(10, "hello");  // 警告：类型不匹配
+```
+
+---
+
+### 静态类型系统（原生类型 - std::）
+
+**特点**: 变量类型在编译时确定，不能随意改变
+
+#### 类型声明方式
+
+```php
+// 整数类型
+$a = std::int(100);
+
+// 浮点类型
+$b = std::float(3.1415926);
+
+// 布尔类型
+$c = std::bool(true);
+
+// 字符串类型（如果支持）
+$d = std::string("hello");
+```
+
+#### 类型约束规则
+
+**✅ 正确的赋值**:
+```php
+$a = std::int(100);
+$a = std::int(200);      // ✅ 可以：同类型
+$a = std::int($x + 5);   // ✅ 可以：表达式结果为 int
+```
+
+**❌ 错误的赋值**:
+```php
+$a = std::int(100);
+$a = [1, 2, 3];          // ❌ 错误：类型不匹配
+$a = "hello";            // ❌ 错误：类型不匹配
+$a = new stdClass();     // ❌ 错误：类型不匹配
+$a = std::float(3.14);   // ❌ 错误：float ≠ int
+```
+
+#### 类型错误示例
+
+```php
+<?php
+// 声明为整数类型
+$counter = std::int(0);
+
+// ✅ 合法的整数操作
+$counter = std::int(100);
+$counter += std::int(1);
+
+// ❌ 非法的类型赋值
+$counter = [1, 2, 3];    // ❌ 编译错误：不能将数组赋给 int
+$counter = "test";       // ❌ 编译错误：不能将字符串赋给 int
+$counter = std::bool(true);  // ❌ 编译错误：不能将 bool 赋给 int
+
+// 声明为浮点类型
+$price = std::float(9.99);
+
+// ✅ 合法的浮点操作
+$price = std::float(19.99);
+$price *= std::float(0.8);
+
+// ❌ 非法的类型赋值
+$price = 100;            // ❌ 错误：int ≠ float（需要显式转换）
+$price = std::int(50);   // ❌ 错误：类型不匹配
+```
+
+---
+
+### 类型系统详细对比
+
+| 特性 | ZVAL (动态类型) | std:: (静态类型) |
+|------|----------------|-----------------|
+| **类型检查** | 运行时 | 编译时 |
+| **类型转换** | 自动 | 手动/显式 |
+| **灵活性** | 高 | 低 |
+| **安全性** | 低 | 高 |
+| **性能** | 较慢 | 快 |
+| **IDE 支持** | 有限 | 完整 |
+| **错误检测** | 运行时 | 编译时 |
+| **重构难度** | 困难 | 简单 |
+
+---
+
+### 混合使用策略
+
+#### 场景一：函数参数和返回值
+
+```php
+<?php
+// 使用静态类型提高性能和安全性
+function calculate_total(std::int $quantity, std::float $price): std::float {
+    return std::float($quantity * $price);
+}
+
+// ❌ 错误调用
+calculate_total(std::int(10), std::int(5));  // 类型不匹配
+
+// ✅ 正确调用
+calculate_total(std::int(10), std::float(5.99));
+```
+
+#### 场景二：类属性声明
+
+```php
+<?php
+class Product {
+    // 使用静态类型
+    private std::int $id;
+    private std::float $price;
+    private std::string $name;
+    
+    public function __construct(
+        std::int $id,
+        std::float $price,
+        std::string $name
+    ) {
+        $this->id = $id;
+        $this->price = $price;
+        $this->name = $name;
+    }
+    
+    // ✅ 类型安全的 getter/setter
+    public function getPrice(): std::float {
+        return $this->price;
+    }
+    
+    // ❌ 错误：类型不匹配
+    public function setPrice(std::int $price) {
+        $this->price = $price;  // 编译错误
+    }
+}
+```
+
+#### 场景三：循环和计数器
+
+```php
+<?php
+// 使用静态类型优化循环
+function process_array($items) {
+    $count = std::int(count($items));
+    $sum = std::int(0);
+    
+    for ($i = std::int(0); $i < $count; $i++) {
+        // ✅ 类型一致，高性能
+        $sum += std::int($items[$i]);
+    }
+    
+    return $sum;
+}
+```
+
+---
+
+### 类型转换方法
+
+#### 显式类型转换
+
+```php
+<?php
+// ZVAL → std::int
+$a = 100;
+$b = std::int($a);
+
+// std::int → ZVAL（自动）
+$c = $b;  // $c 是普通 PHP 变量
+
+// std::int → std::float
+$d = std::int(10);
+$e = std::float($d);  // ✅ 显式转换
+
+// std::float → std::int（可能丢失精度）
+$f = std::float(3.14);
+$g = std::int($f);  // 结果：3
+```
+
+#### 运算中的类型转换
+
+```php
+<?php
+// ❌ 错误：不同类型不能直接运算
+$a = std::int(10);
+$b = std::float(5.5);
+$c = $a + $b;  // 编译错误
+
+// ✅ 正确：显式转换
+$c = std::float($a) + $b;
+// 或
+$c = $a + std::int($b);
+```
+
+---
+
+### 最佳实践
+
+#### 1. 分层使用策略
+
+```php
+<?php
+// 外层：使用 ZVAL 保持灵活性
+function process_request($data) {
+    // 内层：关键计算使用静态类型
+    $result = calculate_precisely(
+        std::int($data['quantity']),
+        std::float($data['price'])
+    );
+    
+    // 返回时转回 ZVAL
+    return (float)$result;
+}
+
+// 核心计算函数：使用静态类型
+function calculate_precisely(
+    std::int $qty,
+    std::float $price
+): std::float {
+    return std::float($qty * $price);
+}
+```
+
+#### 2. 边界检查
+
+```php
+<?php
+function safe_divide(std::int $a, std::int $b): std::float {
+    // 除零检查
+    if ($b === std::int(0)) {
+        throw new InvalidArgumentException("Division by zero");
+    }
+    
+    // 溢出检查
+    if ($a > std::int(PHP_INT_MAX - 1000)) {
+        // 转为 ZVAL 处理大数
+        return (int)$a / (int)$b;
+    }
+    
+    return std::float($a) / std::float($b);
+}
+```
+
+#### 3. 渐进式迁移
+
+```php
+<?php
+// 第一阶段：标记性能瓶颈
+// TODO: 将此函数改为使用 std::int
+function legacy_function($a, $b) {
+    return $a + $b;
+}
+
+// 第二阶段：逐步替换
+function optimized_function(std::int $a, std::int $b): std::int {
+    return $a + $b;
+}
+
+// 第三阶段：全面使用静态类型
+// 移除旧函数，只保留优化版本
+```
+
+---
+
+### 常见陷阱
+
+#### 陷阱 1: 隐式类型转换
+
+```php
+<?php
+// ❌ 错误假设
+$a = std::int(10);
+$b = $a / 3;  // 期望：3.333... 实际：3
+
+// ✅ 正确做法
+$b = std::float($a) / std::float(3);
+```
+
+#### 陷阱 2: 类型不匹配的赋值
+
+```php
+<?php
+$a = std::int(0);
+
+foreach ([1, 2, 3] as $value) {
+    // ❌ 错误：$value 可能是 ZVAL
+    $a = $value;  // 类型不匹配
+    
+    // ✅ 正确：显式转换
+    $a = std::int($value);
+}
+```
+
+#### 陷阱 3: 函数返回类型
+
+```php
+<?php
+function get_value() {
+    return std::int(100);
+}
+
+// ❌ 直接使用可能有问题
+$result = get_value() + 5;  // std::int + ZVAL
+
+// ✅ 显式处理
+$result = std::int(get_value()) + std::int(5);
+```
+
+---
+
+### 决策指南
+
+#### 选择 ZVAL 的场景
+
+- ✅ Web 请求处理
+- ✅ 用户输入处理
+- ✅ 配置文件解析
+- ✅ 快速原型开发
+- ✅ 类型不确定的场景
+
+#### 选择 std:: 的场景
+
+- ✅ 数值密集计算
+- ✅ 循环计数器
+- ✅ 数组索引
+- ✅ 性能关键路径
+- ✅ 类型明确的算法
+
+---
+
+### 总结建议
+
+**推荐的工作流程**:
+
+1. **开发初期**: 使用 ZVAL 快速迭代
+2. **性能分析**: 找出性能瓶颈
+3. **局部优化**: 在关键路径使用 std:: 类型
+4. **充分测试**: 验证类型安全性和正确性
+5. **持续监控**: 关注溢出和精度问题
+
+**黄金法则**:
+- 💡 默认使用 ZVAL（安全优先）
+- ⚡ 必要时使用 std::（性能优先）
+- 🔍 始终进行类型检查
+- 🧪 编写全面的测试用例
+
+---
+
 ### 1. 扩展模式 (Extension Mode)
 
 **编译命令示例**:
