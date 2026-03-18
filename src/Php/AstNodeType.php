@@ -10,8 +10,8 @@ namespace PhpAot\Php;
 
 use PhpParser\Node;
 use PhpParser\Node\Expr;
-use PhpParser\NodeAbstract;
 use PhpParser\Node\VariadicPlaceholder;
+use PhpParser\NodeAbstract;
 
 trait AstNodeType
 {
@@ -102,9 +102,9 @@ trait AstNodeType
 
     protected function isCallExpr(NodeAbstract $expr): bool
     {
-        return $expr instanceof Node\Expr\FuncCall
-            or $expr instanceof Node\Expr\MethodCall
-            or $expr instanceof Node\Expr\StaticCall;
+        return $expr instanceof Expr\FuncCall
+            or $expr instanceof Expr\MethodCall
+            or $expr instanceof Expr\StaticCall;
     }
 
     protected function isPlaceholderExpr(NodeAbstract $expr): bool
@@ -127,6 +127,6 @@ trait AstNodeType
         if ($expr instanceof Node\Stmt\Expression) {
             $expr = $expr->expr;
         }
-        return $expr instanceof Node\Expr\Exit_;
+        return $expr instanceof Expr\Exit_;
     }
 }

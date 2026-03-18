@@ -13,14 +13,6 @@ use PhpParser\NodeAbstract;
 
 trait MagicMethodDetector
 {
-    protected function checkArgType(string $givenType, string $expectType, bool $canBeVar = true): bool
-    {
-        if ($canBeVar and $givenType == self::TYPE_VAR) {
-            return true;
-        }
-        return $givenType == $expectType;
-    }
-
     public function checkRequiredArgNum(string $name, MethodDef $methodDef, NodeAbstract $v): void
     {
         $argInfoList = $methodDef->functionDef->argInfoList;
@@ -68,5 +60,13 @@ trait MagicMethodDetector
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return array");
             }
         }
+    }
+
+    protected function checkArgType(string $givenType, string $expectType, bool $canBeVar = true): bool
+    {
+        if ($canBeVar and $givenType == self::TYPE_VAR) {
+            return true;
+        }
+        return $givenType == $expectType;
     }
 }

@@ -16,8 +16,8 @@ trait ClosureGenerator
     protected function genScopeSwitchCode(): string
     {
         $tmpScope = $this->genTmpVarName();
-        $code = "auto $tmpScope = php_switch_scope(this_);" . PHP_EOL;
-        $code .= "ON_SCOPE_EXIT({ php_restore_scope($tmpScope); });" . PHP_EOL;
+        $code = "auto {$tmpScope} = php_switch_scope(this_);" . PHP_EOL;
+        $code .= "ON_SCOPE_EXIT({ php_restore_scope({$tmpScope}); });" . PHP_EOL;
         return $code;
     }
 

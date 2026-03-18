@@ -1,4 +1,10 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
 
 namespace PhpAot\Php\Context;
 
@@ -10,10 +16,12 @@ class FunctionContext
     public array $objects = [];
     public array $localVars = [];
     public array $staticVars = [];
+
     /**
      * @var array<string, string>
      */
     public array $objectWrappers = [];
+
     /**
      * @var array<string, string>
      */
@@ -22,6 +30,7 @@ class FunctionContext
     public array $arguments = [];
     public bool $inLoop = false;
     public bool $inClosure = false;
+
     /**
      * 赋值表达式的左值，写操作，右值为读操作.
      */
@@ -29,7 +38,7 @@ class FunctionContext
     public array $beforeStmtLines = [];
     public array $afterStmtLines = [];
 
-    function __construct()
+    public function __construct()
     {
         $this->localVars = [];
         $this->staticVars = [];

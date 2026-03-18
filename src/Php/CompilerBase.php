@@ -84,10 +84,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     protected string $cppCompiler = 'g++';
-
     protected array $literalStrings = [];
     protected int $literalStringIndex = 0;
-
     protected int $anonClassIndex = 0;
     protected int $classIndex = 0;
 
@@ -96,6 +94,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected array $classMap = [];
     protected int $funcIndex = 0;
+
     /**
      * @var array<string, int>
      */
@@ -682,9 +681,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
     /**
-     * @param string $propName
      * @param string $className 必须是带有命名空间的完整类名
-     * @return int
      */
     protected function getPropertyId(string $className, string $propName): int
     {
@@ -948,8 +945,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * @param $params array<Node\Param>
-     * @param FunctionDef $functionDef
-     * @return void
      */
     protected function parseParams(array $params, FunctionDef $functionDef): void
     {
@@ -2223,8 +2218,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * @param array<Node\Arg|Node\VariadicPlaceholder> $callArgs
-     * @param string $nativeFunc
-     * @return string
      */
     protected function parseNativeCallArgs(array $callArgs, string $nativeFunc): string
     {
@@ -2259,7 +2252,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($argInfo->variadic) {
                 $argsSlice = array_slice($args, $i);
                 if (count($argsSlice) === 1 and $argsSlice[0]->unpack) {
-                    if ($this->isVarExpr($arg->value) ) {
+                    if ($this->isVarExpr($arg->value)) {
                         $var =$this->parseIdentifier($arg->value);
                         if ($this->getVarType($var) === self::TYPE_ARRAY) {
                             $argList[] = $var;
@@ -2357,7 +2350,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $list_args[] = $globalVar;
                     }
                     continue;
-                } elseif ($this->isVarExpr($arg->value->var) and !$this->hasVar($array)) {
+                }
+                if ($this->isVarExpr($arg->value->var) and !$this->hasVar($array)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $array . '`');
                 }
                 if ($byRef) {
@@ -3078,7 +3072,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($node->byRef) {
                 if (!$this->hasVar($valueVar)) {
                     $this->addLocalVar($valueVar, self::TYPE_REF);
-                } else if ($this->getVarType($valueVar) !== self::TYPE_REF) {
+                } elseif ($this->getVarType($valueVar) !== self::TYPE_REF) {
                     $this->fatalError($node, 'Cannot assign value to reference of type');
                 }
                 $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.valueRef();' . PHP_EOL;
@@ -3137,8 +3131,6 @@ class CompilerBase extends \PhpAot\Core\Translator
      * 为了兼容已有代码，默认不使用原生类型，而是将整数和浮点数作为 php 变量处理
      * 原生 int/float/bool 类型，是不支持自动转换的，例如如果 int 计算超过最大值后，会自动转为 float，除法若不能除尽，则会转为 float
      * 某些情况下高性能计算，可能需要使用原生类型，使用 $a = std::int(0) 来显式地使用原生类型
-     * @param string $type
-     * @return string
      */
     protected function getNativeType(string $type): string
     {
@@ -4201,7 +4193,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isCallExpr($expr->expr)) {
                 $nativeCall = $expr->expr->getAttribute('nativeCall');
                 if ($nativeCall and $this->nativeFunctions[$nativeCall]->returnType === self::TYPE_VOID) {
-                    return $beforeCode . PHP_EOL . $code . ";" . PHP_EOL . "return " . self::VALUE_NULL . ';';
+                    return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
                 }
             }
             return $beforeCode . PHP_EOL . 'return ' . $code . ';';
@@ -4248,38 +4240,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             return false;
         }
         return $stmts[array_key_last($stmts)] instanceof Node\Stmt\Return_;
-    }
-
-    /**
-     * 混杂数组赋值，需要拆分为多行插入
-     */
-    private function parseArrayMixed(Node\Expr\Array_ $node): string
-    {
-        $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_ARRAY);
-
-        $items = $node->items;
-        foreach ($items as $item) {
-            $value = $this->parseIdentifier($item->value);
-            if ($item->unpack) {
-                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
-            } elseif ($item->key) {
-                $key = $this->parseIdentifier($item->key);
-                if (str_starts_with($key, self::LITERAL_STRINGS)) {
-                    $key = "{$key}.toStdString()";
-                } elseif ($key === '0L') {
-                    $key = 'php::zero';
-                }
-                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
-            } else {
-                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
-            }
-        }
-
-        // 释放临时变量，避免修改数组产生数组复制操作
-        $this->context->afterStmtLines[] = $this->getIndent() . $tmpVar . '.unset();';
-
-        return $tmpVar;
     }
 
     protected function parseNullsafePropertyFetch(Node\Expr\NullsafePropertyFetch $expr): string
@@ -4330,22 +4290,54 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         foreach ($list as $key => $item) {
             $tmpVar = $this->addTmpVar($key !== $last ? self::TYPE_OBJECT : self::TYPE_VAR);
-            $code .= "if ($object.isNull()) { return " . self::VALUE_NULL . "; }";
+            $code .= "if ({$object}.isNull()) { return " . self::VALUE_NULL . '; }';
             if ($item[0] == 'property') {
-                $code .= $this->getIndent() . "$tmpVar = $object.attr({$item[1]}, $update);";
+                $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
             } else {
                 $args = $this->parseCallArgs($item[2]);
-                $code .= $this->getIndent() . "$tmpVar = $object.exec({$item[1]}, $args);";
+                $code .= $this->getIndent() . "{$tmpVar} = {$object}.exec({$item[1]}, {$args});";
             }
             $object = $tmpVar;
         }
-        $code .= $this->getIndent() . "return $object; };";
+        $code .= $this->getIndent() . "return {$object}; };";
         $this->context->beforeStmtLines[] = $code;
-        return "$tmpFn()";
+        return "{$tmpFn}()";
     }
 
     protected function parseFullyQualifiedName(Node\Name\FullyQualified $expr): string
     {
         return $expr->name;
+    }
+
+    /**
+     * 混杂数组赋值，需要拆分为多行插入
+     */
+    private function parseArrayMixed(Node\Expr\Array_ $node): string
+    {
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_ARRAY);
+
+        $items = $node->items;
+        foreach ($items as $item) {
+            $value = $this->parseIdentifier($item->value);
+            if ($item->unpack) {
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
+            } elseif ($item->key) {
+                $key = $this->parseIdentifier($item->key);
+                if (str_starts_with($key, self::LITERAL_STRINGS)) {
+                    $key = "{$key}.toStdString()";
+                } elseif ($key === '0L') {
+                    $key = 'php::zero';
+                }
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
+            } else {
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
+            }
+        }
+
+        // 释放临时变量，避免修改数组产生数组复制操作
+        $this->context->afterStmtLines[] = $this->getIndent() . $tmpVar . '.unset();';
+
+        return $tmpVar;
     }
 }

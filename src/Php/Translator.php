@@ -291,20 +291,20 @@ class Translator extends Preprocessor
     {
         $objectFiles = [];
         $job = $this->maxJob;
-        
+
         // 如果只有一个文件或 job 为 1，则串行编译
         if (count($sourceFiles) <= 1 || $job <= 1) {
             foreach ($sourceFiles as $cppFile) {
                 $objectFile = $this->getObjectFile($cppFile);
                 $this->compileFile($cppFile, $objectFile);
                 if (!is_file($objectFile)) {
-                    throw new \Exception("compile error");
+                    throw new \Exception('compile error');
                 }
                 $objectFiles[] = $objectFile;
             }
             return $objectFiles;
         }
-        
+
         // 并行编译
         $totalFiles = count($sourceFiles);
         $runningProcesses = 0;
@@ -312,19 +312,20 @@ class Translator extends Preprocessor
         $fileQueue = $sourceFiles;
         $compiledCount = 0;
         $failedFiles = [];
-        
+
         $this->climate->blue("Starting parallel compilation with {$job} jobs for {$totalFiles} files");
-        
+
         while ($compiledCount < $totalFiles) {
             // 启动新进程，直到达到最大并发数
             while ($runningProcesses < $job && !empty($fileQueue)) {
                 $cppFile = array_shift($fileQueue);
                 $objectFile = $this->getObjectFile($cppFile);
-                
+
                 $pid = pcntl_fork();
                 if ($pid == -1) {
-                    throw new \Exception("Failed to fork process");
-                } elseif ($pid === 0) {
+                    throw new \Exception('Failed to fork process');
+                }
+                if ($pid === 0) {
                     // 子进程：执行编译
                     try {
                         $this->compileFile($cppFile, $objectFile, true);
@@ -342,7 +343,7 @@ class Translator extends Preprocessor
                     $runningProcesses++;
                 }
             }
-            
+
             // 等待任意一个子进程完成
             if ($runningProcesses > 0) {
                 $pid = pcntl_wait($status);
@@ -350,7 +351,7 @@ class Translator extends Preprocessor
                     $processInfo = $processPipes[$pid] ?? null;
                     unset($processPipes[$pid]);
                     $runningProcesses--;
-                    
+
                     $exitCode = pcntl_wexitstatus($status);
                     if ($exitCode !== 0) {
                         $failedFile = $processInfo['file'] ?? 'unknown';
@@ -365,7 +366,7 @@ class Translator extends Preprocessor
                 }
             }
         }
-        
+
         // 确保所有子进程都已结束
         while ($runningProcesses > 0) {
             $pid = pcntl_wait($status);
@@ -375,13 +376,13 @@ class Translator extends Preprocessor
                 $compiledCount++;
             }
         }
-        
+
         if (!empty($failedFiles)) {
-            throw new \Exception("Compilation failed for: " . implode(', ', $failedFiles));
+            throw new \Exception('Compilation failed for: ' . implode(', ', $failedFiles));
         }
-        
+
         $this->climate->green("Successfully compiled {$totalFiles} files");
-        
+
         return $objectFiles;
     }
 

@@ -180,7 +180,7 @@ class Preprocessor extends CompilerBase
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
-        if ($class->extends) {
+        if (!empty($class->extends)) {
             $this->parentClass = $this->getParentClass($class->extends);
             $fullClassName = $this->getNamespacedClassName($this->class);
             $this->classExtends[$fullClassName] = $this->parentClass;
