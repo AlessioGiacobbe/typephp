@@ -1,5 +1,7 @@
 --TEST--
 Property
+--SKIPIF--
+<?php die('skip: not supported');
 --FILE--
 <?php
 class Worker {

@@ -271,12 +271,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public function isTypedObject(string $object): bool
     {
-        return isset($this->objects[$object]);
+        return isset($this->context->objects[$object]);
     }
 
     public function getObjectType(string $object): string
     {
-        return $this->objects[$object] ?? 'stdClass';
+        return $this->context->objects[$object] ?? 'stdClass';
     }
 
     public function parseExpr(NodeAbstract $expr)
@@ -1189,7 +1189,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list[] = $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($next);
         $right  = new Variable($tmpVar);
         foreach ($chain as $var) {
-            $list[] = $this->getIndent() . $this->parseFinallyAssign($var, $right);
+            $list[] = $this->getIndent() . $this->parseAssignFinally($var, $right);
         }
 
         return implode(";\n" . $this->getIndent(), $list);
@@ -1215,10 +1215,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($right->getType() === 'Expr_Assign') {
             return $this->parseRightAssociativeAssign($left, $right);
         }
-        return $this->parseFinallyAssign($left, $right);
+        return $this->parseAssignFinally($left, $right);
     }
 
-    protected function parseFinallyAssign($left, $right): string
+    protected function parseAssignFinally($left, $right): string
     {
         if ($left instanceof Node\Expr\List_) {
             $items = $left->items;
@@ -1263,14 +1263,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isVarExpr($left)) {
             // 类型推断，获取对象的类名
             if ($this->isNewExpr($right) and $this->isNameExpr($right->class)) {
-                $class               = $this->parseIdentifier($right->class);
-                $this->context->objects[$var] = $this->getNamespacedClassName($class);
-                $type                = self::TYPE_OBJECT;
+                $class = $this->parseIdentifier($right->class);
+                $this->addObject($var, $this->getNamespacedClassName($class));
+                $type = self::TYPE_OBJECT;
             } elseif ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
                 $fn = $this->parseIdentifier($right->name);
                 if (count($right->args) === 2 and $fn === 'objval' and $this->isScalarString($right->args[1]->value)) {
-                    $this->context->objects[$var] = $this->getNamespacedClassName($this->parseIdentifier($right->args[1]->value));
-                    $type                = self::TYPE_OBJECT;
+                    $this->addObject($var, $this->getNamespacedClassName($this->parseIdentifier($right->args[1]->value)));
+                    $type = self::TYPE_OBJECT;
                 } elseif (count($right->args) === 1 and $fn === 'any') {
                     $type = self::TYPE_VAR;
                     if (!$this->hasVar($var)) {
@@ -1516,6 +1516,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function addClass(string $name, ClassDef $classDef): void
     {
         $this->classes[$this->escapeClass($name)] = $classDef;
+    }
+
+    protected function addObject(string $name, string $class): void
+    {
+        $this->context->objects[$name] = $class;
     }
 
     protected function addFunction(string $name, FunctionDef $functionDef): void
@@ -1778,13 +1783,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'mixed':
                 return self::TYPE_VAR;
             case 'self':
-                $this->context->objects[$var] = $this->classDef->getNamespacedName(false);
+                $this->addObject($var, $this->classDef->getNamespacedName(false));
                 return self::TYPE_OBJECT;
             case 'resource':
                 $this->fatalError($param, 'Cannot use `resource` as a parameter type.');
                 // no break
             default:
-                $this->context->objects[$var] = $this->getNamespacedClassName($name);
+                $this->addObject($var, $this->getNamespacedClassName($name));
                 return self::TYPE_OBJECT;
         }
     }
@@ -2997,7 +3002,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($objectName === 'this_') {
                 $nativeProperty = $this->findNativeProperty($object, $propertyName, $this->class, $this->namespace);
             } elseif ($this->isTypedObject($objectName)) {
-                $nativeProperty = $this->findNativeProperty($object, $propertyName, $this->context->objects[$objectName]);
+                $className = $this->getObjectType($objectName);
+                $nativeProperty = $this->findNativeProperty($object, $propertyName, $className);
             }
             if ($nativeProperty) {
                 return $nativeProperty;
@@ -4078,8 +4084,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($object === 'this_') {
             $nativeFunc = $this->getNativeName($method, $this->namespace, $this->class);
             $classDef = $this->classDef;
-        } elseif (isset($this->objects[$object])) {
-            $class = $this->objects[$object];
+        } elseif (isset($this->context->objects[$object])) {
+            $class = $this->context->objects[$object];
             $nativeFunc = $this->getNativeMethod($expr, $class, $method);
         }
         if ($classDef) {
