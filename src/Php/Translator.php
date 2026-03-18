@@ -1064,7 +1064,7 @@ class Translator extends Preprocessor
             $methodCodes[$name] = $this->parseFunction($v);
 
             $this->checkRequiredArgNum($name, $this->methodDef, $v);
-            $this->classDef->methods[$name] = $this->methodDef;
+            $this->classDef->addMethod($this->methodDef);
         }
 
         $this->resetMethod();

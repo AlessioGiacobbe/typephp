@@ -15,6 +15,7 @@ use PhpAot\Php\Entity\FunctionDef;
 use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
 use PhpAot\Php\Entity\PropertyDef;
+use PhpAot\Php\Exception\DynamicCall;
 use PhpAot\Php\Exception\PlaceHolder;
 use PhpAot\Php\Exception\Redo;
 use PhpAot\Php\Exception\Skip;
@@ -1537,6 +1538,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return array_key_exists($this->escapeClass($name), $this->classes);
     }
 
+    protected function getNativeClass(string $name): ClassDef
+    {
+        return $this->classes[$this->escapeClass($name)];
+    }
+
     /**
      * @param string $name 必须传入带有完整命名空间的类名，将会自动转义为 native name
      */
@@ -1582,7 +1588,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 $classDef = $this->getClassDef($classDef->extends);
             } else {
-                $methodDef = $classDef->methods[$method];
+                $methodDef = $classDef->getMethod($method);
                 break;
             }
         }
@@ -3536,19 +3542,24 @@ class CompilerBase extends \PhpAot\Core\Translator
             $class = '';
         }
 
+        $dynamicCall = false;
         $method = $this->identifierToStr($expr->name, literal: true);
 
         // 可转为原生调用的 MethodCall
         if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
             $this->context->beforeStmtLines[] = '// Method Call: ' . $object . '->' . $this->parseIdentifier($expr->name) . '()';
-            $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
-            if ($nativeFunc) {
-                $expr->setAttribute('nativeCall', $nativeFunc);
-                try {
-                    return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
-                } catch (PlaceHolder) {
-                    return $this->genPlaceHolder($this->genArray([$object, $method]));
+            try {
+                $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
+                if ($nativeFunc) {
+                    $expr->setAttribute('nativeCall', $nativeFunc);
+                    try {
+                        return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
+                    } catch (PlaceHolder) {
+                        return $this->genPlaceHolder($this->genArray([$object, $method]));
+                    }
                 }
+            } catch (DynamicCall) {
+                $dynamicCall = true;
             }
         }
 
@@ -3558,7 +3569,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $funcName = '';
         }
 
-        if ($class and $funcName) {
+        if ($class and $funcName and !$dynamicCall) {
             $methodPtr = $this->getMethodPtr($class, $funcName);
         } else {
             $methodPtr = $method;
@@ -3639,6 +3650,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             _do_call:
             $method = $this->parseIdentifier($expr->name);
+            $dynamicCall = false;
             $this->context->beforeStmtLines[] = '// Static Method Call: ' . $class . '::' . $method . '()';
 
             if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
@@ -3647,6 +3659,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             if ($callScope) {
                 $nativeFunc = $this->getNativeMethod($expr, $class, $method);
+                // 存在 Native 类，但是没有找到方法，可能是动态调用
+                if (!$nativeFunc and $this->hasNativeClass($class) and $this->getNativeMethod($expr, $class, '__callStatic')) {
+                    $dynamicCall = true;
+                }
+
                 if ($nativeFunc) {
                     try {
                         $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
@@ -3667,8 +3684,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                 }
             }
-            $ce = $this->getClassEntryPtr($class);
-            $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method);
+
+            if ($dynamicCall) {
+                $fn = $this->getLiteralString($class . '::' . $method);
+            } else {
+                $ce = $this->getClassEntryPtr($class);
+                $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method);
+            }
             $placeHolder = $this->genArray($callScope);
         } else {
             $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
@@ -4075,6 +4097,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         } elseif (isset($this->context->objects[$object])) {
             $class = $this->context->objects[$object];
             $nativeFunc = $this->getNativeMethod($expr, $class, $method);
+            // 存在 Native 类，但是没有找到方法，可能是动态调用
+            if (!$nativeFunc and $this->hasNativeClass($class) and $this->getNativeMethod($expr, $class, '__call')) {
+                throw new DynamicCall;
+            }
         }
         if ($classDef) {
             $fullMethodName = $classDef->getNamespacedName(false) . '::' . $method;

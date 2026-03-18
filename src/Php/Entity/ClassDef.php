@@ -36,9 +36,14 @@ class ClassDef extends ClassLikeDef
         parent::__construct($name, $namespace);
     }
 
+    public function addMethod(MethodDef $method): void
+    {
+        $this->methods[strtolower($method->name)] = $method;
+    }
+
     public function hasMethod(string $method): bool
     {
-        return isset($this->methods[$method]);
+        return isset($this->methods[strtolower($method)]);
     }
 
     public function hasProperty(string $property): bool
@@ -58,7 +63,7 @@ class ClassDef extends ClassLikeDef
 
     public function getMethod($method): MethodDef
     {
-        return $this->methods[$method];
+        return $this->methods[strtolower($method)];
     }
 
     public function getConstant($name): ConstantDef
