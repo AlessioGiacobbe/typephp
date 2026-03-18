@@ -336,8 +336,8 @@ $b = std::float(3.1415926);
 // 布尔类型
 $c = std::bool(true);
 
-// 字符串类型（如果支持）
-$d = std::string("hello");
+// ⚠️ 注意：目前仅支持以上 3 种原生类型
+// ❌ 不支持 std::string、std::array 等其他类型
 ```
 
 #### 类型约束规则
