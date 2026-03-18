@@ -2434,6 +2434,11 @@ TEST $file
         $bin_file = compile_php_file($test_file);
         $args = substr($args, strlen(' -- '));
         $cmd = './' . $bin_file . ' ' . $args . $cmdRedirect;
+    } else {
+        $content = file_get_contents($test_file);
+        if (preg_match('/function main\(\)/', $content)) {
+            file_put_contents($test_file, $content. '<?php main(); ?>');
+        }
     }
 
     if ($valgrind) {
