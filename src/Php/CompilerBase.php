@@ -1549,6 +1549,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return array_key_exists($this->escapeFunction($name), $this->nativeFunctions);
     }
 
+    protected function getNativeFunction(string $name): FunctionDef
+    {
+        return $this->nativeFunctions[$this->escapeFunction($name)];
+    }
+
     protected function checkNativeFunction(string $name): void
     {
         // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
@@ -1661,7 +1666,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_FuncCall':
                 $name = $this->parseIdentifier($expr->name);
                 if ($this->hasNativeFunction($name)) {
-                    return $this->functions[$name]->returnType;
+                    return $this->getNativeFunction($name)->returnType;
                 }
                 return $this->detectFuncCallReturnType($name);
             case 'Expr_New':
@@ -2289,9 +2294,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($arg->name !== null) {
                 $this->fatalError($arg, 'Named arguments are not supported');
             }
+            $byRef = $funcName && Reflection::isReferenceArg($funcName, $className, $i);
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
-                if ($funcName and Reflection::isReferenceArg($funcName, $className, $i)) {
+                if ($byRef) {
                     if (!$this->hasVar($name)) {
                         // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
                         $this->addLocalVar($name, self::TYPE_REF);
@@ -2317,16 +2323,39 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$this->hasVar($obj)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
                 }
-                if ($funcName and Reflection::isReferenceArg($funcName, $className, $i)) {
+                if ($byRef) {
                     $list_args[] = $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
                     continue;
                 }
             } elseif ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
                 $array = $this->parseIdentifier($arg->value->var);
-                if ($this->isVarExpr($arg->value->var) and !$this->hasVar($array)) {
+                if ($array === 'GLOBALS') {
+                    if ($arg->value->dim === null) {
+                        $this->fatalError($arg, 'GLOBALS array dimension must be a constant expression');
+                    }
+                    // $GLOBALS['var'] 等价于 global $var; $var ，将字符串常量转为变量名称即可
+                    // 仅限于字面量字符串可以转为变量名称，其他则使用 php::global 函数获取
+                    if ($arg->value->dim instanceof Node\Scalar\String_) {
+                        $globalVar = $arg->value->dim->value;
+                        if (!$this->hasGlobalVar($globalVar)) {
+                            $this->addGlobalVar($globalVar, self::TYPE_VAR);
+                        }
+                    } else {
+                        $globalVar = 'php::global(' . $this->parseExpr($arg->value->dim) . ')';
+                    }
+                    // 全局变量作为引用参数
+                    if ($byRef) {
+                        $ref = $this->addTmpVar(self::TYPE_REF);
+                        $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
+                        $list_args[] = '&' . $ref;
+                    } else {
+                        $list_args[] = $globalVar;
+                    }
+                    continue;
+                } elseif ($this->isVarExpr($arg->value->var) and !$this->hasVar($array)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $array . '`');
                 }
-                if ($funcName and Reflection::isReferenceArg($funcName, $className, $i)) {
+                if ($byRef) {
                     if ($arg->value->dim === null) {
                         $this->fatalError($arg, 'Array dimension must be a constant expression');
                     }
@@ -2334,7 +2363,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     continue;
                 }
             } else {
-                if ($funcName and Reflection::isReferenceArg($funcName, $className, $i)) {
+                if ($byRef) {
                     $list_args[] = $this->parseChainedExpr($arg->value, self::OP_REFVAL);
                     continue;
                 }
