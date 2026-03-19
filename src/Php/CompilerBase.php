@@ -856,7 +856,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function writeLog($msg)
+    protected function writeLog($msg): void
     {
         if ($this->verbose) {
             echo $msg . PHP_EOL;
@@ -1134,7 +1134,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseAssignArrayDim(Node $left, Node $right): string
+    protected function parseAssignArrayDim(NodeAbstract $left, NodeAbstract $right): string
     {
         if ($this->isPropertyFetch($left)) {
             return $this->parseAssignPropertyArrayDim($left, $right);
@@ -1158,7 +1158,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code . "{$array}.offsetSet({$dim}, {$value})";
     }
 
-    protected function parseAssignPropertyFetch(Node $left, Node $right): string
+    protected function parseAssignPropertyFetch(NodeAbstract $left, NodeAbstract $right): string
     {
         $array    = $this->parseIdentifier($left->var);
         $propName = $this->identifierToStr($left->name);
@@ -1247,7 +1247,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $oriInAssignExpr = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
-        $var                = $this->parseIdentifier($left);
+        $var = $this->parseIdentifier($left);
         $this->context->inAssignExpr = $oriInAssignExpr;
         if ($var === 'this_') {
             $this->fatalError($left, 'Cannot re-assign $this');
@@ -1301,7 +1301,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->addLocalVar($var, $type);
             }
         } elseif ($this->isPropertyFetch($left)) {
-            $var = $this->parsePropertyFetch($left, true);
+            return $this->parseAssignPropertyFetch($left, $right);
         } elseif ($this->isArrayDimFetch($left)) {
             $tmp = $this->parseIdentifier($left->var);
             if ($this->isVarExpr($left->var) and $this->getVarType($tmp) === self::TYPE_STR) {
@@ -1463,7 +1463,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseBinaryOpMul(mixed $expr): string
+    protected function parseBinaryOpMul(Node\Expr\BinaryOp\Mul $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '*');
     }
@@ -1866,7 +1866,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseBinaryOpConcat(mixed $expr): string
+    protected function parseBinaryOpConcat(Node\Expr\BinaryOp\Concat $expr): string
     {
         $left  = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -1874,7 +1874,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::concat(' . $left . ', ' . $right . ')';
     }
 
-    protected function parseFor(mixed $v): string
+    protected function parseFor(Node\Stmt\For_ $v): string
     {
         $init  = $v->init;
         $cond  = $v->cond;
@@ -1930,7 +1930,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return str_replace('=', '', $op);
     }
 
-    protected function parseAssignOp(mixed $node, string $op): string
+    protected function parseAssignOp(Node\Expr\AssignOp $node, string $op): string
     {
         $var          = $this->parseIdentifier($node->var);
         $expr         = $this->parseIdentifier($node->expr);
@@ -1989,42 +1989,42 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $var . ' ' . $op . ' (' . $expr . ')';
     }
 
-    protected function parseAssignOpConcat(mixed $expr): string
+    protected function parseAssignOpConcat(Node\Expr\AssignOp\Concat $expr): string
     {
         return $this->parseAssignOp($expr, '.=');
     }
 
-    protected function parseAssignOpPlus(mixed $expr): string
+    protected function parseAssignOpPlus(Node\Expr\AssignOp\Plus $expr): string
     {
         return $this->parseAssignOp($expr, '+=');
     }
 
-    protected function parseAssignOpMinus(mixed $expr): string
+    protected function parseAssignOpMinus(Node\Expr\AssignOp\Minus $expr): string
     {
         return $this->parseAssignOp($expr, '-=');
     }
 
-    protected function parseAssignOpMod(mixed $expr): string
+    protected function parseAssignOpMod(Node\Expr\AssignOp\Mod $expr): string
     {
         return $this->parseAssignOp($expr, '%=');
     }
 
-    protected function parseAssignOpMul(mixed $expr): string
+    protected function parseAssignOpMul(Node\Expr\AssignOp\Mul $expr): string
     {
         return $this->parseAssignOp($expr, '*=');
     }
 
-    protected function parseAssignOpDiv(mixed $expr): string
+    protected function parseAssignOpDiv(Node\Expr\AssignOp\Div $expr): string
     {
         return $this->parseAssignOp($expr, '/=');
     }
 
-    protected function parseAssignOpBitwiseAnd(mixed $expr): string
+    protected function parseAssignOpBitwiseAnd(Node\Expr\AssignOp\BitwiseAnd $expr): string
     {
         return $this->parseAssignOp($expr, '&=');
     }
 
-    protected function parseAssignOpPow(mixed $expr): string
+    protected function parseAssignOpPow(Node\Expr\AssignOp\Pow $expr): string
     {
         return $this->parseAssignOp($expr, '**=');
     }
@@ -2125,28 +2125,28 @@ class CompilerBase extends \PhpAot\Core\Translator
     /**
      * 查找原生函数.
      */
-    protected function findNativeFunction(string $fname): string|false
+    protected function findNativeFunction(string $funcName): string|false
     {
         // 绝对命名空间的函数
-        if ($fname[0] == '\\') {
-            $fname = ltrim($fname, '\\');
-            $possibleFunctionNames = [$this->escapeName($fname)];
+        if ($funcName[0] == '\\') {
+            $funcName = ltrim($funcName, '\\');
+            $possibleFunctionNames = [$this->escapeName($funcName)];
         } else {
-            $possibleFunctionNames = [$this->escapeName($fname)];
-            if (isset($this->useAliases[$fname])) {
-                $possibleFunctionNames[] = $this->escapeName($this->escapeNamespace($this->useAliases[$fname]));
+            $possibleFunctionNames = [$this->escapeName($funcName)];
+            if (isset($this->useAliases[$funcName])) {
+                $possibleFunctionNames[] = $this->escapeName($this->escapeNamespace($this->useAliases[$funcName]));
             }
             if ($this->namespace) {
-                $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $fname;
+                $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $funcName;
             }
-            if (isset($this->useFunctions[$fname])) {
-                $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$fname]) . self::NAMESPACE_SEPARATOR . $fname;
+            if (isset($this->useFunctions[$funcName])) {
+                $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$funcName]) . self::NAMESPACE_SEPARATOR . $funcName;
             }
             // 复杂命名空间规则，组合命名空间
             // 例子：use foo\bar;  bar\fn();
             foreach ($this->useNamespaces as $use) {
                 $ns1 = explode('\\', $use);
-                $ns2 = explode('\\', $fname);
+                $ns2 = explode('\\', $funcName);
                 if ($ns1[array_key_last($ns1)] === $ns2[array_key_first($ns2)]) {
                     $ns = array_merge($ns1, $ns2);
                     array_splice($ns, array_key_last($ns1) + 1);
@@ -2493,12 +2493,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseBinaryOpGreater(mixed $expr): string
+    protected function parseBinaryOpGreater(Node\Expr\BinaryOp\Greater $expr): string
     {
         return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>'));
     }
 
-    protected function parseBinaryOpPow(mixed $expr): string
+    protected function parseBinaryOpPow(Node\Expr\BinaryOp\Pow $expr): string
     {
         $left  = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
@@ -3016,12 +3016,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseIdentifier($object) . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
     }
 
-    protected function parseAssignOpShiftRight(Node $node): string
+    protected function parseAssignOpShiftRight(Node\Expr\AssignOp\ShiftRight $node): string
     {
         return $this->parseAssignOp($node, '>>=');
     }
 
-    protected function parseAssignOpBitwiseXor(Node $node): string
+    protected function parseAssignOpBitwiseXor(Node\Expr\AssignOp\BitwiseXor $node): string
     {
         return $this->parseAssignOp($node, '^=');
     }
@@ -4129,7 +4129,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return self::PREFIX . $nativeFunc . '(' . $object . ', ' . $this->parseNativeCallArgs($args, $nativeFunc) . ')';
     }
 
-    protected function parseAssignPropertyArrayDim(Node $left, Node $right): string
+    protected function parseAssignPropertyArrayDim(NodeAbstract $left, NodeAbstract $right): string
     {
         $obj      = $this->parseIdentifier($left->var->var);
         $propName = $this->identifierToStr($left->var->name);
