@@ -995,6 +995,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($param->default) {
                 $defaultValueCount++;
                 $argInfo->default = $this->parseParamDefaultValue($param->default);
+                $argInfo->defaultValue = $param->default;
             }
             $functionDef->argInfoList[] = $argInfo;
         }
@@ -2246,6 +2247,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         // 对 key 进行排序，确保参数顺序正确
         if ($hasNamedArg) {
+            // 命名参数中间存在空洞，需要使用默认参数填充
+            foreach ($functionDef->argInfoList as $k => $argInfo) {
+                if (!isset($args[$k])) {
+                    $args[$k] = new Node\Arg($argInfo->defaultValue);
+                }
+            }
             ksort($args);
         }
 

@@ -4210,9 +4210,6 @@ function compile_php_file(string $file): string
     }
     system('./bin/compiler.php ' . $file);
     $binary_file = str_replace('-', '_', basename($file, '.php'));
-    if (is_numeric($binary_file)) {
-        $binary_file = 'app_' . $binary_file;
-    }
     if (!file_exists($binary_file)) {
         throw new Exception('Compilation failed');
     }

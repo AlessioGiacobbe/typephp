@@ -8,11 +8,14 @@
 
 namespace PhpAot\Php;
 
+use PhpParser\Node\Expr;
+
 class ArgInfo
 {
     public string $name;
     public string $type;
     public string $default = '';
+    public ?Expr $defaultValue = null;
     public bool $byRef = false;
     public bool $variadic = false;
     public bool $property = false;
