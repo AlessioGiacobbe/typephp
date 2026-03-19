@@ -1023,7 +1023,7 @@ class Translator extends Preprocessor
     protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
     {
         $flags = $v->flags;
-        $type  = $v->type ? $this->getTypeFromZendType($this->parseIdentifier($v->type)) : self::TYPE_VAR;
+        $type  = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST);
         foreach ($v->consts as $const) {
             $constName = $this->parseIdentifier($const->name);
             $constInfo = new ConstantDef($constName, $flags, $type, $this->parseIdentifier($const->value));
@@ -1034,7 +1034,7 @@ class Translator extends Preprocessor
     protected function parsePropertyDef(Node\Stmt\Property $v): void
     {
         $flags = $v->flags;
-        $type  = $this->parseTypeDecl($v->type);
+        $type  = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_PROPERTY);
 
         foreach ($v->props as $prop) {
             $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);

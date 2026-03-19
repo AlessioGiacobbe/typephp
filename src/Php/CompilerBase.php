@@ -59,6 +59,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_STR = 'php::Str';
     public const string TYPE_REF = 'php::Ref';
     public const string TYPE_VOID = 'void';
+    public const int DECL_TYPE_OF_RETURN = 1;
+    public const int DECL_TYPE_OF_PROPERTY = 2;
+    public const int DECL_TYPE_OF_CONST = 3;
+    public const int DECL_TYPE_OF_PARAM = 4;
     public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
     public const string VALUE_NULL = 'php::null';
@@ -103,14 +107,23 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected int $propIndex = 0;
     protected array $propMap = [];
     protected array $zendTypeMap = [
-        'int'    => self::TYPE_INT,
-        'float'  => self::TYPE_FLOAT,
-        'bool'   => self::TYPE_BOOL,
-        'void'   => self::TYPE_VOID,
+        'int' => self::TYPE_INT,
+        'float' => self::TYPE_FLOAT,
+        'bool' => self::TYPE_BOOL,
+        'false' => self::TYPE_BOOL,
+        'true' => self::TYPE_BOOL,
+        'void' => self::TYPE_VOID,
+        'never' => self::TYPE_VOID,
         'string' => self::TYPE_STR,
-        'array'  => self::TYPE_ARRAY,
+        'array' => self::TYPE_ARRAY,
         'object' => self::TYPE_OBJECT,
-        'mixed'  => self::TYPE_VAR,
+        'mixed' => self::TYPE_VAR,
+        'null' => self::TYPE_VAR,
+        // callable 类型，可以是字符串、数组、对象
+        // 1) 'foo' 函数名称字符串, 2) [ $obj, 'bar' ] 对象方法数组, 3) Closure 对象， 4) [ 'class', 'staticMethod'] 类名+静态方法数组
+        'callable' => self::TYPE_VAR,
+        // iterable 类型，可以是数组或者对象
+        'iterable' => self::TYPE_VAR,
     ];
     protected array $globalHeaders = [
         'phpx.h',
@@ -732,13 +745,22 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php_get_prop(' . $funcId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
-    protected function parseTypeDecl(?NodeAbstract $type): string
+    protected function parseTypeDecl(?NodeAbstract $type, int $what): string
     {
-        // 联合类型暂时不支持，使用 var 类型代替
-        if ($type instanceof UnionType or $type instanceof NullableType) {
+        // 未定义类型，默认是 var (mixed, any)
+        if ($type === null) {
+            return self::TYPE_VAR;
+        } elseif ($type instanceof UnionType or $type instanceof NullableType) {
+            // 联合类型暂时不支持，使用 var 类型代替
             return self::TYPE_VAR;
         } else {
-            return $type ? $this->getTypeFromZendType($this->parseIdentifier($type)) : self::TYPE_VOID;
+            $typeName = $this->parseIdentifier($type);
+            // 属性和类常量的类型不能声明为 void/never ，只有返回值可以
+            if ($what !== self::DECL_TYPE_OF_RETURN and ($typeName === 'void' or $typeName === 'never')) {
+                $this->fatalError($type, 'The type `void`/`never` is allowed only for return type');
+            } else {
+                return $this->getTypeFromZendType($typeName);
+            }
         }
     }
 
@@ -750,7 +772,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $fnName = $this->parseIdentifier($v->name);
-        $returnType = $this->parseTypeDecl($v->returnType);
+        $returnType = $this->parseTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
         $this->functionDef = $functionDef;
 
@@ -1756,44 +1778,21 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($param->byRef) {
             return self::TYPE_REF;
         }
+        if ($param->type === null or $param->type instanceof Node\NullableType or $param->type instanceof UnionType) {
+            return self::TYPE_VAR;
+        }
         $type = $param->type;
-        if ($type == null) {
-            return self::TYPE_VAR;
-        }
-        if ($type instanceof NullableType or $type instanceof UnionType) {
-            return self::TYPE_VAR;
-        }
-        $name = $type->name;
-        switch ($name) {
-            case 'int':
-                return self::TYPE_INT;
-            case 'array':
-                return self::TYPE_ARRAY;
-            case 'float':
-                return self::TYPE_FLOAT;
-            case 'bool':
-                return self::TYPE_BOOL;
-            case 'string':
-                return self::TYPE_STR;
-            case 'void':
-                $this->fatalError($param, 'Cannot use `void` as a parameter type.');
-                // no break
-            // callable 类型，可以是字符串、数组、对象
-            // 1) 'foo' 函数名称字符串, 2) [ $obj, 'bar' ] 对象方法数组, 3) Closure 对象， 4) [ 'class', 'staticMethod'] 类名+静态方法数组
-            case 'callable':
-            // iterable 类型，可以是数组或者对象
-            case 'iterable':
-            case 'mixed':
-                return self::TYPE_VAR;
-            case 'self':
-                $this->addObject($var, $this->classDef->getNamespacedName(false));
-                return self::TYPE_OBJECT;
-            case 'resource':
-                $this->fatalError($param, 'Cannot use `resource` as a parameter type.');
-                // no break
-            default:
-                $this->addObject($var, $this->getNamespacedClassName($name));
-                return self::TYPE_OBJECT;
+        $typeName = $type->name;
+        if ($typeName === 'void' or $typeName === 'never') {
+            $this->fatalError($param, 'Cannot use `void`/`never` as a parameter type.');
+        } elseif ($typeName === 'self') {
+            $this->addObject($var, $this->classDef->getNamespacedName(false));
+            return self::TYPE_OBJECT;
+        } elseif (isset($this->zendTypeMap[$typeName])) {
+            return $this->getTypeFromZendType($typeName);
+        } else {
+            $this->addObject($var, $this->getNamespacedClassName($typeName));
+            return self::TYPE_OBJECT;
         }
     }
 
