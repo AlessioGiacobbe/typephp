@@ -1778,6 +1778,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'void':
                 $this->fatalError($param, 'Cannot use `void` as a parameter type.');
                 // no break
+            // callable 类型，可以是字符串、数组、对象
+            // 1) 'foo' 函数名称字符串, 2) [ $obj, 'bar' ] 对象方法数组, 3) Closure 对象， 4) [ 'class', 'staticMethod'] 类名+静态方法数组
+            case 'callable':
+            // iterable 类型，可以是数组或者对象
+            case 'iterable':
             case 'mixed':
                 return self::TYPE_VAR;
             case 'self':
