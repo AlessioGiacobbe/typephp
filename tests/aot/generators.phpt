@@ -2,7 +2,7 @@
 Generators - Yield keyword and generator functions
 --SKIPIF--
 <?php
-echo "skip Generator syntax not supported in AOT";
+exit("skip: Generator syntax not supported in AOT");
 ?>
 --FILE--
 <?php
