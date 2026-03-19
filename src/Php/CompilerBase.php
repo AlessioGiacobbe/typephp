@@ -1160,8 +1160,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseAssignPropertyFetch(NodeAbstract $left, NodeAbstract $right): string
     {
-        $array    = $this->parseIdentifier($left->var);
-        $propName = $this->identifierToStr($left->name);
+        $array = $this->parseIdentifier($left->var);
+        $propName = $this->identifierToStr($left->name, literal: true);
 
         return "{$array}.setProperty({$propName}, " . $this->trimBrackets($this->parseExpr($right)) . ')';
     }
@@ -1300,7 +1300,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (!$this->hasVar($var)) {
                 $this->addLocalVar($var, $type);
             }
-        } elseif ($this->isPropertyFetch($left)) {
+        } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
             return $this->parseAssignPropertyFetch($left, $right);
         } elseif ($this->isArrayDimFetch($left)) {
             $tmp = $this->parseIdentifier($left->var);
@@ -2966,20 +2966,20 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseUnset(Node\Stmt\Unset_ $node): string
     {
-        $vars  = $node->vars;
+        $vars = $node->vars;
         $lines = [];
         foreach ($vars as $var) {
             $type = $var->getType();
             if ($type === self::EXPR_ARRAY_DIM_FETCH) {
-                $array   = $this->parseIdentifier($var->var);
-                $dim     = $this->parseIdentifier($var->dim);
+                $array = $this->parseIdentifier($var->var);
+                $dim = $this->parseIdentifier($var->dim);
                 $lines[] = $array . '.offsetUnset(' . $dim . ');';
             } elseif ($type === 'Expr_PropertyFetch') {
-                $object   = $this->parseIdentifier($var->var);
-                $propName = $this->parseIdentifier($var->name);
-                $lines[]  = $object . '.unsetProperty("' . $propName . '");';
+                $object = $this->parseIdentifier($var->var);
+                $propName = $this->identifierToStr($var->name, literal: true);
+                $lines[] = $object . '.unsetProperty(' . $propName . ');';
             } elseif ($type === self::EXPR_VARIABLE) {
-                $name    = $this->parseIdentifier($var);
+                $name = $this->parseIdentifier($var);
                 $lines[] = "{$name}.unset();";
             } else {
                 abort($var);
@@ -2989,7 +2989,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(PHP_EOL . $this->getIndent(), $lines);
     }
 
-    protected function getPropertyIdentifier(NodeAbstract $object, NodeAbstract $property): ?string
+    protected function getPropertyIdentifier(Node\Expr\PropertyFetch $expr, NodeAbstract $object, NodeAbstract $property): ?string
     {
         if ($this->isVarExpr($object) and $this->isIdExpr($property)) {
             $objectName = $this->parseIdentifier($object);
@@ -3002,17 +3002,18 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $nativeProperty = $this->findNativeProperty($object, $propertyName, $className);
             }
             if ($nativeProperty) {
+                $expr->setAttribute('nativeProperty', $nativeProperty);
                 return $nativeProperty;
             }
         }
-        return $this->identifierToStr($property);
+        return $this->identifierToStr($property, literal: true);
     }
 
     protected function parsePropertyFetch(Node\Expr\PropertyFetch $expr, bool $update = false): string
     {
         $object = $expr->var;
         $property = $expr->name;
-        $id = $this->getPropertyIdentifier($object, $property);
+        $id = $this->getPropertyIdentifier($expr, $object, $property);
         return $this->parseIdentifier($object) . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
     }
 
@@ -3395,7 +3396,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $dim = $this->parseIdentifier($expr->dim);
                 $list[] = '{php::ArrayDimFetch, ' . self::TYPE_VAR . '(' . $dim . ')}';
             } elseif ($this->isPropertyFetch($expr)) {
-                $name = $this->identifierToStr($expr->name);
+                $name = $this->identifierToStr($expr->name, literal: true);
                 $list[] = '{php::PropertyFetch, ' . self::TYPE_VAR . '(' . $name . ')}';
             } elseif ($this->isVarExpr($expr)) {
                 $var = $this->parseIdentifier($expr);
@@ -3765,8 +3766,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } elseif ($classDef->extends) {
                     $findClass = $classDef->extends;
                     continue;
-                } else {
-                    $this->fatalError($object, "Property `{$property}` does not exist in class `{$class}`");
                 }
             }
             break;
