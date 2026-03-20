@@ -420,7 +420,7 @@ class Translator extends Preprocessor
             if ($argInfoList) {
                 foreach ($argInfoList as $argInfo) {
                     if ($argInfo->variadic) {
-                        $arg = self::TYPE_ARRAY . ' ' . $argInfo->name;
+                        $arg = self::TYPE_ARRAY . ' ' . $argInfo->name . ' = {}';
                     } else {
                         $arg = $argInfo->type . ' ' . $argInfo->name;
                         if ($argInfo->default) {

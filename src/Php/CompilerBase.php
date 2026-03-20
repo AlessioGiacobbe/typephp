@@ -999,8 +999,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $propertyDef = new PropertyDef($name, $param->flags, $type, $default, $nullable);
                 $this->classDef->properties[$name] = $propertyDef;
             }
-            if ($param->variadic and $i !== $last) {
-                $this->fatalError($param, 'Variadic parameters must be the last parameter');
+            if ($param->variadic) {
+                if ($i !== $last) {
+                    $this->fatalError($param, 'Variadic parameters must be the last parameter');
+                } elseif ($param->byRef) {
+                    $this->fatalError($param, 'Variadic parameters cannot be passed by reference');
+                }
             }
             $name          = $this->parseIdentifier($param->var);
             $type          = $this->parseParameterType($param, $name);
@@ -1022,6 +1026,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $defaultValueCount++;
                 $argInfo->default = $this->parseParamDefaultValue($param->default);
                 $argInfo->defaultValue = $param->default;
+            } elseif ($param->variadic) {
+                // 变长参数可以视为空数组默认值
+                $defaultValueCount++;
+                $argInfo->default = '{}';
+                $argInfo->defaultValue = new Node\Expr\Array_();
             }
             $functionDef->argInfoList[] = $argInfo;
         }
@@ -1595,6 +1604,17 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function checkNativeCallArgs(CallLike $expr, FunctionDef $funcDef, array $args, string $name): void
+    {
+        $argc = count($args);
+        $type = str_contains($name, '::') ? 'Method' : 'Function';
+        if ($argc < $funcDef->argCountRequired) {
+            $this->fatalError($expr, $type . ' `' . $name . '()` requires ' . $funcDef->argCountRequired . ' arguments, ' . $argc . ' given');
+        } elseif (!$funcDef->hasVariadicArg() and count($expr->args) > count($funcDef->argInfoList)) {
+            $this->fatalError($expr, $type . ' `' . $name . '()` accepts ' . count($funcDef->argInfoList) . ' arguments, ' . $argc . ' given');
+        }
+    }
+
     protected function getNativeMethod(CallLike $expr, string $class, string $method): string|false
     {
         if (!$this->hasNativeClass($class)) {
@@ -1635,11 +1655,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
             return false;
         }
-        if (count($expr->args) < $methodDef->functionDef->argCountRequired) {
-            $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` requires ' . $methodDef->functionDef->argCountRequired . ' arguments, ' . count($expr->args) . ' given');
-        } elseif (count($expr->args) > count($methodDef->functionDef->argInfoList)) {
-            $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` accepts ' . count($methodDef->functionDef->argInfoList) . ' arguments, ' . count($expr->args) . ' given');
-        }
+        $this->checkNativeCallArgs($expr, $methodDef->functionDef, $expr->args, $classDef->getNamespacedName() . '::' . $method);
         return $this->getNativeName($method, $classDef->namespace, $classDef->name);
     }
 
@@ -1697,6 +1713,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return self::TYPE_FLOAT;
                 }
                 if ($leftType === self::TYPE_INT || $rightType === self::TYPE_INT) {
+                    // 除法存在特殊性，若未能整除，会返回浮点数，其他则一律视为整数
+                    if ($exprType === 'Expr_BinaryOp_Div') {
+                        if ($leftType === self::TYPE_INT && $rightType === self::TYPE_INT) {
+                            return self::TYPE_INT;
+                        } else {
+                            return self::TYPE_VAR;
+                        }
+                    }
                     return self::TYPE_INT;
                 }
                 break;
@@ -2205,6 +2229,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
                 $expr->setAttribute('nativeCall', $nativeFn);
+                $this->checkNativeCallArgs($expr, $this->getNativeFunction($nativeFn), $expr->args, $name);
                 try {
                     return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
                 } catch (PlaceHolder) {
@@ -2272,6 +2297,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             ksort($args);
         }
 
+        // 函数只接受一个变长参数，且调用参数为空，直接传入空数组
+        if (count($args) === 0 and count($functionDef->argInfoList) === 1 and $functionDef->argInfoList[0]->variadic) {
+            return '{}';
+        }
+
         foreach ($args as $i => $arg) {
             $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
             if ($argInfo->variadic) {
@@ -2290,7 +2320,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                     foreach ($argsSlice as $item) {
                         if ($item->unpack) {
                             $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArg($item) . ');';
-                            break;
                         } else {
                             $this->context->beforeStmtLines[] = $tmpVar . '.append(' . $this->parseArg($item) . ');';
                         }

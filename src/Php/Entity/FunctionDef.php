@@ -35,4 +35,9 @@ class FunctionDef
     {
         return $this->namespace ? $this->namespace . '\\' . $this->name : $this->name;
     }
+
+    public function hasVariadicArg(): bool
+    {
+        return $this->argInfoList && $this->argInfoList[count($this->argInfoList) - 1]->variadic;
+    }
 }
