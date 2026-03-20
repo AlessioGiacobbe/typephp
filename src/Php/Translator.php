@@ -241,6 +241,10 @@ class Translator extends Preprocessor
         if (ctype_digit($this->targetName[0])) {
             return 'app_' . $this->targetName;
         }
+        $extensions = get_loaded_extensions();
+        if (in_array($this->targetName, $extensions)) {
+            return $this->targetName . '_';
+        }
         return $this->targetName;
     }
 
@@ -812,11 +816,20 @@ class Translator extends Preprocessor
         }
 
         if ($extends) {
-            $this->classDef->extends = $this->getParentClass($class->extends);
-            if (isset($this->classes[$this->classDef->extends])) {
-                $parent = $this->classes[$this->classDef->extends];
+            $parentClass = $this->getParentClass($class->extends);
+            if ($this->hasNativeClass($parentClass)) {
+                $parent = $this->getClassDef($parentClass);
                 if ($parent->flags & Modifiers::FINAL) {
-                    $this->fatalError($class, "Class `{$this->class}` cannot extend final class `{$this->classDef->extends}`");
+                    $this->fatalError($class, "Class `{$this->class}` cannot extend final class `{$parentClass}`");
+                }
+                $this->classDef->extends = $parentClass;
+                $this->classDef->inheritedFromInternalClass = false;
+            } else {
+                if (Reflection::isInternalClass($parentClass)) {
+                    $this->classDef->extends = $parentClass;
+                    $this->classDef->inheritedFromInternalClass = true;
+                } else {
+                    $this->fatalError($class, "Class `{$this->class}` inherits from a non-existent class `$parentClass`");
                 }
             }
         }
@@ -886,6 +899,8 @@ class Translator extends Preprocessor
                 } else {
                     if ($argInfo->byRef) {
                         $argExpr = 'php::getCallArgByRef(' . $k . ')';
+                    } elseif ($argInfo->nullable) {
+                        $argExpr = 'php::getCallArg(' . $k . ', php::null)';
                     } else {
                         $argExpr = 'php::getCallArg(' . $k . ')';
                     }

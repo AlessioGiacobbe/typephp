@@ -13,6 +13,29 @@ class Reflection
     private static array $functions = [];
     private static array $classes = [];
 
+    public static function isInternalClass(string $class): bool
+    {
+        static $internalClasses = null;
+
+        if ($internalClasses === null) {
+            $allClasses = get_declared_classes();
+
+            $internalClasses = [];
+            foreach ($allClasses as $className) {
+                try {
+                    $ref = new \ReflectionClass($className);
+                    if ($ref->isInternal()) {
+                        $internalClasses[strtolower($className)] = true;
+                    }
+                } catch (\ReflectionException) {
+                    continue;
+                }
+            }
+        }
+
+        return isset($internalClasses[strtolower($class)]);
+    }
+
     public static function getFunction(string $fn): ?\ReflectionFunction
     {
         if (!isset(self::$functions[$fn])) {
@@ -103,5 +126,14 @@ class Reflection
             return null;
         }
         return $param->isPassedByReference() ? $param->getName() : null;
+    }
+
+    public static function hasMethod(string $extends, string $method): bool
+    {
+        $class = self::getClass($extends);
+        if (!$class) {
+            return false;
+        }
+        return $class->hasMethod($method);
     }
 }

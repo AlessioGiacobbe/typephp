@@ -29,6 +29,7 @@ class ClassDef extends ClassLikeDef
     public bool $requireCtor = false;
     public bool $enum = false;
     public int $flags;
+    public bool $inheritedFromInternalClass = false;
 
     public function __construct(string $name, int $flags, string $namespace = '')
     {

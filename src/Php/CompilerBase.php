@@ -215,6 +215,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected ?MethodDef $methodDef = null;
     protected ?InterfaceDef $interfaceDef = null;
     protected FunctionContext $context;
+
     protected array $superGlobalVars = [
         '_GET'     => self::TYPE_ARRAY,
         '_POST'    => self::TYPE_ARRAY,
@@ -1014,6 +1015,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $argInfo->byRef = $param->byRef;
             $argInfo->variadic = $param->variadic;
             $argInfo->property = $param->isPromoted();
+            if ($param->type and $param->type instanceof Node\NullableType) {
+                $argInfo->nullable = true;
+            }
             if ($param->default) {
                 $defaultValueCount++;
                 $argInfo->default = $this->parseParamDefaultValue($param->default);
@@ -1606,7 +1610,15 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return false;
                 }
                 if (!$this->hasNativeClass($classDef->extends)) {
-                    $this->climate->error('Native method `' . $class . '::' . $method . '()` not found, the parent class `' . $classDef->extends . '` is not defined');
+                    if ($classDef->inheritedFromInternalClass) {
+                        if (!Reflection::hasMethod($classDef->extends, $method) and !Reflection::hasMethod($classDef->extends, $method . '__call')) {
+                            $this->fatalError($expr, 'Class `' . $classDef->getNamespacedName() . '` inherits from a internal class, but the class `' .
+                                $classDef->extends . '` does not have a `' . $method . '` method or a `__call` magic method');
+                        } else {
+                            $this->climate->cyan('Dynamically calling internal class method `' . $classDef->extends . '::' . $method . '()`');
+                            throw new DynamicCall;
+                        }
+                    }
                     return false;
                 }
                 $classDef = $this->getClassDef($classDef->extends);
