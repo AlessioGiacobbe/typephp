@@ -2851,7 +2851,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseInstanceof(Node\Expr\Instanceof_ $expr): string
     {
-        return $this->convertToObject($expr->expr) . '.instanceOf(' . $this->identifierToStr($expr->class) . ')';
+        if ($this->isNameExpr($expr->class)) {
+            $className = $this->getNamespacedClassName($this->parseIdentifier($expr->class));
+            $className = $this->getClassEntryPtr($className);
+            return 'php::instanceOf(' . $this->parseExpr($expr->expr) . ', ' . $className . ')';
+        } else {
+            return 'php::instanceOf(' . $this->parseExpr($expr->expr) . ', ' . $this->identifierToStr($expr->class) . ')';
+        }
     }
 
     protected function parseCastInt(Node\Expr\Cast\Int_ $node): string
