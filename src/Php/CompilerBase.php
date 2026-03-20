@@ -1023,6 +1023,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $argInfo->nullable = true;
             }
             if ($param->default) {
+                if ($param->byRef) {
+                    $this->fatalError($param, 'Default value for parameters passed by reference is not supported');
+                }
                 $defaultValueCount++;
                 $argInfo->default = $this->parseParamDefaultValue($param->default);
                 $argInfo->defaultValue = $param->default;
