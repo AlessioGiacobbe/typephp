@@ -829,7 +829,7 @@ class Translator extends Preprocessor
                     $this->classDef->extends = $parentClass;
                     $this->classDef->inheritedFromInternalClass = true;
                 } else {
-                    $this->fatalError($class, "Class `{$this->class}` inherits from a non-existent class `$parentClass`");
+                    $this->fatalError($class, "Class `{$this->class}` inherits from a non-existent class `{$parentClass}`");
                 }
             }
         }

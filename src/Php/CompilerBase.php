@@ -215,7 +215,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected ?MethodDef $methodDef = null;
     protected ?InterfaceDef $interfaceDef = null;
     protected FunctionContext $context;
-
     protected array $superGlobalVars = [
         '_GET'     => self::TYPE_ARRAY,
         '_POST'    => self::TYPE_ARRAY,
@@ -751,7 +750,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 未定义类型，默认是 var (mixed, any)
         if ($type === null) {
             return self::TYPE_VAR;
-        } elseif ($type instanceof UnionType or $type instanceof NullableType) {
+        }
+        if ($type instanceof UnionType or $type instanceof NullableType) {
             // 联合类型暂时不支持，使用 var 类型代替
             return self::TYPE_VAR;
         } else {
@@ -1019,7 +1019,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $argInfo->byRef = $param->byRef;
             $argInfo->variadic = $param->variadic;
             $argInfo->property = $param->isPromoted();
-            if ($param->type and $param->type instanceof Node\NullableType) {
+            if ($param->type and $param->type instanceof NullableType) {
                 $argInfo->nullable = true;
             }
             if ($param->default) {
@@ -1636,7 +1636,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                                 $classDef->extends . '` does not have a `' . $method . '` method or a `__call` magic method');
                         } else {
                             $this->climate->cyan('Dynamically calling internal class method `' . $classDef->extends . '::' . $method . '()`');
-                            throw new DynamicCall;
+                            throw new DynamicCall();
                         }
                     }
                     return false;
@@ -1814,7 +1814,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($param->byRef) {
             return self::TYPE_REF;
         }
-        if ($param->type === null or $param->type instanceof Node\NullableType or $param->type instanceof UnionType) {
+        if ($param->type === null or $param->type instanceof NullableType or $param->type instanceof UnionType) {
             return self::TYPE_VAR;
         }
         $type = $param->type;
@@ -4156,7 +4156,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $nativeFunc = $this->getNativeMethod($expr, $class, $method);
             // 存在 Native 类，但是没有找到方法，可能是动态调用
             if (!$nativeFunc and $this->hasNativeClass($class) and $this->getNativeMethod($expr, $class, '__call')) {
-                throw new DynamicCall;
+                throw new DynamicCall();
             }
         }
         if ($classDef) {
