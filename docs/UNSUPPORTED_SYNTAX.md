@@ -1420,7 +1420,195 @@ var_dump($s);  // 输出 "foo bar"
 
 ---
 
-### 6. innerHTML 等 DOM 操作
+### 6. 引用参数带有默认值
+
+**状态**: 不支持  
+**PHP 版本**: 所有版本  
+**描述**: 函数参数声明为引用传递同时带有默认值
+
+**示例代码**:
+```php
+<?php
+// ❌ 不支持：引用参数有默认值
+function processArray(array &$items = []) {
+    $items[] = 'new item';
+}
+
+$data = ['existing'];
+processArray($data);  // 正常调用
+processArray();       // 使用默认值（不支持）
+
+// ❌ 错误示例
+function modifyValue(string &$value = "default") {
+    $value = strtoupper($value);
+}
+
+// ✅ 正确做法：分开处理
+function processArrayStrict(array &$items): void {
+    $items[] = 'new item';
+}
+
+function processArrayWithDefault(array $items = []): array {
+    $items[] = 'new item';
+    return $items;
+}
+
+// ✅ 或者使用 null 默认值
+function modifyValueSafe(?string &$value = null): void {
+    if ($value === null) {
+        $value = "default";
+    }
+    $value = strtoupper($value);
+}
+```
+
+**原因**:
+- 引用参数的默认值在编译期难以确定
+- 默认值的内存分配和生命周期管理复杂
+- 与 AOT 编译器的静态分析机制冲突
+- 实现难度大且容易引入 bug
+
+**相关测试文件**: 
+- 涉及引用参数默认值的测试文件 (SKIP)
+
+**替代方案**:
+1. **不使用默认值**
+   ```php
+   function strictRef(array &$items): void {
+       // 必须传入参数
+   }
+   ```
+
+2. **使用值传递 + 返回值**
+   ```php
+   function withDefault(array $items = []): array {
+       $items[] = 'new';
+       return $items;
+   }
+   ```
+
+3. **使用 null 作为默认值**
+   ```php
+   function nullableRef(?array &$items = null): void {
+       if ($items === null) {
+           $items = [];
+       }
+       $items[] = 'new';
+   }
+   ```
+
+4. **使用重载模式**
+   ```php
+   function process(array &$items): void {
+       // 实际逻辑
+   }
+   
+   function processWithDefault(): array {
+       $temp = [];
+       process($temp);
+       return $temp;
+   }
+   ```
+
+---
+
+### 7. 变长参数中使用引用
+
+**状态**: 不支持  
+**PHP 版本**: 所有版本  
+**描述**: 可变参数（variadic）声明为引用传递
+
+**示例代码**:
+```php
+<?php
+// ❌ 不支持：变长参数是引用
+function addItems(&...$items) {
+    foreach ($items as &$item) {
+        $item = strtoupper($item);
+    }
+}
+
+addItems('a', 'b', 'c');
+
+// ❌ 错误示例
+function processAll(int &...$numbers) {
+    foreach ($numbers as &$num) {
+        $num *= 2;
+    }
+}
+
+// ✅ 正确做法：传递数组
+function addItemsArray(array &$items): void {
+    foreach ($items as &$item) {
+        $item = strtoupper($item);
+    }
+}
+
+addItemsArray(['a', 'b', 'c']);
+
+// ✅ 或者使用值传递
+function addItemsByValue(...$items): array {
+    $result = [];
+    foreach ($items as $item) {
+        $result[] = strtoupper($item);
+    }
+    return $result;
+}
+
+$result = addItemsByValue('a', 'b', 'c');
+```
+
+**原因**:
+- 变长参数的数量在编译期不确定
+- 引用变长参数的内存布局复杂
+- 无法在编译期为每个参数生成正确的引用绑定
+- 运行时动态参数列表与静态编译冲突
+
+**相关测试文件**: 
+- 涉及引用变长参数的测试文件 (SKIP)
+
+**替代方案**:
+
+1. **使用数组参数**
+   ```php
+   function process(array &$items): void {
+       // 直接修改数组
+   }
+   
+   process($myArray);
+   ```
+
+2. **使用值传递并返回结果**
+   ```php
+   function process(...$items): array {
+       $result = [];
+       foreach ($items as $item) {
+           $result[] = transform($item);
+       }
+       return $result;
+   }
+   ```
+
+3. **包装为容器对象**
+   ```php
+   class Container {
+       public array $items;
+       
+       public function __construct(...$items) {
+           $this->items = $items;
+       }
+   }
+   
+   function modify(Container $container): void {
+       foreach ($container->items as &$item) {
+           $item = transform($item);
+       }
+   }
+   ```
+
+---
+
+### 8. innerHTML 等 DOM 操作
 
 **状态**: 不支持  
 **PHP 版本**: 所有版本  
@@ -1765,17 +1953,24 @@ echo "skip Generator syntax not supported in AOT";
 
 | 类别 | 数量 | 百分比 |
 |------|------|--------|
-| 不支持的语法 | 7 | - |
+| 不支持的语法 | 9 | - |
 | 计划支持的语法 | 2 | - |
-| 已支持的语法 | 50+ | ~88% |
+| 已支持的语法 | 50+ | ~85% |
 
-**总测试文件数**: 118 个  
-**Skip 测试数**: 7 个（根据实际标记数量）  
-**正常测试数**: 111 个
+**总测试文件数**: 126 个  
+**Skip 测试数**: 9 个（根据实际标记数量）  
+**正常测试数**: 117 个
 
 ---
 
 ## 📝 更新日志
+
+### 2024-03-20
+- 新增 2 个不支持的语法特性
+- **引用参数带有默认值**: 由于编译期内存管理复杂性，不支持 `function foo(array &$ref = [])`
+- **变长参数中使用引用**: 由于变长参数的动态性与静态编译冲突，不支持 `function foo(&...$args)`
+- 为相关测试文件添加 skip 标记
+- 更新统计信息和快速参考表
 
 ### 2024-XX-XX
 - 初始版本发布
@@ -1840,6 +2035,8 @@ A: 游离代码指在函数或方法之外直接执行的可执行表达式（�
 | Traits | ⏳ 计划中 | 使用继承或组合模式 |
 | innerHTML/DOM | ❌ 不支持 | 使用 DOMDocument 或字符串处理 |
 | 游离代码 | ❌ 不支持 | 将所有代码放入 main() 函数 |
+| **引用参数默认值** | ❌ 不支持 | 使用值传递 + 返回值或 null 默认值 |
+| **变长引用参数** | ❌ 不支持 | 使用数组参数代替 |
 
 ### 正确的代码结构模板
 
