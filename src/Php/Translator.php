@@ -216,6 +216,15 @@ class Translator extends Preprocessor
         $propCount = count($this->propMap);
         $lines[] = 'extern uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . $propCount . '];' . PHP_EOL;
 
+        foreach ($this->classes as $classDef) {
+            foreach ($classDef->constants as $constant) {
+                if ($constant->type === self::TYPE_ARRAY) {
+                    $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
+                    $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $constName . ';' . PHP_EOL;
+                }
+            }
+        }
+
         $code = implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
         $this->writeFile($file, $code);
     }
@@ -406,9 +415,6 @@ class Translator extends Preprocessor
     public function genFunctionDeclaration(string $file): void
     {
         $code = '#include <phpx.h>' . PHP_EOL;
-
-        $literalStringsCount = count($this->literalStrings);
-        $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
 
         foreach ($this->nativeFunctions as $name => $func) {
             $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
@@ -1038,8 +1044,19 @@ class Translator extends Preprocessor
     protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
     {
         $flags = $v->flags;
-        $type  = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST);
+        if ($v->type) {
+            $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST);
+        } else {
+            $type = null;
+        }
         foreach ($v->consts as $const) {
+            if ($type === null) {
+                $type = match ($const->value->getType()) {
+                    'Expr_Array' => self::TYPE_ARRAY,
+                    'Scalar_String' => self::TYPE_STR,
+                    default => self::TYPE_VAR,
+                };
+            }
             $constName = $this->parseIdentifier($const->name);
             $constInfo = new ConstantDef($constName, $flags, $type, $this->parseIdentifier($const->value));
             $this->classDef->constants[$constInfo->name] = $constInfo;

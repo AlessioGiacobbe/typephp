@@ -3883,7 +3883,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->hasNativeClass($class)) {
                 $classDef = $this->getClassDef($class);
                 if ($classDef->hasConstant($const)) {
-                    return $classDef->getConstant($const)->value;
+                    $constInfo = $classDef->getConstant($const);
+                    if ($constInfo->type === self::TYPE_ARRAY) {
+                        return self::PREFIX . $this->getNativeName($constInfo->name, $classDef->namespace, $classDef->name);
+                    } else {
+                        return $constInfo->value;
+                    }
                 }
                 if ($classDef->enum) {
                     $ce = $this->getClassEntryPtr($class);

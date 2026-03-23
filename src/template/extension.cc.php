@@ -79,6 +79,18 @@ foreach ($this->nativeConstants as $name => $const):
 <?=$const->type?> <?=$name?>;
 <?php endforeach; ?>
 
+// class array constants
+<?php
+foreach ($this->classes as $classDef) :
+    foreach ($classDef->constants as $constant) :
+        if ($constant->type === Translator::TYPE_ARRAY) :
+            $constName = Translator::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
+            echo Translator::TYPE_VAR . " " . $constName . ";\n";
+        endif;
+    endforeach;
+endforeach;
+?>
+
 // clang-format off
 static const zend_function_entry ext_functions[] = {
     PHP_FE(cli_set_process_title,        arginfo_cli_set_process_title)
@@ -143,6 +155,18 @@ foreach ($this->staticPropertyList as $prop):
 <?php
 endforeach;
 ?>
+
+    // class array constants
+<?php
+foreach ($this->classes as $classDef) :
+    foreach ($classDef->constants as $constant) :
+        if ($constant->type === Translator::TYPE_ARRAY) :
+            $constName = Translator::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
+            echo $constName . " = " . $constant->value . ";\n";
+        endif;
+    endforeach;
+endforeach;
+?>
 }
 
 void php_app_clean() {
@@ -160,6 +184,18 @@ foreach ($this->nativeConstants as $name => $const):
 ?>
     <?= $name ?>.unset();
 <?php endforeach; ?>
+
+    // class array constants
+<?php
+foreach ($this->classes as $classDef) :
+    foreach ($classDef->constants as $constant) :
+        if ($constant->type === Translator::TYPE_ARRAY) :
+            $constName = Translator::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
+            echo $constName . ".unset();\n";
+        endif;
+    endforeach;
+endforeach;
+?>
 }
 
 PHP_RINIT_FUNCTION(<?=$this->getModuleName()?>) {
