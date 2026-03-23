@@ -32,7 +32,10 @@ class Translator extends Preprocessor
     protected array $phpSrcFiles = [];
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
-    protected array $staticPropertyList = [];
+    // 类静态属性初始值
+    protected array $defaultStaticPropertyList = [];
+    // 类属性初始值
+    protected array $defaultPropertyList = [];
     protected bool $useRegisterSymbolsFn = false;
 
     public function __construct(string $rootPath)
@@ -715,6 +718,7 @@ class Translator extends Preprocessor
             }
 
             $this->classCeInfo[$ce] = [
+                'classDef' => $classDef,
                 'deps'   => $deps,
                 'func'   => $this->getRegisterClassFunction($classDef->getNamespacedName()),
                 'args'   => $this->getRegisterClassFunctionArgs($classDef),
@@ -866,9 +870,6 @@ class Translator extends Preprocessor
             }
         }
         $code = $this->genNativeMethod($methodCodes);
-        if ($this->classDef->requireCtor and !$this->classDef->hasMethod('__construct')) {
-            $this->fatalError($class, "Class `{$this->class}` uses a non-empty array as the default value for an property, and the constructor must be set.");
-        }
         $this->resetClass();
 
         return $code;
@@ -937,32 +938,15 @@ class Translator extends Preprocessor
     protected function genMethodWrapper(ClassDef $classDef, MethodDef $methodDef): string
     {
         $name = $classDef->getNamespacedName();
-        $fullClassName = $classDef->getNamespacedName(false);
         $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
         $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
-
-        foreach ($classDef->properties as $property) {
-            if ($property->type === self::TYPE_ARRAY and $property->default and $property->default !== self::TYPE_ARRAY . '{}') {
-                if ($property->isStatic()) {
-                    $prop = new \stdClass();
-                    $prop->class = $fullClassName;
-                    $prop->name = $property->name;
-                    $prop->default = $property->default;
-                    $this->staticPropertyList[$name . '::' . $property->name] = $prop;
-                } else {
-                    $propOffset = $this->getPropertyOffset($fullClassName, $property->name);
-                    $cppCode .= $this->getIndent() . 'this_.attr(' . $propOffset . ') = ' . $property->default . ';' . PHP_EOL;
-                }
-            }
-        }
-
         $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
         $cppCode .= $this->genWrapperFunctionArgs($fn, $methodDef->functionDef);
 
         return $cppCode;
     }
 
-    protected function getClassRegisterCeFunc(ClassDef|InterfaceDef $classDef): void
+    protected function getClassRegisterCeFunc(ClassDef|InterfaceDef $classDef): string
     {
         $cppCode = '';
         $name    = $classDef->getNamespacedName();
@@ -971,6 +955,8 @@ class Translator extends Preprocessor
         $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $argsDef . ') {' . PHP_EOL;
         $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
+
+        return $cppCode;
     }
 
     protected function genClassWrapper(ClassDef|InterfaceDef $classDef): string
@@ -979,6 +965,21 @@ class Translator extends Preprocessor
 
         // 接口没有方法实体
         if ($classDef instanceof ClassDef) {
+            foreach ($classDef->properties as $property) {
+                if ($property->type === self::TYPE_ARRAY and $property->default and $property->default !== self::TYPE_ARRAY . '{}') {
+                    $fullClassName = $classDef->getNamespacedName(false);
+                    $fullPropName = $fullClassName . '::' . $property->name;
+                    if ($property->isStatic()) {
+                        $prop = new \stdClass();
+                        $prop->class = $fullClassName;
+                        $prop->name = $property->name;
+                        $prop->default = $property->default;
+                        $this->defaultStaticPropertyList[$fullPropName] = $prop;
+                    } else {
+                        $this->defaultPropertyList[$fullPropName] = $property->default;
+                    }
+                }
+            }
             $methods = $classDef->methods;
             foreach ($methods as $methodDef) {
                 $cppCode .= $this->genMethodWrapper($classDef, $methodDef);

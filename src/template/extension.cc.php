@@ -79,9 +79,12 @@ foreach ($this->nativeConstants as $name => $const):
 <?=$const->type?> <?=$name?>;
 <?php endforeach; ?>
 
-// class array constants
+    // class
 <?php
 foreach ($this->classes as $classDef) :
+    if ($classDef->requireCtor) {
+        echo "static zend_object* (*create_object_" . $classDef->getNamespacedName() . ")(zend_class_entry *class_type);";
+    }
     foreach ($classDef->constants as $constant) :
         if ($constant->type === Translator::TYPE_ARRAY) :
             $constName = Translator::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
@@ -119,6 +122,24 @@ foreach ($this->classCeList as $ce):
     $info = $this->classCeInfo[$ce] ?? $this->getInternalCeInfo($ce);
 ?>
     <?=$ce?> = <?= $info['func'] ?>(<?= $info['args'] ?>);
+<?php
+    if ($info['classDef'] and $info['classDef']->requireCtor):
+        $className = $info['classDef']->getNamespacedName();
+?>
+    create_object_<?=$className?> = <?=$ce?>->create_object ? create_object_<?=$className?> : zend_objects_new;
+    <?=$ce?>->create_object = [](zend_class_entry *class_type) -> zend_object* {
+        auto obj = create_object_<?= $className ?>(class_type);
+        <?php foreach ($info['classDef']->properties as $property):
+            $fullPropName = $info['classDef']->getNamespacedName(true) . '::' . $property->name;
+        ?>
+        <?php if (isset($this->defaultPropertyList[$fullPropName])): ?>
+        auto value = <?=$this->defaultPropertyList[$fullPropName]?>;
+        zend_update_property_ex(obj->ce, obj, <?=$this->getLiteralString($property->name)?>.str(), value.ptr());
+        <?php endif; ?>
+        <?php endforeach; ?>
+        return obj;
+    };
+<?php endif; ?>
 <?php endforeach; ?>
 
 // register symbols
@@ -149,7 +170,7 @@ foreach ($this->globalVars as $name => $type):
 
     // static property
 <?php
-foreach ($this->staticPropertyList as $prop):
+foreach ($this->defaultStaticPropertyList as $prop):
 ?>
     php::setStaticProperty(<?=$this->genCharPtr($prop->class, true)?>, <?=$this->genCharPtr($prop->name)?>, <?=$prop->default?>);
 <?php
