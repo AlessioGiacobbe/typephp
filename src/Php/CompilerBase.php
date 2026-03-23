@@ -11,6 +11,7 @@ namespace PhpAot\Php;
 use League\CLImate\CLImate;
 use PhpAot\Php\Context\FunctionContext;
 use PhpAot\Php\Entity\ClassDef;
+use PhpAot\Php\Entity\ConstantDef;
 use PhpAot\Php\Entity\FunctionDef;
 use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
@@ -1660,6 +1661,39 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $this->checkNativeCallArgs($expr, $methodDef->functionDef, $expr->args, $classDef->getNamespacedName() . '::' . $method);
         return $this->getNativeName($method, $classDef->namespace, $classDef->name);
+    }
+
+    protected function getNativeClassConst(NodeAbstract $expr, string $class, string $const): string|false
+    {
+        if (!$this->hasNativeClass($class)) {
+            return false;
+        }
+
+        $classDef = $this->getClassDef($class);
+        $constDef = null;
+        // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
+        while ($classDef) {
+            if (!$classDef->hasConstant($const)) {
+                if (!$classDef->extends) {
+                    return false;
+                }
+                if (!$this->hasNativeClass($classDef->extends)) {
+                    return false;
+                }
+                $classDef = $this->getClassDef($classDef->extends);
+            } else {
+                $constDef = $classDef->getConstant($const);
+                break;
+            }
+        }
+        if (!$this->checkAccessible($classDef, $constDef)) {
+            $this->fatalError($expr, 'Constant `' . $classDef->getNamespacedName() . '::' . $const . '` is not accessible');
+        }
+        if ($constDef->type === self::TYPE_ARRAY) {
+            return self::PREFIX . $this->getNativeName($constDef->name, $classDef->namespace, $classDef->name);
+        } else {
+            return $constDef->value;
+        }
     }
 
     protected function getClassDef(string $name): ClassDef
@@ -3882,17 +3916,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (($self or $this->isNameExpr($expr->class)) and $this->isIdExpr($expr->name)) {
             if ($this->hasNativeClass($class)) {
                 $classDef = $this->getClassDef($class);
-                if ($classDef->hasConstant($const)) {
-                    $constInfo = $classDef->getConstant($const);
-                    if ($constInfo->type === self::TYPE_ARRAY) {
-                        return self::PREFIX . $this->getNativeName($constInfo->name, $classDef->namespace, $classDef->name);
-                    } else {
-                        return $constInfo->value;
-                    }
-                }
                 if ($classDef->enum) {
                     $ce = $this->getClassEntryPtr($class);
                     return 'php::getEnumCase(' . $ce . ', ' . $this->getLiteralString($const) . ')';
+                }
+                $nativeConst = $this->getNativeClassConst($expr, $class, $const);
+                if ($nativeConst) {
+                    return $nativeConst;
                 }
             }
             $ce = $this->getClassEntryPtr($class);
@@ -4141,7 +4171,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function checkAccessible(ClassDef $classDef, MethodDef $methodDef): bool
+    protected function checkAccessible(ClassDef $classDef, MethodDef|ConstantDef $def): bool
     {
         // 在当前类中，允许调用所有方法
         if ($classDef->namespace === $this->namespace and $classDef->name == $this->class) {
@@ -4149,7 +4179,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         // 类外部调用，只允许调用 public 方法
-        return $methodDef->flags & Modifiers::PUBLIC;
+        return $def->flags & Modifiers::PUBLIC;
     }
 
     protected function findNativeMethod(CallLike $expr, string $object, string $method): string|false
