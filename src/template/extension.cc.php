@@ -178,16 +178,7 @@ endforeach;
 ?>
 
     // class array constants
-<?php
-foreach ($this->classes as $classDef) :
-    foreach ($classDef->constants as $constant) :
-        if ($constant->type === Translator::TYPE_ARRAY) :
-            $constName = Translator::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
-            echo $constName . " = " . $constant->value . ";\n";
-        endif;
-    endforeach;
-endforeach;
-?>
+    <?=$this->genUpdateClassConstants();?>
 }
 
 void php_app_clean() {
