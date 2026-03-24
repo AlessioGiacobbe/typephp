@@ -123,10 +123,10 @@ foreach ($this->classCeList as $ce):
 ?>
     <?=$ce?> = <?= $info['func'] ?>(<?= $info['args'] ?>);
 <?php
-    if ($info['classDef'] and $info['classDef']->requireCtor):
+    if (!empty($info['classDef']) and $info['classDef']->requireCtor):
         $className = $info['classDef']->getNamespacedName();
 ?>
-    create_object_<?=$className?> = <?=$ce?>->create_object ? create_object_<?=$className?> : zend_objects_new;
+    create_object_<?=$className?> = php_get_create_object_fn(<?=$ce?>);
     <?=$ce?>->create_object = [](zend_class_entry *class_type) -> zend_object* {
         auto obj = create_object_<?= $className ?>(class_type);
         <?php foreach ($info['classDef']->properties as $property):
@@ -178,7 +178,7 @@ endforeach;
 ?>
 
     // class array constants
-    <?=$this->genUpdateClassConstants();?>
+    <?=$this->genClassArrayConstants();?>
 }
 
 void php_app_clean() {

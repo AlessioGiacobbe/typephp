@@ -19,3 +19,7 @@ extern const char *php_get_called_class(php::Object &this_);
 extern zend_class_entry *php_get_called_ce(php::Object &this_);
 extern php::Scope php_switch_scope(php::Object &this_);
 extern void php_restore_scope(php::Scope &ori_scope);
+
+static inline auto php_get_create_object_fn(zend_class_entry *ce) {
+	return ce->create_object ? ce->create_object : zend_objects_new;
+}

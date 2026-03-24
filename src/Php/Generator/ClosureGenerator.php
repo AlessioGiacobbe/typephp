@@ -29,7 +29,7 @@ trait ClosureGenerator
         $tmpVar = $this->genTmpVarName();
         // 必须使用 = 捕获，不能使用 & ，否则可能会出现悬空指针
         // 在 PHP 中 = 赋值是浅拷贝，仅增加一次引用计数，和 zval (16 字节) 封装的赋值
-        $capture = $useCurrentScope ? '=' : '';
+        $capture = $useCurrentScope ? '&' : '';
 
         $code = $this->getIndent() .
             'php::ClosureFn ' . $tmpVar . ' = [' . $capture . ']('

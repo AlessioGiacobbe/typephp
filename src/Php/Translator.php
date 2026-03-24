@@ -419,6 +419,7 @@ class Translator extends Preprocessor
     {
         $code = '#include <phpx.h>' . PHP_EOL;
 
+        // 函数的默认值可能会使用字符串字面量，需要提前声明
         $literalStringsCount = count($this->literalStrings);
         $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
 
@@ -526,14 +527,17 @@ class Translator extends Preprocessor
         return $scanner->scan();
     }
 
-    protected function genUpdateClassConstants(): string
+    protected function genClassArrayConstants(): string
     {
         $code = '';
         foreach ($this->classes as $classDef) {
             foreach ($classDef->constants as $constant) {
                 if ($constant->type === self::TYPE_ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
+                    $code .= "do {\n";
+                    $code .= $constant->arrayExpr;
                     $code .= $constName . " = " . $constant->value . ";\n";
+                    $code .= "} while(0);\n";
                 }
             }
         }
@@ -1061,6 +1065,7 @@ class Translator extends Preprocessor
 
     protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
     {
+        $this->resetFunction();
         $flags = $v->flags;
         if ($v->type) {
             $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST);
@@ -1076,7 +1081,15 @@ class Translator extends Preprocessor
                 };
             }
             $constName = $this->parseIdentifier($const->name);
-            $constInfo = new ConstantDef($constName, $flags, $type, $this->parseIdentifier($const->value));
+            $constValue = $this->parseIdentifier($const->value);
+            $arrayExpr = '';
+            if ($this->context->beforeStmtLines) {
+                if ($this->context->localVars) {
+                    $arrayExpr .= $this->genLocalVarDecl();
+                }
+                $arrayExpr .= $this->parseBeforeStmtLines();
+            }
+            $constInfo = new ConstantDef($constName, $flags, $type, $constValue, $arrayExpr);
             $this->classDef->constants[$constInfo->name] = $constInfo;
         }
     }
