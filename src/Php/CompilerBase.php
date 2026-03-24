@@ -143,8 +143,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $nativeFunctions = [];
     protected array $internalFunctions = [];
     protected array $nativeConstants = [];
-    protected array $functionDeclInFile = [];
-    protected array $functionCallInFile = [];
+    protected array $symbolDeclInFile = [];
+    protected array $symbolCallInFile = [];
     protected array $redoAfterDeclare = [];
     protected array $constData = [];
     protected int $optimizeLevel = 0;
@@ -1600,8 +1600,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
         // 跳过，稍后再处理
-        if (isset($this->functionDeclInFile[$name])
-            and $this->functionDeclInFile[$name] === $this->file
+        if (isset($this->symbolDeclInFile[$name])
+            and $this->symbolDeclInFile[$name] === $this->file
             and !$this->hasNativeFunction($name)) {
             $this->redoAfterDeclare[$name] = true;
             throw new Skip();

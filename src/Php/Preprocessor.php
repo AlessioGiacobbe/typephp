@@ -20,12 +20,12 @@ class Preprocessor extends CompilerBase
 
     public function sortFiles(array &$list): void
     {
-        foreach ($this->functionCallInFile as $k => $call) {
-            if (!isset($this->functionDeclInFile[$call['name']])) {
-                unset($this->functionCallInFile[$k]);
+        foreach ($this->symbolCallInFile as $k => $call) {
+            if (!isset($this->symbolDeclInFile[$call['name']])) {
+                unset($this->symbolCallInFile[$k]);
             }
         }
-        $sorter      = new FileSorter($this->functionDeclInFile, $this->functionCallInFile);
+        $sorter = new FileSorter($this->symbolDeclInFile, $this->symbolCallInFile);
         $sortedFiles = $sorter->sort();
 
         foreach ($list as $file) {
@@ -120,8 +120,8 @@ class Preprocessor extends CompilerBase
 
         foreach ($functionCalls as $call) {
             if ($call->name instanceof Node\Name) {
-                $name                       = $call->name->toString();
-                $this->functionCallInFile[] = [
+                $name = $call->name->toString();
+                $this->symbolCallInFile[] = [
                     'name' => $name,
                     'file' => $this->file,
                     'line' => $call->getLine(),
@@ -164,7 +164,7 @@ class Preprocessor extends CompilerBase
         if ($this->stubFile) {
             $this->nativeFunctions[$name] = $this->parseFunctionDecl($v);
         } else {
-            $this->functionDeclInFile[$name] = $this->file;
+            $this->symbolDeclInFile[$name] = $this->file;
         }
     }
 
@@ -180,11 +180,18 @@ class Preprocessor extends CompilerBase
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
+        $fullClassName = $this->getNamespacedClassName($this->class);
         if (!empty($class->extends)) {
             $this->parentClass = $this->getParentClass($class->extends);
-            $fullClassName = $this->getNamespacedClassName($this->class);
+            $this->symbolCallInFile[] = [
+                'name' => $this->parentClass,
+                'file' => $this->file,
+                'line' => $class->getLine(),
+            ];
             $this->classExtends[$fullClassName] = $this->parentClass;
         }
+        $this->symbolDeclInFile[$fullClassName] = $this->file;
+
         $code        = '';
         foreach ($class->stmts as $v) {
             $type = $v->getType();

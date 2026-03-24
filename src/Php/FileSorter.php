@@ -10,13 +10,13 @@ namespace PhpAot\Php;
 
 class FileSorter
 {
-    private array $functionDeclInFile;
-    private array $functionCallInFile;
+    private array $symbolDeclInFile;
+    private array $symbolCallInFile;
 
-    public function __construct(array $functionDeclInFile, array $functionCallInFile)
+    public function __construct(array $symbolDeclInFile, array $symbolCallInFile)
     {
-        $this->functionDeclInFile = $functionDeclInFile;
-        $this->functionCallInFile = $functionCallInFile;
+        $this->symbolDeclInFile = $symbolDeclInFile;
+        $this->symbolCallInFile = $symbolCallInFile;
     }
 
     public function sort(): array
@@ -65,12 +65,12 @@ class FileSorter
     {
         $dependencies = [];
 
-        foreach ($this->functionCallInFile as $call) {
+        foreach ($this->symbolCallInFile as $call) {
             $callerFile   = $call['file'];
             $functionName = $call['name'];
 
-            if (isset($this->functionDeclInFile[$functionName])) {
-                $declFile = $this->functionDeclInFile[$functionName];
+            if (isset($this->symbolDeclInFile[$functionName])) {
+                $declFile = $this->symbolDeclInFile[$functionName];
 
                 if ($callerFile !== $declFile) {
                     if (!isset($dependencies[$callerFile])) {
@@ -89,9 +89,9 @@ class FileSorter
 
     private function getAllFiles(): array
     {
-        $files = array_values($this->functionDeclInFile);
+        $files = array_values($this->symbolDeclInFile);
 
-        foreach ($this->functionCallInFile as $call) {
+        foreach ($this->symbolCallInFile as $call) {
             $files[] = $call['file'];
         }
 

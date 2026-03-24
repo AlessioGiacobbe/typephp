@@ -419,6 +419,9 @@ class Translator extends Preprocessor
     {
         $code = '#include <phpx.h>' . PHP_EOL;
 
+        $literalStringsCount = count($this->literalStrings);
+        $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+
         foreach ($this->nativeFunctions as $name => $func) {
             $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
             $list = [];
