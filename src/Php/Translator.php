@@ -526,21 +526,14 @@ class Translator extends Preprocessor
     protected function genUpdateClassConstants(): string
     {
         $code = '';
-        foreach ($this->classes as $classDef) :
-            foreach ($classDef->constants as $constant) :
-                if ($constant->type === self::TYPE_ARRAY) :
+        foreach ($this->classes as $classDef) {
+            foreach ($classDef->constants as $constant) {
+                if ($constant->type === self::TYPE_ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
                     $code .= $constName . " = " . $constant->value . ";\n";
-                    if (false) {
-                        $code .= "do {\n";
-                        $code .= "auto c = (zend_class_constant *) zend_hash_str_find_ptr(&" . $this->getClassCe($classDef) . "->constants_table, ZEND_STRL(\"" . $constant->name . "\"));";
-                        $code .= "c->type = (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_ARRAY);\n";
-                        $code .= "ZVAL_COPY(&c->value, $constName.ptr());\n";
-                        $code .= " } while (0); \n";
-                    }
-                endif;
-            endforeach;
-        endforeach;
+                }
+            }
+        }
         return $code;
     }
 
