@@ -26,11 +26,15 @@ class Preprocessor extends CompilerBase
             $deps = [];
             foreach ($symbols as $symbol) {
                 if (isset($this->symbolDeclInFile[$symbol])) {
-                    $deps[] = $this->symbolDeclInFile[$symbol];
+                    $depFile = $this->symbolDeclInFile[$symbol];
+                    if ($depFile !== $file) {
+                        $deps[] = $depFile;
+                    }
                 }
             }
             $sorter->add($file, array_unique($deps));
         }
+
         $sortedFiles = $sorter->sort();
 
         foreach ($list as $file) {
@@ -171,9 +175,7 @@ class Preprocessor extends CompilerBase
         if ($this->stubFile) {
             $this->nativeFunctions[$name] = $this->parseFunctionDecl($v);
         } else {
-            if ($v instanceof Node\Stmt\Function_) {
-                $this->symbolDeclInFile[strtolower($name)] = $this->file;
-            }
+            $this->symbolDeclInFile[strtolower($name)] = $this->file;
         }
     }
 
