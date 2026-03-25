@@ -245,6 +245,10 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, bool>
      */
     protected array $classMethodOverride = [];
+    /**
+     * 存储所有类继承关系，类名必须全部为小写
+     * @var array<string, string>
+     */
     protected array $classExtends = [];
 
     public function __construct(string $rootPath)

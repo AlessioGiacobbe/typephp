@@ -66,11 +66,11 @@ class FileSorter
         $dependencies = [];
 
         foreach ($this->symbolCallInFile as $call) {
-            $callerFile   = $call['file'];
-            $functionName = $call['name'];
+            $callerFile = $call['file'];
+            $symbolName = $call['name'];
 
-            if (isset($this->symbolDeclInFile[$functionName])) {
-                $declFile = $this->symbolDeclInFile[$functionName];
+            if (isset($this->symbolDeclInFile[$symbolName])) {
+                $declFile = $this->symbolDeclInFile[$symbolName];
 
                 if ($callerFile !== $declFile) {
                     if (!isset($dependencies[$callerFile])) {

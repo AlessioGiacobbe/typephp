@@ -115,7 +115,7 @@ class Preprocessor extends CompilerBase
             }
         }
 
-        $nodeFinder    = new NodeFinder();
+        $nodeFinder = new NodeFinder();
         $functionCalls = $nodeFinder->findInstanceOf($ast, Node\Expr\FuncCall::class);
 
         foreach ($functionCalls as $call) {
@@ -158,7 +158,7 @@ class Preprocessor extends CompilerBase
         $this->resetNamespace();
     }
 
-    protected function prepareFunction(Node $v): void
+    protected function prepareFunction(Node\Stmt\ClassMethod|Node\Stmt\Function_ $v): void
     {
         $name = $this->getFunctionName($v);
         if ($this->stubFile) {
@@ -232,6 +232,7 @@ class Preprocessor extends CompilerBase
             while (isset($this->classExtends[$fullClassNameLower])) {
                 $parentClass = $this->classExtends[$fullClassNameLower];
                 $parentMethodLower = strtolower($parentClass . '::' . $v->name);
+                // 父类有同名方法，子类覆盖了父类方法，这种情况不能直接使用 C++ 函数，而是使用 ZendVM 动态调用
                 if (isset($this->classMethodOverride[$parentMethodLower])) {
                     $this->classMethodOverride[$parentMethodLower] = true;
                 }
