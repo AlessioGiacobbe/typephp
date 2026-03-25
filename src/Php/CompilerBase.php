@@ -1669,7 +1669,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
-        if (!$this->checkAccessible($classDef, $methodDef)) {
+        if (!$this->checkAccessible($classDef, $methodDef->flags)) {
             $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` is not accessible');
         }
         // 函数调用占位符，不是真实的函数调用
@@ -1703,7 +1703,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 break;
             }
         }
-        if (!$this->checkAccessible($classDef, $constDef)) {
+        if (!$this->checkAccessible($classDef, $constDef->flags)) {
             $this->fatalError($expr, 'Constant `' . $classDef->getNamespacedName() . '::' . $const . '` is not accessible');
         }
         if ($constDef->type === self::TYPE_ARRAY) {
@@ -4199,7 +4199,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function checkAccessible(ClassDef $classDef, MethodDef|ConstantDef $def): bool
+    protected function checkAccessible(ClassDef $classDef, int $flags): bool
     {
         // 在当前类中，允许调用所有方法
         if ($classDef->namespace === $this->namespace and $classDef->name == $this->class) {
@@ -4207,7 +4207,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         // 类外部调用，只允许调用 public 方法
-        return $def->flags & Modifiers::PUBLIC;
+        return $flags & Modifiers::PUBLIC;
     }
 
     protected function isOverrideMethod(string $fullMethodName): bool

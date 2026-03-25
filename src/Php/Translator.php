@@ -1106,7 +1106,7 @@ class Translator extends Preprocessor
     protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
     {
         $this->resetFunction();
-        $flags = $v->flags;
+        $flags = $this->parseModifiers($v->flags);
         if ($v->type) {
             $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST);
         } else {
@@ -1136,7 +1136,7 @@ class Translator extends Preprocessor
 
     protected function parsePropertyDef(Node\Stmt\Property $v): void
     {
-        $flags = $v->flags;
+        $flags = $this->parseModifiers($v->flags);
         $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_PROPERTY);
 
         foreach ($v->props as $prop) {
@@ -1151,15 +1151,19 @@ class Translator extends Preprocessor
         }
     }
 
+    protected function parseModifiers(int $flags): int
+    {
+        if (!($flags & Modifiers::PRIVATE) and !($flags & Modifiers::PROTECTED)) {
+            $flags |= Modifiers::PUBLIC;
+        }
+        return $flags;
+    }
+
     protected function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
     {
         $name = $this->getMethodName($v);
         $this->method = $name;
-
-        $flags = $v->flags;
-        if (!($flags & Modifiers::PRIVATE) and !($flags & Modifiers::PROTECTED)) {
-            $flags |= Modifiers::PUBLIC;
-        }
+        $flags = $this->parseModifiers($v->flags);
 
         if (!($flags & Modifiers::ABSTRACT)) {
             $this->methodDef = new MethodDef($flags, $name);

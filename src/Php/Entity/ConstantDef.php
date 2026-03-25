@@ -12,11 +12,11 @@ class ConstantDef
 {
     public string $name;
     public string $type;
-    public string $flags;
+    public int $flags;
     public string $value;
     public string $arrayExpr;
 
-    public function __construct(string $name, string $flags, string $type, string $value, string $arrayExpr = '')
+    public function __construct(string $name, int $flags, string $type, string $value, string $arrayExpr = '')
     {
         $this->name  = $name;
         $this->type  = $type;
