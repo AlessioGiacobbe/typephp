@@ -527,6 +527,35 @@ class Translator extends Preprocessor
         return $scanner->scan();
     }
 
+    public function genClassPropertyInit(): string
+    {
+        $code = '';
+        foreach ($this->classCeList as $ce) {
+            $info = $this->classCeInfo[$ce] ?? $this->getInternalCeInfo($ce);
+            $code .= "$ce = {$info['func']}({$info['args']});\n";
+            $classDef = !empty($info['classDef']) ? $info['classDef'] : null;
+
+            /**
+             * @var ClassDef $classDef
+             */
+            if ($classDef and $classDef->requireCtor) {
+                $className = $classDef->getNamespacedName();
+                $code .= "create_object_$className = php_get_create_object_fn($ce);\n";
+                $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
+                $code .= "auto obj = create_object_$className(class_type);\n";
+                foreach ($classDef->properties as $property) {
+                    $fullPropName = $classDef->getNamespacedName() . '::' . $property->name;
+                    if (isset($this->defaultPropertyList[$fullPropName])) {
+                        $code .= "auto value = {$this->defaultPropertyList[$fullPropName]};\n";
+                        $code .= "zend_update_property_ex(obj->ce, obj, " . $this->getLiteralString($property->name) . ".str(), value.ptr());\n";
+                    }
+                }
+                $code .= "return obj;\n};\n";
+            }
+        }
+        return $code;
+    }
+
     protected function genClassArrayConstants(): string
     {
         $code = '';
@@ -986,6 +1015,7 @@ class Translator extends Preprocessor
 
         // 接口没有方法实体
         if ($classDef instanceof ClassDef) {
+            $arrayPropCount = 0;
             foreach ($classDef->properties as $property) {
                 if ($property->type === self::TYPE_ARRAY and $property->default and $property->default !== self::TYPE_ARRAY . '{}') {
                     $fullClassName = $classDef->getNamespacedName(false);
@@ -998,8 +1028,12 @@ class Translator extends Preprocessor
                         $this->defaultStaticPropertyList[$fullPropName] = $prop;
                     } else {
                         $this->defaultPropertyList[$fullPropName] = $property->default;
+                        $arrayPropCount++;
                     }
                 }
+            }
+            if ($arrayPropCount > 0) {
+                $classDef->requireCtor = true;
             }
             $methods = $classDef->methods;
             foreach ($methods as $methodDef) {
@@ -1097,14 +1131,13 @@ class Translator extends Preprocessor
     protected function parsePropertyDef(Node\Stmt\Property $v): void
     {
         $flags = $v->flags;
-        $type  = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_PROPERTY);
+        $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_PROPERTY);
 
         foreach ($v->props as $prop) {
             $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
             if ($prop->default) {
                 if ($prop->default->getType() == 'Expr_Array' and count($prop->default->items) > 0) {
-                    $this->classDef->requireCtor = true;
-                    $propDef->type               = self::TYPE_ARRAY;
+                    $propDef->type = self::TYPE_ARRAY;
                 }
                 $propDef->default = $this->parseIdentifier($prop->default);
             }

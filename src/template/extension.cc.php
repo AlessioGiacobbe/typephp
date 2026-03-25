@@ -116,31 +116,8 @@ foreach ($this->functions as $functionDef):
 // clang-format on
 
 PHP_MINIT_FUNCTION(<?=$this->getModuleName()?>) {
-// class/interface class entries
-<?php
-foreach ($this->classCeList as $ce):
-    $info = $this->classCeInfo[$ce] ?? $this->getInternalCeInfo($ce);
-?>
-    <?=$ce?> = <?= $info['func'] ?>(<?= $info['args'] ?>);
-<?php
-    if (!empty($info['classDef']) and $info['classDef']->requireCtor):
-        $className = $info['classDef']->getNamespacedName();
-?>
-    create_object_<?=$className?> = php_get_create_object_fn(<?=$ce?>);
-    <?=$ce?>->create_object = [](zend_class_entry *class_type) -> zend_object* {
-        auto obj = create_object_<?= $className ?>(class_type);
-        <?php foreach ($info['classDef']->properties as $property):
-            $fullPropName = $info['classDef']->getNamespacedName(true) . '::' . $property->name;
-        ?>
-        <?php if (isset($this->defaultPropertyList[$fullPropName])): ?>
-        auto value = <?=$this->defaultPropertyList[$fullPropName]?>;
-        zend_update_property_ex(obj->ce, obj, <?=$this->getLiteralString($property->name)?>.str(), value.ptr());
-        <?php endif; ?>
-        <?php endforeach; ?>
-        return obj;
-    };
-<?php endif; ?>
-<?php endforeach; ?>
+    // class/interface class entries
+    <?=$this->genClassPropertyInit()?>
 
 // register symbols
 <?php
