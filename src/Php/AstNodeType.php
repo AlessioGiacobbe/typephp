@@ -122,6 +122,14 @@ trait AstNodeType
         return $expr instanceof Node\Stmt\Break_;
     }
 
+    protected function isThrowExpr(NodeAbstract $expr): bool
+    {
+        if ($expr instanceof Node\Stmt\Expression) {
+            $expr = $expr->expr;
+        }
+        return $expr instanceof Expr\Throw_;
+    }
+
     protected function isExitExpr(NodeAbstract $expr): bool
     {
         if ($expr instanceof Node\Stmt\Expression) {

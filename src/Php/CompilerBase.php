@@ -3351,8 +3351,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $stmts = $stmts[0]->stmts;
             }
             $lastExpr = end($stmts);
-            if (!$this->isReturnExpr($lastExpr) and !$this->isExitExpr($lastExpr) and !$this->isBreakExpr($lastExpr)) {
-                $this->fatalError($case, 'switch case must end with return or break or exit, ' . $lastExpr->getType() . ' given');
+            if (!$this->isReturnExpr($lastExpr)
+                and !$this->isExitExpr($lastExpr)
+                and !$this->isBreakExpr($lastExpr)
+                and !$this->isThrowExpr($lastExpr)
+            ) {
+                $this->fatalError($case, 'switch case must end with return/break/exit/throw, ' . $lastExpr->getType() . ' given');
             }
 
             if ($condList) {
@@ -3959,10 +3963,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseThrow(mixed $expr): string
     {
         if (!$this->isVarExpr($expr->expr) and $expr->expr->getType() != self::EXPR_NEW) {
-            $this->fatalError($expr, 'The throw statement only accepts a object variable');
+            $ex = $this->convertToObject($expr->expr);
+        } else {
+            $ex = $this->parseIdentifier($expr->expr);
         }
-
-        return 'php::throwException(' . $this->parseIdentifier($expr->expr) . ')';
+        return 'php::throwException(' . $ex . ')';
     }
 
     protected function parseTryCatch(mixed $v): string

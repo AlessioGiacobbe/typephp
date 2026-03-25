@@ -4252,7 +4252,7 @@ class FileInfo {
     public bool $generateClassEntries = true;
     private bool $isUndocumentable = false;
     private bool $legacyArginfoGeneration = false;
-    private ?int $minimumPhpVersionIdCompatibility = PHP_80_VERSION_ID;
+    private ?int $minimumPhpVersionIdCompatibility = PHP_84_VERSION_ID;
 
     /** @param array<int, DocCommentTag> $fileTags */
     public function __construct(array $fileTags) {
