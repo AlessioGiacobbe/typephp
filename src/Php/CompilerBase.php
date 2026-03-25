@@ -4193,6 +4193,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $def->flags & Modifiers::PUBLIC;
     }
 
+    protected function isOverrideMethod(string $fullMethodName): bool
+    {
+        $fullMethodNameLower = strtolower($fullMethodName);
+        return isset($this->classMethodOverride[$fullMethodNameLower]) and $this->classMethodOverride[$fullMethodNameLower];
+    }
+
     protected function findNativeMethod(CallLike $expr, string $object, string $method): string|false
     {
         $nativeFunc = '';
@@ -4215,7 +4221,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         // 存在子类同名方法，需要转为动态调用
-        if (isset($this->classMethodOverride[$fullMethodName]) and $this->classMethodOverride[$fullMethodName]) {
+        if ($this->isOverrideMethod($fullMethodName)) {
             return false;
         }
         if ($nativeFunc) {

@@ -122,7 +122,7 @@ class Preprocessor extends CompilerBase
             if ($call->name instanceof Node\Name) {
                 $name = $call->name->toString();
                 $this->symbolCallInFile[] = [
-                    'name' => $name,
+                    'name' => strtolower($name),
                     'file' => $this->file,
                     'line' => $call->getLine(),
                 ];
@@ -164,7 +164,7 @@ class Preprocessor extends CompilerBase
         if ($this->stubFile) {
             $this->nativeFunctions[$name] = $this->parseFunctionDecl($v);
         } else {
-            $this->symbolDeclInFile[$name] = $this->file;
+            $this->symbolDeclInFile[strtolower($name)] = $this->file;
         }
     }
 
@@ -181,16 +181,18 @@ class Preprocessor extends CompilerBase
     {
         $this->class = $this->parseIdentifier($class->name);
         $fullClassName = $this->getNamespacedClassName($this->class);
+        $fullClassNameLower = strtolower($fullClassName);
         if (!empty($class->extends)) {
             $this->parentClass = $this->getParentClass($class->extends);
+            $parentClassLower = strtolower($this->parentClass);
             $this->symbolCallInFile[] = [
-                'name' => $this->parentClass,
+                'name' => $parentClassLower,
                 'file' => $this->file,
                 'line' => $class->getLine(),
             ];
-            $this->classExtends[$fullClassName] = $this->parentClass;
+            $this->classExtends[$fullClassNameLower] = $parentClassLower;
         }
-        $this->symbolDeclInFile[$fullClassName] = $this->file;
+        $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
         $code        = '';
         foreach ($class->stmts as $v) {
@@ -223,16 +225,17 @@ class Preprocessor extends CompilerBase
         $this->prepareFunction($v) . PHP_EOL;
         if ($this->isIdExpr($v->name) or $this->isNameExpr($v->name)) {
             $fullClassName = $this->getNamespacedClassName($this->class);
-            $fullName = $fullClassName . '::' . $v->name;
-            $this->classMethodOverride[$fullName] = false;
+            $fullMethodName = $fullClassName . '::' . $v->name;
+            $this->classMethodOverride[strtolower($fullMethodName)] = false;
             // 查找父类是否有同名方法，递归查找
-            while (isset($this->classExtends[$fullClassName])) {
-                $parentClass = $this->classExtends[$fullClassName];
-                $parentMethod = $parentClass . '::' . $v->name;
-                if (isset($this->classMethodOverride[$parentMethod])) {
-                    $this->classMethodOverride[$parentMethod] = true;
+            $fullClassNameLower = strtolower($fullClassName);
+            while (isset($this->classExtends[$fullClassNameLower])) {
+                $parentClass = $this->classExtends[$fullClassNameLower];
+                $parentMethodLower = strtolower($parentClass . '::' . $v->name);
+                if (isset($this->classMethodOverride[$parentMethodLower])) {
+                    $this->classMethodOverride[$parentMethodLower] = true;
                 }
-                $fullClassName = $parentClass;
+                $fullClassNameLower = strtolower($parentClass);
             }
         }
     }
