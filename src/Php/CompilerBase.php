@@ -245,6 +245,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, bool>
      */
     protected array $classMethodOverride = [];
+
     /**
      * 存储所有类继承关系，类名必须全部为小写
      * @var array<string, string>
@@ -1398,9 +1399,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->isNativeType($this->getVarType($var));
     }
 
-    protected function isInternalFunction(string $fname): bool
+    protected function isInternalFunction(string $name): bool
     {
-        return array_key_exists($fname, $this->internalFunctions);
+        return array_key_exists($name, $this->internalFunctions);
+    }
+
+    protected function isInternalClass(string $name): bool
+    {
+        return Reflection::isInternalClass($name);
     }
 
     protected function isAssignOpConcat(string $op): bool
@@ -4322,7 +4328,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseArrowFunction(Node\Expr\ArrowFunction $expr): string
     {
         $nodeFinder = new NodeFinder();
-        $vars = $nodeFinder->findInstanceOf($expr->expr, Node\Expr\Variable::class);
+        $vars = $nodeFinder->findInstanceOf($expr->expr, Variable::class);
         $uses = [];
         $params = [];
 
@@ -4330,7 +4336,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($param->byRef) {
                 $this->fatalError($expr, 'Closure cannot use reference parameter');
             }
-            if ($param->var instanceof Node\Expr\Variable) {
+            if ($param->var instanceof Variable) {
                 $params[$param->var->name] = $i;
             }
         }

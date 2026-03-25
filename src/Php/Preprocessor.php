@@ -8,6 +8,7 @@
 
 namespace PhpAot\Php;
 
+use MJS\TopSort\Implementations\StringSort;
 use PhpAot\Php\Exception\SyntaxError;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
@@ -20,12 +21,16 @@ class Preprocessor extends CompilerBase
 
     public function sortFiles(array &$list): void
     {
-        foreach ($this->symbolCallInFile as $k => $call) {
-            if (!isset($this->symbolDeclInFile[$call['name']])) {
-                unset($this->symbolCallInFile[$k]);
+        $sorter = new StringSort();
+        foreach ($this->symbolCallInFile as $file => $symbols) {
+            $deps = [];
+            foreach ($symbols as $symbol) {
+                if (isset($this->symbolDeclInFile[$symbol])) {
+                    $deps[] = $this->symbolDeclInFile[$symbol];
+                }
             }
+            $sorter->add($file, array_unique($deps));
         }
-        $sorter = new FileSorter($this->symbolDeclInFile, $this->symbolCallInFile);
         $sortedFiles = $sorter->sort();
 
         foreach ($list as $file) {
@@ -72,6 +77,7 @@ class Preprocessor extends CompilerBase
         }
 
         $phpCode = $this->loadFile($file);
+        $this->symbolCallInFile[$this->file] = [];
 
         $this->climate->info('prepare: ' . $this->file);
         try {
@@ -120,12 +126,11 @@ class Preprocessor extends CompilerBase
 
         foreach ($functionCalls as $call) {
             if ($call->name instanceof Node\Name) {
-                $name = $call->name->toString();
-                $this->symbolCallInFile[] = [
-                    'name' => strtolower($name),
-                    'file' => $this->file,
-                    'line' => $call->getLine(),
-                ];
+                // 内置函数不参与依赖管理
+                $funcName = strtolower($call->name->toString());
+                if (!$this->isInternalFunction($funcName)) {
+                    $this->symbolCallInFile[$this->file][] = $funcName;
+                }
             }
         }
     }
@@ -145,6 +150,8 @@ class Preprocessor extends CompilerBase
                     $this->prepareFunction($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Use':
+                    $this->parseUse($v2);
+                    break;
                 case 'Stmt_Const':
                 case 'Stmt_Interface':
                     break;
@@ -164,7 +171,9 @@ class Preprocessor extends CompilerBase
         if ($this->stubFile) {
             $this->nativeFunctions[$name] = $this->parseFunctionDecl($v);
         } else {
-            $this->symbolDeclInFile[strtolower($name)] = $this->file;
+            if ($v instanceof Node\Stmt\Function_) {
+                $this->symbolDeclInFile[strtolower($name)] = $this->file;
+            }
         }
     }
 
@@ -182,19 +191,18 @@ class Preprocessor extends CompilerBase
         $this->class = $this->parseIdentifier($class->name);
         $fullClassName = $this->getNamespacedClassName($this->class);
         $fullClassNameLower = strtolower($fullClassName);
+
         if (!empty($class->extends)) {
             $this->parentClass = $this->getParentClass($class->extends);
             $parentClassLower = strtolower($this->parentClass);
-            $this->symbolCallInFile[] = [
-                'name' => $parentClassLower,
-                'file' => $this->file,
-                'line' => $class->getLine(),
-            ];
             $this->classExtends[$fullClassNameLower] = $parentClassLower;
+            if (!$this->isInternalClass($parentClassLower)) {
+                $this->symbolCallInFile[$this->file][] = $parentClassLower;
+            }
         }
         $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
-        $code        = '';
+        $code = '';
         foreach ($class->stmts as $v) {
             $type = $v->getType();
             switch ($type) {

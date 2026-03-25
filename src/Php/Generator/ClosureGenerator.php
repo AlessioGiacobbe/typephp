@@ -21,13 +21,6 @@ trait ClosureGenerator
         return $code;
     }
 
-    /**
-     * @param NodeAbstract $expr
-     * @param array $params
-     * @param callable $bodyGenCb
-     * @param array $uses
-     * @return string
-     */
     protected function genClosure(NodeAbstract $expr, array $params, callable $bodyGenCb, array $uses = []): string
     {
         $tmpVar = $this->genTmpVarName();

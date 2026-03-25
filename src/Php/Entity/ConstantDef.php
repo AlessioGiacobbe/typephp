@@ -8,8 +8,6 @@
 
 namespace PhpAot\Php\Entity;
 
-use PhpParser\Node\Expr;
-
 class ConstantDef
 {
     public string $name;

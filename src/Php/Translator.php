@@ -32,8 +32,10 @@ class Translator extends Preprocessor
     protected array $phpSrcFiles = [];
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
+
     // 类静态属性初始值
     protected array $defaultStaticPropertyList = [];
+
     // 类属性初始值
     protected array $defaultPropertyList = [];
     protected bool $useRegisterSymbolsFn = false;
@@ -494,6 +496,35 @@ class Translator extends Preprocessor
         return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
     }
 
+    public function genClassPropertyInit(): string
+    {
+        $code = '';
+        foreach ($this->classCeList as $ce) {
+            $info = $this->classCeInfo[$ce] ?? $this->getInternalCeInfo($ce);
+            $code .= "{$ce} = {$info['func']}({$info['args']});\n";
+            $classDef = !empty($info['classDef']) ? $info['classDef'] : null;
+
+            /**
+             * @var ClassDef $classDef
+             */
+            if ($classDef and $classDef->requireCtor) {
+                $className = $classDef->getNamespacedName();
+                $code .= "create_object_{$className} = php_get_create_object_fn({$ce});\n";
+                $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
+                $code .= "auto obj = create_object_{$className}(class_type);\n";
+                foreach ($classDef->properties as $property) {
+                    $fullPropName = $classDef->getNamespacedName() . '::' . $property->name;
+                    if (isset($this->defaultPropertyList[$fullPropName])) {
+                        $code .= "auto value = {$this->defaultPropertyList[$fullPropName]};\n";
+                        $code .= 'zend_update_property_ex(obj->ce, obj, ' . $this->getLiteralString($property->name) . ".str(), value.ptr());\n";
+                    }
+                }
+                $code .= "return obj;\n};\n";
+            }
+        }
+        return $code;
+    }
+
     protected function getRegisterClassFunction(string $name): string
     {
         return self::PREFIX . 'register_class_' . $name;
@@ -527,35 +558,6 @@ class Translator extends Preprocessor
         return $scanner->scan();
     }
 
-    public function genClassPropertyInit(): string
-    {
-        $code = '';
-        foreach ($this->classCeList as $ce) {
-            $info = $this->classCeInfo[$ce] ?? $this->getInternalCeInfo($ce);
-            $code .= "$ce = {$info['func']}({$info['args']});\n";
-            $classDef = !empty($info['classDef']) ? $info['classDef'] : null;
-
-            /**
-             * @var ClassDef $classDef
-             */
-            if ($classDef and $classDef->requireCtor) {
-                $className = $classDef->getNamespacedName();
-                $code .= "create_object_$className = php_get_create_object_fn($ce);\n";
-                $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
-                $code .= "auto obj = create_object_$className(class_type);\n";
-                foreach ($classDef->properties as $property) {
-                    $fullPropName = $classDef->getNamespacedName() . '::' . $property->name;
-                    if (isset($this->defaultPropertyList[$fullPropName])) {
-                        $code .= "auto value = {$this->defaultPropertyList[$fullPropName]};\n";
-                        $code .= "zend_update_property_ex(obj->ce, obj, " . $this->getLiteralString($property->name) . ".str(), value.ptr());\n";
-                    }
-                }
-                $code .= "return obj;\n};\n";
-            }
-        }
-        return $code;
-    }
-
     protected function genClassArrayConstants(): string
     {
         $code = '';
@@ -565,7 +567,7 @@ class Translator extends Preprocessor
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
                     $code .= "do {\n";
                     $code .= $constant->arrayExpr;
-                    $code .= $constName . " = " . $constant->value . ";\n";
+                    $code .= $constName . ' = ' . $constant->value . ";\n";
                     $code .= "} while(0);\n";
                 }
             }
