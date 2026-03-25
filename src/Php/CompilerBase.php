@@ -4316,11 +4316,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         foreach ($vars as $var) {
-            if ($var->name === 'this' or !$this->hasLocalVar($var->name) or isset($params[$var->name])) {
+            if ($var->name === 'this'
+                or !$this->hasLocalVar($var->name)
+                or isset($params[$var->name])
+                or isset($uses[$var->name])) {
                 continue;
             }
-            $uses[] = new Node\ClosureUse($var);
+            $uses[$var->name] = new Node\ClosureUse($var);
         }
+        $uses = array_values($uses);
 
         $cb = function () use ($expr) {
             $code = $this->parseExpr($expr->expr);
