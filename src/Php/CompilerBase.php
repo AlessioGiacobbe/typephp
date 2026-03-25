@@ -4345,7 +4345,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $cb = function () use ($expr) {
             $fnCode = $this->parseStmts($expr->stmts);
-            $fnCode = $this->genLocalVarDecl() . $fnCode;
             if (!$this->isReturnStmtInLastLine($expr->stmts)) {
                 $fnCode .= 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
             }

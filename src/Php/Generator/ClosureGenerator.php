@@ -64,7 +64,8 @@ trait ClosureGenerator
             $this->addArgument('this_', self::TYPE_OBJECT);
         }
 
-        $code .= $bodyGenCb();
+        $body = $bodyGenCb();
+        $code .= $this->genLocalVarDecl() . $body;
 
         $this->indentLevel--;
         $this->context->inClosure = false;
