@@ -23,3 +23,10 @@ extern void php_restore_scope(php::Scope &ori_scope);
 static inline auto php_get_create_object_fn(zend_class_entry *ce) {
 	return ce->create_object ? ce->create_object : zend_objects_new;
 }
+
+static inline php::Object &php_get_object_wrap(php::Object &obj, php::Var &var) {
+	if (UNEXPECTED(obj.isNull())) {
+		obj = var;
+	}
+	return obj;
+}

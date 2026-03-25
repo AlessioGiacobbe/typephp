@@ -2464,10 +2464,16 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($i !== $last) {
                     $this->fatalError($arg, 'The unpack expression for variadic arguments must be the last');
                 }
-                $tmpVar = $this->genTmpVarName();
-                $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $tmpVar . '{' . implode(', ', $list_args) . '};';
-                $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
-                return $tmpVar;
+                // 如果第一个参数是数组变量，数组展开语法直接传递该变量，没必要创建临时变量
+                // 例如：function (array $args) { var_dump(...$args); }
+                if ($i === 0 and $this->isVarExpr($arg->value) and $this->getVarType($arg->value->name) === self::TYPE_ARRAY) {
+                    return $this->parseIdentifier($arg->value);
+                } else {
+                    $tmpVar = $this->genTmpVarName();
+                    $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $tmpVar . '{' . implode(', ', $list_args) . '};';
+                    $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
+                    return $tmpVar;
+                }
             }
             $list_args[] = $this->parseArg($arg);
         }
@@ -3566,20 +3572,24 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function convertToObject(NodeAbstract $object): string
     {
         $id = $this->parseIdentifier($object);
-        if ($this->isVarExpr($object) and $this->getVarType($id) === self::TYPE_OBJECT) {
-            return $id;
+        if ($this->isVarExpr($object)) {
+            if ($this->getVarType($id) === self::TYPE_OBJECT) {
+                return $id;
+            }
+            if (isset($this->context->objectWrappers[$id])) {
+                return 'php_get_object_wrap(' . $this->context->objectWrappers[$id] . ', ' . $id . ')';
+            } else {
+                $tmpVar = $this->genTmpVarName();
+                $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . ' = ' . $id . ';';
+                $this->context->objectWrappers[$id] = $tmpVar;
+                return $tmpVar;
+            }
+        } else {
+            $tmpVar = $this->genTmpVarName();
+            $this->context->beforeStmtLines[] = $this->getIndent() . self::TYPE_OBJECT . ' ' . $tmpVar . ' = ' . $id . ';';
+            return $tmpVar;
         }
-
-        if (isset($this->context->objectWrappers[$id])) {
-            return $this->context->objectWrappers[$id];
-        }
-
-        $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
-        $this->context->beforeStmtLines[]   = $this->getIndent() . $tmpVar . ' = ' . $id . ';';
-        $this->context->objectWrappers[$id] = $tmpVar;
-
-        return $tmpVar;
     }
 
     protected function convertToRef(NodeAbstract $expr): string
