@@ -52,6 +52,7 @@ class Constants
         'static',
         'pipe',
         'template',
+        'namespace',
         'errno', // Linux error code
     ];
 

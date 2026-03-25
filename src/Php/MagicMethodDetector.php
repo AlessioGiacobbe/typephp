@@ -18,44 +18,46 @@ trait MagicMethodDetector
         $argInfoList = $methodDef->functionDef->argInfoList;
         $returnType = $methodDef->functionDef->returnType;
 
-        if ($name == '__call' or $name == '__callStatic' or $name == '__set') {
+        $nameLower = strtolower($name);
+
+        if ($nameLower == '__call' or $nameLower == '__callstatic' or $nameLower == '__set') {
             if (count($argInfoList) != 2) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take exactly 2 arguments");
             }
             if (!$this->checkArgType($argInfoList[0]->type, self::TYPE_STR)) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take string as argument");
             }
-        } elseif ($name == '__get') {
+        } elseif ($nameLower == '__get') {
             if (count($argInfoList) != 1) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take exactly 1 argument");
             }
-        } elseif ($name == '__toString') {
-            if (!$returnType or $returnType != self::TYPE_STR) {
+        } elseif ($nameLower == '__tostring') {
+            if ($returnType != self::TYPE_VAR and $returnType != self::TYPE_STR) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return string");
             }
-        } elseif ($name == '__serialize') {
-            if (!$returnType or $returnType != self::TYPE_ARRAY) {
+        } elseif ($nameLower == '__serialize') {
+            if ($returnType != self::TYPE_VAR and $returnType != self::TYPE_ARRAY) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return array");
             }
-        } elseif ($name == '__unserialize') {
+        } elseif ($nameLower == '__unserialize') {
             if (count($argInfoList) != 1) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take exactly 1 argument");
             } elseif (!$argInfoList[0]->type or $argInfoList[0]->type != self::TYPE_ARRAY) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take array as argument");
             }
-        } elseif ($name == '__isset' or $name == '__unset' or $name == '__set_state') {
+        } elseif ($nameLower == '__isset' or $nameLower == '__unset' or $nameLower == '__set_state') {
             if (count($argInfoList) != 1) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take exactly 1 argument");
             }
             if (!$argInfoList[0]->type or $argInfoList[0]->type != self::TYPE_STR) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take string as argument");
             }
-            if ($name == '__set_state') {
+            if ($nameLower == '__set_state') {
                 if (!$returnType or $returnType != self::TYPE_ARRAY) {
                     $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return array");
                 }
             }
-        } elseif ($name == '__debugInfo') {
+        } elseif ($nameLower == '__debuginfo') {
             if (!$returnType or $returnType != self::TYPE_ARRAY) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return array");
             }
