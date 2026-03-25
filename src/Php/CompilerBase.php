@@ -3595,19 +3595,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->getVarType($id) === self::TYPE_OBJECT) {
                 return $id;
             }
-            if (isset($this->context->objectWrappers[$id])) {
-                return 'php_get_object_wrap(' . $this->context->objectWrappers[$id] . ', ' . $id . ')';
-            } else {
-                $tmpVar = $this->genTmpVarName();
-                $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
-                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . ' = ' . $id . ';';
-                $this->context->objectWrappers[$id] = $tmpVar;
-                return $tmpVar;
+            if (!isset($this->context->objectWrappers[$id])) {
+                $this->context->objectWrappers[$id] = $this->addTmpVar(self::TYPE_OBJECT);
             }
+            return 'php_get_object_wrap(' . $this->context->objectWrappers[$id] . ', ' . $id . ')';
         } else {
-            $tmpVar = $this->genTmpVarName();
-            $this->context->beforeStmtLines[] = $this->getIndent() . self::TYPE_OBJECT . ' ' . $tmpVar . ' = ' . $id . ';';
-            return $tmpVar;
+            return self::TYPE_OBJECT . '(' . $id . ')';
         }
     }
 

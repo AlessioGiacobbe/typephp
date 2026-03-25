@@ -30,7 +30,9 @@ trait Utils
 
     protected function escapeString(string $str): string
     {
-        return addcslashes($str, "\\\"\n\r\t\v\f\0\x01..\x1f\x7f..\xff");
+        $str = addcslashes($str, "\\\"\n\r\t\v\f\0\x01..\x1f\x7f..\xff");
+        // C++ trigraph
+        return str_replace('??', '\?\?', $str);
     }
 
     protected function escapeBool(bool $bool): string
