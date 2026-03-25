@@ -34,6 +34,7 @@ use PhpParser\Node\Scalar\MagicConst;
 use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
+use PhpParser\NodeFinder;
 use PhpParser\Parser;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter;
@@ -4300,6 +4301,27 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseArrowFunction(Node\Expr\ArrowFunction $expr): string
     {
+        $nodeFinder = new NodeFinder();
+        $vars = $nodeFinder->findInstanceOf($expr->expr, Node\Expr\Variable::class);
+        $uses = [];
+        $params = [];
+
+        foreach ($expr->params as $i => $param) {
+            if ($param->byRef) {
+                $this->fatalError($expr, 'Closure cannot use reference parameter');
+            }
+            if ($param->var instanceof Node\Expr\Variable) {
+                $params[$param->var->name] = $i;
+            }
+        }
+
+        foreach ($vars as $var) {
+            if ($var->name === 'this' or !$this->hasLocalVar($var->name) or isset($params[$var->name])) {
+                continue;
+            }
+            $uses[] = new Node\ClosureUse($var);
+        }
+
         $cb = function () use ($expr) {
             $code = $this->parseExpr($expr->expr);
             if ($this->context->beforeStmtLines) {
@@ -4315,7 +4337,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             return $beforeCode . PHP_EOL . 'return ' . $code . ';';
         };
-        return $this->genClosure($expr, $expr->params, $cb, [], true);
+
+        return $this->genClosure($expr, $expr->params, $cb, $uses);
     }
 
     protected function parseClosure(Node\Expr\Closure $expr): string

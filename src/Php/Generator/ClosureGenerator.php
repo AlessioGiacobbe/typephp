@@ -22,29 +22,25 @@ trait ClosureGenerator
     }
 
     /**
-     * @param $useCurrentScope bool 直接使用当前作用域，C++ 函数将使用 & 捕获所有闭包变量
+     * @param NodeAbstract $expr
+     * @param array $params
+     * @param callable $bodyGenCb
+     * @param array $uses
+     * @return string
      */
-    protected function genClosure(NodeAbstract $expr, array $params, callable $bodyGenCb, array $uses = [], bool $useCurrentScope = false): string
+    protected function genClosure(NodeAbstract $expr, array $params, callable $bodyGenCb, array $uses = []): string
     {
         $tmpVar = $this->genTmpVarName();
-        // 必须使用 = 捕获，不能使用 & ，否则可能会出现悬空指针
-        // 在 PHP 中 = 赋值是浅拷贝，仅增加一次引用计数，和 zval (16 字节) 封装的赋值
-        $capture = $useCurrentScope ? '&' : '';
 
         $code = $this->getIndent() .
-            'php::ClosureFn ' . $tmpVar . ' = [' . $capture . ']('
+            'php::ClosureFn ' . $tmpVar . ' = []('
             . 'INTERNAL_FUNCTION_PARAMETERS, '
             . self::TYPE_OBJECT . ' &this_, '
             . self::TYPE_ARGS . ' &vars_) ' .
             '-> ' . self::TYPE_VAR . ' {' . PHP_EOL;
 
         $oriContext = $this->context;
-        if ($useCurrentScope) {
-            $oriBeforeStmtLines = $oriContext->beforeStmtLines;
-            $oriAfterStmtLines = $oriContext->afterStmtLines;
-        } else {
-            $this->context = new FunctionContext();
-        }
+        $this->context = new FunctionContext();
 
         $this->context->inClosure = true;
         $this->indentLevel++;
@@ -83,14 +79,8 @@ trait ClosureGenerator
                 }
                 if ($useItem->byRef) {
                     // 闭包的 use 语法，若为引用类型，可以就地创建变量
-                    if ($useCurrentScope) {
-                        if (!$this->hasVar($var)) {
-                            $this->addLocalVar($var, self::TYPE_REF);
-                        }
-                    } else {
-                        if (!isset($oriContext->localVars[$var])) {
-                            $oriContext->localVars[$var] = self::TYPE_REF;
-                        }
+                    if (!isset($oriContext->localVars[$var])) {
+                        $oriContext->localVars[$var] = self::TYPE_REF;
                     }
                     $useVars[] = $this->convertToRef($useItem->var);
                 } else {
@@ -103,10 +93,6 @@ trait ClosureGenerator
         }
 
         $this->context = $oriContext;
-        if ($useCurrentScope) {
-            $this->context->beforeStmtLines = $oriBeforeStmtLines;
-            $this->context->afterStmtLines = $oriAfterStmtLines;
-        }
         $this->context->beforeStmtLines[] = $code;
 
         if ($this->methodDef) {
