@@ -749,9 +749,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseTypeDecl(?NodeAbstract $type, int $what): string
     {
-        // 未定义类型，默认是 var (mixed, any)
+        // 未定义类型，属性、参数默认是 var (mixed, any) ，返回值是 void
         if ($type === null) {
-            return self::TYPE_VAR;
+            return $what === self::DECL_TYPE_OF_RETURN ? self::TYPE_VOID : self::TYPE_VAR;
         }
         if ($type instanceof UnionType or $type instanceof NullableType) {
             // 联合类型暂时不支持，使用 var 类型代替
