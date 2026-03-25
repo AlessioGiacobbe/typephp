@@ -1031,11 +1031,17 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if ($param->default) {
                 if ($param->byRef) {
-                    $this->fatalError($param, 'Default value for parameters passed by reference is not supported');
+                    if (!$this->isEmptyArray($param->default)) {
+                        $this->fatalError($param, 'Default value for parameters passed by reference must be an empty array');
+                    } else {
+                        $argInfo->default = 'php::getEmptyArrayRef()';
+                        $argInfo->defaultValue = null;
+                    }
+                } else {
+                    $argInfo->default = $this->parseParamDefaultValue($param->default);
+                    $argInfo->defaultValue = $param->default;
                 }
                 $defaultValueCount++;
-                $argInfo->default = $this->parseParamDefaultValue($param->default);
-                $argInfo->defaultValue = $param->default;
             } elseif ($param->variadic) {
                 // 变长参数可以视为空数组默认值
                 $defaultValueCount++;
@@ -2339,6 +2345,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 命名参数中间存在空洞，需要使用默认参数填充
             foreach ($functionDef->argInfoList as $k => $argInfo) {
                 if (!isset($args[$k])) {
+                    if ($argInfo->defaultValue === null) {
+                        $this->fatalError($callArgs[$i], 'Named argument `' . $argInfo->name . '` is missing default value');
+                    }
                     $args[$k] = new Node\Arg($argInfo->defaultValue);
                 }
             }

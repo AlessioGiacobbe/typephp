@@ -129,4 +129,9 @@ trait AstNodeType
         }
         return $expr instanceof Expr\Exit_;
     }
+
+    protected function isEmptyArray(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Expr\Array_ && count($expr->items) === 0;
+    }
 }

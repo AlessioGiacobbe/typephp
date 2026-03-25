@@ -954,7 +954,11 @@ class Translator extends Preprocessor
                 $cppCode .= '}' . PHP_EOL;
             } else {
                 if ($argInfo->default) {
-                    $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
+                    if ($argInfo->byRef) {
+                        $argExpr = 'php::getCallArgByRef(' . $k . ', ' . $argInfo->default . ')';
+                    } else {
+                        $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
+                    }
                 } else {
                     if ($argInfo->byRef) {
                         $argExpr = 'php::getCallArgByRef(' . $k . ')';
