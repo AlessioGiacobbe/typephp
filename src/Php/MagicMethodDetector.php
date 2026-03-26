@@ -32,33 +32,34 @@ trait MagicMethodDetector
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take exactly 1 argument");
             }
         } elseif ($nameLower == '__tostring') {
-            if ($returnType != self::TYPE_VAR and $returnType != self::TYPE_STR) {
+            if (!$this->checkArgType($returnType, self::TYPE_STR)) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return string");
             }
         } elseif ($nameLower == '__serialize') {
-            if ($returnType != self::TYPE_VAR and $returnType != self::TYPE_ARRAY) {
+            if (!$this->checkArgType($returnType, self::TYPE_ARRAY)) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return array");
             }
         } elseif ($nameLower == '__unserialize') {
             if (count($argInfoList) != 1) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take exactly 1 argument");
-            } elseif (!$argInfoList[0]->type or $argInfoList[0]->type != self::TYPE_ARRAY) {
+            }
+            if (!$this->checkArgType($argInfoList[0]->type, self::TYPE_ARRAY)) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take array as argument");
             }
         } elseif ($nameLower == '__isset' or $nameLower == '__unset' or $nameLower == '__set_state') {
             if (count($argInfoList) != 1) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take exactly 1 argument");
             }
-            if (!$argInfoList[0]->type or $argInfoList[0]->type != self::TYPE_STR) {
+            if (!$this->checkArgType($argInfoList[0]->type, self::TYPE_STR)) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take string as argument");
             }
             if ($nameLower == '__set_state') {
-                if (!$returnType or $returnType != self::TYPE_ARRAY) {
+                if (!$this->checkArgType($returnType, self::TYPE_ARRAY)) {
                     $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return array");
                 }
             }
         } elseif ($nameLower == '__debuginfo') {
-            if (!$returnType or $returnType != self::TYPE_ARRAY) {
+            if (!$this->checkArgType($returnType, self::TYPE_ARRAY)) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return array");
             }
         }

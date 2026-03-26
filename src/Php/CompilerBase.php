@@ -2909,7 +2909,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseClone(Node\Expr\Clone_ $expr): string
     {
-        return $this->convertToObject($expr->expr) . '.clone()';
+        return 'php::clone('.$this->parseExpr($expr->expr).')';
     }
 
     protected function parseInstanceof(Node\Expr\Instanceof_ $expr): string
@@ -3640,7 +3640,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if ($this->isPropertyFetch($expr->expr)) {
                 $left   = $this->parseIdentifier($expr->var);
-                $object = $this->convertToObject($expr->expr->var);
+                $object = $this->parseExpr($expr->expr->var);
                 $prop   = $this->identifierToStr($expr->expr->name);
 
                 return $left . ' = ' . $object . '.attrRef(' . $prop . ')';

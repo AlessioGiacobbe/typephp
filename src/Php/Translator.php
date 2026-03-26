@@ -927,7 +927,7 @@ class Translator extends Preprocessor
         return $code;
     }
 
-    protected function genNativeMethod($methodCodes): string
+    protected function genNativeMethod(array $methodCodes): string
     {
         $code     = '';
         $classDef = $this->classDef;

@@ -10,6 +10,7 @@ namespace PhpAot\Php;
 
 use MJS\TopSort\Implementations\StringSort;
 use PhpAot\Php\Exception\SyntaxError;
+use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeFinder;
@@ -22,6 +23,7 @@ class Preprocessor extends CompilerBase
     public function sortFiles(array &$list): void
     {
         $sorter = new StringSort();
+
         foreach ($this->symbolCallInFile as $file => $symbols) {
             $deps = [];
             foreach ($symbols as $symbol) {
@@ -232,22 +234,24 @@ class Preprocessor extends CompilerBase
 
     protected function prepareMethod(Node\Stmt\ClassMethod $v): void
     {
-        $this->prepareFunction($v) . PHP_EOL;
-        if ($this->isIdExpr($v->name) or $this->isNameExpr($v->name)) {
-            $fullClassName = $this->getNamespacedClassName($this->class);
-            $fullMethodName = $fullClassName . '::' . $v->name;
-            $this->classMethodOverride[strtolower($fullMethodName)] = false;
-            // 查找父类是否有同名方法，递归查找
-            $fullClassNameLower = strtolower($fullClassName);
-            while (isset($this->classExtends[$fullClassNameLower])) {
-                $parentClass = $this->classExtends[$fullClassNameLower];
-                $parentMethodLower = strtolower($parentClass . '::' . $v->name);
-                // 父类有同名方法，子类覆盖了父类方法，这种情况不能直接使用 C++ 函数，而是使用 ZendVM 动态调用
-                if (isset($this->classMethodOverride[$parentMethodLower])) {
-                    $this->classMethodOverride[$parentMethodLower] = true;
-                }
-                $fullClassNameLower = strtolower($parentClass);
+        $abstract = $v->flags & Modifiers::ABSTRACT;
+        if (!$abstract) {
+            $this->prepareFunction($v) . PHP_EOL;
+        }
+
+        $fullClassName = $this->getNamespacedClassName($this->class);
+        $fullMethodName = $fullClassName . '::' . $v->name;
+        $this->classMethodOverride[strtolower($fullMethodName)] = false;
+        // 查找父类是否有同名方法，递归查找
+        $fullClassNameLower = strtolower($fullClassName);
+        while (isset($this->classExtends[$fullClassNameLower])) {
+            $parentClass = $this->classExtends[$fullClassNameLower];
+            $parentMethodLower = strtolower($parentClass . '::' . $v->name);
+            // 父类有同名方法，子类覆盖了父类方法，这种情况不能直接使用 C++ 函数，而是使用 ZendVM 动态调用
+            if (isset($this->classMethodOverride[$parentMethodLower])) {
+                $this->classMethodOverride[$parentMethodLower] = true;
             }
+            $fullClassNameLower = strtolower($parentClass);
         }
     }
 }
