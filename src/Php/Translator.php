@@ -865,7 +865,7 @@ class Translator extends Preprocessor
             $extends = $class->extends;
         }
 
-        $fullName = $this->getNamespacedClassName($this->class);
+        $fullName = ltrim($this->namespace . '\\' . $this->class, '\\');
         if ($this->hasNativeClass($fullName)) {
             $this->classDef = $this->getClassDef($fullName);
         } else {

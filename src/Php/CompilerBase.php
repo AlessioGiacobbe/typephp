@@ -849,6 +849,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$this->isReturnStmtInLastLine($v->stmts)) {
                     $stmts .= $this->genReturnCode();
                 }
+                $this->functionDef->completed = true;
             } catch (Skip) {
                 $this->climate->cyan('Skip function ' . $name);
             }
@@ -1719,9 +1720,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function resetReturnType(Node\Stmt\Return_ $node, string $type): void
     {
+        $oriType = $this->functionDef->returnType;
         $this->functionDef->returnType = $type;
         // 返回值变更，需要重新解析
-        $this->climate->cyan('Return type changed at line ' . $node->getLine() . ', retrying...');
+        $this->climate->cyan("Return type changed ($oriType -> $type) at line {$node->getLine()} retrying...");
         throw new Redo();
     }
 
@@ -1792,9 +1794,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $method = $this->parseIdentifier($expr->name);
                     $nativeFunc = $this->findNativeMethod($expr, $object, $method);
                     if ($nativeFunc) {
-                        return $this->nativeFunctions[$nativeFunc]->returnType;
-                    }
-                    if ($this->isTypedObject($object)) {
+                        $funcDef = $this->nativeFunctions[$nativeFunc];
+                        // 此函数尚未完成解析，仅经过初步的预处理，无法获得准确的返回值类型
+                        if ($funcDef->completed) {
+                            return $funcDef->returnType;
+                        }
+                    } elseif ($this->isTypedObject($object)) {
                         return $this->detectMethodCallReturnType($this->getObjectType($object), $method);
                     }
                 }
@@ -3579,9 +3584,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function detectFuncCallReturnType(string $name): string
     {
-        $returnType = Reflection::getFunctionReturnType($name);
-        if ($returnType) {
-            return $this->getTypeFromZendType($returnType);
+        if ($this->isInternalFunction($name)) {
+            $returnType = Reflection::getFunctionReturnType($name);
+            // void 类型将被忽略，类型推测仅用于赋值操作的右值，即使返回值为 void , 赋值操作也应该继续运行，右值会被当做 null
+            // 例如 $a = var_dump('hello'); 虽然 var_dump 返回值为 void ，但是 $a 的类型是 mixed，值为 null
+            if ($returnType and $returnType !== 'void') {
+                return $this->getTypeFromZendType($returnType);
+            }
         }
         return self::TYPE_VAR;
     }
@@ -3589,7 +3598,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function detectMethodCallReturnType(string $class, string $method): string
     {
         $returnType = Reflection::getMethodReturnType($class, $method);
-        if ($returnType) {
+        if ($returnType and $returnType !== 'void') {
             return $this->getTypeFromZendType($returnType);
         }
         return self::TYPE_VAR;
@@ -3978,8 +3987,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 goto _to_object;
             }
         } else {
+            $ex = $this->parseIdentifier($expr->expr);
             _to_object:
-            $ex = $this->convertObjectExpr($expr->expr);
+            $ex = $this->convertObjectExpr($ex);
         }
         return 'php::throwException(' . $ex . ')';
     }
@@ -4208,7 +4218,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->addLocalVar($name, self::TYPE_VAR);
         } else {
             if ($this->getVarType($name) !== self::TYPE_VAR) {
-                $this->fatalError($node, 'Cannot assign value to variable of type ' . $this->getVarType($name));
+                $this->fatalError($node, 'Cannot assign value to variable $' . $name . ' of type ' . $this->getVarType($name));
             }
         }
     }

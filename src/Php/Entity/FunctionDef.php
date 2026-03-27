@@ -23,6 +23,7 @@ class FunctionDef
     public string $params = '';
     public string $namespace = '';
     public bool $method = false;
+    public bool $completed = false;
 
     public function __construct(string $name, string $returnType, string $namespace = '')
     {
