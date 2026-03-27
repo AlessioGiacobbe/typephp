@@ -136,4 +136,17 @@ class Reflection
         }
         return $class->hasMethod($method);
     }
+
+    public static function getMethodReturnType(string $class, string $method): ?string
+    {
+        $class = self::getClass($class);
+        if (!$class) {
+            return null;
+        }
+        if (!$class->hasMethod($method)) {
+            return null;
+        }
+        $method = $class->getMethod($method);
+        return $method->getReturnType() ? $method->getReturnType()->getName() : null;
+    }
 }

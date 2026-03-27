@@ -1779,11 +1779,27 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 break;
             case 'Expr_FuncCall':
-                $name = $this->parseIdentifier($expr->name);
-                if ($this->hasNativeFunction($name)) {
-                    return $this->getNativeFunction($name)->returnType;
+                if ($this->isNameExpr($expr->name)) {
+                    $name = $this->parseIdentifier($expr->name);
+                    if ($this->hasNativeFunction($name)) {
+                        return $this->getNativeFunction($name)->returnType;
+                    }
+                    return $this->detectFuncCallReturnType($name);
                 }
-                return $this->detectFuncCallReturnType($name);
+                break;
+            case 'Expr_MethodCall':
+                if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
+                    $object = $this->parseIdentifier($expr->var);
+                    $method = $this->parseIdentifier($expr->name);
+                    $nativeFunc = $this->findNativeMethod($expr, $object, $method);
+                    if ($nativeFunc) {
+                        return $this->nativeFunctions[$nativeFunc]->returnType;
+                    }
+                    if ($this->isTypedObject($object)) {
+                        return $this->detectMethodCallReturnType($this->getObjectType($object), $method);
+                    }
+                }
+                break;
             case 'Expr_New':
                 return self::TYPE_OBJECT;
             case 'Expr_Assign':
@@ -2909,7 +2925,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseClone(Node\Expr\Clone_ $expr): string
     {
-        return 'php::clone('.$this->parseExpr($expr->expr).')';
+        return 'php::clone(' . $this->parseExpr($expr->expr) . ')';
     }
 
     protected function parseInstanceof(Node\Expr\Instanceof_ $expr): string
@@ -3057,6 +3073,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         if ($argInfo->byRef) {
             return $this->convertToRef($arg->value);
+        }
+
+        if ($argInfo->type === self::TYPE_OBJECT) {
+            return $this->convertObjectExpr($expr);
         }
 
         return $this->convertExprType($expr, $argInfo->type, $type);
@@ -3568,6 +3588,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         return self::TYPE_VAR;
     }
 
+    protected function detectMethodCallReturnType(string $class, string $method): string
+    {
+        $returnType = Reflection::getMethodReturnType($class, $method);
+        if ($returnType) {
+            return $this->getTypeFromZendType($returnType);
+        }
+        return self::TYPE_VAR;
+    }
+
     protected function convertExprFromType(string $type, string $expr): string
     {
         if ($type === self::TYPE_FLOAT) {
@@ -3590,22 +3619,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return $expr;
-    }
-
-    protected function convertToObject(NodeAbstract $object): string
-    {
-        $id = $this->parseIdentifier($object);
-        if ($this->isVarExpr($object)) {
-            if ($this->getVarType($id) === self::TYPE_OBJECT) {
-                return $id;
-            }
-            if (!isset($this->context->objectWrappers[$id])) {
-                $this->context->objectWrappers[$id] = $this->addTmpVar(self::TYPE_OBJECT);
-            }
-            return 'php_get_object_wrap(' . $this->context->objectWrappers[$id] . ', ' . $id . ')';
-        } else {
-            return self::TYPE_OBJECT . '(' . $id . ')';
-        }
     }
 
     protected function convertToRef(NodeAbstract $expr): string
@@ -3651,18 +3664,15 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseMethodCall(Node\Expr\MethodCall $expr): string
     {
+        $class = '';
+        $object = $this->parseIdentifier($expr->var);
         if ($this->isVarExpr($expr->var)) {
-            $var = $this->parseIdentifier($expr->var);
-            if (!$this->hasVar($var)) {
+            if (!$this->hasVar($object)) {
                 $this->errorUndefinedVariable($expr->var);
             }
-        }
-
-        $object = $this->convertToObject($expr->var);
-        if ($this->isTypedObject($object)) {
-            $class = $this->getObjectType($object);
-        } else {
-            $class = '';
+            if ($this->isTypedObject($object)) {
+                $class = $this->getObjectType($object);
+            }
         }
 
         $dynamicCall = false;
@@ -3699,10 +3709,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         if (empty($expr->args)) {
-            return $object . '.exec(' . $methodPtr . ')';
+            return $object . '.call(' . $methodPtr . ')';
         }
         try {
-            return $object . '.exec(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
+            return $object . '.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($this->genArray([$object, $method]));
         }
@@ -3962,10 +3972,16 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseThrow(mixed $expr): string
     {
-        if (!$this->isVarExpr($expr->expr) and $expr->expr->getType() != self::EXPR_NEW) {
-            $ex = $this->convertToObject($expr->expr);
-        } else {
+        if ($this->isNewExpr($expr->expr)) {
+            $ex = $this->parseExpr($expr->expr);
+        } elseif ($this->isVarExpr($expr->expr)) {
             $ex = $this->parseIdentifier($expr->expr);
+            if ($this->getVarType($ex) != self::TYPE_OBJECT) {
+                goto _to_object;
+            }
+        } else {
+            _to_object:
+            $ex = $this->convertObjectExpr($expr->expr);
         }
         return 'php::throwException(' . $ex . ')';
     }
@@ -4252,6 +4268,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseNativeMethodCall(string $object, string $nativeFunc, array $args): string
     {
+        if ($this->getVarType($object) != self::TYPE_OBJECT) {
+            $tmpVar = $this->genTmpVarName();
+            $this->context->beforeStmtLines[] = self::TYPE_OBJECT . ' ' . $tmpVar . ' = ' . $object . ';';
+            $object = $tmpVar;
+        }
         if (count($args) === 0) {
             return self::PREFIX . $nativeFunc . '(' . $object . ')';
         }
@@ -4471,7 +4492,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
             } else {
                 $args = $this->parseCallArgs($item[2]);
-                $code .= $this->getIndent() . "{$tmpVar} = {$object}.exec({$item[1]}, {$args});";
+                $code .= $this->getIndent() . "{$tmpVar} = {$object}.call({$item[1]}, {$args});";
             }
             $object = $tmpVar;
         }

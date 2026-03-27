@@ -16,12 +16,6 @@ class FunctionContext
     public array $objects = [];
     public array $localVars = [];
     public array $staticVars = [];
-
-    /**
-     * @var array<string, string>
-     */
-    public array $objectWrappers = [];
-
     /**
      * @var array<string, string>
      */
@@ -44,7 +38,6 @@ class FunctionContext
         $this->staticVars = [];
         $this->arguments = [];
         $this->objects = [];
-        $this->objectWrappers = [];
         $this->ceWrappers = [];
         $this->tmpVarIndex = 0;
         $this->inLoop = false;
