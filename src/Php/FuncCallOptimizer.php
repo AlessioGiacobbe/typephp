@@ -44,6 +44,9 @@ trait FuncCallOptimizer
         if ($name === 'abs') {
             return 'php::math::abs(' . $getArg(0) . ')';
         }
+        if ($name === 'pow') {
+            return 'php::math::pow(' . $getArg(0) . ', ' . $getArg(1) . ')';
+        }
         if ($name === 'ord') {
             return 'php::fn::ord(' . $getArg(0) . ')';
         }

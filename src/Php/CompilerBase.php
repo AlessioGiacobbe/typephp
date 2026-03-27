@@ -2045,6 +2045,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $var          = $this->parseIdentifier($node->var);
         $expr         = $this->parseIdentifier($node->expr);
         $leftExprType = $node->var->getType();
+
         if ($this->isVarExpr($node->var)) {
             if (!$this->hasVar($var)) {
                 $this->fatalError($node->var, 'Cannot assign to undefined variable');
@@ -2055,16 +2056,15 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->isArrayVar($node->var)) {
                     $this->fatalError($node->var, 'Cannot concat string to array');
                 }
-
                 return $var . '.append(' . $rightExprStr . ')';
             }
             if ($this->isAssignOpPow($op)) {
-                $powExpr = 'php::call(php::pow, {' . $var . ', ' . $rightExprStr . '})';
-
+                $powExpr = 'php::math::pow(' . $var . ', ' . $rightExprStr . ')';
                 return $var . ' = ' . $this->convertVarType($var, $powExpr);
             }
             return $var . ' ' . $op . ' ' . $rightExprStr;
         }
+
         if ($leftExprType === self::EXPR_ARRAY_DIM_FETCH) {
             /**
              * $count[$r] -= 1;
@@ -2313,8 +2313,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $fn = $this->getFuncPtr($name);
             $this->context->beforeStmtLines[] = '// Func Call: ' . $name . '()';
         } else {
-            $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->name) . ';';
             $placeHolder = $fn = $tmpVar;
             $name = '';
@@ -2633,7 +2632,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $left  = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return 'php::pow(' . $left . ', ' . $right . ')';
+        return 'php::math::pow(' . $left . ', ' . $right . ')';
     }
 
     protected function parsePreDec(Node\Expr\PreDec $expr): string
