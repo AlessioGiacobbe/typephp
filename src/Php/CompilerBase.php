@@ -11,7 +11,6 @@ namespace PhpAot\Php;
 use League\CLImate\CLImate;
 use PhpAot\Php\Context\FunctionContext;
 use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\ConstantDef;
 use PhpAot\Php\Entity\FunctionDef;
 use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
