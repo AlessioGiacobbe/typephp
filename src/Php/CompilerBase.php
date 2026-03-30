@@ -273,6 +273,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->formatCppCode($file);
     }
 
+    public function isScalarInt(Node\Expr $position): bool
+    {
+        return $position instanceof Node\Scalar\LNumber;
+    }
+
     public function getLine($node): int
     {
         return $node->getLine();
@@ -908,7 +913,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return self::LITERAL_STRINGS . '[' . $index . ']';
     }
 
-    protected function parseScalar(Node\Scalar $expr)
+    protected function parseScalar(Node\Scalar $expr): string
     {
         $type = $expr->getType();
         switch ($type) {

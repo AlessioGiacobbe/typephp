@@ -56,27 +56,74 @@ trait FuncCallOptimizer
         if ($name === 'array_key_exists') {
             return $getArg(1) . '.offsetExists(' . $getArg(0) . ')';
         }
+        if ($name === 'func_get_arg') {
+            return $this->genFuncGetArg($name, $expr);
+        }
         if ($name === 'func_get_args') {
-
+            return $this->genFuncGetArgs($name, $expr);
         }
         if ($name === 'func_num_args') {
-            $funcDef = $this->functionDef;
-            foreach ($funcDef->argInfoList as $i => $argInfo) {
-                if ($argInfo->variadic) {
-                    return '(' . $argInfo->name . '.count() + ' . $i . ')';
-                }
-            }
-            return count($funcDef->argInfoList);
+            return $this->genFuncNumArgs($name, $expr);
         }
         if ($name === 'function_exists') {
-            $funcName = $expr->args[0]->value;
-            if ($this->isScalarString($funcName)) {
-                $funcName = $this->getLiteralString(strtolower(trim($funcName->value, '\\')));
-                return 'php::fn::function_exists(' . $funcName . ', true)';
-            }
-            return 'php::fn::function_exists(' . $this->parseIdentifier($funcName) . ')';
+            return $this->genFunctionExists($name, $expr);
         }
-
         return false;
+    }
+
+    public function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr): string
+    {
+        $funcDef = $this->functionDef;
+        $list = [];
+        foreach ($funcDef->argInfoList as $i => $argInfo) {
+            if ($argInfo->variadic) {
+                $tmpVar = $this->addTmpVar(self::TYPE_ARRAY);
+                $this->context->beforeStmtLines[] = $this->genArray($list) . ';';
+                $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $argInfo->name . ');';
+                return $tmpVar;
+            }
+            $list[] = $argInfo->name;
+        }
+        return $this->genArray($list);
+    }
+
+    public function genFuncGetArg(string $name, Node\Expr\FuncCall $expr)
+    {
+        $position = $expr->args[0]->value;
+        if ($this->isScalarInt($position)) {
+            $funcDef = $this->functionDef;
+            $posInt = intval($position->value);
+            foreach ($funcDef->argInfoList as $i => $argInfo) {
+                if ($argInfo->variadic) {
+                    return $argInfo->name . '.offsetGet(' . ($posInt - $i) . ')';
+                } elseif ($i == $posInt) {
+                    return $argInfo->name;
+                }
+            }
+            $this->fatalError($expr, 'wrong parameter position `' . $posInt . '`');
+        } else {
+            $this->fatalError($expr, 'func_get_arg() only support scalar int');
+        }
+    }
+
+    protected function genFuncNumArgs(string $name, Node\Expr\FuncCall $expr): string
+    {
+        $funcDef = $this->functionDef;
+        foreach ($funcDef->argInfoList as $i => $argInfo) {
+            if ($argInfo->variadic) {
+                return '(' . $argInfo->name . '.count() + ' . $i . ')';
+            }
+        }
+        return count($funcDef->argInfoList);
+    }
+
+    protected function genFunctionExists(string $name, Node\Expr\FuncCall $expr): string
+    {
+        $funcName = $expr->args[0]->value;
+        if ($this->isScalarString($funcName)) {
+            $funcName = $this->getLiteralString(strtolower(trim($funcName->value, '\\')));
+            return 'php::fn::function_exists(' . $funcName . ', true)';
+        }
+        return 'php::fn::function_exists(' . $this->parseIdentifier($funcName) . ')';
     }
 }
