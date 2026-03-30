@@ -85,6 +85,10 @@ class Preprocessor extends CompilerBase
 
         $phpCode = $this->loadFile($file);
         $this->symbolCallInFile[$this->file] = [];
+        $this->resetFile();
+        $this->resetFunction();
+        $this->resetClass();
+        $this->resetNamespace();
 
         $this->climate->info('prepare: ' . $this->file);
         try {
@@ -194,7 +198,7 @@ class Preprocessor extends CompilerBase
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
-        $fullClassName = $this->getNamespacedClassName($this->class);
+        $fullClassName = $this->getFullClassName();
         $fullClassNameLower = strtolower($fullClassName);
 
         if (!empty($class->extends)) {

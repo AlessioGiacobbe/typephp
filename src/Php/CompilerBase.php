@@ -599,8 +599,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function resetNamespace(): void
     {
         $this->useNamespaces = [];
-        $this->useFunctions  = [];
-        $this->namespace     = '';
+        $this->useAliases = [];
+        $this->useFunctions = [];
+        $this->namespace = '';
     }
 
     protected function getFunctionName(FunctionLike $v): string
@@ -654,7 +655,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         foreach ($this->useNamespaces as $useNamespace) {
             $ns1 = explode('\\', trim($useNamespace, '\\'));
-            if ($ns1[array_key_last($ns1)] === $ns2[0]) {
+            if (strcasecmp($ns1[array_key_last($ns1)], $ns2[0]) === 0) {
                 $ns = '\\' . implode('\\', $ns1);
                 goto _return;
             }

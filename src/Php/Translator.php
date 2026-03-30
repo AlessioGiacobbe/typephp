@@ -475,7 +475,7 @@ class Translator extends Preprocessor
     public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string
     {
         foreach ($this->sourceDirs as $srcDir) {
-            if (str_starts_with($stubFilenameWithoutExtension, $srcDir)) {
+            if (!is_dir($srcDir) or str_starts_with($stubFilenameWithoutExtension, $srcDir)) {
                 $filePath = ltrim($this->removeCommonPrefix($srcDir, $stubFilenameWithoutExtension), '/');
                 break;
             }
