@@ -1004,6 +1004,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($param->type instanceof NullableType) {
                     $type = $param->type->type;
                     $nullable = true;
+                } elseif ($param->type instanceof UnionType) {
+                    $type = 'mixed';
+                    $nullable = false;
                 } else {
                     $type = $param->type === null ? '' : $param->type;
                     $nullable = false;
