@@ -8,5 +8,8 @@
 /tmp
 /projects/wordpress
 /projects/workerman
+/projects/thinkphp
+/projects/laravel
+/projects/tmp
 /.php-cs-fixer.cache
 *.o

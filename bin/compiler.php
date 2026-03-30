@@ -25,10 +25,10 @@ foreach ($list as $k => $file) {
         try {
             $translator->prepare($file);
         } catch (Unsupported $e) {
-            echo " unsupported syntax: " . $e->getMessage() . "\n";
-            echo " skip: " . $file . "\n";
+            $translator->output(" unsupported syntax: " . $e->getMessage() . "\n" . " skip: " . $file . "\n", 'error');
             unset($list[$k]);
         } catch (SyntaxError $e) {
+            $translator->output(" syntax error: " . $e->getMessage() . "\n" . " skip: " . $file . "\n", 'error');
             unset($list[$k]);
         }
     }

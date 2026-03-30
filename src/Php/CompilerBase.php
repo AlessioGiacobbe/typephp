@@ -627,6 +627,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->escapeName($prefix . $name);
     }
 
+    protected function getFullClassName(): string
+    {
+        return ltrim($this->namespace . '\\' . $this->class, '\\');
+    }
+
     protected function getNamespacedClassName(string $class): string
     {
         if ($class === '') {

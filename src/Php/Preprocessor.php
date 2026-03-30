@@ -10,6 +10,7 @@ namespace PhpAot\Php;
 
 use MJS\TopSort\Implementations\StringSort;
 use PhpAot\Php\Exception\SyntaxError;
+use PhpAot\Php\Exception\Unsupported;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
@@ -165,7 +166,7 @@ class Preprocessor extends CompilerBase
                     $this->foundStrayCode($v2);
                     // no break
                 default:
-                    abort($v2);
+                    throw new Unsupported('Unsupported statement: ' . $type2);
             }
         }
         $this->resetNamespace();
@@ -199,6 +200,9 @@ class Preprocessor extends CompilerBase
         if (!empty($class->extends)) {
             $this->parentClass = $this->getParentClass($class->extends);
             $parentClassLower = strtolower($this->parentClass);
+            if ($parentClassLower === $fullClassNameLower) {
+                $this->fatalError($class, "Class {$fullClassName} cannot extend itself");
+            }
             $this->classExtends[$fullClassNameLower] = $parentClassLower;
             if (!$this->isInternalClass($parentClassLower)) {
                 $this->symbolCallInFile[$this->file][] = $parentClassLower;
@@ -239,11 +243,12 @@ class Preprocessor extends CompilerBase
             $this->prepareFunction($v) . PHP_EOL;
         }
 
-        $fullClassName = $this->getNamespacedClassName($this->class);
+        $fullClassName = $this->getFullClassName();
         $fullMethodName = $fullClassName . '::' . $v->name;
         $this->classMethodOverride[strtolower($fullMethodName)] = false;
         // 查找父类是否有同名方法，递归查找
         $fullClassNameLower = strtolower($fullClassName);
+
         while (isset($this->classExtends[$fullClassNameLower])) {
             $parentClass = $this->classExtends[$fullClassNameLower];
             $parentMethodLower = strtolower($parentClass . '::' . $v->name);

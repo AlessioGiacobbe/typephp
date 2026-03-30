@@ -404,6 +404,11 @@ class Translator extends Preprocessor
         return $objectFiles;
     }
 
+    public function output(string $message, string $style = 'out'): void
+    {
+        $this->climate->{$style}($message);
+    }
+
     public function build(array $objectFiles): void
     {
         $objectList = implode(' ', $objectFiles);
@@ -865,7 +870,7 @@ class Translator extends Preprocessor
             $extends = $class->extends;
         }
 
-        $fullName = ltrim($this->namespace . '\\' . $this->class, '\\');
+        $fullName = $this->getFullClassName();
         if ($this->hasNativeClass($fullName)) {
             $this->classDef = $this->getClassDef($fullName);
         } else {
