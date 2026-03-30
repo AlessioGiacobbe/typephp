@@ -225,7 +225,7 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_EnumCase':
                     break;
                 case 'Stmt_ClassMethod':
-                    $this->prepareMethod($v);
+                    $this->prepareMethod($v, $class);
                     break;
                 case 'Stmt_Expression':
                     $this->foundStrayCode($v);
@@ -240,11 +240,15 @@ class Preprocessor extends CompilerBase
         return $code;
     }
 
-    protected function prepareMethod(Node\Stmt\ClassMethod $v): void
+    protected function prepareMethod(Node\Stmt\ClassMethod $v, Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): void
     {
         $abstract = $v->flags & Modifiers::ABSTRACT;
         if (!$abstract) {
             $this->prepareFunction($v) . PHP_EOL;
+        } else {
+            if (!($class->flags & Modifiers::ABSTRACT)) {
+                $this->fatalError($v, "Class {$this->class} cannot override non-abstract method {$v->name}");
+            }
         }
 
         $fullClassName = $this->getFullClassName();

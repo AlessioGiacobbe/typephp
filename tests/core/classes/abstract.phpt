@@ -27,9 +27,8 @@ function main() {
 --EXPECTF--
 Call to function show()
 
-Fatal error: Uncaught Error: Cannot call abstract method fail::show() in %s:%d
+Fatal error: Uncaught Error: Cannot call abstract method fail::show() in %s
 Stack trace:
-#0 [internal function]: pass->error()
-#1 Unknown(0) : %s
-#2 {main}
-  thrown in %s on line %d
+#0 Unknown(0) : %s
+#1 {main}
+  thrown in Unknown(0) : %s

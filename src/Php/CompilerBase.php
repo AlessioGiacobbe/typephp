@@ -2921,6 +2921,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $cePtr = 'php_get_called_ce(this_)';
                 } else {
                     $className = $this->getNamespacedClassName($className);
+                    if ($this->hasNativeClass($className)) {
+                        $classDef = $this->getClassDef($className);
+                        if ($classDef->flags & Modifiers::ABSTRACT) {
+                            $this->fatalError($expr, "abstract class `$className` cannot be instantiated");
+                        }
+                    }
                     $cePtr = $this->getClassEntryPtr($className);
                 }
             } else {
