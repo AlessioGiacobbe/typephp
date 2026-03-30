@@ -56,6 +56,18 @@ trait FuncCallOptimizer
         if ($name === 'array_key_exists') {
             return $getArg(1) . '.offsetExists(' . $getArg(0) . ')';
         }
+        if ($name === 'func_get_args') {
+
+        }
+        if ($name === 'func_num_args') {
+            $funcDef = $this->functionDef;
+            foreach ($funcDef->argInfoList as $i => $argInfo) {
+                if ($argInfo->variadic) {
+                    return '(' . $argInfo->name . '.count() + ' . $i . ')';
+                }
+            }
+            return count($funcDef->argInfoList);
+        }
         if ($name === 'function_exists') {
             $funcName = $expr->args[0]->value;
             if ($this->isScalarString($funcName)) {
