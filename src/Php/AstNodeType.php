@@ -145,6 +145,6 @@ trait AstNodeType
 
     protected function isNull(NodeAbstract $expr): bool
     {
-        return $expr instanceof Node\Expr\ConstFetch && $expr->name->toString() === 'null';
+        return $expr instanceof Expr\ConstFetch && $expr->name->toString() === 'null';
     }
 }

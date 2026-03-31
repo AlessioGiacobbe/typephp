@@ -1247,6 +1247,11 @@ class Translator extends Preprocessor
         return $code;
     }
 
+    protected function parseTrait(Node\Stmt\Trait_ $trait)
+    {
+        throw new Unsupported('Unsupported Trait ');
+    }
+
     private function getRegisterClassFunctionArgDef(ClassDef|InterfaceDef $classDef): string
     {
         $depsCeList = $this->getRegisterClassFunctionCeList($classDef);
@@ -1366,10 +1371,5 @@ class Translator extends Preprocessor
         $code .= '};' . PHP_EOL . PHP_EOL;
 
         return $code;
-    }
-
-    protected function parseTrait(Node\Stmt\Trait_ $trait)
-    {
-        throw new Unsupported('Unsupported Trait ');
     }
 }
