@@ -144,6 +144,21 @@ class Preprocessor extends CompilerBase
                 }
             }
         }
+
+        $depClasses = $nodeFinder->findInstanceOf($ast, Node\Expr\StaticCall::class);
+        $depClasses = array_merge($depClasses, $nodeFinder->findInstanceOf($ast, Node\Expr\StaticPropertyFetch::class));
+        $depClasses = array_merge($depClasses, $nodeFinder->findInstanceOf($ast, Node\Expr\ClassConstFetch::class));
+        $depClasses = array_merge($depClasses, $nodeFinder->findInstanceOf($ast, Node\Expr\New_::class));
+        foreach ($depClasses as $call) {
+            if ($call->class instanceof Node\Name) {
+                $className = $this->parseIdentifier($call->class);
+                if ($className !== 'self' && $className !== 'static') {
+                    $this->symbolCallInFile[$this->file][] = strtolower($className);
+                }
+            }
+        }
+        // 依赖去重
+        $this->symbolCallInFile[$this->file] = array_unique($this->symbolCallInFile[$this->file]);
     }
 
     protected function prepareNamespaceDef(Node\Stmt\Namespace_ $node): void
