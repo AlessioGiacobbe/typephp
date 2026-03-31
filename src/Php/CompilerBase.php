@@ -3708,8 +3708,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
                 return $left . ' = ' . $object . '.attrRef(' . $prop . ')';
             }
+        } else {
+            $this->fatalError($expr, 'Cannot assign reference to non-variable');
         }
-        abort($expr);
     }
 
     protected function parseMethodCall(Node\Expr\MethodCall $expr): string
