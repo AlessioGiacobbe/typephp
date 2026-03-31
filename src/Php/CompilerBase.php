@@ -3398,11 +3398,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code = 'do {' . PHP_EOL;
         $this->indentLevel++;
         $condList = [];
+        $defaultCase = false;
+        $defaultOnly = true;
         foreach ($v->cases as $case) {
             if (empty($case->cond)) {
-                if ($condList) {
-                    $this->fatalError($case, 'switch case must be first');
-                }
+                $defaultCase = true;
             } else {
                 $condList[] = $tmp_var . '==' . $this->parseIdentifier($case->cond);
             }
@@ -3423,11 +3423,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($case, 'switch case must end with return/break/exit/throw, ' . $lastExpr->getType() . ' given');
             }
 
-            if ($condList) {
-                $code .= $this->getIndent() . 'if (' . implode(' || ', $condList) . ') {' . PHP_EOL;
-                $condList = [];
+            if ($defaultCase) {
+                $else = $defaultOnly ? '' : 'else';
+                $code .= $this->getIndent() . $else . ' {' . PHP_EOL;
             } else {
-                $code .= $this->getIndent() . 'else {' . PHP_EOL;
+                $code .= $this->getIndent() . 'if (' . implode(' || ', $condList) . ') {' . PHP_EOL;
+                $defaultOnly = false;
+                $condList = [];
             }
 
             $code .= $this->parseStmts($stmts);
