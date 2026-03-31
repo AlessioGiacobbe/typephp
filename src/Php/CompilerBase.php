@@ -1055,11 +1055,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if ($param->default) {
                 if ($param->byRef) {
-                    if (!$this->isEmptyArray($param->default)) {
-                        $this->fatalError($param, 'Default value for parameters passed by reference must be an empty array');
-                    } else {
+                    if ($this->isEmptyArray($param->default)) {
                         $argInfo->default = 'php::getEmptyArrayRef()';
                         $argInfo->defaultValue = null;
+                    } elseif ($this->isNull($param->default)) {
+                        $argInfo->default = 'nullptr';
+                        $argInfo->defaultValue = null;
+                    } else {
+                        $this->fatalError($param, 'Only null and empty array can be used as default value for reference parameter');
                     }
                 } else {
                     $argInfo->default = $this->parseParamDefaultValue($param->default);

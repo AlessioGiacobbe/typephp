@@ -142,4 +142,9 @@ trait AstNodeType
     {
         return $expr instanceof Expr\Array_ && count($expr->items) === 0;
     }
+
+    protected function isNull(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Expr\ConstFetch && $expr->name->toString() === 'null';
+    }
 }

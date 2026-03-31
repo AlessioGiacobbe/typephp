@@ -106,7 +106,7 @@ class Preprocessor extends CompilerBase
             $type = $v->getType();
             switch ($type) {
                 case 'Stmt_Namespace':
-                    $this->prepareNamespaceDef($v);
+                    $this->prepareNamespace($v);
                     break;
                 case 'Stmt_Enum':
                 case 'Stmt_Class':
@@ -161,7 +161,7 @@ class Preprocessor extends CompilerBase
         $this->symbolCallInFile[$this->file] = array_unique($this->symbolCallInFile[$this->file]);
     }
 
-    protected function prepareNamespaceDef(Node\Stmt\Namespace_ $node): void
+    protected function prepareNamespace(Node\Stmt\Namespace_ $node): void
     {
         $this->resetNamespace();
         $this->namespace = $node->name ? $this->parseIdentifier($node->name) : '';

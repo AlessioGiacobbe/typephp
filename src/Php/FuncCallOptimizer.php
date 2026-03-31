@@ -12,6 +12,42 @@ use PhpParser\Node;
 
 trait FuncCallOptimizer
 {
+    public function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr): string
+    {
+        $funcDef = $this->functionDef;
+        $list = [];
+        foreach ($funcDef->argInfoList as $i => $argInfo) {
+            if ($argInfo->variadic) {
+                $tmpVar = $this->addTmpVar(self::TYPE_ARRAY);
+                $this->context->beforeStmtLines[] = $this->genArray($list) . ';';
+                $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $argInfo->name . ');';
+                return $tmpVar;
+            }
+            $list[] = $argInfo->name;
+        }
+        return $this->genArray($list);
+    }
+
+    public function genFuncGetArg(string $name, Node\Expr\FuncCall $expr)
+    {
+        $position = $expr->args[0]->value;
+        if ($this->isScalarInt($position)) {
+            $funcDef = $this->functionDef;
+            $posInt = intval($position->value);
+            foreach ($funcDef->argInfoList as $i => $argInfo) {
+                if ($argInfo->variadic) {
+                    return $argInfo->name . '.offsetGet(' . ($posInt - $i) . ')';
+                }
+                if ($i == $posInt) {
+                    return $argInfo->name;
+                }
+            }
+            $this->fatalError($expr, 'wrong parameter position `' . $posInt . '`');
+        } else {
+            $this->fatalError($expr, 'func_get_arg() only support scalar int');
+        }
+    }
+
     protected function parseFuncCallWithOptimizer(string $name, Node\Expr\FuncCall $expr): string|false
     {
         $getArg = function ($i) use ($expr) {
@@ -69,41 +105,6 @@ trait FuncCallOptimizer
             return $this->genFunctionExists($name, $expr);
         }
         return false;
-    }
-
-    public function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr): string
-    {
-        $funcDef = $this->functionDef;
-        $list = [];
-        foreach ($funcDef->argInfoList as $i => $argInfo) {
-            if ($argInfo->variadic) {
-                $tmpVar = $this->addTmpVar(self::TYPE_ARRAY);
-                $this->context->beforeStmtLines[] = $this->genArray($list) . ';';
-                $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $argInfo->name . ');';
-                return $tmpVar;
-            }
-            $list[] = $argInfo->name;
-        }
-        return $this->genArray($list);
-    }
-
-    public function genFuncGetArg(string $name, Node\Expr\FuncCall $expr)
-    {
-        $position = $expr->args[0]->value;
-        if ($this->isScalarInt($position)) {
-            $funcDef = $this->functionDef;
-            $posInt = intval($position->value);
-            foreach ($funcDef->argInfoList as $i => $argInfo) {
-                if ($argInfo->variadic) {
-                    return $argInfo->name . '.offsetGet(' . ($posInt - $i) . ')';
-                } elseif ($i == $posInt) {
-                    return $argInfo->name;
-                }
-            }
-            $this->fatalError($expr, 'wrong parameter position `' . $posInt . '`');
-        } else {
-            $this->fatalError($expr, 'func_get_arg() only support scalar int');
-        }
     }
 
     protected function genFuncNumArgs(string $name, Node\Expr\FuncCall $expr): string

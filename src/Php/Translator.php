@@ -17,6 +17,7 @@ use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
 use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\Redo;
+use PhpAot\Php\Exception\Unsupported;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Foreach_;
@@ -825,6 +826,9 @@ class Translator extends Preprocessor
                 case 'Stmt_Interface':
                     $code .= $this->parseInterface($v2) . PHP_EOL;
                     break;
+                case 'Stmt_Trait':
+                    $code .= $this->parseTrait($v2) . PHP_EOL;
+                    break;
                 default:
                     abort($v2);
             }
@@ -1362,5 +1366,10 @@ class Translator extends Preprocessor
         $code .= '};' . PHP_EOL . PHP_EOL;
 
         return $code;
+    }
+
+    protected function parseTrait(Node\Stmt\Trait_ $trait)
+    {
+        throw new Unsupported('Unsupported Trait ');
     }
 }
