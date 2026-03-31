@@ -10,14 +10,10 @@ namespace PhpAot\Php;
 
 class CompilerTest extends Translator
 {
-    protected static ?self $instance = null;
-
-    public static function getInstance(string $rootPath = ''): CompilerTest
+    public static function create(string $rootPath = ''): CompilerTest
     {
-        if (!self::$instance) {
-            self::$instance = new self($rootPath);
-            self::$instance->forTest = true;
-        }
-        return self::$instance;
+        $instance = new self($rootPath);
+        $instance->forTest = true;
+        return $instance;
     }
 }

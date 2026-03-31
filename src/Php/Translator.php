@@ -244,7 +244,7 @@ class Translator extends Preprocessor
     public function genExtension(string $file): void
     {
         if ($this->buildMode == 'bin') {
-            if (!isset($this->nativeFunctions['main'])) {
+            if (!$this->hasFunction('main')) {
                 $this->climate->red('When the build mode is a binary executable file, the `main()` function must be defined');
                 exit(1);
             }
@@ -437,7 +437,7 @@ class Translator extends Preprocessor
         $literalStringsCount = count($this->literalStrings);
         $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
 
-        foreach ($this->nativeFunctions as $name => $func) {
+        foreach ($this->functions as $name => $func) {
             $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
             $list = [];
             if ($func->method) {
@@ -462,7 +462,7 @@ class Translator extends Preprocessor
         }
 
         $code .= PHP_EOL;
-        foreach ($this->nativeConstants as $name => $constant) {
+        foreach ($this->constants as $name => $constant) {
             $code .= 'extern ' . $constant->type . ' ' . $name . ';' . PHP_EOL;
         }
         $this->writeFile($file, $code);
@@ -881,8 +881,8 @@ class Translator extends Preprocessor
         }
 
         $fullName = $this->getFullClassName();
-        if ($this->hasNativeClass($fullName)) {
-            $this->classDef = $this->getClassDef($fullName);
+        if ($this->hasClass($fullName)) {
+            $this->classDef = $this->getClass($fullName);
         } else {
             $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
             $this->addClass($fullName, $this->classDef);
@@ -894,8 +894,8 @@ class Translator extends Preprocessor
 
         if ($extends) {
             $parentClass = $this->getParentClass($class->extends);
-            if ($this->hasNativeClass($parentClass)) {
-                $parent = $this->getClassDef($parentClass);
+            if ($this->hasClass($parentClass)) {
+                $parent = $this->getClass($parentClass);
                 if ($parent->flags & Modifiers::FINAL) {
                     $this->fatalError($class, "Class `{$this->class}` cannot extend final class `{$parentClass}`");
                 }

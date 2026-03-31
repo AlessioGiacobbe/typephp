@@ -74,7 +74,7 @@ foreach ($this->literalStrings as $str => $index):
 
 // constants
 <?php
-foreach ($this->nativeConstants as $name => $const):
+foreach ($this->constants as $name => $const):
 ?>
 <?=$const->type?> <?=$name?>;
 <?php endforeach; ?>
@@ -101,6 +101,9 @@ static const zend_function_entry ext_functions[] = {
 <?php
 foreach ($this->functions as $functionDef):
     if ($this->buildMode === 'ext' and $functionDef->name === 'main') {
+        continue;
+    }
+    if ($functionDef->method) {
         continue;
     }
     $zif_name = $this->escapeZendFnName($functionDef->getNamespacedName());
@@ -132,7 +135,7 @@ foreach ($this->registerSymbols as $registerSymbolFn):
 void php_app_init() {
     // register constants
 <?php
-foreach ($this->nativeConstants as $name => $const):
+foreach ($this->constants as $name => $const):
 ?>
     <?=$name?> = <?= $const->value ?>;
     php::define("<?=$this->escapeString($const->name)?>", <?= $name ?>);
@@ -166,7 +169,7 @@ foreach ($this->globalVars as $name => $type) :
     php::unsetGlobal("<?=$name?>");
 <?php endforeach; ?>
 <?php
-foreach ($this->nativeConstants as $name => $const):
+foreach ($this->constants as $name => $const):
     if ($const->type !== Translator::TYPE_VAR) {
         continue;
     }

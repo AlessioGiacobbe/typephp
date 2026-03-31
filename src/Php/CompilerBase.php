@@ -11,6 +11,7 @@ namespace PhpAot\Php;
 use League\CLImate\CLImate;
 use PhpAot\Php\Context\FunctionContext;
 use PhpAot\Php\Entity\ClassDef;
+use PhpAot\Php\Entity\ConstantDef;
 use PhpAot\Php\Entity\FunctionDef;
 use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
@@ -136,15 +137,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         'php_aot_helper.h',
     ];
     protected array $localHeaders = [];
-
-    /**
-     * 存储所有函数、类方法的定义，key 是 native name，命名空间需要转为 `_`，并且必须为小写
-     * @var array<string, FunctionDef>
-     */
-    protected array $nativeFunctions = [];
     protected array $internalFunctions = [];
-    protected array $nativeConstants = [];
-
     /**
      * 存储所有函数、类方法的声明，key 是 符号名称，Value 是函数、类方法所在的文件名称
      * @var array<string, string>
@@ -185,28 +178,28 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $class = '';
     protected string $parentClass = '';
     protected string $interface = '';
-
+    /**
+     * @var array<string, InterfaceDef>
+     */
+    protected array $interfaces = [];
+    /**
+     * 存储所有函数、类方法的定义，key 是 native name，命名空间需要转为 `_`，并且必须为小写
+     * @var array<string, FunctionDef>
+     */
+    protected array $functions = [];
     /**
      * key 类名，包含命名空间
      * @var array<string, ClassDef>
      */
     protected array $classes = [];
-
     /**
-     * @var array<string, InterfaceDef>
+     * @var array<string, ConstantDef>
      */
-    protected array $interfaces = [];
-
-    /**
-     * @var array<string, FunctionDef>
-     */
-    protected array $functions = [];
-
+    protected array $constants = [];
     /**
      * @var array<string, ClassDef>
      */
     protected array $classesDefineInFile = [];
-
     /**
      * @var array<string, InterfaceDef>
      */
@@ -837,10 +830,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->resetFunction();
         $this->function = $this->parseIdentifier($v->name);
         $name = $this->getFunctionName($v);
-        if (!empty($this->nativeFunctions[$name])) {
-            $this->functionDef = $this->nativeFunctions[$name];
+        if ($this->hasFunction($name)) {
+            $this->functionDef = $this->getFunction($name);
         } else {
-            $this->nativeFunctions[$name] = $this->parseFunctionDecl($v);
+            $this->addFunction($name, $this->parseFunctionDecl($v));
             if (isset($this->redoAfterDeclare[$name])) {
                 unset($this->redoAfterDeclare[$name]);
                 $this->climate->cyan('Received redo request, retrying...');
@@ -856,7 +849,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->methodDef->functionDef = $this->functionDef;
             }
         } else {
-            $this->functions[$name] = $this->functionDef;
             $this->functionDefineInFile[$name] = $this->functionDef;
         }
 
@@ -1568,10 +1560,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function addStaticVar(string $name, string $type): void
     {
-        $this->context->staticVars[$name] = $type;
         if ($this->hasStaticVar($name)) {
             $this->error('Duplicate static variable `$' . $name . '`');
         }
+        $this->context->staticVars[$name] = $type;
         $this->addGlobalVar($this->getStaticVarName($name), $type);
     }
 
@@ -1594,19 +1586,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->globalVars[$name] = $type;
     }
 
-    protected function addClass(string $name, ClassDef $classDef): void
-    {
-        $this->classes[$this->escapeClass($name)] = $classDef;
-    }
-
     protected function addObject(string $name, string $class): void
     {
         $this->context->objects[$name] = $class;
-    }
-
-    protected function addFunction(string $name, FunctionDef $functionDef): void
-    {
-        $this->functions[$this->escapeFunction($name)] = $functionDef;
     }
 
     protected function hasVar(string $name): bool
@@ -1619,39 +1601,45 @@ class CompilerBase extends \PhpAot\Core\Translator
         return isset($this->context->localVars[$name]);
     }
 
+    protected function addFunction(string $name, FunctionDef $functionDef): void
+    {
+        $this->functions[$this->escapeFunction($name)] = $functionDef;
+    }
     /**
      * @param string $name 必须传入带有完整命名空间的类名，将会自动转义为 native name
      */
-    protected function hasNativeClass(string $name): bool
+    protected function hasFunction(string $name): bool
     {
-        return array_key_exists($this->escapeClass($name), $this->classes);
+        return array_key_exists($this->escapeFunction($name), $this->functions);
     }
 
-    protected function getNativeClass(string $name): ClassDef
+    protected function getFunction(string $name): FunctionDef
+    {
+        return $this->functions[$this->escapeFunction($name)];
+    }
+
+    protected function addClass(string $name, ClassDef $classDef): void
+    {
+        $this->classes[$this->escapeClass($name)] = $classDef;
+    }
+
+    protected function getClass(string $name): ClassDef
     {
         return $this->classes[$this->escapeClass($name)];
     }
 
-    /**
-     * @param string $name 必须传入带有完整命名空间的类名，将会自动转义为 native name
-     */
-    protected function hasNativeFunction(string $name): bool
+    protected function hasClass(string $name): bool
     {
-        return array_key_exists($this->escapeFunction($name), $this->nativeFunctions);
+        return array_key_exists($this->escapeClass($name), $this->classes);
     }
 
-    protected function getNativeFunction(string $name): FunctionDef
-    {
-        return $this->nativeFunctions[$this->escapeFunction($name)];
-    }
-
-    protected function checkNativeFunction(string $name): void
+    protected function checkFunction(string $name): void
     {
         // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
         // 跳过，稍后再处理
         if (isset($this->symbolDeclInFile[$name])
             and $this->symbolDeclInFile[$name] === $this->file
-            and !$this->hasNativeFunction($name)) {
+            and !$this->hasFunction($name)) {
             $this->redoAfterDeclare[$name] = true;
             throw new Skip();
         }
@@ -1670,11 +1658,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getNativeMethod(CallLike $expr, string $class, string $method, bool $checkArgs = true): string|false
     {
-        if (!$this->hasNativeClass($class)) {
+        if (!$this->hasClass($class)) {
             return false;
         }
 
-        $classDef = $this->getClassDef($class);
+        $classDef = $this->getClass($class);
         $methodDef = null;
         // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
         while ($classDef) {
@@ -1682,7 +1670,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$classDef->extends) {
                     return false;
                 }
-                if (!$this->hasNativeClass($classDef->extends)) {
+                if (!$this->hasClass($classDef->extends)) {
                     if ($classDef->inheritedFromInternalClass) {
                         if (!Reflection::hasMethod($classDef->extends, $method) and !Reflection::hasMethod($classDef->extends, $method . '__call')) {
                             $this->fatalError($expr, 'Class `' . $classDef->getNamespacedName() . '` inherits from a internal class, but the class `' .
@@ -1694,7 +1682,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                     return false;
                 }
-                $classDef = $this->getClassDef($classDef->extends);
+                $classDef = $this->getClass($classDef->extends);
             } else {
                 $methodDef = $classDef->getMethod($method);
                 break;
@@ -1714,13 +1702,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->getNativeName($method, $classDef->namespace, $classDef->name);
     }
 
-    protected function getNativeClassConst(NodeAbstract $expr, string $class, string $const): string|false
+    protected function getClassConst(NodeAbstract $expr, string $class, string $const): string|false
     {
-        if (!$this->hasNativeClass($class)) {
+        if (!$this->hasClass($class)) {
             return false;
         }
 
-        $classDef = $this->getClassDef($class);
+        $classDef = $this->getClass($class);
         $constDef = null;
         // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
         while ($classDef) {
@@ -1728,10 +1716,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$classDef->extends) {
                     return false;
                 }
-                if (!$this->hasNativeClass($classDef->extends)) {
+                if (!$this->hasClass($classDef->extends)) {
                     return false;
                 }
-                $classDef = $this->getClassDef($classDef->extends);
+                $classDef = $this->getClass($classDef->extends);
             } else {
                 $constDef = $classDef->getConstant($const);
                 break;
@@ -1745,11 +1733,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         } else {
             return $constDef->value;
         }
-    }
-
-    protected function getClassDef(string $name): ClassDef
-    {
-        return $this->classes[$this->escapeClass($name)];
     }
 
     protected function resetReturnType(Node\Stmt\Return_ $node, string $type): void
@@ -1816,8 +1799,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_FuncCall':
                 if ($this->isNameExpr($expr->name)) {
                     $name = $this->parseIdentifier($expr->name);
-                    if ($this->hasNativeFunction($name)) {
-                        return $this->getNativeFunction($name)->returnType;
+                    if ($this->hasFunction($name)) {
+                        return $this->getFunction($name)->returnType;
                     }
                     return $this->detectFuncCallReturnType($name);
                 }
@@ -1828,7 +1811,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $method = $this->parseIdentifier($expr->name);
                     $nativeFunc = $this->findNativeMethod($expr, $object, $method);
                     if ($nativeFunc) {
-                        $funcDef = $this->nativeFunctions[$nativeFunc];
+                        $funcDef = $this->functions[$nativeFunc];
                         // 此函数尚未完成解析，仅经过初步的预处理，无法获得准确的返回值类型
                         if ($funcDef->completed) {
                             return $funcDef->returnType;
@@ -2323,8 +2306,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (str_contains($nativeFunc, '\\')) {
                 $nativeFunc = $this->escapeNamespace($nativeFunc);
             }
-            $this->checkNativeFunction($nativeFunc);
-            if ($this->hasNativeFunction($nativeFunc)) {
+            $this->checkFunction($nativeFunc);
+            if ($this->hasFunction($nativeFunc)) {
                 return $nativeFunc;
             }
         }
@@ -2351,7 +2334,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
                 $expr->setAttribute('nativeCall', $nativeFn);
-                $this->checkNativeCallArgs($expr, $this->getNativeFunction($nativeFn), $expr->args, $name);
+                $this->checkNativeCallArgs($expr, $this->getFunction($nativeFn), $expr->args, $name);
                 try {
                     return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
                 } catch (PlaceHolder) {
@@ -2387,7 +2370,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseNativeCallArgs(array $callArgs, string $nativeFunc): string
     {
         $argList = [];
-        $functionDef = $this->nativeFunctions[$nativeFunc];
+        $functionDef = $this->functions[$nativeFunc];
         $args = [];
         $hasNamedArg = false;
         // 对命名参数进行重排
@@ -2966,8 +2949,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $cePtr = 'php_get_called_ce(this_)';
                 } else {
                     $className = $this->getNamespacedClassName($className);
-                    if ($this->hasNativeClass($className)) {
-                        $classDef = $this->getClassDef($className);
+                    if ($this->hasClass($className)) {
+                        $classDef = $this->getClass($className);
                         if ($classDef->flags & Modifiers::ABSTRACT) {
                             $this->fatalError($expr, "abstract class `{$className}` cannot be instantiated");
                         }
@@ -3113,10 +3096,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getArgInfo(Node $arg, string $funcName, int $index): ArgInfo
     {
-        if (!isset($this->nativeFunctions[$funcName])) {
+        if (!isset($this->functions[$funcName])) {
             $this->fatalError($arg, "Function `{$funcName}` is undefined, you must adjust the order of function definition");
         }
-        $funcDef = $this->nativeFunctions[$funcName];
+        $funcDef = $this->functions[$funcName];
         if (!array_key_exists($index, $funcDef->argInfoList)) {
             $this->fatalError($arg, "Argument `{$index}` of function `{$funcName}` not found");
         }
@@ -3704,7 +3687,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if ($this->isVarExpr($expr->var)) {
             $this->context->inAssignExpr = true;
-            $left               = $this->parseIdentifier($expr->var);
+            $left = $this->parseIdentifier($expr->var);
             $this->context->inAssignExpr = false;
             if (!$this->hasVar($left)) {
                 $this->addLocalVar($left, self::TYPE_REF);
@@ -3727,9 +3710,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
                 return $left . ' = ' . $object . '.attrRef(' . $prop . ')';
             }
-        } else {
-            $this->fatalError($expr, 'Cannot assign reference to non-variable');
         }
+        $this->fatalError($expr, 'Cannot assign reference to non-variable');
     }
 
     protected function parseMethodCall(Node\Expr\MethodCall $expr): string
@@ -3863,7 +3845,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($callScope) {
                 $nativeFunc = $this->getNativeMethod($expr, $class, $method);
                 // 存在 Native 类，但是没有找到方法，可能是动态调用
-                if (!$nativeFunc and $this->hasNativeClass($class) and $this->getNativeMethod($expr, $class, '__callStatic', false)) {
+                if (!$nativeFunc and $this->hasClass($class) and $this->getNativeMethod($expr, $class, '__callStatic', false)) {
                     $dynamicCall = true;
                 }
 
@@ -3922,11 +3904,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
 
             $fullName = $this->getNamespacedClassName($class);
-            if (!$this->hasNativeClass($fullName)) {
+            if (!$this->hasClass($fullName)) {
                 return null;
             }
 
-            $classDef = $this->getClassDef($fullName);
+            $classDef = $this->getClass($fullName);
             if ($classDef->hasProperty($prop)) {
                 $propDef = $classDef->getProperty($prop);
                 if ($propDef->isStatic()) {
@@ -3947,8 +3929,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         $scope = $this->class ? ltrim($namespace . '\\' . $class, '\\') : '';
 
         while (true) {
-            if ($this->hasNativeClass($findClass)) {
-                $classDef = $this->getClassDef($findClass);
+            if ($this->hasClass($findClass)) {
+                $classDef = $this->getClass($findClass);
                 if ($classDef->hasProperty($property)) {
                     $propertyDef = $classDef->getProperty($property);
                     if ($propertyDef->isPublic()) {
@@ -4021,13 +4003,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             return '"' . $this->escapeString($class) . '"';
         }
         if (($self or $this->isNameExpr($expr->class)) and $this->isIdExpr($expr->name)) {
-            if ($this->hasNativeClass($class)) {
-                $classDef = $this->getClassDef($class);
+            if ($this->hasClass($class)) {
+                $classDef = $this->getClass($class);
                 if ($classDef->enum) {
                     $ce = $this->getClassEntryPtr($class);
                     return 'php::getEnumCase(' . $ce . ', ' . $this->getLiteralString($const) . ')';
                 }
-                $nativeConst = $this->getNativeClassConst($expr, $class, $const);
+                $nativeConst = $this->getClassConst($expr, $class, $const);
                 if ($nativeConst) {
                     return $nativeConst;
                 }
@@ -4157,12 +4139,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         $constInfo->type              = $this->detectStrValueType($value);
         $constInfo->namespace = $this->namespace;
         $constInfo->name = $name;
-        $this->nativeConstants[$this->escapeNamespace($name)] = $constInfo;
+        $this->constants[$this->escapeNamespace($name)] = $constInfo;
     }
 
     protected function hasConstant(string $name): bool
     {
-        return isset($this->nativeConstants[$this->escapeNamespace($name)]);
+        return isset($this->constants[$this->escapeNamespace($name)]);
     }
 
     protected function getConstant(string $name): string
@@ -4172,7 +4154,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getConstantType(string $name): string
     {
-        return $this->nativeConstants[$this->escapeNamespace($name)]->type;
+        return $this->constants[$this->escapeNamespace($name)]->type;
     }
 
     protected function detectStrValueType(mixed $constant): string
@@ -4314,7 +4296,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $class = $this->context->objects[$object];
             $nativeFunc = $this->getNativeMethod($expr, $class, $method);
             // 存在 Native 类，但是没有找到方法，可能是动态调用
-            if (!$nativeFunc and $this->hasNativeClass($class) and $this->getNativeMethod($expr, $class, '__call', false)) {
+            if (!$nativeFunc and $this->hasClass($class) and $this->getNativeMethod($expr, $class, '__call', false)) {
                 throw new DynamicCall();
             }
         }
@@ -4329,8 +4311,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             return false;
         }
         if ($nativeFunc) {
-            $this->checkNativeFunction($nativeFunc);
-            if ($this->hasNativeFunction($nativeFunc)) {
+            $this->checkFunction($nativeFunc);
+            if ($this->hasFunction($nativeFunc)) {
                 return $nativeFunc;
             }
         }
@@ -4460,7 +4442,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if ($this->isCallExpr($expr->expr)) {
                 $nativeCall = $expr->expr->getAttribute('nativeCall');
-                if ($nativeCall and $this->nativeFunctions[$nativeCall]->returnType === self::TYPE_VOID) {
+                if ($nativeCall and $this->functions[$nativeCall]->returnType === self::TYPE_VOID) {
                     return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
                 }
             }

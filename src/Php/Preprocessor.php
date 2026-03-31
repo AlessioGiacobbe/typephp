@@ -195,7 +195,7 @@ class Preprocessor extends CompilerBase
     {
         $name = $this->getFunctionName($v);
         if ($this->stubFile) {
-            $this->nativeFunctions[$name] = $this->parseFunctionDecl($v);
+            $this->addFunction($name, $this->parseFunctionDecl($v));
         } else {
             $this->symbolDeclInFile[strtolower($name)] = $this->file;
         }
