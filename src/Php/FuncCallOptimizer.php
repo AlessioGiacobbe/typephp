@@ -14,6 +14,7 @@ trait FuncCallOptimizer
 {
     public function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr): string
     {
+        $this->warningUndefinedBehavior($expr);
         $funcDef = $this->functionDef;
         $list = [];
         foreach ($funcDef->argInfoList as $i => $argInfo) {
@@ -30,6 +31,7 @@ trait FuncCallOptimizer
 
     public function genFuncGetArg(string $name, Node\Expr\FuncCall $expr)
     {
+        $this->warningUndefinedBehavior($expr);
         $position = $expr->args[0]->value;
         if ($this->isScalarInt($position)) {
             $funcDef = $this->functionDef;
@@ -109,6 +111,7 @@ trait FuncCallOptimizer
 
     protected function genFuncNumArgs(string $name, Node\Expr\FuncCall $expr): string
     {
+        $this->warningUndefinedBehavior($expr);
         $funcDef = $this->functionDef;
         foreach ($funcDef->argInfoList as $i => $argInfo) {
             if ($argInfo->variadic) {

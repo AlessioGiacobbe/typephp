@@ -2185,9 +2185,19 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->error("{$msg} in {$this->file}:{$node->getStartLine()}");
     }
 
+    protected function warning(Node $node, string $msg): void
+    {
+        $this->climate->yellow("{$msg} in {$this->file}:{$node->getStartLine()}");
+    }
+
     protected function errorUndefinedVariable(Variable $node): never
     {
         $this->fatalError($node, "The variable `\${$node->name}` is undefined");
+    }
+
+    protected function warningUndefinedBehavior(NodeAbstract $expr): void
+    {
+        $this->warning($expr, 'Use this expression carefully, which may be inconsistent with the dynamic execution behavior');
     }
 
     protected function dump(NodeAbstract $v): void
