@@ -19,6 +19,7 @@ use PhpAot\Php\Exception\DynamicCall;
 use PhpAot\Php\Exception\PlaceHolder;
 use PhpAot\Php\Exception\Redo;
 use PhpAot\Php\Exception\Skip;
+use PhpAot\Php\Exception\TestError;
 use PhpAot\Php\Generator\ClosureGenerator;
 use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
@@ -244,6 +245,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $defaultNativeType = false;
     protected bool $stubFile = false;
     protected bool $enableProfiler = false;
+    protected bool $forTest = false;
     protected Parser $parser;
     protected PrettyPrinter $printer;
 
@@ -1567,6 +1569,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function addStaticVar(string $name, string $type): void
     {
         $this->context->staticVars[$name] = $type;
+        if ($this->hasStaticVar($name)) {
+            $this->error('Duplicate static variable `$' . $name . '`');
+        }
         $this->addGlobalVar($this->getStaticVarName($name), $type);
     }
 
@@ -2175,9 +2180,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function error(string $msg): never
     {
-        $this->climate->red("Fatal error: {$msg}");
-        debug_print_backtrace();
-        exit(255);
+        if ($this->forTest) {
+            throw new TestError($msg);
+        } else {
+            $this->climate->red("Fatal error: {$msg}");
+            debug_print_backtrace();
+            exit(255);
+        }
     }
 
     protected function fatalError(Node $node, string $msg): never

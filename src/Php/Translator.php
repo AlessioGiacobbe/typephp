@@ -99,6 +99,7 @@ class Translator extends Preprocessor
 
     public function convert(string $file): string
     {
+        $file = realpath($file);
         if ($this->hasCppFileCache($file)) {
             $this->climate->darkGray('skip: ' . $file . ', cache exists');
 
@@ -146,6 +147,11 @@ class Translator extends Preprocessor
             exit(1);
         }
         $this->targetName = $name;
+    }
+
+    public function addFiles(array $files): void
+    {
+        $this->sourceDirs = array_merge($this->sourceDirs, $files);
     }
 
     public function getFiles(string $path): array
