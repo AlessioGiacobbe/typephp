@@ -1665,7 +1665,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $classDef = $this->getClass($class);
         $methodDef = null;
         // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
-        while ($classDef) {
+        while (true) {
             if (!$classDef->hasMethod($method)) {
                 if (!$classDef->extends) {
                     return false;
@@ -1711,7 +1711,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $classDef = $this->getClass($class);
         $constDef = null;
         // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
-        while ($classDef) {
+        while (true) {
             if (!$classDef->hasConstant($const)) {
                 if (!$classDef->extends) {
                     return false;
