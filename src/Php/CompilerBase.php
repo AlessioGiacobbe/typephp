@@ -1333,12 +1333,22 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 类型推断，获取对象的类名
             if ($this->isNewExpr($right) and $this->isNameExpr($right->class)) {
                 $class = $this->parseIdentifier($right->class);
-                $this->addObject($var, $this->getNamespacedClassName($class));
+                $fullClass = $this->getNamespacedClassName($class);
+                if ($this->isTypedObject($var)) {
+                    $leftClass = $this->getObjectType($var);
+                    $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$fullClass}`");
+                }
+                $this->addObject($var, $fullClass);
                 $type = self::TYPE_OBJECT;
             } elseif ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
                 $fn = $this->parseIdentifier($right->name);
                 if (count($right->args) === 2 and $fn === 'objval' and $this->isScalarString($right->args[1]->value)) {
-                    $this->addObject($var, $this->getNamespacedClassName($this->parseIdentifier($right->args[1]->value)));
+                    $fullClass = $this->getNamespacedClassName($this->parseIdentifier($right->args[1]->value));
+                    if ($this->isTypedObject($var)) {
+                        $leftClass = $this->getObjectType($var);
+                        $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$fullClass}`");
+                    }
+                    $this->addObject($var, $fullClass);
                     $type = self::TYPE_OBJECT;
                 } elseif (count($right->args) === 1 and $fn === 'any') {
                     $type = self::TYPE_VAR;
@@ -1370,16 +1380,22 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } elseif ($this->isVarExpr($right)) {
                 $rightVar = $this->parseIdentifier($right);
-                if ($this->hasVar($rightVar) and $this->isTypedObject($rightVar)) {
-                    $type = self::TYPE_OBJECT;
-                    $this->addObject($var, $this->getObjectType($rightVar));
+                $type = $this->getVarType($rightVar);
+                if ($this->isTypedObject($rightVar) and $this->isTypedObject($var)) {
+                    $leftClass = $this->getObjectType($var);
+                    $rightClass = $this->getObjectType($rightVar);
+                    $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
                 }
             }
 
             if (!$this->hasVar($var)) {
                 $this->addLocalVar($var, $type);
-            } else if ($this->getVarType($var) != $type) {
-                $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . " to  " . $type);
+            } else {
+                if ($this->isTypedObject($var) and $type !== self::TYPE_OBJECT or
+                    $this->getVarType($var) === self::TYPE_ARRAY and $type !== self::TYPE_ARRAY
+                ) {
+                    $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . " to  " . $type);
+                }
             }
         } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
             return $this->parseAssignPropertyFetch($left, $right);
