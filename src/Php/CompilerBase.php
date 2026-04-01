@@ -1368,10 +1368,18 @@ class CompilerBase extends \PhpAot\Core\Translator
                         return $var . ' = ' . $this->convertExprFromType($type, $expr);
                     }
                 }
+            } elseif ($this->isVarExpr($right)) {
+                $rightVar = $this->parseIdentifier($right);
+                if ($this->hasVar($rightVar) and $this->isTypedObject($rightVar)) {
+                    $type = self::TYPE_OBJECT;
+                    $this->addObject($var, $this->getObjectType($rightVar));
+                }
             }
 
             if (!$this->hasVar($var)) {
                 $this->addLocalVar($var, $type);
+            } else if ($this->getVarType($var) != $type) {
+                $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . " to  " . $type);
             }
         } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
             return $this->parseAssignPropertyFetch($left, $right);
