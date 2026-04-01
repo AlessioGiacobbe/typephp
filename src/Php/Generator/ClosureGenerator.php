@@ -78,9 +78,7 @@ trait ClosureGenerator
                     }
                     $useVars[] = $this->convertToRef($useItem->var);
                 } else {
-                    if (!$this->hasVar($var)) {
-                        $this->errorUndefinedVariable($useItem->var);
-                    }
+                    $this->checkVarMustExist($useItem->var, $var);
                     $useVars[] = $var;
                 }
             }

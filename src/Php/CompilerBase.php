@@ -2920,9 +2920,21 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseBinaryOpCoalesce(Node\Expr\BinaryOp\Coalesce $expr): string
     {
         $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
+        if ($this->isVarExpr($expr->left)) {
+            $this->checkVarMustExist($expr->left, $left);
+        }
 
-        return $this->parseChainedExpr($expr->left, 'isset') . ' ? ' . $left . ' : ' . $right;
+        $this->mustNoCall($expr->right);
+        $right = $this->parseIdentifier($expr->right);
+        $this->checkVarMustExist($expr->right, $right);
+
+        $isset = $this->parseChainedExpr($expr->left, self::OP_ISSET, true);
+        $chainOpResult = $expr->left->getAttribute('chainOpResult');
+        if ($chainOpResult) {
+            $left = $chainOpResult;
+        }
+
+        return $isset . ' ? ' . $left . ' : ' . $right;
     }
 
     protected function parseBinaryOpNotIdentical(Node\Expr\BinaryOp $expr): string
@@ -3597,8 +3609,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseChainedExpr(NodeAbstract $expr, string $op): string
+    protected function parseChainedExpr(NodeAbstract $node, string $op, bool $getValue = false): string
     {
+        $expr = $node;
         if ($this->isVarExpr($expr)) {
             if ($op === 'isset') {
                 $var = $this->parseIdentifier($expr);
@@ -3631,7 +3644,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $list = array_reverse($list);
         $fn = $op === 'isset' ? 'exists' : $op;
-        return 'php::' . $fn . '(' . $var . ', {' . implode(', ', $list) . '})';
+
+        if ($getValue) {
+            $result = $this->addTmpVar(self::TYPE_VAR);
+            $node->setAttribute('chainOpResult', $result);
+            return 'php::' . $fn . '(' . $var . ', {' . implode(', ', $list) . '}, ' . $result . ')';
+        } else {
+            return 'php::' . $fn . '(' . $var . ', {' . implode(', ', $list) . '})';
+        }
     }
 
     protected function parseCastArray(Node\Expr\Cast\Array_ $expr): string
@@ -4292,6 +4312,24 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->getVarType($name) !== self::TYPE_VAR) {
                 $this->fatalError($node, 'Cannot assign value to variable $' . $name . ' of type ' . $this->getVarType($name));
             }
+        }
+    }
+
+    protected function checkVarMustExist(NodeAbstract $node, string $name): void
+    {
+        if ($this->isVarExpr($node) and !$this->hasVar($name)) {
+            $this->errorUndefinedVariable($node);
+        }
+    }
+
+    protected function mustNoCall(NodeAbstract $node): void
+    {
+        $nodeFinder = new NodeFinder();
+        $r1 = $nodeFinder->findInstanceOf($node, Node\Expr\StaticCall::class);
+        $r2 = $nodeFinder->findInstanceOf($node, Node\Expr\MethodCall::class);
+        $r3 = $nodeFinder->findInstanceOf($node, Node\Expr\FuncCall::class);
+        if (count($r1) + count($r2) + count($r3) > 0) {
+            $this->fatalError($node, 'Calling function or method is not allowed');
         }
     }
 
