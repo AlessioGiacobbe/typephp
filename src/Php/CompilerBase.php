@@ -1392,9 +1392,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->addLocalVar($var, $type);
             } else {
                 if ($this->isTypedObject($var) and $type !== self::TYPE_OBJECT or
-                    $this->getVarType($var) === self::TYPE_ARRAY and $type !== self::TYPE_ARRAY
+                    $this->getVarType($var) === self::TYPE_ARRAY and ($type !== self::TYPE_ARRAY && $type !== self::TYPE_VAR)
                 ) {
-                    $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . " to  " . $type);
+                    $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . " to " . $type);
                 }
             }
         } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
@@ -3191,9 +3191,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $lines[] = $object . '.unsetProperty(' . $propName . ');';
             } elseif ($type === self::EXPR_VARIABLE) {
                 $name = $this->parseIdentifier($var);
+                if (!$this->hasVar($name)) {
+                    $this->errorUndefinedVariable($var);
+                }
                 $lines[] = "{$name}.unset();";
             } else {
-                abort($var);
+                $this->fatalError($var, "Unsupported unset type `{$type}`");
             }
         }
 
