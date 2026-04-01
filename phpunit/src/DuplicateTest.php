@@ -13,6 +13,7 @@ class DuplicateTest extends TestCase
             $compiler = CompilerTest::create(ROOT_PATH);
             $testFile = __DIR__ . '/../code/' . $file;
             $compiler->addFiles([$testFile]);
+            $compiler->prepare($testFile);
             $compiler->convert($testFile);
         } catch (TestError $exception) {
             $this->assertStringContainsString($expected, $exception->getMessage());

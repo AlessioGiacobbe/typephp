@@ -197,7 +197,11 @@ class Preprocessor extends CompilerBase
         if ($this->stubFile) {
             $this->addFunction($name, $this->parseFunctionDecl($v));
         } else {
-            $this->symbolDeclInFile[strtolower($name)] = $this->file;
+            $functionNameLower = strtolower($name);
+            if (isset($this->symbolDeclInFile[$functionNameLower])) {
+                $this->fatalError($v, "Duplicate function `{$functionNameLower}`");
+            }
+            $this->symbolDeclInFile[$functionNameLower] = $this->file;
         }
     }
 
@@ -227,6 +231,11 @@ class Preprocessor extends CompilerBase
                 $this->symbolCallInFile[$this->file][] = $parentClassLower;
             }
         }
+
+        if (isset($this->symbolDeclInFile[$fullClassNameLower])) {
+            $this->fatalError($class, "Duplicate class `{$fullClassName}`");
+        }
+
         $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
         $code = '';
