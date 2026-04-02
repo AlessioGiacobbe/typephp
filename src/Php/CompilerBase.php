@@ -1046,14 +1046,17 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($param, 'Variadic parameters cannot be passed by reference');
                 }
             }
-            $name          = $this->parseIdentifier($param->var);
-            $type          = $this->parseParameterType($param, $name);
-            if ($param->variadic) {
-                $list[]        = self::TYPE_ARRAY . ' ' . $name;
-            } else {
-                $list[]        = $type . ' ' . $name;
+            $name = $this->parseIdentifier($param->var);
+            if ($this->method and $name == 'this_') {
+                $this->fatalError($param, 'Cannot use `$this` as parameter of class method');
             }
-            $argInfo       = new ArgInfo();
+            $type = $this->parseParameterType($param, $name);
+            if ($param->variadic) {
+                $list[] = self::TYPE_ARRAY . ' ' . $name;
+            } else {
+                $list[] = $type . ' ' . $name;
+            }
+            $argInfo = new ArgInfo();
             $argInfo->name = $name;
             $argInfo->type = $type;
             $argInfo->byRef = $param->byRef;
@@ -4005,6 +4008,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $classDef = $this->getClass($findClass);
                 if ($classDef->hasProperty($property)) {
                     $propertyDef = $classDef->getProperty($property);
+                    // 属性是静态的，但作为动态属性访问，只能动态获取
+                    if ($propertyDef->isStatic()) {
+                        return null;
+                    }
                     if ($propertyDef->isPublic()) {
                         return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
                     }

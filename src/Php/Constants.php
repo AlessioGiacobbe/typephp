@@ -54,6 +54,7 @@ class Constants
         'template',
         'namespace',
         'errno', // Linux error code
+        'this_', // phpx keywords
     ];
 
     public const UNSUPPORTED_FUNCTIONS = [
