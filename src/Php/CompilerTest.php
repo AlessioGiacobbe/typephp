@@ -8,6 +8,10 @@
 
 namespace PhpAot\Php;
 
+/**
+ * @internal
+ * @coversNothing
+ */
 class CompilerTest extends Translator
 {
     public static function create(string $rootPath = ''): CompilerTest
