@@ -3369,8 +3369,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $code = '';
         $expr = $this->parseIdentifier($node->expr);
-        $code .= self::TYPE_ARRAY . " {$iteratorVar} = " . $expr . ';' . PHP_EOL;
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
+        $code .= self::TYPE_ARRAY . " {$iteratorVar} = " . $expr . ';' . PHP_EOL;
         $code .= $this->parseForeachArray($node, $iteratorVar);
 
         return $code;
@@ -3637,6 +3637,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function getChainedFunc(string $op): string
+    {
+        return match ($op) {
+            self::OP_ISSET => 'php::exists',
+            self::OP_NOT_EMPTY => '!php::empty',
+            default => 'php::' . $op,
+        };
+    }
+
     protected function parseChainedExpr(NodeAbstract $node, string $op, bool $getValue = false): string
     {
         $expr = $node;
@@ -3644,11 +3653,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($op === self::OP_ISSET) {
                 $var = $this->parseIdentifier($expr);
                 return $this->hasVar($var) ? 'php::exists(' . $var . ')' : 'false';
-            } elseif ($op === self::OP_NOT_EMPTY) {
-                return '!php::empty(' . $this->parseExpr($expr) . ')';
-            } else {
-                return 'php::empty(' . $this->parseExpr($expr) . ')';
             }
+            return $this->getChainedFunc($op) . '(' . $this->parseExpr($expr) . ')';
         }
 
         $list = [];
@@ -3675,11 +3681,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $list = array_reverse($list);
-        $fn = match ($op) {
-            self::OP_ISSET => 'php::exists',
-            self::OP_NOT_EMPTY => '!php::empty',
-            default => 'php::empty',
-        };
+        $fn = $this->getChainedFunc($op);
 
         if ($getValue) {
             $result = $this->addTmpVar(self::TYPE_VAR);
