@@ -3648,13 +3648,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseChainedExpr(NodeAbstract $node, string $op, bool $getValue = false): string
     {
+        $fn = $this->getChainedFunc($op);
         $expr = $node;
         if ($this->isVarExpr($expr)) {
             if ($op === self::OP_ISSET) {
                 $var = $this->parseIdentifier($expr);
-                return $this->hasVar($var) ? 'php::exists(' . $var . ')' : 'false';
+                return $this->hasVar($var) ? $fn . '(' . $var . ')' : 'false';
             }
-            return $this->getChainedFunc($op) . '(' . $this->parseExpr($expr) . ')';
+            return $fn . '(' . $this->parseExpr($expr) . ')';
         }
 
         $list = [];
@@ -3681,7 +3682,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $list = array_reverse($list);
-        $fn = $this->getChainedFunc($op);
 
         if ($getValue) {
             $result = $this->addTmpVar(self::TYPE_VAR);
