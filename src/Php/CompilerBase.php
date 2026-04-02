@@ -794,7 +794,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         // .stub 存根定义 C++ Native 函数，必须设置返回值类型
         if (!$v->returnType && $this->stubFile) {
-            throw new \Exception('No return type for ' . $v->name);
+            $this->fatalError($v, 'The return type of the function `' . $v->name . '` must be specified');
+        }
+        // 返回值不能是引用类型
+        if ($v->byRef) {
+            $this->fatalError($v, 'The return type of the function `' . $v->name . '` cannot be a reference type');
         }
 
         $fnName = $this->parseIdentifier($v->name);
@@ -3739,33 +3743,38 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseAssignRef(Node\Expr\AssignRef $expr): string
     {
-        if ($this->isVarExpr($expr->var)) {
-            $this->context->inAssignExpr = true;
-            $left = $this->parseIdentifier($expr->var);
-            $this->context->inAssignExpr = false;
-            if (!$this->hasVar($left)) {
-                $this->addLocalVar($left, self::TYPE_REF);
-            } else {
-                $type = $this->getVarType($left);
-                if ($type !== self::TYPE_REF) {
-                    $this->fatalError($expr, 'Cannot assign reference to variable of type ' . $type);
-                }
-            }
-            if ($this->isVarExpr($expr->expr)) {
-                return $left . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
-            }
-            if ($expr->expr->getType() === self::EXPR_ARRAY_DIM_FETCH) {
-                return $left . ' = ' . $this->parseIdentifier($expr->expr);
-            }
-            if ($this->isPropertyFetch($expr->expr)) {
-                $left   = $this->parseIdentifier($expr->var);
-                $object = $this->parseExpr($expr->expr->var);
-                $prop   = $this->identifierToStr($expr->expr->name);
+        if (!$this->isVarExpr($expr->var)) {
+            $this->fatalError($expr, 'Cannot assign reference to non-variable');
+        }
 
-                return $left . ' = ' . $object . '.attrRef(' . $prop . ')';
+        $this->context->inAssignExpr = true;
+        $left = $this->parseIdentifier($expr->var);
+        $this->context->inAssignExpr = false;
+        if (!$this->hasVar($left)) {
+            $this->addLocalVar($left, self::TYPE_REF);
+        } else {
+            $type = $this->getVarType($left);
+            if ($type !== self::TYPE_REF) {
+                $this->fatalError($expr, 'Cannot assign reference to variable of type ' . $type);
             }
         }
-        $this->fatalError($expr, 'Cannot assign reference to non-variable');
+        if ($this->isVarExpr($expr->expr)) {
+            return $left . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
+        }
+        if ($expr->expr->getType() === self::EXPR_ARRAY_DIM_FETCH) {
+            return $left . ' = ' . $this->parseIdentifier($expr->expr);
+        }
+        if ($this->isPropertyFetch($expr->expr)) {
+            $left   = $this->parseIdentifier($expr->var);
+            $object = $this->parseExpr($expr->expr->var);
+            $prop   = $this->identifierToStr($expr->expr->name);
+
+            return $left . ' = ' . $object . '.attrRef(' . $prop . ')';
+        }
+
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->expr) . ';';
+        return $left . ' = ' . $tmpVar . '.toReference()';
     }
 
     protected function parseMethodCall(Node\Expr\MethodCall $expr): string
