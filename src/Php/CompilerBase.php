@@ -310,6 +310,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public function parseExpr(NodeAbstract $expr)
     {
+        if ($expr->hasAttribute('replace')) {
+            return $expr->getAttribute('replace');
+        }
         $type = $expr->getType();
         $this->writeLog('Line ' . $this->getLine($expr) . ': ' . $type);
         if ($expr->getLine() === $this->debugLine) {
@@ -2924,17 +2927,21 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->checkVarMustExist($expr->left, $left);
         }
 
-        $this->mustNoCall($expr->right);
-        $right = $this->parseIdentifier($expr->right);
-        $this->checkVarMustExist($expr->right, $right);
-
         $isset = $this->parseChainedExpr($expr->left, self::OP_ISSET, true);
         $chainOpResult = $expr->left->getAttribute('chainOpResult');
         if ($chainOpResult) {
             $left = $chainOpResult;
         }
 
-        return $isset . ' ? ' . $left . ' : ' . $right;
+        $right = $this->parseIdentifier($expr->right);
+        $this->checkVarMustExist($expr->right, $right);
+
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $this->context->beforeStmtLines[] = '// Coalesce: ' . $this->printer->prettyPrintExpr($expr) . PHP_EOL .
+            $tmpVar . ' = ' . $isset . ' ? ' . $left . ' : ' . $right . ';';
+        $expr->setAttribute('replace', $tmpVar);
+
+        return $tmpVar;
     }
 
     protected function parseBinaryOpNotIdentical(Node\Expr\BinaryOp $expr): string

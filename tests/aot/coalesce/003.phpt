@@ -10,16 +10,11 @@ function f($x)
 }
 
 function main() {
-    $a = f(null) ?? f(2);
-    var_dump($a);
-
-    $a = f(1) ?? f(2);
+    $a = f(null) ?? f(1) ?? f(2);
     var_dump($a);
 }
 ?>
 --EXPECT--
 f(0)
-f(2)
-int(2)
 f(1)
 int(1)
