@@ -47,6 +47,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     use ClosureGenerator;
     use PlaceHolderGenerator;
     use PropertyPromotion;
+    use MagicMethodDetector;
     use Utils;
 
     public const string TYPE_VAR = 'php::Var';
@@ -138,6 +139,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     ];
     protected array $localHeaders = [];
     protected array $internalFunctions = [];
+
     /**
      * 存储所有函数、类方法的声明，key 是 符号名称，Value 是函数、类方法所在的文件名称
      * @var array<string, string>
@@ -178,28 +180,34 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $class = '';
     protected string $parentClass = '';
     protected string $interface = '';
+
     /**
      * @var array<string, InterfaceDef>
      */
     protected array $interfaces = [];
+
     /**
      * 存储所有函数、类方法的定义，key 是 native name，命名空间需要转为 `_`，并且必须为小写
      * @var array<string, FunctionDef>
      */
     protected array $functions = [];
+
     /**
      * key 类名，包含命名空间
      * @var array<string, ClassDef>
      */
     protected array $classes = [];
+
     /**
      * @var array<string, ConstantDef>
      */
     protected array $constants = [];
+
     /**
      * @var array<string, ClassDef>
      */
     protected array $classesDefineInFile = [];
+
     /**
      * @var array<string, InterfaceDef>
      */
@@ -817,10 +825,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($returnType !== self::TYPE_VOID) {
                     $this->fatalError($v, 'main function must return void');
                 }
-                if ($functionDef->argInfoList[0]->type !== self::TYPE_VAR and $functionDef->argInfoList[0]->type !== self::TYPE_INT) {
+                if ($this->checkArgType($functionDef->argInfoList[0]->type, self::TYPE_INT)) {
                     $this->fatalError($v, 'The first parameter of the main function must be of type `int`.');
                 }
-                if ($functionDef->argInfoList[1]->type !== self::TYPE_VAR and $functionDef->argInfoList[1]->type !== self::TYPE_ARRAY) {
+                if ($this->checkArgType($functionDef->argInfoList[1]->type, self::TYPE_ARRAY)) {
                     $this->fatalError($v, 'The second parameter of the main function must be of type `array`.');
                 }
             }
@@ -1398,10 +1406,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (!$this->hasVar($var)) {
                 $this->addLocalVar($var, $type);
             } else {
-                if ($this->isTypedObject($var) and $type !== self::TYPE_OBJECT or
-                    $this->getVarType($var) === self::TYPE_ARRAY and ($type !== self::TYPE_ARRAY && $type !== self::TYPE_VAR)
+                if ($this->isTypedObject($var) and $type !== self::TYPE_OBJECT
+                    or $this->getVarType($var) === self::TYPE_ARRAY and ($type !== self::TYPE_ARRAY && $type !== self::TYPE_VAR)
                 ) {
-                    $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . " to " . $type);
+                    $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . ' to ' . $type);
                 }
             }
         } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
@@ -1636,6 +1644,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->functions[$this->escapeFunction($name)] = $functionDef;
     }
+
     /**
      * @param string $name 必须传入带有完整命名空间的类名，将会自动转义为 native name
      */

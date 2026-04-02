@@ -26,7 +26,6 @@ use Symfony\Component\Yaml\Yaml;
 
 class Translator extends Preprocessor
 {
-    use MagicMethodDetector;
     protected string $targetName = 'app';
     protected array $sourceDirs = [];
     protected bool $verbose = false;
