@@ -3641,7 +3641,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         return match ($op) {
             self::OP_ISSET => 'php::exists',
-            self::OP_NOT_EMPTY => '!php::empty',
+            self::OP_NOT_EMPTY => 'php::notEmpty',
             default => 'php::' . $op,
         };
     }
@@ -3984,33 +3984,37 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function findNativeStaticProperty(Expr\StaticPropertyFetch $expr, ?string &$class): ?PropertyDef
+    protected function findNativeStaticProperty(Expr\StaticPropertyFetch $expr, ?string &$class): ?string
     {
         if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
             $class = $this->parseIdentifier($expr->class);
-            $prop = $this->parseIdentifier($expr->name);
+            $propertyName = $this->parseIdentifier($expr->name);
             if ($class === 'self') {
                 $class = $this->class;
-            }
-
-            $fullName = $this->getNamespacedClassName($class);
-            if (!$this->hasClass($fullName)) {
-                return null;
-            }
-
-            $classDef = $this->getClass($fullName);
-            if ($classDef->hasProperty($prop)) {
-                $propDef = $classDef->getProperty($prop);
-                if ($propDef->isStatic()) {
-                    $class = $fullName;
-                    return $propDef;
+            } elseif ($class === 'parent') {
+                if (!$this->classDef->extends) {
+                    $this->fatalError($expr, 'Cannot access parent:: when current class does not extend any class');
                 }
+                $class = $this->classDef->extends;
+            }
+            $nativeProperty = $this->findNativeProperty($expr, $propertyName, $class, $this->namespace, true);
+            if ($nativeProperty) {
+                $expr->setAttribute('nativeProperty', $nativeProperty);
+                return $nativeProperty;
             }
         }
         return null;
     }
 
-    protected function findNativeProperty(NodeAbstract $object, string $property, string $class, string $namespace = ''): ?string
+    /**
+     * @param NodeAbstract $expr 仅用于输出错误日志
+     * @param string $property
+     * @param string $class
+     * @param string $namespace
+     * @param bool $static
+     * @return string|null
+     */
+    protected function findNativeProperty(NodeAbstract $expr, string $property, string $class, string $namespace = '', bool $static = false): ?string
     {
         $findClass = $class;
         if ($namespace) {
@@ -4023,8 +4027,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $classDef = $this->getClass($findClass);
                 if ($classDef->hasProperty($property)) {
                     $propertyDef = $classDef->getProperty($property);
-                    // 属性是静态的，但作为动态属性访问，只能动态获取
-                    if ($propertyDef->isStatic()) {
+                    // 获取动态属性，但找到了静态属性，或者获取静态属性，但是是动态属性，直接返回 null
+                    if ((!$static and $propertyDef->isStatic()) or ($static and !$propertyDef->isStatic())) {
                         return null;
                     }
                     if ($propertyDef->isPublic()) {
@@ -4034,12 +4038,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                         if ($scope) {
                             return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
                         }
-                        $this->fatalError($object, "Cannot access protected property `{$property}` of class `{$class}`");
+                        $this->fatalError($expr, "Cannot access protected property `{$property}` of class `{$class}`");
                     } else {
                         if ($scope === $findClass) {
                             return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
                         }
-                        $this->fatalError($object, "Cannot access private property `{$property}` of class `{$class}`");
+                        $this->fatalError($expr, "Cannot access private property `{$property}` of class `{$class}`");
                     }
                 } elseif ($classDef->extends) {
                     $findClass = $classDef->extends;
@@ -4056,8 +4060,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $nativeProp = $this->findNativeStaticProperty($expr, $class);
         if ($nativeProp) {
             $classPtr = $this->getClassEntryPtr($class);
-            $propOffset = $this->getPropertyOffset($class, $nativeProp->name);
-            return 'php::getStaticProperty(' . $classPtr . ', ' . $propOffset . ')';
+            return 'php::getStaticProperty(' . $classPtr . ', ' . $nativeProp . ')';
         }
         return false;
     }
