@@ -245,7 +245,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $buildDir;
     protected int $debugLine = 0;
     protected CLImate $climate;
-    protected bool $defaultNativeType = false;
+    protected bool $defaultNativeType = true;
     protected bool $stubFile = false;
     protected bool $enableProfiler = false;
     protected bool $forTest = false;

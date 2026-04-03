@@ -85,6 +85,9 @@ trait FuncCallOptimizer
         if ($name === 'pow') {
             return 'php::math::pow(' . $getArg(0) . ', ' . $getArg(1) . ')';
         }
+        if ($name === 'strlen') {
+            return 'php::fn::strlen(' . $getArg(0) . ')';
+        }
         if ($name === 'ord') {
             return 'php::fn::ord(' . $getArg(0) . ')';
         }

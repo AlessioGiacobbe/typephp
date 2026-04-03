@@ -6,4 +6,5 @@ class FunctionTest extends \BaseTest
     {
         $this->exec('The return type of the function `test` cannot be a reference type', 'function-return-ref.php');
     }
+
 }
