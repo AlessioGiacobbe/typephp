@@ -1307,7 +1307,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseAssignFinally($left, $right);
     }
 
-    protected function parseAssignFinally($left, $right): string
+    protected function parseAssignFinally(Node\Expr $left, Node\Expr $right): string
     {
         if ($left instanceof Expr\List_) {
             $items = $left->items;
@@ -1747,7 +1747,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->getNativeName($method, $classDef->namespace, $classDef->name);
     }
 
-    protected function getClassConst(NodeAbstract $expr, string $class, string $const): string|false
+    protected function findNativeClassConst(NodeAbstract $expr, string $class, string $const): string|false
     {
         if (!$this->hasClass($class)) {
             return false;
@@ -1776,6 +1776,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($constDef->type === self::TYPE_ARRAY) {
             return self::PREFIX . $this->getNativeName($constDef->name, $classDef->namespace, $classDef->name);
         } else {
+            $expr->setAttribute('nativeConst', $constDef);
             return $constDef->value;
         }
     }
@@ -3662,6 +3663,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $fn . '(' . $prop . ')';
             }
         }
+        if ($this->isStaticPropertyFetch($expr) and $this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
+            $prop = $this->parseStaticPropertyFetch($expr);
+            if ($expr->hasAttribute('nativeProperty')) {
+                return $fn . '(' . $prop . ')';
+            }
+        }
 
         $list = [];
         while (true) {
@@ -4109,7 +4116,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $ce = $this->getClassEntryPtr($class);
                     return 'php::getEnumCase(' . $ce . ', ' . $this->getLiteralString($const) . ')';
                 }
-                $nativeConst = $this->getClassConst($expr, $class, $const);
+                $nativeConst = $this->findNativeClassConst($expr, $class, $const);
                 if ($nativeConst) {
                     return $nativeConst;
                 }
