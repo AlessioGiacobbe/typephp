@@ -23,7 +23,7 @@ function simpleicall($n)
 }
 
 class Foo {
-    static $a = 0;
+    static $a = 12;
     public $b = 0;
     const TEST = 23;
 

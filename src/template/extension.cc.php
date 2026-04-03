@@ -58,9 +58,9 @@ zend_function *php_get_method(int func_id, const php::Str &method_name, int clas
 
 uint32_t php_get_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name) {
     if (UNEXPECTED(<?= Translator::PREFIX . Translator::PROP_MAP ?>[prop_id] == 0)) {
-        <?= Translator::PREFIX . Translator::PROP_MAP ?>[prop_id] = php::getPropertyOffset(class_name, prop_name);
+        <?= Translator::PREFIX . Translator::PROP_MAP ?>[prop_id] = php::getPropertyOffset(class_name, prop_name) + 1024;
     }
-    return <?= Translator::PREFIX . Translator::PROP_MAP ?>[prop_id];
+    return <?= Translator::PREFIX . Translator::PROP_MAP ?>[prop_id] - 1024;
 }
 
 // literal strings

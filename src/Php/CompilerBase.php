@@ -3648,14 +3648,19 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseChainedExpr(NodeAbstract $node, string $op, bool $getValue = false): string
     {
+        // AOT 编译器不允许操作未定义的变量，PHP 的 isset($var) 可能 $var 未定义
+        $this->checkVarMustExist($node, $this->parseIdentifier($node));
         $fn = $this->getChainedFunc($op);
         $expr = $node;
         if ($this->isVarExpr($expr)) {
-            if ($op === self::OP_ISSET) {
-                $var = $this->parseIdentifier($expr);
-                return $this->hasVar($var) ? $fn . '(' . $var . ')' : 'false';
-            }
             return $fn . '(' . $this->parseExpr($expr) . ')';
+        }
+        // 单属性读取（非链式）
+        if ($this->isPropertyFetch($expr) and $this->isVarExpr($expr->var) and $this->isIdExpr($expr->name)) {
+            $prop = $this->parsePropertyFetch($expr);
+            if ($expr->hasAttribute('nativeProperty')) {
+                return $fn . '(' . $prop . ')';
+            }
         }
 
         $list = [];
@@ -3680,8 +3685,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $expr = $expr->var;
         }
-
-        $list = array_reverse($list);
 
         if ($getValue) {
             $result = $this->addTmpVar(self::TYPE_VAR);
