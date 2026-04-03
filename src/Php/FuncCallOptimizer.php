@@ -116,10 +116,7 @@ trait FuncCallOptimizer
             }
         }
         if ($name === 'get_class') {
-            $object = $expr->args[0]->value;
-            if ($this->isVarExpr($object) and $this->isTypedObject($object->name)) {
-                return $this->genCharPtr($this->getObjectType($object->name));
-            }
+            return $this->genGetClass($expr);
         }
         return false;
     }
@@ -150,5 +147,12 @@ trait FuncCallOptimizer
         return 'php::fn::function_exists(' . $this->parseIdentifier($funcName) . ')';
     }
 
-
+    protected function genGetClass(Node\Expr\FuncCall $expr): string
+    {
+        $object = $expr->args[0]->value;
+        if ($this->isVarExpr($object) and $this->isTypedObject($object->name)) {
+            return $this->getLiteralString($this->getObjectType($object->name));
+        }
+        return 'php::fn::get_class(' . $this->parseIdentifier($object) . ')';
+    }
 }
