@@ -18,8 +18,10 @@ function hallo2() {
 
 function simpleicall($n)
 {
-    for ($i = 0; $i < $n; $i++)
-        $ret = function_exists('hallo');
+    for ($i = 0; $i < $n; $i++) {
+//        $ret = function_exists('hallo');
+        $ret = class_exists('Foo2');
+    }
 }
 
 class Foo {
@@ -169,7 +171,6 @@ function create_object($n) {
 
 function read_const($n) {
     for ($i = 0; $i < $n; ++$i) {
-//        $x = TEST;
         $x = TEST_CONST_2;
     }
 }
@@ -280,11 +281,11 @@ function total()
 
 const N = 5000000;
 const TEST = null;
+const TEST_CONST_2 = 1999;
 
 function main()
 {
     global $total, $last_time, $g_var;
-    define('TEST_CONST_2', 1999);
     $g_var = 0;
     $t0 = $t = start_test();
     empty_loop(N);

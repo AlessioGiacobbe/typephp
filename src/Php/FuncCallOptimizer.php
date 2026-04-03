@@ -109,6 +109,18 @@ trait FuncCallOptimizer
         if ($name === 'function_exists') {
             return $this->genFunctionExists($name, $expr);
         }
+        if ($name === 'class_exists') {
+            $className = $expr->args[0]->value;
+            if ($this->isScalarString($className) and $this->hasClass($className->value)) {
+                return 'true';
+            }
+        }
+        if ($name === 'get_class') {
+            $object = $expr->args[0]->value;
+            if ($this->isVarExpr($object) and $this->isTypedObject($object->name)) {
+                return $this->genCharPtr($this->getObjectType($object->name));
+            }
+        }
         return false;
     }
 
@@ -128,9 +140,15 @@ trait FuncCallOptimizer
     {
         $funcName = $expr->args[0]->value;
         if ($this->isScalarString($funcName)) {
-            $funcName = $this->getLiteralString(strtolower(trim($funcName->value, '\\')));
+            $nameLower = strtolower(trim($funcName->value, '\\'));
+            if ($this->findNativeFunction($nameLower)) {
+                return 'true';
+            }
+            $funcName = $this->getLiteralString($nameLower);
             return 'php::fn::function_exists(' . $funcName . ', true)';
         }
         return 'php::fn::function_exists(' . $this->parseIdentifier($funcName) . ')';
     }
+
+
 }
