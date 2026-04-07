@@ -3,16 +3,19 @@ Test ?? operator
 --FILE--
 <?php
 function foo1() {
+    $a = null;
+    $b = null;
     $c = 100;
-    $a ??=  $b ??= $c;
+    $a ??= $b ??= $c;
     var_dump($a, $b);
 
 }
 
 function foo2() {
-    $c = 100;
+    $a = null;
     $b = 33;
-    $a ??=  $b ??= $c;
+    $c = 100;
+    $a ??= $b ??= $c;
     var_dump($a, $b);
 }
 

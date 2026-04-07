@@ -4014,7 +4014,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $class = $this->parseIdentifier($expr->class);
             $propertyName = $this->parseIdentifier($expr->name);
             if ($class === 'self') {
-                $class = $this->class;
+                $class = $this->getFullClassName();
             } elseif ($class === 'parent') {
                 if (!$this->classDef->extends) {
                     $this->fatalError($expr, 'Cannot access parent:: when current class does not extend any class');
