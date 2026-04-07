@@ -93,4 +93,24 @@ trait ClosureGenerator
             return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
         }
     }
+
+    protected function genLambdaCall(callable $cb): string
+    {
+        $code = '';
+        $oriCtx = $this->context;
+
+        // 使用 lambda 函数来对 static 变量进行赋值
+        $this->context = new FunctionContext();
+        $code .= '([&](){' . PHP_EOL;
+        $body = $cb();
+        $code .= $this->genLocalVarDecl();
+        $code .= $this->parseBeforeStmtLines();
+        $code .= $body;
+        $code .= $this->parseAfterStmtLines();
+        $code .= '})();' . PHP_EOL;
+
+        $this->context = $oriCtx;
+
+        return $code;
+    }
 }

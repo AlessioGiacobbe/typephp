@@ -1112,9 +1112,18 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseBeforeStmtLines(): string
     {
         if ($this->context->beforeStmtLines) {
-            $code                  = implode(PHP_EOL, $this->context->beforeStmtLines);
+            $code = implode(PHP_EOL, $this->context->beforeStmtLines);
             $this->context->beforeStmtLines = [];
+            return $code . PHP_EOL;
+        }
+        return '';
+    }
 
+    protected function parseAfterStmtLines(): string
+    {
+        if ($this->context->afterStmtLines) {
+            $code = implode(PHP_EOL, $this->context->afterStmtLines);
+            $this->context->afterStmtLines = [];
             return $code . PHP_EOL;
         }
         return '';
@@ -3526,7 +3535,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $initCode .= $this->getIndent() . "if (!{$initState}) { \n";
                 $this->indentLevel++;
                 $initCode .= $this->getIndent() . "{$initState} = true;\n";
-                $initCode .= $this->getIndent() . $this->getStaticVarName($varName) . ' = ' . $this->parseIdentifier($var->default) . ';';
+                $initCode .= $this->genLambdaCall(function () use ($var, $varName) {
+                    return $this->getIndent() . $this->getStaticVarName($varName) . ' = ' . $this->parseExpr($var->default) . ';';
+                });
                 $this->indentLevel--;
                 $initCode .= $this->getIndent() . '}';
                 $list[] = $initCode;
