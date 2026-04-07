@@ -188,27 +188,27 @@ function read_auto_global($n) {
     }
 }
 
-function read_global_var($n) {
+function read_global_var(int $n) {
     for ($i = 0; $i < $n; ++$i) {
         $x = $GLOBALS['g_var'];
     }
 }
 
-function read_hash($n) {
+function read_hash(int $n) {
     $hash = array('test' => 0);
     for ($i = 0; $i < $n; ++$i) {
         $x = $hash['test'];
     }
 }
 
-function read_str_offset($n) {
+function read_str_offset(int $n) {
     $str = "test";
     for ($i = 0; $i < $n; ++$i) {
         $x = $str[1];
     }
 }
 
-function issetor($n) {
+function issetor(int $n) {
     $val = array(0,1,2,3,4,5,6,7,8,9);
     for ($i = 0; $i < $n; ++$i) {
         $x = $val ?: null;

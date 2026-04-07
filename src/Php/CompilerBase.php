@@ -2284,6 +2284,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($node->dim === null) {
                     $this->fatalError($node, 'Cannot use [] for GLOBALS');
                 }
+                if ($this->isScalarString($node->dim)) {
+                    $name = $node->dim->value;
+                    if (!$this->hasGlobalVar($name)) {
+                        $this->addGlobalVar($name, self::TYPE_VAR);
+                    }
+                    return $name;
+                }
                 return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
             }
             if (!$this->hasVar($var)) {
