@@ -38,23 +38,23 @@ zend_class_entry *php_get_called_ce(php::Object &this_) {
 }
 
 static zend_execute_data *get_frame() {
-	zend_execute_data *frame = EG(current_execute_data);
-	while (frame && (!frame->func || !ZEND_USER_CODE(frame->func->type))) {
-		frame = frame->prev_execute_data;
-	}
-	return frame;
+    zend_execute_data *frame = EG(current_execute_data);
+    while (frame && (!frame->func || !ZEND_USER_CODE(frame->func->type))) {
+        frame = frame->prev_execute_data;
+    }
+    return frame;
 }
 
 php::Scope php_switch_scope(php::Object &this_) {
-	php::Scope scope;
-	scope.frame = get_frame();
-	scope.ce = scope.frame->func->common.scope;
-	scope.frame->func->common.scope = php_get_called_ce(this_);
-	return scope;
+    php::Scope scope;
+    scope.frame = get_frame();
+    scope.ce = scope.frame->func->common.scope;
+    scope.frame->func->common.scope = php_get_called_ce(this_);
+    return scope;
 }
 
 void php_restore_scope(php::Scope &ori_scope) {
-	ori_scope.frame->func->common.scope = ori_scope.ce;
+    ori_scope.frame->func->common.scope = ori_scope.ce;
 }
 
 void module_shutdown(zend_module_entry *module) {
@@ -82,15 +82,18 @@ int main(int cpp_argc, char **cpp_argv) {
 #if PPROF_ON
     ProfilerStart("profile.out");
 #endif
-    try {
-        char path_translated[] = "embed";
-        SG(request_info).path_translated = path_translated;
-        module->request_startup_func(module->type, module->module_number);
-    } catch (zend_object *e) {
-        rc = EG(exit_status);
-        CG(unclean_shutdown) = 1;
-        zend_exception_error(e, E_ERROR);
+    zend_first_try {
+        try {
+            char path_translated[] = "embed";
+            SG(request_info).path_translated = path_translated;
+            module->request_startup_func(module->type, module->module_number);
+        } catch (zend_object *e) {
+            rc = EG(exit_status);
+            CG(unclean_shutdown) = 1;
+            zend_exception_error(e, E_ERROR);
+        }
     }
+    zend_end_try();
 #if PPROF_ON
     ProfilerStop();
 #endif

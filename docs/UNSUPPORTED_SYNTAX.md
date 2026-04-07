@@ -1427,7 +1427,7 @@ var_dump($s);  // 输出 "foo bar"
 **描述**: 函数参数声明为引用传递同时带有默认值
 
 **示例代码**:
-```php
+```
 <?php
 // ❌ 不支持：引用参数有默认值
 function processArray(array &$items = []) {
@@ -1519,7 +1519,7 @@ function modifyValueSafe(?string &$value = null): void {
 **描述**: 可变参数（variadic）声明为引用传递
 
 **示例代码**:
-```php
+```
 <?php
 // ❌ 不支持：变长参数是引用
 function addItems(&...$items) {
@@ -1615,7 +1615,7 @@ $result = addItemsByValue('a', 'b', 'c');
 **描述**: JavaScript 风格的 DOM 操作和内联 HTML 解析
 
 **示例代码**:
-```php
+```
 // 不支持 JavaScript 风格的 DOM 操作
 $element->innerHTML = '<div>Hello</div>';
 $content = $element->innerHTML;
@@ -1641,6 +1641,568 @@ $body = $doc->body->innerHTML;  // 不支持
 
 ---
 
+### 9. 重复的函数名和类名
+
+**状态**: 不支持  
+**PHP 版本**: 所有版本  
+**描述**: AOT 编译器禁止在同一作用域内定义同名的函数或类，而标准 PHP 允许这种情况（后定义的会覆盖先前的定义）
+
+**示例代码**:
+```
+<?php
+// ❌ AOT 编译器不支持：重复的函数名
+function calculate($a, $b) {
+    return $a + $b;
+}
+
+// ... 其他代码 ...
+
+function calculate($a, $b) {  // ❌ 错误：函数名重复
+    return $a * $b;
+}
+
+// ❌ AOT 编译器不支持：重复的类名
+class User {
+    public $name;
+}
+
+// ... 其他代码 ...
+
+class User {  // ❌ 错误：类名重复
+    public $id;
+    public $email;
+}
+
+// ✅ 正确做法：使用不同的名称
+function calculate_sum($a, $b) {
+    return $a + $b;
+}
+
+function calculate_product($a, $b) {
+    return $a * $b;
+}
+
+class UserV1 {
+    public $name;
+}
+
+class UserV2 {
+    public $id;
+    public $email;
+}
+```
+
+**与标准 PHP 的区别**:
+
+在标准 PHP 中：
+```php
+<?php
+// ✅ PHP 允许重复定义（会产生警告但继续执行）
+function foo() {
+    echo "First";
+}
+
+function foo() {  // Warning: Cannot redeclare foo()
+    echo "Second";
+}
+
+foo();  // 输出 "Second"
+```
+
+在 AOT 编译器中：
+```
+<?php
+// ❌ AOT 编译器会在编译时报错
+function foo() {
+    echo "First";
+}
+
+function foo() {  // Compile Error: Duplicate function name 'foo'
+    echo "Second";
+}
+```
+
+**原因**:
+- AOT 编译是静态编译，需要在编译期确定所有符号的唯一性
+- 重复的名称会导致链接冲突和符号表混乱
+- C++ 后端不允许同名函数/类的重定义
+- 运行时覆盖机制与 AOT 的静态分析理念冲突
+- 提高代码质量和可维护性
+
+**相关测试文件**: 
+- `tests/core-raw/lang/bug22231.phpt` - 涉及全局变量引用的复杂场景可能触发重复定义问题
+
+**替代方案**:
+
+1. **使用命名空间隔离**
+   ```php
+   <?php
+   namespace Version1;
+   
+   function calculate($a, $b) {
+       return $a + $b;
+   }
+   
+   namespace Version2;
+   
+   function calculate($a, $b) {
+       return $a * $b;
+   }
+   
+   // 使用时明确指定命名空间
+   echo \Version1\calculate(5, 3);  // 8
+   echo \Version2\calculate(5, 3);  // 15
+   ```
+
+2. **使用类方法代替全局函数**
+   ```php
+   <?php
+   class MathOperations {
+       public static function add($a, $b) {
+           return $a + $b;
+       }
+       
+       public static function multiply($a, $b) {
+           return $a * $b;
+       }
+   }
+   ```
+
+3. **使用条件定义（仅在必要时）**
+   ```php
+   <?php
+   if (!function_exists('calculate')) {
+       function calculate($a, $b) {
+           return $a + $b;
+       }
+   }
+   ```
+
+4. **重构代码避免重复**
+   ```php
+   <?php
+   // 将相似功能的函数合并
+   function calculate($a, $b, string $operation = 'add') {
+       switch ($operation) {
+           case 'add':
+               return $a + $b;
+           case 'multiply':
+               return $a * $b;
+           default:
+               throw new InvalidArgumentException("Unknown operation: {$operation}");
+       }
+   }
+   ```
+
+---
+
+### 10. break/continue 跳出多层循环
+
+**状态**: 不支持  
+**PHP 版本**: 所有版本  
+**描述**: AOT 编译器不支持使用 `break N` 或 `continue N`（N > 1）跳出或继续多层嵌套循环结构。只支持 `break` 和 `continue`（不带数字参数或参数为 1）。
+
+**示例代码**:
+```
+<?php
+// ❌ AOT 编译器不支持：break 2 跳出两层循环
+for ($i = 0; $i < 10; $i++) {
+    for ($j = 0; $j < 10; $j++) {
+        if ($i * $j > 50) {
+            break 2;  // ❌ 错误：不支持跳出多层循环
+        }
+    }
+}
+
+// ❌ AOT 编译器不支持：continue 3 继续外层循环
+for ($i = 0; $i < 10; $i++) {
+    for ($j = 0; $j < 10; $j++) {
+        for ($k = 0; $k < 10; $k++) {
+            if ($i + $j + $k > 20) {
+                continue 3;  // ❌ 错误：不支持继续多层循环
+            }
+        }
+    }
+}
+
+// ✅ 正确做法：使用 goto
+for ($i = 0; $i < 10; $i++) {
+    for ($j = 0; $j < 10; $j++) {
+        if ($i * $j > 50) {
+            goto end_loop;  // ✅ 使用 goto 跳出
+        }
+    }
+}
+end_loop:
+echo "Loop ended";
+
+// ✅ 正确做法：使用标志变量
+$found = false;
+for ($i = 0; $i < 10 && !$found; $i++) {
+    for ($j = 0; $j < 10 && !$found; $j++) {
+        if ($i * $j > 50) {
+            $found = true;  // ✅ 设置标志
+        }
+    }
+}
+
+// ✅ 正确做法：提取为函数并使用 return
+function findValue() {
+    for ($i = 0; $i < 10; $i++) {
+        for ($j = 0; $j < 10; $j++) {
+            if ($i * $j > 50) {
+                return [$i, $j];  // ✅ 直接返回
+            }
+        }
+    }
+    return null;
+}
+
+$result = findValue();
+```
+
+**与标准 PHP 的区别**:
+
+在标准 PHP 中：
+```php
+<?php
+// ✅ PHP 支持 break/continue N
+for ($i = 0; $i < 10; $i++) {
+    for ($j = 0; $j < 10; $j++) {
+        if ($i * $j > 50) {
+            break 2;  // 跳出两层循环
+        }
+        echo "$i * $j = " . ($i * $j) . "\n";
+    }
+}
+echo "Done";
+```
+
+在 AOT 编译器中：
+```php
+<?php
+// ❌ AOT 编译器会在编译时报错
+for ($i = 0; $i < 10; $i++) {
+    for ($j = 0; $j < 10; $j++) {
+        if ($i * $j > 50) {
+            break 2;  // Compile Error: break/continue with level > 1 is not supported
+        }
+    }
+}
+```
+
+**原因**:
+- 多层 break/continue 需要复杂的控制流分析
+- C++ 后端没有直接对应的语法结构
+- 生成的代码难以优化和维护
+- 容易导致代码逻辑混乱，降低可读性
+- 与现代编程最佳实践不符
+
+**相关测试文件**: 
+- 涉及 `break N` 或 `continue N` (N > 1) 的测试文件 (SKIP)
+
+**替代方案**:
+
+1. **使用 goto 语句**
+   ```php
+   <?php
+   for ($i = 0; $i < 10; $i++) {
+       for ($j = 0; $j < 10; $j++) {
+           for ($k = 0; $k < 10; $k++) {
+               if ($i + $j + $k > 20) {
+                   goto exit_loops;  // 跳出所有循环
+               }
+           }
+       }
+   }
+   exit_loops:
+   echo "Exited loops at i=$i, j=$j, k=$k";
+   ```
+
+2. **使用标志变量**
+   ```php
+   <?php
+   $should_break = false;
+   
+   for ($i = 0; $i < 10 && !$should_break; $i++) {
+       for ($j = 0; $j < 10 && !$should_break; $j++) {
+           if ($i * $j > 50) {
+               $should_break = true;
+           }
+       }
+   }
+   ```
+
+3. **提取为函数并使用 return**
+   ```php
+   <?php
+   function searchMatrix(array $matrix, $target): ?array {
+       foreach ($matrix as $i => $row) {
+           foreach ($row as $j => $value) {
+               if ($value === $target) {
+                   return [$i, $j];  // 找到即返回
+               }
+           }
+       }
+       return null;
+   }
+   
+   $result = searchMatrix($matrix, 42);
+   ```
+
+4. **使用 try/catch 异常机制**
+   ```php
+   <?php
+   class LoopBreakException extends Exception {}
+   
+   try {
+       for ($i = 0; $i < 10; $i++) {
+           for ($j = 0; $j < 10; $j++) {
+               if ($i * $j > 50) {
+                   throw new LoopBreakException("Found at $i, $j");
+               }
+           }
+       }
+   } catch (LoopBreakException $e) {
+       echo $e->getMessage();
+   }
+   ```
+
+5. **重构为单层循环**
+   ```php
+   <?php
+   // 将多维索引转换为单维索引
+   $total = 10 * 10;
+   for ($index = 0; $index < $total; $index++) {
+       $i = intdiv($index, 10);
+       $j = $index % 10;
+       
+       if ($i * $j > 50) {
+           break;  // 只需普通 break
+       }
+   }
+   ```
+
+**最佳实践建议**:
+
+- ✅ **优先使用函数提取**：将复杂的多层循环逻辑提取为独立函数，使用 return 退出
+- ✅ **使用标志变量**：对于简单的双层循环，使用布尔标志更清晰
+- ⚠️ **谨慎使用 goto**：虽然有效，但过度使用会降低代码可读性
+- ⚠️ **避免深层嵌套**：如果需要使用 break 3 或更高层级，考虑重构代码结构
+- ❌ **不要依赖异常控制流程**：try/catch 方案仅作为最后手段，性能较差
+
+---
+
+### 11. 字符串越界访问行为差异
+
+**状态**: 行为不一致  
+**PHP 版本**: 所有版本  
+**描述**: AOT 编译器对字符串越界访问的处理与标准 PHP 不同。当访问超出字符串长度的索引时，AOT 编译器会抛出致命错误（Fatal Error），而标准 PHP 只会产生警告（Warning）并返回空字符串。
+
+**示例代码**:
+```
+<?php
+$str = "Hello";  // 长度为 5
+
+// ❌ AOT 编译器：抛出致命错误
+$char = $str[100];  // Fatal error: Uncaught Error: String offset `100` out of range
+
+// ✅ 标准 PHP：产生警告，返回空字符串
+$char = $str[100];  // Warning: Uninitialized string offset 100
+                    // $char = ""
+
+// ❌ AOT 编译器：负数索引也会检查
+$char = $str[-1];   // Fatal error: String offset `-1` out of range
+
+// ✅ 标准 PHP：负数索引也产生警告
+$char = $str[-1];   // Warning: Uninitialized string offset -1
+                     // $char = ""
+```
+
+**与标准 PHP 的区别**:
+
+在标准 PHP 中：
+```php
+<?php
+$str = "Hello";
+echo strlen($str);  // 输出：5
+
+// 访问越界索引 - 只产生警告
+$char = $str[10];
+var_dump($char);  // 输出：string(0) ""
+                  // Warning: Uninitialized string offset 10
+
+// 程序继续执行
+echo "Program continues";  // 正常输出
+```
+
+在 AOT 编译器中：
+```php
+<?php
+$str = "Hello";
+
+// 访问越界索引 - 抛出致命错误
+$char = $str[10];  // Fatal error: Uncaught Error: String offset `10` out of range
+                    // Stack trace:
+                    // #0 Unknown(0) : eval()(1): main()
+                    // #1 {main}
+                    //   thrown in Unknown(0) : eval() on line 1
+
+// 程序终止，不会继续执行
+echo "This will not be printed";  // ❌ 不会执行
+```
+
+**原因**:
+- AOT 编译器采用更严格的边界检查机制
+- 提前发现潜在的 bug，避免静默失败
+- 符合现代编程语言的安全理念（如 C++ 的 at() 方法）
+- 防止因越界访问导致的不可预测行为
+- 提高代码质量和可靠性
+
+**相关测试文件**: 
+- 涉及字符串越界访问的测试文件需要调整期望输出
+- 从期望 Warning 改为期望 Fatal Error
+
+**替代方案**:
+
+1. **访问前检查长度**
+   ```php
+   <?php
+   $str = "Hello";
+   $index = 10;
+   
+   // ✅ 先检查索引是否有效
+   if ($index >= 0 && $index < strlen($str)) {
+       $char = $str[$index];
+       echo $char;
+   } else {
+       echo "Index out of bounds";
+   }
+   ```
+
+2. **使用三元运算符**
+   ```php
+   <?php
+   $str = "Hello";
+   $index = 10;
+   
+   // ✅ 安全的字符访问
+   $char = ($index >= 0 && $index < strlen($str)) ? $str[$index] : '';
+   echo $char;  // 输出空字符串
+   ```
+
+3. **封装安全访问函数**
+   ```php
+   <?php
+   function safeCharAccess(string $str, int $index): string {
+       if ($index >= 0 && $index < strlen($str)) {
+           return $str[$index];
+       }
+       return '';  // 返回空字符串
+   }
+   
+   $str = "Hello";
+   echo safeCharAccess($str, 1);   // 输出：e
+   echo safeCharAccess($str, 10);  // 输出：（空）
+   echo safeCharAccess($str, -1);  // 输出：（空）
+   ```
+
+4. **使用 substr 函数**
+   ```php
+   <?php
+   $str = "Hello";
+   
+   // ✅ substr 在越界时返回空字符串，不会报错
+   $char = substr($str, 10, 1);
+   var_dump($char);  // 输出：string(0) ""
+   
+   // 注意：substr 性能略低于直接索引访问
+   ```
+
+5. **使用 try/catch 捕获异常**
+   ```php
+   <?php
+   $str = "Hello";
+   
+   try {
+       $char = $str[10];
+       echo $char;
+   } catch (Error $e) {
+       echo "Caught error: " . $e->getMessage();
+       // 输出：Caught error: String offset `10` out of range
+   }
+   ```
+
+**最佳实践建议**:
+
+- ✅ **始终检查边界**：在访问字符串索引前验证索引范围
+- ✅ **使用辅助函数**：封装安全的字符访问逻辑，提高代码复用性
+- ✅ **明确错误处理**：对于可能越界的场景，使用 try/catch 或条件判断
+- ⚠️ **注意性能**：频繁的边界检查会影响性能，关键路径可考虑其他方案
+- ❌ **不要依赖警告**：AOT 编译器会将越界访问升级为致命错误
+- ❌ **避免硬编码索引**：使用变量和动态计算时要格外小心
+
+**迁移指南**:
+
+如果你的代码在标准 PHP 中依赖越界访问返回空字符串的行为，需要进行以下修改：
+
+```php
+<?php
+// ❌ 旧代码（在 PHP 中工作，在 AOT 中会崩溃）
+$str = getUserInput();
+$firstChar = $str[0];  // 如果 $str 为空，AOT 会抛出错误
+
+// ✅ 新代码（兼容 AOT）
+$str = getUserInput();
+$firstChar = (strlen($str) > 0) ? $str[0] : '';
+
+// 或者
+$firstChar = safeCharAccess($str, 0);
+```
+
+**常见陷阱**:
+
+1. **空字符串访问**
+   ```php
+   <?php
+   $str = "";
+   // ❌ AOT 错误
+   $char = $str[0];  // Fatal error: String offset `0` out of range
+   
+   // ✅ 正确做法
+   $char = strlen($str) > 0 ? $str[0] : '';
+   ```
+
+2. **循环中的索引**
+   ```php
+   <?php
+   $str = "Hello";
+   for ($i = 0; $i <= strlen($str); $i++) {  // ❌ <= 会导致越界
+       echo $str[$i];  // 最后一次迭代会出错
+   }
+   
+   // ✅ 正确做法
+   for ($i = 0; $i < strlen($str); $i++) {  // 使用 <
+       echo $str[$i];
+   }
+   ```
+
+3. **用户输入处理**
+   ```php
+   <?php
+   // ❌ 不安全
+   $input = $_GET['char'];
+   echo $input[0];  // 如果 input 为空会出错
+   
+   // ✅ 安全
+   $input = $_GET['char'] ?? '';
+   if (strlen($input) > 0) {
+       echo $input[0];
+   }
+   ```
+
+---
+
 ### 7. 游离代码（全局可执行表达式）
 
 **状态**: 不支持  
@@ -1648,7 +2210,7 @@ $body = $doc->body->innerHTML;  // 不支持
 **描述**: 在函数或类方法之外执行的可执行表达式
 
 **示例代码**:
-```php
+```
 <?php
 // ❌ 不支持：游离的可执行表达式
 echo "Hello World";  // 直接在全局作用域执行
@@ -1689,7 +2251,7 @@ function main() {
 - 在 `main()` 函数中调用需要的功能
 
 **正确的代码结构示例**:
-```php
+```
 <?php
 // 全局声明是允许的
 class MyClass {
@@ -1894,7 +2456,7 @@ echo $user->getCreatedAt();
 
 对于不支持的测试文件，需要在 `--FILE--` 之前添加 `--SKIPIF--` 部分：
 
-```php
+```
 --TEST--
 测试描述
 
@@ -1953,17 +2515,25 @@ echo "skip Generator syntax not supported in AOT";
 
 | 类别 | 数量 | 百分比 |
 |------|------|--------|
-| 不支持的语法 | 9 | - |
+| 不支持的语法 | 12 | - |
 | 计划支持的语法 | 2 | - |
-| 已支持的语法 | 50+ | ~85% |
+| 已支持的语法 | 50+ | ~81% |
 
 **总测试文件数**: 126 个  
-**Skip 测试数**: 9 个（根据实际标记数量）  
-**正常测试数**: 117 个
+**Skip 测试数**: 12 个（根据实际标记数量）  
+**正常测试数**: 114 个
 
 ---
 
 ## 📝 更新日志
+
+### 2024-04-07
+- 新增 3 个不支持的语法特性
+- **重复的函数名和类名**: AOT 编译器禁止在同一作用域内定义同名的函数或类，与标准 PHP 不同。PHP 允许后定义覆盖先前的定义，而 AOT 编译器会在编译时报错。
+- **break/continue 跳出多层循环**: AOT 编译器不支持 `break N` 或 `continue N` (N > 1) 跳出或继续多层嵌套循环。需要使用 goto、标志变量、函数返回或 try/catch 代替。
+- **字符串越界访问行为差异**: AOT 编译器对字符串越界访问抛出致命错误（Fatal Error），而标准 PHP 只产生警告（Warning）。需要添加边界检查或使用安全的访问方式。
+- 添加详细的对比说明和替代方案（命名空间、条件定义、goto、标志变量、边界检查等）
+- 更新统计信息和快速参考表
 
 ### 2024-03-20
 - 新增 2 个不支持的语法特性
@@ -1993,6 +2563,15 @@ echo "skip Generator syntax not supported in AOT";
 
 ### Q: 为什么这些语法不被支持？
 A: AOT 编译器采用静态编译方式，某些 PHP 动态特性（如可变变量、生成器）需要在运行时动态解析，与 AOT 的设计理念冲突。
+
+### Q: AOT 编译器允许重复的函数名或类名吗？
+A: **不允许**。与标准 PHP 不同，AOT 编译器禁止在同一作用域内定义同名的函数或类。PHP 允许后定义覆盖先前的定义（会产生警告），而 AOT 编译器会在编译期直接报错。这是为了保证符号表的唯一性和编译的确定性。建议使用命名空间、不同的名称或条件定义来避免冲突。
+
+### Q: AOT 编译器支持 break 2 或 continue 2 跳出多层循环吗？
+A: **不支持**。AOT 编译器只支持普通的 `break` 和 `continue`（跳出或继续当前层循环），不支持 `break N` 或 `continue N` (N > 1) 跳出或继续多层嵌套循环。替代方案包括：使用 goto 语句、设置标志变量、将逻辑提取为函数并使用 return、或使用 try/catch 异常机制。推荐使用函数提取的方式，代码更清晰易维护。
+
+### Q: AOT 编译器的字符串越界访问行为与 PHP 有什么不同？
+A: **行为不一致**。标准 PHP 在访问超出字符串长度的索引时只会产生警告（Warning）并返回空字符串，程序继续执行。而 AOT 编译器会抛出致命错误（Fatal Error: String offset out of range），导致程序终止。这是因为 AOT 采用更严格的边界检查机制。建议在访问字符串索引前先检查长度，或使用 substr() 函数等安全方式。
 
 ### Q: 什么时候会支持 Traits？
 A: Traits 已在开发计划中，具体支持时间取决于开发进度和社区需求。请查看项目路线图获取最新信息。
@@ -2037,10 +2616,13 @@ A: 游离代码指在函数或方法之外直接执行的可执行表达式（�
 | 游离代码 | ❌ 不支持 | 将所有代码放入 main() 函数 |
 | **引用参数默认值** | ❌ 不支持 | 使用值传递 + 返回值或 null 默认值 |
 | **变长引用参数** | ❌ 不支持 | 使用数组参数代替 |
+| **重复函数/类名** | ❌ 不支持 | 使用命名空间、不同名称或条件定义 |
+| **break/continue N** | ❌ 不支持 | 使用 goto、标志变量、函数返回或 try/catch |
+| **字符串越界访问** | ⚠️ 行为不一致 | 添加边界检查或使用 substr()
 
 ### 正确的代码结构模板
 
-```php
+```
 <?php
 // ✅ 推荐结构
 
@@ -2071,7 +2653,7 @@ function main() {
 
 ### 常见错误示例
 
-```php
+```
 <?php
 // ❌ 错误：游离代码
 
@@ -2091,4 +2673,3 @@ function main() {
         echo $i;
     }
 }
-```
