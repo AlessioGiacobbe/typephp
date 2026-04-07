@@ -3151,7 +3151,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseGlobal(Node\Stmt\Global_ $v): string
     {
         foreach ($v->vars as $v) {
-            $name = $this->escapeVarName($v->name);
+            $name = $this->escapeVarName($this->parseVariable($v));
             if (!$this->hasGlobalVar($name)) {
                 $this->addGlobalVar($name, self::TYPE_VAR);
             }
