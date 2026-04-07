@@ -804,8 +804,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseFunctionDecl(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
     {
         // .stub 存根定义 C++ Native 函数，必须设置返回值类型
-        if (!$v->returnType && $this->stubFile) {
-            $this->fatalError($v, 'The return type of the function `' . $v->name . '` must be specified');
+        if ($this->stubFile and !$v->returnType) {
+            // 以下魔术方法都不能声明返回值类型 __construct()/__destruct()/__clone()
+            if (($this->method and !in_array($this->method, ['__construct', '__destruct', '__clone'])) or !$this->method) {
+                $name = $this->class ? $this->class . '::' . $v->name : $v->name;
+                $this->fatalError($v, 'The return type of the function `' . $name . '` must be specified');
+            }
         }
         // 返回值不能是引用类型
         if ($v->byRef) {
@@ -814,7 +818,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $fnName = $this->parseIdentifier($v->name);
         $returnType = $this->parseTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
-        $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
+        $functionDef = new FunctionDef($fnName, $returnType, $this->namespace, $this->stubFile);
         $this->functionDef = $functionDef;
 
         $this->parseParams($v->params, $functionDef);
@@ -828,10 +832,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($returnType !== self::TYPE_VOID) {
                     $this->fatalError($v, 'main function must return void');
                 }
-                if ($this->checkArgType($functionDef->argInfoList[0]->type, self::TYPE_INT)) {
+                if (!$this->checkArgType($functionDef->argInfoList[0]->type, self::TYPE_INT)) {
                     $this->fatalError($v, 'The first parameter of the main function must be of type `int`.');
                 }
-                if ($this->checkArgType($functionDef->argInfoList[1]->type, self::TYPE_ARRAY)) {
+                if (!$this->checkArgType($functionDef->argInfoList[1]->type, self::TYPE_ARRAY)) {
                     $this->fatalError($v, 'The second parameter of the main function must be of type `array`.');
                 }
             }
@@ -861,7 +865,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         // 类方法不要保存到 functions 中
         if ($this->class) {
-            $this->addArgument('this_', self::TYPE_OBJECT);
             if ($this->methodDef) {
                 $this->functionDef->method = true;
                 $this->methodDef->functionDef = $this->functionDef;
@@ -870,6 +873,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->functionDefineInFile[$name] = $this->functionDef;
         }
 
+        // stub 函数，没有函数的具体实现，只有声明，实现在 C++ 或者 .so 中定义
+        if ($this->functionDef->stub) {
+            $this->resetFunction();
+            return '';
+        }
+
+        if ($this->class) {
+            $this->addArgument('this_', self::TYPE_OBJECT);
+        }
         foreach ($this->functionDef->argInfoList as $argInfo) {
             $this->addArgument($argInfo->name, $argInfo->type);
         }

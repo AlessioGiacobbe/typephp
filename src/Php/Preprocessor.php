@@ -266,6 +266,7 @@ class Preprocessor extends CompilerBase
 
     protected function prepareMethod(Node\Stmt\ClassMethod $v, Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): void
     {
+        $this->method = $v->name;
         $abstract = $v->flags & Modifiers::ABSTRACT;
         if (!$abstract) {
             $this->prepareFunction($v) . PHP_EOL;
@@ -276,7 +277,7 @@ class Preprocessor extends CompilerBase
         }
 
         $fullClassName = $this->getFullClassName();
-        $fullMethodName = $fullClassName . '::' . $v->name;
+        $fullMethodName = $fullClassName . '::' . $this->method;
         $this->classMethodOverride[strtolower($fullMethodName)] = false;
         // 查找父类是否有同名方法，递归查找
         $fullClassNameLower = strtolower($fullClassName);

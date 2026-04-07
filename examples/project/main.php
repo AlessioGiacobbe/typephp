@@ -1,5 +1,5 @@
 <?php
-function main($argc, array $argv)
+function main(int $argc, array $argv)
 {
     var_dump($argc, $argv);
     fn1();
@@ -9,4 +9,8 @@ function main($argc, array $argv)
         echo $r;
     }
     var_dump(gettype($rs));
+
+    var_dump("c++ class:");
+    $o = new Foo(1000);
+    var_dump($o->bar(123, 342));
 }
