@@ -3131,6 +3131,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $fullName = $this->getNamespacedClassName($ns[0]);
                 $ce = $this->getClassEntryPtr($fullName);
                 return 'php::constant(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
+            } elseif (isset($this->useAliases[$name])) {
+                $name = $this->useAliases[$name];
+            } else {
+                $fullName = $this->getNamespacedClassName($name);
+                if ($fullName) {
+                    $name = $fullName;
+                }
             }
             return 'php::constant(nullptr, ' . $this->getLiteralString($name) . ')';
         }
@@ -4374,16 +4381,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function parseUse(mixed $v2): string
+    protected function parseUse(Node\Stmt\Use_ $v2): string
     {
         $code = '';
         foreach ($v2->uses as $use) {
             $id = $this->parseIdentifier($use->name);
             if ($use->type === Node\Stmt\Use_::TYPE_FUNCTION) {
-                $rpos = strrpos($id, '\\');
-                $fn = substr($id, $rpos + 1);
-                $ns = substr($id, 0, $rpos);
-                // fn => namespace
+                $lastIndex = strrpos($id, '\\');
+                $fn = substr($id, $lastIndex + 1);
+                $ns = substr($id, 0, $lastIndex);
                 $this->useFunctions[$fn] = $ns;
             } else {
                 if ($id === 'native_types') {
