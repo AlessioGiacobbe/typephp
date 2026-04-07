@@ -50,6 +50,11 @@ trait FuncCallOptimizer
         }
     }
 
+    protected function isValidDefineName(string $name): bool
+    {
+        return preg_match('/^(?!\d)[\p{L}_][\p{L}\p{N}_]*$/u', $name) === 1;
+    }
+
     protected function parseFuncCallWithOptimizer(string $name, Node\Expr\FuncCall $expr): string|false
     {
         $getArg = function ($i) use ($expr) {
@@ -73,8 +78,14 @@ trait FuncCallOptimizer
                 case 'objval':
                     $arg1 = $expr->args[0]->value;
                     $arg2 = $expr->args[1]->value;
-
                     return $this->convertObjectExpr($this->parseExpr($arg1), $this->parseExpr($arg2));
+
+                case 'define':
+                    $arg1 = $expr->args[0]->value;
+                    if ($this->isScalarString($arg1) and !$this->isValidDefineName($arg1->value)) {
+                        $this->fatalError($expr, 'Invalid define name `' . $arg1->value . '`');
+                    }
+                    break;
                 default:
                     break;
             }
