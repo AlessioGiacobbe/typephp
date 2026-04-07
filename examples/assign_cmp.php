@@ -1,28 +1,4 @@
 <?php
-
-class std
-{
-    static function int(int $value): int
-    {
-        return $value;
-    }
-
-    static function float(float $value):  float
-    {
-        return $value;
-    }
-
-    static function bool(bool $value): bool
-    {
-        return $value;
-    }
-
-    static function string(string $str): resource
-    {
-        return fopen('php://stdin', 'r');
-    }
-}
-
 function main()
 {
     $a = std::int(100);

@@ -241,11 +241,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     ];
     protected array $globalVars = [];
     protected bool $strictTypes = false;
+    protected bool $nativeTypes = false;
     protected string $rootPath;
     protected string $buildDir;
     protected int $debugLine = 0;
     protected CLImate $climate;
-    protected bool $defaultNativeType = true;
     protected bool $stubFile = false;
     protected bool $enableProfiler = false;
     protected bool $forTest = false;
@@ -612,11 +612,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function resetFile(): void
     {
-        $this->indentLevel            = 0;
-        $this->strictTypes            = false;
-        $this->classesDefineInFile    = [];
+        $this->indentLevel = 0;
+        $this->strictTypes = false;
+        $this->nativeTypes = false;
+        $this->classesDefineInFile = [];
         $this->interfacesDefineInFile = [];
-        $this->functionDefineInFile   = [];
+        $this->functionDefineInFile = [];
     }
 
     protected function resetNamespace(): void
@@ -1307,7 +1308,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseAssignFinally($left, $right);
     }
 
-    protected function parseAssignFinally(Node\Expr $left, Node\Expr $right): string
+    protected function parseAssignFinally(Expr $left, Expr $right): string
     {
         if ($left instanceof Expr\List_) {
             $items = $left->items;
@@ -3392,7 +3393,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function getNativeType(string $type): string
     {
-        return $this->defaultNativeType ? $type : self::TYPE_VAR;
+        return $this->nativeTypes ? $type : self::TYPE_VAR;
     }
 
     protected function detectConstType($expr): string
@@ -4018,11 +4019,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * @param NodeAbstract $expr 仅用于输出错误日志
-     * @param string $property
-     * @param string $class
-     * @param string $namespace
-     * @param bool $static
-     * @return string|null
      */
     protected function findNativeProperty(NodeAbstract $expr, string $property, string $class, string $namespace = '', bool $static = false): ?string
     {
@@ -4320,7 +4316,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $declares = $v->declares;
         foreach ($declares as $declare) {
-            $key   = $this->parseIdentifier($declare->key);
+            $key = $this->parseIdentifier($declare->key);
             $value = $this->parseIdentifier($declare->value);
             if ($key === 'ticks') {
                 $this->fatalError($v, 'declare(ticks=1) is not supported');
@@ -4328,8 +4324,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (strtolower($value) !== 'utf-8') {
                     $this->fatalError($v, 'declare(encoding="' . $value . '") is not supported, only UTF-8 is supported');
                 }
+            } elseif ($key === 'strict_types') {
+                $this->strictTypes = boolval(intval($value));
+            } else {
+                $this->fatalError($v, 'declare(' . $key . '=' . $value . ') is not supported');
             }
-            $this->strictTypes = boolval(intval($value));
         }
     }
 
@@ -4340,14 +4339,18 @@ class CompilerBase extends \PhpAot\Core\Translator
             $id = $this->parseIdentifier($use->name);
             if ($use->type === Node\Stmt\Use_::TYPE_FUNCTION) {
                 $rpos = strrpos($id, '\\');
-                $fn   = substr($id, $rpos + 1);
-                $ns   = substr($id, 0, $rpos);
+                $fn = substr($id, $rpos + 1);
+                $ns = substr($id, 0, $rpos);
                 // fn => namespace
                 $this->useFunctions[$fn] = $ns;
             } else {
-                $this->useNamespaces[] = $id;
-                if ($use->alias) {
-                    $this->useAliases[$use->alias->toString()] = $id;
+                if ($id === 'native_types') {
+                    $this->nativeTypes = true;
+                } else {
+                    $this->useNamespaces[] = $id;
+                    if ($use->alias) {
+                        $this->useAliases[$use->alias->toString()] = $id;
+                    }
                 }
             }
         }

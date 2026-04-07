@@ -1,14 +1,17 @@
 <?php
+declare(strict_types=1);
+
+use native_types;
 
 function hallo() {
 }
 
-function simpleucall($n) {
+function simpleucall(int $n) {
   for ($i = 0; $i < $n; $i++)
     hallo();
 }
 
-function simpleudcall($n) {
+function simpleudcall(int $n) {
   for ($i = 0; $i < $n; $i++)
     hallo2();
 }
@@ -16,11 +19,15 @@ function simpleudcall($n) {
 function hallo2() {
 }
 
-function simpleicall($n)
+function simpleicall(int $n)
 {
+//    $array = [new ArrayObject()];
+//    $o = $array[0];
+    $o = new stdClass();
     for ($i = 0; $i < $n; $i++) {
 //        $ret = function_exists('hallo');
-        $ret = class_exists('Foo2');
+//        $ret = class_exists('Foo2');
+        $ret = get_class($o);
     }
 }
 
