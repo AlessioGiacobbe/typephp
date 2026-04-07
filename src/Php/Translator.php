@@ -1179,6 +1179,23 @@ class Translator extends Preprocessor
         $this->method = $name;
         $flags = $this->parseModifiers($v->flags);
 
+        $classDef = $this->classDef;
+        while (true) {
+            $extends = $classDef->extends;
+            if (!$extends) {
+                break;
+            }
+            $classDef = $this->getClass($extends);
+            if ($classDef->hasMethod($this->method)) {
+                $methodDef = $classDef->getMethod($this->method);
+                if ($methodDef->flags & Modifiers::PRIVATE) {
+                    $this->fatalError($v,
+                        'Cannot override private method `' .
+                        $classDef->getNamespacedName(false) . '::' . $this->method . '()`');
+                }
+            }
+        }
+
         if (!($flags & Modifiers::ABSTRACT)) {
             $this->methodDef = new MethodDef($flags, $name);
             $methodCodes[$name] = $this->parseFunction($v);

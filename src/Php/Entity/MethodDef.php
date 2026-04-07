@@ -13,6 +13,7 @@ class MethodDef
     public int $flags;
     public string $name;
     public ?FunctionDef $functionDef = null;
+    public bool $hasDynamicCall = false;
 
     public function __construct(int $flags, string $name)
     {

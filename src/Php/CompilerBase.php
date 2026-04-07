@@ -923,6 +923,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $this->indentLevel--;
         $code .= $this->genDebugInfo();
+
+        // 函数中存在动态调用的函数，需要在运行时动态切换作用域
+        if ($this->methodDef and $this->methodDef->hasDynamicCall) {
+            $code .= $this->genScopeSwitchCode();
+        }
+
         $code .= $stmts;
         $code .= "}\n";
 
@@ -3856,7 +3862,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
-        $dynamicCall = false;
+        $magicMethod = false;
         $method = $this->identifierToStr($expr->name, literal: true);
 
         // 可转为原生调用的 MethodCall
@@ -3873,7 +3879,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                 }
             } catch (DynamicCall) {
-                $dynamicCall = true;
+                $magicMethod = true;
             }
         }
 
@@ -3883,10 +3889,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             $funcName = '';
         }
 
-        if ($class and $funcName and !$dynamicCall) {
+        if ($class and $funcName and !$magicMethod) {
             $methodPtr = $this->getMethodPtr($class, $funcName);
         } else {
             $methodPtr = $method;
+        }
+
+        if ($object === 'this_' or $object === 'self' or $object === 'static') {
+            $this->methodDef->hasDynamicCall = true;
         }
 
         if (empty($expr->args)) {
