@@ -3705,6 +3705,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             $expr = $expr->var;
         }
 
+        $list = array_reverse($list);
+
         if ($getValue) {
             $result = $this->addTmpVar(self::TYPE_VAR);
             $node->setAttribute('chainOpResult', $result);
