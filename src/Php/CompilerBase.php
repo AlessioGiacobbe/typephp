@@ -4234,9 +4234,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseShellExec(mixed $expr): string
+    protected function parseShellExec(Node\Expr\ShellExec $expr): string
     {
-        return 'php::call("shell_exec", {' . $this->parseInterpolatedString($expr) . '})';
+        $list = [];
+        foreach($expr->parts as $part) {
+            $list[] = $this->identifierToStr($part);
+        }
+        return 'php::shell_exec(php::concat({' . implode(', ', $list) . '}))';
     }
 
     protected function parseGoto(Node\Stmt\Goto_ $v): string
