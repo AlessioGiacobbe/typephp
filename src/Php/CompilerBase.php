@@ -1532,11 +1532,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseIdentifier($expr);
     }
 
-    protected function parseBinaryOp($left, $right, $op): string
+    protected function parseBinaryOp(NodeAbstract $left, NodeAbstract $right, string $op): string
     {
         // 运算逻辑，优先转为数字
         $leftExpr  = $this->parseNumericIdentifier($left);
         $rightExpr = $this->parseNumericIdentifier($right);
+
+        $this->checkVarMustExist($left, $leftExpr);
+        $this->checkVarMustExist($right, $rightExpr);
 
         $leftType  = $this->detectExprType($left);
         $rightType = $this->detectExprType($right);
@@ -4576,13 +4579,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         foreach ($vars as $var) {
-            if ($var->name === 'this'
-                or !$this->hasLocalVar($var->name)
+            $varName = $this->escapeVarName($this->parseVariable($var));
+            if ($varName === 'this'
+                or !$this->hasLocalVar($varName)
                 or isset($params[$var->name])
-                or isset($uses[$var->name])) {
+                or isset($uses[$varName])) {
                 continue;
             }
-            $uses[$var->name] = new Node\ClosureUse($var);
+            $uses[$varName] = new Node\ClosureUse($var);
         }
         $uses = array_values($uses);
 
