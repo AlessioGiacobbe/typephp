@@ -101,6 +101,9 @@ trait ClosureGenerator
 
         // 使用 lambda 函数来对 static 变量进行赋值
         $this->context = new FunctionContext();
+        // C++ lambda 使用 & 捕获了当前函数的所有局部变量，可直接使用，不需要再声明，将其作为 arguments 来处理，隐式使用
+        $this->context->arguments = $oriCtx->localVars;
+
         $code .= '([&](){' . PHP_EOL;
         $body = $cb();
         $code .= $this->genLocalVarDecl();
