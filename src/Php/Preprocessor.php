@@ -274,6 +274,13 @@ class Preprocessor extends CompilerBase
             if (!($class->flags & Modifiers::ABSTRACT)) {
                 $this->fatalError($v, "Class {$this->class} cannot override non-abstract method {$v->name}");
             }
+            if ($this->method === '__construct') {
+                foreach ($v->params as $param) {
+                    if ($param->isPromoted()) {
+                        $this->fatalError($v, "Cannot declare promoted property in an abstract constructor");
+                    }
+                }
+            }
         }
 
         $fullClassName = $this->getFullClassName();
