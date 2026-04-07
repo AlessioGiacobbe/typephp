@@ -8,6 +8,8 @@
 
 namespace PhpAot\Php\Entity;
 
+use PhpAot\Php\Context\FunctionContext;
+
 class ClassDef extends ClassLikeDef
 {
     /**
@@ -30,10 +32,14 @@ class ClassDef extends ClassLikeDef
     public bool $enum = false;
     public int $flags;
     public bool $inheritedFromInternalClass = false;
+    public string $ctorInit = '';
+    public string $ctorClean = '';
+    public FunctionContext $propertyContext;
 
     public function __construct(string $name, int $flags, string $namespace = '')
     {
         $this->flags = $flags;
+        $this->propertyContext = new FunctionContext();
         parent::__construct($name, $namespace);
     }
 

@@ -3131,7 +3131,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $fullName = $this->getNamespacedClassName($ns[0]);
                 $ce = $this->getClassEntryPtr($fullName);
                 return 'php::constant(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
-            } elseif (isset($this->useAliases[$name])) {
+            }
+            if (isset($this->useAliases[$name])) {
                 $name = $this->useAliases[$name];
             } else {
                 $fullName = $this->getNamespacedClassName($name);
@@ -4251,10 +4252,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseShellExec(Node\Expr\ShellExec $expr): string
+    protected function parseShellExec(Expr\ShellExec $expr): string
     {
         $list = [];
-        foreach($expr->parts as $part) {
+        foreach ($expr->parts as $part) {
             $list[] = $this->identifierToStr($part);
         }
         return 'php::shell_exec(php::concat({' . implode(', ', $list) . '}))';

@@ -522,14 +522,19 @@ class Translator extends Preprocessor
                 $className = $classDef->getNamespacedName();
                 $code .= "create_object_{$className} = php_get_create_object_fn({$ce});\n";
                 $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
+                $code .= $classDef->ctorInit;
                 $code .= "auto obj = create_object_{$className}(class_type);\n";
+                $code .= "object_properties_init(obj, class_type);\n";
                 foreach ($classDef->properties as $property) {
                     $fullPropName = $classDef->getNamespacedName() . '::' . $property->name;
                     if (isset($this->defaultPropertyList[$fullPropName])) {
+                        $code .= "do {\n";
                         $code .= "auto value = {$this->defaultPropertyList[$fullPropName]};\n";
-                        $code .= 'zend_update_property_ex(obj->ce, obj, ' . $this->getLiteralString($property->name) . ".str(), value.ptr());\n";
+                        $code .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
+                        $code .= "} while(0);\n";
                     }
                 }
+                $code .= $classDef->ctorClean;
                 $code .= "return obj;\n};\n";
             }
         }
@@ -936,6 +941,13 @@ class Translator extends Preprocessor
             }
         }
         $code = $this->genNativeMethod($methodCodes);
+
+        $oriCtx = $this->context;
+        $this->context = $this->classDef->propertyContext;
+        $this->classDef->ctorInit .= $this->genLocalVarDecl() . $this->parseBeforeStmtLines();
+        $this->classDef->ctorClean .= $this->parseAfterStmtLines();
+        $this->context = $oriCtx;
+
         $this->resetClass();
 
         return $code;
@@ -1150,19 +1162,23 @@ class Translator extends Preprocessor
 
     protected function parsePropertyDef(Node\Stmt\Property $v): void
     {
+        $oriCtx = $this->context;
+        $this->context = $this->classDef->propertyContext;
         $flags = $this->parseModifiers($v->flags);
         $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_PROPERTY);
 
         foreach ($v->props as $prop) {
             $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
             if ($prop->default) {
-                if ($prop->default->getType() == 'Expr_Array' and count($prop->default->items) > 0) {
+                $propDef->default = $this->parseIdentifier($prop->default);
+                if ($prop->default->getType() == 'Expr_Array') {
                     $propDef->type = self::TYPE_ARRAY;
                 }
-                $propDef->default = $this->parseIdentifier($prop->default);
             }
             $this->classDef->properties[$propDef->name] = $propDef;
         }
+
+        $this->context = $oriCtx;
     }
 
     protected function parseModifiers(int $flags): int

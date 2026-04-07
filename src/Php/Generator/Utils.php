@@ -18,6 +18,11 @@ trait Utils
         return '"' . ($escape ? $this->escapeString($str) : $str) . '"';
     }
 
+    protected function genZendStrl(string $char): string
+    {
+        return 'ZEND_STRL(' . $this->genCharPtr($char) . ')';
+    }
+
     protected function genArray(array $elements): string
     {
         return CompilerBase::TYPE_ARRAY . '{' . implode(', ', $elements) . ' }';

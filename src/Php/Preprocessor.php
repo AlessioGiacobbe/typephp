@@ -277,7 +277,7 @@ class Preprocessor extends CompilerBase
             if ($this->method === '__construct') {
                 foreach ($v->params as $param) {
                     if ($param->isPromoted()) {
-                        $this->fatalError($v, "Cannot declare promoted property in an abstract constructor");
+                        $this->fatalError($v, 'Cannot declare promoted property in an abstract constructor');
                     }
                 }
             }
