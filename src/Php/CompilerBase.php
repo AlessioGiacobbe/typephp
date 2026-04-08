@@ -142,6 +142,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     ];
     protected array $localHeaders = [];
     protected array $internalFunctions = [];
+    protected array $internalConstants = [];
 
     /**
      * 存储所有函数、类方法的声明，key 是 符号名称，Value 是函数、类方法所在的文件名称
@@ -1437,12 +1438,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             if (!$this->hasVar($var)) {
                 $this->addLocalVar($var, $type);
-            } elseif ($this->getVarType($var) !== self::TYPE_VAR) { // var 可以作为任意类型进行赋值
-                if ($this->isTypedObject($var) and $type !== self::TYPE_OBJECT
-                    or $this->getVarType($var) === self::TYPE_ARRAY and ($type !== self::TYPE_ARRAY)
-                ) {
-                    $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . ' to ' . $type);
-                }
+            } elseif ($this->getVarType($var) !== self::TYPE_VAR and $this->isTypedObject($var) and $type !== self::TYPE_OBJECT) {
+                $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . ' to ' . $type);
             }
         } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
             return $this->parseAssignPropertyFetch($left, $right);
@@ -1453,7 +1450,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($left, 'Cannot use [] for strings');
                 }
             }
-            if ($this->isScalar($right) or $this->isVarExpr($right)) {
+            if ($this->isVarExpr($left->var) and ($this->isVarExpr($right) or $this->isScalar($right))) {
                 return $this->parseAssignArrayDim($left, $right);
             }
         }
@@ -1508,6 +1505,16 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function isInternalClass(string $name): bool
     {
         return Reflection::isInternalClass($name);
+    }
+
+    protected function isInternalInterface(string $name): bool
+    {
+        return Reflection::isInternalInterface($name);
+    }
+
+    protected function isInternalConstant(string $name): bool
+    {
+        return array_key_exists($name, $this->internalConstants);
     }
 
     protected function isAssignOpConcat(string $op): bool
@@ -2006,16 +2013,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($typeName === 'void' or $typeName === 'never') {
             $this->fatalError($param, 'Cannot use `void`/`never` as a parameter type.');
         } elseif ($typeName === 'self') {
-            $this->addObject($var, $this->classDef->getNamespacedName(false));
-            return self::TYPE_OBJECT;
+            $class = $this->classDef->getNamespacedName(false);
         } elseif (isset($this->zendTypeMap[$typeName])) {
             return $this->getTypeFromZendType($typeName);
         } else {
             $class = $this->getNamespacedClassName($typeName);
-            $this->addObject($var, $class);
-            $argInfo->class = $class;
-            return self::TYPE_OBJECT;
         }
+        $this->addObject($var, $class);
+        $argInfo->class = $class;
+        return self::TYPE_OBJECT;
     }
 
     protected function parseIncludes(): string
@@ -3184,7 +3190,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $ce = $this->getClassEntryPtr($fullName);
                 return 'php::constant(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
             }
-            if (isset($this->useAliases[$name])) {
+            if ($this->isInternalConstant($name)) {
+                return 'php::constant(' . $this->getLiteralString($name) . ')';
+            } elseif (isset($this->useAliases[$name])) {
                 $name = $this->useAliases[$name];
             } else {
                 $fullName = $this->getNamespacedClassName($name);
@@ -3272,6 +3280,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function isInheritedFrom(string $class, string $expected): bool
     {
+        if ($this->isInternalClass($class) and ($this->isInternalClass($expected) or $this->isInternalInterface($expected))) {
+            return $class === $expected or is_subclass_of($class, $expected);
+        }
         while (true) {
             if (strcasecmp($class, $expected) === 0) {
                 return true;
@@ -3301,7 +3312,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $object = $this->parseVariable($arg->value);
                 if ($this->isTypedObject($object)) {
                     $class = $this->getObjectType($object);
-                    if (!$this->isInheritedFrom($class, $argInfo->class)) {
+                    if ($class and $argInfo->class and !$this->isInheritedFrom($class, $argInfo->class)) {
                         $this->fatalError($arg, "Argument `{$argInfo->name}` must be an instance of `{$argInfo->class}`, `{$class}` given");
                     }
                 }

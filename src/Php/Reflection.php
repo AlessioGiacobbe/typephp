@@ -12,6 +12,7 @@ class Reflection
 {
     private static array $functions = [];
     private static array $classes = [];
+    private static array $interfaces = [];
 
     public static function isInternalClass(string $class): bool
     {
@@ -34,6 +35,28 @@ class Reflection
         }
 
         return isset($internalClasses[strtolower($class)]);
+    }
+
+    public static function isInternalInterface(string $interface): bool
+    {
+        static $internalInterfaces = null;
+
+        if ($internalInterfaces === null) {
+            $allInterfaces = get_declared_interfaces();
+            $internalInterfaces = [];
+            foreach ($allInterfaces as $interfaceName) {
+                try {
+                    $ref = new \ReflectionClass($interfaceName);
+                    if ($ref->isInternal()) {
+                        $internalInterfaces[strtolower($interfaceName)] = true;
+                    }
+                } catch (\ReflectionException) {
+                    continue;
+                }
+            }
+        }
+
+        return isset($internalInterfaces[strtolower($interface)]);
     }
 
     public static function getFunction(string $fn): ?\ReflectionFunction

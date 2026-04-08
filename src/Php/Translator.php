@@ -51,10 +51,11 @@ class Translator extends Preprocessor
         $this->buildMode = $this->climate->arguments->get('mode');
         $this->debugLine = intval($this->climate->arguments->get('debug-line'));
         $this->maxJob = intval($this->climate->arguments->get('job'));
-        $this->debugInfo     = $this->climate->arguments->defined('debug-info');
+        $this->debugInfo = $this->climate->arguments->defined('debug-info');
         $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
-        $this->enableProfiler    = $this->climate->arguments->defined('profile');
+        $this->enableProfiler = $this->climate->arguments->defined('profile');
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
+        $this->internalConstants = get_defined_constants();
         if ($this->climate->arguments->defined('help')) {
             $this->showUsage();
             exit(0);

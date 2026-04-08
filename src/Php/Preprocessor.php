@@ -8,6 +8,8 @@
 
 namespace PhpAot\Php;
 
+use MJS\TopSort\CircularDependencyException;
+use MJS\TopSort\ElementNotFoundException;
 use MJS\TopSort\Implementations\StringSort;
 use PhpAot\Php\Exception\SyntaxError;
 use PhpAot\Php\Exception\Unsupported;
@@ -24,7 +26,9 @@ class Preprocessor extends CompilerBase
     public function sortFiles(array &$list): void
     {
         $sorter = new StringSort();
+        $fileDeps = [];
 
+        // 构建依赖关系图
         foreach ($this->symbolCallInFile as $file => $symbols) {
             $deps = [];
             foreach ($symbols as $symbol) {
@@ -35,17 +39,87 @@ class Preprocessor extends CompilerBase
                     }
                 }
             }
-            $sorter->add($file, array_unique($deps));
+            $deps = array_unique($deps);
+            $fileDeps[$file] = $deps;
+            $sorter->add($file, $deps);
         }
 
-        $sortedFiles = $sorter->sort();
+        try {
+            // 尝试进行拓扑排序
+            $sortedFiles = $sorter->sort();
+        } catch (CircularDependencyException $e) {
+            // 检测到循环依赖，尝试打破循环
+            $this->climate->yellow('Warning: Circular dependency detected, attempting to resolve...');
+            $circularNodes = $e->getNodes();
+            $this->climate->darkGray('Circular path: ' . implode(' -> ', $circularNodes));
+            
+            // 使用打破循环后的依赖关系重新排序
+            $sortedFiles = $this->resolveCircularDependencies($fileDeps, $circularNodes);
+        }
 
+        // 添加未参与依赖管理的文件（非 stub 文件且不在已排序列表中）
         foreach ($list as $file) {
             if (!$this->isStubFile($file) and !in_array($file, $sortedFiles)) {
                 $sortedFiles[] = $file;
             }
         }
+        
         $list = $sortedFiles;
+    }
+
+    /**
+     * 解决循环依赖问题
+     *
+     * @param array $fileDeps 所有文件的依赖关系
+     * @param array $circularNodes 循环依赖中的节点
+     * @return array 排序后的文件列表
+     * @throws ElementNotFoundException
+     */
+    protected function resolveCircularDependencies(array $fileDeps, array $circularNodes): array
+    {
+        // 找出循环依赖中最少的边来打破循环
+        // 策略：移除被依赖次数最少的文件的依赖关系
+        $depCount = [];
+        foreach ($circularNodes as $node) {
+            $depCount[$node] = 0;
+            // 统计该节点在循环中被其他节点依赖的次数
+            foreach ($circularNodes as $otherNode) {
+                if (isset($fileDeps[$otherNode]) && in_array($node, $fileDeps[$otherNode])) {
+                    $depCount[$node]++;
+                }
+            }
+        }
+        
+        // 找到被依赖最少的节点，打破它的某个依赖
+        asort($depCount);
+        $breakNode = key($depCount);
+        
+        $this->climate->darkGray("Breaking circular dependency at: {$breakNode}");
+        
+        // 创建新的依赖关系，移除导致循环的依赖
+        $resolvedDeps = $fileDeps;
+        if (isset($resolvedDeps[$breakNode])) {
+            // 移除该节点对循环中其他节点的依赖
+            $resolvedDeps[$breakNode] = array_filter(
+                $resolvedDeps[$breakNode],
+                fn($dep) => !in_array($dep, $circularNodes) || $dep === $breakNode
+            );
+        }
+        
+        // 使用修正后的依赖关系重新排序
+        $sorter = new StringSort();
+        foreach ($resolvedDeps as $file => $deps) {
+            $sorter->add($file, $deps);
+        }
+        
+        try {
+            return $sorter->sort();
+        } catch (CircularDependencyException $e) {
+            // 如果仍然存在循环，递归处理
+            $remainingCircular = $e->getNodes();
+            $this->climate->yellow('Still has circular dependency, continuing to resolve...');
+            return $this->resolveCircularDependencies($resolvedDeps, $remainingCircular);
+        }
     }
 
     public function getCppFile(string $file): string
@@ -147,8 +221,9 @@ class Preprocessor extends CompilerBase
             }
         }
 
-        $depClasses = $nodeFinder->findInstanceOf($ast, Node\Expr\StaticCall::class);
-        $depClasses = array_merge($depClasses, $nodeFinder->findInstanceOf($ast, Node\Expr\StaticPropertyFetch::class));
+        $depClasses = [];
+//        $depClasses = array_merge($depClasses, $nodeFinder->findInstanceOf($ast, Node\Expr\StaticCall::class));
+//        $depClasses = array_merge($depClasses, $nodeFinder->findInstanceOf($ast, Node\Expr\StaticPropertyFetch::class));
         $depClasses = array_merge($depClasses, $nodeFinder->findInstanceOf($ast, Node\Expr\ClassConstFetch::class));
         $depClasses = array_merge($depClasses, $nodeFinder->findInstanceOf($ast, Node\Expr\New_::class));
         foreach ($depClasses as $call) {
@@ -161,7 +236,8 @@ class Preprocessor extends CompilerBase
             }
         }
         // 依赖去重
-        $this->symbolCallInFile[$this->file] = array_unique($this->symbolCallInFile[$this->file]);
+        $depClasses = array_unique($this->symbolCallInFile[$this->file]);
+        $this->symbolCallInFile[$this->file] = $depClasses;
     }
 
     protected function prepareNamespace(Node\Stmt\Namespace_ $node): void
