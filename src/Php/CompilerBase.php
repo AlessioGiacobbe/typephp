@@ -1064,13 +1064,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->method and $name == 'this_') {
                 $this->fatalError($param, 'Cannot use `$this` as parameter of class method');
             }
-            $type = $this->parseParameterType($param, $name);
+            $argInfo = new ArgInfo();
+            $type = $this->parseParameterType($param, $argInfo, $name);
             if ($param->variadic) {
                 $list[] = self::TYPE_ARRAY . ' ' . $name;
             } else {
                 $list[] = $type . ' ' . $name;
             }
-            $argInfo = new ArgInfo();
             $argInfo->name = $name;
             $argInfo->type = $type;
             $argInfo->byRef = $param->byRef;
@@ -1446,6 +1446,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($left->dim === null) {
                     $this->fatalError($left, 'Cannot use [] for strings');
                 }
+            }
+            if ($this->isScalar($right) or $this->isVarExpr($right)) {
+                return $this->parseAssignArrayDim($left, $right);
             }
         }
 
@@ -1980,7 +1983,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             '}';
     }
 
-    protected function parseParameterType(Node\Param $param, string $var): string
+    protected function parseParameterType(Node\Param $param, ArgInfo $argInfo, string $var): string
     {
         if ($param->byRef) {
             return self::TYPE_REF;
@@ -1998,7 +2001,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         } elseif (isset($this->zendTypeMap[$typeName])) {
             return $this->getTypeFromZendType($typeName);
         } else {
-            $this->addObject($var, $this->getNamespacedClassName($typeName));
+            $class = $this->getNamespacedClassName($typeName);
+            $this->addObject($var, $class);
+            $argInfo->class = $class;
             return self::TYPE_OBJECT;
         }
     }
@@ -3257,7 +3262,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->functionDef->returnType;
     }
 
-    protected function getTypeConvertedArg($arg, ArgInfo $argInfo): string
+    protected function getTypeConvertedArg(Node\Arg $arg, ArgInfo $argInfo): string
     {
         $expr = $this->parseArg($arg);
         $type = $this->detectExprType($arg->value);
@@ -3267,6 +3272,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         if ($argInfo->type === self::TYPE_OBJECT) {
+            $object = $this->parseVariable($arg->value);
+            if ($this->isVarExpr($arg->value) and $this->isTypedObject($object)) {
+                $class = $this->getObjectType($object);
+                if ($argInfo->class and $class != $argInfo->class) {
+                    $this->fatalError($arg, "Argument `{$argInfo->name}` must be an instance of `{$argInfo->class}`, `{$class}` given");
+                }
+            }
             return $this->convertObjectExpr($expr);
         }
 
