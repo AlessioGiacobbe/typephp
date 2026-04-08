@@ -2543,6 +2543,33 @@ class CompilerBase extends \PhpAot\Core\Translator
         return implode(', ', $argList);
     }
 
+    protected function parseNamedCallArgs(array $args, int $firstIndex, array $listArgs): string
+    {
+        $namedArgs = [];
+        foreach ($args as $i => $arg) {
+            if ($i < $firstIndex) {
+                continue;
+            }
+            if ($arg->name === null) {
+                $this->fatalError($arg, 'Named argument must follow positional argument');
+            }
+            if (!$this->isIdExpr($arg->name)) {
+                $this->fatalError($arg, 'Named argument must be a string');
+            }
+            $namedArgs[$arg->name->name] = $this->parseArg($arg);
+        }
+
+        $tmpVar = $this->genTmpVarName();
+
+        $array = self::TYPE_ARRAY . ' ' . $tmpVar . ';';
+        foreach ($namedArgs as $k => $v) {
+            $array .= $tmpVar . '.set(' . $this->getLiteralString($k) . ', ' . $v . ');' . PHP_EOL;
+        }
+        $this->context->beforeStmtLines[] = $array;
+
+        return '{' . implode(', ', $listArgs) . '}, ' . $tmpVar . '.array()';
+    }
+
     protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
     {
         $list_args = [];
@@ -2552,7 +2579,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 throw new PlaceHolder();
             }
             if ($arg->name !== null) {
-                $this->fatalError($arg, 'Named arguments are not supported');
+                return $this->parseNamedCallArgs($args, $i, $list_args);
             }
             $byRef = $funcName && Reflection::isReferenceArg($funcName, $className, $i);
             if ($this->isVarExpr($arg->value)) {
