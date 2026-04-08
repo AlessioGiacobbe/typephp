@@ -1626,9 +1626,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $var;
     }
 
-    protected function addStaticVar(string $name, string $type): void
+    protected function addStaticVar(Variable $var, string $name, string $type): string
     {
+        if ($this->hasVar($name)) {
+            $this->fatalError($var, 'Duplicate variable `$' . $var->name . '`');
+        }
         $this->context->staticVars[$name] = $type;
+        // 静态变量实际上是一个全局变量的引用
+        $globalVar = $this->escapeStaticVar($name);
+        $this->addGlobalVar($globalVar, $type);
+        return $globalVar;
     }
 
     protected function hasArgument(string $name): bool
@@ -3600,15 +3607,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list = [];
         foreach ($v->vars as $var) {
             $varName = $this->escapeVarName($var->var->name);
-            if ($this->hasVar($varName)) {
-                $this->error('Duplicate variable `$' . $var->var->name . '`');
-            }
-
             $type = $var->default ? $this->detectExprType($var->default) : self::TYPE_VAR;
-            $this->addStaticVar($varName, $type);
-            // 静态变量实际上是一个全局变量的引用
-            $globalVar = $this->escapeStaticVar($varName);
-            $this->addGlobalVar($globalVar, $type);
+            $globalVar = $this->addStaticVar($var->var, $varName, $type);
 
             $list[] = self::TYPE_VAR . ' &' . $varName . ' = ' . $this->escapeGlobalVar($globalVar) . ';';
             if ($var->default) {
