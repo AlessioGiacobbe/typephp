@@ -58,7 +58,7 @@ trait ClosureGenerator
         }
 
         $body = $bodyGenCb();
-        $code .= $this->genLocalVarDecl() . $body;
+        $code .= $this->genScopeVarDecl() . $body;
 
         $this->indentLevel--;
         $this->context->inClosure = false;
@@ -106,7 +106,7 @@ trait ClosureGenerator
 
         $code .= '([&](){' . PHP_EOL;
         $body = $cb();
-        $code .= $this->genLocalVarDecl();
+        $code .= $this->genScopeVarDecl();
         $code .= $this->parseBeforeStmtLines();
         $code .= $body;
         $code .= $this->parseAfterStmtLines();

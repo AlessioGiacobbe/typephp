@@ -9,10 +9,20 @@
 //var_dump($str[99]);
 //var_dump($str[-3]);
 
+function foo()
+{
+    global $gv;
+    $gv = 100;
+}
+
 function main()
 {
-    $arr = array(
-        array(2, 2)
-    );
-    var_dump(empty($arr[0][0][2][3]->prop[3]));
+    var_dump($_SERVER);
+    foo();
+
+    global $gv;
+    var_dump($gv);
+
+    global $gv;
+    var_dump($gv);
 }

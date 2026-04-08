@@ -56,6 +56,30 @@ trait Utils
         return $name;
     }
 
+    protected function escapeStaticVar(string $name): string
+    {
+        $prefix = self::STATIC_VAR;
+        if ($this->namespace) {
+            $prefix .= $this->escapeNamespace($this->namespace) . '_';
+        }
+        if ($this->class) {
+            $prefix .= $this->escapeClass($this->class) . '_';
+            if ($this->method) {
+                $prefix .= $this->method . '_';
+            }
+        } else {
+            if ($this->function) {
+                $prefix .= $this->function . '_';
+            }
+        }
+        return $prefix . $name;
+    }
+
+    protected function escapeGlobalVar(string $name): string
+    {
+        return self::GLOBAL_VAR . $name;
+    }
+
     protected function escapeNamespace(string $ns): string
     {
         return str_replace('\\', self::NAMESPACE_SEPARATOR, strtolower($ns));

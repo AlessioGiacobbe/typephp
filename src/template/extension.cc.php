@@ -15,7 +15,7 @@ echo $this->genIncludeHeaderFiles();
 // 全局变量只能是 var 类型
 foreach ($this->globalVars as $name => $type):
 ?>
-<?= Translator::TYPE_VAR ?>  <?= $name ?>;
+<?= Translator::TYPE_VAR ?>  <?= $this->escapeGlobalVar($name) ?>;
 <?php endforeach; ?>
 
 // class register functions
@@ -145,7 +145,7 @@ foreach ($this->constants as $name => $const):
 <?php
 foreach ($this->globalVars as $name => $type):
 ?>
-    php::initGlobal("<?=$name?>", <?= $name ?>);
+    php::initGlobal("<?=$name?>", <?= $this->escapeGlobalVar($name) ?>);
 <?php endforeach; ?>
 
     // static property
@@ -165,7 +165,7 @@ void php_app_clean() {
 <?php
 foreach ($this->globalVars as $name => $type) :
 ?>
-    <?= $name ?>.unset();
+    <?= $this->escapeGlobalVar($name) ?>.unset();
     php::unsetGlobal("<?=$name?>");
 <?php endforeach; ?>
 <?php

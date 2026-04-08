@@ -72,6 +72,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
     public const string VALUE_NULL = 'php::null';
     public const string LITERAL_STRINGS = '_literal_strings';
+    public const string ANON_CLASS = '_anon_class_';
+    public const string STATIC_VAR = '_static_var_';
+    public const string GLOBAL_VAR = '_global_var_';
     public const string CLASS_MAP = 'class_map';
     public const string FUNC_MAP = 'func_map';
     public const string PROP_MAP = 'property_map';
@@ -85,8 +88,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string NAMESPACE_SEPARATOR = '__';
 
     public const string PREFIX = 'php_';
-    public const string ANON_CLASS = '_anon_class_';
-    public const string STATIC_VAR = '_static_var_';
     public const string OP_ISSET = 'isset';
     public const string OP_EMPTY = 'empty';
     public const string OP_NOT_EMPTY = 'notEmpty';
@@ -633,25 +634,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->getNativeName($this->parseIdentifier($v->name), $this->namespace, $this->class);
     }
 
-    protected function getStaticVarName(string $name): string
-    {
-        $prefix = self::STATIC_VAR;
-        if ($this->namespace) {
-            $prefix .= $this->escapeNamespace($this->namespace) . '_';
-        }
-        if ($this->class) {
-            $prefix .= $this->escapeClass($this->class) . '_';
-            if ($this->method) {
-                $prefix .= $this->method . '_';
-            }
-        } else {
-            if ($this->function) {
-                $prefix .= $this->function . '_';
-            }
-        }
-        return $this->escapeName($prefix . $name);
-    }
-
     protected function getFullClassName(): string
     {
         return ltrim($this->namespace . '\\' . $this->class, '\\');
@@ -912,7 +894,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $code = $functionDeclCode . ' {' . PHP_EOL;
         $this->indentLevel++;
-        $code .= $this->genLocalVarDecl();
+        $code .= $this->genScopeVarDecl();
         $code .= "\n";
         // Constructor Property Promotion
         foreach ($this->functionDef->argInfoList as $argInfo) {
@@ -968,16 +950,27 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function parseSuperGlobalVar(string $name): string
+    {
+        if (!$this->hasGlobalVar($name)) {
+            $this->addGlobalVar($name, $this->superGlobalVars[$name]);
+        }
+        if (!$this->hasScopeGlobalVar($name)) {
+            $this->addScopeGlobalVar($name, $this->superGlobalVars[$name]);
+        }
+        return $name;
+    }
+
     protected function parseVariable(Variable $expr): string
     {
         if (is_object($expr->name) and $this->isVarExpr($expr->name)) {
             $this->fatalError($expr, 'The `$$` syntax is not supported');
         }
-        if ($this->isSuperGlobal($expr->name) and !$this->hasGlobalVar($expr->name)) {
-            $this->addGlobalVar($expr->name, $this->superGlobalVars[$expr->name]);
+        if ($this->isSuperGlobal($expr->name)) {
+            return $this->parseSuperGlobalVar($expr->name);
         }
         if ($this->hasStaticVar($expr->name)) {
-            return $this->getStaticVarName($expr->name);
+            return $this->escapeStaticVar($expr->name);
         }
         return $this->escapeVarName($expr->name);
     }
@@ -1639,7 +1632,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->error('Duplicate static variable `$' . $name . '`');
         }
         $this->context->staticVars[$name] = $type;
-        $this->addGlobalVar($this->getStaticVarName($name), $type);
+        $this->addGlobalVar($this->escapeStaticVar($name), $type);
+    }
+
+    protected function hasArgument(string $name): bool
+    {
+        return isset($this->context->arguments[$name]);
     }
 
     protected function addArgument(string $name, string $type): void
@@ -1661,6 +1659,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->globalVars[$name] = $type;
     }
 
+    protected function addScopeGlobalVar(string $name, string $type): void
+    {
+        $this->context->globalVars[$name] = $type;
+    }
+
     protected function addObject(string $name, string $class): void
     {
         $this->context->objects[$name] = $class;
@@ -1668,7 +1671,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function hasVar(string $name): bool
     {
-        return $this->hasLocalVar($name) || $this->hasGlobalVar($name) || $this->hasStaticVar($name);
+        return $this->hasLocalVar($name) || $this->hasStaticVar($name) || $this->hasScopeGlobalVar($name) || $this->isSuperGlobal($name);
     }
 
     protected function hasLocalVar(string $name): bool
@@ -2276,22 +2279,36 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    /**
+     * $GLOBALS['var'] 等价于 global $var; $var ，将字符串常量转为变量名称即可
+     * 仅限于字面量字符串可以转为变量名称，其他则使用 php::global() 函数获取
+     * @param Expr\ArrayDimFetch $node
+     * @return string
+     */
+    protected function parseGlobalsArrayDimFetch(Expr\ArrayDimFetch $node): string
+    {
+        if ($node->dim === null) {
+            $this->fatalError($node, 'Cannot use [] for GLOBALS');
+        }
+        if ($this->isScalarString($node->dim)) {
+            $name = $node->dim->value;
+            if (!$this->hasGlobalVar($name)) {
+                $this->addGlobalVar($name, self::TYPE_VAR);
+            }
+            if (!$this->hasScopeGlobalVar($name)) {
+                $this->addScopeGlobalVar($name, self::TYPE_VAR);
+            }
+            return $name;
+        }
+        return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
+    }
+
     protected function parseArrayDimFetch(Expr\ArrayDimFetch $node, bool $write): string
     {
         $var = $this->parseIdentifier($node->var);
         if ($this->isVarExpr($node->var)) {
             if ($var === 'GLOBALS') {
-                if ($node->dim === null) {
-                    $this->fatalError($node, 'Cannot use [] for GLOBALS');
-                }
-                if ($this->isScalarString($node->dim)) {
-                    $name = $node->dim->value;
-                    if (!$this->hasGlobalVar($name)) {
-                        $this->addGlobalVar($name, self::TYPE_VAR);
-                    }
-                    return $name;
-                }
-                return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
+                return $this->parseGlobalsArrayDimFetch($node);
             }
             if (!$this->hasVar($var)) {
                 if ($write) {
@@ -2573,19 +2590,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
                 $array = $this->parseIdentifier($arg->value->var);
                 if ($array === 'GLOBALS') {
-                    if ($arg->value->dim === null) {
-                        $this->fatalError($arg, 'GLOBALS array dimension must be a constant expression');
-                    }
-                    // $GLOBALS['var'] 等价于 global $var; $var ，将字符串常量转为变量名称即可
-                    // 仅限于字面量字符串可以转为变量名称，其他则使用 php::global 函数获取
-                    if ($arg->value->dim instanceof Node\Scalar\String_) {
-                        $globalVar = $arg->value->dim->value;
-                        if (!$this->hasGlobalVar($globalVar)) {
-                            $this->addGlobalVar($globalVar, self::TYPE_VAR);
-                        }
-                    } else {
-                        $globalVar = 'php::global(' . $this->parseExpr($arg->value->dim) . ')';
-                    }
+                    $globalVar = $this->parseGlobalsArrayDimFetch($arg->value);
                     // 全局变量作为引用参数
                     if ($byRef) {
                         $ref = $this->addTmpVar(self::TYPE_REF);
@@ -3196,12 +3201,14 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseGlobal(Node\Stmt\Global_ $v): string
     {
         foreach ($v->vars as $v) {
-            $name = $this->escapeVarName($this->parseVariable($v));
+            $name = $this->parseVariable($v);
             if (!$this->hasGlobalVar($name)) {
                 $this->addGlobalVar($name, self::TYPE_VAR);
             }
+            if (!$this->hasScopeGlobalVar($name)) {
+                $this->addScopeGlobalVar($name, self::TYPE_VAR);
+            }
         }
-
         return '';
     }
 
@@ -3572,7 +3579,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->indentLevel++;
                 $initCode .= $this->getIndent() . "{$initState} = true;\n";
                 $initCode .= $this->genLambdaCall(function () use ($var, $varName) {
-                    return $this->getIndent() . $this->getStaticVarName($varName) . ' = ' . $this->parseExpr($var->default) . ';';
+                    return $this->getIndent() . $this->escapeStaticVar($varName) . ' = ' . $this->parseExpr($var->default) . ';';
                 });
                 $this->indentLevel--;
                 $initCode .= $this->getIndent() . '}';
@@ -3760,6 +3767,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function hasGlobalVar(string $name): bool
     {
         return array_key_exists($name, $this->globalVars);
+    }
+
+    protected function hasScopeGlobalVar(string $name): bool
+    {
+        return array_key_exists($name, $this->context->globalVars);
     }
 
     protected function hasStaticVar(string $name): bool
@@ -4555,7 +4567,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function genLocalVarDecl(): string
+    protected function genScopeVarDecl(): string
     {
         $code = '';
         foreach ($this->context->localVars as $name => $type) {
@@ -4567,6 +4579,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $code .= ' = 0';
             }
             $code .= ';' . PHP_EOL;
+        }
+        foreach ($this->context->globalVars as $name => $type) {
+            $code .= $this->getIndent() . self::TYPE_VAR . ' &' . $name . ' = ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
         }
         return $code;
     }
@@ -4608,7 +4623,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         foreach ($vars as $var) {
             $varName = $this->escapeVarName($this->parseVariable($var));
-            if ($varName === 'this'
+            if ($varName === 'this_'
                 or !$this->hasLocalVar($varName)
                 or isset($params[$var->name])
                 or isset($uses[$varName])) {

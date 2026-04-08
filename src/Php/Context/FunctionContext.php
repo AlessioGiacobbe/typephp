@@ -16,6 +16,7 @@ class FunctionContext
     public array $objects = [];
     public array $localVars = [];
     public array $staticVars = [];
+    public array $globalVars = [];
 
     /**
      * @var array<string, string>

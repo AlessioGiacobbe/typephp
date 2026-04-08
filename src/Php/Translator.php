@@ -212,7 +212,7 @@ class Translator extends Preprocessor
         $lines[] = '#include <phpx.h>';
         $lines[] = PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
-            $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $name . ';';
+            $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $this->escapeGlobalVar($name) . ';';
         }
 
         $literalStringsCount = count($this->literalStrings);
@@ -943,7 +943,7 @@ class Translator extends Preprocessor
 
         $oriCtx = $this->context;
         $this->context = $this->classDef->propertyContext;
-        $this->classDef->ctorInit .= $this->genLocalVarDecl() . $this->parseBeforeStmtLines();
+        $this->classDef->ctorInit .= $this->genScopeVarDecl() . $this->parseBeforeStmtLines();
         $this->classDef->ctorClean .= $this->parseAfterStmtLines();
         $this->context = $oriCtx;
 
@@ -1150,7 +1150,7 @@ class Translator extends Preprocessor
             $arrayExpr = '';
             if ($this->context->beforeStmtLines) {
                 if ($this->context->localVars) {
-                    $arrayExpr .= $this->genLocalVarDecl();
+                    $arrayExpr .= $this->genScopeVarDecl();
                 }
                 $arrayExpr .= $this->parseBeforeStmtLines();
             }
