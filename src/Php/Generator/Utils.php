@@ -58,7 +58,7 @@ trait Utils
 
     protected function escapeStaticVar(string $name): string
     {
-        $prefix = self::STATIC_VAR;
+        $prefix = '';
         if ($this->namespace) {
             $prefix .= $this->escapeNamespace($this->namespace) . '_';
         }

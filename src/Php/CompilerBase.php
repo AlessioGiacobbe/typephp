@@ -969,9 +969,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isSuperGlobal($expr->name)) {
             return $this->parseSuperGlobalVar($expr->name);
         }
-        if ($this->hasStaticVar($expr->name)) {
-            return $this->escapeStaticVar($expr->name);
-        }
         return $this->escapeVarName($expr->name);
     }
 
@@ -1631,11 +1628,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function addStaticVar(string $name, string $type): void
     {
-        if ($this->hasStaticVar($name)) {
-            $this->error('Duplicate static variable `$' . $name . '`');
-        }
         $this->context->staticVars[$name] = $type;
-        $this->addGlobalVar($this->escapeStaticVar($name), $type);
     }
 
     protected function hasArgument(string $name): bool
@@ -2287,8 +2280,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     /**
      * $GLOBALS['var'] 等价于 global $var; $var ，将字符串常量转为变量名称即可
      * 仅限于字面量字符串可以转为变量名称，其他则使用 php::global() 函数获取
-     * @param Expr\ArrayDimFetch $node
-     * @return string
      */
     protected function parseGlobalsArrayDimFetch(Expr\ArrayDimFetch $node): string
     {
@@ -3608,9 +3599,18 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $list = [];
         foreach ($v->vars as $var) {
-            $varName = $var->var->name;
+            $varName = $this->escapeVarName($var->var->name);
+            if ($this->hasVar($varName)) {
+                $this->error('Duplicate variable `$' . $var->var->name . '`');
+            }
+
             $type = $var->default ? $this->detectExprType($var->default) : self::TYPE_VAR;
             $this->addStaticVar($varName, $type);
+            // 静态变量实际上是一个全局变量的引用
+            $globalVar = $this->escapeStaticVar($varName);
+            $this->addGlobalVar($globalVar, $type);
+
+            $list[] = self::TYPE_VAR . ' &' . $varName . ' = ' . $this->escapeGlobalVar($globalVar) . ';';
             if ($var->default) {
                 $initState = self::STATIC_VAR . $varName . '_initialized';
                 $initCode = $this->getIndent() . 'static bool ' . $initState . ' = false;';
@@ -3618,7 +3618,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->indentLevel++;
                 $initCode .= $this->getIndent() . "{$initState} = true;\n";
                 $initCode .= $this->genLambdaCall(function () use ($var, $varName) {
-                    return $this->getIndent() . $this->escapeStaticVar($varName) . ' = ' . $this->parseExpr($var->default) . ';';
+                    return $this->getIndent() . $varName . ' = ' . $this->parseExpr($var->default) . ';';
                 });
                 $this->indentLevel--;
                 $initCode .= $this->getIndent() . '}';
