@@ -524,7 +524,6 @@ class Translator extends Preprocessor
                 $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
                 $code .= $classDef->ctorInit;
                 $code .= "auto obj = create_object_{$className}(class_type);\n";
-                $code .= "object_properties_init(obj, class_type);\n";
                 foreach ($classDef->properties as $property) {
                     $fullPropName = $classDef->getNamespacedName() . '::' . $property->name;
                     if (isset($this->defaultPropertyList[$fullPropName])) {
