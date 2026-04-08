@@ -25,6 +25,8 @@ class FunctionDef
     public bool $method = false;
     public bool $stub = false;
     public bool $completed = false;
+    public bool $exactReturnType = false;
+    public string $returnClass = '';
 
     public function __construct(string $name, string $returnType, string $namespace, bool $stub)
     {

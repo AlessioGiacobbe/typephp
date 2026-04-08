@@ -116,8 +116,10 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Function':
                     $this->prepareFunction($v) . PHP_EOL;
                     break;
-                case 'Stmt_Declare':
                 case 'Stmt_Use':
+                    $this->parseUse($v);
+                    break;
+                case 'Stmt_Declare':
                 case 'Stmt_Interface':
                 case 'Stmt_Nop':
                     break;
@@ -153,7 +155,8 @@ class Preprocessor extends CompilerBase
             if ($call->class instanceof Node\Name) {
                 $className = $this->parseIdentifier($call->class);
                 if ($className !== 'self' && $className !== 'static') {
-                    $this->symbolCallInFile[$this->file][] = strtolower($className);
+                    $fullClassName = $this->getNamespacedClassName($className);
+                    $this->symbolCallInFile[$this->file][] = strtolower($fullClassName);
                 }
             }
         }
@@ -188,7 +191,6 @@ class Preprocessor extends CompilerBase
                     throw new Unsupported('Unsupported statement: ' . $type2);
             }
         }
-        $this->resetNamespace();
     }
 
     protected function prepareFunction(Node\Stmt\ClassMethod|Node\Stmt\Function_ $v): void

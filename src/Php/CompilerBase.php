@@ -777,8 +777,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 属性和类常量的类型不能声明为 void/never ，只有返回值可以
             if ($what !== self::DECL_TYPE_OF_RETURN and ($typeName === 'void' or $typeName === 'never')) {
                 $this->fatalError($type, 'The type `void`/`never` is allowed only for return type');
-            } else {
+            } elseif (isset($this->zendTypeMap[$typeName])) {
                 return $this->getTypeFromZendType($typeName);
+            } else {
+                return self::TYPE_OBJECT;
             }
         }
     }
@@ -801,6 +803,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $fnName = $this->parseIdentifier($v->name);
         $returnType = $this->parseTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace, $this->stubFile);
+        // 函数返回值精确类型
+        if ($v->returnType != null and !($v->returnType instanceof UnionType or $v->returnType instanceof NullableType)) {
+            $functionDef->exactReturnType = true;
+            $functionDef->returnClass = $v->returnType;
+        }
         $this->functionDef = $functionDef;
 
         $this->parseParams($v->params, $functionDef);
@@ -1374,7 +1381,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $fullClass = $this->getNamespacedClassName($class);
                 if ($this->isTypedObject($var)) {
                     $leftClass = $this->getObjectType($var);
-                    $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$fullClass}`");
+                    if ($leftClass !== $fullClass) {
+                        $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$fullClass}`");
+                    }
                 }
                 $this->addObject($var, $fullClass);
                 $type = self::TYPE_OBJECT;
@@ -1428,9 +1437,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             if (!$this->hasVar($var)) {
                 $this->addLocalVar($var, $type);
-            } else {
+            } elseif ($this->getVarType($var) !== self::TYPE_VAR) { // var 可以作为任意类型进行赋值
                 if ($this->isTypedObject($var) and $type !== self::TYPE_OBJECT
-                    or $this->getVarType($var) === self::TYPE_ARRAY and ($type !== self::TYPE_ARRAY && $type !== self::TYPE_VAR)
+                    or $this->getVarType($var) === self::TYPE_ARRAY and ($type !== self::TYPE_ARRAY)
                 ) {
                     $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . ' to ' . $type);
                 }
@@ -1849,6 +1858,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_Bool':
                 return $this->getNativeType(self::TYPE_BOOL);
             case 'Expr_Array':
+            case 'Expr_Cast_Array':
                 return self::TYPE_ARRAY;
             case 'Expr_BinaryOp_Plus':
             case 'Expr_BinaryOp_Minus':
@@ -1895,8 +1905,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $nativeFunc = $this->findNativeMethod($expr, $object, $method);
                     if ($nativeFunc) {
                         $funcDef = $this->functions[$nativeFunc];
-                        // 此函数尚未完成解析，仅经过初步的预处理，无法获得准确的返回值类型
-                        if ($funcDef->completed) {
+                        // 用户未定义类型，但函数已编译完成，通过分析代码获得了返回值类型
+                        if ($funcDef->completed or $funcDef->exactReturnType) {
                             return $funcDef->returnType;
                         }
                     } elseif ($this->isTypedObject($object)) {
@@ -3260,6 +3270,23 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->functionDef->returnType;
     }
 
+    protected function isInheritedFrom(string $class, string $expected): bool
+    {
+        while (true) {
+            if (strcasecmp($class, $expected) === 0) {
+                return true;
+            }
+            if (!$this->hasClass($class)) {
+                return false;
+            }
+            $classDef = $this->getClass($class);
+            if (!$classDef->extends) {
+                return false;
+            }
+            $class = $classDef->extends;
+        }
+    }
+
     protected function getTypeConvertedArg(Node\Arg $arg, ArgInfo $argInfo): string
     {
         $expr = $this->parseArg($arg);
@@ -3274,7 +3301,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $object = $this->parseVariable($arg->value);
                 if ($this->isTypedObject($object)) {
                     $class = $this->getObjectType($object);
-                    if ($argInfo->class and $class != $argInfo->class) {
+                    if (!$this->isInheritedFrom($class, $argInfo->class)) {
                         $this->fatalError($arg, "Argument `{$argInfo->name}` must be an instance of `{$argInfo->class}`, `{$class}` given");
                     }
                 }
