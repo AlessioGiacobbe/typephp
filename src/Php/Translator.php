@@ -1200,10 +1200,18 @@ class Translator extends Preprocessor
             if (!$extends) {
                 break;
             }
+            // 父类是内置类
+            if ($classDef->inheritedFromInternalClass) {
+                if (Reflection::getClassMethodModifiers($extends, $name) & \ReflectionMethod::IS_PRIVATE) {
+                    goto _error;
+                }
+                break;
+            }
             $classDef = $this->getClass($extends);
             if ($classDef->hasMethod($this->method)) {
                 $methodDef = $classDef->getMethod($this->method);
                 if ($methodDef->flags & Modifiers::PRIVATE) {
+                    _error:
                     $this->fatalError($v,
                         'Cannot override private method `' .
                         $classDef->getNamespacedName(false) . '::' . $this->method . '()`');

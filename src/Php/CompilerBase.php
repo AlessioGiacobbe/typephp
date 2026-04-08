@@ -3270,11 +3270,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         if ($argInfo->type === self::TYPE_OBJECT) {
-            $object = $this->parseVariable($arg->value);
-            if ($this->isVarExpr($arg->value) and $this->isTypedObject($object)) {
-                $class = $this->getObjectType($object);
-                if ($argInfo->class and $class != $argInfo->class) {
-                    $this->fatalError($arg, "Argument `{$argInfo->name}` must be an instance of `{$argInfo->class}`, `{$class}` given");
+            if ($this->isVarExpr($arg->value)) {
+                $object = $this->parseVariable($arg->value);
+                if ($this->isTypedObject($object)) {
+                    $class = $this->getObjectType($object);
+                    if ($argInfo->class and $class != $argInfo->class) {
+                        $this->fatalError($arg, "Argument `{$argInfo->name}` must be an instance of `{$argInfo->class}`, `{$class}` given");
+                    }
                 }
             }
             return $this->convertObjectExpr($expr);

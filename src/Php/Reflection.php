@@ -95,6 +95,21 @@ class Reflection
         return $args[$index];
     }
 
+    public static function getClassMethodModifiers(string $className, string $fn): ?int
+    {
+        $classRef = self::getClass($className);
+        if (!$classRef) {
+            return null;
+        }
+
+        try {
+            $method = $classRef->getMethod($fn);
+            return $method->getModifiers();
+        } catch (\ReflectionException $e) {
+            return null;
+        }
+    }
+
     public static function getClassMethodParameter(string $className, string $fn, int $index): ?\ReflectionParameter
     {
         $classRef = self::getClass($className);
