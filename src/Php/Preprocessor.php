@@ -59,7 +59,7 @@ class Preprocessor extends CompilerBase
             $this->climate->yellow('Warning: Circular dependency detected, attempting to resolve...');
             $circularNodes = $e->getNodes();
             $this->climate->darkGray('Circular path: ' . implode(' -> ', $circularNodes));
-            
+
             // 使用打破循环后的依赖关系重新排序
             $sortedFiles = $this->resolveCircularDependencies($fileDeps, $circularNodes);
         }
@@ -70,63 +70,8 @@ class Preprocessor extends CompilerBase
                 $sortedFiles[] = $file;
             }
         }
-        
-        $list = $sortedFiles;
-    }
 
-    /**
-     * 解决循环依赖问题
-     *
-     * @param array $fileDeps 所有文件的依赖关系
-     * @param array $circularNodes 循环依赖中的节点
-     * @return array 排序后的文件列表
-     * @throws ElementNotFoundException
-     */
-    protected function resolveCircularDependencies(array $fileDeps, array $circularNodes): array
-    {
-        // 找出循环依赖中最少的边来打破循环
-        // 策略：移除被依赖次数最少的文件的依赖关系
-        $depCount = [];
-        foreach ($circularNodes as $node) {
-            $depCount[$node] = 0;
-            // 统计该节点在循环中被其他节点依赖的次数
-            foreach ($circularNodes as $otherNode) {
-                if (isset($fileDeps[$otherNode]) && in_array($node, $fileDeps[$otherNode])) {
-                    $depCount[$node]++;
-                }
-            }
-        }
-        
-        // 找到被依赖最少的节点，打破它的某个依赖
-        asort($depCount);
-        $breakNode = key($depCount);
-        
-        $this->climate->darkGray("Breaking circular dependency at: {$breakNode}");
-        
-        // 创建新的依赖关系，移除导致循环的依赖
-        $resolvedDeps = $fileDeps;
-        if (isset($resolvedDeps[$breakNode])) {
-            // 移除该节点对循环中其他节点的依赖
-            $resolvedDeps[$breakNode] = array_filter(
-                $resolvedDeps[$breakNode],
-                fn($dep) => !in_array($dep, $circularNodes) || $dep === $breakNode
-            );
-        }
-        
-        // 使用修正后的依赖关系重新排序
-        $sorter = new StringSort();
-        foreach ($resolvedDeps as $file => $deps) {
-            $sorter->add($file, $deps);
-        }
-        
-        try {
-            return $sorter->sort();
-        } catch (CircularDependencyException $e) {
-            // 如果仍然存在循环，递归处理
-            $remainingCircular = $e->getNodes();
-            $this->climate->yellow('Still has circular dependency, continuing to resolve...');
-            return $this->resolveCircularDependencies($resolvedDeps, $remainingCircular);
-        }
+        $list = $sortedFiles;
     }
 
     public function getCppFile(string $file): string
@@ -172,7 +117,7 @@ class Preprocessor extends CompilerBase
         $this->resetClass();
         $this->resetNamespace();
 
-        $this->climate->info('prepare: ' . $this->file);
+        $this->climate->info('prepare: ' . $this->getRelativePath($this->file));
         try {
             $ast = $this->parser->parse($phpCode);
         } catch (\PhpParser\Error $e) {
@@ -215,7 +160,61 @@ class Preprocessor extends CompilerBase
                     $this->fatalError($v, 'Unsupported statement: ' . $type);
             }
         }
+    }
 
+    /**
+     * 解决循环依赖问题
+     *
+     * @param array $fileDeps 所有文件的依赖关系
+     * @param array $circularNodes 循环依赖中的节点
+     * @return array 排序后的文件列表
+     * @throws ElementNotFoundException
+     */
+    protected function resolveCircularDependencies(array $fileDeps, array $circularNodes): array
+    {
+        // 找出循环依赖中最少的边来打破循环
+        // 策略：移除被依赖次数最少的文件的依赖关系
+        $depCount = [];
+        foreach ($circularNodes as $node) {
+            $depCount[$node] = 0;
+            // 统计该节点在循环中被其他节点依赖的次数
+            foreach ($circularNodes as $otherNode) {
+                if (isset($fileDeps[$otherNode]) && in_array($node, $fileDeps[$otherNode])) {
+                    $depCount[$node]++;
+                }
+            }
+        }
+
+        // 找到被依赖最少的节点，打破它的某个依赖
+        asort($depCount);
+        $breakNode = key($depCount);
+
+        $this->climate->darkGray("Breaking circular dependency at: {$breakNode}");
+
+        // 创建新的依赖关系，移除导致循环的依赖
+        $resolvedDeps = $fileDeps;
+        if (isset($resolvedDeps[$breakNode])) {
+            // 移除该节点对循环中其他节点的依赖
+            $resolvedDeps[$breakNode] = array_filter(
+                $resolvedDeps[$breakNode],
+                fn ($dep) => !in_array($dep, $circularNodes) || $dep === $breakNode
+            );
+        }
+
+        // 使用修正后的依赖关系重新排序
+        $sorter = new StringSort();
+        foreach ($resolvedDeps as $file => $deps) {
+            $sorter->add($file, $deps);
+        }
+
+        try {
+            return $sorter->sort();
+        } catch (CircularDependencyException $e) {
+            // 如果仍然存在循环，递归处理
+            $remainingCircular = $e->getNodes();
+            $this->climate->yellow('Still has circular dependency, continuing to resolve...');
+            return $this->resolveCircularDependencies($resolvedDeps, $remainingCircular);
+        }
     }
 
     protected function findSymbolUsing(NodeAbstract $ast)
@@ -356,7 +355,7 @@ class Preprocessor extends CompilerBase
                         $argInfo->default = 'nullptr';
                         $argInfo->defaultValue = null;
                     } else {
-                        $this->fatalError($param, 'Only null and empty array can be used as default value for reference parameter');
+                        $argInfo->default = 'php::newReference(' . $this->parseParamDefaultValue($param->default) . ')';
                     }
                 } else {
                     $argInfo->default = $this->parseParamDefaultValue($param->default);
@@ -453,7 +452,7 @@ class Preprocessor extends CompilerBase
 
         if ($class instanceof Node\Stmt\Enum_) {
             $flags = Modifiers::PUBLIC;
-        } else if (!$class instanceof Node\Stmt\Trait_) {
+        } elseif (!$class instanceof Node\Stmt\Trait_) {
             $flags = $class->flags;
         } else {
             $flags = Modifiers::PUBLIC;

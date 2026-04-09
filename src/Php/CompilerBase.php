@@ -15,7 +15,6 @@ use PhpAot\Php\Entity\ConstantDef;
 use PhpAot\Php\Entity\FunctionDef;
 use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
-use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\DynamicCall;
 use PhpAot\Php\Exception\PlaceHolder;
 use PhpAot\Php\Exception\Redo;
@@ -561,6 +560,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             return true;
         }
         return false;
+    }
+
+    protected function getRelativePath($path, $cwd = ''): string
+    {
+        $cwd = $cwd ?: getcwd();
+        return ltrim($this->removeCommonPrefix($cwd, $path), '/');
     }
 
     protected function removeCommonPrefix(string $short, string $long): string
@@ -1769,7 +1774,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($nativeFunc) {
                         $funcDef = $this->functions[$nativeFunc];
                         return $funcDef->returnType;
-                    } elseif ($this->isTypedObject($object)) {
+                    }
+                    if ($this->isTypedObject($object)) {
                         return $this->detectMethodCallReturnType($this->getObjectType($object), $method);
                     }
                 }
@@ -3045,7 +3051,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if ($this->isInternalConstant($name)) {
                 return 'php::constant(' . $this->getLiteralString($name) . ')';
-            } elseif (isset($this->useAliases[$name])) {
+            }
+            if (isset($this->useAliases[$name])) {
                 $name = $this->useAliases[$name];
             } else {
                 $fullName = $this->getNamespacedClassName($name);
@@ -3133,14 +3140,18 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function isInheritedFrom(string $class, string $expected): bool
     {
-        if ($this->isInternalClass($class) and ($this->isInternalClass($expected) or $this->isInternalInterface($expected))) {
-            return $class === $expected or is_subclass_of($class, $expected);
-        }
+        $internal = ($this->isInternalClass($expected) or $this->isInternalInterface($expected));
+
         while (true) {
             if (strcasecmp($class, $expected) === 0) {
                 return true;
             }
             if (!$this->hasClass($class)) {
+                // 原生类继承自一个内置类，例如: UserError extends Exception ，然后 $expected 预期是 Throwable
+                // 这种情况，需要使用 ZendVM 获取继承关系
+                if ($this->isInternalClass($class) and $internal) {
+                    return $class === $expected or is_subclass_of($class, $expected);
+                }
                 return false;
             }
             $classDef = $this->getClass($class);
@@ -3363,7 +3374,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function formatCppCode(string $file): void
     {
         $cmd = 'cd ' . $this->rootPath . ' && clang-format -i ' . $file;
-        $this->climate->info('format: ' . $file);
+        $this->climate->info('format: ' . $this->getRelativePath($file));
         $this->climate->comment($cmd);
         shell_exec($cmd);
     }

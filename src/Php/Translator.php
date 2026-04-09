@@ -662,7 +662,7 @@ class Translator extends Preprocessor
 
     protected function doConvert(string $phpCode): string
     {
-        $this->climate->info('convert: ' . $this->file);
+        $this->climate->info('convert: ' . $this->getRelativePath($this->file));
 
         $ast       = $this->parser->parse($phpCode);
         $traverser = new NodeTraverser();
@@ -855,7 +855,7 @@ class Translator extends Preprocessor
 
         $genStubCmd = PHP_BINARY . ' ' . $this->rootPath . '/bin/gen_stub.php -f -o ' . $this->getIncludeDir() . '/' . $headerFile . ' ' . $file;
         $output = shell_exec($genStubCmd);
-        $this->climate->info('generate stub file: ' . $file);
+        $this->climate->info('generate stub file: ' . $this->getRelativePath($file));
         $this->climate->comment($genStubCmd);
 
         if (!str_contains($output, 'Saved')) {
