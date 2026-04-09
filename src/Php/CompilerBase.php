@@ -613,7 +613,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->class     = '';
         $this->interface = '';
-        $this->method    = '';
         $this->classDef  = null;
     }
 

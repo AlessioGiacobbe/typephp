@@ -326,6 +326,11 @@ class Preprocessor extends CompilerBase
         $fnName = $this->parseIdentifier($v->name);
         $class = '';
         $returnType = $this->parseTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN, $class);
+        // 构造、析构、克隆方法不能有返回值
+        if ($this->method and in_array($this->method, ['__construct', '__destruct', '__clone'])) {
+            $returnType = self::TYPE_VOID;
+        }
+
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
         $functionDef->returnClass = $class;
         $functionDef->stub = $this->stubFile;
@@ -380,6 +385,7 @@ class Preprocessor extends CompilerBase
 
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
+        $this->resetClass();
         $this->class = $this->parseIdentifier($class->name);
         $fullClassName = $this->getFullClassName();
         $fullClassNameLower = strtolower($fullClassName);
@@ -446,8 +452,8 @@ class Preprocessor extends CompilerBase
                     abort($v);
             }
         }
-        $this->class = '';
-        $this->parentClass = '';
+
+        $this->resetClass();
 
         return $code;
     }
@@ -551,6 +557,7 @@ class Preprocessor extends CompilerBase
 
     protected function prepareClassMethod(Node\Stmt\ClassMethod $v, Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): void
     {
+        $this->resetMethod();
         $name = $this->getMethodName($v);
         $this->method = $name;
         $flags = $this->parseModifiers($v->flags);
@@ -592,5 +599,6 @@ class Preprocessor extends CompilerBase
             }
             $fullClassNameLower = strtolower($parentClass);
         }
+        $this->resetMethod();
     }
 }

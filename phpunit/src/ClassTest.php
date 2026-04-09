@@ -7,4 +7,8 @@ class ClassTest extends \BaseTest
         $this->exec('Cannot re-assign $this', 're-assign-this.php');
     }
 
+    public function testAccessProtectedProperty()
+    {
+        $this->exec('Cannot access protected property `settings` of class `DevConfig`', 'protected-property.php');
+    }
 }

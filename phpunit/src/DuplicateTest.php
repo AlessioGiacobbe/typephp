@@ -24,7 +24,7 @@ class DuplicateTest extends TestCase
 
     public function testStaticVar()
     {
-        $this->exec('Duplicate static variable', 'duplicate_01.php');
+        $this->exec('Duplicate variable', 'duplicate_01.php');
     }
 
     public function testFunction()

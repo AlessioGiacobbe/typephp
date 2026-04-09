@@ -24,7 +24,7 @@ class Child extends ParentClass {
 
 // Test with static properties
 class Config {
-    protected static array $settings = [];
+    public static array $settings = [];
     
     public static function get(string $key): mixed {
         return static::$settings[$key] ?? null;
