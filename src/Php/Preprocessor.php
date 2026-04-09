@@ -59,6 +59,8 @@ class Preprocessor extends CompilerBase
         }
 
         $list = $sortedFiles;
+
+        $this->climate->lightBlue('prepare completed: ' . count($list) . ' source files in total');
     }
 
     public function getCppFile(string $file): string
