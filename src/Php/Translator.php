@@ -241,7 +241,7 @@ class Translator extends Preprocessor
         $this->writeFile($file, $code);
     }
 
-    public function genExtension(string $file): void
+    public function genExtension(): string
     {
         if ($this->buildMode == 'bin') {
             if (!$this->hasFunction('main')) {
@@ -249,12 +249,14 @@ class Translator extends Preprocessor
                 exit(1);
             }
         }
+        $file = $this->getBuildDir() . '/extension-' . $this->getModuleName() . '.cc';
         $this->localHeaders = $this->argInfoHeaderFiles;
         $this->genClassCeList();
         $code = $this->render('extension.cc.php');
         $this->writeFile($file, $code);
         $this->formatCppCode($file);
         $this->localHeaders = [];
+        return $file;
     }
 
     public function getModuleName(): string
@@ -317,17 +319,18 @@ class Translator extends Preprocessor
         $objectFiles = [];
         $job = $this->maxJob;
 
-        // 如果只有一个文件或 job 为 1，则串行编译
-        if (count($sourceFiles) <= 1 || $job <= 1) {
-            foreach ($sourceFiles as $cppFile) {
-                $objectFile = $this->getObjectFile($cppFile);
-                $this->compileFile($cppFile, $objectFile);
-                if (!is_file($objectFile)) {
-                    throw new \Exception('compile error');
-                }
-                $objectFiles[] = $objectFile;
-            }
-            return $objectFiles;
+        // 生成所有函数声明、全局变量声明的头文件
+        $this->genFunctionDeclaration($this->getIncludeDir() . '/php_func_decl.h');
+        $this->genExternGlobalVars($this->getIncludeDir() . '/php_global_var_decl.h');
+
+        // 生成扩展模块的源文件
+        $sourceFiles[] =$this->genExtension();
+
+        // embed 需要 main 函数，以及 cli 的内置函数定义
+        if ($this->getBuildMode() == 'bin') {
+            $sourceFiles[] = __DIR__ . '/../cpp/main.cc';
+            $sourceFiles[] = __DIR__ . '/../cpp/php_cli_process_title.c';
+            $sourceFiles[] = __DIR__ . '/../cpp/ps_title.c';
         }
 
         // 并行编译
@@ -338,7 +341,7 @@ class Translator extends Preprocessor
         $compiledCount = 0;
         $failedFiles = [];
 
-        $this->climate->blue("Starting parallel compilation with {$job} jobs for {$totalFiles} files");
+        $this->climate->lightBlue("Starting parallel compilation with {$job} jobs for {$totalFiles} files");
 
         while ($compiledCount < $totalFiles) {
             // 启动新进程，直到达到最大并发数

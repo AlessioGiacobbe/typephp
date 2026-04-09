@@ -572,7 +572,7 @@ class Preprocessor extends CompilerBase
             $this->checkRequiredArgNum($name, $this->methodDef, $v);
             $this->classDef->addMethod($this->methodDef);
         } else {
-            if (!($class->flags & Modifiers::ABSTRACT)) {
+            if (isset($class->flags) and !($class->flags & Modifiers::ABSTRACT)) {
                 $this->fatalError($v, "Class {$this->class} cannot override non-abstract method {$v->name}");
             }
             if ($this->method === '__construct') {

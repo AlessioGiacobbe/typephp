@@ -58,22 +58,6 @@ if (empty($sourceFiles)) {
     $translator->stop("No valid source file found");
 }
 
-// 生成所有函数声明、全局变量声明
-$translator->genFunctionDeclaration($translator->getIncludeDir() . '/php_func_decl.h');
-$translator->genExternGlobalVars($translator->getIncludeDir() . '/php_global_var_decl.h');
-
-// 生成所有全局变量源文件
-$extensionSourceFile = $translator->getBuildDir() . '/extension.cc';
-$translator->genExtension($extensionSourceFile);
-$sourceFiles[] = $extensionSourceFile;
-
-// 添加 main.cc 文件
-if ($translator->getBuildMode() == 'bin') {
-    $sourceFiles[] = ROOT_PATH . '/src/cpp/main.cc';
-    $sourceFiles[] = ROOT_PATH . '/src/cpp/php_cli_process_title.c';
-    $sourceFiles[] = ROOT_PATH . '/src/cpp/ps_title.c';
-}
-
 // 编译所有 C++ 文件
 $objectFiles = $translator->compile($sourceFiles);
 
