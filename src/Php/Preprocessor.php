@@ -8,8 +8,6 @@
 
 namespace PhpAot\Php;
 
-use MJS\TopSort\CircularDependencyException;
-use MJS\TopSort\ElementNotFoundException;
 use MJS\TopSort\Implementations\StringSort;
 use PhpAot\Php\Entity\ClassDef;
 use PhpAot\Php\Entity\ConstantDef;
