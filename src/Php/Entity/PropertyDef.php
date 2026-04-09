@@ -17,6 +17,7 @@ class PropertyDef
     public int $flags;
     public ?string $default = null;
     public bool $nullable = false;
+    public string $class = '';
 
     public function __construct(string $name, int $flags, string $type, ?string $default = null, bool $nullable = false)
     {

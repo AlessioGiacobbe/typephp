@@ -671,9 +671,10 @@ class Translator extends Preprocessor
         $stmts = $traverser->traverse($ast);
 
         $this->resetFile();
-        $this->resetFunction();
-        $this->resetClass();
         $this->resetNamespace();
+        $this->resetClass();
+        $this->resetMethod();
+        $this->resetFunction();
 
         $cppCode = '';
         foreach ($stmts as $v) {
@@ -798,11 +799,6 @@ class Translator extends Preprocessor
         $this->classCeList = $sorter->sort();
     }
 
-    protected function getMethodName(Node\Stmt\ClassMethod $v): string
-    {
-        return $this->parseIdentifier($v->name);
-    }
-
     protected function getNativeMethodName(ClassDef $classDef, MethodDef $methodDef): string
     {
         return $this->getNativeName($methodDef->name, $classDef->namespace, $classDef->name);
@@ -814,6 +810,9 @@ class Translator extends Preprocessor
         $code = '';
 
         $this->resetNamespace();
+        $this->resetClass();
+        $this->resetMethod();
+        $this->resetFunction();
 
         $this->namespace = $ns;
         $ns_end          = '';
@@ -876,45 +875,26 @@ class Translator extends Preprocessor
     protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
-        if ($class instanceof Node\Stmt\Enum_) {
-            $flags = Modifiers::PUBLIC;
-            $extends = '';
-        } else {
-            $flags = $class->flags;
-            $extends = $class->extends;
-        }
-
         $fullName = $this->getFullClassName();
-        if ($this->hasClass($fullName)) {
-            $this->classDef = $this->getClass($fullName);
-        } else {
-            $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
-            $this->addClass($fullName, $this->classDef);
+        if (!$this->hasClass($fullName)) {
+            $this->fatalError($class, "class {$fullName} not found");
         }
+        $this->classDef = $this->getClass($fullName);
 
-        if ($class instanceof Node\Stmt\Enum_) {
-            $this->classDef->enum = true;
-        }
-
-        if ($extends) {
+        // 如果不是继承自内置类，需要检查父类是否存在，在预处理阶段只需检查了是否继承内置类
+        // 目前不允许继承自动态加载的自定义类
+        if ($this->classDef->extends and !$this->classDef->inheritedFromInternalClass) {
             $parentClass = $this->getParentClass($class->extends);
             if ($this->hasClass($parentClass)) {
                 $parent = $this->getClass($parentClass);
+                // 父类是 final 无法继承
                 if ($parent->flags & Modifiers::FINAL) {
                     $this->fatalError($class, "Class `{$this->class}` cannot extend final class `{$parentClass}`");
                 }
-                $this->classDef->extends = $parentClass;
-                $this->classDef->inheritedFromInternalClass = false;
             } else {
-                if (Reflection::isInternalClass($parentClass)) {
-                    $this->classDef->extends = $parentClass;
-                    $this->classDef->inheritedFromInternalClass = true;
-                } else {
-                    $this->fatalError($class, "Class `{$this->class}` inherits from a non-existent class `{$parentClass}`");
-                }
+                $this->fatalError($class, "Class `{$this->class}` inherits from a non-existent class `{$parentClass}`");
             }
         }
-        $this->classDef->implements = $this->parseIdentifierList($class->implements);
 
         $className = $this->classDef->getNamespacedName();
         $this->classesDefineInFile[$className] = $this->classDef;
@@ -925,16 +905,12 @@ class Translator extends Preprocessor
             $type = $v->getType();
             switch ($type) {
                 case 'Stmt_ClassConst':
-                    $this->parseClassConstDef($v);
-                    break;
                 case 'Stmt_Property':
-                    $this->parsePropertyDef($v);
+                case 'Stmt_Nop':
+                case 'Stmt_EnumCase':
                     break;
                 case 'Stmt_ClassMethod':
                     $this->parseClassMethod($v, $methodCodes);
-                    break;
-                case 'Stmt_EnumCase':
-                case 'Stmt_Nop':
                     break;
                 default:
                     abort($v);
@@ -1129,116 +1105,20 @@ class Translator extends Preprocessor
         return $code;
     }
 
-    protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
-    {
-        $this->resetFunction();
-        $flags = $this->parseModifiers($v->flags);
-        if ($v->type) {
-            $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST);
-        } else {
-            $type = null;
-        }
-        foreach ($v->consts as $const) {
-            if ($type === null) {
-                $type = match ($const->value->getType()) {
-                    'Expr_Array' => self::TYPE_ARRAY,
-                    'Scalar_String' => self::TYPE_STR,
-                    default => self::TYPE_VAR,
-                };
-            }
-            $constName = $this->parseIdentifier($const->name);
-            $constValue = $this->parseIdentifier($const->value);
-            $arrayExpr = '';
-            if ($this->context->beforeStmtLines) {
-                if ($this->context->localVars) {
-                    $arrayExpr .= $this->genScopeVarDecl();
-                }
-                $arrayExpr .= $this->parseBeforeStmtLines();
-            }
-            $constInfo = new ConstantDef($constName, $flags, $type, $constValue, $arrayExpr);
-            $this->classDef->constants[$constInfo->name] = $constInfo;
-        }
-    }
-
-    protected function parsePropertyDef(Node\Stmt\Property $v): void
-    {
-        $oriCtx = $this->context;
-        $this->context = $this->classDef->propertyContext;
-        $flags = $this->parseModifiers($v->flags);
-        $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_PROPERTY);
-
-        foreach ($v->props as $prop) {
-            $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
-            if ($prop->default) {
-                $propDef->default = $this->parseIdentifier($prop->default);
-                if ($prop->default->getType() == 'Expr_Array') {
-                    $propDef->type = self::TYPE_ARRAY;
-                }
-            }
-            $this->classDef->properties[$propDef->name] = $propDef;
-        }
-
-        $this->context = $oriCtx;
-    }
-
-    protected function parseModifiers(int $flags): int
-    {
-        if (!($flags & Modifiers::PRIVATE) and !($flags & Modifiers::PROTECTED)) {
-            $flags |= Modifiers::PUBLIC;
-        }
-        return $flags;
-    }
-
     protected function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
     {
         $name = $this->getMethodName($v);
         $this->method = $name;
         $flags = $this->parseModifiers($v->flags);
 
-        $classDef = $this->classDef;
-        while (true) {
-            $extends = $classDef->extends;
-            if (!$extends) {
-                break;
-            }
-            // 父类是内置类
-            if ($classDef->inheritedFromInternalClass) {
-                if (Reflection::getClassMethodModifiers($extends, $name) & \ReflectionMethod::IS_PRIVATE) {
-                    goto _error;
-                }
-                break;
-            }
-            $classDef = $this->getClass($extends);
-            if ($classDef->hasMethod($this->method)) {
-                $methodDef = $classDef->getMethod($this->method);
-                if ($methodDef->flags & Modifiers::PRIVATE) {
-                    _error:
-                    $this->fatalError($v,
-                        'Cannot override private method `' .
-                        $classDef->getNamespacedName(false) . '::' . $this->method . '()`');
-                }
-            }
-        }
-
         if (!($flags & Modifiers::ABSTRACT)) {
-            $this->methodDef = new MethodDef($flags, $name);
+            $this->methodDef = $this->classDef->getMethod($name);
+            // 预处理阶段没有父类的信息，只能在实现阶段检查
+            $this->checkParentMethodCanBeOverridden($v, $name);
             $methodCodes[$name] = $this->parseFunction($v);
-
-            $this->checkRequiredArgNum($name, $this->methodDef, $v);
-            $this->classDef->addMethod($this->methodDef);
         }
 
         $this->resetMethod();
-    }
-
-    protected function parseIdentifierList(array $implements): array
-    {
-        $list = [];
-        foreach ($implements as $implement) {
-            $list[] = $this->getNamespacedClassName($implement);
-        }
-
-        return $list;
     }
 
     protected function parseInterface(Node\Stmt\Interface_ $v): void

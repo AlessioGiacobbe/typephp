@@ -1,34 +1,18 @@
 <?php
-
-class A
-{
-    public function __construct()
-    {
-        echo "A::__construct()\n";
-    }
+function foo_test($a, $b, $c) {
+    return 1;
 }
 
-class B extends A
+function foo2(): void
 {
-    public function __construct()
-    {
-        parent::__construct();
-        echo "B::__construct()\n";
-    }
-
-    public function foo()
-    {
-
-        var_dump(__METHOD__);
-    }
-}
-
-class C extends ArrayObject {
-
+    var_dump(__FUNCTION__);
+    return;
+    var_dump(__FUNCTION__);
 }
 
 function main()
 {
+    var_dump(foo_test(1, 2, 3));
     $o = new B;
     $o->foo();
 
@@ -37,4 +21,6 @@ function main()
     $c->offsetSet(1, 2);
     var_dump($c);
     var_dump($c->foo());
+
+    foo2();
 }

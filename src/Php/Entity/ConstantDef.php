@@ -14,14 +14,14 @@ class ConstantDef
     public string $type;
     public int $flags;
     public string $value;
-    public string $arrayExpr;
+    public string $arrayExpr = '';
+    public string $class = '';
 
-    public function __construct(string $name, int $flags, string $type, string $value, string $arrayExpr = '')
+    public function __construct(string $name, int $flags, string $type, string $value)
     {
         $this->name  = $name;
         $this->type  = $type;
         $this->flags = $flags;
         $this->value = $value;
-        $this->arrayExpr  = $arrayExpr;
     }
 }

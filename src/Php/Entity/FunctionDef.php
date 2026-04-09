@@ -24,16 +24,13 @@ class FunctionDef
     public string $namespace;
     public bool $method = false;
     public bool $stub = false;
-    public bool $completed = false;
-    public bool $exactReturnType = false;
     public string $returnClass = '';
 
-    public function __construct(string $name, string $returnType, string $namespace, bool $stub)
+    public function __construct(string $name, string $returnType, string $namespace)
     {
         $this->name = $name;
         $this->returnType = $returnType;
         $this->namespace = $namespace;
-        $this->stub = $stub;
     }
 
     public function getNamespacedName(): string
