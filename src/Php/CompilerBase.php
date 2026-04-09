@@ -837,6 +837,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->climate->cyan('Skip function ' . $name);
             }
             $this->indentLevel--;
+        } else {
+            $stmts = $this->genReturnCode();
         }
 
         $functionDeclCode = $this->getReturnType() . ' ' . self::PREFIX . $name . '(';
