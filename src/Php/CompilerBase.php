@@ -1443,16 +1443,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
             return $this->parseAssignPropertyFetch($left, $right);
-        } elseif ($this->isArrayDimFetch($left)) {
+        } elseif ($this->isArrayDimFetch($left) and $this->isVarExpr($left->var)) {
             $tmp = $this->parseIdentifier($left->var);
-            if ($this->isVarExpr($left->var) and $this->getVarType($tmp) === self::TYPE_STR) {
-                if ($left->dim === null) {
-                    $this->fatalError($left, 'Cannot use [] for strings');
-                }
+            if ($this->getVarType($tmp) === self::TYPE_STR and $left->dim === null) {
+                $this->fatalError($left, 'Cannot use [] for strings');
             }
-            if ($this->isVarExpr($left->var) and ($this->isVarExpr($right) or $this->isScalar($right))) {
-                return $this->parseAssignArrayDim($left, $right);
-            }
+            return $this->parseAssignArrayDim($left, $right);
         }
 
         return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
