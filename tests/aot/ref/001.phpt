@@ -1,9 +1,6 @@
 --TEST--
 ref 001
 --SKIPIF--
-<?php
-exit("skip: not supported in AOT");
-?>
 --FILE--
 <?php
 
@@ -97,3 +94,109 @@ function main()
 }
 ?>
 --EXPECT--
+生成的树结构：
+Array
+(
+    [0] => Array
+        (
+            [id] => 1
+            [pid] => 0
+            [name] => 中国
+            [children] => Array
+                (
+                    [0] => Array
+                        (
+                            [id] => 2
+                            [pid] => 1
+                            [name] => 广东省
+                            [children] => Array
+                                (
+                                    [0] => Array
+                                        (
+                                            [id] => 4
+                                            [pid] => 2
+                                            [name] => 广州市
+                                            [children] => Array
+                                                (
+                                                )
+
+                                        )
+
+                                    [1] => Array
+                                        (
+                                            [id] => 5
+                                            [pid] => 2
+                                            [name] => 深圳市
+                                            [children] => Array
+                                                (
+                                                )
+
+                                        )
+
+                                )
+
+                        )
+
+                    [1] => Array
+                        (
+                            [id] => 3
+                            [pid] => 1
+                            [name] => 浙江省
+                            [children] => Array
+                                (
+                                    [0] => Array
+                                        (
+                                            [id] => 6
+                                            [pid] => 3
+                                            [name] => 杭州市
+                                            [children] => Array
+                                                (
+                                                )
+
+                                        )
+
+                                )
+
+                        )
+
+                )
+
+        )
+
+    [1] => Array
+        (
+            [id] => 7
+            [pid] => 0
+            [name] => 美国
+            [children] => Array
+                (
+                    [0] => Array
+                        (
+                            [id] => 8
+                            [pid] => 7
+                            [name] => 加州
+                            [children] => Array
+                                (
+                                    [0] => Array
+                                        (
+                                            [id] => 9
+                                            [pid] => 8
+                                            [name] => 旧金山
+                                            [children] => Array
+                                                (
+                                                )
+
+                                        )
+
+                                )
+
+                        )
+
+                )
+
+        )
+
+)
+
+开始断言测试...
+DONE

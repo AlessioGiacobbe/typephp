@@ -100,6 +100,11 @@ trait AstNodeType
         return $expr instanceof Expr\AssignOp or $expr instanceof Expr\Assign;
     }
 
+    protected function isAssignExpr(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Expr\Assign;
+    }
+
     protected function isCallExpr(NodeAbstract $expr): bool
     {
         return $expr instanceof Expr\FuncCall

@@ -1159,7 +1159,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $chain[] = $left;
         $next    = $right;
-        while ($next->getType() === 'Expr_Assign') {
+        while ($this->isAssignExpr($next)) {
             $var = $next->var;
             $chain[] = $var;
             $next    = $next->expr;
@@ -1196,42 +1196,46 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $left  = $v->var;
         $right = $v->expr;
-
-        if ($right->getType() === 'Expr_Assign') {
+        if ($this->isAssignExpr($right)) {
             return $this->parseRightAssociativeAssign($left, $right);
         }
         return $this->parseAssignFinally($left, $right);
     }
 
+    protected function parseAssignToList(Expr $left, Expr $right): string
+    {
+        $items = $left->items;
+        $code  = '{';
+        $this->indentLevel++;
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+        $code .= $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($right) . '; ';
+        foreach ($items as $k => $item) {
+            if (!$item) {
+                continue;
+            }
+            if ($item instanceof Expr\ArrayItem) {
+                $oriInAssignExpr = $this->context->inAssignExpr;
+                $this->context->inAssignExpr = true;
+                $var = $this->parseIdentifier($item->value);
+                $this->context->inAssignExpr = $oriInAssignExpr;
+                if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
+                    $this->addLocalVar($var, self::TYPE_VAR);
+                }
+                $code .= "{$var} = {$tmpVar}.item({$k}); ";
+            } else {
+                abort($item);
+            }
+        }
+        $this->indentLevel--;
+
+        return $code . '}';
+    }
+
     protected function parseAssignFinally(Expr $left, Expr $right): string
     {
         if ($left instanceof Expr\List_) {
-            $items = $left->items;
-            $code  = '{';
-            $this->indentLevel++;
-            $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            $code .= $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($right) . '; ';
-            foreach ($items as $k => $item) {
-                if (!$item) {
-                    continue;
-                }
-                if ($item instanceof Expr\ArrayItem) {
-                    $oriInAssignExpr = $this->context->inAssignExpr;
-                    $this->context->inAssignExpr = true;
-                    $var = $this->parseIdentifier($item->value);
-                    $this->context->inAssignExpr = $oriInAssignExpr;
-                    if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
-                        $this->addLocalVar($var, self::TYPE_VAR);
-                    }
-                    $code .= "{$var} = {$tmpVar}.item({$k}); ";
-                } else {
-                    abort($item);
-                }
-            }
-            $this->indentLevel--;
-
-            return $code . '}';
+            return $this->parseAssignToList($left, $right);
         }
 
         $oriInAssignExpr = $this->context->inAssignExpr;
@@ -3786,38 +3790,44 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseAssignRef(Expr\AssignRef $expr): string
     {
-        if (!$this->isVarExpr($expr->var)) {
-            $this->fatalError($expr, 'Cannot assign reference to non-variable');
-        }
-
         $this->context->inAssignExpr = true;
         $left = $this->parseIdentifier($expr->var);
         $this->context->inAssignExpr = false;
-        if (!$this->hasVar($left)) {
-            $this->addLocalVar($left, self::TYPE_REF);
-        } else {
-            $type = $this->getVarType($left);
-            if ($type !== self::TYPE_REF) {
-                $this->fatalError($expr, 'Cannot assign reference to variable of type ' . $type);
+
+        if ($this->isVarExpr($expr->var)) {
+            if (!$this->hasVar($left)) {
+                $this->addLocalVar($left, self::TYPE_REF);
+            } else {
+                $type = $this->getVarType($left);
+                if ($type !== self::TYPE_REF) {
+                    $this->fatalError($expr, 'Cannot assign reference to variable of type ' . $type);
+                }
             }
         }
+
+        $tmpVar = $this->addTmpVar(self::TYPE_REF);
+        $rightExpr = '';
+
         if ($this->isVarExpr($expr->expr)) {
-            return $left . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
-        }
-        if ($expr->expr->getType() === self::EXPR_ARRAY_DIM_FETCH) {
-            return $left . ' = ' . $this->parseIdentifier($expr->expr);
-        }
-        if ($this->isPropertyFetch($expr->expr)) {
-            $left   = $this->parseIdentifier($expr->var);
+            $rightExpr = $tmpVar . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
+        } elseif ($this->isPropertyFetch($expr->expr)) {
+            $left = $this->parseIdentifier($expr->var);
             $object = $this->parseExpr($expr->expr->var);
-            $prop   = $this->identifierToStr($expr->expr->name);
-
-            return $left . ' = ' . $object . '.attrRef(' . $prop . ')';
+            $prop = $this->identifierToStr($expr->expr->name);
+            $rightExpr = $tmpVar . ' = ' . $object . '.attrRef(' . $prop . ')';
+        } elseif ($this->isArrayDimFetch($expr->expr)) {
+            $left = $this->parseIdentifier($expr->var);
+            $array = $this->parseIdentifier($expr->expr->var);
+            if ($expr->expr->dim == null) {
+                $this->fatalError($expr, 'Cannot assign reference to array dim fetch without dim');
+            }
+            $rightExpr = $tmpVar . ' = ' . $array . '.itemRef(' . $this->parseIdentifier($expr->expr->dim) . ')';
+        } else {
+            $this->fatalError($expr, 'Cannot assign reference to ' . $this->parseIdentifier($expr->expr));
         }
 
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-        $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->expr) . ';';
-        return $left . ' = ' . $tmpVar . '.toReference()';
+        $this->context->beforeStmtLines[] = $rightExpr . ';';
+        return $left . ' = &' . $tmpVar;
     }
 
     protected function parseMethodCall(Expr\MethodCall $expr): string
