@@ -1,5 +1,5 @@
-#!/usr/bin/env php
-<?php declare(strict_types=1);
+<?php
+declare(strict_types=1);
 
 use PhpAot\Php\Translator;
 use PhpParser\Comment\Doc as DocComment;
@@ -37,9 +37,7 @@ const ALL_PHP_VERSION_IDS = [
 
 // file_put_contents() but with a success message printed after saving
 function reportFilePutContents(string $filename, string $content): void {
-    global $translator;
-    $translator->writeFile($filename, $content);
-    echo "Saved $filename\n";
+    getTranslator()->writeFile($filename, $content);
 }
 
 /**
@@ -149,8 +147,7 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
 
         return $fileInfo;
     } catch (Exception $e) {
-        echo "In $stubFile:\n{$e->getMessage()}\n";
-        exit(1);
+        throw new RuntimeException("In " . getTranslator()->getRelativePath($stubFile) . ": {$e->getMessage()}");
     }
 }
 
@@ -2309,7 +2306,7 @@ class EvaluatedValue
                         if (isset($allConstInfos[$constName])) {
                             return $allConstInfos[$constName]->getValue($allConstInfos)->value;
                         } else {
-                            throw new Exception("Class constant `$constName` not found");
+                            return getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass->name->toString(), $expr->name->toString());
                         }
                     } elseif ($expr->name->__toString() === 'class') {
                         return $class;
@@ -2337,6 +2334,7 @@ class EvaluatedValue
                         } elseif ($constType->isFloat()) {
                             return M_PI;
                         } elseif ($constType->isString()) {
+                            var_dump($const);
                             return $const->name;
                         } elseif ($constType->isArray()) {
                             return [];
@@ -2346,7 +2344,7 @@ class EvaluatedValue
                     return null;
                 }
 
-                global $definedConstants;
+                $definedConstants = getTranslator()->getDefinedConstants();
                 if (isset($definedConstants[$constName])) {
                     $constValue = $definedConstants[$constName];
                     if (is_scalar($constValue)) {
@@ -2448,28 +2446,17 @@ class EvaluatedValue
                     $this->expr->name->__toString() === 'class') {
                     $expr = '"' . addcslashes($this->expr->class->name, '\\') . '"';
                 } else {
-                    var_dump($this->value);
+                    return $this->value;
                 }
             } elseif (!($this->expr instanceof String_)) {
+                if ($this->expr instanceof Expr\ConstFetch) {
+                    return getTranslator()->getConstValue($this->expr->name->toString());
+                }
                 throw new Exception("Expression at line " . $this->expr->getStartLine() . " must be a scalar string");
             }
             $expr = preg_replace("/(^'|'$)/", '"', $expr);
-        } elseif ($this->type->isInt() or $this->type->isFloat()) {
+        } elseif ($this->type->isInt() or $this->type->isFloat() or $this->expr instanceof Expr\ConstFetch) {
             return strval($this->value);
-        } else {
-            if ($this->expr instanceof Expr\ConstFetch) {
-                $value = constant($this->expr->name->__toString());
-                if (is_int($value)) {
-                    $expr = strval($value);
-                    if ($value === PHP_INT_MIN) {
-                        $expr = 'LONG_MIN';
-                    } elseif ($value === PHP_INT_MAX) {
-                        $expr = 'LONG_MAX';
-                    } else {
-                        $expr = $expr . 'L';
-                    }
-                }
-            }
         }
         return $expr[0] == '"' ? $expr : preg_replace('(\bnull\b)', 'NULL', str_replace('\\', '', $expr));
     }
@@ -6172,20 +6159,17 @@ function initPhpParser() {
     $isInitialized = true;
 }
 
-function main()
+function getTranslator(): Translator
 {
-    global $argv, $argc, $translator, $definedConstants;
+    global $translator;
+    return $translator;
+}
 
-    error_reporting(E_ALL & ~E_DEPRECATED);
-    ini_set("precision", "-1");
-    require __DIR__ . '/bootstrap.php';
-
-    $translator = new PhpAot\Php\Translator(ROOT_PATH);
-    $translator->setIndent("\t");
-    $translator->setIndentLevel(1);
-
-    $definedConstants = get_defined_constants();
-
+/**
+ * @throws Exception
+ */
+function generateStubFile(string $stubFile, string $objectFile, bool $forceRegeneration): void
+{
     $opt_index = 0;
     $options = getopt(
         "fho:",
@@ -6208,15 +6192,15 @@ function main()
     $replaceMethodSynopses = isset($options["replace-methodsynopses"]);
     $generateOptimizerInfo = isset($options["generate-optimizer-info"]);
 
-    $context->forceRegeneration = isset($options["f"]) || isset($options["force-regeneration"]);
-    $context->objectFile = $options["o"] ?? '';
+    $context->forceRegeneration = $forceRegeneration;
+    $context->objectFile = $objectFile;
     $context->forceParse = $context->forceRegeneration || $printParameterStats || $verify || $verifyManual || $replacePredefinedConstants || $generateClassSynopses || $generateOptimizerInfo || $replaceClassSynopses || $generateMethodSynopses || $replaceMethodSynopses;
 
     if (isset($options["h"]) || isset($options["help"])) {
         die("\nUsage: gen_stub.php [ -f | --force-regeneration ] [ --replace-predefined-constants ] [ --generate-classsynopses ] [ --replace-classsynopses ] [ --generate-methodsynopses ] [ --replace-methodsynopses ] [ --parameter-stats ] [ --verify ]  [ --verify-manual ] [ --generate-optimizer-info ] [ -h | --help ] [ name.stub.php | directory ] [ directory ]\n\n");
     }
 
-    $locations = array_slice($argv, $opt_index);
+    $locations = [$stubFile];
     $locationCount = count($locations);
     if ($replacePredefinedConstants && $locationCount < 2) {
         die("At least one source stub path and a target manual directory has to be provided:\n./build/gen_stub.php --replace-predefined-constants ./ ../doc-en/\n");
@@ -6388,10 +6372,8 @@ function main()
             }
         }
 
-        echo implode("\n", $errors);
         if (!empty($errors)) {
-            echo "\n";
-            exit(1);
+            throw new Exception("Errors found: " . implode("\n", $errors));
         }
     }
 
@@ -6492,5 +6474,3 @@ function main()
         }
     }
 }
-
-main();

@@ -562,7 +562,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return false;
     }
 
-    protected function getRelativePath($path, $cwd = ''): string
+    public function getRelativePath($path, $cwd = ''): string
     {
         $cwd = $cwd ?: getcwd();
         return ltrim($this->removeCommonPrefix($cwd, $path), '/');

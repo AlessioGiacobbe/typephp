@@ -21,6 +21,7 @@ use PhpAot\Php\Exception\Unsupported;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Foreach_;
+use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
 use Symfony\Component\Yaml\Yaml;
 
@@ -106,7 +107,6 @@ class Translator extends Preprocessor
             return $this->getCppFile($file);
         }
         $phpCode = $this->loadFile($file);
-        $this->genStubFile($this->file);
         $this->localHeaders = [];
         while (true) {
             try {
@@ -114,7 +114,8 @@ class Translator extends Preprocessor
                 $cppFile = $this->getCppFile($file);
                 $this->save($cppCode, $cppFile);
                 $this->phpSrcFiles[] = $file;
-
+                // 生成 stub 文件，依赖 convert 阶段的 use 等信息
+                $this->genStubFile($this->file);
                 return $cppFile;
             } catch (Redo $e) {
                 continue;
@@ -646,6 +647,11 @@ class Translator extends Preprocessor
         return $list;
     }
 
+    public function getDefinedConstants(): array
+    {
+        return $this->internalConstants;
+    }
+
     protected function getInternalCeInfo(string $ce): array
     {
         return [
@@ -856,14 +862,13 @@ class Translator extends Preprocessor
         $stubFilenameWithoutExtension = str_replace(['.stub.php', '.php'], '', $file);
         $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
 
-        $genStubCmd = PHP_BINARY . ' ' . $this->rootPath . '/bin/gen_stub.php -f -o ' . $this->getIncludeDir() . '/' . $headerFile . ' ' . $file;
-        $output = shell_exec($genStubCmd);
-        $this->climate->info('generate stub file: ' . $this->getRelativePath($file));
-        $this->climate->comment($genStubCmd);
-
-        if (!str_contains($output, 'Saved')) {
-            $this->error("failed to generate arginfo header file: `{$headerFile}`, output: {$output}");
+        try {
+            generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true);
+        } catch (\Throwable $e) {
+            $this->error("failed to generate arginfo header file: `{$headerFile}`, Error: {$e->getMessage()}");
         }
+
+        $this->climate->info('generate stub file: ' . $this->getRelativePath($file));
         if ($this->useRegisterSymbolsFn) {
             preg_match('/php_(.*)_arginfo.h/', $headerFile, $matches);
             $registerSymbolFn = 'register_' . $matches[1] . '_symbols';
@@ -1300,5 +1305,49 @@ class Translator extends Preprocessor
         $code .= '};' . PHP_EOL . PHP_EOL;
 
         return $code;
+    }
+
+    /**
+     * 仅用于 gen_stub 脚本
+     * @param NodeAbstract $expr
+     * @param string $class
+     * @param string $name
+     * @return mixed
+     * @throws \Exception
+     */
+    public function getClassConstValue(NodeAbstract $expr, string $class, string $name): mixed
+    {
+        $class = $this->getNamespacedClassName($class);
+        $nativeConst = $this->findNativeClassConst($expr, $class, $name);
+        if ($nativeConst and $expr->hasAttribute('nativeConst')) {
+            $constDef = $expr->getAttribute('nativeConst');
+            return $this->genCValue($constDef->valueExpr->value);
+        }
+        throw new \Exception("Class constant `$class::$name` not found");
+    }
+
+    public function getConstValue(string $name): mixed
+    {
+        if ($this->isInternalConstant($name)) {
+            $value = $this->internalConstants[$name];
+            if (is_int($value)) {
+                $expr = strval($value);
+                if ($value === PHP_INT_MIN) {
+                    $expr = 'LONG_MIN';
+                } elseif ($value === PHP_INT_MAX) {
+                    $expr = 'LONG_MAX';
+                } else {
+                    $expr = $expr . 'L';
+                }
+            } elseif (is_float($value)) {
+                return $value;
+            } elseif (is_string($value)) {
+                return $this->genCharPtr($value);
+            } else {
+                $this->error('Unsupported constant type: ' . gettype($value));
+            }
+            return $expr;
+        }
+        throw new \Exception('Constant ' . $name . ' not found');
     }
 }

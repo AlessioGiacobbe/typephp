@@ -8,6 +8,8 @@
 
 namespace PhpAot\Php\Entity;
 
+use PhpParser\NodeAbstract;
+
 class ConstantDef
 {
     public string $name;
@@ -16,6 +18,7 @@ class ConstantDef
     public string $value;
     public string $arrayExpr = '';
     public string $class = '';
+    public ?NodeAbstract $valueExpr = null;
 
     public function __construct(string $name, int $flags, string $type, string $value)
     {

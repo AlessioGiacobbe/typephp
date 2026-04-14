@@ -13,6 +13,17 @@ use PhpAot\Php\Constants;
 
 trait Utils
 {
+    protected function genCValue(mixed $value): mixed
+    {
+        if (is_int($value) or is_float($value)) {
+            return $value;
+        } elseif (is_string($value)) {
+            return $this->genCharPtr($value);
+        } else {
+            $this->error('Unsupported constant type: ' . gettype($value));
+        }
+    }
+
     protected function genCharPtr(string $str, bool $escape = false): string
     {
         return '"' . ($escape ? $this->escapeString($str) : $str) . '"';

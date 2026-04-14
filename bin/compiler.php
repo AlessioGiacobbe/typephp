@@ -1,6 +1,7 @@
 #!/usr/bin/env php
 <?php
 require __DIR__ . '/bootstrap.php';
+require __DIR__ . '/../src/gen_stub.php';
 
 use PhpAot\Php\Exception\SyntaxError;
 use PhpAot\Php\Exception\Unsupported;

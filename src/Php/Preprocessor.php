@@ -518,6 +518,7 @@ class Preprocessor extends CompilerBase
             $constValue = $this->parseIdentifier($const->value);
 
             $constInfo = new ConstantDef($constName, $flags, $type, $constValue);
+            $constInfo->valueExpr = $const->value;
 
             if ($this->context->beforeStmtLines) {
                 $arrayExpr = '';
