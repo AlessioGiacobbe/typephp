@@ -9,6 +9,7 @@
 namespace PhpAot\Php\Entity;
 
 use PhpAot\Php\Context\FunctionContext;
+use PhpParser\Node\Stmt\Trait_;
 
 class ClassDef extends ClassLikeDef
 {
@@ -30,7 +31,7 @@ class ClassDef extends ClassLikeDef
     public string $extends = '';
     public bool $requireCtor = false;
     public bool $enum = false;
-    public bool $trait = false;
+    public ?Trait_ $trait = null;
     public int $flags;
     public bool $inheritedFromInternalClass = false;
     public string $ctorInit = '';

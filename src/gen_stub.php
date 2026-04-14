@@ -4437,6 +4437,9 @@ class FileInfo {
                 $propertyInfos = [];
                 $methodInfos = [];
                 $enumCaseInfos = [];
+
+                getTranslator()->parseTraitUseForStub($stmt);
+
                 foreach ($stmt->stmts as $classStmt) {
                     $cond = self::handlePreprocessorConditions($conds, $classStmt);
                     if ($classStmt instanceof Stmt\Nop) {
@@ -4496,6 +4499,8 @@ class FileInfo {
                     } else if ($classStmt instanceof Stmt\EnumCase) {
                         $enumCaseInfos[] = new EnumCaseInfo(
                             $classStmt->name->toString(), $classStmt->expr);
+                    } else if ($classStmt instanceof Stmt\TraitUse) {
+                        continue;
                     } else {
                         throw new Exception("Not implemented {$classStmt->getType()}");
                     }

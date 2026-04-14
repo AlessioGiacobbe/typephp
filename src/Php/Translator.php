@@ -920,6 +920,27 @@ class Translator extends Preprocessor
         $this->argInfoHeaderFiles[] = $headerFile;
     }
 
+    public function parseTraitUseForStub(Node\Stmt\ClassLike $stmt): void
+    {
+        foreach ($stmt->stmts as $classStmt) {
+            if (!$classStmt instanceof Node\Stmt\TraitUse) {
+                continue;
+            }
+            foreach ($classStmt->traits as $trait) {
+                $traitFullName = $this->getNamespacedClassName($trait);
+                if (!$this->hasClass($traitFullName)) {
+                    $this->fatalError($classStmt, "Trait `{$traitFullName}` not found");
+                }
+                $classDef = $this->getClass($traitFullName);
+                if (!$classDef->trait) {
+                    $this->fatalError($classStmt, "Trait `{$traitFullName}` not found");
+                }
+                // 务必注意顺序，如果类和 Trait 存在同名的方法，那么将使用类定义的方法
+                $stmt->stmts = array_merge($classDef->trait->stmts, $stmt->stmts);
+            }
+        }
+    }
+
     protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
@@ -1184,12 +1205,22 @@ class Translator extends Preprocessor
             $traitDef = $this->getClass($traitFullName);
             // 将 Trait 中定义的 常量、静态常量、属性、方法、静态属性复制到当前类中
             foreach ($traitDef->constants as $const) {
+                if ($classDef->hasConstant($const->name)) {
+                    continue;
+                }
                 $classDef->constants[$const->name] = $const;
             }
             foreach ($traitDef->properties as $prop) {
+                if ($classDef->hasProperty($prop->name)) {
+                    continue;
+                }
                 $classDef->properties[$prop->name] = $prop;
             }
             foreach ($traitDef->methods as $methodDef) {
+                // 类中已经有同名方法，则不使用 Trait 中的方法
+                if ($classDef->hasMethod($methodDef->name)) {
+                    continue;
+                }
                 $classDef->methods[$methodDef->name] = $methodDef;
                 $traitMethodNativeName = self::PREFIX . $this->getNativeName($methodDef->name, $traitDef->namespace, $traitDef->name);
                 $classMethodNativeName = self::PREFIX . $this->getNativeName($methodDef->name, $classDef->namespace, $classDef->name);
