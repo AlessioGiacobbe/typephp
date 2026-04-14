@@ -902,11 +902,7 @@ class Translator extends Preprocessor
         $stubFilenameWithoutExtension = str_replace(['.stub.php', '.php'], '', $file);
         $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
 
-        try {
-            generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true);
-        } catch (\Throwable $e) {
-            $this->error("failed to generate arginfo header file: `{$headerFile}`, Error: {$e->getMessage()}");
-        }
+        generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true);
 
         $this->climate->info('generate stub file: ' . $this->getRelativePath($file));
         if ($this->useRegisterSymbolsFn) {
@@ -920,23 +916,128 @@ class Translator extends Preprocessor
         $this->argInfoHeaderFiles[] = $headerFile;
     }
 
-    public function parseTraitUseForStub(Node\Stmt\ClassLike $stmt): void
+    protected function getFullMethodName(string $fullClassName, string $method): string
     {
+        return strtolower($fullClassName . '::' . $method);
+    }
+
+    protected function parseTraitUseOptions(Node\Stmt\TraitUse $traitUse, array &$aliases, array &$insteadof)
+    {
+        foreach ($traitUse->adaptations as $adaptation) {
+            if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Alias) {
+                $trait1 = $this->getNamespacedClassName($adaptation->trait);
+                $methodName = $adaptation->method->toString();
+                if ($adaptation->newModifier) {
+                    $this->fatalError($traitUse, "Trait `{$trait1}` cannot use `newModifier`");
+                }
+                $aliases[$this->getFullMethodName($trait1, $methodName)] = $adaptation->newName->toString();
+            }
+            if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Precedence) {
+                $trait1 = $this->getNamespacedClassName($adaptation->trait);
+                if (count($adaptation->insteadof) > 1) {
+                    $this->fatalError($traitUse, "Trait `{$trait1}` cannot use `insteadof` for multiple traits");
+                }
+                $trait2 = $this->getNamespacedClassName($adaptation->insteadof[0]);
+                $methodName = $adaptation->method->toString();
+                $insteadof[$this->getFullMethodName($trait1, $methodName)] = $this->getFullMethodName($trait2, $methodName);
+            }
+        }
+    }
+
+    public function parseTraitUseForStub(Node\Stmt\ClassLike $stmt, Node\Name $className): void
+    {
+        $methods = [];
+        $constants = [];
+        $properties = [];
+        $traitMethods = [];
+        $traitConstants = [];
+        $traitProperties = [];
+        $aliases = [];
+        $insteadof = [];
+
+        foreach ($stmt->stmts as $classStmt) {
+            if ($classStmt instanceof Node\Stmt\ClassMethod) {
+                $name = strtolower($classStmt->name->toString());
+                $methods[$name] = $classStmt;
+            }
+            if ($classStmt instanceof Node\Stmt\Property) {
+                foreach ($classStmt->props as $prop) {
+                    $name = strtolower($prop->name->toString());
+                    $properties[$name] = $prop;
+                }
+            }
+            if ($classStmt instanceof Node\Stmt\ClassConst) {
+                foreach ($classStmt->consts as $const) {
+                    $name = strtolower($const->name->toString());
+                    $constants[$name] = $const;
+                }
+            }
+            if ($classStmt instanceof Node\Stmt\TraitUse and $classStmt->adaptations) {
+                $this->parseTraitUseOptions($classStmt, $aliases, $insteadof);
+            }
+        }
+
         foreach ($stmt->stmts as $classStmt) {
             if (!$classStmt instanceof Node\Stmt\TraitUse) {
                 continue;
             }
-            foreach ($classStmt->traits as $trait) {
-                $traitFullName = $this->getNamespacedClassName($trait);
+
+            foreach ($classStmt->traits as $trait1) {
+                $traitFullName = $this->getNamespacedClassName($trait1);
                 if (!$this->hasClass($traitFullName)) {
                     $this->fatalError($classStmt, "Trait `{$traitFullName}` not found");
                 }
-                $classDef = $this->getClass($traitFullName);
-                if (!$classDef->trait) {
+
+                $traitDef = $this->getClass($traitFullName);
+                if (!$traitDef->trait) {
                     $this->fatalError($classStmt, "Trait `{$traitFullName}` not found");
                 }
-                // 务必注意顺序，如果类和 Trait 存在同名的方法，那么将使用类定义的方法
-                $stmt->stmts = array_merge($classDef->trait->stmts, $stmt->stmts);
+
+                $traitAst = clone $traitDef->trait;
+                $traitStmts = $traitAst->stmts;
+                foreach ($traitStmts as $k1 => $traitStmt) {
+                    if ($traitStmt instanceof Node\Stmt\ClassMethod) {
+                        $methodName = strtolower($traitStmt->name->toString());
+                        if (isset($traitMethods[$methodName])) {
+                            $this->fatalError($classStmt, "Trait `{$traitFullName}` method `{$methodName}` already exists");
+                        }
+                        if (isset($aliases[$this->getFullMethodName($traitFullName, $methodName)])) {
+                            $alias = $aliases[$this->getFullMethodName($traitFullName, $methodName)];
+                            $traitStmt->name = new Node\Identifier($alias);
+                            $methodName = $alias;
+                        }
+                        if (isset($methods[$methodName])) {
+                            unset($traitStmts[$k1]);
+                        }
+                        $traitMethods[$methodName] = $traitStmt;
+                    }
+                    if ($traitStmt instanceof Node\Stmt\ClassConst) {
+                        foreach ($traitStmt->consts as $k2 => $const) {
+                            $constName = strtolower($const->name->toString());
+                            if (isset($constants[$constName])) {
+                                unset($traitStmts[$k1][$k2]);
+                            }
+                            if (isset($traitConstants[$constName])) {
+                                $this->fatalError($classStmt, "Trait `{$traitFullName}` constant `{$constName}` already exists");
+                            }
+                            $traitConstants[$constName] = $const;
+                        }
+                    }
+                    if ($traitStmt instanceof Node\Stmt\Property) {
+                        foreach ($traitStmt->props as $k2 => $prop) {
+                            $propName = strtolower($prop->name->toString());
+                            if (isset($properties[$propName])) {
+                                unset($traitStmts[$k1][$k2]);
+                            }
+                            if (isset($traitProperties[$propName])) {
+                                $this->fatalError($classStmt, "Trait `{$traitFullName}` property `{$propName}` already exists");
+                            }
+                            $traitProperties[$propName] = $prop;
+                        }
+                    }
+                }
+
+                $stmt->stmts = array_merge($stmt->stmts, $traitStmts);
             }
         }
     }
@@ -1196,6 +1297,13 @@ class Translator extends Preprocessor
     protected function parseTraitUse(Node\Stmt\TraitUse $v, array &$methodCodes): void
     {
         $classDef = $this->classDef;
+        $aliases = [];
+        $insteadof = [];
+
+        if ($v->adaptations) {
+            $this->parseTraitUseOptions($v, $aliases, $insteadof);
+        }
+
         foreach ($v->traits as $trait) {
             $traitName = $this->parseIdentifier($trait);
             $traitFullName = $this->getNamespacedClassName($traitName);
@@ -1217,13 +1325,21 @@ class Translator extends Preprocessor
                 $classDef->properties[$prop->name] = $prop;
             }
             foreach ($traitDef->methods as $methodDef) {
+                $classMethodName = $traitMethodName = $methodDef->name;
+                // Trait 设置了别名
+                if (isset($aliases[$this->getFullMethodName($traitFullName, $classMethodName)])) {
+                    $classMethodName = $aliases[$this->getFullMethodName($traitFullName, $classMethodName)];
+                    $methodDef = clone $methodDef;
+                    $methodDef->name = $classMethodName;
+                }
                 // 类中已经有同名方法，则不使用 Trait 中的方法
-                if ($classDef->hasMethod($methodDef->name)) {
+                if ($classDef->hasMethod($classMethodName)) {
                     continue;
                 }
-                $classDef->methods[$methodDef->name] = $methodDef;
-                $traitMethodNativeName = self::PREFIX . $this->getNativeName($methodDef->name, $traitDef->namespace, $traitDef->name);
-                $classMethodNativeName = self::PREFIX . $this->getNativeName($methodDef->name, $classDef->namespace, $classDef->name);
+
+                $classDef->addMethod($methodDef);
+                $traitMethodNativeName = self::PREFIX . $this->getNativeName($traitMethodName, $traitDef->namespace, $traitDef->name);
+                $classMethodNativeName = self::PREFIX . $this->getNativeName($classMethodName, $classDef->namespace, $classDef->name);
                 $argList = ['this_'];
                 foreach ($methodDef->functionDef->argInfoList as $argInfo) {
                     $argList[] = $argInfo->name;
@@ -1248,7 +1364,7 @@ class Translator extends Preprocessor
                 $code .= $this->getIndent() . $methodCall . ';' . PHP_EOL;
                 $this->indentLevel--;
                 $code .= $this->getIndent() . '}' . PHP_EOL;
-                $methodCodes[$methodDef->name] = $code;
+                $methodCodes[$classMethodName] = $code;
             }
         }
     }

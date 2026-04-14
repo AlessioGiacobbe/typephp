@@ -4438,7 +4438,9 @@ class FileInfo {
                 $methodInfos = [];
                 $enumCaseInfos = [];
 
-                getTranslator()->parseTraitUseForStub($stmt);
+                if (!$stmt instanceof PhpParser\Node\Stmt\Interface_) {
+                    getTranslator()->parseTraitUseForStub($stmt, $className);
+                }
 
                 foreach ($stmt->stmts as $classStmt) {
                     $cond = self::handlePreprocessorConditions($conds, $classStmt);
