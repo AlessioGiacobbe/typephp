@@ -47,7 +47,7 @@ return (new PhpCsFixer\Config())
         'phpdoc_types_order'                               => ['sort_algorithm' => 'none', 'null_adjustment' => 'always_last'],
         'phpdoc_separation'                                => false,
         'phpdoc_summary'                                   => false,
-        'ordered_class_elements'                           => true,
+        'ordered_class_elements'                           => false,
         'ordered_imports'                                  => ['imports_order' => ['class', 'function', 'const'], 'sort_algorithm' => 'alpha'],
         'ordered_types'                                    => ['null_adjustment' => 'always_last', 'sort_algorithm' => 'none'],
         'single_line_comment_style'                        => ['comment_types' => []],

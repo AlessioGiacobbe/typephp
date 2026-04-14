@@ -902,7 +902,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_Float':
                 return $this->parseScalarFloat($expr);
             case 'Scalar_String':
-                return $this->getLiteralString($expr->value);
+                return $expr->hasAttribute('noLiteralString') ? $this->genCharPtr($expr->value) : $this->getLiteralString($expr->value);
             default:
                 abort($expr);
         }
@@ -3549,6 +3549,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseEval(Expr\Eval_ $expr): string
     {
+        // 对 eval() 指令的 PHP 代码段禁止字面量优化
+        $expr->expr->setAttribute('noLiteralString', true);
         return 'php::eval(' . $this->parseIdentifier($expr->expr) . ')';
     }
 
