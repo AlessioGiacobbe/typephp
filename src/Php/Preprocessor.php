@@ -421,6 +421,8 @@ class Preprocessor extends CompilerBase
         }
         if (!$class instanceof Node\Stmt\Trait_) {
             $this->classDef->implements = $this->parseImplements($class->implements);
+        } else {
+            $this->classDef->trait = true;
         }
         if (isset($this->symbolDeclInFile[$fullClassNameLower])) {
             $this->fatalError($class, "Duplicate class `{$fullClassName}`");

@@ -17,7 +17,8 @@ trait Utils
     {
         if (is_int($value) or is_float($value)) {
             return $value;
-        } elseif (is_string($value)) {
+        }
+        if (is_string($value)) {
             return $this->genCharPtr($value);
         } else {
             $this->error('Unsupported constant type: ' . gettype($value));

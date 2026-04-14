@@ -554,18 +554,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->buildDir;
     }
 
+    public function getRelativePath($path, $cwd = ''): string
+    {
+        $cwd = $cwd ?: getcwd();
+        return ltrim($this->removeCommonPrefix($cwd, $path), '/');
+    }
+
     protected function isSuperGlobal(string $var): bool
     {
         if (isset($this->superGlobalVars[$var])) {
             return true;
         }
         return false;
-    }
-
-    public function getRelativePath($path, $cwd = ''): string
-    {
-        $cwd = $cwd ?: getcwd();
-        return ltrim($this->removeCommonPrefix($cwd, $path), '/');
     }
 
     protected function removeCommonPrefix(string $short, string $long): string
@@ -1187,9 +1187,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($native) {
             return $native . ' = ' . $value;
         }
-        $class    = $this->identifierToStr($left->class);
+        $class = $this->identifierToStr($left->class);
         $propName = $this->identifierToStr($left->name);
-        return "php::setStaticProperty({$class}, {$propName}, {$value})";
+        return Symbol::setStaticProperty() . "({$class}, {$propName}, {$value})";
     }
 
     protected function parseAssign(Expr\Assign $v): string
@@ -2584,12 +2584,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $native . str_repeat($op, 2);
             }
 
-            $class  = $this->identifierToStr($expr->var->class);
-            $prop   = $this->identifierToStr($expr->var->name);
+            $class = $this->identifierToStr($expr->var->class);
+            $prop = $this->identifierToStr($expr->var->name);
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            $this->context->beforeStmtLines[] = $tmpVar . ' = php::getStaticProperty(' . $class . ', ' . $prop . ');';
-            $this->context->afterStmtLines[]  = 'php::setStaticProperty(' . $class . ', ' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
+            $this->context->beforeStmtLines[] = $tmpVar . ' = ' . Symbol::getStaticProperty() . '(' . $class . ', ' . $prop . ');';
+            $this->context->afterStmtLines[] = Symbol::setStaticProperty() . '(' . $class . ', ' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
 
             return $tmpVar;
         }
@@ -2964,7 +2964,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $className = $this->parseIdentifier($expr->class);
             if ($this->isNameExpr($expr->class)) {
                 if ($className === 'static') {
-                    $cePtr = 'php_get_called_ce(this_)';
+                    $cePtr = Symbol::getCalledCe();
                 } else {
                     $className = $this->getNamespacedClassName($className);
                     if ($this->hasClass($className)) {
@@ -3052,10 +3052,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $ns = explode('::', $name)[0];
                 $fullName = $this->getNamespacedClassName($ns[0]);
                 $ce = $this->getClassEntryPtr($fullName);
-                return 'php::constant(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
+                return Symbol::constant() . '(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
             }
             if ($this->isInternalConstant($name)) {
-                return 'php::constant(' . $this->getLiteralString($name) . ')';
+                return Symbol::constant() . '(' . $this->getLiteralString($name) . ')';
             }
             if (isset($this->useAliases[$name])) {
                 $name = $this->useAliases[$name];
@@ -3065,9 +3065,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $name = $fullName;
                 }
             }
-            return 'php::constant(nullptr, ' . $this->getLiteralString($name) . ')';
+            return Symbol::constant() . '(nullptr, ' . $this->getLiteralString($name) . ')';
         }
-        return 'php::constant("' . $this->escapeString($name) . '")';
+        return Symbol::constant() . '("' . $this->escapeString($name) . '")';
     }
 
     protected function parseUnaryMinus(Expr\UnaryMinus $expr): string
@@ -3250,6 +3250,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $propertyName = $this->parseIdentifier($property);
             $nativeProperty = null;
             if ($objectName === 'this_') {
+                if ($this->classDef->trait) {
+                    goto _dynamic_attr;
+                }
                 $nativeProperty = $this->findNativeProperty($object, $propertyName, $this->class, $this->namespace);
             } elseif ($this->isTypedObject($objectName)) {
                 $className = $this->getObjectType($objectName);
@@ -3260,6 +3263,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $nativeProperty;
             }
         }
+        _dynamic_attr:
         return $this->identifierToStr($property, literal: true);
     }
 
@@ -3906,7 +3910,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($id === 'self') {
             $id = $this->getNamespacedClassName($this->class);
         } elseif ($id === 'static') {
-            return 'php_get_called_class(this_)';
+            return Symbol::getCalledClass();
         }
         if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
             return $literal ? $this->getLiteralString($id) : $this->genCharPtr($id, true);
@@ -3941,9 +3945,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $placeHolder = $fn;
         } elseif ($class === 'static') {
             $methodPtr = $this->identifierToStr($expr->name, literal: true);
-            $fn = 'php_get_called_ce(this_), php::getMethod(php_get_called_ce(this_), ' . $methodPtr . ')';
+            $fn = Symbol::getCalledCe() . ', php::getMethod(' . Symbol::getCalledCe() . ', ' . $methodPtr . ')';
             $this->context->beforeStmtLines[] = '// Static Method Call: static::' . $this->parseIdentifier($expr->name) . '()';
-            $placeHolder = $this->genArray(['php_get_called_class(this_)', $methodPtr]);
+            $placeHolder = $this->genArray([Symbol::getCalledCe(), $methodPtr]);
         } elseif ($this->isNameExpr($expr->class)) {
             if ($class === 'self') {
                 $class = $this->class;
@@ -4020,6 +4024,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $class = $this->parseIdentifier($expr->class);
             $propertyName = $this->parseIdentifier($expr->name);
             if ($class === 'self') {
+                if ($this->classDef->trait) {
+                    return Symbol::getStaticProperty() . '(' . Symbol::getCalledCe() . ', ' . $this->getLiteralString($propertyName) . ')';
+                }
                 $class = $this->getFullClassName();
             } elseif ($class === 'parent') {
                 if (!$this->classDef->extends) {
@@ -4084,8 +4091,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $nativeProp = $this->findNativeStaticProperty($expr, $class);
         if ($nativeProp) {
-            $classPtr = $this->getClassEntryPtr($class);
-            return 'php::getStaticProperty(' . $classPtr . ', ' . $nativeProp . ')';
+            if ($expr->hasAttribute('nativeProperty')) {
+                $classPtr = $this->getClassEntryPtr($class);
+                return Symbol::getStaticProperty() . '(' . $classPtr . ', ' . $nativeProp . ')';
+            } else {
+                return $nativeProp;
+            }
         }
         return false;
     }
@@ -4096,7 +4107,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($native) {
             return $native;
         }
-        return 'php::getStaticProperty(' . $this->identifierToStr($expr->class) . ', ' . $this->identifierToStr($expr->name) . ')';
+        return Symbol::getStaticProperty() . '(' . $this->identifierToStr($expr->class) . ', ' . $this->identifierToStr($expr->name) . ')';
     }
 
     protected function parseClassConstFetch(Expr\ClassConstFetch $expr): string
@@ -4114,9 +4125,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($expr, "The 'static' keyword can only be used as the class name in class methods");
             }
             if ($const === 'class') {
-                return 'php_get_called_class(this_)';
+                return Symbol::getCalledClass();
             } else {
-                return 'php::constant(php_get_called_ce(this_), ' . $this->getLiteralString($const) . ')';
+                return Symbol::constant() . '(' . Symbol::getCalledCe() . ', ' . $this->getLiteralString($const) . ')';
             }
         }
 
@@ -4137,11 +4148,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             }
             $ce = $this->getClassEntryPtr($class);
-            return 'php::constant(' . $ce . ', ' . $this->getLiteralString($const) . ')';
+            return Symbol::constant() . '(' . $ce . ', ' . $this->getLiteralString($const) . ')';
         }
         $name = $class . '::' . $const;
         $name = $this->getLiteralString($name);
-        return 'php::constant(' . $name . ')';
+        return Symbol::constant() . '(' . $name . ')';
     }
 
     protected function parseThrow(mixed $expr): string

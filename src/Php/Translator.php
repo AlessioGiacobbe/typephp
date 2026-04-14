@@ -545,6 +545,51 @@ class Translator extends Preprocessor
         return $code;
     }
 
+    public function getDefinedConstants(): array
+    {
+        return $this->internalConstants;
+    }
+
+    /**
+     * 仅用于 gen_stub 脚本
+     * @throws \Exception
+     */
+    public function getClassConstValue(NodeAbstract $expr, string $class, string $name): mixed
+    {
+        $class = $this->getNamespacedClassName($class);
+        $nativeConst = $this->findNativeClassConst($expr, $class, $name);
+        if ($nativeConst and $expr->hasAttribute('nativeConst')) {
+            $constDef = $expr->getAttribute('nativeConst');
+            return $this->genCValue($constDef->valueExpr->value);
+        }
+        throw new \Exception("Class constant `{$class}::{$name}` not found");
+    }
+
+    public function getConstValue(string $name): mixed
+    {
+        if ($this->isInternalConstant($name)) {
+            $value = $this->internalConstants[$name];
+            if (is_int($value)) {
+                $expr = strval($value);
+                if ($value === PHP_INT_MIN) {
+                    $expr = 'LONG_MIN';
+                } elseif ($value === PHP_INT_MAX) {
+                    $expr = 'LONG_MAX';
+                } else {
+                    $expr = $expr . 'L';
+                }
+            } elseif (is_float($value)) {
+                return $value;
+            } elseif (is_string($value)) {
+                return $this->genCharPtr($value);
+            } else {
+                $this->error('Unsupported constant type: ' . gettype($value));
+            }
+            return $expr;
+        }
+        throw new \Exception('Constant ' . $name . ' not found');
+    }
+
     protected function getRegisterClassFunction(string $name): string
     {
         return self::PREFIX . 'register_class_' . $name;
@@ -645,11 +690,6 @@ class Translator extends Preprocessor
         }
 
         return $list;
-    }
-
-    public function getDefinedConstants(): array
-    {
-        return $this->internalConstants;
     }
 
     protected function getInternalCeInfo(string $ce): array
@@ -920,6 +960,9 @@ class Translator extends Preprocessor
                 case 'Stmt_ClassMethod':
                     $this->parseClassMethod($v, $methodCodes);
                     break;
+                case 'Stmt_TraitUse':
+                    $this->parseTraitUse($v, $methodCodes);
+                    break;
                 default:
                     abort($v);
             }
@@ -1129,6 +1172,56 @@ class Translator extends Preprocessor
         $this->resetMethod();
     }
 
+    protected function parseTraitUse(Node\Stmt\TraitUse $v, array &$methodCodes): void
+    {
+        $classDef = $this->classDef;
+        foreach ($v->traits as $trait) {
+            $traitName = $this->parseIdentifier($trait);
+            $traitFullName = $this->getNamespacedClassName($traitName);
+            if (!$this->hasClass($traitFullName)) {
+                $this->fatalError($v, $traitFullName . ' not found');
+            }
+            $traitDef = $this->getClass($traitFullName);
+            // 将 Trait 中定义的 常量、静态常量、属性、方法、静态属性复制到当前类中
+            foreach ($traitDef->constants as $const) {
+                $classDef->constants[$const->name] = $const;
+            }
+            foreach ($traitDef->properties as $prop) {
+                $classDef->properties[$prop->name] = $prop;
+            }
+            foreach ($traitDef->methods as $methodDef) {
+                $classDef->methods[$methodDef->name] = $methodDef;
+                $traitMethodNativeName = self::PREFIX . $this->getNativeName($methodDef->name, $traitDef->namespace, $traitDef->name);
+                $classMethodNativeName = self::PREFIX . $this->getNativeName($methodDef->name, $classDef->namespace, $classDef->name);
+                $argList = ['this_'];
+                foreach ($methodDef->functionDef->argInfoList as $argInfo) {
+                    $argList[] = $argInfo->name;
+                }
+                $argv = implode(', ', $argList);
+
+                $code = $methodDef->getReturnType() . ' ' . $classMethodNativeName . '(';
+                if ($this->class) {
+                    $code .= self::TYPE_OBJECT . ' &this_';
+                    if ($methodDef->functionDef->params) {
+                        $code .= ', ';
+                    }
+                }
+
+                $code .= $methodDef->functionDef->params . ')';
+                $code .= '{' . PHP_EOL;
+                $this->indentLevel++;
+                $methodCall = $traitMethodNativeName . '(' . $argv . ')';
+                if ($methodDef->getReturnType() !== self::TYPE_VOID) {
+                    $methodCall = 'return ' . $methodCall;
+                }
+                $code .= $this->getIndent() . $methodCall . ';' . PHP_EOL;
+                $this->indentLevel--;
+                $code .= $this->getIndent() . '}' . PHP_EOL;
+                $methodCodes[$methodDef->name] = $code;
+            }
+        }
+    }
+
     protected function parseInterface(Node\Stmt\Interface_ $v): void
     {
         $name                                         = $this->parseIdentifier($v->name);
@@ -1305,49 +1398,5 @@ class Translator extends Preprocessor
         $code .= '};' . PHP_EOL . PHP_EOL;
 
         return $code;
-    }
-
-    /**
-     * 仅用于 gen_stub 脚本
-     * @param NodeAbstract $expr
-     * @param string $class
-     * @param string $name
-     * @return mixed
-     * @throws \Exception
-     */
-    public function getClassConstValue(NodeAbstract $expr, string $class, string $name): mixed
-    {
-        $class = $this->getNamespacedClassName($class);
-        $nativeConst = $this->findNativeClassConst($expr, $class, $name);
-        if ($nativeConst and $expr->hasAttribute('nativeConst')) {
-            $constDef = $expr->getAttribute('nativeConst');
-            return $this->genCValue($constDef->valueExpr->value);
-        }
-        throw new \Exception("Class constant `$class::$name` not found");
-    }
-
-    public function getConstValue(string $name): mixed
-    {
-        if ($this->isInternalConstant($name)) {
-            $value = $this->internalConstants[$name];
-            if (is_int($value)) {
-                $expr = strval($value);
-                if ($value === PHP_INT_MIN) {
-                    $expr = 'LONG_MIN';
-                } elseif ($value === PHP_INT_MAX) {
-                    $expr = 'LONG_MAX';
-                } else {
-                    $expr = $expr . 'L';
-                }
-            } elseif (is_float($value)) {
-                return $value;
-            } elseif (is_string($value)) {
-                return $this->genCharPtr($value);
-            } else {
-                $this->error('Unsupported constant type: ' . gettype($value));
-            }
-            return $expr;
-        }
-        throw new \Exception('Constant ' . $name . ' not found');
     }
 }

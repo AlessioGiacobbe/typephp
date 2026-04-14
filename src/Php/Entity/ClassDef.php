@@ -30,6 +30,7 @@ class ClassDef extends ClassLikeDef
     public string $extends = '';
     public bool $requireCtor = false;
     public bool $enum = false;
+    public bool $trait = false;
     public int $flags;
     public bool $inheritedFromInternalClass = false;
     public string $ctorInit = '';
