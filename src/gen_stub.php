@@ -2437,6 +2437,7 @@ class EvaluatedValue
         // $this->expr has all its PHP constants replaced by C constants
         $prettyPrinter = new Standard;
         $expr = $prettyPrinter->prettyPrintExpr($this->expr);
+
         // PHP single-quote to C double-quote string
         if ($this->type->isString()) {
             if (
@@ -2449,15 +2450,16 @@ class EvaluatedValue
                 } else {
                     return $this->value;
                 }
+            } elseif ($this->expr instanceof Expr\ConstFetch) {
+                return getTranslator()->getConstValue($this->expr->name->toString());
             } elseif (!($this->expr instanceof String_)) {
-                if ($this->expr instanceof Expr\ConstFetch) {
-                    return getTranslator()->getConstValue($this->expr->name->toString());
-                }
                 throw new Exception("Expression at line " . $this->expr->getStartLine() . " must be a scalar string");
             }
             $expr = preg_replace("/(^'|'$)/", '"', $expr);
-        } elseif ($this->type->isInt() or $this->type->isFloat() or $this->expr instanceof Expr\ConstFetch) {
+        } elseif ($this->type->isInt() or $this->type->isFloat()) {
             return strval($this->value);
+        } elseif ($this->type->isBool()) {
+            return $this->value ? 'true' : 'false';
         }
         return $expr[0] == '"' ? $expr : preg_replace('(\bnull\b)', 'NULL', str_replace('\\', '', $expr));
     }

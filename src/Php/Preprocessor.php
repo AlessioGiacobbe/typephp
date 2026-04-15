@@ -251,6 +251,9 @@ class Preprocessor extends CompilerBase
                     $nullable = false;
                 }
                 $default = $this->parseParamDefaultValue($param->default);
+                if ($this->classDef->hasProperty($name)) {
+                    $this->fatalError($param, "Duplicate property `{$name}`");
+                }
                 $propertyDef = new PropertyDef($name, $param->flags, $type, $default, $nullable);
                 $this->classDef->properties[$name] = $propertyDef;
             }
@@ -542,7 +545,11 @@ class Preprocessor extends CompilerBase
         $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_PROPERTY, $class);
 
         foreach ($v->props as $prop) {
-            $propDef = new PropertyDef($this->parseIdentifier($prop->name), $flags, $type);
+            $propName = $this->parseIdentifier($prop->name);
+            if ($this->classDef->hasProperty($propName)) {
+                $this->fatalError($v, "Duplicate property `{$propName}`");
+            }
+            $propDef = new PropertyDef($propName, $flags, $type);
             if ($prop->default) {
                 $propDef->default = $this->parseIdentifier($prop->default);
                 if ($prop->default->getType() == 'Expr_Array') {
