@@ -2310,8 +2310,9 @@ class EvaluatedValue
                         }
                     } elseif ($expr->name->__toString() === 'class') {
                         return $class;
+                    } else {
+                        return getTranslator()->getClassConstValue($expr, $class, $expr->name->__toString());
                     }
-                    goto _error;
                 } else {
                     $constName = $expr->name->__toString();
                     if (strtolower($constName) === "unknown") {

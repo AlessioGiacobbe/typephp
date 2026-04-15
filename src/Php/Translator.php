@@ -567,6 +567,12 @@ class Translator extends Preprocessor
             $constDef = $expr->getAttribute('nativeConst');
             return $this->genCValue($constDef->valueExpr->value);
         }
+        if ($this->isInternalClass($class)) {
+            $constName = $class . '::' . $name;
+            if (defined($constName)) {
+                return $this->genCValue(constant($constName));
+            }
+        }
         throw new \Exception("Class constant `{$class}::{$name}` not found");
     }
 

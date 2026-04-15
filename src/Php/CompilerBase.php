@@ -1277,12 +1277,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->addObject($var, $rightClass);
                 } elseif ($this->isTypedObject($var)) {
                     $leftClass = $this->getObjectType($var);
-                    // 对象的类不一致，不能互相赋值
+                    // 对象的类不一致，不能互相赋值，必须使用 objval() 对齐类型
+                    // 注意这里必须使用绝对相等比较，即使存在继承关系，类的方法也可能不一致
                     if ($leftClass !== $rightClass) {
                         $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
                     }
                 } else {
-                    $this->fatalError($left, "Cannot re-assign `\${$var}` to object of `{$rightClass}`");
+                    // TODO 右值是一个类型对象，但左值是一个 var ，许可，但无法标记对象类型
                 }
             } else {
                 if ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
@@ -1326,7 +1327,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 if (!$this->hasVar($var)) {
                     $this->addLocalVar($var, $type);
-                } elseif ($this->getVarType($var) !== self::TYPE_VAR and $this->isTypedObject($var) and $type !== self::TYPE_OBJECT) {
+                } elseif (($this->getVarType($var) !== self::TYPE_VAR and $this->isTypedObject($var) and $type !== self::TYPE_OBJECT)
+                    // 禁止字符串与数组互相转换，其他类型如对象可以使用 __toString() 协议转为字符串，整数和浮点型也可以转为字符串
+                    or ($this->getVarType($var) === self::TYPE_STR and $type === self::TYPE_ARRAY)
+                    or ($this->getVarType($var) === self::TYPE_ARRAY and $type === self::TYPE_STR)
+                ) {
                     $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . ' to ' . $type);
                 }
             }
@@ -1491,8 +1496,40 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if ($this->isFuncCallExpr($expr) and $this->isNameExpr($expr->name)) {
             $fn = $this->parseIdentifier($expr->name);
-            if (count($expr->args) === 2 and $fn === 'objval' and $this->isScalarString($expr->args[1]->value)) {
-                return $this->getNamespacedClassName($this->parseIdentifier($expr->args[1]->value));
+            if (count($expr->args) === 2 and $fn === 'objval') {
+                $argClass = $expr->args[1]->value;
+                if ($this->isScalarString($argClass)) {
+                    return $this->getNamespacedClassName($this->parseIdentifier($argClass));
+                } elseif ($this->isClassConstFetch($argClass)) {
+                    if ($this->isNameExpr($argClass->class) and $this->isIdExpr($argClass->name) and $this->parseIdentifier($argClass->name) === 'class') {
+                        return $this->getNamespacedClassName($this->parseIdentifier($argClass->class));
+                    }
+                } else {
+                    $this->fatalError($expr, 'The second parameter of objval() function only supports string literals or `ClassName::class` constant');
+                }
+            }
+        }
+        if ($this->isMethodCall($expr) and $this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
+            $object = $this->parseVariable($expr->var);
+            try {
+                $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
+                if ($nativeFunc) {
+                    return $this->getFunction($nativeFunc)->returnClass;
+                }
+            } catch (DynamicCall) {}
+        }
+        if ($this->isStaticCall($expr) and $this->isNameExpr($expr->class) and $this->isNamedMethod($expr->name)) {
+            $class = $this->parseIdentifier($expr->class);
+            if ($class === 'self') {
+                $class = $this->class;
+            } elseif ($class === 'static' or $class === 'parent') {
+                return '';
+            }
+            $class = $this->getNamespacedClassName($class);
+            $method = $this->parseIdentifier($expr->name);
+            $nativeFunc = $this->getNativeMethod($expr, $class, $method);
+            if ($nativeFunc) {
+                return $this->getFunction($nativeFunc)->returnClass;
             }
         }
         return '';
@@ -1526,7 +1563,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $returnClass = $this->getReturnClass();
         if ($returnClass) {
             if (!$objectClass) {
-                $this->fatalError($v, 'The return value must be an instance of the `' . $returnClass . '` class');
+                // TODO 返回值的类型无法确定，需要插入动态类型检测代码
             } elseif (!$this->isInheritedFrom($objectClass, $returnClass)) {
                 $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
             }
