@@ -616,15 +616,15 @@ class Preprocessor extends CompilerBase
             if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Alias) {
                 $trait1 = $this->getNamespacedClassName($adaptation->trait);
                 $methodName = $adaptation->method->toString();
-                if ($adaptation->newModifier) {
-                    $this->fatalError($traitUse, "Trait `{$trait1}` cannot use `newModifier`");
-                }
                 /**
                  * 例如：
                  * use TraitA { TraitA::method as newMethod}
                  * 这表示 TraitA::method() 会被重命名为 TraitA::newMethod()
                  */
-                $aliases[$this->getFullMethodName($trait1, $methodName)] = $adaptation->newName->toString();
+                $aliases[$this->getFullMethodName($trait1, $methodName)] = array(
+                    'newName' => $adaptation->newName->toString(),
+                    'newModifier' => $adaptation->newModifier ?: $adaptation->newModifier->toString(),
+                );
             }
             if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Precedence) {
                 $methodName = $adaptation->method->toString();

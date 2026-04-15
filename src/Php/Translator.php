@@ -972,8 +972,11 @@ class Translator extends Preprocessor
                         $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
                         if (isset($classDef->traitAliases[$fullMethodName])) {
                             $alias = $classDef->traitAliases[$fullMethodName];
-                            $traitStmt->name = new Node\Identifier($alias);
-                            $methodName = $alias;
+                            $methodName = $alias['newName'];
+                            $traitStmt->name = new Node\Identifier($methodName);
+                            if ($alias['newModifier']) {
+                                $traitStmt->flags = $alias['newModifier'];
+                            }
                         }
                         if (isset($classDef->traitIgnored[$fullMethodName])) {
                             unset($traitStmts[$k1]);
@@ -1296,9 +1299,12 @@ class Translator extends Preprocessor
                 $fullMethodName = $this->getFullMethodName($traitFullName, $traitMethodName);
                 // Trait 设置了别名
                 if (isset($classDef->traitAliases[$fullMethodName])) {
-                    $classMethodName = $classDef->traitAliases[$fullMethodName];
+                    $alias = $classDef->traitAliases[$fullMethodName];
                     $methodDef = clone $methodDef;
-                    $methodDef->name = $classMethodName;
+                    $classMethodName = $methodDef->name = $alias['newName'];
+                    if ($alias['newModifier']) {
+                        $methodDef->flags = $this->parseModifiers($alias['newModifier']);
+                    }
                 }
                 // 设置了 insteadof 选项，此 Trait 的方法将不会被使用
                 if (isset($classDef->traitIgnored[$fullMethodName])) {
