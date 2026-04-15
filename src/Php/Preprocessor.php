@@ -440,8 +440,10 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Property':
                     $this->parseClassPropertyDef($v);
                     break;
-                case 'Stmt_Nop':
                 case 'Stmt_TraitUse':
+                    $this->prepareTraitUse($v);
+                    break;
+                case 'Stmt_Nop':
                 case 'Stmt_EnumCase':
                     break;
                 case 'Stmt_ClassMethod':
@@ -603,5 +605,49 @@ class Preprocessor extends CompilerBase
             $fullClassNameLower = strtolower($parentClass);
         }
         $this->resetMethod();
+    }
+
+    protected function parseTraitUseOptions(Node\Stmt\TraitUse $traitUse, array &$aliases, array &$ignored): void
+    {
+        foreach ($traitUse->adaptations as $adaptation) {
+            if (!$adaptation->trait) {
+                $this->fatalError($traitUse, "Trait `use` cannot use `use` without `as`");
+            }
+            if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Alias) {
+                $trait1 = $this->getNamespacedClassName($adaptation->trait);
+                $methodName = $adaptation->method->toString();
+                if ($adaptation->newModifier) {
+                    $this->fatalError($traitUse, "Trait `{$trait1}` cannot use `newModifier`");
+                }
+                /**
+                 * 例如：
+                 * use TraitA { TraitA::method as newMethod}
+                 * 这表示 TraitA::method() 会被重命名为 TraitA::newMethod()
+                 */
+                $aliases[$this->getFullMethodName($trait1, $methodName)] = $adaptation->newName->toString();
+            }
+            if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Precedence) {
+                $methodName = $adaptation->method->toString();
+                /**
+                 * 例如：
+                 * use TraitA { TraitA::method insteadof TraitB}
+                 * 这表示 TraitB::method() 将会被忽略，真正执行的是 TraitA::method()
+                 */
+                foreach($adaptation->insteadof as $trait2) {
+                    $ignored[$this->getFullMethodName($trait2, $methodName)] = true;
+                }
+            }
+        }
+    }
+
+    protected function prepareTraitUse(Node\Stmt\TraitUse $v): void
+    {
+        $aliases = [];
+        $ignored = [];
+        if ($v->adaptations) {
+            $this->parseTraitUseOptions($v, $aliases, $ignored);
+        }
+        $this->classDef->traitAliases = array_merge($this->classDef->traitAliases, $aliases);
+        $this->classDef->traitIgnored = array_merge($this->classDef->traitIgnored, $ignored);
     }
 }

@@ -916,34 +916,6 @@ class Translator extends Preprocessor
         $this->argInfoHeaderFiles[] = $headerFile;
     }
 
-    protected function getFullMethodName(string $fullClassName, string $method): string
-    {
-        return strtolower($fullClassName . '::' . $method);
-    }
-
-    protected function parseTraitUseOptions(Node\Stmt\TraitUse $traitUse, array &$aliases, array &$insteadof)
-    {
-        foreach ($traitUse->adaptations as $adaptation) {
-            if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Alias) {
-                $trait1 = $this->getNamespacedClassName($adaptation->trait);
-                $methodName = $adaptation->method->toString();
-                if ($adaptation->newModifier) {
-                    $this->fatalError($traitUse, "Trait `{$trait1}` cannot use `newModifier`");
-                }
-                $aliases[$this->getFullMethodName($trait1, $methodName)] = $adaptation->newName->toString();
-            }
-            if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Precedence) {
-                $trait1 = $this->getNamespacedClassName($adaptation->trait);
-                if (count($adaptation->insteadof) > 1) {
-                    $this->fatalError($traitUse, "Trait `{$trait1}` cannot use `insteadof` for multiple traits");
-                }
-                $trait2 = $this->getNamespacedClassName($adaptation->insteadof[0]);
-                $methodName = $adaptation->method->toString();
-                $insteadof[$this->getFullMethodName($trait1, $methodName)] = $this->getFullMethodName($trait2, $methodName);
-            }
-        }
-    }
-
     public function parseTraitUseForStub(Node\Stmt\ClassLike $stmt, Node\Name $className): void
     {
         $methods = [];
@@ -952,8 +924,7 @@ class Translator extends Preprocessor
         $traitMethods = [];
         $traitConstants = [];
         $traitProperties = [];
-        $aliases = [];
-        $insteadof = [];
+        $classDef = $this->getClass($className);
 
         foreach ($stmt->stmts as $classStmt) {
             if ($classStmt instanceof Node\Stmt\ClassMethod) {
@@ -971,9 +942,6 @@ class Translator extends Preprocessor
                     $name = strtolower($const->name->toString());
                     $constants[$name] = $const;
                 }
-            }
-            if ($classStmt instanceof Node\Stmt\TraitUse and $classStmt->adaptations) {
-                $this->parseTraitUseOptions($classStmt, $aliases, $insteadof);
             }
         }
 
@@ -1001,10 +969,15 @@ class Translator extends Preprocessor
                         if (isset($traitMethods[$methodName])) {
                             $this->fatalError($classStmt, "Trait `{$traitFullName}` method `{$methodName}` already exists");
                         }
-                        if (isset($aliases[$this->getFullMethodName($traitFullName, $methodName)])) {
-                            $alias = $aliases[$this->getFullMethodName($traitFullName, $methodName)];
+                        $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
+                        if (isset($classDef->traitAliases[$fullMethodName])) {
+                            $alias = $classDef->traitAliases[$fullMethodName];
                             $traitStmt->name = new Node\Identifier($alias);
                             $methodName = $alias;
+                        }
+                        if (isset($classDef->traitIgnored[$fullMethodName])) {
+                            unset($traitStmts[$k1]);
+                            continue;
                         }
                         if (isset($methods[$methodName])) {
                             unset($traitStmts[$k1]);
@@ -1297,12 +1270,6 @@ class Translator extends Preprocessor
     protected function parseTraitUse(Node\Stmt\TraitUse $v, array &$methodCodes): void
     {
         $classDef = $this->classDef;
-        $aliases = [];
-        $insteadof = [];
-
-        if ($v->adaptations) {
-            $this->parseTraitUseOptions($v, $aliases, $insteadof);
-        }
 
         foreach ($v->traits as $trait) {
             $traitName = $this->parseIdentifier($trait);
@@ -1326,11 +1293,16 @@ class Translator extends Preprocessor
             }
             foreach ($traitDef->methods as $methodDef) {
                 $classMethodName = $traitMethodName = $methodDef->name;
+                $fullMethodName = $this->getFullMethodName($traitFullName, $traitMethodName);
                 // Trait 设置了别名
-                if (isset($aliases[$this->getFullMethodName($traitFullName, $classMethodName)])) {
-                    $classMethodName = $aliases[$this->getFullMethodName($traitFullName, $classMethodName)];
+                if (isset($classDef->traitAliases[$fullMethodName])) {
+                    $classMethodName = $classDef->traitAliases[$fullMethodName];
                     $methodDef = clone $methodDef;
                     $methodDef->name = $classMethodName;
+                }
+                // 设置了 insteadof 选项，此 Trait 的方法将不会被使用
+                if (isset($classDef->traitIgnored[$fullMethodName])) {
+                    continue;
                 }
                 // 类中已经有同名方法，则不使用 Trait 中的方法
                 if ($classDef->hasMethod($classMethodName)) {

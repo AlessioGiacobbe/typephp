@@ -644,6 +644,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return ltrim($this->namespace . '\\' . $this->class, '\\');
     }
 
+    protected function getFullMethodName(string $fullClassName, string $method): string
+    {
+        return strtolower($fullClassName . '::' . $method);
+    }
+
     protected function getNamespacedClassName(string $class): string
     {
         if ($class === '') {
