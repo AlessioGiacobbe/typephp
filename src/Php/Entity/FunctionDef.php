@@ -24,6 +24,10 @@ class FunctionDef
     public string $namespace;
     public bool $method = false;
     public bool $stub = false;
+
+    /**
+     * @var string 必须是带有命名空间的完整类名
+     */
     public string $returnClass = '';
 
     public function __construct(string $name, string $returnType, string $namespace)

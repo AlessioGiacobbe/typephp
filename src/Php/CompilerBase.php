@@ -649,7 +649,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return strtolower($fullClassName . '::' . $method);
     }
 
-    protected function getNamespacedClassName(string $class): string
+    public function getNamespacedClassName(string $class): string
     {
         if ($class === '') {
             $this->error('Class name can not be empty');
@@ -773,6 +773,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php_get_prop(' . $funcId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
+    /**
+     * @param string $class 一定是带有命名空间的完整类名
+     */
     protected function parseTypeDecl(?NodeAbstract $type, int $what, string &$class): string
     {
         // 未定义类型视为 var (mixed, any)
@@ -790,7 +793,16 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif (isset($this->zendTypeMap[$typeName])) {
                 return $this->getTypeFromZendType($typeName);
             } else {
-                $class = $this->getNamespacedClassName($typeName);
+                if ($typeName === 'self') {
+                    $class = $this->getFullClassName();
+                } elseif ($typeName === 'parent') {
+                    $class = $this->classDef->extends;
+                } elseif ($typeName === 'static') {
+                    // static 类无法在编译期获取
+                    $class = '';
+                } else {
+                    $class = $this->getNamespacedClassName($typeName);
+                }
                 return self::TYPE_OBJECT;
             }
         }
@@ -950,8 +962,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         switch ($type) {
             case self::EXPR_VARIABLE:
                 return $this->parseVariable($expr);
-            case 'Name':
             case 'Name_FullyQualified':
+                return '\\' . $expr->name;
+            case 'Name':
             case 'VarLikeIdentifier':
             case 'Identifier':
                 return $expr->name;
@@ -1252,73 +1265,70 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $expr = $this->parseExpr($right);
-        $type = $this->detectExprType($right);
+        $type = $this->detectTypeOfExpr($right);
 
         if ($this->isVarExpr($left)) {
-            // 类型推断，获取对象的类名
-            if ($this->isNewExpr($right) and $this->isNameExpr($right->class)) {
-                $class = $this->parseIdentifier($right->class);
-                $fullClass = $this->getNamespacedClassName($class);
-                if ($this->isTypedObject($var)) {
+            // 类型推断，获取对象的类名，如果不是对象则返回空字符串
+            $rightClass = $this->detectClassOfExpr($right);
+            // 右值是一个对象，已获得类的名称，左值必须与右值的类一致
+            if ($rightClass) {
+                if (!$this->hasVar($var)) {
+                    $this->addLocalVar($var, self::TYPE_OBJECT);
+                    $this->addObject($var, $rightClass);
+                } elseif ($this->isTypedObject($var)) {
                     $leftClass = $this->getObjectType($var);
-                    if ($leftClass !== $fullClass) {
-                        $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$fullClass}`");
+                    // 对象的类不一致，不能互相赋值
+                    if ($leftClass !== $rightClass) {
+                        $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
                     }
-                }
-                $this->addObject($var, $fullClass);
-                $type = self::TYPE_OBJECT;
-            } elseif ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
-                $fn = $this->parseIdentifier($right->name);
-                if (count($right->args) === 2 and $fn === 'objval' and $this->isScalarString($right->args[1]->value)) {
-                    $fullClass = $this->getNamespacedClassName($this->parseIdentifier($right->args[1]->value));
-                    if ($this->isTypedObject($var)) {
-                        $leftClass = $this->getObjectType($var);
-                        $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$fullClass}`");
-                    }
-                    $this->addObject($var, $fullClass);
-                    $type = self::TYPE_OBJECT;
-                } elseif (count($right->args) === 1 and $fn === 'any') {
-                    $type = self::TYPE_VAR;
-                    if (!$this->hasVar($var)) {
-                        $this->addLocalVar($var, $type);
-                    }
-                    return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
                 } else {
-                    $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
+                    $this->fatalError($left, "Cannot re-assign `\${$var}` to object of `{$rightClass}`");
                 }
-            } elseif ($this->isStaticCall($right) and $this->isIdExpr($right->name)) {
-                $class = $this->parseIdentifier($right->class);
-                if ($class === 'std') {
-                    $func = $this->parseIdentifier($right->name);
-                    $type = match ($func) {
-                        'int' => self::TYPE_INT,
-                        'float' => self::TYPE_FLOAT,
-                        'bool' => self::TYPE_BOOL,
-                        default => '',
-                    };
-                    // Native 类型
-                    if ($type) {
+            } else {
+                if ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
+                    $fn = $this->parseIdentifier($right->name);
+                    if (count($right->args) === 1 and $fn === 'any') {
+                        $type = self::TYPE_VAR;
                         if (!$this->hasVar($var)) {
                             $this->addLocalVar($var, $type);
                         }
-                        $expr = $this->parseExpr($right->args[0]->value);
-                        return $var . ' = ' . $this->convertExprFromType($type, $expr);
+                        return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
+                    } else {
+                        $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
+                    }
+                } elseif ($this->isStaticCall($right) and $this->isIdExpr($right->name)) {
+                    $class = $this->parseIdentifier($right->class);
+                    if ($class === 'std') {
+                        $func = $this->parseIdentifier($right->name);
+                        $type = match ($func) {
+                            'int' => self::TYPE_INT,
+                            'float' => self::TYPE_FLOAT,
+                            'bool' => self::TYPE_BOOL,
+                            default => '',
+                        };
+                        // Native 类型
+                        if ($type) {
+                            if (!$this->hasVar($var)) {
+                                $this->addLocalVar($var, $type);
+                            }
+                            $expr = $this->parseExpr($right->args[0]->value);
+                            return $var . ' = ' . $this->convertExprFromType($type, $expr);
+                        }
+                    }
+                } elseif ($this->isVarExpr($right)) {
+                    $rightVar = $this->parseIdentifier($right);
+                    $type = $this->getVarType($rightVar);
+                    if ($this->isTypedObject($rightVar) and $this->isTypedObject($var)) {
+                        $leftClass = $this->getObjectType($var);
+                        $rightClass = $this->getObjectType($rightVar);
+                        $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
                     }
                 }
-            } elseif ($this->isVarExpr($right)) {
-                $rightVar = $this->parseIdentifier($right);
-                $type = $this->getVarType($rightVar);
-                if ($this->isTypedObject($rightVar) and $this->isTypedObject($var)) {
-                    $leftClass = $this->getObjectType($var);
-                    $rightClass = $this->getObjectType($rightVar);
-                    $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
+                if (!$this->hasVar($var)) {
+                    $this->addLocalVar($var, $type);
+                } elseif ($this->getVarType($var) !== self::TYPE_VAR and $this->isTypedObject($var) and $type !== self::TYPE_OBJECT) {
+                    $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . ' to ' . $type);
                 }
-            }
-
-            if (!$this->hasVar($var)) {
-                $this->addLocalVar($var, $type);
-            } elseif ($this->getVarType($var) !== self::TYPE_VAR and $this->isTypedObject($var) and $type !== self::TYPE_OBJECT) {
-                $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . ' to ' . $type);
             }
         } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
             return $this->parseAssignPropertyFetch($left, $right);
@@ -1330,7 +1340,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->parseAssignArrayDim($left, $right);
         }
 
-        return $var . ' = ' . $this->convertExprType($expr, $this->detectExprType($left), $this->detectExprType($right));
+        return $var . ' = ' . $this->convertExprType($expr, $this->detectTypeOfExpr($left), $this->detectTypeOfExpr($right));
     }
 
     protected function parseEcho(mixed $v): string
@@ -1431,8 +1441,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->checkVarMustExist($left, $leftExpr);
         $this->checkVarMustExist($right, $rightExpr);
 
-        $leftType  = $this->detectExprType($left);
-        $rightType = $this->detectExprType($right);
+        $leftType  = $this->detectTypeOfExpr($left);
+        $rightType = $this->detectTypeOfExpr($right);
 
         if ($leftType === self::TYPE_FLOAT) {
             $rightExpr = $this->convertExprType($rightExpr, self::TYPE_FLOAT, $rightType);
@@ -1456,6 +1466,38 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseBinaryOp($expr->left, $expr->right, '+');
     }
 
+    protected function detectClassOfExpr(NodeAbstract $expr): string
+    {
+        if ($this->isNewExpr($expr) and $this->isNameExpr($expr->class)) {
+            $class = $this->parseIdentifier($expr->class);
+            if ($class === 'self') {
+                return $this->getFullClassName();
+            }
+            if ($class === 'static') {
+                // 无法在编译期获得 static 类的准确类名
+                return '';
+            } else {
+                return $this->getNamespacedClassName($class);
+            }
+        }
+        if ($this->isVarExpr($expr)) {
+            $object = $this->parseVariable($expr);
+            if ($object === 'this_') {
+                return $this->getFullClassName();
+            }
+            if ($this->isTypedObject($object)) {
+                return $this->getObjectType($object);
+            }
+        }
+        if ($this->isFuncCallExpr($expr) and $this->isNameExpr($expr->name)) {
+            $fn = $this->parseIdentifier($expr->name);
+            if (count($expr->args) === 2 and $fn === 'objval' and $this->isScalarString($expr->args[1]->value)) {
+                return $this->getNamespacedClassName($this->parseIdentifier($expr->args[1]->value));
+            }
+        }
+        return '';
+    }
+
     protected function parseReturn(Node\Stmt\Return_ $v): string
     {
         if ($v->expr === null) {
@@ -1466,7 +1508,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
         // 实际函数的返回值
-        $type = $this->detectExprType($v->expr);
+        $type = $this->detectTypeOfExpr($v->expr);
         $expr = $this->parseExpr($v->expr);
         $returnType = $this->getReturnType();
 
@@ -1477,6 +1519,17 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         } else {
             $returnType = self::TYPE_VAR;
+        }
+
+        // 返回值的表达式是一个类的对象
+        $objectClass = $this->detectClassOfExpr($v->expr);
+        $returnClass = $this->getReturnClass();
+        if ($returnClass) {
+            if (!$objectClass) {
+                $this->fatalError($v, 'The return value must be an instance of the `' . $returnClass . '` class');
+            } elseif (!$this->isInheritedFrom($objectClass, $returnClass)) {
+                $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
+            }
         }
 
         $exprCode = $this->convertExprType($expr, $returnType, $type);
@@ -1721,7 +1774,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->getVarType($name);
     }
 
-    protected function detectExprType($expr): string
+    protected function detectTypeOfExpr($expr): string
     {
         $exprType = $expr->getType();
         switch ($exprType) {
@@ -1750,8 +1803,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_BinaryOp_BitwiseOr':
             case 'Expr_BinaryOp_BitwiseXor':
             case 'Expr_BinaryOp_BooleanAnd':
-                $leftType  = $this->detectExprType($expr->left);
-                $rightType = $this->detectExprType($expr->right);
+                $leftType  = $this->detectTypeOfExpr($expr->left);
+                $rightType = $this->detectTypeOfExpr($expr->right);
                 if ($leftType === self::TYPE_FLOAT || $rightType === self::TYPE_FLOAT) {
                     return self::TYPE_FLOAT;
                 }
@@ -2043,7 +2096,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($node->var, 'Cannot assign to undefined variable');
             }
             $type         = $this->detectVarType($node->var);
-            $rightExprStr = $this->convertExprType($expr, $type, $this->detectExprType($node->expr));
+            $rightExprStr = $this->convertExprType($expr, $type, $this->detectTypeOfExpr($node->expr));
             if ($this->isAssignOpConcat($op)) {
                 if ($this->isArrayVar($node->var)) {
                     $this->fatalError($node->var, 'Cannot concat string to array');
@@ -2065,7 +2118,7 @@ class CompilerBase extends \PhpAot\Core\Translator
              * $count[$r] = $tmp_var;.
              */
             $type      = $this->detectVarType($node->var);
-            $rightType = $this->detectExprType($node->expr);
+            $rightType = $this->detectTypeOfExpr($node->expr);
             $tmpVar    = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, $rightType);
             $dim      = $this->parseIdentifier($node->var->dim);
@@ -3148,6 +3201,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->functionDef->returnType;
     }
 
+    protected function getReturnClass(): string
+    {
+        return $this->functionDef->returnClass;
+    }
+
     protected function isInheritedFrom(string $class, string $expected): bool
     {
         $internal = ($this->isInternalClass($expected) or $this->isInternalInterface($expected));
@@ -3175,7 +3233,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function getTypeConvertedArg(Node\Arg $arg, ArgInfo $argInfo): string
     {
         $expr = $this->parseArg($arg);
-        $type = $this->detectExprType($arg->value);
+        $type = $this->detectTypeOfExpr($arg->value);
 
         if ($argInfo->byRef) {
             return $this->convertToRef($arg->value);
@@ -3425,7 +3483,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $cond    = $v->cond;
         $tmp_var = $this->genTmpVarName();
-        $type    = $this->detectExprType($cond);
+        $type    = $this->detectTypeOfExpr($cond);
         if ($this->isVarExpr($cond)) {
             $this->requireVar($v, $this->parseIdentifier($cond));
         }
@@ -3525,7 +3583,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list = [];
         foreach ($v->vars as $var) {
             $varName = $this->escapeVarName($var->var->name);
-            $type = $var->default ? $this->detectExprType($var->default) : self::TYPE_VAR;
+            $type = $var->default ? $this->detectTypeOfExpr($var->default) : self::TYPE_VAR;
             $globalVar = $this->addStaticVar($var->var, $varName, $type);
 
             $list[] = self::TYPE_VAR . ' &' . $varName . ' = ' . $this->escapeGlobalVar($globalVar) . ';';
@@ -4667,7 +4725,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->errorUndefinedVariable($expr->expr);
         }
         if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
-            $this->addLocalVar($var, $this->detectExprType($expr->expr));
+            $this->addLocalVar($var, $this->detectTypeOfExpr($expr->expr));
         }
         return '(' . $isset . '?' . $var . ':(' . $var . ' = ' . $right . '))';
     }

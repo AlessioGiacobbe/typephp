@@ -228,8 +228,8 @@ class SimpleType {
                 return new SimpleType(ClassInfo::$currentClassName, false);
             }
 
-            assert($node->isFullyQualified());
-            return new SimpleType($node->toString(), false);
+            $class = $node->isFullyQualified() ? $node->toString() : getTranslator()->getNamespacedClassName($node->toString());
+            return new SimpleType($class, false);
         }
 
         if ($node instanceof Node\Identifier) {

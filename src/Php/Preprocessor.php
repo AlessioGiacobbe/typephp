@@ -376,11 +376,7 @@ class Preprocessor extends CompilerBase
 
     protected function getParentClass(NodeAbstract $extends): string
     {
-        if ($extends instanceof Node\Name\FullyQualified) {
-            return $this->parseIdentifier($extends);
-        } else {
-            return $this->getNamespacedClassName($this->parseIdentifier($extends));
-        }
+        return $this->getNamespacedClassName($this->parseIdentifier($extends));
     }
 
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string

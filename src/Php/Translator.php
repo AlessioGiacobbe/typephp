@@ -128,6 +128,11 @@ class Translator extends Preprocessor
         return implode(', ', $this->getRegisterClassFunctionCeList($classDef));
     }
 
+    public function setBuildMode(string $mode): void
+    {
+        $this->buildMode = $mode;
+    }
+
     public function setTargetName(string $name): void
     {
         if ($this->climate->arguments->defined('output')) {
@@ -688,6 +693,9 @@ class Translator extends Preprocessor
         if (!empty($cfg['name'])) {
             $this->setTargetName($cfg['name']);
         }
+        if (!empty($cfg['type'])) {
+            $this->setBuildMode($cfg['type']);
+        }
 
         return $list;
     }
@@ -870,6 +878,7 @@ class Translator extends Preprocessor
             $type2 = $v2->getType();
             switch ($type2) {
                 case 'Stmt_Class':
+                case 'Stmt_Trait':
                     $code .= $this->parseClass($v2);
                     break;
                 case 'Stmt_Const':
@@ -883,9 +892,6 @@ class Translator extends Preprocessor
                     break;
                 case 'Stmt_Interface':
                     $code .= $this->parseInterface($v2) . PHP_EOL;
-                    break;
-                case 'Stmt_Trait':
-                    $code .= $this->parseTrait($v2) . PHP_EOL;
                     break;
                 default:
                     abort($v2);
@@ -902,9 +908,9 @@ class Translator extends Preprocessor
         $stubFilenameWithoutExtension = str_replace(['.stub.php', '.php'], '', $file);
         $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
 
+        $this->climate->info('generate stub file: ' . $this->getRelativePath($file));
         generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true);
 
-        $this->climate->info('generate stub file: ' . $this->getRelativePath($file));
         if ($this->useRegisterSymbolsFn) {
             preg_match('/php_(.*)_arginfo.h/', $headerFile, $matches);
             $registerSymbolFn = 'register_' . $matches[1] . '_symbols';
