@@ -623,7 +623,7 @@ class Preprocessor extends CompilerBase
                  */
                 $aliases[$this->getFullMethodName($trait1, $methodName)] = [
                     'newName' => $adaptation->newName->toString(),
-                    'newModifier' => $adaptation->newModifier ?: $adaptation->newModifier->toString(),
+                    'newModifier' => $adaptation->newModifier ?: 0,
                 ];
             }
             if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Precedence) {
