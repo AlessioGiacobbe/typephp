@@ -611,29 +611,29 @@ class Preprocessor extends CompilerBase
     {
         foreach ($traitUse->adaptations as $adaptation) {
             if (!$adaptation->trait) {
-                $this->fatalError($traitUse, "Trait `use` cannot use `use` without `as`");
+                $this->fatalError($traitUse, 'Trait `use` cannot use `use` without `as`');
             }
             if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Alias) {
                 $trait1 = $this->getNamespacedClassName($adaptation->trait);
                 $methodName = $adaptation->method->toString();
-                /**
+                /*
                  * 例如：
                  * use TraitA { TraitA::method as newMethod}
                  * 这表示 TraitA::method() 会被重命名为 TraitA::newMethod()
                  */
-                $aliases[$this->getFullMethodName($trait1, $methodName)] = array(
+                $aliases[$this->getFullMethodName($trait1, $methodName)] = [
                     'newName' => $adaptation->newName->toString(),
                     'newModifier' => $adaptation->newModifier ?: $adaptation->newModifier->toString(),
-                );
+                ];
             }
             if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Precedence) {
                 $methodName = $adaptation->method->toString();
-                /**
+                /*
                  * 例如：
                  * use TraitA { TraitA::method insteadof TraitB}
                  * 这表示 TraitB::method() 将会被忽略，真正执行的是 TraitA::method()
                  */
-                foreach($adaptation->insteadof as $trait2) {
+                foreach ($adaptation->insteadof as $trait2) {
                     $ignored[$this->getFullMethodName($trait2, $methodName)] = true;
                 }
             }

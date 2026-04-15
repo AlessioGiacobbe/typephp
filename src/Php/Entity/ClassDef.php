@@ -32,11 +32,13 @@ class ClassDef extends ClassLikeDef
     public bool $requireCtor = false;
     public bool $enum = false;
     public ?Trait_ $trait = null;
+
     /**
      * FullMethodName -> NewMethodName
      * @var array<string, array>
      */
     public array $traitAliases = [];
+
     /**
      * FullMethodName -> true
      * @var array<string, bool>

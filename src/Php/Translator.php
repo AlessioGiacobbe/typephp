@@ -1316,15 +1316,15 @@ class Translator extends Preprocessor
                 }
 
                 $classDef->addMethod($methodDef);
-                $traitMethodNativeName = self::PREFIX . $this->getNativeName($traitMethodName, $traitDef->namespace, $traitDef->name);
-                $classMethodNativeName = self::PREFIX . $this->getNativeName($classMethodName, $classDef->namespace, $classDef->name);
+                $traitMethodNativeName = $this->getNativeName($traitMethodName, $traitDef->namespace, $traitDef->name);
+                $classMethodNativeName = $this->getNativeName($classMethodName, $classDef->namespace, $classDef->name);
                 $argList = ['this_'];
                 foreach ($methodDef->functionDef->argInfoList as $argInfo) {
                     $argList[] = $argInfo->name;
                 }
                 $argv = implode(', ', $argList);
 
-                $code = $methodDef->getReturnType() . ' ' . $classMethodNativeName . '(';
+                $code = $methodDef->getReturnType() . ' ' . self::PREFIX . $classMethodNativeName . '(';
                 if ($this->class) {
                     $code .= self::TYPE_OBJECT . ' &this_';
                     if ($methodDef->functionDef->params) {
@@ -1332,10 +1332,12 @@ class Translator extends Preprocessor
                     }
                 }
 
+                $this->addFunction($classMethodNativeName, $methodDef->functionDef);
+
                 $code .= $methodDef->functionDef->params . ')';
                 $code .= '{' . PHP_EOL;
                 $this->indentLevel++;
-                $methodCall = $traitMethodNativeName . '(' . $argv . ')';
+                $methodCall = self::PREFIX . $traitMethodNativeName . '(' . $argv . ')';
                 if ($methodDef->getReturnType() !== self::TYPE_VOID) {
                     $methodCall = 'return ' . $methodCall;
                 }
