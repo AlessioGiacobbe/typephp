@@ -164,6 +164,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $ldflags = '';
     protected int $floatPrecision = 17;
     protected bool $debugInfo = true;
+    protected bool $printBacktraceOnError = false;
     protected bool $noLiteralStrings = false;
     protected string $file;
     protected string $dir;
@@ -2237,7 +2238,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             throw new TestError($msg);
         } else {
             $this->climate->red("Fatal error: {$msg}");
-            debug_print_backtrace();
+            if ($this->printBacktraceOnError) {
+                debug_print_backtrace();
+            }
             exit(255);
         }
     }
