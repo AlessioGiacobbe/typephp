@@ -369,6 +369,10 @@ class Preprocessor extends CompilerBase
         if ($this->hasFunction($name)) {
             $this->fatalError($v, "Duplicate function `{$name}`");
         }
+        // 禁止重定义内置函数
+        if (!$this->methodDef and $this->isInternalFunction($name)) {
+            $this->fatalError($v, "The function `{$name}` is a built-in function and cannot be redefined");
+        }
         $functionDef = $this->parseFunctionDecl($v);
         $this->addFunction($name, $functionDef);
         if ($this->methodDef) {

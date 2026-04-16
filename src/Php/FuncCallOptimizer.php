@@ -126,6 +126,9 @@ trait FuncCallOptimizer
                 return 'true';
             }
         }
+        if ($name === 'compact') {
+            return $this->genCompact($expr);
+        }
         if ($name === 'get_class') {
             return $this->genGetClass($expr);
         }
@@ -165,5 +168,30 @@ trait FuncCallOptimizer
             return $this->getLiteralString($this->getObjectType($object->name));
         }
         return 'php::fn::get_class(' . $this->parseIdentifier($object) . ')';
+    }
+
+    protected function genCompact(Node\Expr\FuncCall $expr): string
+    {
+        $list = [];
+
+        $this->indentLevel++;
+        foreach ($expr->args as $arg) {
+            if (!$this->isScalarString($arg->value)) {
+                $this->fatalError($expr, 'The argument of compact function can only be literal string');
+            }
+            $var = $arg->value->value;
+            if (!$this->hasVar($var)) {
+                $this->errorUndefinedVariable($var);
+            }
+            if ($this->isSuperGlobal($var)) {
+                $this->fatalError($expr, 'Cannot use super global variable `' . $var . '` in compact function');
+            }
+
+            $key = $this->getLiteralString($var);
+            $list[] = $this->getIndent() . '{ ' . $key . '.str(), ' . $var . ' }';
+        }
+        $this->indentLevel--;
+
+        return $this->genArray($list);
     }
 }

@@ -58,7 +58,6 @@ class Constants
     ];
 
     public const UNSUPPORTED_FUNCTIONS = [
-        'compact',
         'extract',
     ];
 }
