@@ -90,7 +90,7 @@ class Preprocessor extends CompilerBase
         return false;
     }
 
-    public function prepare(string $file): void
+    public function prepareFile(string $file): void
     {
         if ($this->hasCppFileCache($file)) {
             $this->climate->darkGray('skip: ' . $file . ', cache exists');
@@ -210,11 +210,9 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Const':
                 case 'Stmt_Interface':
                     break;
-                case 'Stmt_Expression':
-                    $this->foundStrayCode($v2);
-                    // no break
                 default:
-                    throw new Unsupported('Unsupported statement: ' . $type2);
+                    $this->foundStrayCode($v2);
+                    break;
             }
         }
     }

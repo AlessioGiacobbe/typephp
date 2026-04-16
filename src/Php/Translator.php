@@ -17,6 +17,7 @@ use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
 use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\Redo;
+use PhpAot\Php\Exception\SyntaxError;
 use PhpAot\Php\Exception\Unsupported;
 use PhpParser\Modifiers;
 use PhpParser\Node;
@@ -31,6 +32,7 @@ class Translator extends Preprocessor
     protected array $sourceDirs = [];
     protected bool $verbose = false;
     protected array $phpSrcFiles = [];
+    protected array $ignorePaths = [];
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
 
@@ -98,7 +100,7 @@ class Translator extends Preprocessor
         $climate->br();
     }
 
-    public function convert(string $file): string
+    public function convertFile(string $file): string
     {
         $file = realpath($file);
         if ($this->hasCppFileCache($file)) {
@@ -188,6 +190,68 @@ class Translator extends Preprocessor
         }
 
         return $list;
+    }
+
+    public function prepare(string $path): array
+    {
+        $files = $this->getFiles($path);
+        // 应用 ignorePaths 过滤
+        if (!empty($this->ignorePaths)) {
+            $files = array_filter($files, function ($file) {
+                foreach ($this->ignorePaths as $ignorePath) {
+                    if ($file === $ignorePath) {
+                        return false;
+                    }
+                    if (is_dir($ignorePath) && str_starts_with($file, $ignorePath . DIRECTORY_SEPARATOR)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+        // 分析 PHP 文件，预处理
+        foreach ($files as $k => $file) {
+            if (FileScanner::isPhpFile($file)) {
+                try {
+                    $this->prepareFile($file);
+                } catch (Unsupported $e) {
+                    $this->output(" unsupported syntax: " . $e->getMessage() . "\n" . " skip: " . $file . "\n", 'error');
+                    unset($files[$k]);
+                } catch (SyntaxError $e) {
+                    $this->output(" syntax error: " . $e->getMessage() . "\n" . " skip: " . $file . "\n", 'error');
+                    unset($files[$k]);
+                }
+            }
+        }
+        $this->sortFiles($files);
+        return $files;
+    }
+
+    public function convert(array $files): array
+    {
+        $sourceFiles = [];
+        // 生成 C++ 文件
+        foreach ($files as $k => $file) {
+            try {
+                if (FileScanner::isPhpFile($file)) {
+                    $cppFile = $this->convertFile($file);
+                } elseif (FileScanner::isCppFile($file)) {
+                    $cppFile = $file;
+                } else {
+                    continue;
+                }
+                $sourceFiles[] = $cppFile;
+            } catch (Unsupported $e) {
+                echo " unsupported syntax: " . $e->getMessage() . "\n";
+                echo " skip: " . $file . "\n";
+                unset($files[$k]);
+            }
+        }
+
+        if (empty($sourceFiles)) {
+            $this->stop("No valid source file found");
+        }
+        return $sourceFiles;
     }
 
     public function preprocessArgvAdvanced(): void
@@ -653,6 +717,17 @@ class Translator extends Preprocessor
         return $code;
     }
 
+    protected function getAbsolutePath(string $path, string $projectDir): string
+    {
+        $path = trim($path);
+        if ($path[0] != '/') {
+            $absPath = $projectDir . '/' . $path;
+        } else {
+            $absPath = $path;
+        }
+        return realpath($absPath);
+    }
+
     protected function parseProjectYaml(string $path): array
     {
         $cfg        = Yaml::parseFile($path);
@@ -660,15 +735,12 @@ class Translator extends Preprocessor
 
         if (!empty($cfg['sources'])) {
             $sources = $cfg['sources'];
+            if (!is_array($sources)) {
+                $this->error('`sources` must be array');
+            }
             $list    = [];
             foreach ($sources as $src) {
-                $src = trim($src);
-                if ($src[0] != '/') {
-                    $absPath = $projectDir . '/' . $src;
-                } else {
-                    $absPath = $src;
-                }
-                $realPath = realpath($absPath);
+                $realPath = $this->getAbsolutePath($src, $projectDir);
                 if (!$realPath) {
                     $this->error('Source file not exists: `' . $src . '`');
                 }
@@ -703,6 +775,19 @@ class Translator extends Preprocessor
         }
         if (!empty($cfg['type'])) {
             $this->setBuildMode($cfg['type']);
+        }
+
+        if (!empty($cfg['ignore'])) {
+            if (!is_array($cfg['ignore'])) {
+                $this->error('`ignore` must be array');
+            }
+            foreach ($cfg['ignore'] as $src) {
+                $realPath = $this->getAbsolutePath($src, $projectDir);
+                if (!$realPath) {
+                    $this->error('Source file not exists: `' . $src . '`');
+                }
+                $this->ignorePaths[] = $realPath;
+            }
         }
 
         return $list;

@@ -14,8 +14,8 @@ class BaseTest extends TestCase
             $compiler = CompilerTest::create(ROOT_PATH);
             $testFile = __DIR__ . '/code/' . $file;
             $compiler->addFiles([$testFile]);
-            $compiler->prepare($testFile);
-            $compiler->convert($testFile);
+            $compiler->prepareFile($testFile);
+            $compiler->convertFile($testFile);
         } catch (TestError $exception) {
             $this->assertStringContainsString($expected, $exception->getMessage());
             return;
