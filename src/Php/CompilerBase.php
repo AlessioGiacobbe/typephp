@@ -70,6 +70,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
     public const string VALUE_NULL = 'php::null';
+    public const string VALUE_ZERO = 'php::zero';
     public const string LITERAL_STRINGS = '_literal_strings';
     public const string ANON_CLASS = '_anon_class_';
     public const string STATIC_VAR = '_static_var_';
@@ -954,6 +955,19 @@ class CompilerBase extends \PhpAot\Core\Translator
             $list[] = $this->getNamespacedClassName($implement);
         }
         return $list;
+    }
+
+    protected function parseArrayKey(NodeAbstract $expr): string
+    {
+        $key = $this->parseIdentifier($expr);
+        if (str_starts_with($key, self::LITERAL_STRINGS)) {
+            $key = "{$key}.str()";
+        } elseif ($key === '0L') {
+            // 0 在 C++ 中是一个特殊的值，存在二义性，既是空指针，也是整数，这会导致产生 ambiguous 错误
+            // 必须转为 php::zero 常量，保证作为 key 时正确匹配到 IntKeyMap
+            $key = self::VALUE_ZERO;
+        }
+        return $key;
     }
 
     protected function parseIdentifier(NodeAbstract $expr): string
@@ -1941,14 +1955,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($items as $item) {
             $value = $this->parseIdentifier($item->value);
             if ($item->key) {
-                $key = $this->parseIdentifier($item->key);
-                if (str_starts_with($key, self::LITERAL_STRINGS)) {
-                    $key = "{$key}.toStdString()";
-                } elseif ($key === '0L') {
-                    $key = 'php::zero';
-                }
-                $list[] = $this->getIndent() . '{ ' . $key . ', ' .
-                    self::TYPE_VAR . '(' . $value . ') }';
+                $key = $this->parseArrayKey($item->key);
+                $list[] = $this->getIndent() . '{ ' . $key . ', ' . self::TYPE_VAR . '(' . $value . ') }';
             } else {
                 $list[] = $this->getIndent() . self::TYPE_VAR . '(' . $value . ')';
             }
@@ -4858,12 +4866,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($item->unpack) {
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
             } elseif ($item->key) {
-                $key = $this->parseIdentifier($item->key);
-                if (str_starts_with($key, self::LITERAL_STRINGS)) {
-                    $key = "{$key}.toStdString()";
-                } elseif ($key === '0L') {
-                    $key = 'php::zero';
-                }
+                $key = $this->parseArrayKey($item->key);
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
             } else {
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
