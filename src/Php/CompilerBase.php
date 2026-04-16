@@ -4049,7 +4049,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $methodPtr = $this->identifierToStr($expr->name, literal: true);
             $fn = Symbol::getCalledCe() . ', php::getMethod(' . Symbol::getCalledCe() . ', ' . $methodPtr . ')';
             $this->context->beforeStmtLines[] = '// Static Method Call: static::' . $this->parseIdentifier($expr->name) . '()';
-            $placeHolder = $this->genArray([Symbol::getCalledCe(), $methodPtr]);
+            $placeHolder = $this->genArray([Symbol::getCalledClass(), $methodPtr]);
         } elseif ($this->isNameExpr($expr->class)) {
             if ($class === 'self') {
                 $class = $this->class;
