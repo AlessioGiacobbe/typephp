@@ -613,23 +613,35 @@ class Preprocessor extends CompilerBase
     protected function parseTraitUseOptions(Node\Stmt\TraitUse $traitUse, array &$aliases, array &$ignored): void
     {
         foreach ($traitUse->adaptations as $adaptation) {
-            if (!$adaptation->trait) {
-                $this->fatalError($traitUse, 'Trait `use` cannot use `use` without `as`');
-            }
             if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Alias) {
-                $trait1 = $this->getNamespacedClassName($adaptation->trait);
-                $methodName = $adaptation->method->toString();
-                /*
-                 * 例如：
-                 * use TraitA { TraitA::method as newMethod}
-                 * 这表示 TraitA::method() 会被重命名为 TraitA::newMethod()
-                 */
-                $aliases[$this->getFullMethodName($trait1, $methodName)] = [
-                    'newName' => $adaptation->newName->toString(),
-                    'newModifier' => $adaptation->newModifier ?: 0,
-                ];
+                $traits = [];
+                if (!$adaptation->trait) {
+                    // use THello1, THello2 {
+                    //    hello as hello3;
+                    // }
+                    // 未指定 trait，将添加所有 trait 的别名映射，在预处理阶段无法获取 trait 的方法列表
+                    $traits = $traitUse->traits;
+                } else {
+                    $traits[] = $adaptation->trait;
+                }
+                foreach ($traits as $trait) {
+                    $traitName = $this->getNamespacedClassName($trait);
+                    $methodName = $adaptation->method->toString();
+                    /*
+                     * 例如：
+                     * use TraitA { TraitA::method as newMethod}
+                     * 这表示 TraitA::method() 会被重命名为 TraitA::newMethod()
+                     */
+                    $aliases[$this->getFullMethodName($traitName, $methodName)] = [
+                        'newName' => $adaptation->newName->toString(),
+                        'newModifier' => $adaptation->newModifier ?: 0,
+                    ];
+                }
             }
             if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Precedence) {
+                if (!$adaptation->trait) {
+                    $this->fatalError($traitUse, 'Trait precedence cannot be used without a trait');
+                }
                 $methodName = $adaptation->method->toString();
                 /*
                  * 例如：
