@@ -1500,7 +1500,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $argClass = $expr->args[1]->value;
                 if ($this->isScalarString($argClass)) {
                     return $this->getNamespacedClassName($this->parseIdentifier($argClass));
-                } elseif ($this->isClassConstFetch($argClass)) {
+                }
+                if ($this->isClassConstFetch($argClass)) {
                     if ($this->isNameExpr($argClass->class) and $this->isIdExpr($argClass->name) and $this->parseIdentifier($argClass->name) === 'class') {
                         return $this->getNamespacedClassName($this->parseIdentifier($argClass->class));
                     }
@@ -1516,7 +1517,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($nativeFunc) {
                     return $this->getFunction($nativeFunc)->returnClass;
                 }
-            } catch (DynamicCall) {}
+            } catch (DynamicCall) {
+            }
         }
         if ($this->isStaticCall($expr) and $this->isNameExpr($expr->class) and $this->isNamedMethod($expr->name)) {
             $class = $this->parseIdentifier($expr->class);
@@ -4045,7 +4047,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
             }
             $placeHolder = $fn;
-        } elseif ($class === 'static') {
+        } elseif ($this->isNameExpr($expr->class) and $class === 'static') {
             $methodPtr = $this->identifierToStr($expr->name, literal: true);
             $fn = Symbol::getCalledCe() . ', php::getMethod(' . Symbol::getCalledCe() . ', ' . $methodPtr . ')';
             $this->context->beforeStmtLines[] = '// Static Method Call: static::' . $this->parseIdentifier($expr->name) . '()';

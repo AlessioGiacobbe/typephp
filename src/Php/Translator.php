@@ -591,7 +591,7 @@ class Translator extends Preprocessor
                 }
             } elseif (is_float($value)) {
                 return $value;
-            } else if (is_bool($value)) {
+            } elseif (is_bool($value)) {
                 return $value ? 1 : 0;
             } elseif (is_string($value)) {
                 return $this->genCharPtr($value);
