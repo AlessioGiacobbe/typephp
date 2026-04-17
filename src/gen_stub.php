@@ -3119,24 +3119,22 @@ class StringBuilder {
             return $result;
         }
         $include = self::PHP_80_KNOWN;
-        switch ($minPhp) {
-            case PHP_85_VERSION_ID:
-                $include = array_merge($include, self::PHP_85_KNOWN);
-            // Intentional fall through
 
-            case PHP_84_VERSION_ID:
-                $include = array_merge($include, self::PHP_84_KNOWN);
-            // Intentional fall through
+        $versions = [
+            PHP_85_VERSION_ID => self::PHP_85_KNOWN,
+            PHP_84_VERSION_ID => self::PHP_84_KNOWN,
+            PHP_82_VERSION_ID => self::PHP_82_KNOWN, // 8.3 合并到 8.2
+            PHP_81_VERSION_ID => self::PHP_81_KNOWN,
+        ];
 
-            case PHP_83_VERSION_ID:
-            case PHP_82_VERSION_ID:
-                $include = array_merge($include, self::PHP_82_KNOWN);
-            // Intentional fall through
+        krsort($versions);
 
-            case PHP_81_VERSION_ID:
-                $include = array_merge($include, self::PHP_81_KNOWN);
-                break;
+        foreach ($versions as $versionId => $knownItems) {
+            if ($minPhp >= $versionId) {
+                $include = array_merge($include, $knownItems);
+            }
         }
+
         if (array_key_exists($content, $include)) {
             $knownStr = $include[$content];
             return [
@@ -4279,10 +4277,11 @@ class FileInfo {
      */
     public function getAllFuncInfos(): iterable
     {
+        $allFuncInfos = [];
         foreach ($this->classInfos as $classInfo) {
-            yield from $classInfo->funcInfos;
+            $allFuncInfos = array_merge($allFuncInfos, $classInfo->funcInfos);
         }
-        yield from $this->funcInfos;
+        return array_merge($allFuncInfos, $this->funcInfos);
     }
 
     /** @return array<string, ConstInfo> */

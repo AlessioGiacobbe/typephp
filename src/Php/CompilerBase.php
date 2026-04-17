@@ -1320,21 +1320,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } elseif ($this->isStaticCall($right) and $this->isIdExpr($right->name)) {
                     $class = $this->parseIdentifier($right->class);
                     if ($class === 'std') {
-                        $func = $this->parseIdentifier($right->name);
-                        $type = match ($func) {
-                            'int' => self::TYPE_INT,
-                            'float' => self::TYPE_FLOAT,
-                            'bool' => self::TYPE_BOOL,
-                            default => '',
-                        };
-                        // Native 类型
-                        if ($type) {
-                            if (!$this->hasVar($var)) {
-                                $this->addLocalVar($var, $type);
-                            }
-                            $expr = $this->parseExpr($right->args[0]->value);
-                            return $var . ' = ' . $this->convertExprFromType($type, $expr);
+                        $valueExpr = $this->parseStdCall($right);
+                        if (!$this->hasVar($var)) {
+                            $this->addLocalVar($var, $right->getAttribute('nativeType'));
                         }
+                        return $var . ' = ' . $valueExpr;
                     }
                 } elseif ($this->isVarExpr($right)) {
                     $rightVar = $this->parseIdentifier($right);
@@ -4095,6 +4085,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $self = true;
             } elseif ($class === 'parent') {
                 return $this->parseParentMethodCall($expr);
+            } elseif ($class === 'std') {
+                return $this->parseStdCall($expr);
             }
             $class = $this->getNamespacedClassName($class);
 
@@ -4656,6 +4648,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
 
         return $code . "{$obj}.updateArrayProperty({$propName}, {$dim}, {$value})";
+    }
+
+    protected function parseStdCall(Expr\StaticCall $expr): string
+    {
+        $func = $this->parseIdentifier($expr->name);
+        $type = match ($func) {
+            'int' => self::TYPE_INT,
+            'float' => self::TYPE_FLOAT,
+            'bool' => self::TYPE_BOOL,
+            default => '',
+        };
+        if ($type) {
+            $expr->setAttribute('nativeType', $type);
+            $valueExpr = $this->parseExpr($expr->args[0]->value);
+            return $this->convertExprFromType($type, $valueExpr);
+        } else {
+            $this->fatalError($expr, 'Unknown std method: ' . $func);
+        }
     }
 
     protected function parseParentMethodCall(Expr\StaticCall $expr): string
