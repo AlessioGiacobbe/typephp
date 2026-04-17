@@ -1,0 +1,12 @@
+name: swoole-compiler
+type: ext
+version: 0.0.1
+cxxflags: |
+  -std=c++14
+  -Wall
+sources:
+  - ./src/Php
+  - ./src/Core
+  - ./src/functions.php
+  - ./src/gen_stub.php
+  - ./vendor/nikic/php-parser/lib/PhpParser/NodeVisitorAbstract.php

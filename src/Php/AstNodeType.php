@@ -55,6 +55,11 @@ trait AstNodeType
         return $expr instanceof Node\Name;
     }
 
+    protected function isFullNameExpr(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Name\FullyQualified;
+    }
+
     protected function isNamedMethod(NodeAbstract $expr): bool
     {
         return $this->isIdExpr($expr);

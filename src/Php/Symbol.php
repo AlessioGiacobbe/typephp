@@ -20,6 +20,11 @@ class Symbol
         return 'php::setStaticProperty';
     }
 
+    public static function instanceOf(): string
+    {
+        return 'php::instanceOf';
+    }
+
     public static function getCalledCe(): string
     {
         return CompilerBase::PREFIX . 'get_called_ce(this_)';

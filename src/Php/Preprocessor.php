@@ -143,9 +143,10 @@ class Preprocessor extends CompilerBase
                     break;
                 case 'Stmt_Expression':
                     $this->foundStrayCode($v);
-                    // no break
+                    break;
                 default:
                     $this->fatalError($v, 'Unsupported statement: ' . $type);
+                    break;
             }
         }
     }
@@ -451,9 +452,10 @@ class Preprocessor extends CompilerBase
                     break;
                 case 'Stmt_Expression':
                     $this->foundStrayCode($v);
-                    // no break
+                    break;
                 default:
                     abort($v);
+                    break;
             }
         }
 

@@ -515,9 +515,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_Yield':
             case 'Expr_YieldFrom':
                 $this->fatalError($expr, 'The `' . $type . '` is not supported');
-                // no break
+                break;
             default:
                 abort($expr);
+                break;
         }
     }
 
@@ -926,6 +927,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $expr->hasAttribute('noLiteralString') ? $this->genCharPtr($expr->value) : $this->getLiteralString($expr->value);
             default:
                 abort($expr);
+                break;
         }
     }
 
@@ -1135,9 +1137,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                     break;
                 case 'Stmt_Class':
                     $this->fatalError($v, 'Cannot declare class in function');
-                    // no break
+                    break;
                 default:
                     abort($v);
+                    break;
             }
             $lines                 = array_merge($lines, $this->context->beforeStmtLines);
             $this->context->beforeStmtLines = [];
@@ -3224,9 +3227,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '"' . $this->escapeString($expr->value) . '"';
     }
 
-    protected function parseGlobal(Node\Stmt\Global_ $v): string
+    protected function parseGlobal(Node\Stmt\Global_ $expr): string
     {
-        foreach ($v->vars as $v) {
+        foreach ($expr->vars as $v) {
             $name = $this->parseVariable($v);
             if (!$this->hasGlobalVar($name)) {
                 $this->addGlobalVar($name, self::TYPE_VAR);
@@ -3433,6 +3436,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return '"' . $this->escapeString($class) . '::' . $this->escapeString($this->method) . '"';
             default:
                 abort($expr);
+                break;
         }
     }
 
@@ -3700,6 +3704,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 break;
             default:
                 $this->fatalError($expr, 'Invalid include type');
+                break;
         }
 
         return 'php::include(' . $this->parseIdentifier($expr->expr) . ', ' . $type . ')';
@@ -4356,7 +4361,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $code .= $this->getIndent() . 'if (' . $var . ' && ';
         foreach ($types as $type) {
-            $code .= 'php::instanceOf(' . $var . ', "' . $this->parseIdentifier($type) . '")';
+            if ($this->isNameExpr($type) or $this->isFullNameExpr($type)) {
+                $class = $this->getNamespacedClassName($this->parseIdentifier($type));
+                $ce = $this->getClassEntryPtr($class);
+                $code .= Symbol::instanceOf() . '(' . $var . ', ' . $ce . ')';
+            } else {
+                $this->fatalError($type, 'Unsupported catch type');
+            }
         }
 
         $code .= ') {' . PHP_EOL;

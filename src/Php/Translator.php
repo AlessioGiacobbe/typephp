@@ -857,6 +857,7 @@ class Translator extends Preprocessor
                     break;
                 default:
                     abort($v);
+                    break;
             }
         }
 
@@ -988,6 +989,7 @@ class Translator extends Preprocessor
                     break;
                 default:
                     abort($v2);
+                    break;
             }
         }
         $code .= $ns_end;
@@ -1162,6 +1164,7 @@ class Translator extends Preprocessor
                     break;
                 default:
                     abort($v);
+                    break;
             }
         }
         $code = $this->genNativeMethod($methodCodes);
