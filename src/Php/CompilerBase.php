@@ -4593,13 +4593,16 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function checkAccessible(ClassDef $classDef, int $flags): bool
     {
-        // 在当前类中，允许调用所有方法
-        if ($classDef->namespace === $this->namespace and $classDef->name == $this->class) {
-            return true;
+        // 私有方法，只能当前的类使用
+        if ($flags & Modifiers::PRIVATE) {
+            return $classDef->namespace === $this->namespace and $classDef->name == $this->class;
         }
-
+        // 保护方法，只能当前类和子类使用
+        if ($flags & Modifiers::PROTECTED) {
+            return $this->isInheritedFrom($this->classDef->getNamespacedName(), $classDef->getNamespacedName());
+        }
         // 类外部调用，只允许调用 public 方法
-        return $flags & Modifiers::PUBLIC;
+        return true;
     }
 
     protected function isOverrideMethod(string $fullMethodName): bool
@@ -4610,21 +4613,24 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function findNativeMethod(CallLike $expr, string $object, string $method): string|false
     {
-        $nativeFunc = '';
         $classDef = null;
         if ($object === 'this_') {
-            $nativeFunc = $this->getNativeName($method, $this->namespace, $this->class);
+            $class = $this->class;
             $classDef = $this->classDef;
         } elseif (isset($this->context->objects[$object])) {
             $class = $this->context->objects[$object];
-            $nativeFunc = $this->getNativeMethod($expr, $class, $method);
-            // 存在 Native 类，但是没有找到方法，可能是动态调用
-            if (!$nativeFunc) {
-                if ($this->hasClass($class) and $this->getNativeMethod($expr, $class, '__call', false)) {
-                    throw new DynamicCall();
-                }
+        } else {
+            return false;
+        }
+
+        $nativeFunc = $this->getNativeMethod($expr, $class, $method);
+        // 存在 Native 类，但是没有找到方法，可能是动态调用
+        if (!$nativeFunc) {
+            if ($this->hasClass($class) and $this->getNativeMethod($expr, $class, '__call', false)) {
+                throw new DynamicCall();
             }
         }
+
         if ($classDef) {
             $fullMethodName = $classDef->getNamespacedName(false) . '::' . $method;
         } else {
