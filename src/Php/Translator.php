@@ -28,6 +28,8 @@ use Symfony\Component\Yaml\Yaml;
 
 class Translator extends Preprocessor
 {
+    public const string VERSION = '0.1.0';
+    public const string APP_NAME = 'Swoole-Compiler (AOT)';
     protected string $targetName = 'app';
     protected array $sourceDirs = [];
     protected bool $verbose = false;
@@ -63,12 +65,16 @@ class Translator extends Preprocessor
             $this->showUsage();
             exit(0);
         }
+        if ($this->climate->arguments->defined('version')) {
+            $this->showVersion();
+            exit(0);
+        }
     }
 
     public function showUsage(): void
     {
         $climate = $this->climate;
-        $climate->bold()->green('PHP AOT Compiler v1.0.0');
+        $this->showVersion();
         $climate->br();
 
         $climate->bold('USAGE:');
@@ -98,6 +104,11 @@ class Translator extends Preprocessor
         $climate->tab()->out('./bin/compiler.php examples/extension -O2 -o myapp -m ext');
         $climate->tab()->out('./bin/compiler.php examples/app.php -O3 -o myapp -v');
         $climate->br();
+    }
+
+    private function showVersion(): void
+    {
+        $this->climate->bold()->out(self::APP_NAME . ' v' . self::VERSION);
     }
 
     public function convertFile(string $file): string
@@ -552,15 +563,9 @@ class Translator extends Preprocessor
         return str_replace('-', '_', $rs);
     }
 
-    public function getArgInfoHeaderFile(string $stubFilenameWithoutExtension, bool $relative = false): string
+    public function getArgInfoHeaderFile(string $file, bool $relative = false): string
     {
-        foreach ($this->sourceDirs as $srcDir) {
-            if (!is_dir($srcDir) or str_starts_with($stubFilenameWithoutExtension, $srcDir)) {
-                $filePath = ltrim($this->removeCommonPrefix($srcDir, $stubFilenameWithoutExtension), '/');
-                break;
-            }
-        }
-
+        $filePath = $this->getRelativePath(str_replace(['.stub.php', '.php'], '', $file));
         $filename = self::PREFIX . str_replace('/', '_', $filePath);
         $filename = $this->escapeFileName($filename);
         $absPath = $this->getIncludeDir() . "/{$filename}_arginfo.h";
@@ -1000,8 +1005,7 @@ class Translator extends Preprocessor
 
     protected function genStubFile(string $file): void
     {
-        $stubFilenameWithoutExtension = str_replace(['.stub.php', '.php'], '', $file);
-        $headerFile = $this->getArgInfoHeaderFile($stubFilenameWithoutExtension, true);
+        $headerFile = $this->getArgInfoHeaderFile($file, true);
 
         $this->climate->info('generate stub file: ' . $this->getRelativePath($file));
         generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true);

@@ -19,6 +19,12 @@ return [
         'description' => 'Show help',
         'noValue'     => true,
     ],
+    'version' => [
+        'prefix'      => 'v',
+        'longPrefix'  => 'version',
+        'description' => 'Show Version',
+        'noValue'     => true,
+    ],
     'profile' => [
         'longPrefix'  => 'profile',
         'description' => 'Enable performance profiling',
