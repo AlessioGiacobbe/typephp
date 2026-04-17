@@ -15,7 +15,6 @@ use PhpAot\Php\Entity\FunctionDef;
 use PhpAot\Php\Entity\MethodDef;
 use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\SyntaxError;
-use PhpAot\Php\Exception\Unsupported;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\NullableType;

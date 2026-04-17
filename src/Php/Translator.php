@@ -215,10 +215,10 @@ class Translator extends Preprocessor
                 try {
                     $this->prepareFile($file);
                 } catch (Unsupported $e) {
-                    $this->output(" unsupported syntax: " . $e->getMessage() . "\n" . " skip: " . $file . "\n", 'error');
+                    $this->output(' unsupported syntax: ' . $e->getMessage() . "\n" . ' skip: ' . $file . "\n", 'error');
                     unset($files[$k]);
                 } catch (SyntaxError $e) {
-                    $this->output(" syntax error: " . $e->getMessage() . "\n" . " skip: " . $file . "\n", 'error');
+                    $this->output(' syntax error: ' . $e->getMessage() . "\n" . ' skip: ' . $file . "\n", 'error');
                     unset($files[$k]);
                 }
             }
@@ -242,14 +242,14 @@ class Translator extends Preprocessor
                 }
                 $sourceFiles[] = $cppFile;
             } catch (Unsupported $e) {
-                echo " unsupported syntax: " . $e->getMessage() . "\n";
-                echo " skip: " . $file . "\n";
+                echo ' unsupported syntax: ' . $e->getMessage() . "\n";
+                echo ' skip: ' . $file . "\n";
                 unset($files[$k]);
             }
         }
 
         if (empty($sourceFiles)) {
-            $this->stop("No valid source file found");
+            $this->stop('No valid source file found');
         }
         return $sourceFiles;
     }
@@ -637,7 +637,7 @@ class Translator extends Preprocessor
                 return $this->genCValue(constant($constName));
             }
         }
-        throw new \Exception("Class constant `{$class}::{$name}` not found");
+        $this->fatalError($expr, "Class constant `{$class}::{$name}` not found");
     }
 
     public function getConstValue(string $name): mixed

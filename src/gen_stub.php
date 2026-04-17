@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+use PhpAot\Php\Exception\Skip;
 use PhpAot\Php\Translator;
 use PhpParser\Comment\Doc as DocComment;
 use PhpParser\ConstExprEvaluator;
@@ -225,7 +226,7 @@ class SimpleType {
             }
 
             if ($node->toLowerString() === 'self') {
-                return new SimpleType(ClassInfo::$currentClassName, false);
+                return new SimpleType(ClassInfo::getCurrentClassName(), false);
             }
 
             $class = $node->isFullyQualified() ? $node->toString() : getTranslator()->getNamespacedClassName($node->toString());
@@ -3443,7 +3444,6 @@ class AttributeInfo {
 
 class ClassInfo {
     static public ?self $currentClass = null;
-    static public ?string $currentClassName = null;
     public /* readonly */ Name $name;
     private int $flags;
     public string $type;
@@ -3521,6 +3521,11 @@ class ClassInfo {
         $this->phpVersionIdMinimumCompatibility = $minimumPhpVersionIdCompatibility;
         $this->isUndocumentable = $isUndocumentable;
         self::$currentClass = $this;
+    }
+
+    static public function getCurrentClassName(): string
+    {
+        return self::$currentClass->name->toString();
     }
 
     /** @param array<string, ConstInfo> $allConstInfos */
@@ -4434,7 +4439,6 @@ class FileInfo {
 
             if ($stmt instanceof Stmt\ClassLike) {
                 $className = $stmt->namespacedName;
-                ClassInfo::$currentClassName = $className->toString();
                 $constInfos = [];
                 $propertyInfos = [];
                 $methodInfos = [];
@@ -4576,6 +4580,7 @@ class FileInfo {
         $code = "";
 
         foreach ($this->classInfos as $class) {
+            ClassInfo::$currentClass = $class;
             $code .= "\n" . $class->getRegistration($allConstInfos);
         }
 
@@ -5110,12 +5115,17 @@ function parseClass(
     }
 
     $attributes = AttributeInfo::createFromGroups($class->attrGroups);
-    foreach ($attributes as $attribute) {
-        switch ($attribute->class) {
-            case 'AllowDynamicProperties':
-                $allowsDynamicProperties = true;
-                break 2;
+
+    try {
+        foreach ($attributes as $attribute) {
+            switch ($attribute->class) {
+                case 'AllowDynamicProperties':
+                    $allowsDynamicProperties = true;
+                    throw new Skip();
+            }
         }
+    } catch (Skip) {
+
     }
 
     if ($isStrictProperties && $allowsDynamicProperties) {
@@ -5385,7 +5395,8 @@ function generateFunctionAttributeInitialization(iterable $funcInfos, array $all
             // conditionally available; string reuse is only among declarations
             // that are always there
             if ($funcInfo->cond) {
-                $useDeclared = [];
+                $empty = [];
+                $useDeclared = &$empty;
             } else {
                 $useDeclared = &$declaredStrings;
             }
@@ -5448,7 +5459,8 @@ function generateGlobalConstantAttributeInitialization(
             // conditionally available; string reuse is only among declarations
             // that are always there
             if ($constInfo->cond) {
-                $useDeclared = [];
+                $empty = [];
+                $useDeclared = &$empty;
             } else {
                 $useDeclared = &$declaredStrings;
             }
@@ -5504,7 +5516,8 @@ function generateConstantAttributeInitialization(
             // conditionally available; string reuse is only among declarations
             // that are always there
             if ($constInfo->cond) {
-                $useDeclared = [];
+                $empty = [];
+                $useDeclared = &$empty;
             } else {
                 $useDeclared = &$declaredStrings;
             }
