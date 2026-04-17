@@ -30,6 +30,7 @@ class Translator extends Preprocessor
 {
     public const string VERSION = '0.1.0';
     public const string APP_NAME = 'Swoole-Compiler (AOT)';
+
     protected string $targetName = 'app';
     protected array $sourceDirs = [];
     protected bool $verbose = false;
@@ -801,7 +802,7 @@ class Translator extends Preprocessor
     protected function getInternalCeInfo(string $ce): array
     {
         return [
-            'func' => 'php::getClassEntry',
+            'func' => Symbol::getClassEntrySafe(),
             'args' => '"' . substr($ce, strlen(self::PREFIX . 'class_entry_')) . '"',
         ];
     }

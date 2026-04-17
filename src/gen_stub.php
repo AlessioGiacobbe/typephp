@@ -690,7 +690,7 @@ class Type {
         return true;
     }
 
-    public function __toString() {
+    public function __toString() : string {
         $char = $this->isIntersection ? '&' : '|';
         return implode($char, array_map(
                 function ($type) { return $type->name; },

@@ -44,4 +44,9 @@ class Symbol
     {
         return 'php::constant';
     }
+
+    public static function getClassEntrySafe(): string
+    {
+        return 'php::getClassEntrySafe';
+    }
 }

@@ -119,15 +119,17 @@ foreach ($this->functions as $functionDef):
 // clang-format on
 
 PHP_MINIT_FUNCTION(<?=$this->getModuleName()?>) {
-    // class/interface class entries
-    <?=$this->genClassPropertyInit()?>
+    zend_first_try {
+        // class/interface class entries
+        <?=$this->genClassPropertyInit()?>
 
-// register symbols
-<?php
-foreach ($this->registerSymbols as $registerSymbolFn):
-?>
-    <?= $registerSymbolFn ?>(module_number);
-<?php endforeach; ?>
+        // register symbols
+        <?php
+        foreach ($this->registerSymbols as $registerSymbolFn):
+            ?>
+            <?= $registerSymbolFn ?>(module_number);
+        <?php endforeach; ?>
+    } zend_end_try();
 
     return SUCCESS;
 }
