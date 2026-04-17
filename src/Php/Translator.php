@@ -30,7 +30,6 @@ class Translator extends Preprocessor
 {
     public const string VERSION = '0.1.0';
     public const string APP_NAME = 'Swoole-Compiler (AOT)';
-
     protected string $targetName = 'app';
     protected array $sourceDirs = [];
     protected bool $verbose = false;
@@ -857,7 +856,6 @@ class Translator extends Preprocessor
                     $this->parseConstDef($v);
                     break;
                 case 'Stmt_Interface':
-                    $this->parseInterface($v);
                     break;
                 case 'Stmt_Nop':
                     break;
@@ -991,7 +989,6 @@ class Translator extends Preprocessor
                     $code .= $this->parseUse($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Interface':
-                    $this->parseInterface($v2);
                     break;
                 default:
                     abort($v2);
@@ -1145,6 +1142,14 @@ class Translator extends Preprocessor
                 }
             } else {
                 $this->fatalError($class, "Class `{$this->class}` inherits from a non-existent class `{$parentClass}`");
+            }
+        }
+
+        if (is_array($this->classDef->implements)) {
+            foreach ($this->classDef->implements as $interfaceName) {
+                if (!$this->hasInterface($interfaceName) and !$this->isInternalInterface($interfaceName)) {
+                    $this->fatalError($class, "Class `{$this->class}` implements a non-existent interface `{$interfaceName}`");
+                }
             }
         }
 
@@ -1454,16 +1459,6 @@ class Translator extends Preprocessor
                 $methodCodes[$classMethodName] = $code;
             }
         }
-    }
-
-    protected function parseInterface(Node\Stmt\Interface_ $v): void
-    {
-        $name = $this->parseIdentifier($v->name);
-        $this->interface = $name;
-        $this->interfaceDef = new InterfaceDef($name, $this->namespace);
-        $interfaceName = $this->interfaceDef->getNamespacedName();
-        $this->interfaces[$this->escapeClass($interfaceName)] = $this->interfaceDef;
-        $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
     }
 
     protected function parseForeachObject(Foreach_ $node): string

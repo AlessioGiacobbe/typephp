@@ -13,10 +13,7 @@
   "autoload": {
     "psr-4": {
       "PhpAot\\": "src"
-    },
-    "files": [
-      "src/functions.php"
-    ]
+    }
   },
   "scripts": {
     "cs-fix": "php-cs-fixer fix $1",

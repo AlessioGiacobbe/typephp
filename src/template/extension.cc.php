@@ -119,7 +119,7 @@ foreach ($this->functions as $functionDef):
 // clang-format on
 
 PHP_MINIT_FUNCTION(<?=$this->getModuleName()?>) {
-    zend_first_try {
+    zend_try {
         // class/interface class entries
         <?=$this->genClassPropertyInit()?>
 

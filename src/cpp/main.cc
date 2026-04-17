@@ -57,6 +57,50 @@ void php_restore_scope(php::Scope &ori_scope) {
     ori_scope.frame->func->common.scope = ori_scope.ce;
 }
 
+static php_stream *s_in_process = NULL;
+static void cli_register_file_handles(void) {
+    php_stream *s_in, *s_out, *s_err;
+    php_stream_context *sc_in = NULL, *sc_out = NULL, *sc_err = NULL;
+    zend_constant ic, oc, ec;
+
+    s_in = php_stream_open_wrapper_ex("php://stdin", "rb", 0, NULL, sc_in);
+    s_out = php_stream_open_wrapper_ex("php://stdout", "wb", 0, NULL, sc_out);
+    s_err = php_stream_open_wrapper_ex("php://stderr", "wb", 0, NULL, sc_err);
+
+    /* Release stream resources, but don't free the underlying handles. Otherwise,
+     * extensions which write to stderr or company during mshutdown/gshutdown
+     * won't have the expected functionality.
+     */
+    if (s_in) s_in->flags |= PHP_STREAM_FLAG_NO_RSCR_DTOR_CLOSE;
+    if (s_out) s_out->flags |= PHP_STREAM_FLAG_NO_RSCR_DTOR_CLOSE;
+    if (s_err) s_err->flags |= PHP_STREAM_FLAG_NO_RSCR_DTOR_CLOSE;
+
+    if (s_in == NULL || s_out == NULL || s_err == NULL) {
+        if (s_in) php_stream_close(s_in);
+        if (s_out) php_stream_close(s_out);
+        if (s_err) php_stream_close(s_err);
+        return;
+    }
+
+    s_in_process = s_in;
+
+    php_stream_to_zval(s_in, &ic.value);
+    php_stream_to_zval(s_out, &oc.value);
+    php_stream_to_zval(s_err, &ec.value);
+
+    Z_CONSTANT_FLAGS(ic.value) = 0;
+    ic.name = zend_string_init_interned("STDIN", sizeof("STDIN") - 1, 0);
+    zend_register_constant(&ic);
+
+    Z_CONSTANT_FLAGS(oc.value) = 0;
+    oc.name = zend_string_init_interned("STDOUT", sizeof("STDOUT") - 1, 0);
+    zend_register_constant(&oc);
+
+    Z_CONSTANT_FLAGS(ec.value) = 0;
+    ec.name = zend_string_init_interned("STDERR", sizeof("STDERR") - 1, 0);
+    zend_register_constant(&ec);
+}
+
 void module_shutdown(zend_module_entry *module) {
     /**
      * There is a bug in PHP's handling of internal strings. All interned strings are released in the request shutdown
@@ -85,6 +129,7 @@ int main(int cpp_argc, char **cpp_argv) {
     zend_first_try {
         try {
             char path_translated[] = "embed";
+            cli_register_file_handles();
             SG(request_info).path_translated = path_translated;
             module->request_startup_func(module->type, module->module_number);
         } catch (zend_object *e) {

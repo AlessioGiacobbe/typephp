@@ -12,6 +12,7 @@ use MJS\TopSort\Implementations\StringSort;
 use PhpAot\Php\Entity\ClassDef;
 use PhpAot\Php\Entity\ConstantDef;
 use PhpAot\Php\Entity\FunctionDef;
+use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
 use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\SyntaxError;
@@ -128,6 +129,9 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Trait':
                     $this->prepareClass($v);
                     break;
+                case 'Stmt_Interface':
+                    $this->parseInterface($v);
+                    break;
                 case 'Stmt_Function':
                     $this->prepareFunction($v);
                     break;
@@ -135,7 +139,6 @@ class Preprocessor extends CompilerBase
                     $this->parseUse($v);
                     break;
                 case 'Stmt_Declare':
-                case 'Stmt_Interface':
                 case 'Stmt_Nop':
                     break;
                 case 'Stmt_Const':
@@ -208,7 +211,9 @@ class Preprocessor extends CompilerBase
                     $this->parseUse($v2);
                     break;
                 case 'Stmt_Const':
+                    break;
                 case 'Stmt_Interface':
+                    $this->parseInterface($v2);
                     break;
                 default:
                     $this->foundStrayCode($v2);
@@ -611,6 +616,16 @@ class Preprocessor extends CompilerBase
             $fullClassNameLower = strtolower($parentClass);
         }
         $this->resetMethod();
+    }
+
+    protected function parseInterface(Node\Stmt\Interface_ $v): void
+    {
+        $name = $this->parseIdentifier($v->name);
+        $this->interface = $name;
+        $this->interfaceDef = new InterfaceDef($name, $this->namespace);
+        $interfaceName = $this->interfaceDef->getNamespacedName();
+        $this->interfaces[$this->escapeClass($interfaceName)] = $this->interfaceDef;
+        $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
     }
 
     protected function parseTraitUseOptions(Node\Stmt\TraitUse $traitUse, array &$aliases, array &$ignored): void
