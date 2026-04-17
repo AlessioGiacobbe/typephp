@@ -3315,8 +3315,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                 // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
                 if (!$this->hasLocalVar($var)) {
                     $this->addLocalVar($var, self::TYPE_VAR);
-                } elseif ($this->getVarType($var) != self::TYPE_REF) {
-                    $this->fatalError($arg, "Argument `{$argInfo->name}` must be a reference, `{$type}` given");
                 }
             }
             return $this->convertToRef($arg->value);
