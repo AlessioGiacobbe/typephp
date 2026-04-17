@@ -4599,7 +4599,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         // 保护方法，只能当前类和子类使用
         if ($flags & Modifiers::PROTECTED) {
-            return $this->isInheritedFrom($this->classDef->getNamespacedName(), $classDef->getNamespacedName());
+            return $this->isInheritedFrom($this->classDef->getNamespacedName(false), $classDef->getNamespacedName(false));
         }
         // 类外部调用，只允许调用 public 方法
         return true;
@@ -4615,7 +4615,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $classDef = null;
         if ($object === 'this_') {
-            $class = $this->class;
+            $class = $this->getFullClassName();
             $classDef = $this->classDef;
         } elseif (isset($this->context->objects[$object])) {
             $class = $this->context->objects[$object];

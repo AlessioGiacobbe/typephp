@@ -980,7 +980,7 @@ class Translator extends Preprocessor
                     $code .= $this->parseClass($v2);
                     break;
                 case 'Stmt_Const':
-                    $this->parseConstDef($v2) . PHP_EOL;
+                    $this->parseConstDef($v2);
                     break;
                 case 'Stmt_Function':
                     $code .= $this->parseFunction($v2) . PHP_EOL;
