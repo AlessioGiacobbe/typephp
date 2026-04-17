@@ -390,6 +390,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseAssignOpShiftRight($expr);
             case 'Expr_AssignOp_BitwiseAnd':
                 return $this->parseAssignOpBitwiseAnd($expr);
+            case 'Expr_AssignOp_BitwiseOr':
+                return $this->parseAssignOpBitwiseOr($expr);
             case 'Expr_AssignOp_BitwiseXor':
                 return $this->parseAssignOpBitwiseXor($expr);
             case 'Expr_AssignOp_Pow':
@@ -2233,6 +2235,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseAssignOpBitwiseAnd(Expr\AssignOp\BitwiseAnd $expr): string
     {
         return $this->parseAssignOp($expr, '&=');
+    }
+
+    private function parseAssignOpBitwiseOr(Expr\AssignOp\BitwiseOr $expr): string
+    {
+        return $this->parseAssignOp($expr, '|=');
     }
 
     protected function parseAssignOpPow(Expr\AssignOp\Pow $expr): string
