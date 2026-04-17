@@ -848,10 +848,10 @@ class Translator extends Preprocessor
                     $cppCode .= $this->parseFunction($v) . PHP_EOL;
                     break;
                 case 'Stmt_Const':
-                    $this->parseConstDef($v) . PHP_EOL;
+                    $this->parseConstDef($v);
                     break;
                 case 'Stmt_Interface':
-                    $this->parseInterface($v) . PHP_EOL;
+                    $this->parseInterface($v);
                     break;
                 case 'Stmt_Nop':
                     break;
@@ -985,7 +985,7 @@ class Translator extends Preprocessor
                     $code .= $this->parseUse($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Interface':
-                    $code .= $this->parseInterface($v2) . PHP_EOL;
+                    $this->parseInterface($v2);
                     break;
                 default:
                     abort($v2);
@@ -1471,25 +1471,25 @@ class Translator extends Preprocessor
         $this->addLocalVar($tmpArrayVar, self::TYPE_ARRAY);
 
         $code = 'if (' . $obj . '.instanceOf("IteratorAggregate")) {' . PHP_EOL;
-        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . '.exec("getIterator");' . PHP_EOL . '}' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . '.call("getIterator");' . PHP_EOL . '}' . PHP_EOL;
         $code .= 'else if (' . $obj . '.instanceOf("Iterator")) {' . PHP_EOL;
         $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . ';' . PHP_EOL . '}' . PHP_EOL;
 
         $code .= 'if (' . $tmpVar . ') {' . PHP_EOL;
 
         $this->indentLevel++;
-        $code .= $this->getIndent() . $tmpVar . '.exec("rewind");' . PHP_EOL;
-        $code .= $this->getIndent() . 'for (;' . $tmpVar . '.exec("valid");  ' . $tmpVar . '.exec("next")) {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpVar . '.call("rewind");' . PHP_EOL;
+        $code .= $this->getIndent() . 'for (;' . $tmpVar . '.call("valid");  ' . $tmpVar . '.call("next")) {' . PHP_EOL;
         $this->indentLevel++;
 
         $valueVar = $this->parseIdentifier($node->valueVar);
         $this->checkVar($node, $valueVar);
 
-        $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.exec("current");' . PHP_EOL;
+        $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.call("current");' . PHP_EOL;
         if ($node->keyVar) {
             $keyVar = $this->parseIdentifier($node->keyVar);
             $this->checkVar($node, $keyVar);
-            $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.exec("key");' . PHP_EOL;
+            $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call("key");' . PHP_EOL;
         }
         $code .= $this->parseStmts($node->stmts);
         $code .= '}' . PHP_EOL;

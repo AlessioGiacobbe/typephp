@@ -129,7 +129,7 @@ class Preprocessor extends CompilerBase
                     $this->prepareClass($v);
                     break;
                 case 'Stmt_Function':
-                    $this->prepareFunction($v) . PHP_EOL;
+                    $this->prepareFunction($v);
                     break;
                 case 'Stmt_Use':
                     $this->parseUse($v);
@@ -202,7 +202,7 @@ class Preprocessor extends CompilerBase
                     $this->prepareClass($v2);
                     break;
                 case 'Stmt_Function':
-                    $this->prepareFunction($v2) . PHP_EOL;
+                    $this->prepareFunction($v2);
                     break;
                 case 'Stmt_Use':
                     $this->parseUse($v2);
@@ -579,7 +579,7 @@ class Preprocessor extends CompilerBase
             if ($this->classDef->hasMethod($name)) {
                 $this->fatalError($v, "Duplicate method `{$this->method}`");
             }
-            $this->prepareFunction($v) . PHP_EOL;
+            $this->prepareFunction($v);
             $this->checkRequiredArgNum($name, $this->methodDef, $v);
             $this->classDef->addMethod($this->methodDef);
         } else {

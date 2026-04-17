@@ -2074,10 +2074,15 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseBinaryOpConcat(Expr\BinaryOp\Concat $expr): string
     {
-        $left  = $this->parseIdentifier($expr->left);
+        $left = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
 
-        return 'php::concat(' . $left . ', ' . $right . ')';
+        $leftType = $this->detectTypeOfExpr($expr->left);
+        $rightType = $this->detectTypeOfExpr($expr->right);
+        if ($leftType === self::TYPE_VOID or $rightType === self::TYPE_VOID) {
+            $this->fatalError($expr, 'Cannot concat void');
+        }
+        return Symbol::concat() . '(' . $this->convertStringExpr($left) . ', ' . $this->convertStringExpr($right) . ')';
     }
 
     protected function parseFor(Node\Stmt\For_ $v): string
@@ -2879,7 +2884,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $expr = $this->parseExpr($expr->expr);
 
-        return '!' . $expr;
+        return '!(' . $expr . ')';
     }
 
     protected function parseWhile(Node\Stmt\While_ $v): string
@@ -3305,6 +3310,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         $type = $this->detectTypeOfExpr($arg->value);
 
         if ($argInfo->byRef) {
+            if ($this->isVarExpr($arg->value)) {
+                $var = $this->parseVariable($arg->value);
+                // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
+                if (!$this->hasLocalVar($var)) {
+                    $this->addLocalVar($var, self::TYPE_VAR);
+                } elseif ($this->getVarType($var) != self::TYPE_REF) {
+                    $this->fatalError($arg, "Argument `{$argInfo->name}` must be a reference, `{$type}` given");
+                }
+            }
             return $this->convertToRef($arg->value);
         }
 
@@ -4407,7 +4421,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $flags;
     }
 
-    protected function parseConstDef(mixed $v2): string
+    protected function parseConstDef(mixed $v2): void
     {
         foreach ($v2->consts as $const) {
             $name  = $this->parseIdentifier($const->name);
@@ -4417,8 +4431,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $this->addConstant($name, $value);
         }
-
-        return '';
     }
 
     protected function addConstant(string $name, string $value): void

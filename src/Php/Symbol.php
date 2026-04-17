@@ -25,6 +25,11 @@ class Symbol
         return 'php::instanceOf';
     }
 
+    public static function concat(): string
+    {
+        return 'php::concat';
+    }
+
     public static function getCalledCe(): string
     {
         return CompilerBase::PREFIX . 'get_called_ce(this_)';
