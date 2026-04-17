@@ -164,7 +164,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $ldflags = '';
     protected int $floatPrecision = 17;
     protected bool $debugInfo = true;
-    protected bool $printBacktraceOnError = false;
+    protected bool $printBacktraceOnError = true;
     protected bool $noLiteralStrings = false;
     protected string $file;
     protected string $dir;
@@ -1289,7 +1289,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($rightClass) {
                 if (!$this->hasVar($var)) {
                     $this->addLocalVar($var, self::TYPE_OBJECT);
-                    $this->addObject($var, $rightClass);
+                    // TODO 返回值类型是一个接口，只能作为 var 变量，无法作为 TypedObject
+                    if (!$this->hasInterface($rightClass)) {
+                        $this->addObject($var, $rightClass);
+                    }
                 } elseif ($this->isTypedObject($var)) {
                     $leftClass = $this->getObjectType($var);
                     // 对象的类不一致，不能互相赋值，必须使用 objval() 对齐类型
@@ -1579,8 +1582,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         $objectClass = $this->detectClassOfExpr($v->expr);
         $returnClass = $this->getReturnClass();
         if ($returnClass) {
-            if (!$objectClass) {
-                // TODO 返回值的类型无法确定，需要插入动态类型检测代码
+            if (!$objectClass or $this->hasInterface($objectClass)) {
+                // TODO 返回值的类型无法确定，或者是一个接口，无法继承关系，需要插入动态类型检测代码
             } elseif (!$this->isInheritedFrom($objectClass, $returnClass)) {
                 $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
             }
@@ -1707,6 +1710,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function hasClass(string $name): bool
     {
         return array_key_exists($this->escapeClass($name), $this->classes);
+    }
+
+    protected function hasInterface(string $name): bool
+    {
+        return array_key_exists($this->escapeClass($name), $this->interfaces);
     }
 
     protected function checkFunction(string $name): void
@@ -3259,24 +3267,35 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function isInheritedFrom(string $class, string $expected): bool
     {
         $internal = ($this->isInternalClass($expected) or $this->isInternalInterface($expected));
-
+        $isInterface = $this->hasInterface($expected);
+        // 类不存在，说明这是一个动态类，跳过静态检查，需要运行时检查
+        if (!$this->hasClass($class)) {
+            return true;
+        }
+        $classDef = $this->getClass($class);
         while (true) {
-            if (strcasecmp($class, $expected) === 0) {
-                return true;
-            }
-            if (!$this->hasClass($class)) {
-                // 原生类继承自一个内置类，例如: UserError extends Exception ，然后 $expected 预期是 Throwable
-                // 这种情况，需要使用 ZendVM 获取继承关系
-                if ($this->isInternalClass($class) and $internal) {
-                    return $class === $expected or is_subclass_of($class, $expected);
+            if ($isInterface) {
+                if ($classDef->implements and in_array($expected, $classDef->implements)) {
+                    return true;
                 }
-                return false;
+            } else {
+                if (strcasecmp($class, $expected) === 0) {
+                    return true;
+                }
+                if (!$this->hasClass($class)) {
+                    // 原生类继承自一个内置类，例如: UserError extends Exception ，然后 $expected 预期是 Throwable
+                    // 这种情况，需要使用 ZendVM 获取继承关系
+                    if ($this->isInternalClass($class) and $internal) {
+                        return $class === $expected or is_subclass_of($class, $expected);
+                    }
+                    return false;
+                }
             }
-            $classDef = $this->getClass($class);
             if (!$classDef->extends) {
                 return false;
             }
             $class = $classDef->extends;
+            $classDef = $this->getClass($class);
         }
     }
 

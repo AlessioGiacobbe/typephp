@@ -1450,11 +1450,11 @@ class Translator extends Preprocessor
 
     protected function parseInterface(Node\Stmt\Interface_ $v): void
     {
-        $name                                         = $this->parseIdentifier($v->name);
-        $this->interface                              = $name;
-        $this->interfaceDef                           = new InterfaceDef($name, $this->namespace);
-        $interfaceName                                = $this->interfaceDef->getNamespacedName();
-        $this->interfaces[$interfaceName]             = $this->interfaceDef;
+        $name = $this->parseIdentifier($v->name);
+        $this->interface = $name;
+        $this->interfaceDef = new InterfaceDef($name, $this->namespace);
+        $interfaceName = $this->interfaceDef->getNamespacedName();
+        $this->interfaces[$this->escapeClass($interfaceName)] = $this->interfaceDef;
         $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
     }
 
