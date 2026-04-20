@@ -1252,6 +1252,7 @@ class Translator extends Preprocessor
         if ($functionDef->returnType !== self::TYPE_VOID) {
             $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
             $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
+            $cppCode .= $this->getIndent() . 'php::deref(return_value);' . PHP_EOL;
         } else {
             $cppCode .= $this->getIndent() . $fn . '(' . $callParams . ');' . PHP_EOL;
         }
