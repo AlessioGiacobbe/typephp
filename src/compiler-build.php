@@ -12,6 +12,8 @@ function main(int $argc, array $argv): void
         die("php compiler.php [file]\n");
     }
 
+    global $translator;
+
     $path = $argv[1];
     $translator = new Translator(ROOT_PATH);
     $translator->setIndent('    ');

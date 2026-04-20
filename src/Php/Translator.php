@@ -35,6 +35,7 @@ class Translator extends Preprocessor
     protected bool $verbose = false;
     protected array $phpSrcFiles = [];
     protected array $ignorePaths = [];
+    protected array $ignoreExtensions = [];
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
 
@@ -60,6 +61,7 @@ class Translator extends Preprocessor
         $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
         $this->enableProfiler = $this->climate->arguments->defined('profile');
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
+        unset($this->internalFunctions['main']);
         $this->internalConstants = get_defined_constants();
         if ($this->climate->arguments->defined('help')) {
             $this->showUsage();
@@ -604,7 +606,7 @@ class Translator extends Preprocessor
                 $code .= $classDef->ctorInit;
                 $code .= "auto obj = create_object_{$className}(class_type);\n";
                 foreach ($classDef->properties as $property) {
-                    $fullPropName = $classDef->getNamespacedName() . '::' . $property->name;
+                    $fullPropName = $classDef->getNamespacedName(false) . '::' . $property->name;
                     if (isset($this->defaultPropertyList[$fullPropName])) {
                         $code .= "do {\n";
                         $code .= "auto value = {$this->defaultPropertyList[$fullPropName]};\n";
@@ -787,6 +789,10 @@ class Translator extends Preprocessor
                 $this->error('`ignore` must be array');
             }
             foreach ($cfg['ignore'] as $src) {
+                if (preg_match('/ext-([a-z0-9_]+)/i', $src, $matches)) {
+                    $this->ignoreExtensions[] = $matches[1];
+                    continue;
+                }
                 $realPath = $this->getAbsolutePath($src, $projectDir);
                 if (!$realPath) {
                     $this->error('Source file not exists: `' . $src . '`');
