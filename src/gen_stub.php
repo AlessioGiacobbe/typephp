@@ -4359,7 +4359,7 @@ class FileInfo {
         $nodeTraverser = new PhpParser\NodeTraverser;
         $nodeTraverser->addVisitor(new PhpParser\NodeVisitor\NameResolver);
         $prettyPrinter = new class extends Standard {
-            protected function pName_FullyQualified(Name\FullyQualified $node): string {
+            protected function pName_FullyQualified(PhpParser\Node\Name\FullyQualified $node): string {
                 return implode('\\', $node->getParts());
             }
         };

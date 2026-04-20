@@ -3072,6 +3072,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $className = $this->genAnonClassName();
                 $classDef->name = new Node\Identifier($className);
                 // 继承父类可能是 use 的名称，需要转换成全限定名称
+                // TODO 匿名类的属性、常量、方法参数中都可能会用相对类名，都需要转为全限定名称
                 if ($classDef->extends !== null) {
                     $parentClass = $this->getNamespacedClassName($classDef->extends->toString());
                     $classDef->extends = new Node\Name\FullyQualified($parentClass);
