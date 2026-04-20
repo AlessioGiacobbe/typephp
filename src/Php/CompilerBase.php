@@ -3071,6 +3071,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $classDef = $expr->class;
                 $className = $this->genAnonClassName();
                 $classDef->name = new Node\Identifier($className);
+                // 继承父类可能是 use 的名称，需要转换成全限定名称
+                if ($classDef->extends !== null) {
+                    $parentClass = $this->getNamespacedClassName($classDef->extends->toString());
+                    $classDef->extends = new Node\Name\FullyQualified($parentClass);
+                }
                 $this->context->beforeStmtLines[] = 'static THREAD_LOCAL bool ' . $className . '_defined = false;';
                 $classCode = $this->genEmbeddedCode($classDef);
                 $this->addConstData($className . '_code', $classCode);
