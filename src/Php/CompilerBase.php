@@ -4271,8 +4271,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         $class = $this->parseIdentifier($expr->class);
         $self = false;
         if ($class === 'self' or $class === 'this_') {
-            $self = true;
-            $class = $this->class;
+            // Trait 读取常量，必须动态获取类名
+            if ($this->classDef->trait) {
+                $class = 'static';
+            } else {
+                $self = true;
+                $class = $this->class;
+            }
         }
 
         $const = $this->escapeString($this->parseIdentifier($expr->name));

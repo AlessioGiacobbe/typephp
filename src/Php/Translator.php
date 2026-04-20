@@ -548,6 +548,7 @@ zend_module_entry {$moduleName}_module_entry = {
     STANDARD_MODULE_PROPERTIES,
 };
 CODE;
+        $code .= PHP_EOL . PHP_EOL;
 
         if ($this->buildMode === 'ext') {
             $code .= "ZEND_GET_MODULE({$moduleName});\n";
