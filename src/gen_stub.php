@@ -1423,7 +1423,7 @@ class FuncInfo {
         return false;
     }
 
-    private function equalsApartFromNameAndRefcount(FuncInfo $other): bool {
+    public function equalsApartFromNameAndRefcount(FuncInfo $other): bool {
         if (count($this->args) !== count($other->args)) {
             return false;
         }
@@ -2202,6 +2202,7 @@ OUPUT_EXAMPLE
     /** @param FuncInfo[] $generatedFuncInfos */
     public function findEquivalent(array $generatedFuncInfos): ?FuncInfo {
         foreach ($generatedFuncInfos as $generatedFuncInfo) {
+            // TODO 从数组遍历元素，调用方法，在编译期无法获得元素的类型，因此判断作用域，必须为 public 方法
             if ($generatedFuncInfo->equalsApartFromNameAndRefcount($this)) {
                 return $generatedFuncInfo;
             }

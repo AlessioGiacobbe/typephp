@@ -335,7 +335,230 @@ class Translator extends Preprocessor
         $file = $this->getBuildDir() . '/extension-' . $this->getModuleName() . '.cc';
         $this->localHeaders = $this->argInfoHeaderFiles;
         $this->genClassCeList();
-        $code = $this->render('extension.cc.php');
+        $this->indentLevel++;
+
+        $code = $this->genIncludeHeaderFiles();
+
+        if ($this->buildMode === 'bin') {
+            $cliHeaders = [
+                '#include "ps_title.h"',
+                '#include "php_cli_process_title.h"',
+                '#include "php_cli_process_title_arginfo.h"',
+            ];
+            $code .= implode(PHP_EOL, $cliHeaders) . PHP_EOL;
+        }
+
+        $code .= "// global vars \n";
+        foreach ($this->globalVars as $name => $type) {
+            $code .= self::TYPE_VAR . ' ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
+        }
+
+        $code .= "// class register functions \n";
+        foreach ($this->classCeList as $ce) {
+            $code .= 'zend_class_entry *' . $ce . ';' . PHP_EOL;
+        }
+
+        $code .= "// class entry \n";
+        $code .= 'zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . count($this->classMap) . '];' . PHP_EOL;
+
+        $code .= "// func \n";
+        $code .= 'zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . count($this->funcMap) . '];' . PHP_EOL;
+
+        $code .= "// property \n";
+        $code .= 'uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . count($this->propMap) . '];' . PHP_EOL;
+
+        $code .= <<<'CODE'
+zend_class_entry *php_get_class(int class_id, const php::String &class_name) {
+    if (UNEXPECTED(php_class_map[class_id] == nullptr)) {
+        php_class_map[class_id] = php::getClassEntrySafe(class_name);
+    }
+    return php_class_map[class_id];
+}
+
+zend_function *php_get_func(int func_id, const php::String &func_name) {
+    if (UNEXPECTED(php_func_map[func_id] == nullptr)) {
+        php_func_map[func_id] = php::getFunction(func_name);
+    }
+    return php_func_map[func_id];
+}
+
+zend_function *php_get_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
+    if (UNEXPECTED(php_func_map[func_id] == nullptr)) {
+        auto ce = php_get_class(class_id, class_name);
+        php_func_map[func_id] = php::getMethod(ce, method_name);
+    }
+    return php_func_map[func_id];
+}
+
+uint32_t php_get_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name) {
+    if (UNEXPECTED(php_property_map[prop_id] == 0)) {
+        php_property_map[prop_id] = php::getPropertyOffset(class_name, prop_name) + 1024;
+    }
+    return php_property_map[prop_id] - 1024;
+}
+CODE;
+        $code .= "\n\n";
+
+        $code .= "// literal strings \n";
+        $code .= self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[] = {' . PHP_EOL;
+        foreach ($this->literalStrings as $str => $index) {
+            $code .= self::TYPE_STR . '{ZEND_STRL("' . $this->escapeString($str) . '"), true}, // [' . $index . ']' . PHP_EOL;
+        }
+        $code .= '};' . PHP_EOL . PHP_EOL;
+
+        $code .= "// constants \n";
+        foreach ($this->constants as $name => $const) {
+            $code .= $const->type . ' ' . $name . ";\n";
+        }
+
+        $code .= "// class \n";
+        foreach ($this->classes as $classDef) {
+            if ($classDef->requireCtor) {
+                $code .= 'static zend_object* (*create_object_' . $classDef->getNamespacedName() . ")(zend_class_entry *class_type);\n";
+            }
+            foreach ($classDef->constants as $constant) {
+                if ($constant->type === self::TYPE_ARRAY) {
+                    $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
+                    $code .= self::TYPE_VAR . ' ' . $constName . ";\n";
+                }
+            }
+        }
+
+        $code .= "// clang-format off\n";
+        $code .= "static const zend_function_entry ext_functions[] = {\n";
+        if ($this->buildMode === 'bin') {
+            $code .= $this->getIndent() . "PHP_FE(cli_set_process_title,        arginfo_cli_set_process_title)\n";
+            $code .= $this->getIndent() . "PHP_FE(cli_get_process_title,        arginfo_cli_get_process_title)\n";
+        }
+
+        foreach ($this->functions as $functionDef) {
+            if ($this->buildMode === 'ext' and $functionDef->name === 'main') {
+                continue;
+            }
+            if ($functionDef->method) {
+                continue;
+            }
+            $fullName = $functionDef->getNamespacedName();
+            $zifName = $this->escapeZendFnName($fullName);
+            if ($functionDef->namespace) {
+                $code .= $this->getIndent() . 'ZEND_NAMED_FE("' . $this->escapeString($fullName) . '", ZEND_FN(' . $zifName . '), arginfo_<?=' . $zifName . ')' . PHP_EOL;
+            } else {
+                $code .= $this->getIndent() . 'ZEND_FE(' . $zifName . ', arginfo_' . $zifName . ')' . PHP_EOL;
+            }
+        }
+        $code .= $this->getIndent() . "ZEND_FE_END\n};\n// clang-format on" . PHP_EOL . PHP_EOL;
+
+        // minit begin
+        $code .= 'PHP_MINIT_FUNCTION(' . $this->getModuleName() . ') {' . PHP_EOL;
+        $code .= 'zend_try {' . PHP_EOL;
+        $code .= '// class/interface class entries' . PHP_EOL;
+        $code .= $this->genClassPropertyInit() . PHP_EOL;
+
+        $code .= '// register symbols' . PHP_EOL;
+        foreach ($this->registerSymbols as $registerSymbolFn) {
+            $code .= $registerSymbolFn . '(module_number);' . PHP_EOL;
+        }
+        $code .= '} zend_end_try();' . PHP_EOL;
+        $code .= 'return SUCCESS;' . PHP_EOL;
+        $code .= '}' . PHP_EOL . PHP_EOL;
+        // minit end
+
+        // php_app_init begin
+        $code .= 'void php_app_init() {' . PHP_EOL;
+        $code .= '// register constants' . PHP_EOL;
+        foreach ($this->constants as $name => $const) {
+            $code .= "{$name} = {$const->value};\n";
+            $code .= 'php::define(' . $this->genCharPtr($const->name) . ', ' . $name . ');' . PHP_EOL;
+        }
+        $code .= '// global vars ' . PHP_EOL;
+        foreach ($this->globalVars as $name => $type) {
+            $code .= 'php::initGlobal(' . $this->genCharPtr($name) . ', ' . $this->escapeGlobalVar($name) . ');' . PHP_EOL;
+        }
+
+        $code .= '// static property ' . PHP_EOL;
+        foreach ($this->defaultStaticPropertyList as $prop) {
+            $code .= 'php::setStaticProperty(' . $this->genCharPtr($prop->class, true) . ', ' . $this->genCharPtr($prop->name) . ', ' . $prop->default . ');' . PHP_EOL;
+        }
+
+        $code .= '// class array constants' . PHP_EOL;
+        $code .= $this->genClassArrayConstants();
+        $code .= '}' . PHP_EOL . PHP_EOL;
+        // php_app_init end
+
+        // php_app_clean begin
+        $code .= 'void php_app_clean() {' . PHP_EOL;
+        foreach ($this->globalVars as $name => $type) {
+            $code .= $this->escapeGlobalVar($name) . '.unset();' . PHP_EOL;
+            $code .= 'php::unsetGlobal("' . $name . '");' . PHP_EOL;
+        }
+        foreach ($this->constants as $name => $const) {
+            if ($const->type !== self::TYPE_VAR) {
+                continue;
+            }
+            $code .= $name . '.unset();' . PHP_EOL;
+        }
+
+        $code .= '// class array constants' . PHP_EOL;
+        foreach ($this->classes as $classDef) {
+            foreach ($classDef->constants as $constant) {
+                if ($constant->type === self::TYPE_ARRAY) {
+                    $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
+                    $code .= $constName . ".unset();\n";
+                }
+            }
+        }
+        $code .= '}' . PHP_EOL . PHP_EOL;
+        // php_app_clean end
+
+        $moduleName = $this->getModuleName();
+        // rinit begin
+        $code .= 'PHP_RINIT_FUNCTION(' . $moduleName . ') {' . PHP_EOL;
+        $code .= 'php::request_init();' . PHP_EOL;
+        $code .= 'php_app_init();' . PHP_EOL;
+
+        if ($this->buildMode === 'bin') {
+            if (count($this->functions['main']->argInfoList) == 2) {
+                $code .= 'php::eval("global $argc, $argv; main($argc, $argv);");' . PHP_EOL;
+            } else {
+                $code .= 'php::eval("main();");' . PHP_EOL;
+            }
+        }
+
+        $code .= 'return SUCCESS;' . PHP_EOL;
+        $code .= '}' . PHP_EOL . PHP_EOL;
+        // rinit end
+
+        $code .= <<<CODE
+PHP_RSHUTDOWN_FUNCTION({$moduleName}) {
+    php_app_clean();
+    php::request_shutdown();
+    return SUCCESS;
+}
+
+zend_module_entry {$moduleName}_module_entry = {
+    STANDARD_MODULE_HEADER,
+    "{$moduleName}",
+    ext_functions,
+    PHP_MINIT({$moduleName}),
+    nullptr,
+    PHP_RINIT({$moduleName}),
+    PHP_RSHUTDOWN({$moduleName}),
+    nullptr,
+    nullptr,
+    STANDARD_MODULE_PROPERTIES,
+};
+CODE;
+
+        if ($this->buildMode === 'ext') {
+            $code .= "ZEND_GET_MODULE({$moduleName});\n";
+        } else {
+            $code .= 'zend_module_entry *' . self::PREFIX . 'embed_get_module() {' . PHP_EOL;
+            $code .= $this->getIndent() . 'return &' . $moduleName . '_module_entry;' . PHP_EOL;
+            $code .= '}' . PHP_EOL;
+        }
+
+        $this->indentLevel--;
+
         $this->writeFile($file, $code);
         $this->formatCppCode($file);
         $this->localHeaders = [];
@@ -1533,14 +1756,6 @@ class Translator extends Preprocessor
         }
 
         return $list;
-    }
-
-    private function render(string $template): string
-    {
-        ob_start();
-        include __DIR__ . '/../template/' . $template;
-
-        return ob_get_clean();
     }
 
     private function genFunctionWrapper(FunctionDef $functionDef): string
