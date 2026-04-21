@@ -917,7 +917,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_Float':
                 return $this->parseScalarFloat($expr);
             case 'Scalar_String':
-                return $expr->hasAttribute('noLiteralString') ? $this->genCharPtr($expr->value) : $this->getLiteralString($expr->value);
+                return $expr->hasAttribute('noLiteralString') ? $this->genCharPtr($expr->value, true) : $this->getLiteralString($expr->value);
             default:
                 abort($expr);
                 break;
@@ -2586,21 +2586,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
                 if ($byRef) {
-                    if (!$this->hasVar($name)) {
-                        // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
-                        $this->addLocalVar($name, self::TYPE_REF);
-                    } else {
-                        // 本地变量，且是原生类型，则转为普通变量
-                        if ($this->hasLocalVar($name) and $this->isNativeType($this->getVarType($name))) {
-                            $this->context->localVars[$name] = self::TYPE_VAR;
-                        }
-                        // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
-                        $tmpVar = $this->genTmpVarName();
-                        $this->addLocalVar($tmpVar, self::TYPE_REF);
-                        $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
-                        $name = $tmpVar;
-                    }
-                    $list_args[] = '&' . $name;
+                    $list_args[] = $this->parseArgRefVar($arg, $name);
                     continue;
                 }
                 if (!$this->hasVar($name)) {
@@ -2639,6 +2625,18 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $list_args[] = $array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')';
                     continue;
                 }
+            } elseif ($this->isFuncCallExpr($arg->value)) {
+                if ($this->isNameExpr($arg->value->name) and $arg->value->name->toString() === 'refval') {
+                    if (count($arg->value->args) === 1 and $this->isVarExpr($arg->value->args[0]->value)) {
+                        $name = $this->parseVariable($arg->value->args[0]->value);
+                        // 消除 refval() 函数调用，直接使用变量
+                        $arg->value = $arg->value->args[0]->value;
+                        $list_args[] = $this->parseArgRefVar($arg, $name);
+                        continue;
+                    } else {
+                        $this->fatalError($arg, 'The refval function only accepts one parameter of variable type');
+                    }
+                }
             } else {
                 if ($byRef) {
                     $list_args[] = $this->parseChainedExpr($arg->value, self::OP_REFVAL);
@@ -2665,6 +2663,25 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return '{' . implode(', ', $list_args) . '}';
+    }
+
+    protected function parseArgRefVar(Node\Arg $arg, string $name): string
+    {
+        if (!$this->hasVar($name)) {
+            // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
+            $this->addLocalVar($name, self::TYPE_REF);
+        } else {
+            // 本地变量，且是原生类型，则转为普通变量
+            if ($this->hasLocalVar($name) and $this->isNativeType($this->getVarType($name))) {
+                $this->context->localVars[$name] = self::TYPE_VAR;
+            }
+            // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_REF);
+            $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
+            $name = $tmpVar;
+        }
+        return '&' . $name;
     }
 
     protected function parseArg(Node\Arg $arg): string
@@ -3702,7 +3719,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         // 对 eval() 指令的 PHP 代码段禁止字面量优化
         $expr->expr->setAttribute('noLiteralString', true);
-        return 'php::eval(' . $this->parseIdentifier($expr->expr) . ')';
+        return 'php::eval(' . $this->identifierToStr($expr->expr) . ')';
     }
 
     protected function parseInclude(Expr\Include_ $expr): string
