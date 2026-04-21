@@ -801,6 +801,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } else {
                     $class = $this->getNamespacedClassName($typeName);
                 }
+                // Trait 在注入 class 需要使用完整类名
+                if ($class and $this->classDef and $this->classDef->trait) {
+                    $type->name = $class;
+                }
                 return self::TYPE_OBJECT;
             }
         }
@@ -1976,23 +1980,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($param->byRef) {
             return self::TYPE_REF;
         }
-        if ($param->type === null or $param->type instanceof NullableType or $param->type instanceof UnionType) {
-            return self::TYPE_VAR;
+        $class = '';
+        $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
+        if ($class) {
+            $this->addObject($var, $class);
+            $argInfo->class = $class;
         }
-        $type = $param->type;
-        $typeName = $type->name;
-        if ($typeName === 'void' or $typeName === 'never') {
-            $this->fatalError($param, 'Cannot use `void`/`never` as a parameter type.');
-        } elseif ($typeName === 'self') {
-            $class = $this->classDef->getNamespacedName(false);
-        } elseif (isset($this->zendTypeMap[$typeName])) {
-            return $this->getTypeFromZendType($typeName);
-        } else {
-            $class = $this->getNamespacedClassName($typeName);
-        }
-        $this->addObject($var, $class);
-        $argInfo->class = $class;
-        return self::TYPE_OBJECT;
+        return $type;
     }
 
     protected function parseIncludes(): string
