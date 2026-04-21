@@ -1649,21 +1649,21 @@ class FuncInfo {
             }
         }
 
-        $flags = new VersionFlags($flags);
+        $obj = new VersionFlags($flags);
 
         if ($this->isMethod() === false && $this->supportsCompileTimeEval) {
-            $flags->addForVersionsAbove("ZEND_ACC_COMPILE_TIME_EVAL", PHP_82_VERSION_ID);
+            $obj->addForVersionsAbove("ZEND_ACC_COMPILE_TIME_EVAL", PHP_82_VERSION_ID);
         }
 
         foreach ($this->attributes as $attr) {
             switch ($attr->class) {
                 case "NoDiscard":
-                    $flags->addForVersionsAbove("ZEND_ACC_NODISCARD", PHP_85_VERSION_ID);
+                    $obj->addForVersionsAbove("ZEND_ACC_NODISCARD", PHP_85_VERSION_ID);
                     break;
             }
         }
 
-        return $flags;
+        return $obj;
     }
 
     private function generateRefSect1(DOMDocument $doc, string $role): DOMElement {
@@ -2263,7 +2263,7 @@ class EvaluatedValue
             }
 
             /** @return Node|null */
-            public function enterNode(Node $expr)
+            public function enterNode(PhpParser\Node $expr)
             {
                 if (!$expr instanceof Expr\ConstFetch && !$expr instanceof Expr\ClassConstFetch) {
                     return null;
