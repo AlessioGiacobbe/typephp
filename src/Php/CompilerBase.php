@@ -78,13 +78,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string CLASS_MAP = 'class_map';
     public const string FUNC_MAP = 'func_map';
     public const string PROP_MAP = 'property_map';
-    public const string EXPR_VARIABLE = 'Expr_Variable';
-
-    public const string EXPR_NEW = 'Expr_New';
-
-    public const string EXPR_ARRAY_DIM_FETCH = 'Expr_ArrayDimFetch';
-    public const string EXPR_PROPERTY_FETCH = 'Expr_PropertyFetch';
-
     public const string NAMESPACE_SEPARATOR = '__';
 
     public const string PREFIX = 'php_';
@@ -321,7 +314,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->context->objects[$object] ?? 'stdClass';
     }
 
-    public function parseExpr(NodeAbstract $expr)
+    public function parseExpr(NodeAbstract $expr): string
     {
         if ($expr->hasAttribute('replace')) {
             return $expr->getAttribute('replace');
@@ -416,9 +409,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseBinaryOpMinus($expr);
             case 'Expr_Array':
                 return $this->parseArray($expr);
-            case self::EXPR_ARRAY_DIM_FETCH:
+            case 'Expr_ArrayDimFetch':
                 return $this->parseArrayDimFetch($expr, $this->context->inAssignExpr);
-            case self::EXPR_PROPERTY_FETCH:
+            case 'Expr_PropertyFetch':
                 return $this->parsePropertyFetch($expr, $this->context->inAssignExpr);
             case 'Expr_NullsafePropertyFetch':
                 return $this->parseNullsafePropertyFetch($expr);
@@ -477,7 +470,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_Int':
             case 'Scalar_Float':
             case 'Scalar_String':
-            case self::EXPR_VARIABLE:
+            case 'Expr_Variable':
                 return $this->parseIdentifier($expr);
             case 'Scalar_MagicConst_File':
             case 'Scalar_MagicConst_Dir':
@@ -979,7 +972,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $type = $expr->getType();
         switch ($type) {
-            case self::EXPR_VARIABLE:
+            case 'Expr_Variable':
                 return $this->parseVariable($expr);
             case 'Name_FullyQualified':
                 return '\\' . $expr->name;
@@ -1306,6 +1299,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
                     }
                 } else {
+                    if ($this->getVarType($var) === self::TYPE_ARRAY) {
+                        $this->fatalError($left, "Cannot re-assign `\${$var}` from object to array");
+                    }
                     // TODO 右值是一个类型对象，但左值是一个 var ，许可，但无法标记对象类型
                 }
             } else {
@@ -1344,6 +1340,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                     // 禁止字符串与数组互相转换，其他类型如对象可以使用 __toString() 协议转为字符串，整数和浮点型也可以转为字符串
                     or ($this->getVarType($var) === self::TYPE_STR and $type === self::TYPE_ARRAY)
                     or ($this->getVarType($var) === self::TYPE_ARRAY and $type === self::TYPE_STR)
+                    // 禁止对象转为数组
+                    or ($this->getVarType($var) === self::TYPE_ARRAY and $type === self::TYPE_OBJECT)
                 ) {
                     $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . ' to ' . $type);
                 }
@@ -1904,7 +1902,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return self::TYPE_OBJECT;
             case 'Expr_Assign':
                 return $this->detectVarType($expr->var);
-            case self::EXPR_VARIABLE:
+            case 'Expr_Variable':
                 return $this->detectVarType($expr);
             case 'Expr_ConstFetch':
                 return $this->detectConstType($expr);
@@ -2145,7 +2143,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $var          = $this->parseIdentifier($node->var);
         $expr         = $this->parseIdentifier($node->expr);
-        $leftExprType = $node->var->getType();
 
         if ($this->isVarExpr($node->var)) {
             if (!$this->hasVar($var)) {
@@ -2166,7 +2163,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $var . ' ' . $op . ' ' . $rightExprStr;
         }
 
-        if ($leftExprType === self::EXPR_ARRAY_DIM_FETCH) {
+        if ($this->isArrayDimFetch($node->var)) {
             /**
              * $count[$r] -= 1;
              * 需要转为下面语句：
@@ -2882,9 +2879,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseBooleanNot(Expr\BooleanNot $expr): string
     {
-        $expr = $this->parseExpr($expr->expr);
-
-        return '!(' . $expr . ')';
+        return '!(' . $this->parseExpr($expr->expr) . ')';
     }
 
     protected function parseWhile(Node\Stmt\While_ $v): string
@@ -3093,7 +3088,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($className === 'static') {
                     $cePtr = Symbol::getCalledCe();
                 } else {
-                    $className = $this->getNamespacedClassName($className);
+                    if ($className === 'self') {
+                        $className = $this->getFullClassName();
+                    } elseif ($className === 'parent') {
+                        $className = $this->classDef->extends;
+                    } else {
+                        $className = $this->getNamespacedClassName($className);
+                    }
                     if ($this->hasClass($className)) {
                         $classDef = $this->getClass($className);
                         if ($classDef->flags & Modifiers::ABSTRACT) {
@@ -3370,23 +3371,22 @@ class CompilerBase extends \PhpAot\Core\Translator
         $vars = $node->vars;
         $lines = [];
         foreach ($vars as $var) {
-            $type = $var->getType();
-            if ($type === self::EXPR_ARRAY_DIM_FETCH) {
+            if ($this->isArrayDimFetch($var)) {
                 $array = $this->parseIdentifier($var->var);
                 $dim = $this->parseIdentifier($var->dim);
                 $lines[] = $array . '.offsetUnset(' . $dim . ');';
-            } elseif ($type === 'Expr_PropertyFetch') {
+            } elseif ($this->isPropertyFetch($var)) {
                 $object = $this->parseIdentifier($var->var);
                 $propName = $this->identifierToStr($var->name, literal: true);
                 $lines[] = $object . '.unsetProperty(' . $propName . ');';
-            } elseif ($type === self::EXPR_VARIABLE) {
+            } elseif ($this->isVarExpr($var)) {
                 $name = $this->parseIdentifier($var);
                 if (!$this->hasVar($name)) {
                     $this->errorUndefinedVariable($var);
                 }
                 $lines[] = "{$name}.unset();";
             } else {
-                $this->fatalError($var, "Unsupported unset type `{$type}`");
+                $this->fatalError($var, "Unsupported unset type `{$var->getType()}`");
             }
         }
 
@@ -3472,7 +3472,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->fatalError($node, 'Foreach by reference only supports variable as value');
         }
 
-        if ($node->valueVar->getType() == self::EXPR_ARRAY_DIM_FETCH) {
+        if ($this->isArrayDimFetch($node->valueVar)) {
             $array = $this->parseIdentifier($node->valueVar->var);
             if (!$this->hasVar($array) or $node->valueVar->dim === null) {
                 abort($node->valueVar);
@@ -4057,10 +4057,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             return $id;
         }
-        /*
-         * 对 static 的支持存在问题，静态编译时无法获得实际运行时的子类名，所以只能使用 self
-         * self 是在编译期确定的，而 static 是运行时确定的，但使用 AOT 编译为可执行文件后，运行时类的名称是无法确定的
-         */
         if ($id === 'self') {
             $id = $this->getNamespacedClassName($this->class);
         } elseif ($id === 'static') {
