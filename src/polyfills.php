@@ -38,3 +38,8 @@ function objval(mixed $obj, string $class): object
     }
     throw new Exception('Invalid object type');
 }
+
+function &refval(&$var)
+{
+    return $var;
+}

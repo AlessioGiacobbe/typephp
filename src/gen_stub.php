@@ -3673,7 +3673,7 @@ class ClassInfo {
                     "class_{$escapedName}_$key",
                     $allConstInfos,
                     $this->phpVersionIdMinimumCompatibility,
-                    $declaredStrings
+                    refval($declaredStrings)
                 );
             }
 

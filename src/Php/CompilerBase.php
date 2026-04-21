@@ -2665,6 +2665,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '{' . implode(', ', $list_args) . '}';
     }
 
+    /**
+     * 仅用于动态调用的参数解析
+     */
     protected function parseArgRefVar(Node\Arg $arg, string $name): string
     {
         if (!$this->hasVar($name)) {
@@ -2681,6 +2684,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
             $name = $tmpVar;
         }
+        // 动态调用，参数列表是 Variant 类型而不是 Reference，必须使用 & 符号取地址，传递指针，以保持引用传递
         return '&' . $name;
     }
 
@@ -3334,6 +3338,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         $type = $this->detectTypeOfExpr($arg->value);
 
         if ($argInfo->byRef) {
+            if ($this->isRefvalCall($arg->value)) {
+                if (count($arg->value->args) === 1 and $this->isVarExpr($arg->value->args[0]->value)) {
+                    // 消除 refval() 函数调用，直接使用变量
+                    $arg->value = $arg->value->args[0]->value;
+                } else {
+                    $this->fatalError($arg, 'The refval function only accepts one parameter of variable type');
+                }
+            }
             if ($this->isVarExpr($arg->value)) {
                 $var = $this->parseVariable($arg->value);
                 // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用

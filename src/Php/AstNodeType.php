@@ -75,6 +75,11 @@ trait AstNodeType
         return $expr instanceof Expr\FuncCall;
     }
 
+    protected function isRefvalCall(NodeAbstract $expr): bool
+    {
+        return $this->isFuncCallExpr($expr) and $this->isNameExpr($expr->name) and $expr->name->toString() === 'refval';
+    }
+
     protected function isMethodCall(NodeAbstract $expr): bool
     {
         return $expr instanceof Expr\MethodCall;
