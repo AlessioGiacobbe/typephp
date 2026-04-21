@@ -1,5 +1,5 @@
 --TEST--
-Method conflict in traits
+trait full class name
 --FILE--
 <?php
 namespace App1 {
@@ -37,3 +37,7 @@ namespace {
 }
 ?>
 --EXPECT--
+object(App1\Foo1)#1 (1) {
+  ["prop"]=>
+  string(7) "Hello 1"
+}
