@@ -1515,7 +1515,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (count($expr->args) === 2 and $fn === 'objval') {
                 $argClass = $expr->args[1]->value;
                 if ($this->isScalarString($argClass)) {
-                    return $this->getNamespacedClassName($this->parseIdentifier($argClass));
+                    return $this->getNamespacedClassName($argClass->value);
                 }
                 if ($this->isClassConstFetch($argClass)) {
                     if ($this->isNameExpr($argClass->class) and $this->isIdExpr($argClass->name) and $this->parseIdentifier($argClass->name) === 'class') {
@@ -4325,7 +4325,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $class = $this->getNamespacedClassName($class);
         if ($const === 'class') {
-            return '"' . $this->escapeString($class) . '"';
+            return $this->getLiteralString($class);
         }
         if (($self or $this->isNameExpr($expr->class)) and $this->isIdExpr($expr->name)) {
             if ($this->hasClass($class)) {

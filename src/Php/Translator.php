@@ -49,7 +49,7 @@ class Translator extends Preprocessor
     public function __construct(string $rootPath)
     {
         parent::__construct($rootPath);
-        $this->climate->arguments->add(require __DIR__ . '/../config/compiler_options.php');
+        $this->climate->arguments->add(Constants::COMPILER_OPTIONS);
         $this->preprocessArgvAdvanced();
         $this->climate->arguments->parse();
 
