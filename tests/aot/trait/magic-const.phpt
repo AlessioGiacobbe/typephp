@@ -1,28 +1,19 @@
+--TEST--
+trait full class name
+--FILE--
 <?php
-
 trait TraitA {
     public function sayHello() {
-        echo 'Hello';
         var_dump(__TRAIT__);
         var_dump(__CLASS__);
     }
 }
 
-trait TraitB {
-    public function sayWorld() {
-        echo 'World';
-    }
-}
-
 class MyHelloWorld
 {
-    use TraitA, TraitB; // A class can use multiple traits
-
+    use TraitA;
     public function sayHelloWorld() {
         $this->sayHello();
-        echo ' ';
-        $this->sayWorld();
-        echo "!\n";
     }
 }
 
@@ -31,3 +22,7 @@ function main()
     $obj = new MyHelloWorld();
     $obj->sayHelloWorld();
 }
+?>
+--EXPECT--
+string(6) "TraitA"
+string(12) "MyHelloWorld"

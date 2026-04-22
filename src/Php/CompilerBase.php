@@ -478,6 +478,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_MagicConst_Function':
             case 'Scalar_MagicConst_Method':
             case 'Scalar_MagicConst_Class':
+            case 'Scalar_MagicConst_Trait':
                 return $this->parseMagicConst($expr);
             case 'Scalar_InterpolatedString':
                 return $this->parseInterpolatedString($expr);
@@ -3472,6 +3473,17 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_MagicConst_Function':
                 return '"' . $this->escapeString($function) . '"';
             case 'Scalar_MagicConst_Class':
+                if (!$this->classDef) {
+                    $this->fatalError($expr, 'The magic constant `__CLASS__` is not allowed in global scope');
+                }
+                if ($this->classDef->trait) {
+                    return Symbol::getCalledClass();
+                }
+                return '"' . $this->escapeString($class) . '"';
+            case 'Scalar_MagicConst_Trait':
+                if (!$this->classDef or !$this->classDef->trait) {
+                    $this->fatalError($expr, 'The magic constant `__TRAIT__` is not allowed in global scope');
+                }
                 return '"' . $this->escapeString($class) . '"';
             case 'Scalar_MagicConst_Method':
                 return '"' . $this->escapeString($class) . '::' . $this->escapeString($this->method) . '"';

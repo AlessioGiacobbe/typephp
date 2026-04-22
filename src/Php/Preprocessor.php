@@ -546,6 +546,9 @@ class Preprocessor extends CompilerBase
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
+        if ($v->hooks and count($v->hooks) > 0) {
+            $this->fatalError($v, 'The class property hooks are not supported');
+        }
         $oriCtx = $this->context;
         $this->context = $this->classDef->propertyContext;
         $flags = $this->parseModifiers($v->flags);
