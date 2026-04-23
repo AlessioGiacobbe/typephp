@@ -3432,7 +3432,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($object === 'this_' and $this->isIdExpr($var->name)) {
                     $propName = $this->parseIdentifier($var->name);
                     if ($this->hasObjectPropVar($this->getObjectPropVarName($object, $propName))) {
-                        $this->warning($var, "Unset of object property `{$propName}` is not allowed");
+                        $this->warning($var, "Object property `$propName` of native types cannot be unset");
                         $lines = [];
                         $lines[] = $this->getObjectPropVarName($object, $propName) . " = 0;";
                     }
@@ -3442,7 +3442,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$this->hasVar($name)) {
                     $this->errorUndefinedVariable($var);
                 }
-                $lines[] = "{$name}.unset();";
+                $type = $this->getVarType($name);
+                if ($this->isNativeType($type)) {
+                    $this->warning($var, "Variable of native type `\${$name}` cannot be unset");
+                } else {
+                    $lines[] = "{$name}.unset();";
+                }
             } else {
                 $this->fatalError($var, "Unsupported unset type `{$var->getType()}`");
             }
