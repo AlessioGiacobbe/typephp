@@ -1,8 +1,13 @@
 <?php
-// python: import sys
 use sys;
-// python: import sos
 use os;
+use numpy as np;
+
+function np()
+{
+    print(np::$module);
+    print(np::version->full_version);
+}
 
 function main()
 {
@@ -11,15 +16,6 @@ function main()
     var_dump(os::environ->get("PATH"));
 }
 
-
-
-use numpy as np;
-
-function np()
-{
-    print(np::$module);
-    print(np::version->full_version);
-}
 
 
 $array["hello"] = $a;

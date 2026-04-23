@@ -33,7 +33,7 @@ function simpleicall(int $n)
 
 class Foo {
     static $a = 12;
-    public $b = 0;
+    public int $b = 0;
     const TEST = 23;
 
     static function read_static($n) {
@@ -69,13 +69,13 @@ class Foo {
         }
     }
 
-    function read_prop($n) {
+    function read_prop(int $n) {
         for ($i = 0; $i < $n; ++$i) {
             $x = $this->b;
         }
     }
 
-    function write_prop($n) {
+    function write_prop(int $n) {
         for ($i = 0; $i < $n; ++$i) {
             $this->b = 0;
         }
