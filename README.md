@@ -3,6 +3,8 @@
 - 需要 GCC-9 以上版本，支持 C++17 标准
 - 需要 CMake-3.24 以上版本
 
+> 预览版目前仅支持 `Linux` 系统，建议使用 `Ubuntu 22.04`
+
 ## PHP
 必须包含 embed 模块
 
@@ -11,7 +13,7 @@
 进入 `vendor/swoole/phpx` 目录，编译 `phpx`
 
 ```shell
-vendor/swoole/phpx
+cd vendor/swoole/phpx
 cmake .
 make -j32
 ```

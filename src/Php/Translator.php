@@ -484,7 +484,7 @@ CODE;
         $code .= '// register constants' . PHP_EOL;
         foreach ($this->constants as $name => $const) {
             $code .= "{$name} = {$const->value};\n";
-            $code .= 'php::define(' . $this->genCharPtr($const->name) . ', ' . $name . ');' . PHP_EOL;
+            $code .= 'php::define(' . $this->genCharPtr($const->name, true) . ', ' . $name . ');' . PHP_EOL;
         }
         $code .= '// global vars ' . PHP_EOL;
         foreach ($this->globalVars as $name => $type) {

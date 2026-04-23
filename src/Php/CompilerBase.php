@@ -158,7 +158,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $ldflags = '';
     protected int $floatPrecision = 17;
     protected bool $debugInfo = false;
-    protected bool $formatCode = false;
+    protected bool $formatCode = true;
     protected bool $printBacktraceOnError = false;
     protected bool $noLiteralStrings = false;
     protected string $file;
