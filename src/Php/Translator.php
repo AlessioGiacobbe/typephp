@@ -457,7 +457,7 @@ CODE;
             $fullName = $functionDef->getNamespacedName();
             $zifName = $this->escapeZendFnName($fullName);
             if ($functionDef->namespace) {
-                $code .= $this->getIndent() . 'ZEND_NAMED_FE("' . $this->escapeString($fullName) . '", ZEND_FN(' . $zifName . '), arginfo_<?=' . $zifName . ')' . PHP_EOL;
+                $code .= $this->getIndent() . 'ZEND_NAMED_FE("' . $this->escapeString($fullName) . '", ZEND_FN(' . $zifName . '), arginfo_' . $zifName . ')' . PHP_EOL;
             } else {
                 $code .= $this->getIndent() . 'ZEND_FE(' . $zifName . ', arginfo_' . $zifName . ')' . PHP_EOL;
             }
