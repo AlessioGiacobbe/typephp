@@ -1235,7 +1235,7 @@ CODE;
     {
         $headerFile = $this->getArgInfoHeaderFile($file, true);
 
-        $this->climate->info('generate stub file: ' . $this->getRelativePath($file));
+        $this->climate->info('generate arginfo file: ' . $this->getRelativePath($file));
         generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true);
 
         if ($this->useRegisterSymbolsFn) {
