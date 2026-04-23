@@ -15,6 +15,7 @@ use PhpAot\Php\Entity\ConstantDef;
 use PhpAot\Php\Entity\FunctionDef;
 use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
+use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\DynamicCall;
 use PhpAot\Php\Exception\PlaceHolder;
 use PhpAot\Php\Exception\Redo;
@@ -75,6 +76,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string ANON_CLASS = '_anon_class_';
     public const string STATIC_VAR = '_static_var_';
     public const string GLOBAL_VAR = '_global_var_';
+    public const string OBJECT_PROP = '_object_prop_';
     public const string CLASS_MAP = 'class_map';
     public const string FUNC_MAP = 'func_map';
     public const string PROP_MAP = 'property_map';
@@ -3427,10 +3429,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->classDef->trait) {
                     goto _dynamic_attr;
                 }
-                $nativeProperty = $this->findNativeProperty($object, $propertyName, $this->class, $this->namespace);
+                $nativeProperty = $this->findNativeProperty($expr, $propertyName, $this->class, $this->namespace);
             } elseif ($this->isTypedObject($objectName)) {
                 $className = $this->getObjectType($objectName);
-                $nativeProperty = $this->findNativeProperty($object, $propertyName, $className);
+                $nativeProperty = $this->findNativeProperty($expr, $propertyName, $className);
             }
             if ($nativeProperty) {
                 $expr->setAttribute('nativeProperty', $nativeProperty);
@@ -3446,7 +3448,27 @@ class CompilerBase extends \PhpAot\Core\Translator
         $object = $expr->var;
         $property = $expr->name;
         $id = $this->getPropertyIdentifier($expr, $object, $property);
-        return $this->parseIdentifier($object) . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
+        $objectVar = $this->parseIdentifier($object);
+        $getProperty = $objectVar . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
+        // 将属性设置为 native 类型的引用，以提高性能，仅适用于 this_ ，其他类型对象可能会在中间发生改变
+        // TODO 分析对象是否为 SSA , 如果是 SSA 则可以将属性设置为引用
+        if ($expr->hasAttribute('nativePropertyDef') and $this->nativeTypes and $objectVar === 'this_') {
+            /**
+             * @var $def PropertyDef
+             */
+            $def = $expr->getAttribute('nativePropertyDef');
+            if ($def->type === self::TYPE_INT or $def->type === self::TYPE_FLOAT) {
+                $propVar = self::OBJECT_PROP . $objectVar . self::NAMESPACE_SEPARATOR . $this->parseIdentifier($property);
+                if (!isset($this->context->objectProps[$propVar])) {
+                    $this->context->objectProps[$propVar] = [
+                        'type' => $def->type,
+                        'getter' => $getProperty,
+                    ];
+                }
+                return $propVar;
+            }
+        }
+        return $getProperty;
     }
 
     protected function parseAssignOpShiftRight(Expr\AssignOp\ShiftRight $node): string
@@ -4240,7 +4262,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             $findClass = $namespace . '\\' . $class;
         }
         $scope = $this->class ? ltrim($namespace . '\\' . $class, '\\') : '';
-
+        $propertyDef = null;
+        $classDef = null;
         while (true) {
             if ($this->hasClass($findClass)) {
                 $classDef = $this->getClass($findClass);
@@ -4251,16 +4274,16 @@ class CompilerBase extends \PhpAot\Core\Translator
                         return null;
                     }
                     if ($propertyDef->isPublic()) {
-                        return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
+                        break;
                     }
                     if ($propertyDef->isProtected()) {
                         if ($scope) {
-                            return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
+                            break;
                         }
                         $this->fatalError($expr, "Cannot access protected property `{$property}` of class `{$class}`");
                     } else {
                         if ($scope === $findClass) {
-                            return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
+                            break;
                         }
                         $this->fatalError($expr, "Cannot access private property `{$property}` of class `{$class}`");
                     }
@@ -4270,6 +4293,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             }
             break;
+        }
+        if ($propertyDef and $classDef) {
+            $expr->setAttribute('nativePropertyDef', $propertyDef);
+            $expr->setAttribute('nativeClassDef', $classDef);
+            return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
         }
         return null;
     }
@@ -4783,6 +4811,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         foreach ($this->context->globalVars as $name => $type) {
             $code .= $this->getIndent() . self::TYPE_VAR . ' &' . $name . ' = ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
+        }
+        foreach ($this->context->objectProps as $name => $info) {
+            $code .= $this->getIndent() . $info['type'] . ' &' . $name . ' = Z_LVAL_P(' . $info['getter'] . '.unwrap_ptr());' . PHP_EOL;
         }
         return $code;
     }

@@ -33,6 +33,7 @@ class FunctionContext
     public bool $inAssignExpr = false;
     public array $beforeStmtLines = [];
     public array $afterStmtLines = [];
+    public array $objectProps;
 
     public function __construct()
     {
@@ -40,6 +41,7 @@ class FunctionContext
         $this->staticVars = [];
         $this->arguments = [];
         $this->objects = [];
+        $this->objectProps = [];
         $this->ceWrappers = [];
         $this->tmpVarIndex = 0;
         $this->inLoop = false;
