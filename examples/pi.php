@@ -1,4 +1,6 @@
 <?php
+use native_types;
+
 function main()
 {
     ini_set("precision", 17);

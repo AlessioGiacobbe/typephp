@@ -1905,6 +1905,16 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                 }
                 break;
+            case 'Expr_PropertyFetch':
+                if ($this->isVarExpr($expr->var) and $this->isIdExpr($expr->name)) {
+                    $this->parsePropertyFetch($expr);
+                    if ($expr->getAttribute('nativePropertyVar')) {
+                        $propVar = $expr->getAttribute('nativePropertyVar');
+                        $info = $this->context->objectProps[$propVar];
+                        return $info['type'];
+                    }
+                }
+                break;
             case 'Expr_New':
                 return self::TYPE_OBJECT;
             case 'Expr_Assign':
@@ -3465,6 +3475,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                         'getter' => $getProperty,
                     ];
                 }
+                $expr->setAttribute('nativePropertyVar', $propVar);
                 return $propVar;
             }
         }

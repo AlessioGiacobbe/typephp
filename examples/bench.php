@@ -1,4 +1,6 @@
 <?php
+use native_types;
+
 function simple()
 {
     $a = 0;

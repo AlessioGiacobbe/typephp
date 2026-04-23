@@ -1,4 +1,4 @@
 #!/usr/bin/env php
 <?php
 include $argv[1];
-main();
+main($argc, $argv);
