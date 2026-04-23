@@ -236,6 +236,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         '_FILES'   => self::TYPE_ARRAY,
         '_SESSION' => self::TYPE_ARRAY,
         '_REQUEST' => self::TYPE_ARRAY,
+        '_ENV'     => self::TYPE_ARRAY,
     ];
     protected array $globalVars = [];
     protected bool $strictTypes = false;

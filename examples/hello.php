@@ -1,14 +1,12 @@
 <?php
 
-function main(): int
+function main(): void
 {
-    global $a;
-    $a = 100;
+    echo "Hello World!";
+    var_dump(PHP_VERSION);
+    var_dump(php_uname());
+    var_dump($_ENV);
 
-    var_dump($GLOBALS['a']);
-    var_dump($a);
-    var_dump(gettype($_SERVER));
-    var_dump($_SERVER['argc']);
-    var_dump($_SERVER['argv']);
-    return 0;
+    global $argv;
+    var_dump($argv);
 }
