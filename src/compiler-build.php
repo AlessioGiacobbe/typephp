@@ -8,16 +8,17 @@ function main(int $argc, array $argv): void
 
     require ROOT_PATH . '/vendor/autoload.php';
 
-    if (empty($argv[1])) {
-        die("php compiler.php [file]\n");
-    }
-
     global $translator;
 
-    $path = $argv[1];
     $translator = new Translator(ROOT_PATH);
+    if (empty($argv[1])) {
+        $translator->showUsage();
+        exit(0);
+    }
+
     $translator->setIndent('    ');
     // 扫描所有 PHP 文件，预处理
+    $path = $argv[1];
     $files = $translator->prepare($path);
     // 生成 C++ 文件
     $sourceFiles = $translator->convert($files);

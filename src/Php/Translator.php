@@ -79,19 +79,23 @@ class Translator extends Preprocessor
         $this->showVersion();
         $climate->br();
 
+        global $argv;
+        $cmd = $argv[0];
+
         $climate->bold('USAGE:');
-        $climate->tab()->out('./bin/compiler.php <file/dir> [options]');
+        $climate->tab()->out($cmd . ' <file/dir/project.yml> [options]');
         $climate->br();
 
         $climate->bold('ARGUMENTS:');
-        $climate->tab()->out('<file>    Input PHP file/directory to compile');
+        $climate->tab()->out('<file>    Input PHP file/directory/project.yml to compile');
         $climate->br();
 
         $climate->bold('OPTIONS:');
         $climate->tab()->out('-O <level>           Optimization level (0-3, default: 0)');
         $climate->tab()->out('-p, --profile        Enable performance profiling');
+        $climate->tab()->out('-d, --debug-info     Enable debug info');
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
-        $climate->tab()->out('-v, --verbose        Verbose output');
+        $climate->tab()->out('-v, --version        Show version');
         $climate->tab()->out('-h, --help           Show this help message');
         $climate->tab()->out('-f, --force          Force compile even if cache exists');
         $climate->tab()->out('-m, --mode <mode>    Compilation mode, -m bin(binary) or -m ext(extension), default: bin');
@@ -100,11 +104,11 @@ class Translator extends Preprocessor
         $climate->br();
 
         $climate->bold('EXAMPLES:');
-        $climate->tab()->out('./bin/compiler.php examples/hello.php');
-        $climate->tab()->out('./bin/compiler.php examples/bench.php -O2');
-        $climate->tab()->out('./bin/compiler.php examples/bench.php -O2 ');
-        $climate->tab()->out('./bin/compiler.php examples/extension -O2 -o myapp -m ext');
-        $climate->tab()->out('./bin/compiler.php examples/app.php -O3 -o myapp -v');
+        $climate->tab()->out($cmd . ' hello.php');
+        $climate->tab()->out($cmd . ' bench.php -O2');
+        $climate->tab()->out($cmd . ' project/config.yml -O2');
+        $climate->tab()->out($cmd . ' my-ext/ -O2 -o myapp -m ext');
+        $climate->tab()->out($cmd . ' app.php -O3 -o myapp -v');
         $climate->br();
     }
 
@@ -179,7 +183,7 @@ class Translator extends Preprocessor
     {
         $realpath = realpath($path);
         if ($realpath === false) {
-            exit("path not exists: {$path}\n");
+            $this->error("path not exists: {$path}");
         }
         $path = $realpath;
 

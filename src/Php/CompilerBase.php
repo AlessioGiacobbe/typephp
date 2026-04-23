@@ -158,8 +158,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $cxxflags = '';
     protected string $ldflags = '';
     protected int $floatPrecision = 17;
-    protected bool $debugInfo = true;
-    protected bool $printBacktraceOnError = true;
+    protected bool $debugInfo = false;
+    protected bool $formatCode = false;
+    protected bool $printBacktraceOnError = false;
     protected bool $noLiteralStrings = false;
     protected string $file;
     protected string $dir;
@@ -2064,8 +2065,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $cmd .= ' ' . $this->parseIncludes();
         $cmd .= ' -O' . $this->optimizeLevel;
-        $cmd .= ' -g';
+
+        if ($this->debugInfo) {
+            $cmd .= ' -g';
+        }
         $cmd .= ' -Wall';
+
         if ($this->enableProfiler) {
             $cmd .= ' -lprofiler';
             $cmd .= ' -DPPROF_ON=1';
@@ -3628,6 +3633,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function formatCppCode(string $file): void
     {
+        if (!$this->formatCode) {
+            return;
+        }
         $cmd = 'cd ' . $this->rootPath . ' && clang-format -i ' . $file;
         $this->climate->info('format: ' . $this->getRelativePath($file));
         $this->climate->comment($cmd);
