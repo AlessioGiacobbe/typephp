@@ -211,6 +211,18 @@ class Translator extends Preprocessor
 
     public function prepare(string $path): array
     {
+        $phpDir = shell_exec('php-config --prefix');
+        if (empty($phpDir)) {
+            $this->error("The `php-config` is not found");
+        }
+        $phpDir = trim($phpDir);
+        if (!is_file($phpDir . '/lib/libphp.so')) {
+            $this->error("The `libphp.so` is not found, please run `make` to build it");
+        }
+        if (!is_file($this->getPhpxDir() . '/lib/libphpx.so')) {
+            $this->error("The `libphpx.so` is not found, please run `make` to build it");
+        }
+
         $files = $this->getFiles($path);
         // 应用 ignorePaths 过滤
         if (!empty($this->ignorePaths)) {
@@ -639,9 +651,9 @@ CODE;
 
         // embed 需要 main 函数，以及 cli 的内置函数定义
         if ($this->getBuildMode() == 'bin') {
-            $sourceFiles[] = __DIR__ . '/../cpp/main.cc';
-            $sourceFiles[] = __DIR__ . '/../cpp/php_cli_process_title.c';
-            $sourceFiles[] = __DIR__ . '/../cpp/ps_title.c';
+            $sourceFiles[] = $this->getPhpxDir() . '/src/misc/main.cc';
+            $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_cli_process_title.c';
+            $sourceFiles[] = $this->getPhpxDir() . '/src/misc/ps_title.c';
         }
 
         // 并行编译

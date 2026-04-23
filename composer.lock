@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9cc0c6bd977c8959d0cd9596d3962b37",
+    "content-hash": "b85ec97da999339a1cebcf7664e5465b",
     "packages": [
         {
             "name": "league/climate",
@@ -296,6 +296,50 @@
                 "source": "https://github.com/Seldaek/cli-prompt/tree/1.0.4"
             },
             "time": "2020-12-15T21:32:01+00:00"
+        },
+        {
+            "name": "swoole/phpx",
+            "version": "v2.1.4",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/swoole/phpx.git",
+                "reference": "2f6d8de5333085c0d8f7975ca9b6b6cdb74057b6"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/swoole/phpx/zipball/2f6d8de5333085c0d8f7975ca9b6b6cdb74057b6",
+                "reference": "2f6d8de5333085c0d8f7975ca9b6b6cdb74057b6",
+                "shasum": ""
+            },
+            "require": {
+                "league/climate": "^3.10"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.75",
+                "phpunit/phpunit": "^10.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Phpx\\": "src/php"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "Apache-2.0"
+            ],
+            "description": "C++ wrapper for Zend API",
+            "keywords": [
+                "ZendAPI",
+                "embedded",
+                "extension",
+                "php"
+            ],
+            "support": {
+                "issues": "https://github.com/swoole/phpx/issues",
+                "source": "https://github.com/swoole/phpx/tree/v2.1.4"
+            },
+            "time": "2026-04-23T06:18:21+00:00"
         },
         {
             "name": "symfony/polyfill-ctype",

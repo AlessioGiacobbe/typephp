@@ -88,7 +88,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string OP_NOT_EMPTY = 'notEmpty';
     public const string OP_REFVAL = 'toReference';
     public const string OP_NOP = "if (0) {}\n";
-    protected string $phpxDir = '~/workspace/projects/phpx';
     protected string $lang = 'PHP';
     protected string $cppCompiler = 'g++';
     protected array $literalStrings = [];
@@ -276,9 +275,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         //        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
     }
 
-    public function setPhpxDir($dir): void
+    protected function getPhpxDir(): string
     {
-        $this->phpxDir = $dir;
+        return $this->rootPath . '/vendor/swoole/phpx';
     }
 
     public function save(string $code, string $file): void
@@ -2021,9 +2020,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseIncludes(): string
     {
         $list = [
-            $this->phpxDir . '/include',
+            $this->getPhpxDir() . '/include',
             $this->getBuildDir() . '/include',
-            $this->rootPath . '/src/cpp',
+            $this->getPhpxDir() . '/src/misc',
         ];
         $out = '$(php-config --includes) ';
         foreach ($list as $li) {
@@ -2037,7 +2036,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $list = [
             '$(php-config --prefix)/lib',
-            $this->phpxDir . '/lib',
+            $this->getPhpxDir() . '/lib',
         ];
         $out = '';
         foreach ($list as $li) {

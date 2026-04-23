@@ -128,6 +128,7 @@ class Constants
             'longPrefix' => 'debug-info',
             'description' => 'Enable debug info',
             'required' => false,
+            'defaultValue' => 0,
         ],
         'job' => [
             'prefix' => 'j',
