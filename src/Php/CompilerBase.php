@@ -686,6 +686,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $class;
     }
 
+    protected function getObjectPropVarName(string $object, string $prop):  string
+    {
+        return self::OBJECT_PROP . $object . self::NAMESPACE_SEPARATOR . $prop;
+    }
+
+    protected function getObjectPropVarInfo(string $object, string $prop): array
+    {
+        return $this->context->objectProps[$this->getObjectPropVarName($object, $prop)];
+    }
+
     protected function getNativeName(string $fn, string $ns = '', string $class = ''): string
     {
         $names = [];
@@ -1679,6 +1689,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return isset($this->context->localVars[$name]);
     }
 
+    protected function hasObjectPropVar(string $name): bool
+    {
+        return isset($this->context->objectProps[$name]);
+    }
+
     protected function addFunction(string $name, FunctionDef $functionDef): void
     {
         $this->functions[$this->escapeFunction($name)] = $functionDef;
@@ -2269,7 +2284,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function warning(Node $node, string $msg): void
     {
-        $this->climate->yellow("{$msg} in {$this->file}:{$node->getStartLine()}");
+        $this->climate->magenta("{$msg} in {$this->file}:{$node->getStartLine()}");
     }
 
     protected function errorUndefinedVariable(Variable $node): never
@@ -3413,8 +3428,15 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $lines[] = $array . '.offsetUnset(' . $dim . ');';
             } elseif ($this->isPropertyFetch($var)) {
                 $object = $this->parseIdentifier($var->var);
-                $propName = $this->identifierToStr($var->name, literal: true);
-                $lines[] = $object . '.unsetProperty(' . $propName . ');';
+                $lines[] = $object . '.unsetProperty(' . $this->identifierToStr($var->name, literal: true) . ');';
+                if ($object === 'this_' and $this->isIdExpr($var->name)) {
+                    $propName = $this->parseIdentifier($var->name);
+                    if ($this->hasObjectPropVar($this->getObjectPropVarName($object, $propName))) {
+                        $this->warning($var, "Unset of object property `{$propName}` is not allowed");
+                        $lines = [];
+                        $lines[] = $this->getObjectPropVarName($object, $propName) . " = 0;";
+                    }
+                }
             } elseif ($this->isVarExpr($var)) {
                 $name = $this->parseIdentifier($var);
                 if (!$this->hasVar($name)) {
@@ -3468,8 +3490,8 @@ class CompilerBase extends \PhpAot\Core\Translator
              */
             $def = $expr->getAttribute('nativePropertyDef');
             if ($def->type === self::TYPE_INT or $def->type === self::TYPE_FLOAT) {
-                $propVar = self::OBJECT_PROP . $objectVar . self::NAMESPACE_SEPARATOR . $this->parseIdentifier($property);
-                if (!isset($this->context->objectProps[$propVar])) {
+                $propVar = $this->getObjectPropVarName($objectVar, $this->parseIdentifier($property));
+                if (!$this->hasObjectPropVar($propVar)) {
                     $this->context->objectProps[$propVar] = [
                         'type' => $def->type,
                         'getter' => $getProperty,
