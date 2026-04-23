@@ -226,7 +226,7 @@ class SimpleType {
             }
 
             if ($node->toLowerString() === 'self') {
-                return new SimpleType(ClassInfo::getCurrentClassName(), false);
+                return new SimpleType(ClassInfo::$currentClass, false);
             }
 
             $class = $node->isFullyQualified() ? $node->toString() : getTranslator()->getNamespacedClassName($node->toString());
@@ -2304,11 +2304,11 @@ class EvaluatedValue
                 if ($expr instanceof Expr\ClassConstFetch) {
                     $class = $expr->class->toString();
                     if ($class === 'self') {
-                        $constName = ClassInfo::$currentClass->name->toString() . "::" . $expr->name->__toString();
+                        $constName = ClassInfo::$currentClass . "::" . $expr->name->__toString();
                         if (isset($allConstInfos[$constName])) {
                             return $allConstInfos[$constName]->getValue($allConstInfos)->value;
                         } else {
-                            return getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass->name->toString(), $expr->name->toString());
+                            return getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $expr->name->toString());
                         }
                     } elseif ($expr->name->__toString() === 'class') {
                         return $class;
@@ -3444,7 +3444,7 @@ class AttributeInfo {
 }
 
 class ClassInfo {
-    static public ?self $currentClass = null;
+    static public string $currentClass = '';
     public /* readonly */ Name $name;
     private int $flags;
     public string $type;
@@ -3521,12 +3521,6 @@ class ClassInfo {
         $this->cond = $cond;
         $this->phpVersionIdMinimumCompatibility = $minimumPhpVersionIdCompatibility;
         $this->isUndocumentable = $isUndocumentable;
-        self::$currentClass = $this;
-    }
-
-    static public function getCurrentClassName(): string
-    {
-        return self::$currentClass->name->toString();
     }
 
     /** @param array<string, ConstInfo> $allConstInfos */
@@ -4448,6 +4442,7 @@ class FileInfo {
                 if (!$stmt instanceof PhpParser\Node\Stmt\Interface_) {
                     getTranslator()->parseTraitUseForStub($stmt, $className);
                 }
+                ClassInfo::$currentClass = $className->toString();
 
                 foreach ($stmt->stmts as $classStmt) {
                     $cond = self::handlePreprocessorConditions($conds, $classStmt);
@@ -4581,7 +4576,7 @@ class FileInfo {
         $code = "";
 
         foreach ($this->classInfos as $class) {
-            ClassInfo::$currentClass = $class;
+            ClassInfo::$currentClass = $class->name->toString();
             $code .= "\n" . $class->getRegistration($allConstInfos);
         }
 
