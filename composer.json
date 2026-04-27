@@ -1,5 +1,7 @@
 {
   "require": {
+    "php": ">=8.2 <8.6",
+    "ext-pcntl": "*",
     "nikic/php-parser": "5.6.1",
     "league/climate": "^3.10",
     "marcj/topsort": "^2.0",
