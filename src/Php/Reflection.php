@@ -177,14 +177,14 @@ class Reflection
 
     public static function getMethodReturnType(string $class, string $method): ?string
     {
-        $class = self::getClass($class);
-        if (!$class) {
+        $classRef = self::getClass($class);
+        if (!$classRef) {
             return null;
         }
-        if (!$class->hasMethod($method)) {
+        if (!$classRef->hasMethod($method)) {
             return null;
         }
-        $method = $class->getMethod($method);
-        return $method->getReturnType() ? $method->getReturnType()->getName() : null;
+        $methodDef = $classRef->getMethod($method);
+        return $methodDef->getReturnType() ? $methodDef->getReturnType()->getName() : null;
     }
 }

@@ -4137,6 +4137,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         // 可转为原生调用的 MethodCall
         if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
+            $type = $this->getVarType($object);
+            if (!$this->checkArgType($type, self::TYPE_OBJECT)) {
+                $this->fatalError($expr, 'Cannot call method `' . $expr->name->toString() . '()` on variable of type ' . $type);
+            }
             $this->context->beforeStmtLines[] = '// Method Call: ' . $object . '->' . $this->parseIdentifier($expr->name) . '()';
             try {
                 $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
