@@ -46,6 +46,8 @@ class Translator extends Preprocessor
     protected array $defaultPropertyList = [];
     protected bool $useRegisterSymbolsFn = false;
 
+    protected const string MODULE_NAME_PREFIX = 'app_';
+
     public function __construct(string $rootPath)
     {
         parent::__construct($rootPath);
@@ -584,14 +586,7 @@ CODE;
 
     public function getModuleName(): string
     {
-        if (ctype_digit($this->targetName[0])) {
-            return 'app_' . $this->targetName;
-        }
-        $extensions = get_loaded_extensions();
-        if (in_array($this->targetName, $extensions)) {
-            return $this->targetName . '_';
-        }
-        return $this->targetName;
+        return self::MODULE_NAME_PREFIX . $this->targetName;
     }
 
     public function hasObjectFileCache(string $cppFile): bool

@@ -2666,6 +2666,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } else {
                 if ($byRef) {
+                    if ($this->isScalar($arg->value)) {
+                        $this->fatalError($arg, 'The constants cannot be used as an argument for a reference-type parameter');
+                    }
                     $list_args[] = $this->parseChainedExpr($arg->value, self::OP_REFVAL);
                     continue;
                 }
@@ -4145,6 +4148,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $object . '.call(' . $methodPtr . ')';
         }
         try {
+            // 类名为空，这是一个 var ，类型是 any ，编译期无法获得它的类型，需要动态调用
+            $class = empty($class) ? '__DYNAMIC-CALLED-CLASS__' : $class;
             return $object . '.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($this->genArray([$object, $method]));
