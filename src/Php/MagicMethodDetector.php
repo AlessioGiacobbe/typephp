@@ -32,7 +32,7 @@ trait MagicMethodDetector
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must take exactly 1 argument");
             }
         } elseif ($nameLower == '__tostring') {
-            if (!$this->checkArgType($returnType, self::TYPE_STR)) {
+            if (!$this->checkArgType($returnType, self::TYPE_STR, false)) {
                 $this->fatalError($v, 'Method ' . $this->class . "::{$name}() must return string");
             }
         } elseif ($nameLower == '__serialize') {

@@ -225,6 +225,11 @@ class Translator extends Preprocessor
             $this->error("The `libphpx.so` is not found, please run `make` to build it");
         }
 
+        $clangFormatVersion = shell_exec('clang-format --version');
+        if (empty($clangFormatVersion)) {
+            $this->formatCode = false;
+        }
+
         $files = $this->getFiles($path);
         // 应用 ignorePaths 过滤
         if (!empty($this->ignorePaths)) {

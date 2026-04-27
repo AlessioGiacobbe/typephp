@@ -1377,14 +1377,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 if (!$this->hasVar($var)) {
                     $this->addLocalVar($var, $type);
-                } elseif (($this->getVarType($var) !== self::TYPE_VAR and $this->isTypedObject($var) and $type !== self::TYPE_OBJECT)
-                    // 禁止字符串与数组互相转换，其他类型如对象可以使用 __toString() 协议转为字符串，整数和浮点型也可以转为字符串
-                    or ($this->getVarType($var) === self::TYPE_STR and $type === self::TYPE_ARRAY)
-                    or ($this->getVarType($var) === self::TYPE_ARRAY and $type === self::TYPE_STR)
-                    // 禁止对象转为数组
-                    or ($this->getVarType($var) === self::TYPE_ARRAY and $type === self::TYPE_OBJECT)
-                ) {
-                    $this->fatalError($left, "Cannot re-assign variable `\${$var}` from " . $this->getVarType($var) . ' to ' . $type);
+                } else {
+                    $this->checkVarAssignExpr($left, $this->getVarType($var), $type);
                 }
             }
         } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
@@ -3411,6 +3405,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->convertToRef($arg->value);
         }
 
+        $this->checkVarAssignExpr($arg, $argInfo->type, $type);
+
         if ($argInfo->type === self::TYPE_OBJECT) {
             if ($this->isVarExpr($arg->value)) {
                 $object = $this->parseVariable($arg->value);
@@ -4728,6 +4724,37 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isVarExpr($node) and !$this->hasVar($name)) {
             $this->errorUndefinedVariable($node);
         }
+    }
+
+    protected function checkVarAssignExpr(NodeAbstract $left, string $toType, string $fromType): bool
+    {
+        if ($toType === self::TYPE_VAR or $fromType === self::TYPE_VAR) {
+            return true;
+        }
+        // 引用当前没有类型信息，按照 var 处理
+        if ($toType === self::TYPE_REF or $fromType === self::TYPE_REF) {
+            return true;
+        }
+        if ($toType === self::TYPE_OBJECT and $fromType === self::TYPE_OBJECT) {
+            return true;
+        }
+        if ($toType === self::TYPE_ARRAY and $fromType === self::TYPE_ARRAY) {
+            return true;
+        }
+        if ($toType === self::TYPE_STR) {
+            if ($fromType === self::TYPE_STR) {
+                return true;
+            }
+            if (!$this->strictTypes) {
+                $this->warning($left, "Attempt to implicitly convert `$fromType` to `$toType`");
+                return true;
+            }
+        }
+        // 原生类型可以互相转换，由 C++ 底层完成
+        if ($this->isNativeType($toType) and $this->isNativeType($fromType)) {
+            return true;
+        }
+        $this->fatalError($left, "Cannot re-assign variable from `$fromType` to `$toType`");
     }
 
     protected function mustNoCall(NodeAbstract $node): void
