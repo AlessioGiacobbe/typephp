@@ -3,7 +3,6 @@
 # 打包脚本：创建包含指定文件的 zip 压缩包（先对二进制文件进行 UPX 压缩）
 # 支持版本管理，每次打包版本号自动递增
 
-OUTPUT_FILE="swoole_compiler_package.zip"
 BINARY_FILE="swoole_compiler"
 VERSION_FILE="version.txt"
 BACKUP_FILE="${BINARY_FILE}.backup"
@@ -19,7 +18,11 @@ fi
 VERSION_ID=$((VERSION_ID + 1))
 echo "$VERSION_ID" > "$VERSION_FILE"
 
+# 生成带版本号的输出文件名
+OUTPUT_FILE="swoole_compiler_v${VERSION_ID}.zip"
+
 echo "当前版本: $VERSION_ID"
+echo "输出文件: $OUTPUT_FILE"
 
 # 生成带版本号的二进制文件名
 VERSIONED_BINARY="${BINARY_FILE}_v${VERSION_ID}"
