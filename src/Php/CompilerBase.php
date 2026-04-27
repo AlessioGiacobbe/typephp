@@ -39,6 +39,7 @@ use PhpParser\NodeAbstract;
 use PhpParser\NodeFinder;
 use PhpParser\Parser;
 use PhpParser\ParserFactory;
+use PhpParser\PhpVersion;
 use PhpParser\PrettyPrinter;
 
 class CompilerBase extends \PhpAot\Core\Translator
@@ -267,8 +268,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public function __construct(string $rootPath)
     {
+        if (version_compare(PHP_VERSION, '8.2.0', '<')) {
+            $this->error('PHP 8.2.0 or later is required');
+        }
+        if (version_compare(PHP_VERSION, '8.6.0', '>=')) {
+            $this->error('PHP 8.6.0 or later is not supported');
+        }
         $this->rootPath = $rootPath;
-        $this->parser = (new ParserFactory())->createForNewestSupportedVersion();
+        $this->parser = (new ParserFactory())->createForVersion(PhpVersion::fromString(PHP_VERSION));
         $this->printer = new PrettyPrinter\Standard();
         $this->setBuildDir($rootPath . '/build');
         $climate = new CLImate();
@@ -685,6 +692,22 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return $class;
+    }
+
+    /**
+     * 函数名称处理，补齐 namespace
+     * @param string $funcName
+     * @return string
+     */
+    public function getNamespacedFuncName(string $funcName): string
+    {
+        if ($funcName[0] == '\\') {
+            return ltrim($funcName, '\\');
+        }
+        if (isset($this->useFunctions[$funcName])) {
+            return $this->useFunctions[$funcName];
+        }
+        return $funcName;
     }
 
     protected function getObjectPropVarName(string $object, string $prop):  string
@@ -2470,6 +2493,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return $this->genPlaceHolder($this->identifierToStr($expr->name));
                 }
             }
+            // 动态调用的函数，转换函数名为带有命名空间的全限定名称
+            $name = $this->getNamespacedFuncName($name);
             $code = $this->parseFuncCallWithOptimizer($name, $expr);
             if ($code) {
                 return $code;
