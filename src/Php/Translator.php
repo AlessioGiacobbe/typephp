@@ -215,14 +215,14 @@ class Translator extends Preprocessor
     {
         $phpDir = shell_exec('php-config --prefix');
         if (empty($phpDir)) {
-            $this->error("The `php-config` is not found");
+            $this->error('The `php-config` is not found');
         }
         $phpDir = trim($phpDir);
         if (!is_file($phpDir . '/lib/libphp.so')) {
-            $this->error("The `libphp.so` is not found, please run `make` to build it");
+            $this->error('The `libphp.so` is not found, please run `make` to build it');
         }
         if (!is_file($this->getPhpxDir() . '/lib/libphpx.so')) {
-            $this->error("The `libphpx.so` is not found, please run `make` to build it");
+            $this->error('The `libphpx.so` is not found, please run `make` to build it');
         }
 
         $clangFormatVersion = shell_exec('clang-format --version');

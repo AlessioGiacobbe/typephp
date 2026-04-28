@@ -696,8 +696,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     /**
      * 函数名称处理，补齐 namespace
-     * @param string $funcName
-     * @return string
      */
     public function getNamespacedFuncName(string $funcName): string
     {
@@ -710,7 +708,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $funcName;
     }
 
-    protected function getObjectPropVarName(string $object, string $prop):  string
+    protected function getObjectPropVarName(string $object, string $prop): string
     {
         return self::OBJECT_PROP . $object . self::NAMESPACE_SEPARATOR . $prop;
     }
@@ -3461,9 +3459,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($object === 'this_' and $this->isIdExpr($var->name)) {
                     $propName = $this->parseIdentifier($var->name);
                     if ($this->hasObjectPropVar($this->getObjectPropVarName($object, $propName))) {
-                        $this->warning($var, "Object property `$propName` of native types cannot be unset");
+                        $this->warning($var, "Object property `{$propName}` of native types cannot be unset");
                         $lines = [];
-                        $lines[] = $this->getObjectPropVarName($object, $propName) . " = 0;";
+                        $lines[] = $this->getObjectPropVarName($object, $propName) . ' = 0;';
                     }
                 }
             } elseif ($this->isVarExpr($var)) {
@@ -3520,7 +3518,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         // TODO 分析对象是否为 SSA , 如果是 SSA 则可以将属性设置为引用
         if ($expr->hasAttribute('nativePropertyDef') and $this->nativeTypes and $objectVar === 'this_') {
             /**
-             * @var $def PropertyDef
+             * @var PropertyDef $def
              */
             $def = $expr->getAttribute('nativePropertyDef');
             if ($def->type === self::TYPE_INT or $def->type === self::TYPE_FLOAT) {
@@ -4747,7 +4745,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return true;
             }
             if (!$this->strictTypes) {
-                $this->warning($left, "Attempt to implicitly convert `$fromType` to `$toType`");
+                $this->warning($left, "Attempt to implicitly convert `{$fromType}` to `{$toType}`");
                 return true;
             }
         }
@@ -4755,7 +4753,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isNativeType($toType) and $this->isNativeType($fromType)) {
             return true;
         }
-        $this->fatalError($left, "Cannot re-assign variable from `$fromType` to `$toType`");
+        $this->fatalError($left, "Cannot re-assign variable from `{$fromType}` to `{$toType}`");
     }
 
     protected function mustNoCall(NodeAbstract $node): void
