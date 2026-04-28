@@ -19,9 +19,12 @@ function simple()
 
 /****/
 
-function simplecall() {
-  for ($i = 0; $i < 1000000; $i++)
-      strlen("hallo" . $i);
+function simplecall()
+{
+    $total = 0;
+    for ($i = 0; $i < 1000000; $i++)
+        $total += strlen("hallo" . $i);
+    print "$total\n";
 }
 
 /****/
@@ -277,7 +280,7 @@ function mkmatrix ($rows, $cols) {
             $mx[$i][$j] = $count++;
         }
     }
-    return($mx);
+    return ($mx);
 }
 
 function mmult ($rows, $cols, $m1, $m2) {
@@ -294,7 +297,7 @@ function mmult ($rows, $cols, $m1, $m2) {
     return($m3);
 }
 
-function matrix($n) {
+function matrix(int $n) {
   $SIZE = 30;
   $m1 = mkmatrix($SIZE, $SIZE);
   $m2 = mkmatrix($SIZE, $SIZE);
@@ -320,7 +323,7 @@ function nestedloop($n) {
 
 /****/
 
-function sieve($n) {
+function sieve(int $n) {
   $count = 0;
   while ($n-- > 0) {
     $count = 0;
