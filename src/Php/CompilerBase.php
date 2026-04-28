@@ -156,6 +156,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected int $maxJob = 4;
     protected string $buildMode = 'bin';
     protected string $cxxflags = '';
+    protected string $cxxStd = 'c++14';
     protected string $ldflags = '';
     protected int $floatPrecision = 17;
     protected bool $debugInfo = false;
@@ -2109,6 +2110,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         } else {
             if ($this->cxxflags) {
                 $cmd .= ' ' . $this->cxxflags;
+            }
+            if (!str_contains($this->cxxflags, ' -std=')) {
+                $cmd .= ' -std=' . $this->cxxStd;
             }
         }
     }
