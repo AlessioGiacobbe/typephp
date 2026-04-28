@@ -43,3 +43,8 @@ function &refval(&$var)
 {
     return $var;
 }
+
+function any(mixed $var): mixed
+{
+    return $var;
+}

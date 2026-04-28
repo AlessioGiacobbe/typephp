@@ -705,7 +705,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return ltrim($funcName, '\\');
         }
         if (isset($this->useFunctions[$funcName])) {
-            return $this->useFunctions[$funcName];
+            return $this->useFunctions[$funcName] . '\\' . $funcName;
         }
         return $funcName;
     }
@@ -4679,7 +4679,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code = '';
         foreach ($v2->uses as $use) {
             $id = $this->parseIdentifier($use->name);
-            if ($use->type === Node\Stmt\Use_::TYPE_FUNCTION) {
+            $type = $use->type !== Node\Stmt\Use_::TYPE_UNKNOWN ? $use->type : $v2->type;
+            if ($type === Node\Stmt\Use_::TYPE_FUNCTION) {
                 $lastIndex = strrpos($id, '\\');
                 $fn = substr($id, $lastIndex + 1);
                 $ns = substr($id, 0, $lastIndex);
