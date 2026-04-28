@@ -218,10 +218,11 @@ class Translator extends Preprocessor
             $this->error('The `php-config` is not found');
         }
         $phpDir = trim($phpDir);
-        if (!is_file($phpDir . '/lib/libphp.so')) {
+        $ext = $this->isMacos() ? '.dylib' : '.so';
+        if (!is_file($phpDir . '/lib/libphp' . $ext)) {
             $this->error('The `libphp.so` is not found, please run `make` to build it');
         }
-        if (!is_file($this->getPhpxDir() . '/lib/libphpx.so')) {
+        if (!is_file($this->getPhpxDir() . '/lib/libphpx' . $ext)) {
             $this->error('The `libphpx.so` is not found, please run `make` to build it');
         }
 

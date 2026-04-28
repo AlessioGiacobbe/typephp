@@ -8,6 +8,27 @@ abstract class Translator
     protected string $indentStr = "\t";
     public string $mode = 'cli';
     protected string $lang;
+    protected string $osType = 'linux';
+
+    public function __construct()
+    {
+        $this->osType = PHP_OS_FAMILY;
+    }
+
+    public function isMacos(): bool
+    {
+        return $this->osType === 'Darwin';
+    }
+
+    public function isLinux(): bool
+    {
+        return $this->osType === 'Linux';
+    }
+
+    public function isWindows(): bool
+    {
+        return $this->osType === 'Windows';
+    }
 
     public function setMode($mode): void
     {

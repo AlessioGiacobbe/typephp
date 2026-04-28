@@ -268,6 +268,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public function __construct(string $rootPath)
     {
+        parent::__construct();
         if (version_compare(PHP_VERSION, '8.2.0', '<')) {
             $this->error('PHP 8.2.0 or later is required');
         }
