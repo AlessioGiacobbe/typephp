@@ -290,6 +290,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->rootPath . '/vendor/swoole/phpx';
     }
 
+    public function getPhpDir(): string
+    {
+        $phpDir = shell_exec('php-config --prefix');
+        if (empty($phpDir)) {
+            $this->error('The `php-config` is not found');
+        }
+        return trim($phpDir);
+    }
+
     public function save(string $code, string $file): void
     {
         $this->writeFile($file, $code);
@@ -2106,6 +2115,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $cmd .= ' ' . $this->parseLibs();
             if ($this->ldflags) {
                 $cmd .= ' ' . $this->ldflags;
+            }
+            // macos 没有 ldconfig ，只能配置 rpath 绝对路径
+            if ($this->isMacos()) {
+                $cmd .= ' -Wl,-rpath,' . $this->getPhpDir() . '/lib';
+                $cmd .= ' -Wl,-rpath,' . $this->getPhpxDir() . '/lib';
             }
         } else {
             if ($this->cxxflags) {

@@ -213,13 +213,8 @@ class Translator extends Preprocessor
 
     public function prepare(string $path): array
     {
-        $phpDir = shell_exec('php-config --prefix');
-        if (empty($phpDir)) {
-            $this->error('The `php-config` is not found');
-        }
-        $phpDir = trim($phpDir);
         $ext = $this->isMacos() ? 'dylib' : 'so';
-        if (!is_file($phpDir . '/lib/libphp.' . $ext)) {
+        if (!is_file($this->getPhpDir() . '/lib/libphp.' . $ext)) {
             $this->error("The `libphp.{$ext}` is not found, please run `make` to build it");
         }
         if (!is_file($this->getPhpxDir() . '/lib/libphpx.' . $ext)) {
