@@ -66,15 +66,21 @@ class Preprocessor extends CompilerBase
     public function getCppFile(string $file): string
     {
         $info = pathinfo($file);
-
-        return $this->buildDir . '/' . $this->removeCommonPrefix($this->buildDir, $info['dirname'] . '/' . $info['filename'] . '.cc');
+        
+        // Windows 下使用反斜杠，其他平台使用正斜杠
+        $separator = $this->isWindows() ? '\\' : '/';
+        $relativePath = $this->removeCommonPrefix($this->buildDir, $info['dirname']);
+        
+        return $this->buildDir . $separator . $relativePath . $separator . $info['filename'] . '.cc';
     }
 
     public function getObjectFile(string $cppFile): string
     {
         $info = pathinfo($cppFile);
         $ext = $this->isWindows() ? '.obj' : '.o';
-        return $info['dirname'] . '/' . $info['filename'] . $ext;
+        
+        // 保持与 cppFile 相同的路径分隔符
+        return $info['dirname'] . ($this->isWindows() ? '\\' : '/') . $info['filename'] . $ext;
     }
 
     public function hasCppFileCache(string $file): bool

@@ -213,12 +213,56 @@ class Translator extends Preprocessor
 
     public function prepare(string $path): array
     {
-        $ext = $this->isMacos() ? 'dylib' : 'so';
-        if (!is_file($this->getPhpDir() . '/lib/libphp.' . $ext)) {
-            $this->error("The `libphp.{$ext}` is not found, please run `make` to build it");
-        }
-        if (!is_file($this->getPhpxDir() . '/lib/libphpx.' . $ext)) {
-            $this->error("The `libphpx.{$ext}` is not found, please run `make` to build it");
+        // 根据平台检查库文件（仅在构建二进制文件时需要）
+        if ($this->buildMode === 'bin') {
+            if ($this->isWindows()) {
+                // Windows 平台检查 dll 和 lib 文件
+                // 按照新的路径规则检查：SDK/lib, lib, 根目录
+                $phpDirs = [
+                    $this->getPhpDir() . '\\SDK\\lib',
+                    $this->getPhpDir() . '\\lib',
+                ];
+                
+                $foundLib = false;
+                foreach ($phpDirs as $phpDir) {
+                    if (is_dir($phpDir)) {
+                        if (is_file($phpDir . '\\php8.lib') || is_file($phpDir . '\\php8ts.lib')) {
+                            $foundLib = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // 如果没找到 lib，检查根目录的 DLL
+                if (!$foundLib) {
+                    $phpDll = $this->getPhpDir() . '\\php8.dll';
+                    $phpTsDll = $this->getPhpDir() . '\\php8ts.dll';
+                    if (!is_file($phpDll) && !is_file($phpTsDll)) {
+                        $this->climate->warning("The `php8.lib` or `php8.dll` is not found in PHP directory, please check your PHP installation");
+                    }
+                }
+                
+                $phpxLib = $this->getPhpxDir() . '\\lib\\phpx.lib';
+                $phpxDll = $this->getPhpxDir() . '\\lib\\phpx.dll';
+                if (!is_file($phpxLib) && !is_file($phpxDll)) {
+                    $this->climate->warning("The `phpx.lib` or `phpx.dll` is not found in PHX directory");
+                    $this->climate->info("Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it");
+                }
+            } else {
+                // Unix/Linux/macOS 平台检查 .so 或 .dylib 文件
+                $ext = $this->isMacos() ? 'dylib' : 'so';
+                $phpLib = $this->getPhpDir() . '/lib/libphp.' . $ext;
+                $phpxLib = $this->getPhpxDir() . '/lib/libphpx.' . $ext;
+                
+                if (!is_file($phpLib)) {
+                    $this->climate->warning("The `libphp.{$ext}` is not found");
+                    $this->climate->info("Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it");
+                }
+                if (!is_file($phpxLib)) {
+                    $this->climate->warning("The `libphpx.{$ext}` is not found");
+                    $this->climate->info("Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it");
+                }
+            }
         }
 
         $clangFormatVersion = shell_exec('clang-format --version');
@@ -321,13 +365,14 @@ class Translator extends Preprocessor
         $literalStringsCount = count($this->literalStrings);
         $lines[] = 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
 
-        $classCount = count($this->classMap);
+        // 确保数组大小至少为 1，避免 C/C++ 编译错误
+        $classCount = max(1, count($this->classMap));
         $lines[] = 'extern zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;
 
-        $funcCount = count($this->funcMap);
+        $funcCount = max(1, count($this->funcMap));
         $lines[] = 'extern zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
 
-        $propCount = count($this->propMap);
+        $propCount = max(1, count($this->propMap));
         $lines[] = 'extern uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . $propCount . '];' . PHP_EOL;
 
         foreach ($this->classes as $classDef) {
@@ -378,13 +423,14 @@ class Translator extends Preprocessor
         }
 
         $code .= "// class entry \n";
-        $code .= 'zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . count($this->classMap) . '];' . PHP_EOL;
+        // 确保数组大小至少为 1，避免 C/C++ 编译错误
+        $code .= 'zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . max(1, count($this->classMap)) . '];' . PHP_EOL;
 
         $code .= "// func \n";
-        $code .= 'zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . count($this->funcMap) . '];' . PHP_EOL;
+        $code .= 'zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . max(1, count($this->funcMap)) . '];' . PHP_EOL;
 
         $code .= "// property \n";
-        $code .= 'uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . count($this->propMap) . '];' . PHP_EOL;
+        $code .= 'uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . max(1, count($this->propMap)) . '];' . PHP_EOL;
 
         $code .= <<<'CODE'
 zend_class_entry *php_get_class(int class_id, const php::Str &class_name) {
@@ -661,7 +707,63 @@ CODE;
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/ps_title.c';
         }
 
-        // 并行编译
+        // Windows 不支持 pcntl_fork，使用串行编译或 proc_open
+        if ($this->isWindows()) {
+            return $this->compileOnWindows($sourceFiles);
+        }
+
+        // Unix/Linux/macOS 使用 pcntl 并行编译
+        return $this->compileWithPcntl($sourceFiles, $job);
+    }
+
+    /**
+     * Windows 平台编译（不使用 pcntl）
+     */
+    protected function compileOnWindows(array $sourceFiles): array
+    {
+        $objectFiles = [];
+        $totalFiles = count($sourceFiles);
+        $failedFiles = [];
+
+        $this->climate->lightBlue("Starting compilation for {$totalFiles} files (Windows mode)");
+
+        foreach ($sourceFiles as $cppFile) {
+            $objectFile = $this->getObjectFile($cppFile);
+            
+            try {
+                $this->compileFile($cppFile, $objectFile, false);
+                if (is_file($objectFile)) {
+                    $objectFiles[] = $objectFile;
+                } else {
+                    $failedFiles[] = $cppFile;
+                    $this->climate->red("Compilation failed: {$cppFile}");
+                }
+            } catch (\Throwable $e) {
+                $failedFiles[] = $cppFile;
+                $this->climate->red("Compilation error: {$cppFile} - " . $e->getMessage());
+            }
+        }
+
+        if (!empty($failedFiles)) {
+            throw new \Exception('Compilation failed for: ' . implode(', ', $failedFiles));
+        }
+
+        $this->climate->green("Successfully compiled {$totalFiles} files");
+        return $objectFiles;
+    }
+
+    /**
+     * Unix/Linux/macOS 平台并行编译（使用 pcntl）
+     */
+    protected function compileWithPcntl(array $sourceFiles, int $job): array
+    {
+        // 检查 pcntl 扩展是否可用
+        if (!function_exists('pcntl_fork')) {
+            $this->climate->warning('pcntl extension not available, using sequential compilation');
+            return $this->compileOnWindows($sourceFiles);
+        }
+
+        $objectFiles = [];
         $totalFiles = count($sourceFiles);
         $runningProcesses = 0;
         $processPipes = [];
@@ -738,7 +840,6 @@ CODE;
         }
 
         $this->climate->green("Successfully compiled {$totalFiles} files");
-
         return $objectFiles;
     }
 
@@ -781,7 +882,28 @@ CODE;
         
         $this->addCompilationOption($linkCmd, true);
         $this->climate->comment($linkCmd);
-        shell_exec($linkCmd);
+        
+        // 执行链接并捕获输出
+        exec($linkCmd . ' 2>&1', $output, $ret);
+        
+        // 显示输出（如果有）
+        if (!empty($output)) {
+            foreach ($output as $line) {
+                $this->climate->out($line);
+            }
+        }
+        
+        // 检查链接是否成功
+        if ($ret !== 0) {
+            $this->error('link failed: ' . $targetFile);
+        }
+        
+        // 验证目标文件是否生成
+        if (!file_exists($targetFile)) {
+            $this->error('target file not generated: ' . $targetFile);
+        }
+        
+        $this->climate->green('Build successful: ' . $targetFile);
     }
 
     public function genFunctionDeclaration(string $file): void

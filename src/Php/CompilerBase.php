@@ -253,6 +253,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $forTest = false;
     protected Parser $parser;
     protected PrettyPrinter $printer;
+    protected bool $isPhpZts = false;  // PHP 是否为线程安全版本
 
     /**
      * 在预处理阶段获取所有类的方法名称，检测子类和父类中存在的同名方法，解决动态绑定方法调用的问题
@@ -287,6 +288,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         
         // 检测操作系统并设置编译器
         $this->detectPlatform();
+        
+        // 检测 PHP 是否为线程安全版本（ZTS）
+        $this->isPhpZts = defined('PHP_ZTS') && PHP_ZTS === 1;
     }
 
     protected function detectPlatform(): void
@@ -307,6 +311,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getPhpxDir(): string
     {
+        // 优先使用环境变量 PHPX_HOME
+        $phpxDir = getenv('PHPX_HOME');
+        if ($phpxDir && is_dir($phpxDir)) {
+            return rtrim($phpxDir, '\\/');
+        }
+        
+        // 默认路径
         return $this->rootPath . '/vendor/swoole/phpx';
     }
 
@@ -323,13 +334,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     public function getPhpDir(): string
     {
         if ($this->isWindows()) {
-            // Windows 下尝试从环境变量或注册表获取 PHP 路径
+            // Windows 下尝试从环境变量获取 PHP 路径
             $phpDir = getenv('PHP_HOME');
             if ($phpDir && is_dir($phpDir)) {
                 return rtrim($phpDir, '\\/');
             }
             
-            // 尝试从 php.exe 路径推断
+            // 尝试从 php.exe 路径推断（使用 where 命令）
             $phpExe = exec('where php 2>nul');
             if ($phpExe) {
                 $phpDir = dirname($phpExe);
@@ -341,9 +352,18 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 默认路径
             return 'C:\\php';
         } else {
-            $phpDir = shell_exec('php-config --prefix');
+            // Unix/Linux/macOS 下使用 php-config 获取 PHP 路径
+            $phpDir = shell_exec('php-config --prefix 2>/dev/null');
             if (empty($phpDir)) {
-                $this->error('The `php-config` is not found');
+                // 如果 php-config 不可用，尝试从 which php 推断
+                $phpExe = trim(shell_exec('which php 2>/dev/null'));
+                if ($phpExe && file_exists($phpExe)) {
+                    $phpDir = dirname(dirname($phpExe));
+                    if (is_dir($phpDir)) {
+                        return $phpDir;
+                    }
+                }
+                $this->error('The `php-config` is not found. Please install PHP development package or set PHP_HOME environment variable');
             }
             return trim($phpDir);
         }
@@ -640,6 +660,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function removeCommonPrefix(string $short, string $long): string
     {
+        // Windows 下统一使用反斜杠
+        if ($this->isWindows()) {
+            $short = str_replace('/', '\\', $short);
+            $long = str_replace('/', '\\', $long);
+        }
+        
         $len       = min(strlen($short), strlen($long));
         $prefixLen = 0;
 
@@ -651,7 +677,16 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
-        return substr($long, $prefixLen);
+        $result = substr($long, $prefixLen);
+        
+        // 移除开头的路径分隔符
+        if ($this->isWindows()) {
+            $result = ltrim($result, '\\');
+        } else {
+            $result = ltrim($result, '/');
+        }
+        
+        return $result;
     }
 
     protected function getVarType(string $name): string
@@ -2105,7 +2140,21 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->getBuildDir() . '/include',
             $this->getPhpxDir() . '/src/misc',
         ];
-        $out = '$(php-config --includes) ';
+        
+        // 尝试使用 php-config 获取包含路径，如果失败则手动构建
+        $phpIncludes = shell_exec('php-config --includes 2>/dev/null');
+        if ($phpIncludes) {
+            $out = trim($phpIncludes) . ' ';
+        } else {
+            // 手动构建包含路径
+            $phpInclude = $this->getPhpDir() . '/include/php';
+            if (is_dir($phpInclude)) {
+                $out = '-I ' . $phpInclude . ' ';
+            } else {
+                $out = '';
+            }
+        }
+        
         foreach ($list as $li) {
             $out .= '-I ' . $li . ' ';
         }
@@ -2121,15 +2170,32 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->getPhpxDir() . '\\src\\misc',
         ];
         
-        // 获取 PHP 的包含路径（Windows）
-        $phpInclude = $this->getPhpDir() . '\\include';
-        if (is_dir($phpInclude)) {
-            $list[] = $phpInclude;
+        // Windows 下 PHP 头文件必须从 SDK/include 读取
+        $phpSdkInclude = $this->getPhpDir() . '\\SDK\\include';
+        if (!is_dir($phpSdkInclude)) {
+            throw new \RuntimeException(
+                "PHP SDK include directory not found: {$phpSdkInclude}\n" .
+                "Please ensure PHP is installed with SDK headers at the expected location."
+            );
+        }
+        
+        // 添加主包含目录
+        $list[] = $phpSdkInclude;
+        
+        // 添加子目录：main, Zend, TSRM, ext
+        $subDirs = ['main', 'Zend', 'TSRM', 'ext'];
+        foreach ($subDirs as $subDir) {
+            $subPath = $phpSdkInclude . '\\' . $subDir;
+            if (is_dir($subPath)) {
+                $list[] = $subPath;
+            }
         }
         
         $out = '';
         foreach ($list as $li) {
-            $out .= '/I "' . $li . '" ';
+            // 确保路径使用双引号包裹，处理可能的空格
+            $normalizedPath = str_replace('/', '\\', $li);
+            $out .= '/I "' . $normalizedPath . '" ';
         }
 
         return $out;
@@ -2142,9 +2208,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         
         $list = [
-            '$(php-config --prefix)/lib',
             $this->getPhpxDir() . '/lib',
         ];
+        
+        // 尝试使用 php-config 获取库路径，如果失败则手动构建
+        $phpLibDir = shell_exec('php-config --prefix 2>/dev/null');
+        if ($phpLibDir) {
+            $phpLibPath = trim($phpLibDir) . '/lib';
+            if (is_dir($phpLibPath)) {
+                array_unshift($list, $phpLibPath);
+            }
+        } else {
+            // 手动添加 PHP 库路径
+            $phpLibPath = $this->getPhpDir() . '/lib';
+            if (is_dir($phpLibPath)) {
+                array_unshift($list, $phpLibPath);
+            }
+        }
+        
         $out = '';
         foreach ($list as $li) {
             $out .= '-L ' . $li . ' ';
@@ -2155,10 +2236,25 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseWindowsLdflags(): string
     {
-        $list = [
-            $this->getPhpDir() . '\\lib',
-            $this->getPhpxDir() . '\\lib',
-        ];
+        $list = [];
+        
+        // Windows 下 PHP 库文件固定从 SDK/lib 读取
+        $phpLib = $this->getPhpDir() . '\\SDK\\lib';
+        if (is_dir($phpLib)) {
+            $list[] = $phpLib;
+        } else {
+            // 备选：尝试直接从 lib 目录
+            $phpLibAlt = $this->getPhpDir() . '\\lib';
+            if (is_dir($phpLibAlt)) {
+                $list[] = $phpLibAlt;
+            }
+        }
+        
+        // phpx 库文件
+        $phpxLib = $this->getPhpxDir() . '\\lib';
+        if (is_dir($phpxLib)) {
+            $list[] = $phpxLib;
+        }
         
         $out = '';
         foreach ($list as $li) {
@@ -2207,22 +2303,53 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         
         if ($this->buildMode === 'bin') {
-            // 优先使用 .lib 导入库
-            $phpLib = $this->getPhpDir() . '\\lib\\php8.lib';
-            if (file_exists($phpLib)) {
-                $list[] = '"' . $phpLib . '"';
-            } else {
-                // 尝试其他可能的文件名
-                $altPhpLib = $this->getPhpDir() . '\\lib\\php8ts.lib';
+            // Windows 下 PHP 库文件和 DLL 的查找顺序：
+            // 1. SDK/lib/php8.lib
+            // 2. SDK/lib/php8ts.lib
+            // 3. lib/php8.lib
+            // 4. lib/php8ts.lib
+            // 5. 根目录/php8.dll
+            
+            $phpDirs = [
+                $this->getPhpDir() . '\\SDK\\lib',  // 优先从 SDK/lib 查找
+                $this->getPhpDir() . '\\lib',        // 备选从 lib 查找
+            ];
+            
+            $found = false;
+            foreach ($phpDirs as $phpDir) {
+                if (!is_dir($phpDir)) continue;
+                
+                // 尝试 php8.lib
+                $phpLib = $phpDir . '\\php8.lib';
+                if (file_exists($phpLib)) {
+                    $list[] = '"' . $phpLib . '"';
+                    $found = true;
+                    break;
+                }
+                
+                // 尝试 php8ts.lib
+                $altPhpLib = $phpDir . '\\php8ts.lib';
                 if (file_exists($altPhpLib)) {
                     $list[] = '"' . $altPhpLib . '"';
+                    $found = true;
+                    break;
+                }
+            }
+            
+            // 如果都没找到 .lib，尝试直接使用根目录的 DLL
+            if (!$found) {
+                $phpDll = $this->getPhpDir() . '\\php8.dll';
+                if (file_exists($phpDll)) {
+                    $this->climate->magenta('php8.lib not found, using php8.dll directly');
+                    $this->climate->info('Note: This may require additional setup');
+                    $list[] = '"' . $phpDll . '"';
                 } else {
-                    // 最后尝试直接使用 DLL
-                    $phpDll = $this->getPhpDir() . '\\php8.dll';
-                    if (file_exists($phpDll)) {
-                        $this->climate->magenta('php8.lib not found, using php8.dll directly');
+                    // 尝试 php8ts.dll
+                    $phpTsDll = $this->getPhpDir() . '\\php8ts.dll';
+                    if (file_exists($phpTsDll)) {
+                        $this->climate->magenta('php8.lib not found, using php8ts.dll directly');
                         $this->climate->info('Note: This may require additional setup');
-                        $list[] = '"' . $phpDll . '"';
+                        $list[] = '"' . $phpTsDll . '"';
                     }
                 }
             }
@@ -2249,8 +2376,22 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function addWindowsCompilationOption(string &$cmd, bool $link): void
     {
-        // 添加包含路径
-        $cmd .= ' ' . $this->parseWindowsIncludes();
+        // 添加包含路径（仅在编译时，不在链接时）
+        if (!$link) {
+            $cmd .= ' ' . $this->parseWindowsIncludes();
+        }
+        
+        // Windows 平台必需的宏定义（参考 CMakeLists.txt）
+        $cmd .= ' /DZEND_WIN32';           // 标识 Windows 平台
+        $cmd .= ' /DPHP_WIN32';            // 标识 Windows 平台
+        $cmd .= ' /DZEND_DEBUG=0';         // 禁用调试模式
+        
+        // 根据 PHP 是否为线程安全版本决定是否添加 ZTS 宏
+        if ($this->isPhpZts) {
+            $cmd .= ' /DZTS';                  // 启用线程安全
+        }
+        
+        $cmd .= ' /DZEND_ENABLE_STATIC_TSRMLS_CACHE'; // 启用静态 TSRM 缓存
         
         // 优化级别
         switch ($this->optimizeLevel) {
@@ -2273,8 +2414,15 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         // 警告级别
         $cmd .= ' /W3';
+        
+        // 禁用 PHP SDK 头文件中的常见警告
+        $cmd .= ' /wd4244';  // 禁用类型转换警告（__int64 到 int）
+        $cmd .= ' /wd4146';  // 禁用一元负运算符应用于无符号类型的警告
+        
+        // 禁用编译器版权信息输出
+        $cmd .= ' /nologo';
 
-        // C++ 标准
+        // C++ 标准（仅在编译时）
         if (!$link && !str_contains($this->cxxflags, '/std:')) {
             $cmd .= ' /std:c++17';
         }
