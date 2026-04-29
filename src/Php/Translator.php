@@ -612,7 +612,16 @@ CODE;
 
             return;
         }
-        $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
+        
+        // 根据平台构建编译命令
+        if ($this->isWindows()) {
+            // Windows MSVC 编译命令
+            $cmd = $this->cppCompiler . ' /c ' . $cppFile . ' /Fo' . $objectFile;
+        } else {
+            // Unix/Linux/macOS GCC 编译命令
+            $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
+        }
+        
         $this->addCompilationOption($cmd, false);
         if (!$parallel) {
             $this->climate->comment($cmd);
@@ -740,12 +749,36 @@ CODE;
 
     public function build(array $objectFiles): void
     {
-        $objectList = implode(' ', $objectFiles);
         $targetFile = $this->targetName;
-        if ($this->buildMode == 'ext' and !str_ends_with($targetFile, '.so')) {
-            $targetFile .= '.so';
+        
+        // 根据平台设置目标文件扩展名
+        if ($this->isWindows()) {
+            if ($this->buildMode == 'ext') {
+                if (!str_ends_with($targetFile, '.dll')) {
+                    $targetFile .= '.dll';
+                }
+            } else {
+                if (!str_ends_with($targetFile, '.exe')) {
+                    $targetFile .= '.exe';
+                }
+            }
+        } else {
+            if ($this->buildMode == 'ext' and !str_ends_with($targetFile, '.so')) {
+                $targetFile .= '.so';
+            }
         }
-        $linkCmd = $this->cppCompiler . ' ' . $objectList . ' -o ' . $targetFile;
+        
+        // 根据平台构建链接命令
+        if ($this->isWindows()) {
+            // Windows MSVC 链接命令
+            $objectList = implode(' ', $objectFiles);
+            $linkCmd = $this->cppCompiler . ' ' . $objectList . ' /Fe' . $targetFile;
+        } else {
+            // Unix/Linux/macOS GCC 链接命令
+            $objectList = implode(' ', $objectFiles);
+            $linkCmd = $this->cppCompiler . ' ' . $objectList . ' -o ' . $targetFile;
+        }
+        
         $this->addCompilationOption($linkCmd, true);
         $this->climate->comment($linkCmd);
         shell_exec($linkCmd);

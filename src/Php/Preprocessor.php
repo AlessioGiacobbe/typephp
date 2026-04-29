@@ -73,8 +73,8 @@ class Preprocessor extends CompilerBase
     public function getObjectFile(string $cppFile): string
     {
         $info = pathinfo($cppFile);
-
-        return $info['dirname'] . '/' . $info['filename'] . '.o';
+        $ext = $this->isWindows() ? '.obj' : '.o';
+        return $info['dirname'] . '/' . $info['filename'] . $ext;
     }
 
     public function hasCppFileCache(string $file): bool
