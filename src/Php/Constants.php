@@ -98,7 +98,7 @@ class Constants
             'required' => false,
             'noValue' => true,
         ],
-        'noLiteralStrings' => [
+        'no-literal-strings' => [
             'longPrefix' => 'no-literal-strings',
             'description' => 'Disable literal strings optimization',
             'required' => false,
@@ -149,6 +149,12 @@ class Constants
             'required' => false,
             'defaultValue' => '',
         ],
+        'cxx-std' => [
+            'longPrefix' => 'cxx-std',
+            'description' => 'C++ standard version (c++14, c++17, c++20, etc.)',
+            'required' => false,
+            'defaultValue' => 'c++17',
+        ],
     ];
 
     /**
@@ -171,5 +177,6 @@ class Constants
         '5219' => '隐式转换警告',
         '5220' => 'volatile 成员警告',
         '4100' => '未使用的参数',
+        '5039' => '使用未定义的函数',
     ];
 }

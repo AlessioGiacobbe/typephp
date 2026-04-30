@@ -55,15 +55,8 @@ class Translator extends Preprocessor
         $this->preprocessArgvAdvanced();
         $this->climate->arguments->parse();
 
-        $this->optimizeLevel = $this->climate->arguments->get('optimize');
-        $this->buildMode = $this->climate->arguments->get('mode');
-        $this->debugLine = intval($this->climate->arguments->get('debug-line'));
-        $this->maxJob = intval($this->climate->arguments->get('job'));
-        $this->debugInfo = $this->climate->arguments->defined('debug-info');
-        $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
-        $this->enableProfiler = $this->climate->arguments->defined('profile');
-        $this->noConsole = $this->climate->arguments->defined('no-console');
-        $this->sanitize = $this->climate->arguments->get('sanitize');
+        // 只读取命令行参数，不立即应用（等待 YAML 解析后再应用）
+        // 这样可以确保优先级：命令行 > YAML > 默认值
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
         unset($this->internalFunctions['main']);
         $this->internalConstants = get_defined_constants();
@@ -98,6 +91,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-O <level>           Optimization level (0-3, default: 0)');
         $climate->tab()->out('-p, --profile        Enable performance profiling');
         $climate->tab()->out('-d, --debug-info     Enable debug info (auto-disable optimizations, add -g/-Zi)');
+        $climate->tab()->out('--cxx-std <version>  C++ standard version (c++14, c++17, c++20, etc.)');
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
         $climate->tab()->out('-v, --version        Show version');
         $climate->tab()->out('-h, --help           Show this help message');
@@ -117,7 +111,65 @@ class Translator extends Preprocessor
         $climate->tab()->out($cmd . ' app.php -O3 -o myapp -v');
         $climate->tab()->out($cmd . ' gui-app.php --no-console  (Windows GUI app, no console)');
         $climate->tab()->out($cmd . ' app.php --sanitize=address  (Enable AddressSanitizer)');
+        $climate->tab()->out($cmd . ' app.php --cxx-std=c++17  (Use C++17 standard)');
+        $climate->tab()->out($cmd . ' app.php --no-literal-strings  (Disable string optimization)');
         $climate->br();
+    }
+
+    /**
+     * 应用命令行参数（在 YAML 解析后调用，确保命令行参数优先级最高）
+     */
+    protected function applyCommandLineArguments(): void
+    {
+        // 优化级别
+        if ($this->climate->arguments->defined('optimize')) {
+            $this->optimizeLevel = $this->climate->arguments->get('optimize');
+        }
+        
+        // 构建模式
+        if ($this->climate->arguments->defined('mode')) {
+            $this->buildMode = $this->climate->arguments->get('mode');
+        }
+        
+        // 调试行号
+        if ($this->climate->arguments->defined('debug-line')) {
+            $this->debugLine = intval($this->climate->arguments->get('debug-line'));
+        }
+        
+        // 最大并行任务数
+        if ($this->climate->arguments->defined('job')) {
+            $this->maxJob = intval($this->climate->arguments->get('job'));
+        }
+        
+        // 调试信息
+        if ($this->climate->arguments->defined('debug-info')) {
+            $this->debugInfo = true;
+        }
+        
+        // 禁用字面量字符串优化
+        if ($this->climate->arguments->defined('no-literal-strings')) {
+            $this->noLiteralStrings = true;
+        }
+        
+        // 启用性能分析
+        if ($this->climate->arguments->defined('profile')) {
+            $this->enableProfiler = true;
+        }
+        
+        // 隐藏控制台窗口
+        if ($this->climate->arguments->defined('no-console')) {
+            $this->noConsole = true;
+        }
+        
+        // Sanitizer
+        if ($this->climate->arguments->defined('sanitize')) {
+            $this->sanitize = $this->climate->arguments->get('sanitize');
+        }
+        
+        // C++ 标准版本
+        if ($this->climate->arguments->defined('cxx-std')) {
+            $this->cxxStd = $this->climate->arguments->get('cxx-std');
+        }
     }
 
     private function showVersion(): void
@@ -196,6 +248,7 @@ class Translator extends Preprocessor
         $path = $realpath;
 
         if (is_dir($path)) {
+            // 目录模式：不解析 YAML
             $list = $this->getFilesFromDir($path);
             $targetName = basename($path);
             $this->setTargetName($targetName);
@@ -203,8 +256,10 @@ class Translator extends Preprocessor
         } else {
             $ext = pathinfo($path, PATHINFO_EXTENSION);
             if ($ext === 'yml') {
+                // YAML 配置模式：先解析 YAML
                 $list = $this->parseProjectYaml($path);
             } elseif ($ext === 'php') {
+                // 单文件模式：不解析 YAML
                 $list = [$path];
                 $targetName = FileScanner::getFileName($path);
                 $this->setTargetName($targetName);
@@ -213,6 +268,9 @@ class Translator extends Preprocessor
                 $this->error('Unsupported file type: ' . $path);
             }
         }
+
+        // 在所有配置加载完成后，应用命令行参数（确保优先级最高）
+        $this->applyCommandLineArguments();
 
         return $list;
     }
@@ -1181,32 +1239,51 @@ CODE;
         } else {
             $list = $this->getFilesFromDir($projectDir);
         }
-        if (!empty($cfg['cxxflags'])) {
-            if (is_array($cfg['cxxflags'])) {
-                $this->cxxflags = implode(' ', $cfg['cxxflags']);
+        
+        // 读取 cxxflags（支持中横线和下划线）
+        $cxxflags = $cfg['cxx-flags'] ?? $cfg['cxxflags'] ?? null;
+        if (!empty($cxxflags)) {
+            if (is_array($cxxflags)) {
+                $this->cxxflags = implode(' ', $cxxflags);
             } else {
-                $this->cxxflags = str_replace("\n", ' ', $cfg['cxxflags']);
+                $this->cxxflags = str_replace("\n", ' ', $cxxflags);
             }
         }
-        if (!empty($cfg['ldflags'])) {
-            if (is_array($cfg['ldflags'])) {
-                $this->ldflags = implode(' ', $cfg['ldflags']);
+        
+        // 读取 C++ 标准版本（支持中横线和下划线）
+        $cxxStd = $cfg['cxx-std'] ?? $cfg['cxx_std'] ?? null;
+        if (!empty($cxxStd)) {
+            $this->cxxStd = $cxxStd;
+        }
+        
+        // 读取 ldflags（支持中横线和下划线）
+        $ldflags = $cfg['ld-flags'] ?? $cfg['ldflags'] ?? null;
+        if (!empty($ldflags)) {
+            if (is_array($ldflags)) {
+                $this->ldflags = implode(' ', $ldflags);
             } else {
-                $this->ldflags = str_replace("\n", ' ', $cfg['ldflags']);
+                $this->ldflags = str_replace("\n", ' ', $ldflags);
             }
         }
+        
+        // 读取 name
         if (!empty($cfg['name'])) {
             $this->setTargetName($cfg['name']);
         }
-        if (!empty($cfg['type'])) {
-            $this->setBuildMode($cfg['type']);
+        
+        // 读取 type/build-mode（支持中横线和下划线）
+        $buildMode = $cfg['build-mode'] ?? $cfg['type'] ?? null;
+        if (!empty($buildMode)) {
+            $this->setBuildMode($buildMode);
         }
 
-        if (!empty($cfg['ignore'])) {
-            if (!is_array($cfg['ignore'])) {
+        // 读取 ignore（支持中横线和下划线）
+        $ignore = $cfg['ignore'] ?? null;
+        if (!empty($ignore)) {
+            if (!is_array($ignore)) {
                 $this->error('`ignore` must be array');
             }
-            foreach ($cfg['ignore'] as $src) {
+            foreach ($ignore as $src) {
                 if (preg_match('/ext-([a-z0-9_]+)/i', $src, $matches)) {
                     $this->ignoreExtensions[] = $matches[1];
                     continue;

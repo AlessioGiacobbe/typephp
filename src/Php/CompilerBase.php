@@ -2448,9 +2448,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 启用 C++ 异常处理（消除 C4530 警告）
             $cmd .= ' /EHsc';
             
-            // C++ 标准
+            // C++ 标准（从 cxxStd 属性读取，如果 cxxflags 中没有指定）
             if (!str_contains($this->cxxflags, '/std:')) {
-                $cmd .= ' /std:c++17';
+                $cmd .= ' /std:' . $this->cxxStd;
             }
             
             // 编译时的额外选项
@@ -2572,6 +2572,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->cxxflags) {
                 $cmd .= ' ' . $this->cxxflags;
             }
+            // C++ 标准（从 cxxStd 属性读取，如果 cxxflags 中没有指定）
             if (!str_contains($this->cxxflags, ' -std=')) {
                 $cmd .= ' -std=' . $this->cxxStd;
             }

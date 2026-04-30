@@ -1,9 +1,10 @@
 name: swoole-compiler
-type: bin
+build-mode: bin
 version: 0.1.0
-cxxflags: |
-  -std=c++14
-  -Wall
+cxx-std: c++14
+cxx-flags:
+  - -Wall
+
 sources:
   - ./src/Php
   - ./src/Core
