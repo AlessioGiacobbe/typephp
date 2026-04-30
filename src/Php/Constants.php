@@ -143,5 +143,11 @@ class Constants
             'required' => false,
             'noValue' => true,
         ],
+        'sanitize' => [
+            'longPrefix' => 'sanitize',
+            'description' => 'Enable sanitizers (address, undefined, etc.) for debugging',
+            'required' => false,
+            'defaultValue' => '',
+        ],
     ];
 }

@@ -44,6 +44,50 @@ php ../../cli.php build --mode=bin --no-console hello-gui.php
 
 ---
 
+### 3. debug-test.php - 调试测试程序
+
+**特点：**
+- ✅ 包含详细的日志记录
+- ✅ 异常处理
+- ✅ 逐步验证功能
+- ✅ 用于排查 "Debug Assertion Failed" 问题
+
+**编译命令：**
+```bash
+php ../../cli.php build --mode=bin --no-console debug-test.php
+```
+
+**使用方法：**
+1. 编译并运行程序
+2. 查看生成的 `debug-test.log` 文件
+3. 根据日志定位问题
+
+---
+
+### 4. asan-test.php - AddressSanitizer 测试程序
+
+**特点：**
+- ✅ 演示 AddressSanitizer 的使用
+- ✅ 包含各种内存操作测试
+- ✅ 检测内存错误和泄漏
+
+**编译命令：**
+```bash
+# Windows
+php ../../cli.php build --mode=bin --sanitize=address --no-console asan-test.php
+
+# Linux/macOS
+php ../../cli.php build --mode=bin --sanitize=address,undefined asan-test.php
+```
+
+**使用方法：**
+1. 编译带 sanitizer 的版本
+2. 运行程序
+3. 查看 `asan-test.log` 和控制台输出
+4. 如果有内存错误，AddressSanitizer 会报告详细信息
+
+---
+
 ## 🔧 核心功能
 
 ### C++ 函数导出
@@ -191,6 +235,35 @@ A:
 1. 使用消息框显示变量值
 2. 写入日志文件：`file_put_contents('app.log', $msg, FILE_APPEND)`
 3. 临时移除 `--no-console` 参数进行调试
+4. 使用 [debug-test.php](./debug-test.php) 示例程序
+5. 查看详细的 [DEBUG_GUIDE.md](./DEBUG_GUIDE.md)
+
+### Q: 出现 "Debug Assertion Failed" 错误怎么办？
+
+A: 这通常是由于 CRT 库冲突导致的。解决方法：
+
+1. **重新编译**（编译器已自动添加 `/NODEFAULTLIB` 选项）
+   ```bash
+   php ../../cli.php build --mode=bin --no-console your-app.php
+   ```
+
+2. **清理构建目录**
+   ```bash
+   Remove-Item -Recurse -Force build/
+   php ../../cli.php build --mode=bin --no-console your-app.php
+   ```
+
+3. **使用调试测试程序**
+   ```bash
+   php ../../cli.php build --mode=bin --no-console debug-test.php
+   .\debug-test.exe
+   # 查看 debug-test.log 文件
+   ```
+
+4. **查看详细调试指南**
+   - 参考 [DEBUG_GUIDE.md](./DEBUG_GUIDE.md)
+   - 使用 Visual Studio 调试器
+   - 使用 WinDbg
 
 ### Q: 中文显示乱码怎么办？
 
@@ -214,6 +287,8 @@ A: 技术上可以，但不推荐。通常的做法是：
 win32-hello/
 ├── hello-console.php      # 控制台版本示例
 ├── hello-gui.php          # GUI 版本示例
+├── debug-test.php         # 调试测试程序（带日志）
+├── asan-test.php          # AddressSanitizer 测试程序
 ├── main.php               # 另一个示例文件
 ├── window.php             # 窗口创建示例
 ├── cpp-src/
@@ -222,6 +297,8 @@ win32-hello/
 ├── WINDOWS_GUI_GUIDE.md   # GUI 程序指南
 ├── CHINESE_SUPPORT_GUIDE.md  # 中文支持指南
 ├── CPP_FUNCTION_EXPORT_GUIDE.md  # C++ 函数导出指南
+├── DEBUG_GUIDE.md         # 调试指南（重要！）
+├── SANITIZER_GUIDE.md     # AddressSanitizer 使用指南
 └── README.md              # 本文件
 ```
 

@@ -63,6 +63,7 @@ class Translator extends Preprocessor
         $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
         $this->enableProfiler = $this->climate->arguments->defined('profile');
         $this->noConsole = $this->climate->arguments->defined('no-console');
+        $this->sanitize = $this->climate->arguments->get('sanitize');
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
         unset($this->internalFunctions['main']);
         $this->internalConstants = get_defined_constants();
@@ -105,6 +106,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-j, --job <num>      Number of parallel compilation jobs (default: 4)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->tab()->out('--no-console         Hide console window (Windows only, GUI application)');
+        $climate->tab()->out('--sanitize <type>    Enable sanitizers (address, undefined, etc.)');
         $climate->br();
 
         $climate->bold('EXAMPLES:');
@@ -114,6 +116,7 @@ class Translator extends Preprocessor
         $climate->tab()->out($cmd . ' my-ext/ -O2 -o myapp -m ext');
         $climate->tab()->out($cmd . ' app.php -O3 -o myapp -v');
         $climate->tab()->out($cmd . ' gui-app.php --no-console  (Windows GUI app, no console)');
+        $climate->tab()->out($cmd . ' app.php --sanitize=address  (Enable AddressSanitizer)');
         $climate->br();
     }
 
@@ -826,6 +829,7 @@ CODE;
 
             // 等待任意一个子进程完成
             if ($runningProcesses > 0) {
+                $status = null;
                 $pid = pcntl_wait($status);
                 if ($pid > 0) {
                     $processInfo = $processPipes[$pid] ?? null;
@@ -849,6 +853,7 @@ CODE;
 
         // 确保所有子进程都已结束
         while ($runningProcesses > 0) {
+            $status = null;
             $pid = pcntl_wait($status);
             if ($pid > 0) {
                 unset($processPipes[$pid]);

@@ -165,6 +165,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $printBacktraceOnError = false;
     protected bool $noLiteralStrings = false;
     protected bool $noConsole = false;  // Windows: hide console window
+    protected string $sanitize = '';    // Sanitizer type (address, undefined, etc.)
     protected string $file;
     protected string $dir;
 
@@ -2419,6 +2420,17 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $cmd .= ' /DZTS';                  // 启用线程安全
             }
             
+            // Sanitizer 支持（MSVC 使用 /fsanitize）
+            if ($this->sanitize) {
+                // MSVC 支持的 sanitizer: address
+                if ($this->sanitize === 'address' || $this->sanitize === 'addr') {
+                    $cmd .= ' /fsanitize=address';
+                    $this->climate->info('AddressSanitizer enabled (MSVC)');
+                } else {
+                    $this->climate->warning("Unsupported sanitizer type: {$this->sanitize} (MSVC only supports 'address')");
+                }
+            }
+            
             // 优化级别
             switch ($this->optimizeLevel) {
                 case 0:
@@ -2484,6 +2496,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 // 所有输出需要通过 GUI 元素（如消息框）显示
             }
             
+            // 解决 CRT 库冲突问题（LNK4098 警告和 Debug Assertion Failed）
+            // 排除静态 CRT 库，只使用动态 CRT（/MD）
+            $cmd .= ' /NODEFAULTLIB:LIBCMT';
+            $cmd .= ' /NODEFAULTLIB:LIBCMTD';
+            $cmd .= ' /NODEFAULTLIB:MSVCRTD';
+            
             $cmd .= ' ' . $this->parseWindowsLibs();
             if ($this->ldflags) {
                 $cmd .= ' ' . $this->ldflags;
@@ -2508,6 +2526,32 @@ class CompilerBase extends \PhpAot\Core\Translator
             $cmd .= ' -g';
         }
         $cmd .= ' -Wall';
+        
+        // Sanitizer 支持（GCC/Clang 使用 -fsanitize）
+        if ($this->sanitize && !$link) {
+            $sanitizers = explode(',', $this->sanitize);
+            $validSanitizers = ['address', 'undefined', 'thread', 'memory', 'leak'];
+            $enabledSanitizers = [];
+            
+            foreach ($sanitizers as $san) {
+                $san = trim($san);
+                if (in_array($san, $validSanitizers)) {
+                    $enabledSanitizers[] = $san;
+                } else {
+                    $this->climate->warning("Unsupported sanitizer: $san");
+                }
+            }
+            
+            if (!empty($enabledSanitizers)) {
+                $sanitizerFlag = '-fsanitize=' . implode(',', $enabledSanitizers);
+                $cmd .= ' ' . $sanitizerFlag;
+                // AddressSanitizer 需要额外的链接选项
+                if (in_array('address', $enabledSanitizers)) {
+                    $cmd .= ' -fsanitize=address';
+                }
+                $this->climate->info('Sanitizers enabled: ' . implode(', ', $enabledSanitizers));
+            }
+        }
 
         if ($this->enableProfiler) {
             $cmd .= ' -lprofiler';
