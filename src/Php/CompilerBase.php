@@ -2363,15 +2363,22 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             }
             
-//            // 添加 Windows 系统库（PHP 嵌入模式必需）
-//            $list[] = 'ws2_32.lib';      // Winsock
-//            $list[] = 'advapi32.lib';    // 高级 API
-//            $list[] = 'user32.lib';      // 用户界面
-//            $list[] = 'shell32.lib';     // Shell API
-//            $list[] = 'ole32.lib';       // OLE
-//            $list[] = 'oleaut32.lib';    // OLE Automation
-//            $list[] = 'crypt32.lib';     // 加密 API
-
+            // 添加 CRT 和系统库（解决 LNK2019 错误）
+            $list[] = 'msvcrt.lib';       // C 运行时库（动态）
+            $list[] = 'oldnames.lib';     // 旧名称兼容库
+            $list[] = 'kernel32.lib';     // Windows 核心 API
+            $list[] = 'user32.lib';       // 用户界面
+            $list[] = 'gdi32.lib';        // GDI
+            $list[] = 'winspool.lib';     // 打印池
+            $list[] = 'comdlg32.lib';     // 通用对话框
+            $list[] = 'advapi32.lib';     // 高级 API
+            $list[] = 'shell32.lib';      // Shell API
+            $list[] = 'ole32.lib';        // OLE
+            $list[] = 'oleaut32.lib';     // OLE Automation
+            $list[] = 'uuid.lib';         // UUID
+            $list[] = 'odbc32.lib';       // ODBC
+            $list[] = 'odbccp32.lib';     // ODBC CP
+            $list[] = 'ws2_32.lib';       // Winsock
         }
         
         $out = '';
@@ -2471,6 +2478,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $cmd .= ' ' . $this->ldflags;
             }
         } else {
+            // 编译时使用动态多线程 CRT（与 PHP SDK 一致）
             $cmd .= ' /MD';
         }
         

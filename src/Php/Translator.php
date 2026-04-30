@@ -680,7 +680,6 @@ CODE;
                 if ($this->isPhpZts) {
                     $cmd .= ' /DZTS';
                 }
-                $cmd .= ' /DZEND_ENABLE_STATIC_TSRMLS_CACHE';
                 $cmd .= ' /Od /W3 /wd4244 /wd4146 /nologo';
             }
         } else {
