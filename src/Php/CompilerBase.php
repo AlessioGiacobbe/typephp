@@ -2530,7 +2530,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->debugInfo) {
                 $cmd .= ' /Od';      // 禁用优化（类似 gcc -O0）
                 $cmd .= ' /Zi';      // 生成完整调试信息（类似 gcc -g）
-                $cmd .= ' /DEBUG';   // 链接时生成 PDB 文件
                 $this->climate->info('Debug mode enabled: optimizations disabled, debug info generated');
             } else {
                 // 非调试模式：使用用户指定的优化级别
@@ -2586,6 +2585,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 链接选项
         if ($link) {
             $cmd .= ' ' . $this->parseWindowsLdflags();
+            
+            // 调试模式：链接时生成 PDB 文件
+            if ($this->debugInfo) {
+                $cmd .= ' /DEBUG';  // 生成 PDB 调试信息文件
+            }
             
             // 对于 bin 模式且指定了 --no-console，使用 Windows 子系统（不显示控制台窗口）
             if ($this->buildMode === 'bin' && $this->noConsole) {
@@ -2697,6 +2701,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 链接选项（Clang on Windows 仍然使用 MSVC 的链接器）
         if ($link) {
             $cmd .= ' ' . $this->parseWindowsLdflags();
+            
+            // 调试模式：链接时生成 PDB 文件（Clang + lld-link/link.exe）
+            if ($this->debugInfo) {
+                $cmd .= ' /DEBUG';  // 生成 PDB 调试信息文件
+            }
             
             // 对于 bin 模式且指定了 --no-console，使用 Windows 子系统
             if ($this->buildMode === 'bin' && $this->noConsole) {
