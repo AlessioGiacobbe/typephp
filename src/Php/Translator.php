@@ -62,6 +62,7 @@ class Translator extends Preprocessor
         $this->debugInfo = $this->climate->arguments->defined('debug-info');
         $this->noLiteralStrings = $this->climate->arguments->get('noLiteralStrings');
         $this->enableProfiler = $this->climate->arguments->defined('profile');
+        $this->noConsole = $this->climate->arguments->defined('no-console');
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
         unset($this->internalFunctions['main']);
         $this->internalConstants = get_defined_constants();
@@ -103,6 +104,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-m, --mode <mode>    Compilation mode, -m bin(binary) or -m ext(extension), default: bin');
         $climate->tab()->out('-j, --job <num>      Number of parallel compilation jobs (default: 4)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
+        $climate->tab()->out('--no-console         Hide console window (Windows only, GUI application)');
         $climate->br();
 
         $climate->bold('EXAMPLES:');
@@ -111,6 +113,7 @@ class Translator extends Preprocessor
         $climate->tab()->out($cmd . ' project/config.yml -O2');
         $climate->tab()->out($cmd . ' my-ext/ -O2 -o myapp -m ext');
         $climate->tab()->out($cmd . ' app.php -O3 -o myapp -v');
+        $climate->tab()->out($cmd . ' gui-app.php --no-console  (Windows GUI app, no console)');
         $climate->br();
     }
 

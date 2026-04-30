@@ -48,17 +48,14 @@ function MessageBox(int $hWnd, string $lpText, string $lpCaption, int $uType): i
 
 function main()
 {
-    // Set console to UTF-8 for proper Chinese character display
-    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-        exec('chcp 65001 > nul 2>&1');
-    }
-    
     // Set timezone to China (UTC+8)
     date_default_timezone_set('Asia/Shanghai');
     
-    // Show a simple message box
-    $result = MessageBox(0, "Hello from PHP Compiler!\n\n这是一个使用 PHPX 编译器创建的 Windows 程序。", "Hello World", 0);
-    
-    echo "消息框返回值: " . $result . "\n";
-    echo "程序结束。\n";
+    // Show welcome message box
+    MessageBox(0, 
+        "Hello from PHP Compiler!\n\n" .
+        "这是一个使用 PHPX 编译器创建的 Windows 程序。\n\n" .
+        "当前时间: " . date('Y-m-d H:i:s'), 
+        "Hello World", 
+        0);
 }

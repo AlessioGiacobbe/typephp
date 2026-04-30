@@ -164,6 +164,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $formatCode = true;
     protected bool $printBacktraceOnError = false;
     protected bool $noLiteralStrings = false;
+    protected bool $noConsole = false;  // Windows: hide console window
     protected string $file;
     protected string $dir;
 
@@ -2473,6 +2474,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 链接选项
         if ($link) {
             $cmd .= ' ' . $this->parseWindowsLdflags();
+            
+            // 对于 bin 模式且指定了 --no-console，使用 Windows 子系统（不显示控制台窗口）
+            if ($this->buildMode === 'bin' && $this->noConsole) {
+                $cmd .= ' /SUBSYSTEM:WINDOWS';
+                // 指定入口点为 mainCRTStartup，这样可以使用 main() 而不是 WinMain()
+                $cmd .= ' /ENTRY:mainCRTStartup';
+                // 注意：使用 WINDOWS 子系统后，程序将没有控制台窗口
+                // 所有输出需要通过 GUI 元素（如消息框）显示
+            }
+            
             $cmd .= ' ' . $this->parseWindowsLibs();
             if ($this->ldflags) {
                 $cmd .= ' ' . $this->ldflags;

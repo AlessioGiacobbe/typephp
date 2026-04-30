@@ -1,10 +1,10 @@
 <?php
 
 /**
- * Win32 Hello World - Using C++ helper functions
- * This is the simplest Windows GUI program example
+ * Win32 Hello World - GUI Version (No Console)
+ * This example demonstrates a pure GUI application without console window
  * 
- * Note: C++ functions are declared in cpp-src/winapi.stub.php and implemented in cpp-src/winapi.cc
+ * Compile with: php ../../cli.php build --mode=bin --no-console hello-gui.php
  */
 
 function main()

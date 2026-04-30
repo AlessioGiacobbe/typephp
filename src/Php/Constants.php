@@ -137,5 +137,11 @@ class Constants
             'required' => false,
             'defaultValue' => 4,
         ],
+        'no-console' => [
+            'longPrefix' => 'no-console',
+            'description' => 'Hide console window (Windows only, use /SUBSYSTEM:WINDOWS)',
+            'required' => false,
+            'noValue' => true,
+        ],
     ];
 }
