@@ -290,7 +290,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->detectPlatform();
         
         // 检测 PHP 是否为线程安全版本（ZTS）
-        $this->isPhpZts = defined('PHP_ZTS') && PHP_ZTS === 1;
+        $this->isPhpZts = defined('PHP_ZTS');
     }
 
     protected function detectPlatform(): void
@@ -2304,11 +2304,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         
         if ($this->buildMode === 'bin') {
             // Windows 下 PHP 库文件和 DLL 的查找顺序：
-            // 1. SDK/lib/php8.lib
+            // 1. SDK/lib/php8embed.lib (嵌入模式首选)
             // 2. SDK/lib/php8ts.lib
-            // 3. lib/php8.lib
-            // 4. lib/php8ts.lib
-            // 5. 根目录/php8.dll
+            // 3. SDK/lib/php8.lib
+            // 4. lib/php8embed.lib
+            // 5. lib/php8ts.lib
+            // 6. lib/php8.lib
             
             $phpDirs = [
                 $this->getPhpDir() . '\\SDK\\lib',  // 优先从 SDK/lib 查找
@@ -2319,18 +2320,26 @@ class CompilerBase extends \PhpAot\Core\Translator
             foreach ($phpDirs as $phpDir) {
                 if (!is_dir($phpDir)) continue;
                 
-                // 尝试 php8.lib
-                $phpLib = $phpDir . '\\php8.lib';
-                if (file_exists($phpLib)) {
-                    $list[] = '"' . $phpLib . '"';
+                // 尝试 php8embed.lib (嵌入模式)
+                $phpEmbedLib = $phpDir . '\\php8embed.lib';
+                if (file_exists($phpEmbedLib)) {
+                    $list[] = '"' . $phpEmbedLib . '"';
                     $found = true;
                     break;
                 }
                 
                 // 尝试 php8ts.lib
-                $altPhpLib = $phpDir . '\\php8ts.lib';
-                if (file_exists($altPhpLib)) {
-                    $list[] = '"' . $altPhpLib . '"';
+                $phpTsLib = $phpDir . '\\php8ts.lib';
+                if (file_exists($phpTsLib)) {
+                    $list[] = '"' . $phpTsLib . '"';
+                    $found = true;
+                    break;
+                }
+                
+                // 尝试 php8.lib
+                $phpLib = $phpDir . '\\php8.lib';
+                if (file_exists($phpLib)) {
+                    $list[] = '"' . $phpLib . '"';
                     $found = true;
                     break;
                 }
@@ -2340,19 +2349,29 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (!$found) {
                 $phpDll = $this->getPhpDir() . '\\php8.dll';
                 if (file_exists($phpDll)) {
-                    $this->climate->magenta('php8.lib not found, using php8.dll directly');
+                    $this->climate->magenta('php8embed.lib not found, using php8.dll directly');
                     $this->climate->info('Note: This may require additional setup');
                     $list[] = '"' . $phpDll . '"';
                 } else {
                     // 尝试 php8ts.dll
                     $phpTsDll = $this->getPhpDir() . '\\php8ts.dll';
                     if (file_exists($phpTsDll)) {
-                        $this->climate->magenta('php8.lib not found, using php8ts.dll directly');
+                        $this->climate->magenta('php8embed.lib not found, using php8ts.dll directly');
                         $this->climate->info('Note: This may require additional setup');
                         $list[] = '"' . $phpTsDll . '"';
                     }
                 }
             }
+            
+//            // 添加 Windows 系统库（PHP 嵌入模式必需）
+//            $list[] = 'ws2_32.lib';      // Winsock
+//            $list[] = 'advapi32.lib';    // 高级 API
+//            $list[] = 'user32.lib';      // 用户界面
+//            $list[] = 'shell32.lib';     // Shell API
+//            $list[] = 'ole32.lib';       // OLE
+//            $list[] = 'oleaut32.lib';    // OLE Automation
+//            $list[] = 'crypt32.lib';     // 加密 API
+
         }
         
         $out = '';
@@ -2381,51 +2400,59 @@ class CompilerBase extends \PhpAot\Core\Translator
             $cmd .= ' ' . $this->parseWindowsIncludes();
         }
         
-        // Windows 平台必需的宏定义（参考 CMakeLists.txt）
-        $cmd .= ' /DZEND_WIN32';           // 标识 Windows 平台
-        $cmd .= ' /DPHP_WIN32';            // 标识 Windows 平台
-        $cmd .= ' /DZEND_DEBUG=0';         // 禁用调试模式
-        
-        // 根据 PHP 是否为线程安全版本决定是否添加 ZTS 宏
-        if ($this->isPhpZts) {
-            $cmd .= ' /DZTS';                  // 启用线程安全
-        }
-        
-        $cmd .= ' /DZEND_ENABLE_STATIC_TSRMLS_CACHE'; // 启用静态 TSRM 缓存
-        
-        // 优化级别
-        switch ($this->optimizeLevel) {
-            case 0:
-                $cmd .= ' /Od'; // 禁用优化
-                break;
-            case 1:
-            case 2:
-                $cmd .= ' /O2'; // 最大速度优化
-                break;
-            case 3:
-                $cmd .= ' /Ox'; // 完全优化
-                break;
-        }
+        // Windows 平台必需的宏定义（参考 CMakeLists.txt）- 仅在编译时
+        if (!$link) {
+            $cmd .= ' /DZEND_WIN32';           // 标识 Windows 平台
+            $cmd .= ' /DPHP_WIN32';            // 标识 Windows 平台
+            $cmd .= ' /DZEND_DEBUG=0';         // 禁用调试模式
+            
+            // 根据 PHP 是否为线程安全版本决定是否添加 ZTS 宏
+            if ($this->isPhpZts) {
+                $cmd .= ' /DZTS';                  // 启用线程安全
+            }
+            
+            // 优化级别
+            switch ($this->optimizeLevel) {
+                case 0:
+                    $cmd .= ' /Od'; // 禁用优化
+                    break;
+                case 1:
+                case 2:
+                    $cmd .= ' /O2'; // 最大速度优化
+                    break;
+                case 3:
+                    $cmd .= ' /Ox'; // 完全优化
+                    break;
+            }
 
-        // 调试信息
-        if ($this->debugInfo) {
-            $cmd .= ' /Zi'; // 生成完整调试信息
-        }
+            // 调试信息
+            if ($this->debugInfo) {
+                $cmd .= ' /Zi'; // 生成完整调试信息
+            }
 
-        // 警告级别
-        $cmd .= ' /W3';
-        
-        // 禁用 PHP SDK 头文件中的常见警告
-        $cmd .= ' /wd4244';  // 禁用类型转换警告（__int64 到 int）
-        $cmd .= ' /wd4146';  // 禁用一元负运算符应用于无符号类型的警告
+            // 警告级别
+            $cmd .= ' /W3';
+            
+            // 禁用 PHP SDK 头文件中的常见警告
+            $cmd .= ' /wd4244';  // 禁用类型转换警告（__int64 到 int）
+            $cmd .= ' /wd4146';  // 禁用一元负运算符应用于无符号类型的警告
+            
+            // 启用 C++ 异常处理（消除 C4530 警告）
+            $cmd .= ' /EHsc';
+            
+            // C++ 标准
+            if (!str_contains($this->cxxflags, '/std:')) {
+                $cmd .= ' /std:c++17';
+            }
+            
+            // 编译时的额外选项
+            if ($this->cxxflags) {
+                $cmd .= ' ' . $this->cxxflags;
+            }
+        }
         
         // 禁用编译器版权信息输出
         $cmd .= ' /nologo';
-
-        // C++ 标准（仅在编译时）
-        if (!$link && !str_contains($this->cxxflags, '/std:')) {
-            $cmd .= ' /std:c++17';
-        }
 
         // 扩展模块特定选项
         if ($this->buildMode === 'ext') {
@@ -2444,14 +2471,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $cmd .= ' ' . $this->ldflags;
             }
         } else {
-            // 编译时的额外选项
-            if ($this->cxxflags) {
-                $cmd .= ' ' . $this->cxxflags;
-            }
+            $cmd .= ' /MD';
         }
         
-        // 定义宏
-        if ($this->enableProfiler) {
+        // 定义宏（仅在编译时）
+        if (!$link && $this->enableProfiler) {
             $cmd .= ' /DPPROF_ON=1';
         }
     }

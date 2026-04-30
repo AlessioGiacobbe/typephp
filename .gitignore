@@ -13,3 +13,5 @@
 /projects/tmp
 /.php-cs-fixer.cache
 *.o
+*.dll
+*.exe

@@ -405,11 +405,12 @@ class Translator extends Preprocessor
 
         if ($this->buildMode === 'bin') {
             $cliHeaders = [
-                '#include "ps_title.h"',
                 '#include "php_cli_process_title.h"',
                 '#include "php_cli_process_title_arginfo.h"',
             ];
+            $code .= 'extern "C" {' . PHP_EOL;
             $code .= implode(PHP_EOL, $cliHeaders) . PHP_EOL;
+            $code .= '}';
         }
 
         $code .= "// global vars \n";
@@ -663,12 +664,31 @@ CODE;
         if ($this->isWindows()) {
             // Windows MSVC 编译命令
             $cmd = $this->cppCompiler . ' /c ' . $cppFile . ' /Fo' . $objectFile;
+            
+            // C 文件和 C++ 文件使用不同的选项
+            $isCppFile = (pathinfo($cppFile, PATHINFO_EXTENSION) === 'cc' || 
+                         pathinfo($cppFile, PATHINFO_EXTENSION) === 'cpp' || 
+                         pathinfo($cppFile, PATHINFO_EXTENSION) === 'cxx');
+            
+            // 添加编译选项（C 文件不需要 /EHsc 和 /std:c++17）
+            if ($isCppFile) {
+                $this->addCompilationOption($cmd, false);
+            } else {
+                // C 文件：只添加基本选项，不添加 C++ 特定选项
+                $cmd .= ' ' . $this->parseWindowsIncludes();
+                $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
+                if ($this->isPhpZts) {
+                    $cmd .= ' /DZTS';
+                }
+                $cmd .= ' /DZEND_ENABLE_STATIC_TSRMLS_CACHE';
+                $cmd .= ' /Od /W3 /wd4244 /wd4146 /nologo';
+            }
         } else {
             // Unix/Linux/macOS GCC 编译命令
             $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
+            $this->addCompilationOption($cmd, false);
         }
         
-        $this->addCompilationOption($cmd, false);
         if (!$parallel) {
             $this->climate->comment($cmd);
         }
@@ -871,9 +891,9 @@ CODE;
         
         // 根据平台构建链接命令
         if ($this->isWindows()) {
-            // Windows MSVC 链接命令
+            // Windows 使用 link.exe 进行链接
             $objectList = implode(' ', $objectFiles);
-            $linkCmd = $this->cppCompiler . ' ' . $objectList . ' /Fe' . $targetFile;
+            $linkCmd = 'link /nologo ' . $objectList . ' /OUT:' . $targetFile;
         } else {
             // Unix/Linux/macOS GCC 链接命令
             $objectList = implode(' ', $objectFiles);
