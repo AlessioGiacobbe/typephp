@@ -1048,7 +1048,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $type = $expr->getType();
         switch ($type) {
             case 'Scalar_Int':
-                return $expr->value . ($this->isMacos() ? 'LL' : 'L');
+                return $expr->value . ($this->isLinux() ? 'L' : 'LL');
             case 'Scalar_Float':
                 return $this->parseScalarFloat($expr);
             case 'Scalar_String':
