@@ -474,7 +474,7 @@ class Translator extends Preprocessor
             ];
             $code .= 'extern "C" {' . PHP_EOL;
             $code .= implode(PHP_EOL, $cliHeaders) . PHP_EOL;
-            $code .= '}';
+            $code .= '}' . PHP_EOL;
         }
 
         $code .= "// global vars \n";
@@ -795,7 +795,6 @@ CODE;
 
     public function compile(array $sourceFiles): array
     {
-        $objectFiles = [];
         $job = $this->maxJob;
 
         // 生成所有函数声明、全局变量声明的头文件
