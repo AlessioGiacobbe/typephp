@@ -92,6 +92,9 @@ function main()
         exec('chcp 65001 > nul 2>&1');
     }
     
+    // 设置时区为中国（UTC+8）
+    date_default_timezone_set('Asia/Shanghai');
+    
     echo "========================================\n";
     echo "  Win32 Hello World 程序\n";
     echo "========================================\n\n";
@@ -189,10 +192,11 @@ php bin\compiler.php examples\win32-hello\project.yml
 ## 最佳实践
 
 1. ✅ **始终在程序开始时设置 UTF-8**
-2. ✅ **Windows API 使用宽字符版本（W 后缀）**
-3. ✅ **UTF-8 ↔ UTF-16 转换后记得释放内存**
-4. ✅ **源文件保存为 UTF-8 编码（无 BOM）**
-5. ❌ **避免混用 ANSI 和 Unicode API**
+2. ✅ **设置正确的时区**（`date_default_timezone_set('Asia/Shanghai')`）
+3. ✅ **Windows API 使用宽字符版本**（W 后缀）
+4. ✅ **UTF-8 ↔ UTF-16 转换后记得释放内存**
+5. ✅ **源文件保存为 UTF-8 编码（无 BOM）**
+6. ❌ **避免混用 ANSI 和 Unicode API**
 
 ## 参考资源
 

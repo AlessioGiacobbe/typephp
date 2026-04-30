@@ -14,6 +14,9 @@ function main()
         exec('chcp 65001 > nul 2>&1');
     }
     
+    // Set timezone to China (UTC+8)
+    date_default_timezone_set('Asia/Shanghai');
+    
     echo "========================================\n";
     echo "  Win32 Hello World 程序\n";
     echo "========================================\n\n";

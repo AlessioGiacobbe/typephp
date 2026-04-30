@@ -53,6 +53,9 @@ function main()
         exec('chcp 65001 > nul 2>&1');
     }
     
+    // Set timezone to China (UTC+8)
+    date_default_timezone_set('Asia/Shanghai');
+    
     // Show a simple message box
     $result = MessageBox(0, "Hello from PHP Compiler!\n\n这是一个使用 PHPX 编译器创建的 Windows 程序。", "Hello World", 0);
     
