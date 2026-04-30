@@ -88,6 +88,31 @@ php ../../cli.php build --mode=bin --sanitize=address,undefined asan-test.php
 
 ---
 
+### 5. debug-mode-test.php - 调试模式测试程序
+
+**特点：**
+- ✅ 演示 `--debug-info` 参数的使用
+- ✅ 禁用优化，便于调试
+- ✅ 生成完整的调试信息
+- ✅ 支持 GDB、LLDB、Visual Studio 调试
+
+**编译命令：**
+```bash
+# 启用调试模式（自动禁用优化 + 生成调试信息）
+php ../../cli.php build --mode=bin --debug-info --no-console debug-mode-test.php
+
+# 结合 AddressSanitizer
+php ../../cli.php build --mode=bin --debug-info --sanitize=address --no-console debug-mode-test.php
+```
+
+**使用方法：**
+1. 编译带调试信息的版本
+2. 使用调试器加载程序
+3. 设置断点、查看变量、单步执行
+4. 查看 `debug-mode-test.log` 了解运行流程
+
+---
+
 ## 🔧 核心功能
 
 ### C++ 函数导出
@@ -288,6 +313,7 @@ win32-hello/
 ├── hello-console.php      # 控制台版本示例
 ├── hello-gui.php          # GUI 版本示例
 ├── debug-test.php         # 调试测试程序（带日志）
+├── debug-mode-test.php    # 调试模式测试程序（--debug-info）
 ├── asan-test.php          # AddressSanitizer 测试程序
 ├── main.php               # 另一个示例文件
 ├── window.php             # 窗口创建示例
@@ -298,6 +324,7 @@ win32-hello/
 ├── CHINESE_SUPPORT_GUIDE.md  # 中文支持指南
 ├── CPP_FUNCTION_EXPORT_GUIDE.md  # C++ 函数导出指南
 ├── DEBUG_GUIDE.md         # 调试指南（重要！）
+├── DEBUG_MODE_GUIDE.md    # 调试模式使用指南
 ├── SANITIZER_GUIDE.md     # AddressSanitizer 使用指南
 └── README.md              # 本文件
 ```

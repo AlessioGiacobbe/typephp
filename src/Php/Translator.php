@@ -97,7 +97,7 @@ class Translator extends Preprocessor
         $climate->bold('OPTIONS:');
         $climate->tab()->out('-O <level>           Optimization level (0-3, default: 0)');
         $climate->tab()->out('-p, --profile        Enable performance profiling');
-        $climate->tab()->out('-d, --debug-info     Enable debug info');
+        $climate->tab()->out('-d, --debug-info     Enable debug info (auto-disable optimizations, add -g/-Zi)');
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
         $climate->tab()->out('-v, --version        Show version');
         $climate->tab()->out('-h, --help           Show this help message');

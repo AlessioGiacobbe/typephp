@@ -2364,23 +2364,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                 }
             }
-            
-            // 添加 CRT 和系统库（解决 LNK2019 错误）
-            $list[] = 'msvcrt.lib';       // C 运行时库（动态）
-            $list[] = 'oldnames.lib';     // 旧名称兼容库
-            $list[] = 'kernel32.lib';     // Windows 核心 API
-            $list[] = 'user32.lib';       // 用户界面
-            $list[] = 'gdi32.lib';        // GDI
-            $list[] = 'winspool.lib';     // 打印池
-            $list[] = 'comdlg32.lib';     // 通用对话框
-            $list[] = 'advapi32.lib';     // 高级 API
-            $list[] = 'shell32.lib';      // Shell API
-            $list[] = 'ole32.lib';        // OLE
-            $list[] = 'oleaut32.lib';     // OLE Automation
-            $list[] = 'uuid.lib';         // UUID
-            $list[] = 'odbc32.lib';       // ODBC
-            $list[] = 'odbccp32.lib';     // ODBC CP
-            $list[] = 'ws2_32.lib';       // Winsock
         }
         
         $out = '';
@@ -2431,23 +2414,26 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             }
             
-            // 优化级别
-            switch ($this->optimizeLevel) {
-                case 0:
-                    $cmd .= ' /Od'; // 禁用优化
-                    break;
-                case 1:
-                case 2:
-                    $cmd .= ' /O2'; // 最大速度优化
-                    break;
-                case 3:
-                    $cmd .= ' /Ox'; // 完全优化
-                    break;
-            }
-
-            // 调试信息
+            // 调试模式：当启用 --debug-info 时，自动禁用优化并添加调试信息
             if ($this->debugInfo) {
-                $cmd .= ' /Zi'; // 生成完整调试信息
+                $cmd .= ' /Od';      // 禁用优化（类似 gcc -O0）
+                $cmd .= ' /Zi';      // 生成完整调试信息（类似 gcc -g）
+                $cmd .= ' /DEBUG';   // 链接时生成 PDB 文件
+                $this->climate->info('Debug mode enabled: optimizations disabled, debug info generated');
+            } else {
+                // 非调试模式：使用用户指定的优化级别
+                switch ($this->optimizeLevel) {
+                    case 0:
+                        $cmd .= ' /Od'; // 禁用优化
+                        break;
+                    case 1:
+                    case 2:
+                        $cmd .= ' /O2'; // 最大速度优化
+                        break;
+                    case 3:
+                        $cmd .= ' /Ox'; // 完全优化
+                        break;
+                }
             }
 
             // 警告级别
@@ -2496,12 +2482,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 // 所有输出需要通过 GUI 元素（如消息框）显示
             }
             
-            // 解决 CRT 库冲突问题（LNK4098 警告和 Debug Assertion Failed）
             // 排除静态 CRT 库，只使用动态 CRT（/MD）
             $cmd .= ' /NODEFAULTLIB:LIBCMT';
-            $cmd .= ' /NODEFAULTLIB:LIBCMTD';
-            $cmd .= ' /NODEFAULTLIB:MSVCRTD';
-            
+
             $cmd .= ' ' . $this->parseWindowsLibs();
             if ($this->ldflags) {
                 $cmd .= ' ' . $this->ldflags;
@@ -2520,11 +2503,17 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function addUnixCompilationOption(string &$cmd, bool $link): void
     {
         $cmd .= ' ' . $this->parseIncludes();
-        $cmd .= ' -O' . $this->optimizeLevel;
-
+        
+        // 调试模式：当启用 --debug-info 时，自动禁用优化并添加调试信息
         if ($this->debugInfo) {
-            $cmd .= ' -g';
+            $cmd .= ' -O0';     // 禁用优化（类似 MSVC /Od）
+            $cmd .= ' -g';      // 生成调试信息
+            $this->climate->info('Debug mode enabled: optimizations disabled (-O0), debug info generated (-g)');
+        } else {
+            // 非调试模式：使用用户指定的优化级别
+            $cmd .= ' -O' . $this->optimizeLevel;
         }
+        
         $cmd .= ' -Wall';
         
         // Sanitizer 支持（GCC/Clang 使用 -fsanitize）
