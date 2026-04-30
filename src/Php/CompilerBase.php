@@ -3405,7 +3405,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $list_args[] = $this->parseArg($arg);
         }
 
-        return '{' . implode(', ', $list_args) . '}';
+        return Symbol::argList() . '{' . implode(', ', $list_args) . '}';
     }
 
     /**

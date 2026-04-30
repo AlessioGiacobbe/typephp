@@ -49,4 +49,9 @@ class Symbol
     {
         return 'php::getClassEntrySafe';
     }
+
+    public static function argList(): string
+    {
+        return 'php::ArgList';
+    }
 }
