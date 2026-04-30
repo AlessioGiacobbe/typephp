@@ -2439,9 +2439,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 警告级别
             $cmd .= ' /W3';
             
-            // 禁用 PHP SDK 头文件中的常见警告
-            $cmd .= ' /wd4244';  // 禁用类型转换警告（__int64 到 int）
-            $cmd .= ' /wd4146';  // 禁用一元负运算符应用于无符号类型的警告
+            // 禁用 PHP SDK 和 Windows SDK 头文件中的常见警告
+            // 这些警告都是编译器噪音，不影响功能（从 Constants 配置中读取）
+            foreach (Constants::MSVC_SUPPRESSED_WARNINGS as $code => $description) {
+                $cmd .= " /wd{$code}";  // C{$code}: {$description}
+            }
             
             // 启用 C++ 异常处理（消除 C4530 警告）
             $cmd .= ' /EHsc';

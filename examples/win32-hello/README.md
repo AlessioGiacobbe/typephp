@@ -326,6 +326,7 @@ win32-hello/
 ├── DEBUG_GUIDE.md         # 调试指南（重要！）
 ├── DEBUG_MODE_GUIDE.md    # 调试模式使用指南
 ├── SANITIZER_GUIDE.md     # AddressSanitizer 使用指南
+├── MSVC_WARNINGS_SUPPRESSION.md  # MSVC 警告屏蔽说明
 └── README.md              # 本文件
 ```
 
