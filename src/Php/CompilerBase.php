@@ -159,6 +159,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $cxxflags = '';
     protected string $cxxStd = 'c++14';
     protected string $ldflags = '';
+    protected string $linker = 'link';  // Windows linker: link.exe or lld-link
     protected int $floatPrecision = 17;
     protected bool $debugInfo = false;
     protected bool $formatCode = true;
@@ -301,14 +302,110 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
         
         if ($this->isWindows) {
-            // Windows 使用 MSVC 编译器
-            $this->cppCompiler = 'cl';
-            $this->cxxStd = 'c++17'; // MSVC 更好的支持 C++17
+            // Windows 下检测使用哪个编译器
+            // 优先级：环境变量 PHPX_CC > clang > cl (MSVC)
+            $compilerEnv = getenv('PHPX_CC');
+            
+            if ($compilerEnv) {
+                // 用户通过环境变量指定编译器
+                $this->cppCompiler = $compilerEnv;
+                $this->climate->info("Using compiler from PHPX_CC: {$this->cppCompiler}");
+            } elseif ($this->isClangAvailable()) {
+                // 优先使用 Clang（如果可用）
+                $this->cppCompiler = 'clang++';
+                $this->cxxStd = 'c++17';
+                $this->climate->info('Using Clang compiler (clang++)');
+            } else {
+                // 默认使用 MSVC
+                $this->cppCompiler = 'cl';
+                $this->cxxStd = 'c++17';
+                $this->climate->info('Using MSVC compiler (cl)');
+            }
         } else {
             // Unix/Linux/macOS 使用 g++
             $this->cppCompiler = 'g++';
             $this->cxxStd = 'c++14';
         }
+    }
+
+    /**
+     * 检测 Clang 是否可用
+     */
+    protected function isClangAvailable(): bool
+    {
+        if (!$this->isWindows) {
+            return false;
+        }
+        
+        // 首先尝试 PATH 中的 clang++
+        $output = [];
+        $returnCode = 0;
+        exec('clang++ --version 2>&1', $output, $returnCode);
+        
+        if ($returnCode === 0) {
+            // 检查是否有 lld-link
+            $this->checkLldLinker();
+            return true;
+        }
+        
+        // 如果 PATH 中没有，尝试从 LLVM_HOME 环境变量获取
+        $llvmHome = getenv('LLVM_HOME');
+        if ($llvmHome && is_dir($llvmHome)) {
+            $clangPath = rtrim($llvmHome, '\\/') . '\x64\bin\clang++.exe';
+            if (file_exists($clangPath)) {
+                // 验证是否可以执行
+                exec('"' . $clangPath . '" --version 2>&1', $output, $returnCode);
+                if ($returnCode === 0) {
+                    // 将 Clang 路径添加到环境变量
+                    $clangDir = dirname($clangPath);
+                    putenv("PATH=$clangDir;" . getenv('PATH'));
+                    
+                    // 检查是否有 lld-link
+                    $this->checkLldLinker();
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * 检查 lld-link 是否可用（用于更快的链接）
+     */
+    protected function checkLldLinker(): void
+    {
+        // 优先使用 lld-link（更快），否则使用 link.exe
+        $output = [];
+        $returnCode = 0;
+        exec('lld-link --version 2>&1', $output, $returnCode);
+        
+        if ($returnCode === 0) {
+            $this->linker = 'lld-link';
+            $this->climate->info('Using lld-link linker (faster than link.exe)');
+            return;
+        }
+        
+        // 如果 PATH 中没有，尝试从 LLVM_HOME 获取
+        $llvmHome = getenv('LLVM_HOME');
+        if ($llvmHome && is_dir($llvmHome)) {
+            $lldLinkPath = rtrim($llvmHome, '\\/') . '\x64\bin\lld-link.exe';
+            if (file_exists($lldLinkPath)) {
+                exec('"' . $lldLinkPath . '" --version 2>&1', $output, $returnCode);
+                if ($returnCode === 0) {
+                    // 将 lld-link 路径添加到环境变量
+                    $lldDir = dirname($lldLinkPath);
+                    putenv("PATH=$lldDir;" . getenv('PATH'));
+                    $this->linker = 'lld-link';
+                    $this->climate->info('Using lld-link linker from LLVM_HOME (faster than link.exe)');
+                    return;
+                }
+            }
+        }
+        
+        // Fallback 到 MSVC link.exe
+        $this->linker = 'link';
+        $this->climate->info('Using MSVC link.exe linker');
     }
 
     protected function getPhpxDir(): string
@@ -2194,10 +2291,19 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         
         $out = '';
-        foreach ($list as $li) {
-            // 确保路径使用双引号包裹，处理可能的空格
-            $normalizedPath = str_replace('/', '\\', $li);
-            $out .= '/I "' . $normalizedPath . '" ';
+        // 根据编译器类型选择不同的包含路径格式
+        if ($this->cppCompiler === 'clang++' || $this->cppCompiler === 'clang') {
+            // Clang 使用 -I 格式
+            foreach ($list as $li) {
+                $normalizedPath = str_replace('/', '\\', $li);
+                $out .= '-I"' . $normalizedPath . '" ';
+            }
+        } else {
+            // MSVC 使用 /I 格式
+            foreach ($list as $li) {
+                $normalizedPath = str_replace('/', '\\', $li);
+                $out .= '/I "' . $normalizedPath . '" ';
+            }
         }
 
         return $out;
@@ -2377,8 +2483,14 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function addCompilationOption(string &$cmd, bool $link): void
     {
         if ($this->isWindows()) {
-            // Windows MSVC 编译选项
-            $this->addWindowsCompilationOption($cmd, $link);
+            // Windows 下根据编译器类型选择
+            if ($this->cppCompiler === 'clang++' || $this->cppCompiler === 'clang') {
+                // Windows Clang 编译选项（类似 GCC）
+                $this->addWindowsClangCompilationOption($cmd, $link);
+            } else {
+                // Windows MSVC 编译选项
+                $this->addWindowsCompilationOption($cmd, $link);
+            }
         } else {
             // Unix/Linux/macOS GCC 编译选项
             $this->addUnixCompilationOption($cmd, $link);
@@ -2499,6 +2611,114 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 定义宏（仅在编译时）
         if (!$link && $this->enableProfiler) {
             $cmd .= ' /DPPROF_ON=1';
+        }
+    }
+
+    /**
+     * Windows Clang 编译选项（类似 GCC，但使用 MSVC 的链接器）
+     */
+    protected function addWindowsClangCompilationOption(string &$cmd, bool $link): void
+    {
+        // 添加包含路径（仅在编译时，不在链接时）
+        if (!$link) {
+            $cmd .= ' ' . $this->parseWindowsIncludes();
+        }
+        
+        // Windows 平台必需的宏定义 - 仅在编译时
+        if (!$link) {
+            $cmd .= ' -DZEND_WIN32';           // 标识 Windows 平台
+            $cmd .= ' -DPHP_WIN32';            // 标识 Windows 平台
+            $cmd .= ' -DZEND_DEBUG=0';         // 禁用调试模式
+            
+            // 根据 PHP 是否为线程安全版本决定是否添加 ZTS 宏
+            if ($this->isPhpZts) {
+                $cmd .= ' -DZTS';              // 启用线程安全
+            }
+            
+            // Sanitizer 支持（Clang 使用 -fsanitize）
+            if ($this->sanitize && !$link) {
+                $sanitizers = explode(',', $this->sanitize);
+                $validSanitizers = ['address', 'undefined', 'thread', 'memory', 'leak'];
+                $enabledSanitizers = [];
+                
+                foreach ($sanitizers as $san) {
+                    $san = trim($san);
+                    if (in_array($san, $validSanitizers)) {
+                        $enabledSanitizers[] = $san;
+                    } else {
+                        $this->climate->warning("Unsupported sanitizer: $san");
+                    }
+                }
+                
+                if (!empty($enabledSanitizers)) {
+                    $sanitizerFlag = '-fsanitize=' . implode(',', $enabledSanitizers);
+                    $cmd .= ' ' . $sanitizerFlag;
+                    // AddressSanitizer 需要额外的链接选项
+                    if (in_array('address', $enabledSanitizers)) {
+                        $cmd .= ' -fsanitize=address';
+                    }
+                    $this->climate->info('Sanitizers enabled (Clang): ' . implode(', ', $enabledSanitizers));
+                }
+            }
+            
+            // 调试模式：当启用 --debug-info 时，自动禁用优化并添加调试信息
+            if ($this->debugInfo) {
+                $cmd .= ' -O0';      // 禁用优化
+                $cmd .= ' -g';       // 生成调试信息
+                $this->climate->info('Debug mode enabled (Clang): optimizations disabled (-O0), debug info generated (-g)');
+            } else {
+                // 非调试模式：使用用户指定的优化级别
+                $cmd .= ' -O' . $this->optimizeLevel;
+            }
+
+            // 警告级别
+            $cmd .= ' -Wall';
+            
+            // C++ 标准
+            if (!str_contains($this->cxxflags, ' -std=')) {
+                $cmd .= ' -std=' . $this->cxxStd;
+            }
+            
+            // 编译时的额外选项
+            if ($this->cxxflags) {
+                $cmd .= ' ' . $this->cxxflags;
+            }
+        }
+
+        // 扩展模块特定选项
+        if ($this->buildMode === 'ext') {
+            if ($link) {
+                $cmd .= ' -shared';
+            } else {
+                $cmd .= ' -fPIC';
+            }
+        }
+
+        // 链接选项（Clang on Windows 仍然使用 MSVC 的链接器）
+        if ($link) {
+            $cmd .= ' ' . $this->parseWindowsLdflags();
+            
+            // 对于 bin 模式且指定了 --no-console，使用 Windows 子系统
+            if ($this->buildMode === 'bin' && $this->noConsole) {
+                $cmd .= ' /SUBSYSTEM:WINDOWS';
+                $cmd .= ' /ENTRY:mainCRTStartup';
+            }
+            
+            // CRT 库配置
+            $cmd .= ' /NODEFAULTLIB:LIBCMT';
+
+            $cmd .= ' ' . $this->parseWindowsLibs();
+            if ($this->ldflags) {
+                $cmd .= ' ' . $this->ldflags;
+            }
+        } else {
+            // 编译时使用动态多线程 CRT
+            $cmd .= ' -MD';
+        }
+        
+        // 定义宏（仅在编译时）
+        if (!$link && $this->enableProfiler) {
+            $cmd .= ' -DPPROF_ON=1';
         }
     }
 

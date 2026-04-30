@@ -724,27 +724,49 @@ CODE;
             return;
         }
         
-        // 根据平台构建编译命令
+        // 根据平台和编译器类型构建编译命令
         if ($this->isWindows()) {
-            // Windows MSVC 编译命令
-            $cmd = $this->cppCompiler . ' /c ' . $cppFile . ' /Fo' . $objectFile;
-            
             // C 文件和 C++ 文件使用不同的选项
             $isCppFile = (pathinfo($cppFile, PATHINFO_EXTENSION) === 'cc' || 
                          pathinfo($cppFile, PATHINFO_EXTENSION) === 'cpp' || 
                          pathinfo($cppFile, PATHINFO_EXTENSION) === 'cxx');
+            
+            // Windows 下根据编译器类型选择参数格式
+            if ($this->cppCompiler === 'clang++' || $this->cppCompiler === 'clang') {
+                // Clang on Windows 使用 GCC 风格的参数
+                if (!$isCppFile) {
+                    // C 文件：在源文件前添加 -x c 标志
+                    $cmd = $this->cppCompiler . ' -x c -c ' . $cppFile . ' -o ' . $objectFile;
+                } else {
+                    $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
+                }
+            } else {
+                // MSVC 使用 /c 和 /Fo 参数
+                $cmd = $this->cppCompiler . ' /c ' . $cppFile . ' /Fo' . $objectFile;
+            }
             
             // 添加编译选项（C 文件不需要 /EHsc 和 /std:c++17）
             if ($isCppFile) {
                 $this->addCompilationOption($cmd, false);
             } else {
                 // C 文件：只添加基本选项，不添加 C++ 特定选项
-                $cmd .= ' ' . $this->parseWindowsIncludes();
-                $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
-                if ($this->isPhpZts) {
-                    $cmd .= ' /DZTS';
+                if ($this->cppCompiler === 'clang++' || $this->cppCompiler === 'clang') {
+                    // Clang C 文件选项
+                    $cmd .= ' ' . $this->parseWindowsIncludes();
+                    $cmd .= ' -DZEND_WIN32 -DPHP_WIN32 -DZEND_DEBUG=0';
+                    if ($this->isPhpZts) {
+                        $cmd .= ' -DZTS';
+                    }
+                    $cmd .= ' -O0 -Wall';
+                } else {
+                    // MSVC C 文件选项
+                    $cmd .= ' ' . $this->parseWindowsIncludes();
+                    $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
+                    if ($this->isPhpZts) {
+                        $cmd .= ' /DZTS';
+                    }
+                    $cmd .= ' /Od /W3 /wd4244 /wd4146 /nologo';
                 }
-                $cmd .= ' /Od /W3 /wd4244 /wd4146 /nologo';
             }
         } else {
             // Unix/Linux/macOS GCC 编译命令
@@ -956,9 +978,12 @@ CODE;
         
         // 根据平台构建链接命令
         if ($this->isWindows()) {
-            // Windows 使用 link.exe 进行链接
+            // Windows 使用 link.exe 或 lld-link 进行链接
             $objectList = implode(' ', $objectFiles);
-            $linkCmd = 'link /nologo ' . $objectList . ' /OUT:' . $targetFile;
+            
+            // 使用检测到的链接器（lld-link 或 link）
+            $linkerCmd = $this->linker;
+            $linkCmd = "{$linkerCmd} /nologo {$objectList} /OUT:{$targetFile}";
         } else {
             // Unix/Linux/macOS GCC 链接命令
             $objectList = implode(' ', $objectFiles);
