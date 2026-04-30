@@ -1,0 +1,6 @@
+name: win32-hello
+version: 0.0.1
+mode: bin
+sources:
+  - hello-win.php
+  - ./cpp-src
