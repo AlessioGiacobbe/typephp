@@ -11,7 +11,6 @@ class native_types
     public const type_int = 'int';
     public const type_float = 'float';
     public const type_bool = 'bool';
-    public const type_any = 'php::Var';
 }
 
 class std
