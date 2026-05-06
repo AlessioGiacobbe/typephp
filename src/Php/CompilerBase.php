@@ -3454,6 +3454,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseArg(Node\Arg $arg): string
     {
+        if ($this->isArrayDimFetch($arg->value) and $this->isStdArrayExpr($arg->value)) {
+            return $this->convertArrayExpr($this->parseStdArrayDimFetch($arg->value, true));
+        }
         $expr = $this->parseIdentifier($arg->value);
         if ($this->isVarExpr($arg->value) and $this->isStdArray($arg->value->name)) {
             return $this->convertArrayExpr($expr);

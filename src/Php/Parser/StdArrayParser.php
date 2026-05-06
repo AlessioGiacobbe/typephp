@@ -56,7 +56,7 @@ trait StdArrayParser
         return $arrayDimFetch . ' ' . $binaryOp . '= ' . $this->convertExprFromType($info['type'], $this->parseExpr($expr->expr));
     }
 
-    protected function parseStdArrayDimFetch(Expr\ArrayDimFetch $expr): string
+    protected function parseStdArrayDimFetch(Expr\ArrayDimFetch $expr, bool $toArray = false): string
     {
         $tmp = $expr;
         $nesting = [];
@@ -66,12 +66,12 @@ trait StdArrayParser
         while (true) {
             if ($this->isArrayDimFetch($tmp)) {
                 if ($tmp->dim === null) {
-                    $this->fatalError($tmp, 'std::array() expects an index');
+                    $this->fatalError($tmp, 'std::array expects an index');
                 }
                 $size = $info['sizes'][$level];
                 if ($this->isScalarInt($tmp->dim)) {
                     if ($tmp->dim->value < 0 || $tmp->dim->value >= $size) {
-                        $this->fatalError($tmp, "Array index out of bounds: index {$tmp->dim->value}, size {$size}");
+                        $this->fatalError($tmp, "std::array index out of bounds: index {$tmp->dim->value}, size {$size}");
                     }
                 }
                 $index = $this->parseExpr($tmp->dim);
@@ -82,6 +82,10 @@ trait StdArrayParser
                 $nesting[] = $this->parseVariable($tmp);
                 break;
             }
+        }
+
+        if (!$toArray and count($nesting) !== count($info['sizes']) + 1) {
+            $this->fatalError($expr, 'Wrong dimension access std::array used');
         }
 
         return implode('', array_reverse($nesting));
