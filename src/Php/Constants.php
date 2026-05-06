@@ -151,7 +151,7 @@ class Constants
         ],
         'cxx-std' => [
             'longPrefix' => 'cxx-std',
-            'description' => 'C++ standard version (c++14, c++17, c++20, etc.)',
+            'description' => 'C++ standard version (c++17, c++20, etc.)',
             'required' => false,
             'defaultValue' => 'c++17',
         ],

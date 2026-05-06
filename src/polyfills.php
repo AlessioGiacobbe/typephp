@@ -11,6 +11,7 @@ class native_types
     public const type_int = 'int';
     public const type_float = 'float';
     public const type_bool = 'bool';
+    public const type_any = 'php::Var';
 }
 
 class std
@@ -28,6 +29,18 @@ class std
     public static function bool(mixed $value): bool
     {
         return boolval($value);
+    }
+
+    public static function array(mixed $type, int $size): array
+    {
+        return [];
+    }
+
+    public static function fill(array $array, mixed $value): void
+    {
+        for ($i = 0; $i < count($array); $i++) {
+            $array[$i] = $value;
+        }
     }
 }
 

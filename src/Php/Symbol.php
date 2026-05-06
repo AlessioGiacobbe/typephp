@@ -54,4 +54,9 @@ class Symbol
     {
         return 'php::ArgList';
     }
+
+    public static function safeIndex(string $index, string $size): string
+    {
+        return "php::safeIndex($index, $size)";
+    }
 }

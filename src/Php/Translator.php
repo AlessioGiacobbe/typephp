@@ -91,7 +91,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-O <level>           Optimization level (0-3, default: 0)');
         $climate->tab()->out('-p, --profile        Enable performance profiling');
         $climate->tab()->out('-d, --debug-info     Enable debug info (auto-disable optimizations, add -g/-Zi)');
-        $climate->tab()->out('--cxx-std <version>  C++ standard version (c++14, c++17, c++20, etc.)');
+        $climate->tab()->out('--cxx-std <version>  C++ standard version (c++17, c++20, etc.)');
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
         $climate->tab()->out('-v, --version        Show version');
         $climate->tab()->out('-h, --help           Show this help message');
@@ -812,24 +812,21 @@ CODE;
         }
 
         // Windows 不支持 pcntl_fork，使用串行编译或 proc_open
-        if ($this->isWindows()) {
-            return $this->compileOnWindows($sourceFiles);
+        if ($this->isWindows() or $job <= 1) {
+            return $this->compileSourceFile($sourceFiles);
         }
 
         // Unix/Linux/macOS 使用 pcntl 并行编译
         return $this->compileWithPcntl($sourceFiles, $job);
     }
 
-    /**
-     * Windows 平台编译（不使用 pcntl）
-     */
-    protected function compileOnWindows(array $sourceFiles): array
+    protected function compileSourceFile(array $sourceFiles): array
     {
         $objectFiles = [];
         $totalFiles = count($sourceFiles);
         $failedFiles = [];
 
-        $this->climate->lightBlue("Starting compilation for {$totalFiles} files (Windows mode)");
+        $this->climate->lightBlue("Starting compilation for {$totalFiles} files");
 
         foreach ($sourceFiles as $cppFile) {
             $objectFile = $this->getObjectFile($cppFile);
@@ -864,7 +861,7 @@ CODE;
         // 检查 pcntl 扩展是否可用
         if (!function_exists('pcntl_fork')) {
             $this->climate->warning('pcntl extension not available, using sequential compilation');
-            return $this->compileOnWindows($sourceFiles);
+            return $this->compileSourceFile($sourceFiles);
         }
 
         $objectFiles = [];

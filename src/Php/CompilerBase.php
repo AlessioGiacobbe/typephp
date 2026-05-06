@@ -25,6 +25,7 @@ use PhpAot\Php\Generator\ClosureGenerator;
 use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
 use PhpAot\Php\Generator\Utils;
+use PhpAot\Php\Parser\StdArrayParser;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -50,6 +51,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     use PlaceHolderGenerator;
     use PropertyPromotion;
     use MagicMethodDetector;
+    use StdArrayParser;
     use Utils;
 
     public const string TYPE_VAR = 'php::Var';
@@ -65,6 +67,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_STR = 'php::Str';
     public const string TYPE_REF = 'php::Ref';
     public const string TYPE_VOID = 'void';
+    public const string TYPE_STD_ARRAY = 'std::array';
     public const int DECL_TYPE_OF_RETURN = 1;
     public const int DECL_TYPE_OF_PROPERTY = 2;
     public const int DECL_TYPE_OF_CONST = 3;
@@ -157,13 +160,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected int $maxJob = 4;
     protected string $buildMode = 'bin';
     protected string $cxxflags = '';
-    protected string $cxxStd = 'c++14';
+    protected string $cxxStd = 'c++17';
     protected string $ldflags = '';
     protected string $linker = 'link';  // Windows linker: link.exe or lld-link
     protected int $floatPrecision = 17;
     protected bool $debugInfo = false;
     protected bool $formatCode = true;
-    protected bool $printBacktraceOnError = false;
+    protected bool $printBacktraceOnError = true;
     protected bool $noLiteralStrings = false;
     protected bool $noConsole = false;  // Windows: hide console window
     protected string $sanitize = '';    // Sanitizer type (address, undefined, etc.)
@@ -313,18 +316,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($this->isClangAvailable()) {
                 // 优先使用 Clang（如果可用）
                 $this->cppCompiler = 'clang++';
-                $this->cxxStd = 'c++17';
                 $this->climate->info('Using Clang compiler (clang++)');
             } else {
                 // 默认使用 MSVC
                 $this->cppCompiler = 'cl';
-                $this->cxxStd = 'c++17';
                 $this->climate->info('Using MSVC compiler (cl)');
             }
         } else {
             // Unix/Linux/macOS 使用 g++
             $this->cppCompiler = 'g++';
-            $this->cxxStd = 'c++14';
         }
     }
 
@@ -1511,7 +1511,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->fatalError($left, 'Cannot re-assign $this');
         }
 
-        $expr = $this->parseExpr($right);
         $type = $this->detectTypeOfExpr($right);
 
         if ($this->isVarExpr($left)) {
@@ -1550,14 +1549,22 @@ class CompilerBase extends \PhpAot\Core\Translator
                     } else {
                         $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
                     }
-                } elseif ($this->isStaticCall($right) and $this->isIdExpr($right->name)) {
+                } elseif ($this->isStaticCall($right) and $this->isNameExpr($right->class) and $this->isIdExpr($right->name)) {
                     $class = $this->parseIdentifier($right->class);
                     if ($class === 'std') {
-                        $valueExpr = $this->parseStdCall($right);
-                        if (!$this->hasVar($var)) {
-                            $this->addLocalVar($var, $right->getAttribute('nativeType'));
+                        if ($right->name->toString() === 'array') {
+                            if ($this->hasVar($var)) {
+                                $this->fatalError($left, "Cannot re-assign `\${$var}` to std::array");
+                            }
+                            $this->addLocalVar($var, self::TYPE_STD_ARRAY);
+                            return $this->parseStdArray($var, $right);
+                        } else {
+                            $valueExpr = $this->parseStdCall($right);
+                            if (!$this->hasVar($var)) {
+                                $this->addLocalVar($var, $right->getAttribute('nativeType'));
+                            }
+                            return $var . ' = ' . $valueExpr;
                         }
-                        return $var . ' = ' . $valueExpr;
                     }
                 } elseif ($this->isVarExpr($right)) {
                     $rightVar = $this->parseIdentifier($right);
@@ -1584,7 +1591,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->parseAssignArrayDim($left, $right);
         }
 
-        return $var . ' = ' . $this->convertExprType($expr, $this->detectTypeOfExpr($left), $this->detectTypeOfExpr($right));
+        return $var . ' = ' . $this->convertExprType($this->parseExpr($right), $this->detectTypeOfExpr($left), $this->detectTypeOfExpr($right));
     }
 
     protected function parseEcho(mixed $v): string
@@ -2058,7 +2065,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function detectVarType($var): string
     {
         $name = $this->parseIdentifier($var);
-
+        if ($this->isStdArray($name)) {
+            return self::TYPE_ARRAY;
+        }
         return $this->getVarType($name);
     }
 
@@ -2139,6 +2148,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $info = $this->context->objectProps[$propVar];
                         return $info['type'];
                     }
+                }
+                break;
+            case 'Expr_ArrayDimFetch':
+                if ($this->isStdArrayExpr($expr)) {
+                    return $this->getStdArrayInfo($expr)['type'];
                 }
                 break;
             case 'Expr_New':
@@ -2902,6 +2916,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         if ($this->isArrayDimFetch($node->var)) {
+            if ($this->isStdArrayExpr($node->var)) {
+                return $this->parseStdArrayAssignOp($node, $op);
+            }
             /**
              * $count[$r] -= 1;
              * 需要转为下面语句：
@@ -3044,6 +3061,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseArrayDimFetch(Expr\ArrayDimFetch $node, bool $write): string
     {
+        if ($this->isStdArrayExpr($node)) {
+            return $this->parseStdArrayDimFetch($node);
+        }
+
         $var = $this->parseIdentifier($node->var);
         if ($this->isVarExpr($node->var)) {
             if ($var === 'GLOBALS') {
@@ -3433,7 +3454,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseArg(Node\Arg $arg): string
     {
-        return $this->parseIdentifier($arg->value);
+        $expr = $this->parseIdentifier($arg->value);
+        if ($this->isVarExpr($arg->value) and $this->isStdArray($arg->value->name)) {
+            return $this->convertArrayExpr($expr);
+        }
+        return $expr;
     }
 
     protected function parseArrayArg(Node\Arg $expr): string
@@ -5611,9 +5636,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (isset($this->context->arguments[$name])) {
                 continue;
             }
-            $code .= $this->getIndent() . $type . ' ' . $name;
-            if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
-                $code .= ' = 0';
+            $code .= $this->getIndent();
+            if ($type === self::TYPE_STD_ARRAY) {
+                $info = $this->context->stdArrays[$name];
+                $code .= $info['decl'] . ' ' . $name . '{}';
+            } else {
+                $code .= $type . ' ' . $name;
+                if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
+                    $code .= ' = 0';
+                }
             }
             $code .= ';' . PHP_EOL;
         }

@@ -95,6 +95,11 @@ trait AstNodeType
         return $expr instanceof Node\Scalar;
     }
 
+    protected function isScalarInt(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Scalar\Int_;
+    }
+
     protected function isMatchExpr(NodeAbstract $expr): bool
     {
         return $expr instanceof Expr\Match_;

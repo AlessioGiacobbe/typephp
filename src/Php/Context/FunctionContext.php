@@ -14,6 +14,10 @@ class FunctionContext
      * @var array<string, string>
      */
     public array $objects = [];
+    /**
+     * @var array<string, array>
+     */
+    public array $stdArrays = [];
     public array $localVars = [];
     public array $staticVars = [];
     public array $globalVars = [];
