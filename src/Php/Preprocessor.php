@@ -63,6 +63,11 @@ class Preprocessor extends CompilerBase
         $this->climate->lightBlue('prepare completed: ' . count($list) . ' source files in total');
     }
 
+    protected function genArgumentDeclaration(ArgInfo $argInfo): string
+    {
+        return $argInfo->type . ' ' . $argInfo->name;
+    }
+
     public function getCppFile(string $file): string
     {
         $info = pathinfo($file);
@@ -279,11 +284,6 @@ class Preprocessor extends CompilerBase
             }
             $argInfo = new ArgInfo();
             $type = $this->parseParameterType($param, $argInfo, $name);
-            if ($param->variadic) {
-                $list[] = self::TYPE_ARRAY . ' ' . $name;
-            } else {
-                $list[] = $type . ' ' . $name;
-            }
             $argInfo->name = $name;
             $argInfo->type = $type;
             $argInfo->byRef = $param->byRef;
@@ -291,6 +291,11 @@ class Preprocessor extends CompilerBase
             $argInfo->property = $param->isPromoted();
             if ($param->type and $param->type instanceof NullableType) {
                 $argInfo->nullable = true;
+            }
+            if ($param->variadic) {
+                $list[] = self::TYPE_ARRAY . ' ' . $name;
+            } else {
+                $list[] = $this->genArgumentDeclaration($argInfo);
             }
             if ($param->default) {
                 if ($param->byRef) {

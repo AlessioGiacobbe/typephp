@@ -1035,7 +1035,7 @@ CODE;
                     if ($argInfo->variadic) {
                         $arg = self::TYPE_ARRAY . ' ' . $argInfo->name . ' = {}';
                     } else {
-                        $arg = $argInfo->type . ' ' . $argInfo->name;
+                        $arg = $this->genArgumentDeclaration($argInfo);
                         if ($argInfo->default) {
                             $arg .= ' = ' . $argInfo->default;
                         }
