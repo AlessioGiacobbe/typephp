@@ -1,0 +1,109 @@
+<?php
+
+namespace PhpAot\Php\Backend;
+
+use PhpAot\Php\Platform\PlatformBase;
+
+/**
+ * 编译器后端抽象基类
+ * 定义所有编译器必须实现的接口
+ */
+abstract class CompilerBackend
+{
+    /**
+     * 平台实例
+     */
+    protected PlatformBase $platform;
+
+    public function __construct(PlatformBase $platform)
+    {
+        $this->platform = $platform;
+    }
+
+    /**
+     * 获取编译器名称
+     */
+    abstract public function getName(): string;
+
+    /**
+     * 获取编译器命令
+     */
+    abstract public function getCompilerCommand(): string;
+
+    /**
+     * 获取链接器命令
+     */
+    abstract public function getLinkerCommand(): string;
+
+    /**
+     * 编译单个文件
+     */
+    abstract public function compileFile(
+        string $sourceFile,
+        string $outputFile,
+        array $includePaths = [],
+        array $defines = [],
+        array $flags = []
+    ): string;
+
+    /**
+     * 链接目标文件
+     */
+    abstract public function linkObjects(
+        array $objectFiles,
+        string $outputFile,
+        array $libraryPaths = [],
+        array $libraries = [],
+        array $flags = []
+    ): string;
+
+    /**
+     * 构建完整的编译命令
+     */
+    abstract public function buildCompileCommand(
+        string $sourceFile,
+        string $outputFile,
+        array $options = []
+    ): string;
+
+    /**
+     * 构建完整的链接命令
+     */
+    abstract public function buildLinkCommand(
+        array $objectFiles,
+        string $outputFile,
+        array $options = []
+    ): string;
+
+    /**
+     * 获取平台实例
+     */
+    public function getPlatform(): PlatformBase
+    {
+        return $this->platform;
+    }
+
+    /**
+     * 格式化包含路径
+     */
+    protected function formatIncludePaths(array $includePaths): string
+    {
+        return $this->platform->getIncludeFlags($includePaths);
+    }
+
+    /**
+     * 格式化库路径
+     */
+    protected function formatLibraryPaths(array $libraryPaths): string
+    {
+        return $this->platform->getLibraryPathFlags($libraryPaths);
+    }
+
+    /**
+     * 格式化库文件
+     */
+    protected function formatLibraries(array $libraries): string
+    {
+        return $this->platform->getLibraryFlags($libraries);
+    }
+}
