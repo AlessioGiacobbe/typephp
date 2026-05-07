@@ -53,7 +53,7 @@ return (new PhpCsFixer\Config())
         'single_line_comment_style'                        => ['comment_types' => []],
         'single_line_comment_spacing'                      => false,
         'single_line_empty_body'                           => false,
-        'single_quote'                                     => false,
+        'single_quote'                                     => true,
         'standardize_increment'                            => false,
         'standardize_not_equals'                           => true,
         'yoda_style'                                       => ['always_move_variable' => false, 'equal' => false, 'identical' => false],
