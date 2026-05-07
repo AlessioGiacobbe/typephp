@@ -293,10 +293,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         $climate = new CLImate();
         $this->climate = $climate;
         //        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
-        
+
         // 检测操作系统并设置编译器
         $this->detectPlatform();
-        
+
         // 检测 PHP 是否为线程安全版本（ZTS）
         $this->isPhpZts = defined('PHP_ZTS');
     }
@@ -305,12 +305,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         // 检测是否为 Windows 系统
         $this->isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
-        
+
         if ($this->isWindows) {
             // Windows 下检测使用哪个编译器
             // 优先级：环境变量 PHPX_CC > clang > cl (MSVC)
             $compilerEnv = getenv('PHPX_CC');
-            
+
             if ($compilerEnv) {
                 // 用户通过环境变量指定编译器
                 $this->cppCompiler = $compilerEnv;
@@ -338,37 +338,37 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$this->isWindows) {
             return false;
         }
-        
+
         // 首先尝试 PATH 中的 clang++
         $output = [];
         $returnCode = 0;
         exec('clang++ --version 2>&1', $output, $returnCode);
-        
+
         if ($returnCode === 0) {
             // 检查是否有 lld-link
             $this->checkLldLinker();
             return true;
         }
-        
+
         // 如果 PATH 中没有，尝试从 LLVM_HOME 环境变量获取
         $llvmHome = getenv('LLVM_HOME');
         if ($llvmHome && is_dir($llvmHome)) {
-            $clangPath = rtrim($llvmHome, '\\/') . '\x64\bin\clang++.exe';
+            $clangPath = rtrim($llvmHome, '\/') . '\x64\bin\clang++.exe';
             if (file_exists($clangPath)) {
                 // 验证是否可以执行
                 exec('"' . $clangPath . '" --version 2>&1', $output, $returnCode);
                 if ($returnCode === 0) {
                     // 将 Clang 路径添加到环境变量
                     $clangDir = dirname($clangPath);
-                    putenv("PATH=$clangDir;" . getenv('PATH'));
-                    
+                    putenv("PATH={$clangDir};" . getenv('PATH'));
+
                     // 检查是否有 lld-link
                     $this->checkLldLinker();
                     return true;
                 }
             }
         }
-        
+
         return false;
     }
 
@@ -381,30 +381,30 @@ class CompilerBase extends \PhpAot\Core\Translator
         $output = [];
         $returnCode = 0;
         exec('lld-link --version 2>&1', $output, $returnCode);
-        
+
         if ($returnCode === 0) {
             $this->linker = 'lld-link';
             $this->climate->info('Using lld-link linker (faster than link.exe)');
             return;
         }
-        
+
         // 如果 PATH 中没有，尝试从 LLVM_HOME 获取
         $llvmHome = getenv('LLVM_HOME');
         if ($llvmHome && is_dir($llvmHome)) {
-            $lldLinkPath = rtrim($llvmHome, '\\/') . '\x64\bin\lld-link.exe';
+            $lldLinkPath = rtrim($llvmHome, '\/') . '\x64\bin\lld-link.exe';
             if (file_exists($lldLinkPath)) {
                 exec('"' . $lldLinkPath . '" --version 2>&1', $output, $returnCode);
                 if ($returnCode === 0) {
                     // 将 lld-link 路径添加到环境变量
                     $lldDir = dirname($lldLinkPath);
-                    putenv("PATH=$lldDir;" . getenv('PATH'));
+                    putenv("PATH={$lldDir};" . getenv('PATH'));
                     $this->linker = 'lld-link';
                     $this->climate->info('Using lld-link linker from LLVM_HOME (faster than link.exe)');
                     return;
                 }
             }
         }
-        
+
         // Fallback 到 MSVC link.exe
         $this->linker = 'link';
         $this->climate->info('Using MSVC link.exe linker');
@@ -415,9 +415,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 优先使用环境变量 PHPX_HOME
         $phpxDir = getenv('PHPX_HOME');
         if ($phpxDir && is_dir($phpxDir)) {
-            return rtrim($phpxDir, '\\/');
+            return rtrim($phpxDir, '\/');
         }
-        
+
         // 默认路径
         return $this->rootPath . '/vendor/swoole/phpx';
     }
@@ -438,20 +438,20 @@ class CompilerBase extends \PhpAot\Core\Translator
             // Windows 下尝试从环境变量获取 PHP 路径
             $phpDir = getenv('PHP_HOME');
             if ($phpDir && is_dir($phpDir)) {
-                return rtrim($phpDir, '\\/');
+                return rtrim($phpDir, '\/');
             }
-            
+
             // 尝试从 php.exe 路径推断（使用 where 命令）
             $phpExe = exec('where php 2>nul');
             if ($phpExe) {
                 $phpDir = dirname($phpExe);
                 if (is_dir($phpDir)) {
-                    return rtrim($phpDir, '\\/');
+                    return rtrim($phpDir, '\/');
                 }
             }
-            
+
             // 默认路径
-            return 'C:\\php';
+            return 'C:\php';
         } else {
             // Unix/Linux/macOS 下使用 php-config 获取 PHP 路径
             $phpDir = shell_exec('php-config --prefix 2>/dev/null');
@@ -766,7 +766,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $short = str_replace('/', '\\', $short);
             $long = str_replace('/', '\\', $long);
         }
-        
+
         $len       = min(strlen($short), strlen($long));
         $prefixLen = 0;
 
@@ -779,14 +779,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $result = substr($long, $prefixLen);
-        
+
         // 移除开头的路径分隔符
         if ($this->isWindows()) {
             $result = ltrim($result, '\\');
         } else {
             $result = ltrim($result, '/');
         }
-        
+
         return $result;
     }
 
@@ -2261,13 +2261,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isWindows()) {
             return $this->parseWindowsIncludes();
         }
-        
+
         $list = [
             $this->getPhpxDir() . '/include',
             $this->getBuildDir() . '/include',
             $this->getPhpxDir() . '/src/misc',
         ];
-        
+
         // 尝试使用 php-config 获取包含路径，如果失败则手动构建
         $phpIncludes = shell_exec('php-config --includes 2>/dev/null');
         if ($phpIncludes) {
@@ -2281,7 +2281,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $out = '';
             }
         }
-        
+
         foreach ($list as $li) {
             $out .= '-I ' . $li . ' ';
         }
@@ -2292,23 +2292,20 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseWindowsIncludes(): string
     {
         $list = [
-            $this->getPhpxDir() . '\\include',
-            $this->getBuildDir() . '\\include',
-            $this->getPhpxDir() . '\\src\\misc',
+            $this->getPhpxDir() . '\include',
+            $this->getBuildDir() . '\include',
+            $this->getPhpxDir() . '\src\misc',
         ];
-        
+
         // Windows 下 PHP 头文件必须从 SDK/include 读取
-        $phpSdkInclude = $this->getPhpDir() . '\\SDK\\include';
+        $phpSdkInclude = $this->getPhpDir() . '\SDK\include';
         if (!is_dir($phpSdkInclude)) {
-            throw new \RuntimeException(
-                "PHP SDK include directory not found: {$phpSdkInclude}\n" .
-                "Please ensure PHP is installed with SDK headers at the expected location."
-            );
+            throw new \RuntimeException("PHP SDK include directory not found: {$phpSdkInclude}\n" . 'Please ensure PHP is installed with SDK headers at the expected location.');
         }
-        
+
         // 添加主包含目录
         $list[] = $phpSdkInclude;
-        
+
         // 添加子目录：main, Zend, TSRM, ext
         $subDirs = ['main', 'Zend', 'TSRM', 'ext'];
         foreach ($subDirs as $subDir) {
@@ -2317,7 +2314,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $list[] = $subPath;
             }
         }
-        
+
         $out = '';
         // 根据编译器类型选择不同的包含路径格式
         if ($this->cppCompiler === 'clang++' || $this->cppCompiler === 'clang') {
@@ -2342,11 +2339,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isWindows()) {
             return $this->parseWindowsLdflags();
         }
-        
+
         $list = [
             $this->getPhpxDir() . '/lib',
         ];
-        
+
         // 尝试使用 php-config 获取库路径，如果失败则手动构建
         $phpLibDir = shell_exec('php-config --prefix 2>/dev/null');
         if ($phpLibDir) {
@@ -2361,7 +2358,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 array_unshift($list, $phpLibPath);
             }
         }
-        
+
         $out = '';
         foreach ($list as $li) {
             $out .= '-L ' . $li . ' ';
@@ -2373,25 +2370,25 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseWindowsLdflags(): string
     {
         $list = [];
-        
+
         // Windows 下 PHP 库文件固定从 SDK/lib 读取
-        $phpLib = $this->getPhpDir() . '\\SDK\\lib';
+        $phpLib = $this->getPhpDir() . '\SDK\lib';
         if (is_dir($phpLib)) {
             $list[] = $phpLib;
         } else {
             // 备选：尝试直接从 lib 目录
-            $phpLibAlt = $this->getPhpDir() . '\\lib';
+            $phpLibAlt = $this->getPhpDir() . '\lib';
             if (is_dir($phpLibAlt)) {
                 $list[] = $phpLibAlt;
             }
         }
-        
+
         // phpx 库文件
-        $phpxLib = $this->getPhpxDir() . '\\lib';
+        $phpxLib = $this->getPhpxDir() . '\lib';
         if (is_dir($phpxLib)) {
             $list[] = $phpxLib;
         }
-        
+
         $out = '';
         foreach ($list as $li) {
             if (is_dir($li)) {
@@ -2407,7 +2404,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isWindows()) {
             return $this->parseWindowsLibs();
         }
-        
+
         $list = ['phpx'];
         if ($this->buildMode === 'bin') {
             $list[] = 'php';
@@ -2423,21 +2420,21 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseWindowsLibs(): string
     {
         $list = [];
-        
+
         // 优先使用 .lib 导入库
-        $phpxLib = $this->getPhpxDir() . '\\lib\\phpx.lib';
+        $phpxLib = $this->getPhpxDir() . '\lib\phpx.lib';
         if (file_exists($phpxLib)) {
             $list[] = '"' . $phpxLib . '"';
         } else {
             // 如果没有 .lib，尝试直接使用 DLL（需要生成导入库）
-            $phpxDll = $this->getPhpxDir() . '\\lib\\phpx.dll';
+            $phpxDll = $this->getPhpxDir() . '\lib\phpx.dll';
             if (file_exists($phpxDll)) {
                 $this->climate->magenta('phpx.lib not found, using phpx.dll directly');
                 $this->climate->info('Note: You may need to generate phpx.lib from phpx.dll using lib /def:phpx.def');
                 $list[] = '"' . $phpxDll . '"';
             }
         }
-        
+
         if ($this->buildMode === 'bin') {
             // Windows 下 PHP 库文件和 DLL 的查找顺序：
             // 1. SDK/lib/php8embed.lib (嵌入模式首选)
@@ -2446,51 +2443,53 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 4. lib/php8embed.lib
             // 5. lib/php8ts.lib
             // 6. lib/php8.lib
-            
+
             $phpDirs = [
-                $this->getPhpDir() . '\\SDK\\lib',  // 优先从 SDK/lib 查找
-                $this->getPhpDir() . '\\lib',        // 备选从 lib 查找
+                $this->getPhpDir() . '\SDK\lib',  // 优先从 SDK/lib 查找
+                $this->getPhpDir() . '\lib',        // 备选从 lib 查找
             ];
-            
+
             $found = false;
             foreach ($phpDirs as $phpDir) {
-                if (!is_dir($phpDir)) continue;
-                
+                if (!is_dir($phpDir)) {
+                    continue;
+                }
+
                 // 尝试 php8embed.lib (嵌入模式)
-                $phpEmbedLib = $phpDir . '\\php8embed.lib';
+                $phpEmbedLib = $phpDir . '\php8embed.lib';
                 if (file_exists($phpEmbedLib)) {
                     $list[] = '"' . $phpEmbedLib . '"';
                     $found = true;
                     break;
                 }
-                
+
                 // 尝试 php8ts.lib
-                $phpTsLib = $phpDir . '\\php8ts.lib';
+                $phpTsLib = $phpDir . '\php8ts.lib';
                 if (file_exists($phpTsLib)) {
                     $list[] = '"' . $phpTsLib . '"';
                     $found = true;
                     break;
                 }
-                
+
                 // 尝试 php8.lib
-                $phpLib = $phpDir . '\\php8.lib';
+                $phpLib = $phpDir . '\php8.lib';
                 if (file_exists($phpLib)) {
                     $list[] = '"' . $phpLib . '"';
                     $found = true;
                     break;
                 }
             }
-            
+
             // 如果都没找到 .lib，尝试直接使用根目录的 DLL
             if (!$found) {
-                $phpDll = $this->getPhpDir() . '\\php8.dll';
+                $phpDll = $this->getPhpDir() . '\php8.dll';
                 if (file_exists($phpDll)) {
                     $this->climate->magenta('php8embed.lib not found, using php8.dll directly');
                     $this->climate->info('Note: This may require additional setup');
                     $list[] = '"' . $phpDll . '"';
                 } else {
                     // 尝试 php8ts.dll
-                    $phpTsDll = $this->getPhpDir() . '\\php8ts.dll';
+                    $phpTsDll = $this->getPhpDir() . '\php8ts.dll';
                     if (file_exists($phpTsDll)) {
                         $this->climate->magenta('php8embed.lib not found, using php8ts.dll directly');
                         $this->climate->info('Note: This may require additional setup');
@@ -2499,7 +2498,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             }
         }
-        
+
         $out = '';
         foreach ($list as $li) {
             $out .= $li . ' ';
@@ -2531,18 +2530,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$link) {
             $cmd .= ' ' . $this->parseWindowsIncludes();
         }
-        
+
         // Windows 平台必需的宏定义（参考 CMakeLists.txt）- 仅在编译时
         if (!$link) {
             $cmd .= ' /DZEND_WIN32';           // 标识 Windows 平台
             $cmd .= ' /DPHP_WIN32';            // 标识 Windows 平台
             $cmd .= ' /DZEND_DEBUG=0';         // 禁用调试模式
-            
+
             // 根据 PHP 是否为线程安全版本决定是否添加 ZTS 宏
             if ($this->isPhpZts) {
                 $cmd .= ' /DZTS';                  // 启用线程安全
             }
-            
+
             // Sanitizer 支持（MSVC 使用 /fsanitize）
             if ($this->sanitize) {
                 // MSVC 支持的 sanitizer: address
@@ -2553,7 +2552,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->climate->warning("Unsupported sanitizer type: {$this->sanitize} (MSVC only supports 'address')");
                 }
             }
-            
+
             // 调试模式：当启用 --debug-info 时，自动禁用优化并添加调试信息
             if ($this->debugInfo) {
                 $cmd .= ' /Od';      // 禁用优化（类似 gcc -O0）
@@ -2577,27 +2576,27 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             // 警告级别
             $cmd .= ' /W3';
-            
+
             // 禁用 PHP SDK 和 Windows SDK 头文件中的常见警告
             // 这些警告都是编译器噪音，不影响功能（从 Constants 配置中读取）
             foreach (Constants::MSVC_SUPPRESSED_WARNINGS as $code => $description) {
                 $cmd .= " /wd{$code}";  // C{$code}: {$description}
             }
-            
+
             // 启用 C++ 异常处理（消除 C4530 警告）
             $cmd .= ' /EHsc';
-            
+
             // C++ 标准（从 cxxStd 属性读取，如果 cxxflags 中没有指定）
             if (!str_contains($this->cxxflags, '/std:')) {
                 $cmd .= ' /std:' . $this->cxxStd;
             }
-            
+
             // 编译时的额外选项
             if ($this->cxxflags) {
                 $cmd .= ' ' . $this->cxxflags;
             }
         }
-        
+
         // 禁用编译器版权信息输出
         $cmd .= ' /nologo';
 
@@ -2613,12 +2612,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 链接选项
         if ($link) {
             $cmd .= ' ' . $this->parseWindowsLdflags();
-            
+
             // 调试模式：链接时生成 PDB 文件
             if ($this->debugInfo) {
                 $cmd .= ' /DEBUG';  // 生成 PDB 调试信息文件
             }
-            
+
             // 对于 bin 模式且指定了 --no-console，使用 Windows 子系统（不显示控制台窗口）
             if ($this->buildMode === 'bin' && $this->noConsole) {
                 $cmd .= ' /SUBSYSTEM:WINDOWS';
@@ -2627,7 +2626,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 // 注意：使用 WINDOWS 子系统后，程序将没有控制台窗口
                 // 所有输出需要通过 GUI 元素（如消息框）显示
             }
-            
+
             // 排除静态 CRT 库，只使用动态 CRT（/MD）
             $cmd .= ' /NODEFAULTLIB:LIBCMT';
 
@@ -2639,7 +2638,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 编译时使用动态多线程 CRT（与 PHP SDK 一致）
             $cmd .= ' /MD';
         }
-        
+
         // 定义宏（仅在编译时）
         if (!$link && $this->enableProfiler) {
             $cmd .= ' /DPPROF_ON=1';
@@ -2655,33 +2654,33 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$link) {
             $cmd .= ' ' . $this->parseWindowsIncludes();
         }
-        
+
         // Windows 平台必需的宏定义 - 仅在编译时
         if (!$link) {
             $cmd .= ' -DZEND_WIN32';           // 标识 Windows 平台
             $cmd .= ' -DPHP_WIN32';            // 标识 Windows 平台
             $cmd .= ' -DZEND_DEBUG=0';         // 禁用调试模式
-            
+
             // 根据 PHP 是否为线程安全版本决定是否添加 ZTS 宏
             if ($this->isPhpZts) {
                 $cmd .= ' -DZTS';              // 启用线程安全
             }
-            
+
             // Sanitizer 支持（Clang 使用 -fsanitize）
             if ($this->sanitize && !$link) {
                 $sanitizers = explode(',', $this->sanitize);
                 $validSanitizers = ['address', 'undefined', 'thread', 'memory', 'leak'];
                 $enabledSanitizers = [];
-                
+
                 foreach ($sanitizers as $san) {
                     $san = trim($san);
                     if (in_array($san, $validSanitizers)) {
                         $enabledSanitizers[] = $san;
                     } else {
-                        $this->climate->warning("Unsupported sanitizer: $san");
+                        $this->climate->warning("Unsupported sanitizer: {$san}");
                     }
                 }
-                
+
                 if (!empty($enabledSanitizers)) {
                     $sanitizerFlag = '-fsanitize=' . implode(',', $enabledSanitizers);
                     $cmd .= ' ' . $sanitizerFlag;
@@ -2692,7 +2691,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->climate->info('Sanitizers enabled (Clang): ' . implode(', ', $enabledSanitizers));
                 }
             }
-            
+
             // 调试模式：当启用 --debug-info 时，自动禁用优化并添加调试信息
             if ($this->debugInfo) {
                 $cmd .= ' -O0';      // 禁用优化
@@ -2705,12 +2704,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             // 警告级别
             $cmd .= ' -Wall';
-            
+
             // C++ 标准
             if (!str_contains($this->cxxflags, ' -std=')) {
                 $cmd .= ' -std=' . $this->cxxStd;
             }
-            
+
             // 编译时的额外选项
             if ($this->cxxflags) {
                 $cmd .= ' ' . $this->cxxflags;
@@ -2729,18 +2728,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 链接选项（Clang on Windows 仍然使用 MSVC 的链接器）
         if ($link) {
             $cmd .= ' ' . $this->parseWindowsLdflags();
-            
+
             // 调试模式：链接时生成 PDB 文件（Clang + lld-link/link.exe）
             if ($this->debugInfo) {
                 $cmd .= ' /DEBUG';  // 生成 PDB 调试信息文件
             }
-            
+
             // 对于 bin 模式且指定了 --no-console，使用 Windows 子系统
             if ($this->buildMode === 'bin' && $this->noConsole) {
                 $cmd .= ' /SUBSYSTEM:WINDOWS';
                 $cmd .= ' /ENTRY:mainCRTStartup';
             }
-            
+
             // CRT 库配置
             $cmd .= ' /NODEFAULTLIB:LIBCMT';
 
@@ -2752,7 +2751,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 编译时使用动态多线程 CRT
             $cmd .= ' -MD';
         }
-        
+
         // 定义宏（仅在编译时）
         if (!$link && $this->enableProfiler) {
             $cmd .= ' -DPPROF_ON=1';
@@ -2762,7 +2761,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function addUnixCompilationOption(string &$cmd, bool $link): void
     {
         $cmd .= ' ' . $this->parseIncludes();
-        
+
         // 调试模式：当启用 --debug-info 时，自动禁用优化并添加调试信息
         if ($this->debugInfo) {
             $cmd .= ' -O0';     // 禁用优化（类似 MSVC /Od）
@@ -2772,24 +2771,24 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 非调试模式：使用用户指定的优化级别
             $cmd .= ' -O' . $this->optimizeLevel;
         }
-        
+
         $cmd .= ' -Wall';
-        
+
         // Sanitizer 支持（GCC/Clang 使用 -fsanitize）
         if ($this->sanitize && !$link) {
             $sanitizers = explode(',', $this->sanitize);
             $validSanitizers = ['address', 'undefined', 'thread', 'memory', 'leak'];
             $enabledSanitizers = [];
-            
+
             foreach ($sanitizers as $san) {
                 $san = trim($san);
                 if (in_array($san, $validSanitizers)) {
                     $enabledSanitizers[] = $san;
                 } else {
-                    $this->climate->warning("Unsupported sanitizer: $san");
+                    $this->climate->warning("Unsupported sanitizer: {$san}");
                 }
             }
-            
+
             if (!empty($enabledSanitizers)) {
                 $sanitizerFlag = '-fsanitize=' . implode(',', $enabledSanitizers);
                 $cmd .= ' ' . $sanitizerFlag;
@@ -4409,12 +4408,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$this->formatCode) {
             return;
         }
-        
+
         // Windows 下可能没有 clang-format，跳过格式化
         if ($this->isWindows()) {
             return;
         }
-        
+
         $cmd = 'cd ' . $this->rootPath . ' && clang-format -i ' . $file;
         $this->climate->info('format: ' . $this->getRelativePath($file));
         $this->climate->comment($cmd);

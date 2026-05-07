@@ -14,6 +14,7 @@ class FunctionContext
      * @var array<string, string>
      */
     public array $objects = [];
+
     /**
      * @var array<string, array>
      */

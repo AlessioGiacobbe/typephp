@@ -1,4 +1,10 @@
 <?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
 
 namespace PhpAot\Php\Parser;
 
@@ -28,7 +34,7 @@ trait StdArrayParser
         $valueExpr = $this->parseExpr($expr->args[1]->value);
         $type = $this->context->stdArrays[$array]['type'];
         $value = $this->convertExprFromType($type, $valueExpr);
-        return  "{$array}.fill({$value})";
+        return "{$array}.fill({$value})";
     }
 
     protected function getStdArrayInfo(Expr\ArrayDimFetch $expr): ?array
@@ -103,7 +109,7 @@ trait StdArrayParser
         $tmp = $expr;
         $nesting = [];
 
-        while(true) {
+        while (true) {
             if (count($tmp->args) !== 2) {
                 $this->fatalError($tmp, 'std::array() expects two arguments');
             }
@@ -132,7 +138,8 @@ trait StdArrayParser
                         break;
                 }
                 break;
-            } elseif ($this->isStaticCall($typeExpr)) {
+            }
+            if ($this->isStaticCall($typeExpr)) {
                 $tmp = $typeExpr;
                 if (!$this->isNameExpr($tmp->class) || !$this->isIdExpr($tmp->name) || $tmp->class->toString() !== 'std' || $tmp->name->toString() !== 'array') {
                     $this->fatalError($tmp, 'An incorrect `std::array` definition');

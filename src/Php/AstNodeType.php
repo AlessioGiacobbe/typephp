@@ -102,10 +102,10 @@ trait AstNodeType
 
     protected function isScalarBool(NodeAbstract $expr): bool
     {
-        return $expr instanceof Node\Expr\ConstFetch and in_array($expr->name->toString(), ['true', 'false']);
+        return $expr instanceof Expr\ConstFetch and in_array($expr->name->toString(), ['true', 'false']);
     }
 
-    protected function getBoolValue(Node\Expr\ConstFetch $expr): string
+    protected function getBoolValue(Expr\ConstFetch $expr): string
     {
         return $expr->name->toString() === 'true' ? self::VALUE_TRUE : self::VALUE_FALSE;
     }

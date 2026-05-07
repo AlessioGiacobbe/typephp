@@ -160,7 +160,7 @@ class Constants
     /**
      * MSVC 编译器警告屏蔽列表
      * 这些警告来自 Windows SDK 和 PHP SDK 头文件，都是编译器噪音，不影响功能
-     * 
+     *
      * @var array<string, string> 键为警告编号，值为说明
      */
     public const array MSVC_SUPPRESSED_WARNINGS = [

@@ -71,11 +71,11 @@ class Preprocessor extends CompilerBase
     public function getCppFile(string $file): string
     {
         $info = pathinfo($file);
-        
+
         // Windows 下使用反斜杠，其他平台使用正斜杠
         $separator = $this->isWindows() ? '\\' : '/';
         $relativePath = $this->removeCommonPrefix($this->buildDir, $info['dirname']);
-        
+
         return $this->buildDir . $separator . $relativePath . $separator . $info['filename'] . '.cc';
     }
 
@@ -83,7 +83,7 @@ class Preprocessor extends CompilerBase
     {
         $info = pathinfo($cppFile);
         $ext = $this->isWindows() ? '.obj' : '.o';
-        
+
         // 保持与 cppFile 相同的路径分隔符
         return $info['dirname'] . ($this->isWindows() ? '\\' : '/') . $info['filename'] . $ext;
     }

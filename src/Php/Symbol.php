@@ -57,6 +57,6 @@ class Symbol
 
     public static function safeIndex(string $index, string $size): string
     {
-        return "php::safeIndex($index, $size)";
+        return "php::safeIndex({$index}, {$size})";
     }
 }
