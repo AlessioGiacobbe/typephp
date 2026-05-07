@@ -76,6 +76,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
     public const string VALUE_NULL = 'php::null';
     public const string VALUE_ZERO = 'php::zero';
+    public const string VALUE_FALSE = 'php::false_value';
+    public const string VALUE_TRUE = 'php::true_value';
     public const string LITERAL_STRINGS = '_literal_strings';
     public const string ANON_CLASS = '_anon_class_';
     public const string STATIC_VAR = '_static_var_';
@@ -3659,14 +3661,33 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code . PHP_EOL;
     }
 
+    protected function parseCompareExpr(NodeAbstract $expr): string
+    {
+        // PHPX 与 bool 值比较会出现重载错误，所以需要转换成 bool 值
+        if ($this->isScalarBool($expr)) {
+            return $this->getBoolValue($expr);
+        }
+        return $this->parseIdentifier($expr);
+    }
+
     protected function parseBinaryOpEqual(Expr\BinaryOp\Equal $expr): string
     {
-        return 'php::equals(' . $this->parseExpr($expr->left) . ', ' . $this->parseExpr($expr->right) . ')';
+        return 'php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
     }
 
     protected function parseBinaryOpNotEqual(Expr\BinaryOp\NotEqual $expr): string
     {
-        return '!php::equals(' . $this->parseExpr($expr->left) . ', ' . $this->parseExpr($expr->right) . ')';
+        return '!php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
+    }
+
+    protected function parseBinaryOpIdentical(Expr\BinaryOp $expr): string
+    {
+        $left  = $this->parseCompareExpr($expr->left);
+        $right = $this->parseCompareExpr($expr->right);
+        if ($right === 'nullptr') {
+            return $left . '.isNull()';
+        }
+        return 'php::same(' . $left . ', ' . $right . ')';
     }
 
     /**
@@ -3791,18 +3812,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code .= $this->getIndent() . '} while (' . $cond . ');' . PHP_EOL;
 
         return $code;
-    }
-
-    protected function parseBinaryOpIdentical(Expr\BinaryOp $expr): string
-    {
-        $left  = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-
-        if ($right === 'nullptr') {
-            return $left . '.isNull()';
-        }
-
-        return 'php::same(' . $left . ', ' . $right . ')';
     }
 
     protected function parseBinaryOpSpaceship(Expr\BinaryOp\Spaceship $expr): string

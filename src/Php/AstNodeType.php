@@ -100,6 +100,16 @@ trait AstNodeType
         return $expr instanceof Node\Scalar\Int_;
     }
 
+    protected function isScalarBool(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Expr\ConstFetch and in_array($expr->name->toString(), ['true', 'false']);
+    }
+
+    protected function getBoolValue(Node\Expr\ConstFetch $expr): string
+    {
+        return $expr->name->toString() === 'true' ? self::VALUE_TRUE : self::VALUE_FALSE;
+    }
+
     protected function isMatchExpr(NodeAbstract $expr): bool
     {
         return $expr instanceof Expr\Match_;
