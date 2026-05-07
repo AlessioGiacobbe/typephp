@@ -2540,238 +2540,417 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    /**
+     * Windows MSVC 编译选项配置
+     */
     protected function addWindowsCompilationOption(string &$cmd, bool $link): void
     {
-        // 添加包含路径（仅在编译时，不在链接时）
+        // 编译时选项
         if (!$link) {
-            $cmd .= ' ' . $this->parseWindowsIncludes();
+            $this->addWindowsCompileOptions($cmd);
         }
 
-        // Windows 平台必需的宏定义（参考 CMakeLists.txt）- 仅在编译时
-        if (!$link) {
-            $cmd .= ' /DZEND_WIN32';           // 标识 Windows 平台
-            $cmd .= ' /DPHP_WIN32';            // 标识 Windows 平台
-            $cmd .= ' /DZEND_DEBUG=0';         // 禁用调试模式
-
-            // 根据 PHP 是否为线程安全版本决定是否添加 ZTS 宏
-            if ($this->isPhpZts) {
-                $cmd .= ' /DZTS';                  // 启用线程安全
-            }
-
-            // Sanitizer 支持（MSVC 使用 /fsanitize）
-            if ($this->sanitize) {
-                // MSVC 支持的 sanitizer: address
-                if ($this->sanitize === 'address' || $this->sanitize === 'addr') {
-                    $cmd .= ' /fsanitize=address';
-                    $this->climate->info('AddressSanitizer enabled (MSVC)');
-                } else {
-                    $this->climate->warning("Unsupported sanitizer type: {$this->sanitize} (MSVC only supports 'address')");
-                }
-            }
-
-            // 调试模式：当启用 --debug-info 时，自动禁用优化并添加调试信息
-            if ($this->debugInfo) {
-                $cmd .= ' /Od';      // 禁用优化（类似 gcc -O0）
-                $cmd .= ' /Zi';      // 生成完整调试信息（类似 gcc -g）
-                $this->climate->info('Debug mode enabled: optimizations disabled, debug info generated');
-            } else {
-                // 非调试模式：使用用户指定的优化级别
-                switch ($this->optimizeLevel) {
-                    case 0:
-                        $cmd .= ' /Od'; // 禁用优化
-                        break;
-                    case 1:
-                    case 2:
-                        $cmd .= ' /O2'; // 最大速度优化
-                        break;
-                    case 3:
-                        $cmd .= ' /Ox'; // 完全优化
-                        break;
-                }
-            }
-
-            // 警告级别
-            $cmd .= ' /W3';
-
-            // 禁用 PHP SDK 和 Windows SDK 头文件中的常见警告
-            // 这些警告都是编译器噪音，不影响功能（从 Constants 配置中读取）
-            foreach (Constants::MSVC_SUPPRESSED_WARNINGS as $code => $description) {
-                $cmd .= " /wd{$code}";  // C{$code}: {$description}
-            }
-
-            // 启用 C++ 异常处理（消除 C4530 警告）
-            $cmd .= ' /EHsc';
-
-            // C++ 标准（从 cxxStd 属性读取，如果 cxxflags 中没有指定）
-            if (!str_contains($this->cxxflags, '/std:')) {
-                $cmd .= ' /std:' . $this->cxxStd;
-            }
-
-            // 编译时的额外选项
-            if ($this->cxxflags) {
-                $cmd .= ' ' . $this->cxxflags;
-            }
-        }
-
-        // 禁用编译器版权信息输出
+        // 通用选项
         $cmd .= ' /nologo';
 
         // 扩展模块特定选项
-        if ($this->buildMode === 'ext') {
-            if ($link) {
-                $cmd .= ' /DLL'; // 生成 DLL
-            } else {
-                // MSVC 不需要 -fPIC，默认就是位置无关代码
-            }
-        }
+        $this->addWindowsExtensionOptions($cmd, $link);
 
-        // 链接选项
+        // 链接时选项
         if ($link) {
-            $cmd .= ' ' . $this->parseWindowsLdflags();
-
-            // 调试模式：链接时生成 PDB 文件
-            if ($this->debugInfo) {
-                $cmd .= ' /DEBUG';  // 生成 PDB 调试信息文件
-            }
-
-            // 对于 bin 模式且指定了 --no-console，使用 Windows 子系统（不显示控制台窗口）
-            if ($this->buildMode === 'bin' && $this->noConsole) {
-                $cmd .= ' /SUBSYSTEM:WINDOWS';
-                // 指定入口点为 mainCRTStartup，这样可以使用 main() 而不是 WinMain()
-                $cmd .= ' /ENTRY:mainCRTStartup';
-                // 注意：使用 WINDOWS 子系统后，程序将没有控制台窗口
-                // 所有输出需要通过 GUI 元素（如消息框）显示
-            }
-
-            // 排除静态 CRT 库，只使用动态 CRT（/MD）
-            $cmd .= ' /NODEFAULTLIB:LIBCMT';
-
-            $cmd .= ' ' . $this->parseWindowsLibs();
-            if ($this->ldflags) {
-                $cmd .= ' ' . $this->ldflags;
-            }
+            $this->addWindowsLinkOptions($cmd);
         } else {
-            // 编译时使用动态多线程 CRT（与 PHP SDK 一致）
+            // 编译时使用动态多线程 CRT
             $cmd .= ' /MD';
         }
 
-        // 定义宏（仅在编译时）
+        // 性能分析宏
         if (!$link && $this->enableProfiler) {
             $cmd .= ' /DPPROF_ON=1';
         }
     }
 
     /**
-     * Windows Clang 编译选项（类似 GCC，但使用 MSVC 的链接器）
+     * 添加 Windows MSVC 编译时选项
+     */
+    protected function addWindowsCompileOptions(string &$cmd): void
+    {
+        // 包含路径
+        $cmd .= ' ' . $this->parseWindowsIncludes();
+
+        // 平台宏定义
+        $this->addWindowsPlatformDefines($cmd);
+
+        // Sanitizer 支持
+        $this->addWindowsSanitizerOptions($cmd);
+
+        // 优化和调试选项
+        $this->addWindowsOptimizationOptions($cmd);
+
+        // 警告设置
+        $this->addWindowsWarningOptions($cmd);
+
+        // C++ 标准和异常处理
+        $this->addWindowsCppOptions($cmd);
+
+        // 用户自定义编译选项
+        if ($this->cxxflags) {
+            $cmd .= ' ' . $this->cxxflags;
+        }
+    }
+
+    /**
+     * 添加 Windows 平台宏定义
+     */
+    protected function addWindowsPlatformDefines(string &$cmd): void
+    {
+        $cmd .= ' /DZEND_WIN32';           // 标识 Windows 平台
+        $cmd .= ' /DPHP_WIN32';            // 标识 Windows 平台
+        $cmd .= ' /DZEND_DEBUG=0';         // 禁用调试模式
+
+        // ZTS 线程安全宏
+        if ($this->isPhpZts) {
+            $cmd .= ' /DZTS';
+        }
+    }
+
+    /**
+     * 添加 Windows Sanitizer 选项
+     */
+    protected function addWindowsSanitizerOptions(string &$cmd): void
+    {
+        if (!$this->sanitize) {
+            return;
+        }
+
+        // MSVC 仅支持 AddressSanitizer
+        if ($this->sanitize === 'address' || $this->sanitize === 'addr') {
+            $cmd .= ' /fsanitize=address';
+            $this->climate->info('AddressSanitizer enabled (MSVC)');
+        } else {
+            $this->climate->warning(
+                "Unsupported sanitizer type: {$this->sanitize} (MSVC only supports 'address')"
+            );
+        }
+    }
+
+    /**
+     * 添加 Windows 优化和调试选项
+     */
+    protected function addWindowsOptimizationOptions(string &$cmd): void
+    {
+        if ($this->debugInfo) {
+            // 调试模式：禁用优化，生成调试信息
+            $cmd .= ' /Od';      // 禁用优化
+            $cmd .= ' /Zi';      // 生成完整调试信息
+            $this->climate->info('Debug mode enabled: optimizations disabled, debug info generated');
+            return;
+        }
+
+        // 非调试模式：根据优化级别设置
+        $optimizationMap = [
+            0 => '/Od',   // 禁用优化
+            1 => '/O2',   // 最大速度优化
+            2 => '/O2',   // 最大速度优化
+            3 => '/Ox',   // 完全优化
+        ];
+
+        $optLevel = $this->optimizeLevel;
+        $optFlag = $optimizationMap[$optLevel] ?? '/O2';
+        $cmd .= ' ' . $optFlag;
+    }
+
+    /**
+     * 添加 Windows 警告选项
+     */
+    protected function addWindowsWarningOptions(string &$cmd): void
+    {
+        // 基础警告级别
+        $cmd .= ' /W3';
+
+        // 禁用常见警告（从 Constants 配置读取）
+        foreach (Constants::MSVC_SUPPRESSED_WARNINGS as $code => $description) {
+            $cmd .= " /wd{$code}";
+        }
+    }
+
+    /**
+     * 添加 Windows C++ 选项
+     */
+    protected function addWindowsCppOptions(string &$cmd): void
+    {
+        // 启用 C++ 异常处理
+        $cmd .= ' /EHsc';
+
+        // C++ 标准（如果 cxxflags 中未指定）
+        if (!str_contains($this->cxxflags, '/std:')) {
+            $cmd .= ' /std:' . $this->cxxStd;
+        }
+    }
+
+    /**
+     * 添加 Windows 扩展模块选项
+     */
+    protected function addWindowsExtensionOptions(string &$cmd, bool $link): void
+    {
+        if ($this->buildMode !== 'ext') {
+            return;
+        }
+
+        if ($link) {
+            $cmd .= ' /DLL'; // 生成 DLL
+        }
+        // 注意：MSVC 不需要 -fPIC，默认就是位置无关代码
+    }
+
+    /**
+     * 添加 Windows 链接时选项
+     */
+    protected function addWindowsLinkOptions(string &$cmd): void
+    {
+        // 链接器标志
+        $cmd .= ' ' . $this->parseWindowsLdflags();
+
+        // 调试信息
+        if ($this->debugInfo) {
+            $cmd .= ' /DEBUG';  // 生成 PDB 文件
+        }
+
+        // Windows 子系统配置
+        $this->addWindowsSubsystemOptions($cmd);
+
+        // CRT 库配置
+        $cmd .= ' /NODEFAULTLIB:LIBCMT';
+
+        // 链接库
+        $cmd .= ' ' . $this->parseWindowsLibs();
+
+        // 用户自定义链接标志
+        if ($this->ldflags) {
+            $cmd .= ' ' . $this->ldflags;
+        }
+    }
+
+    /**
+     * 添加 Windows 子系统选项
+     */
+    protected function addWindowsSubsystemOptions(string &$cmd): void
+    {
+        if ($this->buildMode !== 'bin' || !$this->noConsole) {
+            return;
+        }
+
+        // 使用 Windows 子系统（不显示控制台窗口）
+        $cmd .= ' /SUBSYSTEM:WINDOWS';
+        $cmd .= ' /ENTRY:mainCRTStartup';
+        // 注意：使用 WINDOWS 子系统后，程序将没有控制台窗口
+        // 所有输出需要通过 GUI 元素（如消息框）显示
+    }
+
+    /**
+     * Windows Clang 编译选项配置（使用 GCC 风格语法，MSVC 链接器）
      */
     protected function addWindowsClangCompilationOption(string &$cmd, bool $link): void
     {
-        // 添加包含路径（仅在编译时，不在链接时）
+        // 编译时选项
         if (!$link) {
-            $cmd .= ' ' . $this->parseWindowsIncludes();
-        }
-
-        // Windows 平台必需的宏定义 - 仅在编译时
-        if (!$link) {
-            $cmd .= ' -DZEND_WIN32';           // 标识 Windows 平台
-            $cmd .= ' -DPHP_WIN32';            // 标识 Windows 平台
-            $cmd .= ' -DZEND_DEBUG=0';         // 禁用调试模式
-
-            // 根据 PHP 是否为线程安全版本决定是否添加 ZTS 宏
-            if ($this->isPhpZts) {
-                $cmd .= ' -DZTS';              // 启用线程安全
-            }
-
-            // Sanitizer 支持（Clang 使用 -fsanitize）
-            if ($this->sanitize && !$link) {
-                $sanitizers = explode(',', $this->sanitize);
-                $validSanitizers = ['address', 'undefined', 'thread', 'memory', 'leak'];
-                $enabledSanitizers = [];
-
-                foreach ($sanitizers as $san) {
-                    $san = trim($san);
-                    if (in_array($san, $validSanitizers)) {
-                        $enabledSanitizers[] = $san;
-                    } else {
-                        $this->climate->warning("Unsupported sanitizer: {$san}");
-                    }
-                }
-
-                if (!empty($enabledSanitizers)) {
-                    $sanitizerFlag = '-fsanitize=' . implode(',', $enabledSanitizers);
-                    $cmd .= ' ' . $sanitizerFlag;
-                    // AddressSanitizer 需要额外的链接选项
-                    if (in_array('address', $enabledSanitizers)) {
-                        $cmd .= ' -fsanitize=address';
-                    }
-                    $this->climate->info('Sanitizers enabled (Clang): ' . implode(', ', $enabledSanitizers));
-                }
-            }
-
-            // 调试模式：当启用 --debug-info 时，自动禁用优化并添加调试信息
-            if ($this->debugInfo) {
-                $cmd .= ' -O0';      // 禁用优化
-                $cmd .= ' -g';       // 生成调试信息
-                $this->climate->info('Debug mode enabled (Clang): optimizations disabled (-O0), debug info generated (-g)');
-            } else {
-                // 非调试模式：使用用户指定的优化级别
-                $cmd .= ' -O' . $this->optimizeLevel;
-            }
-
-            // 警告级别
-            $cmd .= ' -Wall';
-
-            // C++ 标准
-            if (!str_contains($this->cxxflags, ' -std=')) {
-                $cmd .= ' -std=' . $this->cxxStd;
-            }
-
-            // 编译时的额外选项
-            if ($this->cxxflags) {
-                $cmd .= ' ' . $this->cxxflags;
-            }
+            $this->addWindowsClangCompileOptions($cmd);
         }
 
         // 扩展模块特定选项
-        if ($this->buildMode === 'ext') {
-            if ($link) {
-                $cmd .= ' -shared';
-            } else {
-                $cmd .= ' -fPIC';
-            }
-        }
+        $this->addWindowsClangExtensionOptions($cmd, $link);
 
-        // 链接选项（Clang on Windows 仍然使用 MSVC 的链接器）
+        // 链接时选项（Clang on Windows 仍使用 MSVC 链接器）
         if ($link) {
-            $cmd .= ' ' . $this->parseWindowsLdflags();
-
-            // 调试模式：链接时生成 PDB 文件（Clang + lld-link/link.exe）
-            if ($this->debugInfo) {
-                $cmd .= ' /DEBUG';  // 生成 PDB 调试信息文件
-            }
-
-            // 对于 bin 模式且指定了 --no-console，使用 Windows 子系统
-            if ($this->buildMode === 'bin' && $this->noConsole) {
-                $cmd .= ' /SUBSYSTEM:WINDOWS';
-                $cmd .= ' /ENTRY:mainCRTStartup';
-            }
-
-            // CRT 库配置
-            $cmd .= ' /NODEFAULTLIB:LIBCMT';
-
-            $cmd .= ' ' . $this->parseWindowsLibs();
-            if ($this->ldflags) {
-                $cmd .= ' ' . $this->ldflags;
-            }
+            $this->addWindowsClangLinkOptions($cmd);
         } else {
             // 编译时使用动态多线程 CRT
             $cmd .= ' -MD';
         }
 
-        // 定义宏（仅在编译时）
+        // 性能分析宏
         if (!$link && $this->enableProfiler) {
             $cmd .= ' -DPPROF_ON=1';
         }
+    }
+
+    /**
+     * 添加 Windows Clang 编译时选项
+     */
+    protected function addWindowsClangCompileOptions(string &$cmd): void
+    {
+        // 包含路径
+        $cmd .= ' ' . $this->parseWindowsIncludes();
+
+        // MSVC 兼容性选项
+        $this->addWindowsClangCompatibilityOptions($cmd);
+
+        // 平台宏定义
+        $this->addWindowsClangPlatformDefines($cmd);
+
+        // Sanitizer 支持
+        $this->addWindowsClangSanitizerOptions($cmd);
+
+        // 优化和调试选项
+        $this->addWindowsClangOptimizationOptions($cmd);
+
+        // 警告设置
+        $cmd .= ' -Wall';
+
+        // C++ 标准
+        $this->addWindowsClangCppOptions($cmd);
+
+        // 用户自定义编译选项
+        if ($this->cxxflags) {
+            $cmd .= ' ' . $this->cxxflags;
+        }
+    }
+
+    /**
+     * 添加 Windows Clang MSVC 兼容性选项
+     */
+    protected function addWindowsClangCompatibilityOptions(string &$cmd): void
+    {
+        $cmd .= ' -fms-compatibility';                // 启用 MSVC 兼容性
+        $cmd .= ' -fms-compatibility-version=19.40';  // MSVC 版本兼容性（VS2022）
+        $cmd .= ' -fdelayed-template-parsing';        // 延迟模板解析（MSVC 特性）
+        $cmd .= ' -fms-extensions';                   // 启用 MSVC 扩展
+    }
+
+    /**
+     * 添加 Windows Clang 平台宏定义
+     */
+    protected function addWindowsClangPlatformDefines(string &$cmd): void
+    {
+        $cmd .= ' -DZEND_WIN32';           // 标识 Windows 平台
+        $cmd .= ' -DPHP_WIN32';            // 标识 Windows 平台
+        $cmd .= ' -DZEND_DEBUG=0';         // 禁用调试模式
+
+        // ZTS 线程安全宏
+        if ($this->isPhpZts) {
+            $cmd .= ' -DZTS';
+        }
+    }
+
+    /**
+     * 添加 Windows Clang Sanitizer 选项
+     */
+    protected function addWindowsClangSanitizerOptions(string &$cmd): void
+    {
+        if (!$this->sanitize) {
+            return;
+        }
+
+        $sanitizers = explode(',', $this->sanitize);
+        $validSanitizers = ['address', 'undefined', 'thread', 'memory', 'leak'];
+        $enabledSanitizers = [];
+
+        foreach ($sanitizers as $san) {
+            $san = trim($san);
+            if (in_array($san, $validSanitizers)) {
+                $enabledSanitizers[] = $san;
+            } else {
+                $this->climate->warning("Unsupported sanitizer: {$san}");
+            }
+        }
+
+        if (!empty($enabledSanitizers)) {
+            $sanitizerFlag = '-fsanitize=' . implode(',', $enabledSanitizers);
+            $cmd .= ' ' . $sanitizerFlag;
+
+            // AddressSanitizer 需要额外的链接选项
+            if (in_array('address', $enabledSanitizers)) {
+                $cmd .= ' -fsanitize=address';
+            }
+
+            $this->climate->info('Sanitizers enabled (Clang): ' . implode(', ', $enabledSanitizers));
+        }
+    }
+
+    /**
+     * 添加 Windows Clang 优化和调试选项
+     */
+    protected function addWindowsClangOptimizationOptions(string &$cmd): void
+    {
+        if ($this->debugInfo) {
+            // 调试模式：禁用优化，生成调试信息
+            $cmd .= ' -O0';      // 禁用优化
+            $cmd .= ' -g';       // 生成调试信息
+            $this->climate->info('Debug mode enabled (Clang): optimizations disabled (-O0), debug info generated (-g)');
+            return;
+        }
+
+        // 非调试模式：使用用户指定的优化级别
+        $cmd .= ' -O' . $this->optimizeLevel;
+    }
+
+    /**
+     * 添加 Windows Clang C++ 选项
+     */
+    protected function addWindowsClangCppOptions(string &$cmd): void
+    {
+        // C++ 标准（如果 cxxflags 中未指定）
+        if (!str_contains($this->cxxflags, ' -std=')) {
+            $cmd .= ' -std=' . $this->cxxStd;
+        }
+    }
+
+    /**
+     * 添加 Windows Clang 扩展模块选项
+     */
+    protected function addWindowsClangExtensionOptions(string &$cmd, bool $link): void
+    {
+        if ($this->buildMode !== 'ext') {
+            return;
+        }
+
+        if ($link) {
+            $cmd .= ' -shared';
+        } else {
+            $cmd .= ' -fPIC';
+        }
+    }
+
+    /**
+     * 添加 Windows Clang 链接时选项
+     */
+    protected function addWindowsClangLinkOptions(string &$cmd): void
+    {
+        // 链接器标志
+        $cmd .= ' ' . $this->parseWindowsLdflags();
+
+        // 调试信息
+        if ($this->debugInfo) {
+            $cmd .= ' /DEBUG';  // 生成 PDB 文件
+        }
+
+        // Windows 子系统配置
+        $this->addWindowsClangSubsystemOptions($cmd);
+
+        // CRT 库配置
+        $cmd .= ' /NODEFAULTLIB:LIBCMT';
+
+        // 链接库
+        $cmd .= ' ' . $this->parseWindowsLibs();
+
+        // 用户自定义链接标志
+        if ($this->ldflags) {
+            $cmd .= ' ' . $this->ldflags;
+        }
+    }
+
+    /**
+     * 添加 Windows Clang 子系统选项
+     */
+    protected function addWindowsClangSubsystemOptions(string &$cmd): void
+    {
+        if ($this->buildMode !== 'bin' || !$this->noConsole) {
+            return;
+        }
+
+        // 使用 Windows 子系统（不显示控制台窗口）
+        $cmd .= ' /SUBSYSTEM:WINDOWS';
+        $cmd .= ' /ENTRY:mainCRTStartup';
     }
 
     protected function addUnixCompilationOption(string &$cmd, bool $link): void
