@@ -4,6 +4,7 @@ namespace PhpAot\Php\Parser;
 
 use PhpAot\Php\Symbol;
 use PhpParser\Node\Expr;
+use PhpParser\NodeAbstract;
 
 trait StdArrayParser
 {
@@ -42,6 +43,13 @@ trait StdArrayParser
                 return null;
             }
         }
+    }
+
+    protected function parseStdArrayAssign(NodeAbstract $left, NodeAbstract $right): string
+    {
+        $info = $this->getStdArrayInfo($left);
+        $arrayDimFetch = $this->parseStdArrayDimFetch($left);
+        return $arrayDimFetch . ' = ' . $this->convertExprFromType($info['type'], $this->parseExpr($right));
     }
 
     protected function parseStdArrayAssignOp(Expr\AssignOp $expr, string $op): string

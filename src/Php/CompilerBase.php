@@ -1589,6 +1589,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->getVarType($tmp) === self::TYPE_STR and $left->dim === null) {
                 $this->fatalError($left, 'Cannot use [] for strings');
             }
+            if ($this->isStdArrayExpr($left)) {
+                return $this->parseStdArrayAssign($left, $right);
+            }
             return $this->parseAssignArrayDim($left, $right);
         }
 
