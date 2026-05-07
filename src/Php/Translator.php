@@ -1065,7 +1065,7 @@ CODE;
     public function getArgInfoHeaderFile(string $file, bool $relative = false): string
     {
         $filePath = $this->getRelativePath(str_replace(['.stub.php', '.php'], '', $file));
-        $filename = self::PREFIX . str_replace('/', '_', $filePath);
+        $filename = self::PREFIX . str_replace(['/', '\\'], '_', $filePath);
         $filename = $this->escapeFileName($filename);
         $absPath = $this->getIncludeDir() . "/{$filename}_arginfo.h";
         if ($relative) {

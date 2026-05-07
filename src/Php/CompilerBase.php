@@ -262,6 +262,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected Parser $parser;
     protected PrettyPrinter $printer;
     protected bool $isPhpZts = false;  // PHP 是否为线程安全版本
+    
+    // Windows 平台：保存检测到的 PHP lib 文件路径
+    protected string $windowsPhpEmbedLib = '';  // php8embed.lib 路径
+    protected string $windowsPhpCoreLib = '';   // php8ts.lib 或 php8.lib 路径
 
     /**
      * 在预处理阶段获取所有类的方法名称，检测子类和父类中存在的同名方法，解决动态绑定方法调用的问题
@@ -294,11 +298,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->climate = $climate;
         //        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
 
-        // 检测操作系统并设置编译器
+        // 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
         $this->detectPlatform();
-
-        // 检测 PHP 是否为线程安全版本（ZTS）
-        $this->isPhpZts = defined('PHP_ZTS');
     }
 
     protected function detectPlatform(): void
@@ -320,9 +321,80 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->cppCompiler = 'cl';
                 $this->climate->info('Using MSVC compiler (cl)');
             }
+
+            // Windows 平台：检测 PHP lib 文件并决定 ZTS/NTS 模式
+            $this->detectWindowsPhpLibs();
         } else {
             // Unix/Linux/macOS 使用 g++
             $this->cppCompiler = 'g++';
+        }
+    }
+
+    /**
+     * Windows 平台：检测 PHP lib 文件并决定 ZTS/NTS 模式
+     * 根据找到的 lib 文件来决定是 ZTS 还是 NTS：
+     * - php8ts.lib 存在 => ZTS 模式
+     * - php8.lib 存在 => NTS 模式
+     */
+    protected function detectWindowsPhpLibs(): void
+    {
+        $phpDirs = [
+            $this->getPhpDir() . '\SDK\lib',  // 优先从 SDK/lib 查找
+            $this->getPhpDir() . '\lib',        // 备选从 lib 查找
+        ];
+
+        $embedLibPath = '';
+        $tsLibPath = '';
+        $ntsLibPath = '';
+
+        foreach ($phpDirs as $phpDir) {
+            if (!is_dir($phpDir)) {
+                continue;
+            }
+
+            // 检查 php8embed.lib
+            if (empty($embedLibPath) && file_exists($phpDir . '\php8embed.lib')) {
+                $embedLibPath = $phpDir . '\php8embed.lib';
+            }
+
+            // 检查 php8ts.lib (ZTS)
+            if (empty($tsLibPath) && file_exists($phpDir . '\php8ts.lib')) {
+                $tsLibPath = $phpDir . '\php8ts.lib';
+            }
+
+            // 检查 php8.lib (NTS)
+            if (empty($ntsLibPath) && file_exists($phpDir . '\php8.lib')) {
+                $ntsLibPath = $phpDir . '\php8.lib';
+            }
+
+            // 如果已经找到所有需要的库，提前退出
+            if ($embedLibPath && ($tsLibPath || $ntsLibPath)) {
+                break;
+            }
+        }
+
+        // 验证必需的库文件是否存在
+        if (!$embedLibPath) {
+            $this->error('php8embed.lib not found. Please ensure it exists in SDK/lib or lib directory of your PHP installation');
+        }
+
+        if (!$tsLibPath && !$ntsLibPath) {
+            $this->error('Neither php8ts.lib nor php8.lib found. Please ensure at least one exists in SDK/lib or lib directory of your PHP installation');
+        }
+
+        // 保存库文件路径
+        $this->windowsPhpEmbedLib = $embedLibPath;
+        
+        // 根据找到的库文件决定 ZTS/NTS 模式
+        // 优先级：php8ts.lib > php8.lib
+        if ($tsLibPath) {
+            $this->isPhpZts = true;
+            $this->windowsPhpCoreLib = $tsLibPath;
+            $this->climate->info('Detected ZTS mode (php8ts.lib found)');
+        } else {
+            $this->isPhpZts = false;
+            $this->windowsPhpCoreLib = $ntsLibPath;
+            $this->climate->info('Detected NTS mode (php8.lib found)');
         }
     }
 
@@ -2422,76 +2494,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (file_exists($phpxLib)) {
             $list[] = '"' . $phpxLib . '"';
         } else {
-            // 如果没有 .lib，尝试直接使用 DLL（需要生成导入库）
-            $phpxDll = $this->getPhpxDir() . '\lib\phpx.dll';
-            if (file_exists($phpxDll)) {
-                $this->climate->magenta('phpx.lib not found, using phpx.dll directly');
-                $this->climate->info('Note: You may need to generate phpx.lib from phpx.dll using lib /def:phpx.def');
-                $list[] = '"' . $phpxDll . '"';
-            }
+            $this->error('phpx.lib not found');
         }
 
         if ($this->buildMode === 'bin') {
-            // Windows 下 PHP 库文件和 DLL 的查找顺序：
-            // 1. SDK/lib/php8embed.lib (嵌入模式首选)
-            // 2. SDK/lib/php8ts.lib
-            // 3. SDK/lib/php8.lib
-            // 4. lib/php8embed.lib
-            // 5. lib/php8ts.lib
-            // 6. lib/php8.lib
+            // Windows 下 PHP 库文件的链接策略：
+            // 需要同时链接 php8embed.lib + (php8.lib 或 php8ts.lib)
+            //   - php8embed.lib: 提供嵌入模式的主入口
+            //   - php8.lib/php8ts.lib: 提供内存管理等核心符号（_efree, _emalloc 等）
+            //
+            // 注意：库文件路径已在 detectWindowsPhpLibs() 中检测并保存
 
-            $phpDirs = [
-                $this->getPhpDir() . '\SDK\lib',  // 优先从 SDK/lib 查找
-                $this->getPhpDir() . '\lib',        // 备选从 lib 查找
-            ];
-
-            $found = false;
-            foreach ($phpDirs as $phpDir) {
-                if (!is_dir($phpDir)) {
-                    continue;
-                }
-
-                // 尝试 php8embed.lib (嵌入模式)
-                $phpEmbedLib = $phpDir . '\php8embed.lib';
-                if (file_exists($phpEmbedLib)) {
-                    $list[] = '"' . $phpEmbedLib . '"';
-                    $found = true;
-                    break;
-                }
-
-                // 尝试 php8ts.lib
-                $phpTsLib = $phpDir . '\php8ts.lib';
-                if (file_exists($phpTsLib)) {
-                    $list[] = '"' . $phpTsLib . '"';
-                    $found = true;
-                    break;
-                }
-
-                // 尝试 php8.lib
-                $phpLib = $phpDir . '\php8.lib';
-                if (file_exists($phpLib)) {
-                    $list[] = '"' . $phpLib . '"';
-                    $found = true;
-                    break;
-                }
+            // 直接使用检测阶段保存的库文件路径
+            if (!empty($this->windowsPhpEmbedLib)) {
+                $list[] = '"' . $this->windowsPhpEmbedLib . '"';
             }
-
-            // 如果都没找到 .lib，尝试直接使用根目录的 DLL
-            if (!$found) {
-                $phpDll = $this->getPhpDir() . '\php8.dll';
-                if (file_exists($phpDll)) {
-                    $this->climate->magenta('php8embed.lib not found, using php8.dll directly');
-                    $this->climate->info('Note: This may require additional setup');
-                    $list[] = '"' . $phpDll . '"';
-                } else {
-                    // 尝试 php8ts.dll
-                    $phpTsDll = $this->getPhpDir() . '\php8ts.dll';
-                    if (file_exists($phpTsDll)) {
-                        $this->climate->magenta('php8embed.lib not found, using php8ts.dll directly');
-                        $this->climate->info('Note: This may require additional setup');
-                        $list[] = '"' . $phpTsDll . '"';
-                    }
-                }
+            
+            if (!empty($this->windowsPhpCoreLib)) {
+                $list[] = '"' . $this->windowsPhpCoreLib . '"';
             }
         }
 
