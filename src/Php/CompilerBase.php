@@ -63,11 +63,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_FLOAT = 'php::Float';
     public const string TYPE_OBJECT = 'php::Object';
     public const string TYPE_ARRAY = 'php::Array';
+    public const string TYPE_STD_ARRAY = 'php::StdArray';
     public const string TYPE_ARGS = 'php::Args';
     public const string TYPE_STR = 'php::Str';
     public const string TYPE_REF = 'php::Ref';
     public const string TYPE_VOID = 'void';
-    public const string TYPE_STD_ARRAY = 'std::array';
     public const int DECL_TYPE_OF_RETURN = 1;
     public const int DECL_TYPE_OF_PROPERTY = 2;
     public const int DECL_TYPE_OF_CONST = 3;
@@ -134,6 +134,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $globalHeaders = [
         'phpx.h',
         'phpx_helper.h',
+        'phpx_std_array.h',
         'phpx_func.h',
         'php_func_decl.h',
         'php_global_var_decl.h',

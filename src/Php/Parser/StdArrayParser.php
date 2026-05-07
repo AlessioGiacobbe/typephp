@@ -75,7 +75,7 @@ trait StdArrayParser
                     }
                 }
                 $index = $this->parseExpr($tmp->dim);
-                $nesting[] = '[' . Symbol::safeIndex($index, $info['sizes'][$level]) . ']';
+                $nesting[] = '[' . Symbol::safeIndex($this->convertIntExpr($index), $info['sizes'][$level]) . ']';
                 $tmp = $tmp->var;
                 $level++;
             } else {
@@ -103,7 +103,7 @@ trait StdArrayParser
             if (!$this->isScalarInt($tmp->args[1]->value)) {
                 $this->fatalError($tmp, 'std::array() expects second argument to be an integer');
             }
-            $size = $this->parseScalar($tmp->args[1]->value);
+            $size = $tmp->args[1]->value->value;
             $nesting[] = $size;
             $typeExpr = $tmp->args[0]->value;
             if ($this->isClassConstFetch($typeExpr)) {
@@ -135,7 +135,7 @@ trait StdArrayParser
             }
         }
 
-        $decl = str_repeat('std::array<', count($nesting));
+        $decl = str_repeat(self::TYPE_STD_ARRAY . '<', count($nesting));
         $decl .= $type;
         for ($i = count($nesting) - 1; $i >= 0; $i--) {
             $decl .= ', ' . $nesting[$i] . '>';
@@ -145,6 +145,6 @@ trait StdArrayParser
             'type' => $type,
             'sizes' => array_reverse($nesting),
         ];
-        return '';
+        return '// ' . $decl;
     }
 }

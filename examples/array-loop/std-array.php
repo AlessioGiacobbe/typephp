@@ -8,8 +8,7 @@ function main()
     $index = 9;
     $index2 = 5;
     $array[$index2][$index][0] = 2026;
-//    $array = std::array(native_types::type_int, 100);
-//    $array[99] = 2026;
+
     var_dump($array[$index2][$index][0]);
     var_dump($array[$index2][$index]);
 }
