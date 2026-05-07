@@ -16,12 +16,6 @@ function main() {
 }
 ?>
 --EXPECT--
-array(1) {
-  [0]=>
-  int(2026)
-}
-array(1) {
-  [0]=>
-  int(0)
-}
+int(2026)
+int(0)
 Array index out of bounds: index 100, size 100
