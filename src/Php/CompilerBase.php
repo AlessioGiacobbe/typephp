@@ -76,8 +76,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
     public const string VALUE_NULL = 'php::null';
     public const string VALUE_ZERO = 'php::zero';
-    public const string VALUE_FALSE = 'php::false_value';
-    public const string VALUE_TRUE = 'php::true_value';
+    public const string VALUE_FALSE = 'php::false_';
+    public const string VALUE_TRUE = 'php::true_';
     public const string LITERAL_STRINGS = '_literal_strings';
     public const string ANON_CLASS = '_anon_class_';
     public const string STATIC_VAR = '_static_var_';
