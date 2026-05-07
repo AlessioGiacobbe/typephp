@@ -64,7 +64,7 @@ trait StdArrayParser
         return $arrayDimFetch . ' ' . $binaryOp . '= ' . $this->convertExprFromType($info['type'], $this->parseExpr($expr->expr));
     }
 
-    protected function parseStdArrayDimFetch(Expr\ArrayDimFetch $expr, bool $toArray = false): string
+    protected function parseStdArrayDimFetch(Expr\ArrayDimFetch $expr): string
     {
         $tmp = $expr;
         $nesting = [];
@@ -92,11 +92,10 @@ trait StdArrayParser
             }
         }
 
-        if (!$toArray and count($nesting) !== count($info['sizes']) + 1) {
-            $this->fatalError($expr, 'Wrong dimension access std::array used');
-        }
+        $nesting = array_reverse($nesting);
+        $expr->setAttribute('stdArrayDimFetch', ['var' => $nesting[0], 'accessLevel' => $level, 'totalLevel' => count($info['sizes'])]);
 
-        return implode('', array_reverse($nesting));
+        return implode('', $nesting);
     }
 
     protected function parseStdArray(string $var, Expr\StaticCall $expr): string

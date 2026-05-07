@@ -134,7 +134,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $globalHeaders = [
         'phpx.h',
         'phpx_helper.h',
-        'phpx_std_array.h',
         'phpx_func.h',
         'php_func_decl.h',
         'php_global_var_decl.h',
@@ -1595,7 +1594,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->parseAssignArrayDim($left, $right);
         }
 
-        return $var . ' = ' . $this->convertExprType($this->parseExpr($right), $this->detectTypeOfExpr($left), $this->detectTypeOfExpr($right));
+        $rightExpr = $this->parseExpr($right);
+        return $var . ' = ' . $this->convertExprType($rightExpr, $this->detectTypeOfExpr($left), $this->detectTypeOfExpr($right));
     }
 
     protected function parseEcho(mixed $v): string
@@ -2156,7 +2156,15 @@ class CompilerBase extends \PhpAot\Core\Translator
                 break;
             case 'Expr_ArrayDimFetch':
                 if ($this->isStdArrayExpr($expr)) {
-                    return $this->getStdArrayInfo($expr)['type'];
+                    if (!$expr->hasAttribute('stdArrayDimFetch')) {
+                        $this->parseStdArrayDimFetch($expr);
+                    }
+                    $attr = $expr->getAttribute('stdArrayDimFetch');
+                    if ($attr['accessLevel'] === $attr['totalLevel']) {
+                        return $this->context->stdArrays[$attr['var']]['type'];
+                    } else {
+                        return self::TYPE_ARRAY;
+                    }
                 }
                 break;
             case 'Expr_New':
@@ -3459,7 +3467,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseArg(Node\Arg $arg): string
     {
         if ($this->isArrayDimFetch($arg->value) and $this->isStdArrayExpr($arg->value)) {
-            return $this->convertArrayExpr($this->parseStdArrayDimFetch($arg->value, true));
+            $valueExpr = $this->parseStdArrayDimFetch($arg->value);
+            $attr = $arg->value->getAttribute('stdArrayDimFetch');
+            if ($attr['accessLevel'] === $attr['totalLevel']) {
+                return $this->convertExprFromType($this->context->stdArrays[$attr['var']]['type'], $valueExpr);
+            } else {
+                return $this->convertArrayExpr($valueExpr);
+            }
         }
         $expr = $this->parseIdentifier($arg->value);
         if ($this->isVarExpr($arg->value) and $this->isStdArray($arg->value->name)) {
