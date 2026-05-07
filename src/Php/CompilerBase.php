@@ -308,19 +308,15 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         if ($this->isWindows) {
             // Windows 下检测使用哪个编译器
-            // 优先级：环境变量 PHPX_CC > clang > cl (MSVC)
+            // 优先级：环境变量 PHPX_CC > cl (MSVC, 默认) > clang
             $compilerEnv = getenv('PHPX_CC');
 
             if ($compilerEnv) {
                 // 用户通过环境变量指定编译器
                 $this->cppCompiler = $compilerEnv;
                 $this->climate->info("Using compiler from PHPX_CC: {$this->cppCompiler}");
-            } elseif ($this->isClangAvailable()) {
-                // 优先使用 Clang（如果可用）
-                $this->cppCompiler = 'clang++';
-                $this->climate->info('Using Clang compiler (clang++)');
             } else {
-                // 默认使用 MSVC
+                // 默认使用 MSVC（更稳定，与链接器兼容）
                 $this->cppCompiler = 'cl';
                 $this->climate->info('Using MSVC compiler (cl)');
             }
