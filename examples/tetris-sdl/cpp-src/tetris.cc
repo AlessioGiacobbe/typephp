@@ -146,23 +146,33 @@ public:
     int board[BOARD_HEIGHT][BOARD_WIDTH];
     int score;
     bool gameOver;
+    bool sdlInitialized;
     SDL_Window* window;
     SDL_Renderer* renderer;
     
-    TetrisBox() : score(0), gameOver(false), window(nullptr), renderer(nullptr) {
+    TetrisBox() : score(0), gameOver(false), sdlInitialized(false), window(nullptr), renderer(nullptr) {
         memset(board, 0, sizeof(board));
         printf("[C++] TetrisBox constructor called\n");
     }
     
-    ~TetrisBox() {
+    ~TetrisBox() override {
         printf("[C++] TetrisBox destructor called\n");
+        cleanup();
+    }
+
+    void cleanup() {
         if (renderer) {
             SDL_DestroyRenderer(renderer);
+            renderer = nullptr;
         }
         if (window) {
             SDL_DestroyWindow(window);
+            window = nullptr;
         }
-        SDL_Quit();
+        if (sdlInitialized) {
+            SDL_QuitSubSystem(SDL_INIT_VIDEO);
+            sdlInitialized = false;
+        }
     }
 };
 
@@ -175,6 +185,7 @@ var php_tetris_new() {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("[C++] SDL Init Error: %s\n", SDL_GetError());
     } else {
+        box->sdlInitialized = true;
         box->window = SDL_CreateWindow(
             "俄罗斯方块 - PHP版",
             SDL_WINDOWPOS_UNDEFINED,
@@ -333,7 +344,10 @@ void php_tetris_handle_key(var box, Int keyCode) {
 
 // Post quit message
 void php_tetris_post_quit(Int exitCode) {
-    SDL_Quit();
+    SDL_Event event;
+    memset(&event, 0, sizeof(event));
+    event.type = SDL_QUIT;
+    SDL_PushEvent(&event);
 }
 
 // Show message box with UTF-8 support
