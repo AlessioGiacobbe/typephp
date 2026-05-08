@@ -2,7 +2,11 @@
 
 require __DIR__ . '/vendor/autoload.php';
 
-$compiler = new PhpAot\Php\CompilerBase();
+use PhpAot\Php\CompilerBase;
+use League\CLImate\CLImate;
+
+$climate = new CLImate();
+$compiler = new CompilerBase($climate);
 $ref = new ReflectionMethod($compiler, 'getPhpxDir');
 $ref->setAccessible(true);
 
