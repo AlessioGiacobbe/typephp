@@ -156,16 +156,16 @@ class Linux extends PlatformBase
      */
     private function findPhpConfig(string $phpDir): ?string
     {
-        $candidates = [
-            $phpDir . '/bin/php-config',
-            '/usr/bin/php-config',
-            '/usr/local/bin/php-config',
-        ];
+        // 优先使用 PHP_DIR 指定的路径
+        $candidate = $phpDir . '/bin/php-config';
+        if (is_executable($candidate)) {
+            return $candidate;
+        }
         
-        foreach ($candidates as $path) {
-            if (is_executable($path)) {
-                return $path;
-            }
+        // 回退到 PATH 中查找（通过 which 命令）
+        $whichResult = trim(shell_exec('which php-config 2>/dev/null'));
+        if ($whichResult && is_executable($whichResult)) {
+            return $whichResult;
         }
         
         return null;

@@ -369,6 +369,79 @@ EXAMPLES:
 
 ---
 
+## 🔧 编译器选择
+
+### 默认编译器
+
+编译器会根据操作系统自动选择合适的 C++ 编译器：
+
+| 平台 | 默认编译器 | 说明 |
+|------|----------|------|
+| **macOS** | `clang++` | 系统自带，性能优秀 |
+| **Linux** | `g++` | GNU 编译器集合 |
+| **Windows** | `cl` (MSVC) | Microsoft Visual C++ |
+
+### 通过环境变量切换编译器
+
+你可以通过设置环境变量来覆盖默认的编译器选择。
+
+#### 方法一：PHPX_CC（推荐）
+
+```bash
+# macOS 使用 GCC（如果已安装）
+export PHPX_CC=g++
+php bin/compiler.php examples/hello.php
+
+# Linux 使用 Clang
+export PHPX_CC=clang++
+php bin/compiler.php examples/hello.php
+
+# Windows 使用 Clang
+set PHPX_CC=clang++
+php bin\compiler.php examples\hello.php
+```
+
+#### 方法二：CXX（标准环境变量）
+
+```bash
+# 使用标准的 CXX 环境变量
+export CXX=clang++
+php bin/compiler.php examples/hello.php
+```
+
+**优先级**：`PHPX_CC` > `CXX` > 平台默认
+
+### 通过配置文件指定编译器
+
+在项目 YAML 配置文件中，可以使用 `cpp-compiler` 选项指定编译器：
+
+```yaml
+name: myapp
+type: bin
+cpp-compiler: clang++  # 或 g++, cl
+sources:
+  - src/*.php
+```
+
+支持的编译器名称：
+- `clang++` / `clang` - LLVM Clang 编译器
+- `g++` / `gcc` - GNU GCC 编译器
+- `cl` / `msvc` - Microsoft Visual C++（仅 Windows）
+
+### 检查当前使用的编译器
+
+编译时会显示使用的编译器信息：
+
+```bash
+$ php bin/compiler.php examples/hello.php
+Initialized new architecture: macOS + Clang
+prepare: examples/hello.php
+prepare completed: 1 source files in total
+...
+```
+
+---
+
 ## 📁 支持的输入类型
 
 ### 1. 单个 PHP 文件

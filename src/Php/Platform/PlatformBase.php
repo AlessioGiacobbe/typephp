@@ -68,4 +68,17 @@ abstract class PlatformBase
     {
         return implode($this->getPathSeparator(), $parts);
     }
+
+    /**
+     * 获取默认的 RPATH 路径列表（仅 macOS 需要）
+     * 
+     * @param string|null $phpxDir phpx 目录路径
+     * @param string|null $phpDir PHP 目录路径
+     * @return array RPATH 路径数组
+     */
+    public function getDefaultRpaths(?string $phpxDir = null, ?string $phpDir = null): array
+    {
+        // 默认返回空数组，由子类重写
+        return [];
+    }
 }

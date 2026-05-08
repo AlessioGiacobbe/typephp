@@ -1301,7 +1301,16 @@ CODE;
         // 读取 type/build-mode（支持中横线和下划线）
         $buildMode = $cfg['build-mode'] ?? $cfg['type'] ?? null;
         if (!empty($buildMode)) {
-            $this->setBuildMode($buildMode);
+            // 映射常见的类型名称到内部 buildMode
+            $modeMap = [
+                'extension' => 'ext',
+                'ext' => 'ext',
+                'binary' => 'bin',
+                'bin' => 'bin',
+                'cli' => 'bin',
+            ];
+            $mappedMode = $modeMap[strtolower($buildMode)] ?? $buildMode;
+            $this->setBuildMode($mappedMode);
         }
 
         // 读取 ignore（支持中横线和下划线）

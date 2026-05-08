@@ -335,8 +335,26 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 初始化新的 Platform 和 Backend 抽象层
             $this->initializeNewArchitecture();
         } else {
-            // Unix/Linux/macOS 默认使用 g++
-            $this->cppCompiler = 'g++';
+            // Unix/Linux/macOS 下检测编译器
+            // 优先级：环境变量 PHPX_CC > CXX > 平台默认
+            $compilerEnv = getenv('PHPX_CC') ?: getenv('CXX');
+            
+            if ($compilerEnv) {
+                // 用户通过环境变量指定编译器
+                $this->cppCompiler = $compilerEnv;
+                $this->climate->info("Using compiler from environment: {$this->cppCompiler}");
+            } else {
+                // 根据平台选择默认编译器
+                if ($this->isMacos()) {
+                    // macOS 默认使用 Clang（系统自带）
+                    $this->cppCompiler = 'clang++';
+                    $this->climate->info('Using Clang compiler (clang++)');
+                } else {
+                    // Linux 默认使用 GCC
+                    $this->cppCompiler = 'g++';
+                    $this->climate->info('Using GCC compiler (g++)');
+                }
+            }
             
             // 初始化新的 Platform 和 Backend 抽象层
             $this->initializeNewArchitecture();
@@ -582,7 +600,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return 'C:\php';
         } else {
             // Unix/Linux/macOS 下获取 PHP 路径
-            // 优先级：环境变量 PHP_HOME > /opt/php-8.4 > php-config > which php
+            // 优先级：环境变量 PHP_HOME > php-config > which php
             
             // 1. 尝试环境变量 PHP_HOME
             $phpDir = getenv('PHP_HOME');
@@ -590,25 +608,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return rtrim($phpDir, '\/');
             }
             
-            // 2. 尝试常见的 PHP 8.4 安装路径
-            $commonPaths = [
-                '/opt/php-8.4',
-                '/usr/local/php-8.4',
-                '/usr/local/php84',
-            ];
-            foreach ($commonPaths as $path) {
-                if (is_dir($path) && is_executable($path . '/bin/php')) {
-                    return $path;
-                }
-            }
-            
-            // 3. 使用 php-config 获取 PHP 路径
+            // 2. 使用 php-config 获取 PHP 路径（优先从 PATH 中查找）
             $phpDir = shell_exec('php-config --prefix 2>/dev/null');
             if (!empty($phpDir)) {
                 return trim($phpDir);
             }
             
-            // 4. 如果 php-config 不可用，尝试从 which php 推断
+            // 3. 如果 php-config 不可用，尝试从 which php 推断
             $phpExe = trim(shell_exec('which php 2>/dev/null'));
             if ($phpExe && file_exists($phpExe)) {
                 $phpDir = dirname(dirname($phpExe));
@@ -2674,20 +2680,20 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
-        // bin 模式需要链接 PHP 库
-        if ($this->buildMode === 'bin') {
-            if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
-                // Windows 使用已检测的库文件
+        // extension 和 bin 模式都需要链接 PHP 库
+        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+            // Windows bin 模式使用已检测的库文件
+            if ($this->buildMode === 'bin') {
                 if (!empty($this->windowsPhpEmbedLib)) {
                     $libraries[] = '"' . $this->windowsPhpEmbedLib . '"';
                 }
                 if (!empty($this->windowsPhpCoreLib)) {
                     $libraries[] = '"' . $this->windowsPhpCoreLib . '"';
                 }
-            } else {
-                // Linux/macOS: 添加 php 库
-                $libraries[] = 'php';
             }
+        } else {
+            // Linux/macOS: extension 和 bin 模式都需要添加 php 库
+            $libraries[] = 'php';
         }
 
         return $this->platform->getLibraryFlags($libraries);
@@ -2819,6 +2825,17 @@ class CompilerBase extends \PhpAot\Core\Translator
                 'build_mode' => $this->buildMode,
                 'sanitize' => $this->sanitize,
             ];
+            
+            // 添加 RPATH（通过 Platform 层获取，仅 macOS 需要）
+            if ($this->platform !== null) {
+                $rpaths = $this->platform->getDefaultRpaths(
+                    $this->getPhpxDir(),
+                    $this->getPhpDir()
+                );
+                if (!empty($rpaths)) {
+                    $config['rpath'] = $rpaths;
+                }
+            }
             
             $cmd .= $this->compilerBackend->buildLinkOptions($config);
             
