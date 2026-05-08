@@ -98,7 +98,7 @@ class Gcc extends CompilerBackend
         $cmd .= ' -O' . $optimizeLevel;
         
         // 调试信息
-        if (!empty($options['debug'])) {
+        if (!empty($options['debug_info'])) {
             $cmd .= ' -g';
         }
         
@@ -132,7 +132,7 @@ class Gcc extends CompilerBackend
         $cmd .= ' -O' . $optimizeLevel;
         
         // 调试信息
-        if (!empty($options['debug'])) {
+        if (!empty($options['debug_info'])) {
             $cmd .= ' -g';
         }
         
@@ -285,11 +285,6 @@ class Gcc extends CompilerBackend
     public function buildLinkOptions(array $config = []): string
     {
         $cmd = '';
-        
-        // 调试
-        if (!empty($config['debug_info'])) {
-            $cmd .= ' -g';
-        }
         
         // 扩展模块选项
         if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {

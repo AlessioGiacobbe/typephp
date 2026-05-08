@@ -2470,7 +2470,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             $libraryPaths = array_merge($libraryPaths, $phpLibPaths);
         }
 
-        return $this->platform->getLibraryPathFlags($libraryPaths);
+        $flags = $this->platform->getLibraryPathFlags($libraryPaths);
+        
+        // 添加用户自定义的 ldflags
+        if (!empty($this->ldflags)) {
+            $flags .= ' ' . $this->ldflags;
+        }
+        
+        return $flags;
     }
 
     /**

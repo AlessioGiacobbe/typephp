@@ -123,7 +123,7 @@ class Clang extends CompilerBackend
         $optimizeLevel = $options['optimize'] ?? 2;
         
         // 调试模式
-        if (!empty($options['debug'])) {
+        if (!empty($options['debug_info'])) {
             $cmd .= ' -O0 -g';
         } else {
             $cmd .= ' -O' . $optimizeLevel;
@@ -172,7 +172,7 @@ class Clang extends CompilerBackend
         $optimizeLevel = $options['optimize'] ?? 0;
         
         // 调试模式
-        if (!empty($options['debug'])) {
+        if (!empty($options['debug_info'])) {
             $cmd .= ' -O0 -g';
         } else {
             $cmd .= ' -O' . $optimizeLevel;
@@ -407,11 +407,6 @@ class Clang extends CompilerBackend
             }
         } else {
             // Unix/Linux/macOS
-            // 调试
-            if (!empty($config['debug_info'])) {
-                $cmd .= ' -g';
-            }
-            
             // 扩展模块选项
             if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
                 $cmd .= ' -shared';

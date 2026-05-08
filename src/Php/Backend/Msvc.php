@@ -182,7 +182,7 @@ class Msvc extends CompilerBackend
         $cmd .= ' /OUT:' . escapeshellarg($outputFile);
         
         // 调试信息
-        if (!empty($options['debug'])) {
+        if (!empty($options['debug_info'])) {
             $cmd .= ' /DEBUG';
         }
         
