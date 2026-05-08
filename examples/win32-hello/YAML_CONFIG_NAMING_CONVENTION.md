@@ -19,7 +19,7 @@ cxx-flags:
   - -Wall
 ld-flags:
   - -lm
-debug-info: true
+debug: true
 no-console: true
 ```
 
@@ -59,7 +59,7 @@ cxxflags:          # 等同于 cxx-flags
 | `ld-flags` | `ldflags` | 链接器选项 | array/string |
 | `sources` | - | 源文件列表 | array |
 | `ignore` | - | 忽略的文件/目录 | array |
-| `debug-info` | - | 启用调试信息 | boolean |
+| `debug` | - | 启用调试模式 | boolean |
 | `no-console` | - | 隐藏控制台窗口 | boolean |
 
 **注意：**
@@ -318,7 +318,7 @@ ld-flags:
 # ✅ 好
 cxx-std: c++17
 build-mode: bin
-debug-info: true
+debug: true
 
 # ❌ 避免
 cxx_std: c++17
@@ -447,7 +447,7 @@ php bin/compiler.php project.yml --cxx-std=c++20
 php bin/compiler.php project.yml --mode=ext
 
 # 启用调试信息
-php bin/compiler.php project.yml --debug-info
+php bin/compiler.php project.yml --debug
 ```
 
 ---

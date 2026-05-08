@@ -21,6 +21,7 @@ function tetris_hard_drop(mixed $game): void {}
 // SDL 窗口和渲染函数
 function tetris_poll_event(mixed $game): array {}
 function tetris_set_board(mixed $game, array $board): void {}
+function tetris_set_score(mixed $game, int $score): void {}
 function tetris_render(mixed $game, int $hWnd): void {}
 
 // SDL 工具函数

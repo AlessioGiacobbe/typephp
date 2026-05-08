@@ -135,7 +135,7 @@ class BackendTest extends TestCase
         
         $options = $compiler->buildFullCompileOptions([
             'optimize' => 2,
-            'debug_info' => false,
+            'debug' => false,
             'sanitize' => null,
             'cpp_std' => 'c++17',
             'suppressed_warnings' => [
@@ -165,7 +165,7 @@ class BackendTest extends TestCase
         $compiler = new Msvc($platform);
         
         $options = $compiler->buildFullCompileOptions([
-            'debug_info' => true,
+            'debug' => true,
         ]);
         
         $this->assertStringContainsString('/Od', $options); // 禁用优化
@@ -181,7 +181,7 @@ class BackendTest extends TestCase
         $compiler = new Msvc($platform);
         
         $options = $compiler->buildFullLinkOptions([
-            'debug_info' => true,
+            'debug' => true,
             'no_console' => true,
             'shared' => true,
         ]);
@@ -241,7 +241,7 @@ class BackendTest extends TestCase
         
         $options = $compiler->buildFullCompileOptions([
             'optimize' => 2,
-            'debug_info' => false,
+            'debug' => false,
             'cpp_std' => 'c++17',
             'sanitize' => 'address',
             'pic' => true,
@@ -263,7 +263,7 @@ class BackendTest extends TestCase
         $compiler = new Gcc($platform);
         
         $options = $compiler->buildFullCompileOptions([
-            'debug_info' => true,
+            'debug' => true,
         ]);
         
         $this->assertStringContainsString('-O0', $options);
@@ -361,7 +361,7 @@ class BackendTest extends TestCase
         $compiler = new Clang($platform);
         
         $options = $compiler->buildFullLinkOptions([
-            'debug_info' => true,
+            'debug' => true,
             'no_console' => true,
         ]);
         

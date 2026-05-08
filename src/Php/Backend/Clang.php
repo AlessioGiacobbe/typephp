@@ -123,7 +123,7 @@ class Clang extends CompilerBackend
         $optimizeLevel = $options['optimize'] ?? 2;
         
         // 调试模式
-        if (!empty($options['debug_info'])) {
+        if (!empty($options['debug'])) {
             $cmd .= ' -O0 -g';
         } else {
             $cmd .= ' -O' . $optimizeLevel;
@@ -172,7 +172,7 @@ class Clang extends CompilerBackend
         $optimizeLevel = $options['optimize'] ?? 0;
         
         // 调试模式
-        if (!empty($options['debug_info'])) {
+        if (!empty($options['debug'])) {
             $cmd .= ' -O0 -g';
         } else {
             $cmd .= ' -O' . $optimizeLevel;
@@ -251,7 +251,7 @@ class Clang extends CompilerBackend
         }
         
         // 优化级别
-        if (!empty($options['debug_info'])) {
+        if (!empty($options['debug'])) {
             $cmd .= ' -O0 -g';
         } else {
             $optimizeLevel = $options['optimize'] ?? 2;
@@ -289,7 +289,7 @@ class Clang extends CompilerBackend
         // Windows 特定选项
         if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
             // 调试
-            if (!empty($options['debug_info'])) {
+            if (!empty($options['debug'])) {
                 $cmd .= ' /DEBUG';
             }
             
@@ -342,7 +342,7 @@ class Clang extends CompilerBackend
         }
         
         // 优化和调试
-        if (!empty($config['debug_info'])) {
+        if (!empty($config['debug'])) {
             $cmd .= ' -O0 -g';
         } else {
             $optimizeLevel = $config['optimize'] ?? 2;
@@ -389,7 +389,7 @@ class Clang extends CompilerBackend
         // Windows 特定选项
         if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
             // 调试
-            if (!empty($config['debug_info'])) {
+            if (!empty($config['debug'])) {
                 $cmd .= ' /DEBUG';
             }
             

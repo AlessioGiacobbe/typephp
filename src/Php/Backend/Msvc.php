@@ -182,7 +182,7 @@ class Msvc extends CompilerBackend
         $cmd .= ' /OUT:' . escapeshellarg($outputFile);
         
         // 调试信息
-        if (!empty($options['debug_info'])) {
+        if (!empty($options['debug'])) {
             $cmd .= ' /DEBUG';
         }
         
@@ -253,7 +253,7 @@ class Msvc extends CompilerBackend
         }
         
         // 优化和调试
-        if (!empty($options['debug_info'])) {
+        if (!empty($options['debug'])) {
             $cmd .= ' /Od /Zi';
         } else {
             $optimizeLevel = $options['optimize'] ?? 2;
@@ -294,7 +294,7 @@ class Msvc extends CompilerBackend
         $cmd = '';
         
         // 调试
-        if (!empty($options['debug_info'])) {
+        if (!empty($options['debug'])) {
             $cmd .= ' /DEBUG';
         }
         
@@ -340,7 +340,7 @@ class Msvc extends CompilerBackend
         }
         
         // 优化和调试
-        if (!empty($config['debug_info'])) {
+        if (!empty($config['debug'])) {
             $cmd .= ' /Od /Zi';
         } else {
             $optimizeLevel = $config['optimize'] ?? 2;
@@ -396,7 +396,7 @@ class Msvc extends CompilerBackend
         $cmd = '';
         
         // 调试
-        if (!empty($config['debug_info'])) {
+        if (!empty($config['debug'])) {
             $cmd .= ' /DEBUG';
         }
         

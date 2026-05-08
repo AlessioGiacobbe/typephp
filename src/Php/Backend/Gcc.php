@@ -98,7 +98,7 @@ class Gcc extends CompilerBackend
         $cmd .= ' -O' . $optimizeLevel;
         
         // 调试信息
-        if (!empty($options['debug_info'])) {
+        if (!empty($options['debug'])) {
             $cmd .= ' -g';
         }
         
@@ -132,7 +132,7 @@ class Gcc extends CompilerBackend
         $cmd .= ' -O' . $optimizeLevel;
         
         // 调试信息
-        if (!empty($options['debug_info'])) {
+        if (!empty($options['debug'])) {
             $cmd .= ' -g';
         }
         
@@ -176,7 +176,7 @@ class Gcc extends CompilerBackend
         $cmd = '';
         
         // 优化级别
-        if (!empty($options['debug_info'])) {
+        if (!empty($options['debug'])) {
             $cmd .= ' -O0 -g';
         } else {
             $optimizeLevel = $options['optimize'] ?? 2;
@@ -246,7 +246,7 @@ class Gcc extends CompilerBackend
         }
         
         // 优化和调试
-        if (!empty($config['debug_info'])) {
+        if (!empty($config['debug'])) {
             $cmd .= ' -O0 -g';
         } else {
             $optimizeLevel = $config['optimize'] ?? 2;

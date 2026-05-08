@@ -94,7 +94,7 @@ class Translator extends Preprocessor
         $climate->bold('OPTIONS:');
         $climate->tab()->out('-O <level>           Optimization level (0-3, default: 0)');
         $climate->tab()->out('-p, --profile        Enable performance profiling');
-        $climate->tab()->out('-d, --debug-info     Enable debug info (auto-disable optimizations, add -g/-Zi)');
+        $climate->tab()->out('-d, --debug            Enable debug mode (auto-disable optimizations, add debug symbols)');
         $climate->tab()->out('--cxx-std <version>  C++ standard version (c++17, c++20, etc.)');
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
         $climate->tab()->out('-v, --version        Show version');
@@ -145,9 +145,9 @@ class Translator extends Preprocessor
             $this->maxJob = intval($this->climate->arguments->get('job'));
         }
 
-        // 调试信息
-        if ($this->climate->arguments->defined('debug-info')) {
-            $this->debugInfo = true;
+        // 调试模式
+        if ($this->climate->arguments->defined('debug')) {
+            $this->debug = true;
         }
 
         // 禁用字面量字符串优化
@@ -748,7 +748,7 @@ CODE;
                 $objectFile,
                 [
                     'optimize' => $this->optimizeLevel,
-                    'debug_info' => $this->debugInfo,
+                    'debug' => $this->debug,
                     'sanitize' => $this->sanitize,
                     'cpp_std' => $this->cxxStd,
                     'is_zts' => $this->isPhpZts,

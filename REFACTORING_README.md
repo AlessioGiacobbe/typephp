@@ -180,7 +180,7 @@ $linkCmd = $compiler->buildLinkCommand(
     ['hello.obj', 'main.obj'],
     'hello.exe',
     [
-        'debug_info' => false,
+        'debug' => false,
         'no_console' => false,
     ]
 );

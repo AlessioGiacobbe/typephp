@@ -22,7 +22,7 @@ class BackendOptionsTest extends TestCase
         
         $options = $compiler->buildCompileOptions([
             'optimize' => 2,
-            'debug_info' => false,
+            'debug' => false,
             'cpp_std' => 'c++17',
             'is_zts' => false,
         ]);
@@ -61,7 +61,7 @@ class BackendOptionsTest extends TestCase
         $compiler = new Msvc($platform);
         
         $options = $compiler->buildCompileOptions([
-            'debug_info' => true,
+            'debug' => true,
         ]);
         
         $this->assertStringContainsString('/Od', $options); // 禁用优化
@@ -159,7 +159,7 @@ class BackendOptionsTest extends TestCase
         $compiler = new Msvc($platform);
         
         $options = $compiler->buildLinkOptions([
-            'debug_info' => true,
+            'debug' => true,
         ]);
         
         $this->assertStringContainsString('/DEBUG', $options);
@@ -206,7 +206,7 @@ class BackendOptionsTest extends TestCase
         
         $options = $compiler->buildCompileOptions([
             'optimize' => 2,
-            'debug_info' => false,
+            'debug' => false,
             'cpp_std' => 'c++17',
         ]);
         
@@ -224,7 +224,7 @@ class BackendOptionsTest extends TestCase
         $compiler = new Gcc($platform);
         
         $options = $compiler->buildCompileOptions([
-            'debug_info' => true,
+            'debug' => true,
         ]);
         
         $this->assertStringContainsString('-O0', $options);
@@ -290,7 +290,7 @@ class BackendOptionsTest extends TestCase
     }
 
     /**
-     * 测试 GCC 链接选项 - 调试
+     * 测试 GCC 链接选项 - 调试模式（链接时不需要 -g）
      */
     public function testGccLinkOptionsDebug(): void
     {
@@ -298,10 +298,11 @@ class BackendOptionsTest extends TestCase
         $compiler = new Gcc($platform);
         
         $options = $compiler->buildLinkOptions([
-            'debug_info' => true,
+            'debug' => true,
         ]);
         
-        $this->assertStringContainsString('-g', $options);
+        // 链接时不应该包含 -g，调试信息在编译阶段已经生成
+        $this->assertStringNotContainsString('-g', $options);
     }
 
     /**
@@ -395,7 +396,7 @@ class BackendOptionsTest extends TestCase
         $compiler = new Clang($platform);
         
         $options = $compiler->buildLinkOptions([
-            'debug_info' => true,
+            'debug' => true,
             'no_console' => true,
             'build_mode' => 'ext',
         ]);
@@ -407,7 +408,7 @@ class BackendOptionsTest extends TestCase
     }
 
     /**
-     * 测试 Clang 链接选项 - Unix
+     * 测试 Clang 链接选项 - Unix（链接时不需要 -g）
      */
     public function testClangLinkOptionsUnix(): void
     {
@@ -415,12 +416,13 @@ class BackendOptionsTest extends TestCase
         $compiler = new Clang($platform);
         
         $options = $compiler->buildLinkOptions([
-            'debug_info' => true,
+            'debug' => true,
             'build_mode' => 'ext',
             'rpath' => ['/usr/lib'],
         ]);
         
-        $this->assertStringContainsString('-g', $options);
+        // 链接时不应该包含 -g，调试信息在编译阶段已经生成
+        $this->assertStringNotContainsString('-g', $options);
         $this->assertStringContainsString('-shared', $options);
         $this->assertStringContainsString('-Wl,-rpath', $options);
     }

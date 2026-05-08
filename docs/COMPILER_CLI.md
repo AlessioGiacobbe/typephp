@@ -274,7 +274,7 @@ cat benchmark.prof
 
 ---
 
-### 10. `--debug-info` - 启用调试信息
+### 10. `--debug` - 启用调试模式
 
 **类型**: 开关
 
@@ -283,7 +283,7 @@ cat benchmark.prof
 **示例**:
 ```bash
 # 启用调试信息
-./bin/compiler.php app.php --debug-info
+./bin/compiler.php app.php --debug
 ```
 
 ---
@@ -651,7 +651,7 @@ skip: /path/to/file.php
 ./bin/compiler.php app.php -O3 -j 16 -p
 
 # 调试构建
-./bin/compiler.php app.php -O0 -v --debug-info
+./bin/compiler.php app.php -O0 -v --debug
 
 # 扩展构建
 ./bin/compiler.php ext/ -m ext -o myext -O2 -v

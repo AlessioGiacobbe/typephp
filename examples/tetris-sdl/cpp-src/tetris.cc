@@ -1,7 +1,10 @@
 #include <phpx.h>
 #include <SDL2/SDL.h>
 #include <map>
+#include <algorithm>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 using namespace php;
 
@@ -73,6 +76,69 @@ static const SDL_Color COLORS[7] = {
     {0, 0, 255, 255},     // J - Blue
     {255, 165, 0, 255}    // L - Orange
 };
+
+static void draw_filled_rect(SDL_Renderer* renderer, int x, int y, int w, int h) {
+    SDL_Rect rect;
+    rect.x = x;
+    rect.y = y;
+    rect.w = w;
+    rect.h = h;
+    SDL_RenderFillRect(renderer, &rect);
+}
+
+static void draw_seven_segment_digit(SDL_Renderer* renderer, int x, int y, int digit, int scale) {
+    static const bool SEGMENTS[10][7] = {
+        {true,  true,  true,  true,  true,  true,  false}, // 0
+        {false, true,  true,  false, false, false, false}, // 1
+        {true,  true,  false, true,  true,  false, true }, // 2
+        {true,  true,  true,  true,  false, false, true }, // 3
+        {false, true,  true,  false, false, true,  true }, // 4
+        {true,  false, true,  true,  false, true,  true }, // 5
+        {true,  false, true,  true,  true,  true,  true }, // 6
+        {true,  true,  true,  false, false, false, false}, // 7
+        {true,  true,  true,  true,  true,  true,  true }, // 8
+        {true,  true,  true,  true,  false, true,  true }  // 9
+    };
+
+    if (digit < 0 || digit > 9) {
+        return;
+    }
+
+    const int width = 10 * scale;
+    const int height = 18 * scale;
+    const int thickness = 2 * scale;
+    const int midY = y + height / 2 - thickness / 2;
+
+    if (SEGMENTS[digit][0]) draw_filled_rect(renderer, x + thickness, y, width - 2 * thickness, thickness);
+    if (SEGMENTS[digit][1]) draw_filled_rect(renderer, x + width - thickness, y + thickness, thickness, height / 2 - thickness);
+    if (SEGMENTS[digit][2]) draw_filled_rect(renderer, x + width - thickness, y + height / 2, thickness, height / 2 - thickness);
+    if (SEGMENTS[digit][3]) draw_filled_rect(renderer, x + thickness, y + height - thickness, width - 2 * thickness, thickness);
+    if (SEGMENTS[digit][4]) draw_filled_rect(renderer, x, y + height / 2, thickness, height / 2 - thickness);
+    if (SEGMENTS[digit][5]) draw_filled_rect(renderer, x, y + thickness, thickness, height / 2 - thickness);
+    if (SEGMENTS[digit][6]) draw_filled_rect(renderer, x + thickness, midY, width - 2 * thickness, thickness);
+}
+
+static void draw_score_number(SDL_Renderer* renderer, int x, int y, int score) {
+    char scoreStr[16];
+    snprintf(scoreStr, sizeof(scoreStr), "%d", std::max(0, score));
+
+    int length = 0;
+    while (scoreStr[length] != '\0') {
+        length++;
+    }
+
+    const int scale = length > 6 ? 1 : 2;
+    const int digitWidth = 10 * scale;
+    const int spacing = 4 * scale;
+    const int maxDigits = scale == 1 ? 12 : 6;
+
+    int start = std::max(0, length - maxDigits);
+    for (int i = start; i < length; i++) {
+        int digit = scoreStr[i] - '0';
+        int offset = i - start;
+        draw_seven_segment_digit(renderer, x + offset * (digitWidth + spacing), y, digit, scale);
+    }
+}
 
 // Simple game state - stores board data from PHP
 class TetrisBox : public Box {
@@ -187,6 +253,12 @@ void php_tetris_set_board(var box, Array board) {
     }
 }
 
+// Set score calculated by PHP game logic
+void php_tetris_set_score(var box, Int score) {
+    auto tetris = box.toBox<TetrisBox>();
+    tetris->score = (int)score;
+}
+
 // Render game - Draw board from PHP
 void php_tetris_render(var box, Int hWnd) {
     auto tetris = box.toBox<TetrisBox>();
@@ -244,26 +316,9 @@ void php_tetris_render(var box, Int hWnd) {
         SDL_RenderFillRect(renderer, &bar);
     }
     
-    // Display score value as simple horizontal bars
+    // Display score value as seven-segment digits
     SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-    int score = tetris->score;
-    
-    // Draw score digits as bars
-    char scoreStr[16];
-    snprintf(scoreStr, sizeof(scoreStr), "%d", score);
-    
-    int yPos = panelY + 40;
-    for (int i = 0; scoreStr[i] != '\0' && i < 6; i++) {
-        int digit = scoreStr[i] - '0';
-        // Each digit represented by vertical bar height
-        int barHeight = digit * 15 + 5;
-        SDL_Rect digitBar;
-        digitBar.x = panelX + 20 + i * 25;
-        digitBar.y = yPos + (150 - barHeight);
-        digitBar.w = 15;
-        digitBar.h = barHeight;
-        SDL_RenderFillRect(renderer, &digitBar);
-    }
+    draw_score_number(renderer, panelX + 20, panelY + 55, tetris->score);
     
     // Update the screen
     SDL_RenderPresent(renderer);

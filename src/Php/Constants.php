@@ -124,11 +124,11 @@ class Constants
             'required' => false,
             'defaultValue' => 0,
         ],
-        'debug-info' => [
-            'longPrefix' => 'debug-info',
-            'description' => 'Enable debug info',
+        'debug' => [
+            'longPrefix' => 'debug',
+            'description' => 'Enable debug mode (auto-disable optimizations, add debug symbols)',
             'required' => false,
-            'defaultValue' => 0,
+            'noValue' => true,
         ],
         'job' => [
             'prefix' => 'j',

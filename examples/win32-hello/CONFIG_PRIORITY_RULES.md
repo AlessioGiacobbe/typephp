@@ -267,7 +267,7 @@ php bin/compiler.php test.php --cxx-std=c++17 -O2
 | 配置项 | 命令行参数 | 说明 |
 |--------|-----------|------|
 | 优化级别 | `-O <level>` | 0-3 |
-| 调试信息 | `--debug-info` | 启用调试 |
+| 调试信息 | `--debug` | 启用调试 |
 | 性能分析 | `--profile` | 启用 profiling |
 | Sanitizer | `--sanitize` | 内存检测 |
 | 并行任务 | `-j <num>` | 并行编译数 |
@@ -296,7 +296,7 @@ cxx-flags:
 
 ```bash
 # 开发时使用调试模式
-php bin/compiler.php project.yml --debug-info
+php bin/compiler.php project.yml --debug
 
 # 发布时使用优化
 php bin/compiler.php project.yml -O3

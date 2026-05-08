@@ -246,6 +246,7 @@ class TetrisGame
         
         // Sync to C++
         tetris_set_board($this->game, $renderBoard);
+        tetris_set_score($this->game, $this->score);
     }
     
     private function handleKeyPress(int $keyCode): void

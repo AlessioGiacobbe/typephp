@@ -166,7 +166,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $ldflags = '';
     protected string $linker = 'link';  // Windows linker: link.exe or lld-link
     protected int $floatPrecision = 17;
-    protected bool $debugInfo = false;
+    protected bool $debug = false;
     protected bool $formatCode = false;
     protected bool $printBacktraceOnError = false;
     protected bool $noLiteralStrings = false;
@@ -2563,7 +2563,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 再添加编译选项（编译器相关）
             $config = [
                 'optimize' => $this->optimizeLevel,
-                'debug_info' => $this->debugInfo,
+                'debug' => $this->debug,
                 'sanitize' => $this->sanitize,
                 'cpp_std' => $this->cxxStd,
                 'is_zts' => $this->isPhpZts,
@@ -2582,7 +2582,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             
             // 再添加链接选项（编译器相关）
             $config = [
-                'debug_info' => $this->debugInfo,
+                'debug' => $this->debug,
                 'no_console' => $this->noConsole,
                 'build_mode' => $this->buildMode,
                 'sanitize' => $this->sanitize,
@@ -5421,7 +5421,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function genDebugInfo(?NodeAbstract $stmt = null): string
     {
         $code = '';
-        if ($this->debugInfo) {
+        if ($this->debug) {
             if ($stmt) {
                 $code .= 'php::traceDebugInfo("' . $this->escapeString($this->file) . '", ' . $stmt->getLine() . ');' . PHP_EOL;
             } else {
