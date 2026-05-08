@@ -3106,8 +3106,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $array .= $tmpVar . '.set(' . $this->getLiteralString($k) . ', ' . $v . ');' . PHP_EOL;
         }
         $this->context->beforeStmtLines[] = $array;
+        $this->context->afterStmtLines[] = $tmpVar . '.unset();';
 
-        return '{' . implode(', ', $listArgs) . '}, ' . $tmpVar . '.array()';
+        return Symbol::argList() . '{' . implode(', ', $listArgs) . '}, ' . $tmpVar . '.array()';
     }
 
     protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
