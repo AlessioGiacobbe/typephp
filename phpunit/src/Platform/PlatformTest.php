@@ -87,6 +87,29 @@ class PlatformTest extends TestCase
         $this->assertEquals('src\Php\Backend', $path);
     }
 
+    public function testTargetExtensions(): void
+    {
+        $windows = new Windows();
+        $linux = new Linux();
+        $macos = new Macos();
+
+        $this->assertSame('.exe', $windows->getTargetExtension('bin'));
+        $this->assertSame('.dll', $windows->getTargetExtension('ext'));
+        $this->assertSame('', $linux->getTargetExtension('bin'));
+        $this->assertSame('.so', $linux->getTargetExtension('ext'));
+        $this->assertSame('', $macos->getTargetExtension('bin'));
+        $this->assertSame('.so', $macos->getTargetExtension('ext'));
+    }
+
+    public function testPlatformPathPrefixRemoval(): void
+    {
+        $windows = new Windows();
+        $linux = new Linux();
+
+        $this->assertSame('src\app.php', $windows->removeCommonPrefix('C:\project', 'C:/project/src/app.php'));
+        $this->assertSame('src/app.php', $linux->removeCommonPrefix('/project', '/project/src/app.php'));
+    }
+
     /**
      * 测试 Windows 子系统选项
      */
@@ -155,8 +178,8 @@ class PlatformTest extends TestCase
         $paths = ['/usr/include/php', '/usr/local/include'];
         $flags = $platform->getIncludeFlags($paths);
         
-        $this->assertStringContainsString('-I"/usr/include/php"', $flags);
-        $this->assertStringContainsString('-I"/usr/local/include"', $flags);
+        $this->assertStringContainsString('-I' . escapeshellarg('/usr/include/php'), $flags);
+        $this->assertStringContainsString('-I' . escapeshellarg('/usr/local/include'), $flags);
     }
 
     /**
@@ -169,8 +192,8 @@ class PlatformTest extends TestCase
         $paths = ['/usr/lib', '/usr/local/lib'];
         $flags = $platform->getLibraryPathFlags($paths);
         
-        $this->assertStringContainsString('-L"/usr/lib"', $flags);
-        $this->assertStringContainsString('-L"/usr/local/lib"', $flags);
+        $this->assertStringContainsString('-L' . escapeshellarg('/usr/lib'), $flags);
+        $this->assertStringContainsString('-L' . escapeshellarg('/usr/local/lib'), $flags);
     }
 
     /**
@@ -197,8 +220,8 @@ class PlatformTest extends TestCase
         $paths = ['/usr/lib', '/usr/local/lib'];
         $options = $platform->getRpathOptions($paths);
         
-        $this->assertStringContainsString('-Wl,-rpath,"/usr/lib"', $options);
-        $this->assertStringContainsString('-Wl,-rpath,"/usr/local/lib"', $options);
+        $this->assertStringContainsString('-Wl,-rpath,' . escapeshellarg('/usr/lib'), $options);
+        $this->assertStringContainsString('-Wl,-rpath,' . escapeshellarg('/usr/local/lib'), $options);
     }
 
     /**
@@ -209,6 +232,13 @@ class PlatformTest extends TestCase
         $platform = new Linux();
         
         $this->assertEquals('-fPIC', $platform->getPicFlag());
+    }
+
+    public function testIntegerLiteralSuffixes(): void
+    {
+        $this->assertSame('L', (new Linux())->getIntegerLiteralSuffix());
+        $this->assertSame('LL', (new Macos())->getIntegerLiteralSuffix());
+        $this->assertSame('LL', (new Windows())->getIntegerLiteralSuffix());
     }
 
     /**

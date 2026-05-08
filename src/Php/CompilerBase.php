@@ -9,6 +9,8 @@
 namespace PhpAot\Php;
 
 use League\CLImate\CLImate;
+use PhpAot\Php\Backend\CompilerBackend;
+use PhpAot\Php\Backend\CompilerFactory;
 use PhpAot\Php\Context\FunctionContext;
 use PhpAot\Php\Entity\ClassDef;
 use PhpAot\Php\Entity\ConstantDef;
@@ -26,6 +28,11 @@ use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
 use PhpAot\Php\Generator\Utils;
 use PhpAot\Php\Parser\StdArrayParser;
+use PhpAot\Php\Platform\Linux;
+use PhpAot\Php\Platform\Macos;
+use PhpAot\Php\Platform\PlatformBase;
+use PhpAot\Php\Platform\PlatformFactory;
+use PhpAot\Php\Platform\Windows;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -164,7 +171,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $cxxflags = '';
     protected string $cxxStd = 'c++17';
     protected string $ldflags = '';
-    protected string $linker = 'link';  // Windows linker: link.exe or lld-link
     protected int $floatPrecision = 17;
     protected bool $debug = false;
     protected bool $formatCode = false;
@@ -268,8 +274,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $windowsPhpCoreLib = '';   // php8ts.lib 或 php8.lib 路径
     
     // 新的平台和编译器抽象层（可选使用）
-    protected ?\PhpAot\Php\Platform\PlatformBase $platform = null;
-    protected ?\PhpAot\Php\Backend\CompilerBackend $compilerBackend = null;
+    protected ?PlatformBase $platform = null;
+    protected ?CompilerBackend $compilerBackend = null;
 
     /**
      * 在预处理阶段获取所有类的方法名称，检测子类和父类中存在的同名方法，解决动态绑定方法调用的问题
@@ -307,53 +313,30 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function detectPlatform(): void
     {
-        // 检测是否为 Windows 系统
-        $this->isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+        try {
+            $this->platform = PlatformFactory::create();
+            $this->isWindows = $this->platform instanceof Windows;
+            $this->cppCompiler = CompilerFactory::detectCompilerName($this->platform);
 
-        if ($this->isWindows) {
-            // Windows 下检测使用哪个编译器
-            // 优先级：环境变量 PHPX_CC > cl (MSVC, 默认) > clang
-            $compilerEnv = getenv('PHPX_CC');
+            if ($this->platform instanceof Windows) {
+                $libInfo = $this->platform->detectPhpLibs($this->getPhpDir());
+                $this->windowsPhpEmbedLib = $libInfo['embed'];
+                $this->windowsPhpCoreLib = $libInfo['core'];
+                $this->isPhpZts = $libInfo['is_zts'];
 
-            if ($compilerEnv) {
-                // 用户通过环境变量指定编译器
-                $this->cppCompiler = $compilerEnv;
-                $this->climate->info("Using compiler from PHPX_CC: {$this->cppCompiler}");
-            } else {
-                // 默认使用 MSVC（更稳定，与链接器兼容）
-                $this->cppCompiler = 'cl';
-                $this->climate->info('Using MSVC compiler (cl)');
+                $this->platform = new Windows(
+                    phpLibs: [$this->windowsPhpCoreLib, $this->windowsPhpEmbedLib],
+                    isZts: $this->isPhpZts,
+                    phpSdkPath: $this->getPhpDir() . '\\SDK'
+                );
             }
 
-            // Windows 平台：检测 PHP lib 文件并决定 ZTS/NTS 模式
-            $this->detectWindowsPhpLibs();
-            
-            // 初始化新的 Platform 和 Backend 抽象层
-            $this->initializeNewArchitecture();
-        } else {
-            // Unix/Linux/macOS 下检测编译器
-            // 优先级：环境变量 PHPX_CC > CXX > 平台默认
-            $compilerEnv = getenv('PHPX_CC') ?: getenv('CXX');
-            
-            if ($compilerEnv) {
-                // 用户通过环境变量指定编译器
-                $this->cppCompiler = $compilerEnv;
-                $this->climate->info("Using compiler from environment: {$this->cppCompiler}");
-            } else {
-                // 根据平台选择默认编译器
-                if ($this->isMacos()) {
-                    // macOS 默认使用 Clang（系统自带）
-                    $this->cppCompiler = 'clang++';
-                    $this->climate->info('Using Clang compiler (clang++)');
-                } else {
-                    // Linux 默认使用 GCC
-                    $this->cppCompiler = 'g++';
-                    $this->climate->info('Using GCC compiler (g++)');
-                }
-            }
-            
-            // 初始化新的 Platform 和 Backend 抽象层
-            $this->initializeNewArchitecture();
+            $this->compilerBackend = CompilerFactory::createByName($this->cppCompiler, $this->platform);
+            $this->climate->info(
+                "Initialized platform/backend: {$this->platform->getName()} + {$this->compilerBackend->getName()} ({$this->compilerBackend->getCompilerCommand()})"
+            );
+        } catch (\Throwable $e) {
+            $this->error($e->getMessage());
         }
     }
     
@@ -376,27 +359,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function initializeNewArchitecture(): void
     {
         try {
+            $platform = $this->platform ?? PlatformFactory::create();
+            $this->platform = $platform;
+
             // 自动检测平台和编译器
-            $result = \PhpAot\Php\Backend\CompilerFactory::autoDetect($this->cppCompiler);
+            $result = CompilerFactory::autoDetect($this->cppCompiler, $platform);
             $this->platform = $result['platform'];
             $this->compilerBackend = $result['compiler'];
-            
-            // Windows 平台：需要传递 ZTS 状态给 Platform 对象
-            if ($this->platform instanceof \PhpAot\Php\Platform\Windows && $this->isWindows) {
-                // 重新创建 Windows Platform，传递正确的 ZTS 状态
-                $phpSdkPath = $this->getPhpDir() . '\\SDK';
-                $this->platform = new \PhpAot\Php\Platform\Windows(
-                    phpLibs: [],
-                    isZts: $this->isPhpZts,  // ✅ 传递检测到的 ZTS 状态
-                    phpSdkPath: $phpSdkPath
-                );
-                
-                // 重新创建 Backend，使用更新后的 Platform
-                $this->compilerBackend = \PhpAot\Php\Backend\CompilerFactory::createByName(
-                    $this->cppCompiler,
-                    $this->platform
-                );
-            }
             
             $this->climate->info(
                 "Initialized new architecture: {$this->platform->getName()} + {$this->compilerBackend->getName()}"
@@ -409,154 +378,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->platform = null;
             $this->compilerBackend = null;
         }
-    }
-
-    /**
-     * Windows 平台：检测 PHP lib 文件并决定 ZTS/NTS 模式
-     * 根据找到的 lib 文件来决定是 ZTS 还是 NTS：
-     * - php8ts.lib 存在 => ZTS 模式
-     * - php8.lib 存在 => NTS 模式
-     */
-    protected function detectWindowsPhpLibs(): void
-    {
-        $phpDirs = [
-            $this->getPhpDir() . '\SDK\lib',  // 优先从 SDK/lib 查找
-            $this->getPhpDir() . '\lib',        // 备选从 lib 查找
-        ];
-
-        $embedLibPath = '';
-        $tsLibPath = '';
-        $ntsLibPath = '';
-
-        foreach ($phpDirs as $phpDir) {
-            if (!is_dir($phpDir)) {
-                continue;
-            }
-
-            // 检查 php8embed.lib
-            if (empty($embedLibPath) && file_exists($phpDir . '\php8embed.lib')) {
-                $embedLibPath = $phpDir . '\php8embed.lib';
-            }
-
-            // 检查 php8ts.lib (ZTS)
-            if (empty($tsLibPath) && file_exists($phpDir . '\php8ts.lib')) {
-                $tsLibPath = $phpDir . '\php8ts.lib';
-            }
-
-            // 检查 php8.lib (NTS)
-            if (empty($ntsLibPath) && file_exists($phpDir . '\php8.lib')) {
-                $ntsLibPath = $phpDir . '\php8.lib';
-            }
-
-            // 如果已经找到所有需要的库，提前退出
-            if ($embedLibPath && ($tsLibPath || $ntsLibPath)) {
-                break;
-            }
-        }
-
-        // 验证必需的库文件是否存在
-        if (!$embedLibPath) {
-            $this->error('php8embed.lib not found. Please ensure it exists in SDK/lib or lib directory of your PHP installation');
-        }
-
-        if (!$tsLibPath && !$ntsLibPath) {
-            $this->error('Neither php8ts.lib nor php8.lib found. Please ensure at least one exists in SDK/lib or lib directory of your PHP installation');
-        }
-
-        // 保存库文件路径
-        $this->windowsPhpEmbedLib = $embedLibPath;
-        
-        // 根据找到的库文件决定 ZTS/NTS 模式
-        // 优先级：php8ts.lib > php8.lib
-        if ($tsLibPath) {
-            $this->isPhpZts = true;
-            $this->windowsPhpCoreLib = $tsLibPath;
-            $this->climate->info('Detected ZTS mode (php8ts.lib found)');
-        } else {
-            $this->isPhpZts = false;
-            $this->windowsPhpCoreLib = $ntsLibPath;
-            $this->climate->info('Detected NTS mode (php8.lib found)');
-        }
-    }
-
-    /**
-     * 检测 Clang 是否可用
-     */
-    protected function isClangAvailable(): bool
-    {
-        if (!$this->isWindows) {
-            return false;
-        }
-
-        // 首先尝试 PATH 中的 clang++
-        $output = [];
-        $returnCode = 0;
-        exec('clang++ --version 2>&1', $output, $returnCode);
-
-        if ($returnCode === 0) {
-            // 检查是否有 lld-link
-            $this->checkLldLinker();
-            return true;
-        }
-
-        // 如果 PATH 中没有，尝试从 LLVM_HOME 环境变量获取
-        $llvmHome = getenv('LLVM_HOME');
-        if ($llvmHome && is_dir($llvmHome)) {
-            $clangPath = rtrim($llvmHome, '\/') . '\x64\bin\clang++.exe';
-            if (file_exists($clangPath)) {
-                // 验证是否可以执行
-                exec('"' . $clangPath . '" --version 2>&1', $output, $returnCode);
-                if ($returnCode === 0) {
-                    // 将 Clang 路径添加到环境变量
-                    $clangDir = dirname($clangPath);
-                    putenv("PATH={$clangDir};" . getenv('PATH'));
-
-                    // 检查是否有 lld-link
-                    $this->checkLldLinker();
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * 检查 lld-link 是否可用（用于更快的链接）
-     */
-    protected function checkLldLinker(): void
-    {
-        // 优先使用 lld-link（更快），否则使用 link.exe
-        $output = [];
-        $returnCode = 0;
-        exec('lld-link --version 2>&1', $output, $returnCode);
-
-        if ($returnCode === 0) {
-            $this->linker = 'lld-link';
-            $this->climate->info('Using lld-link linker (faster than link.exe)');
-            return;
-        }
-
-        // 如果 PATH 中没有，尝试从 LLVM_HOME 获取
-        $llvmHome = getenv('LLVM_HOME');
-        if ($llvmHome && is_dir($llvmHome)) {
-            $lldLinkPath = rtrim($llvmHome, '\/') . '\x64\bin\lld-link.exe';
-            if (file_exists($lldLinkPath)) {
-                exec('"' . $lldLinkPath . '" --version 2>&1', $output, $returnCode);
-                if ($returnCode === 0) {
-                    // 将 lld-link 路径添加到环境变量
-                    $lldDir = dirname($lldLinkPath);
-                    putenv("PATH={$lldDir};" . getenv('PATH'));
-                    $this->linker = 'lld-link';
-                    $this->climate->info('Using lld-link linker from LLVM_HOME (faster than link.exe)');
-                    return;
-                }
-            }
-        }
-
-        // Fallback 到 MSVC link.exe
-        $this->linker = 'link';
-        $this->climate->info('Using MSVC link.exe linker');
     }
 
     protected function getPhpxDir(): string
@@ -573,6 +394,23 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $composerPhpxDir;
         }
 
+        $composerPhpxVendorDir = $this->rootPath . '/vendor/swoole/phpx-vendor';
+        if (is_dir($composerPhpxVendorDir)) {
+            return $composerPhpxVendorDir;
+        }
+
+        if (defined('ROOT_PATH')) {
+            $rootPhpxDir = ROOT_PATH . '/vendor/swoole/phpx';
+            if (is_dir($rootPhpxDir)) {
+                return $rootPhpxDir;
+            }
+
+            $rootPhpxVendorDir = ROOT_PATH . '/vendor/swoole/phpx-vendor';
+            if (is_dir($rootPhpxVendorDir)) {
+                return $rootPhpxVendorDir;
+            }
+        }
+
         // 两个路径都不存在，报错
         $this->error(
             'phpx directory not found. Please either:\n' .
@@ -581,62 +419,47 @@ class CompilerBase extends \PhpAot\Core\Translator
         );
     }
 
+    protected function getPlatform(): PlatformBase
+    {
+        if ($this->platform === null) {
+            $this->platform = PlatformFactory::create();
+            $this->isWindows = $this->platform instanceof Windows;
+        }
+
+        return $this->platform;
+    }
+
+    protected function getCompilerBackend(): CompilerBackend
+    {
+        if ($this->compilerBackend === null) {
+            $this->cppCompiler = CompilerFactory::detectCompilerName($this->getPlatform(), $this->cppCompiler);
+            $this->compilerBackend = CompilerFactory::createByName($this->cppCompiler, $this->getPlatform());
+        }
+
+        return $this->compilerBackend;
+    }
+
     public function isWindows(): bool
     {
-        return $this->isWindows;
+        return $this->getPlatform() instanceof Windows;
+    }
+
+    public function isLinux(): bool
+    {
+        return $this->getPlatform() instanceof Linux;
     }
 
     public function isMacos(): bool
     {
-        return strtoupper(substr(PHP_OS, 0, 6)) === 'DARWIN';
+        return $this->getPlatform() instanceof Macos;
     }
 
     public function getPhpDir(): string
     {
-        if ($this->isWindows()) {
-            // Windows 下尝试从环境变量获取 PHP 路径
-            $phpDir = getenv('PHP_HOME');
-            if ($phpDir && is_dir($phpDir)) {
-                return rtrim($phpDir, '\/');
-            }
-
-            // 尝试从 php.exe 路径推断（使用 where 命令）
-            $phpExe = exec('where php 2>nul');
-            if ($phpExe) {
-                $phpDir = dirname($phpExe);
-                if (is_dir($phpDir)) {
-                    return rtrim($phpDir, '\/');
-                }
-            }
-
-            // 默认路径
-            return 'C:\php';
-        } else {
-            // Unix/Linux/macOS 下获取 PHP 路径
-            // 优先级：环境变量 PHP_HOME > php-config > which php
-            
-            // 1. 尝试环境变量 PHP_HOME
-            $phpDir = getenv('PHP_HOME');
-            if ($phpDir && is_dir($phpDir)) {
-                return rtrim($phpDir, '\/');
-            }
-            
-            // 2. 使用 php-config 获取 PHP 路径（优先从 PATH 中查找）
-            $phpDir = shell_exec('php-config --prefix 2>/dev/null');
-            if (!empty($phpDir)) {
-                return trim($phpDir);
-            }
-            
-            // 3. 如果 php-config 不可用，尝试从 which php 推断
-            $phpExe = trim(shell_exec('which php 2>/dev/null'));
-            if ($phpExe && file_exists($phpExe)) {
-                $phpDir = dirname(dirname($phpExe));
-                if (is_dir($phpDir)) {
-                    return $phpDir;
-                }
-            }
-            
-            $this->error('The `php-config` is not found. Please install PHP development package or set PHP_HOME environment variable');
+        try {
+            return $this->getPlatform()->getPhpDir();
+        } catch (\RuntimeException $e) {
+            $this->error($e->getMessage());
         }
     }
 
@@ -931,33 +754,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function removeCommonPrefix(string $short, string $long): string
     {
-        // Windows 下统一使用反斜杠
-        if ($this->isWindows()) {
-            $short = str_replace('/', '\\', $short);
-            $long = str_replace('/', '\\', $long);
-        }
-
-        $len       = min(strlen($short), strlen($long));
-        $prefixLen = 0;
-
-        for ($i = 0; $i < $len; $i++) {
-            if ($short[$i] === $long[$i]) {
-                $prefixLen++;
-            } else {
-                break;
-            }
-        }
-
-        $result = substr($long, $prefixLen);
-
-        // 移除开头的路径分隔符
-        if ($this->isWindows()) {
-            $result = ltrim($result, '\\');
-        } else {
-            $result = ltrim($result, '/');
-        }
-
-        return $result;
+        return $this->getPlatform()->removeCommonPrefix($short, $long);
     }
 
     protected function getVarType(string $name): string
@@ -1319,7 +1116,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $type = $expr->getType();
         switch ($type) {
             case 'Scalar_Int':
-                return $expr->value . ($this->isLinux() ? 'L' : 'LL');
+                return $expr->value . $this->getPlatform()->getIntegerLiteralSuffix();
             case 'Scalar_Float':
                 return $this->parseScalarFloat($expr);
             case 'Scalar_String':
@@ -2427,10 +2224,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
     /**
-     * 解析包含路径
+     * 获取包含路径
      */
-    protected function parseIncludes(): string
+    protected function getIncludePaths(): array
     {
+        $platform = $this->getPlatform();
         $includePaths = [
             $this->getPhpxDir() . '/include',
             $this->getBuildDir() . '/include',
@@ -2438,39 +2236,49 @@ class CompilerBase extends \PhpAot\Core\Translator
         ];
 
         // 根据平台添加 PHP 包含路径
-        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
-            /** @var \PhpAot\Php\Platform\Windows $platform */
-            $platform = $this->platform;
+        if ($platform instanceof Windows) {
             $phpSdkPaths = $platform->buildPhpSdkIncludePaths($this->getPhpDir());
             $includePaths = array_merge($includePaths, $phpSdkPaths);
         } else {
             // Linux/macOS
-            $phpPaths = $this->platform->buildPhpIncludePaths($this->getPhpDir());
+            $phpPaths = $platform->buildPhpIncludePaths($this->getPhpDir());
             $includePaths = array_merge($includePaths, $phpPaths);
         }
 
-        return $this->platform->getIncludeFlags($includePaths);
+        return $includePaths;
     }
 
-    protected function parseLdflags(): string
+    /**
+     * 解析包含路径
+     */
+    protected function parseIncludes(): string
     {
+        return $this->getPlatform()->getIncludeFlags($this->getIncludePaths());
+    }
+
+    protected function getLibraryPaths(): array
+    {
+        $platform = $this->getPlatform();
         $libraryPaths = [
             $this->getPhpxDir() . '/lib',
         ];
 
         // 根据平台添加 PHP 库路径
-        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
-            /** @var \PhpAot\Php\Platform\Windows $platform */
-            $platform = $this->platform;
+        if ($platform instanceof Windows) {
             $phpLibPaths = $platform->buildPhpSdkLibPaths($this->getPhpDir());
             $libraryPaths = array_merge($libraryPaths, $phpLibPaths);
         } else {
             // Linux/macOS
-            $phpLibPaths = $this->platform->buildPhpLibPaths($this->getPhpDir());
+            $phpLibPaths = $platform->buildPhpLibPaths($this->getPhpDir());
             $libraryPaths = array_merge($libraryPaths, $phpLibPaths);
         }
 
-        $flags = $this->platform->getLibraryPathFlags($libraryPaths);
+        return $libraryPaths;
+    }
+
+    protected function parseLdflags(): string
+    {
+        $flags = $this->getPlatform()->getLibraryPathFlags($this->getLibraryPaths());
         
         // 添加用户自定义的 ldflags
         if (!empty($this->ldflags)) {
@@ -2481,14 +2289,15 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
     /**
-     * 解析库文件
+     * 获取库文件
      */
-    protected function parseLibs(): string
+    protected function getLibraries(): array
     {
+        $platform = $this->getPlatform();
         $libraries = [];
 
         // phpx 库（根据平台使用不同的文件名格式）
-        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+        if ($platform instanceof Windows) {
             // Windows: phpx.lib (无 lib 前缀)
             $phpxLibPath = $this->getPhpxDir() . '\\lib\\phpx.lib';
             if (file_exists($phpxLibPath)) {
@@ -2498,7 +2307,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         } else {
             // Linux/macOS: libphpx.so 或 libphpx.a
-            $sharedLibExt = $this->platform->getSharedLibraryExtension();
+            $sharedLibExt = $platform->getSharedLibraryExtension();
             // getSharedLibraryExtension() 返回的值可能带点或不带点，需要统一处理
             $extWithoutDot = ltrim($sharedLibExt, '.');
             $phpxLibPath = $this->getPhpxDir() . '/lib/libphpx.' . $extWithoutDot;
@@ -2516,7 +2325,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         // extension 和 bin 模式都需要链接 PHP 库
-        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+        if ($platform instanceof Windows) {
             // Windows: 根据构建模式选择不同的库
             if ($this->buildMode === 'bin') {
                 // bin 模式：需要同时链接 php8ts.lib 和 php8embed.lib
@@ -2545,7 +2354,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             $libraries[] = 'php';
         }
 
-        return $this->platform->getLibraryFlags($libraries);
+        return $libraries;
+    }
+
+    /**
+     * 解析库文件
+     */
+    protected function parseLibs(): string
+    {
+        return $this->getPlatform()->getLibraryFlags($this->getLibraries());
     }
 
 
@@ -2573,7 +2390,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 'cxxflags' => $this->cxxflags,
             ];
             
-            $cmd .= $this->compilerBackend->buildCompileOptions($config);
+            $cmd .= $this->getCompilerBackend()->buildCompileOptions($config);
         } else {
             // 链接时选项
             
@@ -2589,21 +2406,90 @@ class CompilerBase extends \PhpAot\Core\Translator
             ];
             
             // 添加 RPATH（通过 Platform 层获取，仅 macOS 需要）
-            if ($this->platform !== null) {
-                $rpaths = $this->platform->getDefaultRpaths(
-                    $this->getPhpxDir(),
-                    $this->getPhpDir()
-                );
-                if (!empty($rpaths)) {
-                    $config['rpath'] = $rpaths;
-                }
+            $rpaths = $this->getPlatform()->getDefaultRpaths(
+                $this->getPhpxDir(),
+                $this->getPhpDir()
+            );
+            if (!empty($rpaths)) {
+                $config['rpath'] = $rpaths;
             }
             
-            $cmd .= $this->compilerBackend->buildLinkOptions($config);
+            $cmd .= $this->getCompilerBackend()->buildLinkOptions($config);
             
             // 最后添加库文件（平台相关，必须在链接选项之后）
             $cmd .= ' ' . $this->parseLibs();
         }
+    }
+
+    protected function getCompileCommandOptions(): array
+    {
+        return [
+            'include_paths' => $this->getIncludePaths(),
+            'optimize' => $this->optimizeLevel,
+            'debug' => $this->debug,
+            'sanitize' => $this->sanitize,
+            'cpp_std' => $this->cxxStd,
+            'is_zts' => $this->isPhpZts,
+            'build_mode' => $this->buildMode,
+            'enable_profiler' => $this->enableProfiler,
+            'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
+            'cxxflags' => $this->cxxflags,
+        ];
+    }
+
+    protected function getCCompileCommandOptions(): array
+    {
+        return [
+            'include_paths' => $this->getIncludePaths(),
+            'optimize' => 0,
+            'debug' => $this->debug,
+            'is_zts' => $this->isPhpZts,
+            'suppressed_warnings' => ['4244', '4146'],
+        ];
+    }
+
+    protected function getLinkCommandOptions(): array
+    {
+        $options = [
+            'library_paths' => $this->getLibraryPaths(),
+            'libraries' => $this->getLibraries(),
+            'ldflags' => $this->ldflags,
+            'debug' => $this->debug,
+            'no_console' => $this->noConsole,
+            'build_mode' => $this->buildMode,
+            'sanitize' => $this->sanitize,
+        ];
+
+        $rpaths = $this->getPlatform()->getDefaultRpaths(
+            $this->getPhpxDir(),
+            $this->getPhpDir()
+        );
+        if (!empty($rpaths)) {
+            $options['rpath'] = $rpaths;
+        }
+
+        return $options;
+    }
+
+    protected function getTargetFileName(): string
+    {
+        $targetFile = $this->targetName;
+        $extension = $this->getPlatform()->getTargetExtension($this->buildMode);
+
+        if ($extension !== '' && !str_ends_with($targetFile, $extension)) {
+            $targetFile .= $extension;
+        }
+
+        return $targetFile;
+    }
+
+    protected function buildLinkCommand(array $objectFiles, string $targetFile): string
+    {
+        return $this->getCompilerBackend()->buildLinkCommand(
+            $objectFiles,
+            $targetFile,
+            $this->getLinkCommandOptions()
+        );
     }
 
 
@@ -4183,7 +4069,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         // Windows 下可能没有 clang-format，跳过格式化
-        if ($this->isWindows()) {
+        if ($this->getPlatform() instanceof Windows) {
             return;
         }
 
@@ -4883,12 +4769,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                         if ($scope) {
                             break;
                         }
-                        $this->fatalError($expr, "Cannot access protected property `{$property}` of class `{$class}`");
+                        $displayClass = ltrim($class, '\\');
+                        $this->fatalError($expr, "Cannot access protected property `{$property}` of class `{$displayClass}`");
                     } else {
                         if ($scope === $findClass) {
                             break;
                         }
-                        $this->fatalError($expr, "Cannot access private property `{$property}` of class `{$class}`");
+                        $displayClass = ltrim($class, '\\');
+                        $this->fatalError($expr, "Cannot access private property `{$property}` of class `{$displayClass}`");
                     }
                 } elseif ($classDef->extends) {
                     $findClass = $classDef->extends;

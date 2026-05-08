@@ -54,6 +54,83 @@ abstract class PlatformBase
     abstract public function getPathSeparator(): string;
 
     /**
+     * 获取该平台默认使用的 C++ 编译器命令
+     */
+    abstract public function getDefaultCompiler(): string;
+
+    /**
+     * 获取 PHP 安装目录
+     */
+    abstract public function getPhpDir(): string;
+
+    /**
+     * 构建 PHP 包含路径
+     */
+    abstract public function buildPhpIncludePaths(string $phpDir): array;
+
+    /**
+     * 构建 PHP 库路径
+     */
+    abstract public function buildPhpLibPaths(string $phpDir): array;
+
+    /**
+     * 检测 PHP 库文件
+     */
+    abstract public function detectPhpLibs(string $phpDir): array;
+
+    /**
+     * 获取指定构建模式的目标文件扩展名
+     */
+    public function getTargetExtension(string $buildMode): string
+    {
+        return $buildMode === 'ext'
+            ? '.so'
+            : $this->getExecutableExtension();
+    }
+
+    /**
+     * 获取构建前的运行库检查告警
+     */
+    public function getBuildLibraryWarnings(string $phpDir, string $phpxDir, string $buildMode): array
+    {
+        if ($buildMode !== 'bin') {
+            return [];
+        }
+
+        $ext = ltrim($this->getSharedLibraryExtension(), '.');
+        $warnings = [];
+
+        if (!is_file($phpDir . '/lib/libphp.' . $ext)) {
+            $warnings[] = [
+                'warning' => "The `libphp.{$ext}` is not found",
+                'info' => 'Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it',
+            ];
+        }
+
+        if (!is_file($phpxDir . '/lib/libphpx.' . $ext)) {
+            $warnings[] = [
+                'warning' => "The `libphpx.{$ext}` is not found",
+                'info' => 'Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it',
+            ];
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * 当前平台是否适合使用 pcntl_fork 并行编译
+     */
+    public function supportsPcntlParallelCompile(): bool
+    {
+        return true;
+    }
+
+    public function getIntegerLiteralSuffix(): string
+    {
+        return 'LL';
+    }
+
+    /**
      * 规范化路径
      */
     public function normalizePath(string $path): string
@@ -67,6 +144,28 @@ abstract class PlatformBase
     public function joinPath(string ...$parts): string
     {
         return implode($this->getPathSeparator(), $parts);
+    }
+
+    public function removeCommonPrefix(string $short, string $long): string
+    {
+        $separator = $this->getPathSeparator();
+        if ($separator === '\\') {
+            $short = str_replace('/', '\\', $short);
+            $long = str_replace('/', '\\', $long);
+        }
+
+        $len = min(strlen($short), strlen($long));
+        $prefixLen = 0;
+
+        for ($i = 0; $i < $len; $i++) {
+            if ($short[$i] === $long[$i]) {
+                $prefixLen++;
+            } else {
+                break;
+            }
+        }
+
+        return ltrim(substr($long, $prefixLen), $separator);
     }
 
     /**

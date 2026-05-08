@@ -103,6 +103,34 @@ class Windows extends PlatformBase
         return '\\';
     }
 
+    public function getTargetExtension(string $buildMode): string
+    {
+        return $buildMode === 'ext' ? '.dll' : '.exe';
+    }
+
+    public function getDefaultCompiler(): string
+    {
+        return 'cl';
+    }
+
+    public function getPhpDir(): string
+    {
+        $phpDir = getenv('PHP_HOME');
+        if ($phpDir && is_dir($phpDir)) {
+            return rtrim($phpDir, '\/');
+        }
+
+        $phpExe = exec('where php 2>nul');
+        if ($phpExe) {
+            $phpDir = dirname($phpExe);
+            if (is_dir($phpDir)) {
+                return rtrim($phpDir, '\/');
+            }
+        }
+
+        return 'C:\php';
+    }
+
     /**
      * 获取 PHP 库文件列表
      */
@@ -147,6 +175,47 @@ class Windows extends PlatformBase
         return '/NODEFAULTLIB:LIBCMT';
     }
 
+    public function getBuildLibraryWarnings(string $phpDir, string $phpxDir, string $buildMode): array
+    {
+        if ($buildMode !== 'bin') {
+            return [];
+        }
+
+        $warnings = [];
+        $phpDirs = [
+            $phpDir . '\SDK\lib',
+            $phpDir . '\lib',
+        ];
+
+        $foundLib = false;
+        foreach ($phpDirs as $dir) {
+            if (is_dir($dir) && (is_file($dir . '\php8.lib') || is_file($dir . '\php8ts.lib'))) {
+                $foundLib = true;
+                break;
+            }
+        }
+
+        if (!$foundLib && !is_file($phpDir . '\php8.dll') && !is_file($phpDir . '\php8ts.dll')) {
+            $warnings[] = [
+                'warning' => 'The `php8.lib` or `php8.dll` is not found in PHP directory, please check your PHP installation',
+            ];
+        }
+
+        if (!is_file($phpxDir . '\lib\phpx.lib') && !is_file($phpxDir . '\lib\phpx.dll')) {
+            $warnings[] = [
+                'warning' => 'The `phpx.lib` or `phpx.dll` is not found in PHX directory',
+                'info' => 'Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it',
+            ];
+        }
+
+        return $warnings;
+    }
+
+    public function supportsPcntlParallelCompile(): bool
+    {
+        return false;
+    }
+
     /**
      * 获取调试选项
      */
@@ -157,6 +226,16 @@ class Windows extends PlatformBase
         }
 
         return '/DEBUG';
+    }
+
+    public function buildPhpIncludePaths(string $phpDir): array
+    {
+        return $this->buildPhpSdkIncludePaths($phpDir);
+    }
+
+    public function buildPhpLibPaths(string $phpDir): array
+    {
+        return $this->buildPhpSdkLibPaths($phpDir);
     }
 
     /**

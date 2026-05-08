@@ -86,6 +86,34 @@ class Macos extends PlatformBase
         return '/';
     }
 
+    public function getDefaultCompiler(): string
+    {
+        return 'clang++';
+    }
+
+    public function getPhpDir(): string
+    {
+        $phpDir = getenv('PHP_HOME');
+        if ($phpDir && is_dir($phpDir)) {
+            return rtrim($phpDir, '\/');
+        }
+
+        $phpDir = shell_exec('php-config --prefix 2>/dev/null');
+        if (!empty($phpDir)) {
+            return trim($phpDir);
+        }
+
+        $phpExe = trim(shell_exec('which php 2>/dev/null'));
+        if ($phpExe && file_exists($phpExe)) {
+            $phpDir = dirname(dirname($phpExe));
+            if (is_dir($phpDir)) {
+                return $phpDir;
+            }
+        }
+
+        throw new \RuntimeException('The `php-config` is not found. Please install PHP development package or set PHP_HOME environment variable');
+    }
+
     /**
      * 获取 RPATH 选项（macOS 需要绝对路径）
      */

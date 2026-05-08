@@ -283,52 +283,10 @@ class Translator extends Preprocessor
     {
         // 根据平台检查库文件（仅在构建二进制文件时需要）
         if ($this->buildMode === 'bin') {
-            if ($this->isWindows()) {
-                // Windows 平台检查 dll 和 lib 文件
-                // 按照新的路径规则检查：SDK/lib, lib, 根目录
-                $phpDirs = [
-                    $this->getPhpDir() . '\SDK\lib',
-                    $this->getPhpDir() . '\lib',
-                ];
-
-                $foundLib = false;
-                foreach ($phpDirs as $phpDir) {
-                    if (is_dir($phpDir)) {
-                        if (is_file($phpDir . '\php8.lib') || is_file($phpDir . '\php8ts.lib')) {
-                            $foundLib = true;
-                            break;
-                        }
-                    }
-                }
-
-                // 如果没找到 lib，检查根目录的 DLL
-                if (!$foundLib) {
-                    $phpDll = $this->getPhpDir() . '\php8.dll';
-                    $phpTsDll = $this->getPhpDir() . '\php8ts.dll';
-                    if (!is_file($phpDll) && !is_file($phpTsDll)) {
-                        $this->climate->warning('The `php8.lib` or `php8.dll` is not found in PHP directory, please check your PHP installation');
-                    }
-                }
-
-                $phpxLib = $this->getPhpxDir() . '\lib\phpx.lib';
-                $phpxDll = $this->getPhpxDir() . '\lib\phpx.dll';
-                if (!is_file($phpxLib) && !is_file($phpxDll)) {
-                    $this->climate->warning('The `phpx.lib` or `phpx.dll` is not found in PHX directory');
-                    $this->climate->info('Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it');
-                }
-            } else {
-                // Unix/Linux/macOS 平台检查 .so 或 .dylib 文件
-                $ext = $this->isMacos() ? 'dylib' : 'so';
-                $phpLib = $this->getPhpDir() . '/lib/libphp.' . $ext;
-                $phpxLib = $this->getPhpxDir() . '/lib/libphpx.' . $ext;
-
-                if (!is_file($phpLib)) {
-                    $this->climate->warning("The `libphp.{$ext}` is not found");
-                    $this->climate->info('Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it');
-                }
-                if (!is_file($phpxLib)) {
-                    $this->climate->warning("The `libphpx.{$ext}` is not found");
-                    $this->climate->info('Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it');
+            foreach ($this->getPlatform()->getBuildLibraryWarnings($this->getPhpDir(), $this->getPhpxDir(), $this->buildMode) as $message) {
+                $this->climate->warning($message['warning']);
+                if (!empty($message['info'])) {
+                    $this->climate->info($message['info']);
                 }
             }
         }
@@ -743,38 +701,19 @@ CODE;
         // 使用 Backend 层构建编译命令
         if ($isCppFile) {
             // C++ 文件：使用标准的编译命令构建
-            $cmd = $this->compilerBackend->buildCompileCommand(
+            $cmd = $this->getCompilerBackend()->buildCompileCommand(
                 $cppFile,
                 $objectFile,
-                [
-                    'optimize' => $this->optimizeLevel,
-                    'debug' => $this->debug,
-                    'sanitize' => $this->sanitize,
-                    'cpp_std' => $this->cxxStd,
-                    'is_zts' => $this->isPhpZts,
-                    'build_mode' => $this->buildMode,
-                    'enable_profiler' => $this->enableProfiler,
-                    'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
-                    'cxxflags' => $this->cxxflags,
-                ]
+                $this->getCompileCommandOptions()
             );
-            
-            // 添加包含路径（通过 Platform 层）
-            $cmd .= ' ' . $this->parseIncludes();
         } else {
             // C 文件：不能使用 C++ 特定选项（/EHsc, /std:c++17 等）
             // 使用 Backend 的 buildCCompileCommand() 方法
-            $cmd = $this->compilerBackend->buildCCompileCommand(
+            $cmd = $this->getCompilerBackend()->buildCCompileCommand(
                 $cppFile,
                 $objectFile,
-                [
-                    'optimize' => 0,
-                    'suppressed_warnings' => ['4244', '4146'],
-                ]
+                $this->getCCompileCommandOptions()
             );
-            
-            // 手动添加包含路径
-            $cmd .= ' ' . $this->parseIncludes();
         }
 
         if (!$parallel) {
@@ -814,8 +753,7 @@ CODE;
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/ps_title.c';
         }
 
-        // Windows 不支持 pcntl_fork，使用串行编译或 proc_open
-        if ($this->isWindows() or $job <= 1) {
+        if (!$this->getPlatform()->supportsPcntlParallelCompile() or $job <= 1) {
             return $this->compileSourceFile($sourceFiles);
         }
 
@@ -956,40 +894,8 @@ CODE;
 
     public function build(array $objectFiles): void
     {
-        $targetFile = $this->targetName;
-
-        // 根据平台设置目标文件扩展名
-        if ($this->isWindows()) {
-            if ($this->buildMode == 'ext') {
-                if (!str_ends_with($targetFile, '.dll')) {
-                    $targetFile .= '.dll';
-                }
-            } else {
-                if (!str_ends_with($targetFile, '.exe')) {
-                    $targetFile .= '.exe';
-                }
-            }
-        } else {
-            if ($this->buildMode == 'ext' and !str_ends_with($targetFile, '.so')) {
-                $targetFile .= '.so';
-            }
-        }
-
-        // 根据平台构建链接命令
-        if ($this->isWindows()) {
-            // Windows 使用 link.exe 或 lld-link 进行链接
-            $objectList = implode(' ', $objectFiles);
-
-            // 使用检测到的链接器（lld-link 或 link）
-            $linkerCmd = $this->linker;
-            $linkCmd = "{$linkerCmd} /nologo {$objectList} /OUT:{$targetFile}";
-        } else {
-            // Unix/Linux/macOS GCC 链接命令
-            $objectList = implode(' ', $objectFiles);
-            $linkCmd = $this->cppCompiler . ' ' . $objectList . ' -o ' . $targetFile;
-        }
-
-        $this->addCompilationOption($linkCmd, true);
+        $targetFile = $this->getTargetFileName();
+        $linkCmd = $this->buildLinkCommand($objectFiles, $targetFile);
         $this->climate->comment($linkCmd);
 
         // 执行链接并捕获输出

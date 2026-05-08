@@ -72,8 +72,7 @@ class Preprocessor extends CompilerBase
     {
         $info = pathinfo($file);
 
-        // Windows 下使用反斜杠，其他平台使用正斜杠
-        $separator = $this->isWindows() ? '\\' : '/';
+        $separator = $this->getPlatform()->getPathSeparator();
         $relativePath = $this->removeCommonPrefix($this->buildDir, $info['dirname']);
 
         return $this->buildDir . $separator . $relativePath . $separator . $info['filename'] . '.cc';
@@ -82,10 +81,10 @@ class Preprocessor extends CompilerBase
     public function getObjectFile(string $cppFile): string
     {
         $info = pathinfo($cppFile);
-        $ext = $this->isWindows() ? '.obj' : '.o';
+        $ext = $this->getPlatform()->getObjectExtension();
 
         // 保持与 cppFile 相同的路径分隔符
-        return $info['dirname'] . ($this->isWindows() ? '\\' : '/') . $info['filename'] . $ext;
+        return $info['dirname'] . $this->getPlatform()->getPathSeparator() . $info['filename'] . $ext;
     }
 
     public function hasCppFileCache(string $file): bool

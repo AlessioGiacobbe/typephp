@@ -9,9 +9,14 @@ use PhpAot\Php\Platform\Windows;
  */
 class Msvc extends CompilerBackend
 {
-    public function __construct(Windows $platform)
+    private string $compilerCommand;
+    private string $linkerCommand;
+
+    public function __construct(Windows $platform, string $compilerCommand = 'cl', string $linkerCommand = 'link')
     {
         parent::__construct($platform);
+        $this->compilerCommand = $compilerCommand;
+        $this->linkerCommand = $linkerCommand;
     }
 
     public function getName(): string
@@ -21,12 +26,12 @@ class Msvc extends CompilerBackend
 
     public function getCompilerCommand(): string
     {
-        return 'cl';
+        return $this->compilerCommand;
     }
 
     public function getLinkerCommand(): string
     {
-        return 'link';
+        return $this->linkerCommand;
     }
 
     public function compileFile(
@@ -97,42 +102,14 @@ class Msvc extends CompilerBackend
         $cmd .= ' /c';
         $cmd .= ' ' . escapeshellarg($sourceFile);
         $cmd .= ' /Fo' . escapeshellarg($outputFile);
-        
-        // 平台宏定义
-        $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
-        
-        // ZTS 支持
-        if ($this->platform instanceof Windows && $this->platform->isZts()) {
-            $cmd .= ' /DZTS';
+
+        if (!empty($options['include_paths'])) {
+            $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
         }
-        
-        // 优化级别
-        $optimizeLevel = $options['optimize'] ?? 2;
-        $cmd .= ' /O' . ($optimizeLevel >= 2 ? '2' : ($optimizeLevel === 0 ? 'd' : '1'));
-        
-        // 警告级别
-        $cmd .= ' /W3';
-        
-        // 禁用常见警告
-        if (!empty($options['suppressed_warnings'])) {
-            foreach ($options['suppressed_warnings'] as $code => $description) {
-                $cmd .= " /wd{$code}";
-            }
-        }
-        
-        // C++ 标准
-        $cppStd = $options['cpp_std'] ?? 'c++17';
-        $cmd .= ' /std:' . $cppStd;
-        
-        // 异常处理
-        $cmd .= ' /EHsc';
-        
-        // CRT
-        $cmd .= ' /MD';
-        
-        // nologo
-        $cmd .= ' /nologo';
-        
+
+        $options['is_zts'] ??= $this->platform instanceof Windows && $this->platform->isZts();
+        $cmd .= $this->buildCompileOptions($options);
+
         return $cmd;
     }
 
@@ -145,6 +122,10 @@ class Msvc extends CompilerBackend
         $cmd .= ' /c';
         $cmd .= ' ' . escapeshellarg($sourceFile);
         $cmd .= ' /Fo' . escapeshellarg($outputFile);
+
+        if (!empty($options['include_paths'])) {
+            $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
+        }
         
         // 平台宏定义
         $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
@@ -180,23 +161,21 @@ class Msvc extends CompilerBackend
         $cmd = $this->getLinkerCommand();
         $cmd .= ' ' . implode(' ', array_map('escapeshellarg', $objectFiles));
         $cmd .= ' /OUT:' . escapeshellarg($outputFile);
-        
-        // 调试信息
-        if (!empty($options['debug'])) {
-            $cmd .= ' /DEBUG';
+
+        if (!empty($options['library_paths'])) {
+            $cmd .= ' ' . $this->formatLibraryPaths($options['library_paths']);
         }
-        
-        // Windows 子系统
-        if (!empty($options['no_console'])) {
-            $cmd .= ' ' . $this->platform->getSubsystemOptions(true);
+
+        if (!empty($options['ldflags'])) {
+            $cmd .= ' ' . $options['ldflags'];
         }
-        
-        // CRT 配置
-        $cmd .= ' ' . $this->platform->getCrtConfig();
-        
-        // nologo
-        $cmd .= ' /nologo';
-        
+
+        $cmd .= $this->buildLinkOptions($options);
+
+        if (!empty($options['libraries'])) {
+            $cmd .= ' ' . $this->formatLibraries($options['libraries']);
+        }
+
         return $cmd;
     }
 
@@ -267,6 +246,7 @@ class Msvc extends CompilerBackend
         // 禁用常见警告（只使用键，即警告代码）
         if (!empty($options['suppressed_warnings'])) {
             foreach ($options['suppressed_warnings'] as $code => $description) {
+                $code = is_int($code) && $code < 100 ? $description : $code;
                 $cmd .= " /wd{$code}";
             }
         }
@@ -354,6 +334,7 @@ class Msvc extends CompilerBackend
         // 禁用常见警告（只使用键，即警告代码）
         if (!empty($config['suppressed_warnings'])) {
             foreach ($config['suppressed_warnings'] as $code => $description) {
+                $code = is_int($code) && $code < 100 ? $description : $code;
                 $cmd .= " /wd{$code}";
             }
         }

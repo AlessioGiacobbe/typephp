@@ -9,6 +9,16 @@ use PhpAot\Php\Platform\PlatformBase;
  */
 class Clang extends CompilerBackend
 {
+    private string $compilerCommand;
+    private ?string $linkerCommand;
+
+    public function __construct(PlatformBase $platform, string $compilerCommand = 'clang++', ?string $linkerCommand = null)
+    {
+        parent::__construct($platform);
+        $this->compilerCommand = $compilerCommand;
+        $this->linkerCommand = $linkerCommand;
+    }
+
     public function getName(): string
     {
         return 'Clang';
@@ -16,16 +26,49 @@ class Clang extends CompilerBackend
 
     public function getCompilerCommand(): string
     {
-        return 'clang++';
+        return $this->compilerCommand;
     }
 
     public function getLinkerCommand(): string
     {
+        if ($this->linkerCommand !== null) {
+            return $this->linkerCommand;
+        }
+
         // Windows 下使用 MSVC 链接器，其他平台使用 clang++
         if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
             return 'link';
         }
-        return 'clang++';
+        return $this->compilerCommand;
+    }
+
+    /**
+     * Windows 下优先使用 lld-link，找不到时回退到 link.exe
+     */
+    public static function detectWindowsLinker(): string
+    {
+        $output = [];
+        $returnCode = 0;
+        exec('lld-link --version 2>&1', $output, $returnCode);
+
+        if ($returnCode === 0) {
+            return 'lld-link';
+        }
+
+        $llvmHome = getenv('LLVM_HOME');
+        if ($llvmHome && is_dir($llvmHome)) {
+            $lldLinkPath = rtrim($llvmHome, '\/') . '\x64\bin\lld-link.exe';
+            if (file_exists($lldLinkPath)) {
+                exec('"' . $lldLinkPath . '" --version 2>&1', $output, $returnCode);
+                if ($returnCode === 0) {
+                    $lldDir = dirname($lldLinkPath);
+                    putenv("PATH={$lldDir};" . getenv('PATH'));
+                    return 'lld-link';
+                }
+            }
+        }
+
+        return 'link';
     }
 
     public function compileFile(
@@ -118,34 +161,13 @@ class Clang extends CompilerBackend
         $cmd .= ' -c';
         $cmd .= ' ' . escapeshellarg($sourceFile);
         $cmd .= ' -o ' . escapeshellarg($outputFile);
-        
-        // 优化级别
-        $optimizeLevel = $options['optimize'] ?? 2;
-        
-        // 调试模式
-        if (!empty($options['debug'])) {
-            $cmd .= ' -O0 -g';
-        } else {
-            $cmd .= ' -O' . $optimizeLevel;
+
+        if (!empty($options['include_paths'])) {
+            $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
         }
-        
-        // 警告级别
-        $cmd .= ' -Wall';
-        
-        // C++ 标准
-        $cppStd = $options['cpp_std'] ?? 'c++17';
-        $cmd .= ' -std=' . $cppStd;
-        
-        // Sanitizer 支持
-        if (!empty($options['sanitize'])) {
-            $cmd .= ' -fsanitize=' . $options['sanitize'];
-        }
-        
-        // PIC（位置无关代码）
-        if (!empty($options['pic'])) {
-            $cmd .= ' -fPIC';
-        }
-        
+
+        $cmd .= $this->buildCompileOptions($options);
+
         return $cmd;
     }
 
@@ -167,6 +189,10 @@ class Clang extends CompilerBackend
         $cmd .= ' -c';
         $cmd .= ' ' . escapeshellarg($sourceFile);
         $cmd .= ' -o ' . escapeshellarg($outputFile);
+
+        if (!empty($options['include_paths'])) {
+            $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
+        }
         
         // 优化级别（C 文件通常使用较低的优化）
         $optimizeLevel = $options['optimize'] ?? 0;
@@ -195,41 +221,22 @@ class Clang extends CompilerBackend
         if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
             $cmd .= ' /OUT:' . escapeshellarg($outputFile);
             
-            // 调试信息
-            if (!empty($options['debug'])) {
-                $cmd .= ' /DEBUG';
-            }
-            
-            // Windows 子系统
-            if (!empty($options['no_console'])) {
-                $cmd .= ' ' . $this->platform->getSubsystemOptions(true);
-            }
-            
-            // CRT 配置
-            $cmd .= ' ' . $this->platform->getCrtConfig();
         } else {
-            // Unix/Linux/macOS 使用 GCC 风格语法
             $cmd .= ' -o ' . escapeshellarg($outputFile);
-            
-            // 共享库
-            if (!empty($options['shared'])) {
-                $cmd .= ' ' . $this->platform->getSharedLinkFlag();
-                
-                // macOS 需要 install_name
-                if ($this->platform instanceof \PhpAot\Php\Platform\Macos && !empty($options['install_name'])) {
-                    $cmd .= ' ' . $this->platform->getCurrentInstallNameOption($options['install_name']);
-                }
-            }
-            
-            // RPATH（运行时库搜索路径）
-            if (!empty($options['rpath'])) {
-                $cmd .= ' ' . $this->platform->getRpathOptions($options['rpath']);
-            }
-            
-            // Sanitizer 链接选项
-            if (!empty($options['sanitize'])) {
-                $cmd .= ' -fsanitize=' . $options['sanitize'];
-            }
+        }
+
+        if (!empty($options['library_paths'])) {
+            $cmd .= ' ' . $this->formatLibraryPaths($options['library_paths']);
+        }
+
+        if (!empty($options['ldflags'])) {
+            $cmd .= ' ' . $options['ldflags'];
+        }
+
+        $cmd .= $this->buildLinkOptions($options);
+
+        if (!empty($options['libraries'])) {
+            $cmd .= ' ' . $this->formatLibraries($options['libraries']);
         }
         
         return $cmd;
@@ -358,7 +365,7 @@ class Clang extends CompilerBackend
         }
         
         // PIC (Position Independent Code)
-        if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
+        if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['pic'])) {
             if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
                 // Windows Clang 不需要特殊处理
             } else {
@@ -408,8 +415,12 @@ class Clang extends CompilerBackend
         } else {
             // Unix/Linux/macOS
             // 扩展模块选项
-            if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
-                $cmd .= ' -shared';
+            if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['shared'])) {
+                $cmd .= ' ' . $this->platform->getSharedLinkFlag();
+
+                if ($this->platform instanceof \PhpAot\Php\Platform\Macos && !empty($config['install_name'])) {
+                    $cmd .= ' ' . $this->platform->getCurrentInstallNameOption($config['install_name']);
+                }
             }
             
             // RPATH

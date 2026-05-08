@@ -9,6 +9,16 @@ use PhpAot\Php\Platform\PlatformBase;
  */
 class Gcc extends CompilerBackend
 {
+    private string $compilerCommand;
+    private string $linkerCommand;
+
+    public function __construct(PlatformBase $platform, string $compilerCommand = 'g++', ?string $linkerCommand = null)
+    {
+        parent::__construct($platform);
+        $this->compilerCommand = $compilerCommand;
+        $this->linkerCommand = $linkerCommand ?? $compilerCommand;
+    }
+
     public function getName(): string
     {
         return 'GCC';
@@ -16,12 +26,12 @@ class Gcc extends CompilerBackend
 
     public function getCompilerCommand(): string
     {
-        return 'g++';
+        return $this->compilerCommand;
     }
 
     public function getLinkerCommand(): string
     {
-        return 'g++';
+        return $this->linkerCommand;
     }
 
     public function compileFile(
@@ -92,28 +102,13 @@ class Gcc extends CompilerBackend
         $cmd .= ' -c';
         $cmd .= ' ' . escapeshellarg($sourceFile);
         $cmd .= ' -o ' . escapeshellarg($outputFile);
-        
-        // 优化级别
-        $optimizeLevel = $options['optimize'] ?? 2;
-        $cmd .= ' -O' . $optimizeLevel;
-        
-        // 调试信息
-        if (!empty($options['debug'])) {
-            $cmd .= ' -g';
+
+        if (!empty($options['include_paths'])) {
+            $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
         }
-        
-        // 警告级别
-        $cmd .= ' -Wall';
-        
-        // C++ 标准
-        $cppStd = $options['cpp_std'] ?? 'c++17';
-        $cmd .= ' -std=' . $cppStd;
-        
-        // PIC（位置无关代码）
-        if (!empty($options['pic'])) {
-            $cmd .= ' -fPIC';
-        }
-        
+
+        $cmd .= $this->buildCompileOptions($options);
+
         return $cmd;
     }
 
@@ -126,6 +121,10 @@ class Gcc extends CompilerBackend
         $cmd .= ' -c';
         $cmd .= ' ' . escapeshellarg($sourceFile);
         $cmd .= ' -o ' . escapeshellarg($outputFile);
+
+        if (!empty($options['include_paths'])) {
+            $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
+        }
         
         // 优化级别（C 文件通常使用较低的优化）
         $optimizeLevel = $options['optimize'] ?? 0;
@@ -149,22 +148,21 @@ class Gcc extends CompilerBackend
         $cmd = $this->getLinkerCommand();
         $cmd .= ' ' . implode(' ', array_map('escapeshellarg', $objectFiles));
         $cmd .= ' -o ' . escapeshellarg($outputFile);
-        
-        // 共享库
-        if (!empty($options['shared'])) {
-            $cmd .= ' ' . $this->platform->getSharedLinkFlag();
-            
-            // macOS 需要 install_name
-            if ($this->platform instanceof \PhpAot\Php\Platform\Macos && !empty($options['install_name'])) {
-                $cmd .= ' ' . $this->platform->getCurrentInstallNameOption($options['install_name']);
-            }
+
+        if (!empty($options['library_paths'])) {
+            $cmd .= ' ' . $this->formatLibraryPaths($options['library_paths']);
         }
-        
-        // RPATH（运行时库搜索路径）
-        if (!empty($options['rpath'])) {
-            $cmd .= ' ' . $this->platform->getRpathOptions($options['rpath']);
+
+        if (!empty($options['ldflags'])) {
+            $cmd .= ' ' . $options['ldflags'];
         }
-        
+
+        $cmd .= $this->buildLinkOptions($options);
+
+        if (!empty($options['libraries'])) {
+            $cmd .= ' ' . $this->formatLibraries($options['libraries']);
+        }
+
         return $cmd;
     }
 
@@ -262,7 +260,7 @@ class Gcc extends CompilerBackend
         }
         
         // PIC (Position Independent Code)
-        if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
+        if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['pic'])) {
             $cmd .= ' -fPIC';
         }
         
@@ -287,8 +285,12 @@ class Gcc extends CompilerBackend
         $cmd = '';
         
         // 扩展模块选项
-        if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
-            $cmd .= ' -shared';
+        if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['shared'])) {
+            $cmd .= ' ' . $this->platform->getSharedLinkFlag();
+
+            if ($this->platform instanceof \PhpAot\Php\Platform\Macos && !empty($config['install_name'])) {
+                $cmd .= ' ' . $this->platform->getCurrentInstallNameOption($config['install_name']);
+            }
         }
         
         // RPATH

@@ -9,6 +9,7 @@ use PhpAot\Php\Platform\Macos;
 use PhpAot\Php\Backend\Msvc;
 use PhpAot\Php\Backend\Gcc;
 use PhpAot\Php\Backend\Clang;
+use PhpAot\Php\Backend\CompilerFactory;
 
 class BackendTest extends TestCase
 {
@@ -231,6 +232,43 @@ class BackendTest extends TestCase
         $this->assertStringContainsString('-DZEND_WIN32', $cmd);
     }
 
+    public function testGccBuildCompileCommandUsesCustomCompilerAndIncludes(): void
+    {
+        $platform = new Linux();
+        $compiler = new Gcc($platform, '/opt/toolchain/bin/g++');
+
+        $cmd = $compiler->buildCompileCommand('test.cpp', 'test.o', [
+            'include_paths' => ['/usr/include/php'],
+            'cpp_std' => 'c++20',
+            'cxxflags' => '-fno-rtti',
+        ]);
+
+        $this->assertStringStartsWith('/opt/toolchain/bin/g++', $cmd);
+        $this->assertStringContainsString('-I' . escapeshellarg('/usr/include/php'), $cmd);
+        $this->assertStringContainsString('-std=c++20', $cmd);
+        $this->assertStringContainsString('-fno-rtti', $cmd);
+    }
+
+    public function testGccBuildLinkCommandIncludesPlatformPathsOptionsAndLibraries(): void
+    {
+        $platform = new Linux();
+        $compiler = new Gcc($platform, 'g++');
+
+        $cmd = $compiler->buildLinkCommand(['a.o', 'b.o'], 'app', [
+            'library_paths' => ['/usr/lib'],
+            'libraries' => ['/usr/lib/libphpx.so', 'php'],
+            'ldflags' => '-Wl,--as-needed',
+            'build_mode' => 'ext',
+        ]);
+
+        $this->assertStringStartsWith('g++', $cmd);
+        $this->assertStringContainsString('-L' . escapeshellarg('/usr/lib'), $cmd);
+        $this->assertStringContainsString('-Wl,--as-needed', $cmd);
+        $this->assertStringContainsString('-shared', $cmd);
+        $this->assertStringContainsString('-lphpx', $cmd);
+        $this->assertStringContainsString('-lphp', $cmd);
+    }
+
     /**
      * 测试 GCC 完整编译选项
      */
@@ -312,6 +350,15 @@ class BackendTest extends TestCase
         
         // Windows 下 Clang 使用 link.exe
         $this->assertEquals('link', $compiler->getLinkerCommand());
+    }
+
+    public function testCompilerFactoryKeepsConfiguredCompilerCommand(): void
+    {
+        $compiler = CompilerFactory::createByName('/opt/llvm/bin/clang++', new Linux());
+
+        $this->assertInstanceOf(Clang::class, $compiler);
+        $this->assertSame('/opt/llvm/bin/clang++', $compiler->getCompilerCommand());
+        $this->assertSame('/opt/llvm/bin/clang++', $compiler->getLinkerCommand());
     }
 
     /**
