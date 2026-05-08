@@ -126,4 +126,63 @@ class Macos extends PlatformBase
     {
         return '-install_name ' . escapeshellarg($path);
     }
+
+    /**
+     * 构建 PHP 包含路径
+     */
+    public function buildPhpIncludePaths(string $phpDir): array
+    {
+        $paths = [
+            $phpDir . '/include',
+            $phpDir . '/include/main',
+            $phpDir . '/include/TSRM',
+            $phpDir . '/include/Zend',
+        ];
+
+        // 过滤不存在的路径
+        return array_filter($paths, 'is_dir');
+    }
+
+    /**
+     * 构建 PHP 库路径
+     */
+    public function buildPhpLibPaths(string $phpDir): array
+    {
+        $paths = [];
+        
+        $libPath = $phpDir . '/lib';
+        if (is_dir($libPath)) {
+            $paths[] = $libPath;
+        }
+
+        return $paths;
+    }
+
+    /**
+     * 检测 PHP 库文件
+     */
+    public function detectPhpLibs(string $phpDir): array
+    {
+        $libPath = $phpDir . '/lib';
+        
+        if (!is_dir($libPath)) {
+            throw new \RuntimeException("PHP lib directory not found: {$libPath}");
+        }
+
+        $embedLib = $libPath . '/libphp.dylib';
+        $staticLib = $libPath . '/libphp.a';
+
+        $hasEmbed = file_exists($embedLib);
+        $hasStatic = file_exists($staticLib);
+
+        if (!$hasEmbed && !$hasStatic) {
+            throw new \RuntimeException('Neither libphp.dylib nor libphp.a found');
+        }
+
+        return [
+            'embed' => $hasEmbed ? $embedLib : null,
+            'static' => $hasStatic ? $staticLib : null,
+            'is_shared' => $hasEmbed,
+        ];
+    }
 }

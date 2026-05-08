@@ -173,21 +173,29 @@ if ((new Windows())->isCurrent()) {
 3. **文档和示例**
    - ✅ 创建详细 README
    - ✅ 创建使用示例
+   - ✅ 创建迁移指南（MIGRATION_GUIDE.md）
+   - ✅ 创建集成测试（test_integration.php）
+
+4. **CompilerBase 集成**
+   - ✅ 添加新架构属性
+   - ✅ 添加自动初始化逻辑
+   - ✅ 保持向后兼容
 
 ### 🔄 进行中
-4. **重构 CompilerBase**
+5. **重构 CompilerBase**
    - ⏳ 使用新的 Platform 和 Backend 类
    - ⏳ 保持向后兼容
    - ⏳ 逐步迁移现有代码
+   - 📖 详见 [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
 
 ### 📋 待办
-5. **添加单元测试**
+6. **添加单元测试**
    - ⏳ 测试所有 Platform 实现
    - ⏳ 测试所有 Backend 实现
    - ⏳ 测试工厂类
    - ⏳ 测试集成场景
 
-6. **文档完善**
+7. **文档完善**
    - ⏳ 添加更多使用示例
    - ⏳ 编写迁移指南
    - ⏳ 更新 API 文档

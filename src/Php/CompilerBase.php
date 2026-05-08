@@ -266,6 +266,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     // Windows 平台：保存检测到的 PHP lib 文件路径
     protected string $windowsPhpEmbedLib = '';  // php8embed.lib 路径
     protected string $windowsPhpCoreLib = '';   // php8ts.lib 或 php8.lib 路径
+    
+    // 新的平台和编译器抽象层（可选使用）
+    protected ?\PhpAot\Php\Platform\PlatformBase $platform = null;
+    protected ?\PhpAot\Php\Backend\CompilerBackend $compilerBackend = null;
 
     /**
      * 在预处理阶段获取所有类的方法名称，检测子类和父类中存在的同名方法，解决动态绑定方法调用的问题
@@ -302,6 +306,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->detectPlatform();
     }
 
+    /**
+     * 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
+     */
     protected function detectPlatform(): void
     {
         // 检测是否为 Windows 系统
@@ -324,9 +331,40 @@ class CompilerBase extends \PhpAot\Core\Translator
 
             // Windows 平台：检测 PHP lib 文件并决定 ZTS/NTS 模式
             $this->detectWindowsPhpLibs();
+            
+            // 初始化新的 Platform 和 Backend 抽象层
+            $this->initializeNewArchitecture();
         } else {
             // Unix/Linux/macOS 使用 g++
             $this->cppCompiler = 'g++';
+            
+            // 初始化新的 Platform 和 Backend 抽象层
+            $this->initializeNewArchitecture();
+        }
+    }
+    
+    /**
+     * 初始化新的 Platform 和 Backend 抽象层
+     * 这是一个渐进式迁移，保持向后兼容
+     */
+    protected function initializeNewArchitecture(): void
+    {
+        try {
+            // 自动检测平台和编译器
+            $result = \PhpAot\Php\Backend\CompilerFactory::autoDetect($this->cppCompiler);
+            $this->platform = $result['platform'];
+            $this->compilerBackend = $result['compiler'];
+            
+            $this->climate->info(
+                "Initialized new architecture: {$this->platform->getName()} + {$this->compilerBackend->getName()}"
+            );
+        } catch (\Exception $e) {
+            // 如果初始化失败，回退到旧逻辑
+            $this->climate->warning(
+                "Failed to initialize new architecture: {$e->getMessage()}. Using legacy mode."
+            );
+            $this->platform = null;
+            $this->compilerBackend = null;
         }
     }
 
@@ -2326,6 +2364,46 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseIncludes(): string
     {
+        // 优先使用新架构
+        if ($this->platform !== null) {
+            return $this->parseIncludesNew();
+        }
+        
+        // 回退到旧逻辑
+        return $this->parseIncludesLegacy();
+    }
+
+    /**
+     * 使用新架构解析包含路径
+     */
+    protected function parseIncludesNew(): string
+    {
+        $includePaths = [
+            $this->getPhpxDir() . '/include',
+            $this->getBuildDir() . '/include',
+            $this->getPhpxDir() . '/src/misc',
+        ];
+
+        // 根据平台添加 PHP 包含路径
+        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+            /** @var \PhpAot\Php\Platform\Windows $platform */
+            $platform = $this->platform;
+            $phpSdkPaths = $platform->buildPhpSdkIncludePaths($this->getPhpDir());
+            $includePaths = array_merge($includePaths, $phpSdkPaths);
+        } else {
+            // Linux/macOS
+            $phpPaths = $this->platform->buildPhpIncludePaths($this->getPhpDir());
+            $includePaths = array_merge($includePaths, $phpPaths);
+        }
+
+        return $this->platform->getIncludeFlags($includePaths);
+    }
+
+    /**
+     * 旧的包含路径解析逻辑（保持兼容）
+     */
+    protected function parseIncludesLegacy(): string
+    {
         if ($this->isWindows()) {
             return $this->parseWindowsIncludes();
         }
@@ -2404,6 +2482,44 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseLdflags(): string
     {
+        // 优先使用新架构
+        if ($this->platform !== null) {
+            return $this->parseLdflagsNew();
+        }
+        
+        // 回退到旧逻辑
+        return $this->parseLdflagsLegacy();
+    }
+
+    /**
+     * 使用新架构解析库路径
+     */
+    protected function parseLdflagsNew(): string
+    {
+        $libraryPaths = [
+            $this->getPhpxDir() . '/lib',
+        ];
+
+        // 根据平台添加 PHP 库路径
+        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+            /** @var \PhpAot\Php\Platform\Windows $platform */
+            $platform = $this->platform;
+            $phpLibPaths = $platform->buildPhpSdkLibPaths($this->getPhpDir());
+            $libraryPaths = array_merge($libraryPaths, $phpLibPaths);
+        } else {
+            // Linux/macOS
+            $phpLibPaths = $this->platform->buildPhpLibPaths($this->getPhpDir());
+            $libraryPaths = array_merge($libraryPaths, $phpLibPaths);
+        }
+
+        return $this->platform->getLibraryPathFlags($libraryPaths);
+    }
+
+    /**
+     * 旧的库路径解析逻辑（保持兼容）
+     */
+    protected function parseLdflagsLegacy(): string
+    {
         if ($this->isWindows()) {
             return $this->parseWindowsLdflags();
         }
@@ -2469,6 +2585,71 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseLibs(): string
     {
+        // 优先使用新架构
+        if ($this->platform !== null) {
+            return $this->parseLibsNew();
+        }
+        
+        // 回退到旧逻辑
+        return $this->parseLibsLegacy();
+    }
+
+    /**
+     * 使用新架构解析库文件
+     */
+    protected function parseLibsNew(): string
+    {
+        $libraries = [];
+
+        // phpx 库（根据平台使用不同的文件名格式）
+        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+            // Windows: phpx.lib (无 lib 前缀)
+            $phpxLibPath = $this->getPhpxDir() . '\\lib\\phpx.lib';
+            if (file_exists($phpxLibPath)) {
+                $libraries[] = '"' . $phpxLibPath . '"';
+            } else {
+                $this->error('phpx.lib not found at: ' . $phpxLibPath);
+            }
+        } else {
+            // Linux/macOS: libphpx.so 或 libphpx.a
+            $phpxLibPath = $this->getPhpxDir() . '/lib/libphpx.' . $this->platform->getSharedLibraryExtension();
+            if (file_exists($phpxLibPath)) {
+                $libraries[] = $phpxLibPath;
+            } else {
+                // 尝试静态库
+                $phpxStaticPath = $this->getPhpxDir() . '/lib/libphpx.a';
+                if (file_exists($phpxStaticPath)) {
+                    $libraries[] = $phpxStaticPath;
+                } else {
+                    $this->error('libphpx library not found');
+                }
+            }
+        }
+
+        // bin 模式需要链接 PHP 库
+        if ($this->buildMode === 'bin') {
+            if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+                // Windows 使用已检测的库文件
+                if (!empty($this->windowsPhpEmbedLib)) {
+                    $libraries[] = '"' . $this->windowsPhpEmbedLib . '"';
+                }
+                if (!empty($this->windowsPhpCoreLib)) {
+                    $libraries[] = '"' . $this->windowsPhpCoreLib . '"';
+                }
+            } else {
+                // Linux/macOS: 添加 php 库
+                $libraries[] = 'php';
+            }
+        }
+
+        return $this->platform->getLibraryFlags($libraries);
+    }
+
+    /**
+     * 旧的库文件解析逻辑（保持兼容）
+     */
+    protected function parseLibsLegacy(): string
+    {
         if ($this->isWindows()) {
             return $this->parseWindowsLibs();
         }
@@ -2524,6 +2705,93 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
     protected function addCompilationOption(string &$cmd, bool $link): void
+    {
+        // 优先使用新架构
+        if ($this->compilerBackend !== null) {
+            $this->addCompilationOptionNew($cmd, $link);
+        } else {
+            // 回退到旧逻辑
+            $this->addCompilationOptionLegacy($cmd, $link);
+        }
+    }
+
+    /**
+     * 使用新架构添加编译选项
+     */
+    protected function addCompilationOptionNew(string &$cmd, bool $link): void
+    {
+        if (!$link) {
+            // 编译时选项
+            
+            // 先添加包含路径（平台相关，parseIncludesNew 内部已处理平台差异）
+            if ($this->platform !== null) {
+                $cmd .= ' ' . $this->parseIncludesNew();
+            } else {
+                // 回退到旧方法
+                if ($this->isWindows()) {
+                    $cmd .= ' ' . $this->parseWindowsIncludes();
+                } else {
+                    $cmd .= ' ' . $this->parseUnixIncludes();
+                }
+            }
+            
+            // 再添加编译选项（编译器相关）
+            $config = [
+                'optimize' => $this->optimizeLevel,
+                'debug_info' => $this->debugInfo,
+                'sanitize' => $this->sanitize,
+                'cpp_std' => $this->cxxStd,
+                'is_zts' => $this->isPhpZts,
+                'build_mode' => $this->buildMode,
+                'enable_profiler' => $this->enableProfiler,
+                'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
+                'cxxflags' => $this->cxxflags,
+            ];
+            
+            $cmd .= $this->compilerBackend->buildCompileOptions($config);
+        } else {
+            // 链接时选项
+            
+            // 先添加库路径（平台相关，parseLdflagsNew 内部已处理平台差异）
+            if ($this->platform !== null) {
+                $cmd .= ' ' . $this->parseLdflagsNew();
+            } else {
+                // 回退到旧方法
+                if ($this->isWindows()) {
+                    $cmd .= ' ' . $this->parseWindowsLdflags();
+                } else {
+                    $cmd .= ' ' . $this->parseUnixLdflags();
+                }
+            }
+            
+            // 再添加链接选项（编译器相关）
+            $config = [
+                'debug_info' => $this->debugInfo,
+                'no_console' => $this->noConsole,
+                'build_mode' => $this->buildMode,
+                'sanitize' => $this->sanitize,
+            ];
+            
+            $cmd .= $this->compilerBackend->buildLinkOptions($config);
+            
+            // 最后添加库文件（平台相关，必须在链接选项之后）
+            if ($this->platform !== null) {
+                $cmd .= ' ' . $this->parseLibsNew();
+            } else {
+                // 回退到旧方法
+                if ($this->isWindows()) {
+                    $cmd .= ' ' . $this->parseWindowsLibs();
+                } else {
+                    $cmd .= ' ' . $this->parseUnixLibs();
+                }
+            }
+        }
+    }
+
+    /**
+     * 旧版添加编译选项（回退逻辑）
+     */
+    protected function addCompilationOptionLegacy(string &$cmd, bool $link): void
     {
         if ($this->isWindows()) {
             // Windows 下根据编译器类型选择

@@ -197,4 +197,202 @@ class Clang extends CompilerBackend
         
         return $cmd;
     }
+
+    /**
+     * 构建完整的编译选项
+     */
+    public function buildFullCompileOptions(array $options = []): string
+    {
+        $cmd = '';
+        
+        // Windows MSVC 兼容模式
+        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+            $cmd .= ' -fms-compatibility';
+            $cmd .= ' -fms-compatibility-version=19.40';
+            $cmd .= ' -fdelayed-template-parsing';
+            $cmd .= ' -fms-extensions';
+        }
+        
+        // 优化级别
+        if (!empty($options['debug_info'])) {
+            $cmd .= ' -O0 -g';
+        } else {
+            $optimizeLevel = $options['optimize'] ?? 2;
+            $cmd .= ' -O' . $optimizeLevel;
+        }
+        
+        // 警告
+        $cmd .= ' -Wall';
+        
+        // C++ 标准
+        if (!empty($options['cpp_std'])) {
+            $cmd .= ' -std=' . $options['cpp_std'];
+        }
+        
+        // Sanitizer
+        if (!empty($options['sanitize'])) {
+            $cmd .= ' -fsanitize=' . $options['sanitize'];
+        }
+        
+        // PIC
+        if (!empty($options['pic'])) {
+            $cmd .= ' -fPIC';
+        }
+        
+        return $cmd;
+    }
+
+    /**
+     * 构建完整的链接选项
+     */
+    public function buildFullLinkOptions(array $options = []): string
+    {
+        $cmd = '';
+        
+        // Windows 特定选项
+        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+            // 调试
+            if (!empty($options['debug_info'])) {
+                $cmd .= ' /DEBUG';
+            }
+            
+            // Windows 子系统
+            if (!empty($options['no_console'])) {
+                $cmd .= ' ' . $this->platform->getSubsystemOptions(true);
+            }
+            
+            // CRT
+            $cmd .= ' ' . $this->platform->getCrtConfig();
+        } else {
+            // Unix/Linux/macOS
+            // 共享库
+            if (!empty($options['shared'])) {
+                $cmd .= ' ' . $this->platform->getSharedLinkFlag();
+            }
+            
+            // RPATH
+            if (!empty($options['rpath'])) {
+                $cmd .= ' ' . $this->platform->getRpathOptions($options['rpath']);
+            }
+        }
+        
+        // Sanitizer
+        if (!empty($options['sanitize'])) {
+            $cmd .= ' -fsanitize=' . $options['sanitize'];
+        }
+        
+        return $cmd;
+    }
+
+    /**
+     * 构建编译选项（实现抽象方法）
+     */
+    public function buildCompileOptions(array $config = []): string
+    {
+        $cmd = '';
+        
+        // Windows MSVC 兼容模式
+        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+            $cmd .= ' -fms-compatibility';
+            $cmd .= ' -fms-compatibility-version=19.40';
+            $cmd .= ' -fdelayed-template-parsing';
+            $cmd .= ' -fms-extensions';
+        }
+        
+        // Sanitizer
+        if (!empty($config['sanitize'])) {
+            $cmd .= ' -fsanitize=' . $config['sanitize'];
+        }
+        
+        // 优化和调试
+        if (!empty($config['debug_info'])) {
+            $cmd .= ' -O0 -g';
+        } else {
+            $optimizeLevel = $config['optimize'] ?? 2;
+            $cmd .= ' -O' . $optimizeLevel;
+        }
+        
+        // 警告
+        $cmd .= ' -Wall';
+        
+        // C++ 标准
+        if (!empty($config['cpp_std'])) {
+            $cmd .= ' -std=' . $config['cpp_std'];
+        }
+        
+        // PIC (Position Independent Code)
+        if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
+            if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+                // Windows Clang 不需要特殊处理
+            } else {
+                $cmd .= ' -fPIC';
+            }
+        }
+        
+        // 性能分析宏
+        if (!empty($config['enable_profiler'])) {
+            $cmd .= ' -DPPROF_ON=1';
+        }
+        
+        // 用户自定义编译标志
+        if (!empty($config['cxxflags'])) {
+            $cmd .= ' ' . $config['cxxflags'];
+        }
+        
+        return $cmd;
+    }
+
+    /**
+     * 构建链接选项（实现抽象方法）
+     */
+    public function buildLinkOptions(array $config = []): string
+    {
+        $cmd = '';
+        
+        // Windows 特定选项
+        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+            // 调试
+            if (!empty($config['debug_info'])) {
+                $cmd .= ' /DEBUG';
+            }
+            
+            // Windows 子系统
+            if (!empty($config['no_console'])) {
+                $cmd .= ' ' . $this->platform->getSubsystemOptions(true);
+            }
+            
+            // CRT
+            $cmd .= ' ' . $this->platform->getCrtConfig();
+            
+            // 扩展模块选项
+            if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
+                $cmd .= ' /DLL';
+            }
+        } else {
+            // Unix/Linux/macOS
+            // 调试
+            if (!empty($config['debug_info'])) {
+                $cmd .= ' -g';
+            }
+            
+            // 扩展模块选项
+            if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
+                $cmd .= ' -shared';
+            }
+            
+            // RPATH
+            if (!empty($config['rpath'])) {
+                foreach ($config['rpath'] as $path) {
+                    $cmd .= ' -Wl,-rpath,' . escapeshellarg($path);
+                }
+            }
+        }
+        
+        // Sanitizer
+        if (!empty($config['sanitize'])) {
+            $cmd .= ' -fsanitize=' . $config['sanitize'];
+        }
+        
+        return $cmd;
+    }
 }

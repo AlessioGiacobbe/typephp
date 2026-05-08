@@ -1,0 +1,282 @@
+<?php
+
+namespace PhpAot\Tests\Platform;
+
+use PHPUnit\Framework\TestCase;
+use PhpAot\Php\Platform\Windows;
+use PhpAot\Php\Platform\Linux;
+use PhpAot\Php\Platform\Macos;
+
+class PlatformTest extends TestCase
+{
+    /**
+     * 测试 Windows 平台基本功能
+     */
+    public function testWindowsBasic(): void
+    {
+        $platform = new Windows();
+        
+        $this->assertEquals('Windows', $platform->getName());
+        $this->assertEquals('.obj', $platform->getObjectExtension());
+        $this->assertEquals('.exe', $platform->getExecutableExtension());
+        $this->assertEquals('.dll', $platform->getSharedLibraryExtension());
+        $this->assertEquals('\\', $platform->getPathSeparator());
+    }
+
+    /**
+     * 测试 Windows 包含路径格式化
+     */
+    public function testWindowsIncludeFlags(): void
+    {
+        $platform = new Windows();
+        
+        $paths = ['C:\PHP\include', 'C:\PHP\SDK\include'];
+        $flags = $platform->getIncludeFlags($paths);
+        
+        $this->assertStringContainsString('/I "C:\PHP\include"', $flags);
+        $this->assertStringContainsString('/I "C:\PHP\SDK\include"', $flags);
+    }
+
+    /**
+     * 测试 Windows 库路径格式化
+     */
+    public function testWindowsLibraryPathFlags(): void
+    {
+        $platform = new Windows();
+        
+        $paths = ['C:\PHP\lib', 'C:\PHP\SDK\lib'];
+        $flags = $platform->getLibraryPathFlags($paths);
+        
+        $this->assertStringContainsString('/LIBPATH:"C:\PHP\lib"', $flags);
+        $this->assertStringContainsString('/LIBPATH:"C:\PHP\SDK\lib"', $flags);
+    }
+
+    /**
+     * 测试 Windows 库文件格式化
+     */
+    public function testWindowsLibraryFlags(): void
+    {
+        $platform = new Windows();
+        
+        $libs = ['php8embed.lib', 'php8ts.lib'];
+        $flags = $platform->getLibraryFlags($libs);
+        
+        $this->assertStringContainsString('"php8embed.lib"', $flags);
+        $this->assertStringContainsString('"php8ts.lib"', $flags);
+    }
+
+    /**
+     * 测试 Windows 路径规范化
+     */
+    public function testWindowsNormalizePath(): void
+    {
+        $platform = new Windows();
+        
+        $this->assertEquals('src\Php\Backend', $platform->normalizePath('src/Php/Backend'));
+        $this->assertEquals('C:\PHP\include', $platform->normalizePath('C:/PHP/include'));
+    }
+
+    /**
+     * 测试 Windows 路径组合
+     */
+    public function testWindowsJoinPath(): void
+    {
+        $platform = new Windows();
+        
+        $path = $platform->joinPath('src', 'Php', 'Backend');
+        $this->assertEquals('src\Php\Backend', $path);
+    }
+
+    /**
+     * 测试 Windows 子系统选项
+     */
+    public function testWindowsSubsystemOptions(): void
+    {
+        $platform = new Windows();
+        
+        // 无控制台
+        $options = $platform->getSubsystemOptions(true);
+        $this->assertStringContainsString('/SUBSYSTEM:WINDOWS', $options);
+        $this->assertStringContainsString('/ENTRY:mainCRTStartup', $options);
+        
+        // 有控制台
+        $options = $platform->getSubsystemOptions(false);
+        $this->assertEquals('', $options);
+    }
+
+    /**
+     * 测试 Windows CRT 配置
+     */
+    public function testWindowsCrtConfig(): void
+    {
+        $platform = new Windows();
+        
+        $config = $platform->getCrtConfig();
+        $this->assertEquals('/NODEFAULTLIB:LIBCMT', $config);
+    }
+
+    /**
+     * 测试 Windows 调试选项
+     */
+    public function testWindowsDebugOptions(): void
+    {
+        $platform = new Windows();
+        
+        // 启用调试
+        $options = $platform->getDebugOptions(true);
+        $this->assertEquals('/DEBUG', $options);
+        
+        // 禁用调试
+        $options = $platform->getDebugOptions(false);
+        $this->assertEquals('', $options);
+    }
+
+    /**
+     * 测试 Linux 平台基本功能
+     */
+    public function testLinuxBasic(): void
+    {
+        $platform = new Linux();
+        
+        $this->assertEquals('Linux', $platform->getName());
+        $this->assertEquals('.o', $platform->getObjectExtension());
+        $this->assertEquals('', $platform->getExecutableExtension());
+        $this->assertEquals('.so', $platform->getSharedLibraryExtension());
+        $this->assertEquals('/', $platform->getPathSeparator());
+    }
+
+    /**
+     * 测试 Linux 包含路径格式化
+     */
+    public function testLinuxIncludeFlags(): void
+    {
+        $platform = new Linux();
+        
+        $paths = ['/usr/include/php', '/usr/local/include'];
+        $flags = $platform->getIncludeFlags($paths);
+        
+        $this->assertStringContainsString('-I"/usr/include/php"', $flags);
+        $this->assertStringContainsString('-I"/usr/local/include"', $flags);
+    }
+
+    /**
+     * 测试 Linux 库路径格式化
+     */
+    public function testLinuxLibraryPathFlags(): void
+    {
+        $platform = new Linux();
+        
+        $paths = ['/usr/lib', '/usr/local/lib'];
+        $flags = $platform->getLibraryPathFlags($paths);
+        
+        $this->assertStringContainsString('-L"/usr/lib"', $flags);
+        $this->assertStringContainsString('-L"/usr/local/lib"', $flags);
+    }
+
+    /**
+     * 测试 Linux 库文件格式化
+     */
+    public function testLinuxLibraryFlags(): void
+    {
+        $platform = new Linux();
+        
+        $libs = ['/usr/lib/libphp.so', '/usr/lib/libphpx.a'];
+        $flags = $platform->getLibraryFlags($libs);
+        
+        $this->assertStringContainsString('-lphp', $flags);
+        $this->assertStringContainsString('-lphpx', $flags);
+    }
+
+    /**
+     * 测试 Linux RPATH 选项
+     */
+    public function testLinuxRpathOptions(): void
+    {
+        $platform = new Linux();
+        
+        $paths = ['/usr/lib', '/usr/local/lib'];
+        $options = $platform->getRpathOptions($paths);
+        
+        $this->assertStringContainsString('-Wl,-rpath,"/usr/lib"', $options);
+        $this->assertStringContainsString('-Wl,-rpath,"/usr/local/lib"', $options);
+    }
+
+    /**
+     * 测试 Linux PIC 标志
+     */
+    public function testLinuxPicFlag(): void
+    {
+        $platform = new Linux();
+        
+        $this->assertEquals('-fPIC', $platform->getPicFlag());
+    }
+
+    /**
+     * 测试 Linux 共享库链接标志
+     */
+    public function testLinuxSharedLinkFlag(): void
+    {
+        $platform = new Linux();
+        
+        $this->assertEquals('-shared', $platform->getSharedLinkFlag());
+    }
+
+    /**
+     * 测试 macOS 平台基本功能
+     */
+    public function testMacosBasic(): void
+    {
+        $platform = new Macos();
+        
+        $this->assertEquals('macOS', $platform->getName());
+        $this->assertEquals('.o', $platform->getObjectExtension());
+        $this->assertEquals('', $platform->getExecutableExtension());
+        $this->assertEquals('.dylib', $platform->getSharedLibraryExtension());
+        $this->assertEquals('/', $platform->getPathSeparator());
+    }
+
+    /**
+     * 测试 macOS install_name 选项
+     */
+    public function testMacosInstallName(): void
+    {
+        $platform = new Macos();
+        
+        $option = $platform->getCurrentInstallNameOption('/usr/lib/libtest.dylib');
+        $this->assertStringContainsString('-install_name', $option);
+        $this->assertStringContainsString('/usr/lib/libtest.dylib', $option);
+    }
+
+    /**
+     * 测试 macOS 共享库链接标志
+     */
+    public function testMacosSharedLinkFlag(): void
+    {
+        $platform = new Macos();
+        
+        $this->assertEquals('-dynamiclib', $platform->getSharedLinkFlag());
+    }
+
+    /**
+     * 测试空数组处理
+     */
+    public function testEmptyArrays(): void
+    {
+        $windows = new Windows();
+        $linux = new Linux();
+        $macos = new Macos();
+        
+        // 所有平台应该正确处理空数组
+        $this->assertEquals('', $windows->getIncludeFlags([]));
+        $this->assertEquals('', $windows->getLibraryPathFlags([]));
+        $this->assertEquals('', $windows->getLibraryFlags([]));
+        
+        $this->assertEquals('', $linux->getIncludeFlags([]));
+        $this->assertEquals('', $linux->getLibraryPathFlags([]));
+        $this->assertEquals('', $linux->getLibraryFlags([]));
+        
+        $this->assertEquals('', $macos->getIncludeFlags([]));
+        $this->assertEquals('', $macos->getLibraryPathFlags([]));
+        $this->assertEquals('', $macos->getLibraryFlags([]));
+    }
+}

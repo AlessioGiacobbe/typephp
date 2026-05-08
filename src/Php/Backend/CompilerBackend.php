@@ -76,6 +76,31 @@ abstract class CompilerBackend
     ): string;
 
     /**
+     * 构建编译选项（不含文件路径）
+     * @param array $config 编译配置
+     *   - optimize: 优化级别 (0-3)
+     *   - debug_info: 是否生成调试信息
+     *   - sanitize: sanitizer 类型 (address, undefined, etc.)
+     *   - cpp_std: C++ 标准版本
+     *   - is_zts: 是否为 ZTS 模式
+     *   - build_mode: 构建模式 ('bin' or 'ext')
+     *   - enable_profiler: 是否启用性能分析
+     *   - suppressed_warnings: 需要屏蔽的警告代码数组
+     *   - cxxflags: 用户自定义编译标志
+     */
+    abstract public function buildCompileOptions(array $config = []): string;
+
+    /**
+     * 构建链接选项（不含文件路径）
+     * @param array $config 链接配置
+     *   - debug_info: 是否生成调试信息
+     *   - no_console: 是否隐藏控制台窗口
+     *   - build_mode: 构建模式 ('bin' or 'ext')
+     *   - sanitize: sanitizer 类型
+     */
+    abstract public function buildLinkOptions(array $config = []): string;
+
+    /**
      * 获取平台实例
      */
     public function getPlatform(): PlatformBase
