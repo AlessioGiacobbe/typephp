@@ -167,8 +167,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $linker = 'link';  // Windows linker: link.exe or lld-link
     protected int $floatPrecision = 17;
     protected bool $debugInfo = false;
-    protected bool $formatCode = true;
-    protected bool $printBacktraceOnError = true;
+    protected bool $formatCode = false;
+    protected bool $printBacktraceOnError = false;
     protected bool $noLiteralStrings = false;
     protected bool $noConsole = false;  // Windows: hide console window
     protected string $sanitize = '';    // Sanitizer type (address, undefined, etc.)
