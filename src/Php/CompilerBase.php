@@ -300,10 +300,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->setBuildDir($rootPath . '/build');
         $climate = new CLImate();
         $this->climate = $climate;
-        //        $this->noLiteralStrings = $climate->arguments->get('no-literal-strings');
-
-        // 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
-        $this->detectPlatform();
     }
 
     /**

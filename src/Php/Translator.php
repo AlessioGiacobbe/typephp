@@ -68,6 +68,10 @@ class Translator extends Preprocessor
             $this->showVersion();
             exit(0);
         }
+
+
+        // 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
+        $this->detectPlatform();
     }
 
     public function showUsage(): void
