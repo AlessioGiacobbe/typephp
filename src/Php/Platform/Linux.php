@@ -120,19 +120,55 @@ class Linux extends PlatformBase
     }
 
     /**
-     * 构建 PHP 包含路径
+     * 构建 PHP 包含路径（使用 php-config 动态获取）
      */
     public function buildPhpIncludePaths(string $phpDir): array
     {
+        // 优先使用 php-config 获取包含路径
+        $phpConfigPath = $this->findPhpConfig($phpDir);
+        if ($phpConfigPath) {
+            $includes = shell_exec("{$phpConfigPath} --includes 2>/dev/null");
+            if ($includes) {
+                // 解析 -I/path 格式的路径
+                preg_match_all('/-I([^\s]+)/', $includes, $matches);
+                if (!empty($matches[1])) {
+                    // 过滤不存在的路径并返回
+                    return array_filter($matches[1], 'is_dir');
+                }
+            }
+        }
+        
+        // 回退到硬编码路径（兼容旧版本）
         $paths = [
-            $phpDir . '/include',
-            $phpDir . '/include/main',
-            $phpDir . '/include/TSRM',
-            $phpDir . '/include/Zend',
+            $phpDir . '/include/php',
+            $phpDir . '/include/php/main',
+            $phpDir . '/include/php/TSRM',
+            $phpDir . '/include/php/Zend',
+            $phpDir . '/include/php/ext',
         ];
 
         // 过滤不存在的路径
         return array_filter($paths, 'is_dir');
+    }
+    
+    /**
+     * 查找 php-config 可执行文件
+     */
+    private function findPhpConfig(string $phpDir): ?string
+    {
+        $candidates = [
+            $phpDir . '/bin/php-config',
+            '/usr/bin/php-config',
+            '/usr/local/bin/php-config',
+        ];
+        
+        foreach ($candidates as $path) {
+            if (is_executable($path)) {
+                return $path;
+            }
+        }
+        
+        return null;
     }
 
     /**
