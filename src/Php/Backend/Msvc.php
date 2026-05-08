@@ -113,6 +113,13 @@ class Msvc extends CompilerBackend
         // 警告级别
         $cmd .= ' /W3';
         
+        // 禁用常见警告
+        if (!empty($options['suppressed_warnings'])) {
+            foreach ($options['suppressed_warnings'] as $code => $description) {
+                $cmd .= " /wd{$code}";
+            }
+        }
+        
         // C++ 标准
         $cppStd = $options['cpp_std'] ?? 'c++17';
         $cmd .= ' /std:' . $cppStd;
