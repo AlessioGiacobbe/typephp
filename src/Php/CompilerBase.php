@@ -524,8 +524,18 @@ class CompilerBase extends \PhpAot\Core\Translator
             return rtrim($phpxDir, '\/');
         }
 
-        // 默认路径
-        return $this->rootPath . '/vendor/swoole/phpx';
+        // 尝试使用 Composer 安装的 phpx
+        $composerPhpxDir = $this->rootPath . '/vendor/swoole/phpx';
+        if (is_dir($composerPhpxDir)) {
+            return $composerPhpxDir;
+        }
+
+        // 两个路径都不存在，报错
+        $this->error(
+            'phpx directory not found. Please either:\n' .
+            '1. Set PHPX_HOME environment variable to your phpx installation path\n' .
+            '2. Install phpx via Composer: composer require swoole/phpx'
+        );
     }
 
     public function isWindows(): bool
