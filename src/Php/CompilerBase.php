@@ -2409,21 +2409,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $type;
     }
 
-    protected function parseIncludes(): string
-    {
-        // 优先使用新架构
-        if ($this->platform !== null) {
-            return $this->parseIncludesNew();
-        }
-        
-        // 回退到旧逻辑
-        return $this->parseIncludesLegacy();
-    }
-
     /**
-     * 使用新架构解析包含路径
+     * 解析包含路径
      */
-    protected function parseIncludesNew(): string
+    protected function parseIncludes(): string
     {
         $includePaths = [
             $this->getPhpxDir() . '/include',
@@ -2446,102 +2435,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->platform->getIncludeFlags($includePaths);
     }
 
-    /**
-     * 旧的包含路径解析逻辑（保持兼容）
-     */
-    protected function parseIncludesLegacy(): string
-    {
-        if ($this->isWindows()) {
-            return $this->parseWindowsIncludes();
-        }
-
-        $list = [
-            $this->getPhpxDir() . '/include',
-            $this->getBuildDir() . '/include',
-            $this->getPhpxDir() . '/src/misc',
-        ];
-
-        // 尝试使用 php-config 获取包含路径，如果失败则手动构建
-        $phpIncludes = shell_exec('php-config --includes 2>/dev/null');
-        if ($phpIncludes) {
-            $out = trim($phpIncludes) . ' ';
-        } else {
-            // 手动构建包含路径
-            $phpInclude = $this->getPhpDir() . '/include/php';
-            if (is_dir($phpInclude)) {
-                $out = '-I ' . $phpInclude . ' ';
-            } else {
-                $out = '';
-            }
-        }
-
-        foreach ($list as $li) {
-            $out .= '-I ' . $li . ' ';
-        }
-
-        return $out;
-    }
-
-    protected function parseWindowsIncludes(): string
-    {
-        $list = [
-            $this->getPhpxDir() . '\include',
-            $this->getBuildDir() . '\include',
-            $this->getPhpxDir() . '\src\misc',
-        ];
-
-        // Windows 下 PHP 头文件必须从 SDK/include 读取
-        $phpSdkInclude = $this->getPhpDir() . '\SDK\include';
-        if (!is_dir($phpSdkInclude)) {
-            throw new \RuntimeException("PHP SDK include directory not found: {$phpSdkInclude}\n" . 'Please ensure PHP is installed with SDK headers at the expected location.');
-        }
-
-        // 添加主包含目录
-        $list[] = $phpSdkInclude;
-
-        // 添加子目录：main, Zend, TSRM, ext
-        $subDirs = ['main', 'Zend', 'TSRM', 'ext'];
-        foreach ($subDirs as $subDir) {
-            $subPath = $phpSdkInclude . '\\' . $subDir;
-            if (is_dir($subPath)) {
-                $list[] = $subPath;
-            }
-        }
-
-        $out = '';
-        // 根据编译器类型选择不同的包含路径格式
-        if ($this->cppCompiler === 'clang++' || $this->cppCompiler === 'clang') {
-            // Clang 使用 -I 格式
-            foreach ($list as $li) {
-                $normalizedPath = str_replace('/', '\\', $li);
-                $out .= '-I"' . $normalizedPath . '" ';
-            }
-        } else {
-            // MSVC 使用 /I 格式
-            foreach ($list as $li) {
-                $normalizedPath = str_replace('/', '\\', $li);
-                $out .= '/I "' . $normalizedPath . '" ';
-            }
-        }
-
-        return $out;
-    }
-
     protected function parseLdflags(): string
-    {
-        // 优先使用新架构
-        if ($this->platform !== null) {
-            return $this->parseLdflagsNew();
-        }
-        
-        // 回退到旧逻辑
-        return $this->parseLdflagsLegacy();
-    }
-
-    /**
-     * 使用新架构解析库路径
-     */
-    protected function parseLdflagsNew(): string
     {
         $libraryPaths = [
             $this->getPhpxDir() . '/lib',
@@ -2563,88 +2457,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
     /**
-     * 旧的库路径解析逻辑（保持兼容）
+     * 解析库文件
      */
-    protected function parseLdflagsLegacy(): string
-    {
-        if ($this->isWindows()) {
-            return $this->parseWindowsLdflags();
-        }
-
-        $list = [
-            $this->getPhpxDir() . '/lib',
-        ];
-
-        // 尝试使用 php-config 获取库路径，如果失败则手动构建
-        $phpLibDir = shell_exec('php-config --prefix 2>/dev/null');
-        if ($phpLibDir) {
-            $phpLibPath = trim($phpLibDir) . '/lib';
-            if (is_dir($phpLibPath)) {
-                array_unshift($list, $phpLibPath);
-            }
-        } else {
-            // 手动添加 PHP 库路径
-            $phpLibPath = $this->getPhpDir() . '/lib';
-            if (is_dir($phpLibPath)) {
-                array_unshift($list, $phpLibPath);
-            }
-        }
-
-        $out = '';
-        foreach ($list as $li) {
-            $out .= '-L ' . $li . ' ';
-        }
-
-        return $out;
-    }
-
-    protected function parseWindowsLdflags(): string
-    {
-        $list = [];
-
-        // Windows 下 PHP 库文件固定从 SDK/lib 读取
-        $phpLib = $this->getPhpDir() . '\SDK\lib';
-        if (is_dir($phpLib)) {
-            $list[] = $phpLib;
-        } else {
-            // 备选：尝试直接从 lib 目录
-            $phpLibAlt = $this->getPhpDir() . '\lib';
-            if (is_dir($phpLibAlt)) {
-                $list[] = $phpLibAlt;
-            }
-        }
-
-        // phpx 库文件
-        $phpxLib = $this->getPhpxDir() . '\lib';
-        if (is_dir($phpxLib)) {
-            $list[] = $phpxLib;
-        }
-
-        $out = '';
-        foreach ($list as $li) {
-            if (is_dir($li)) {
-                $out .= '/LIBPATH:"' . $li . '" ';
-            }
-        }
-
-        return $out;
-    }
-
     protected function parseLibs(): string
-    {
-        // 优先使用新架构
-        if ($this->platform !== null) {
-            return $this->parseLibsNew();
-        }
-        
-        // 回退到旧逻辑
-        return $this->parseLibsLegacy();
-    }
-
-    /**
-     * 使用新架构解析库文件
-     */
-    protected function parseLibsNew(): string
     {
         $libraries = [];
 
@@ -2701,22 +2516,16 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
 
-    protected function addCompilationOption(string &$cmd, bool $link): void
-    {
-        // 使用新架构（Platform + Backend）
-        $this->addCompilationOptionNew($cmd, $link);
-    }
-
     /**
-     * 使用新架构添加编译选项
+     * 添加编译选项
      */
-    protected function addCompilationOptionNew(string &$cmd, bool $link): void
+    protected function addCompilationOption(string &$cmd, bool $link): void
     {
         if (!$link) {
             // 编译时选项
             
             // 先添加包含路径（平台相关）
-            $cmd .= ' ' . $this->parseIncludesNew();
+            $cmd .= ' ' . $this->parseIncludes();
             
             // 再添加编译选项（编译器相关）
             $config = [
@@ -2736,7 +2545,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 链接时选项
             
             // 先添加库路径（平台相关）
-            $cmd .= ' ' . $this->parseLdflagsNew();
+            $cmd .= ' ' . $this->parseLdflags();
             
             // 再添加链接选项（编译器相关）
             $config = [
@@ -2760,7 +2569,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $cmd .= $this->compilerBackend->buildLinkOptions($config);
             
             // 最后添加库文件（平台相关，必须在链接选项之后）
-            $cmd .= ' ' . $this->parseLibsNew();
+            $cmd .= ' ' . $this->parseLibs();
         }
     }
 
