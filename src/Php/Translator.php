@@ -1292,6 +1292,12 @@ CODE;
             $this->setTargetName($cfg['name']);
         }
 
+        // 读取 cpp-compiler（支持中横线和下划线）
+        $cppCompiler = $cfg['cpp-compiler'] ?? $cfg['cpp_compiler'] ?? null;
+        if (!empty($cppCompiler)) {
+            $this->setCppCompiler($cppCompiler);
+        }
+
         // 读取 type/build-mode（支持中横线和下划线）
         $buildMode = $cfg['build-mode'] ?? $cfg['type'] ?? null;
         if (!empty($buildMode)) {

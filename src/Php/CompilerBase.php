@@ -335,12 +335,24 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 初始化新的 Platform 和 Backend 抽象层
             $this->initializeNewArchitecture();
         } else {
-            // Unix/Linux/macOS 使用 g++
+            // Unix/Linux/macOS 默认使用 g++
             $this->cppCompiler = 'g++';
             
             // 初始化新的 Platform 和 Backend 抽象层
             $this->initializeNewArchitecture();
         }
+    }
+    
+    /**
+     * 设置 C++ 编译器（从配置文件读取）
+     */
+    public function setCppCompiler(string $compiler): void
+    {
+        $this->cppCompiler = $compiler;
+        $this->climate->info("Using compiler from config: {$this->cppCompiler}");
+        
+        // 重新初始化 Backend
+        $this->initializeNewArchitecture();
     }
     
     /**
@@ -569,20 +581,43 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 默认路径
             return 'C:\php';
         } else {
-            // Unix/Linux/macOS 下使用 php-config 获取 PHP 路径
-            $phpDir = shell_exec('php-config --prefix 2>/dev/null');
-            if (empty($phpDir)) {
-                // 如果 php-config 不可用，尝试从 which php 推断
-                $phpExe = trim(shell_exec('which php 2>/dev/null'));
-                if ($phpExe && file_exists($phpExe)) {
-                    $phpDir = dirname(dirname($phpExe));
-                    if (is_dir($phpDir)) {
-                        return $phpDir;
-                    }
-                }
-                $this->error('The `php-config` is not found. Please install PHP development package or set PHP_HOME environment variable');
+            // Unix/Linux/macOS 下获取 PHP 路径
+            // 优先级：环境变量 PHP_HOME > /opt/php-8.4 > php-config > which php
+            
+            // 1. 尝试环境变量 PHP_HOME
+            $phpDir = getenv('PHP_HOME');
+            if ($phpDir && is_dir($phpDir)) {
+                return rtrim($phpDir, '\/');
             }
-            return trim($phpDir);
+            
+            // 2. 尝试常见的 PHP 8.4 安装路径
+            $commonPaths = [
+                '/opt/php-8.4',
+                '/usr/local/php-8.4',
+                '/usr/local/php84',
+            ];
+            foreach ($commonPaths as $path) {
+                if (is_dir($path) && is_executable($path . '/bin/php')) {
+                    return $path;
+                }
+            }
+            
+            // 3. 使用 php-config 获取 PHP 路径
+            $phpDir = shell_exec('php-config --prefix 2>/dev/null');
+            if (!empty($phpDir)) {
+                return trim($phpDir);
+            }
+            
+            // 4. 如果 php-config 不可用，尝试从 which php 推断
+            $phpExe = trim(shell_exec('which php 2>/dev/null'));
+            if ($phpExe && file_exists($phpExe)) {
+                $phpDir = dirname(dirname($phpExe));
+                if (is_dir($phpDir)) {
+                    return $phpDir;
+                }
+            }
+            
+            $this->error('The `php-config` is not found. Please install PHP development package or set PHP_HOME environment variable');
         }
     }
 
@@ -2622,7 +2657,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         } else {
             // Linux/macOS: libphpx.so 或 libphpx.a
-            $phpxLibPath = $this->getPhpxDir() . '/lib/libphpx.' . $this->platform->getSharedLibraryExtension();
+            $sharedLibExt = $this->platform->getSharedLibraryExtension();
+            // getSharedLibraryExtension() 返回的值可能带点或不带点，需要统一处理
+            $extWithoutDot = ltrim($sharedLibExt, '.');
+            $phpxLibPath = $this->getPhpxDir() . '/lib/libphpx.' . $extWithoutDot;
             if (file_exists($phpxLibPath)) {
                 $libraries[] = $phpxLibPath;
             } else {
