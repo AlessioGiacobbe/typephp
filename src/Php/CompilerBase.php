@@ -381,6 +381,23 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->platform = $result['platform'];
             $this->compilerBackend = $result['compiler'];
             
+            // Windows 平台：需要传递 ZTS 状态给 Platform 对象
+            if ($this->platform instanceof \PhpAot\Php\Platform\Windows && $this->isWindows) {
+                // 重新创建 Windows Platform，传递正确的 ZTS 状态
+                $phpSdkPath = $this->getPhpDir() . '\\SDK';
+                $this->platform = new \PhpAot\Php\Platform\Windows(
+                    phpLibs: [],
+                    isZts: $this->isPhpZts,  // ✅ 传递检测到的 ZTS 状态
+                    phpSdkPath: $phpSdkPath
+                );
+                
+                // 重新创建 Backend，使用更新后的 Platform
+                $this->compilerBackend = \PhpAot\Php\Backend\CompilerFactory::createByName(
+                    $this->cppCompiler,
+                    $this->platform
+                );
+            }
+            
             $this->climate->info(
                 "Initialized new architecture: {$this->platform->getName()} + {$this->compilerBackend->getName()}"
             );
@@ -2468,7 +2485,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             // Windows: phpx.lib (无 lib 前缀)
             $phpxLibPath = $this->getPhpxDir() . '\\lib\\phpx.lib';
             if (file_exists($phpxLibPath)) {
-                $libraries[] = '"' . $phpxLibPath . '"';
+                $libraries[] = $phpxLibPath;  // 不添加引号，由 getLibraryFlags() 统一处理
             } else {
                 $this->error('phpx.lib not found at: ' . $phpxLibPath);
             }
@@ -2493,13 +2510,22 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         // extension 和 bin 模式都需要链接 PHP 库
         if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
-            // Windows bin 模式使用已检测的库文件
+            // Windows: 根据构建模式选择不同的库
             if ($this->buildMode === 'bin') {
-                if (!empty($this->windowsPhpEmbedLib)) {
-                    $libraries[] = '"' . $this->windowsPhpEmbedLib . '"';
-                }
+                // bin 模式：需要同时链接 php8ts.lib 和 php8embed.lib
+                // 注意：php8ts.lib 必须在 php8embed.lib 之前，因为 embed 依赖 core
+                // php8ts.lib 提供 PHP 核心全局符号（executor_globals, compiler_globals, sapi_globals）
                 if (!empty($this->windowsPhpCoreLib)) {
-                    $libraries[] = '"' . $this->windowsPhpCoreLib . '"';
+                    $libraries[] = $this->windowsPhpCoreLib;  // 不添加引号
+                }
+                // php8embed.lib 提供嵌入 API
+                if (!empty($this->windowsPhpEmbedLib)) {
+                    $libraries[] = $this->windowsPhpEmbedLib;  // 不添加引号
+                }
+            } else {
+                // ext 模式：只使用 php8ts.lib 或 php8.lib（PHP 扩展）
+                if (!empty($this->windowsPhpCoreLib)) {
+                    $libraries[] = $this->windowsPhpCoreLib;  // 不添加引号
                 }
             }
             

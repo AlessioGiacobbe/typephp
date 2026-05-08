@@ -129,6 +129,45 @@ class Msvc extends CompilerBackend
         return $cmd;
     }
 
+    /**
+     * 构建 C 文件的编译命令（不包含 C++ 特定选项）
+     */
+    public function buildCCompileCommand(string $sourceFile, string $outputFile, array $options = []): string
+    {
+        $cmd = $this->getCompilerCommand();
+        $cmd .= ' /c';
+        $cmd .= ' ' . escapeshellarg($sourceFile);
+        $cmd .= ' /Fo' . escapeshellarg($outputFile);
+        
+        // 平台宏定义
+        $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
+        
+        // ZTS 支持
+        if ($this->platform instanceof Windows && $this->platform->isZts()) {
+            $cmd .= ' /DZTS';
+        }
+        
+        // 优化级别（C 文件通常使用较低的优化）
+        $optimizeLevel = $options['optimize'] ?? 0;
+        $cmd .= ' /O' . ($optimizeLevel >= 2 ? '2' : ($optimizeLevel === 0 ? 'd' : '1'));
+        
+        // 警告级别
+        $cmd .= ' /W3';
+        
+        // 禁用常见警告
+        $suppressedWarnings = $options['suppressed_warnings'] ?? ['4244', '4146'];
+        foreach ($suppressedWarnings as $code) {
+            $cmd .= " /wd{$code}";
+        }
+        
+        // nologo
+        $cmd .= ' /nologo';
+        
+        // 注意：C 文件不使用 /EHsc, /std:c++17, /MD 等 C++ 特定选项
+        
+        return $cmd;
+    }
+
     public function buildLinkCommand(array $objectFiles, string $outputFile, array $options = []): string
     {
         $cmd = $this->getLinkerCommand();

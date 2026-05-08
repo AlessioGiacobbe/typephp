@@ -67,6 +67,15 @@ abstract class CompilerBackend
     ): string;
 
     /**
+     * 构建 C 文件的编译命令（不包含 C++ 特定选项）
+     */
+    abstract public function buildCCompileCommand(
+        string $sourceFile,
+        string $outputFile,
+        array $options = []
+    ): string;
+
+    /**
      * 构建完整的链接命令
      */
     abstract public function buildLinkCommand(

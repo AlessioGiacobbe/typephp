@@ -117,6 +117,33 @@ class Gcc extends CompilerBackend
         return $cmd;
     }
 
+    /**
+     * 构建 C 文件的编译命令（不包含 C++ 特定选项）
+     */
+    public function buildCCompileCommand(string $sourceFile, string $outputFile, array $options = []): string
+    {
+        $cmd = $this->getCompilerCommand();
+        $cmd .= ' -c';
+        $cmd .= ' ' . escapeshellarg($sourceFile);
+        $cmd .= ' -o ' . escapeshellarg($outputFile);
+        
+        // 优化级别（C 文件通常使用较低的优化）
+        $optimizeLevel = $options['optimize'] ?? 0;
+        $cmd .= ' -O' . $optimizeLevel;
+        
+        // 调试信息
+        if (!empty($options['debug'])) {
+            $cmd .= ' -g';
+        }
+        
+        // 警告级别
+        $cmd .= ' -Wall';
+        
+        // 注意：C 文件不使用 -std=c++17 等 C++ 特定选项
+        
+        return $cmd;
+    }
+
     public function buildLinkCommand(array $objectFiles, string $outputFile, array $options = []): string
     {
         $cmd = $this->getLinkerCommand();

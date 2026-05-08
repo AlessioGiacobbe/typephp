@@ -718,6 +718,15 @@ CODE;
         return false;
     }
 
+    /**
+     * 判断文件是否为 C++ 源文件
+     */
+    protected function isCppFile(string $filePath): bool
+    {
+        $extension = pathinfo($filePath, PATHINFO_EXTENSION);
+        return in_array($extension, ['cc', 'cpp', 'cxx'], true);
+    }
+
     public function compileFile(string $cppFile, string $objectFile, bool $parallel = false): void
     {
         if ($this->hasObjectFileCache($cppFile)) {
@@ -728,58 +737,44 @@ CODE;
             return;
         }
 
-        // 根据平台和编译器类型构建编译命令
-        if ($this->isWindows()) {
-            // C 文件和 C++ 文件使用不同的选项
-            $isCppFile = (pathinfo($cppFile, PATHINFO_EXTENSION) === 'cc'
-                         || pathinfo($cppFile, PATHINFO_EXTENSION) === 'cpp'
-                         || pathinfo($cppFile, PATHINFO_EXTENSION) === 'cxx');
+        // 判断是否为 C++ 文件
+        $isCppFile = $this->isCppFile($cppFile);
 
-            // Windows 下根据编译器类型选择参数格式
-            if ($this->cppCompiler === 'clang++' || $this->cppCompiler === 'clang') {
-                // Clang on Windows 使用 GCC 风格的参数
-                if (!$isCppFile) {
-                    // C 文件：在源文件前添加 -x c 标志
-                    $cmd = $this->cppCompiler . ' -x c -c ' . $cppFile . ' -o ' . $objectFile;
-                } else {
-                    $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
-                }
-            } else {
-                // MSVC 使用 /c 和 /Fo 参数
-                $cmd = $this->cppCompiler . ' /c ' . $cppFile . ' /Fo' . $objectFile;
-            }
-
-            // 添加编译选项（C 文件不需要 /EHsc 和 /std:c++17）
-            if ($isCppFile) {
-                $this->addCompilationOption($cmd, false);
-            } else {
-                // C 文件：只添加基本选项，不添加 C++ 特定选项
-                // 使用 Platform 层获取包含路径
-                if ($this->platform !== null) {
-                    $cmd .= ' ' . $this->parseIncludes();
-                }
-                
-                // 添加平台宏定义（根据编译器类型选择语法）
-                if ($this->cppCompiler === 'clang++' || $this->cppCompiler === 'clang') {
-                    // Clang/GCC 风格
-                    $cmd .= ' -DZEND_WIN32 -DPHP_WIN32 -DZEND_DEBUG=0';
-                    if ($this->isPhpZts) {
-                        $cmd .= ' -DZTS';
-                    }
-                    $cmd .= ' -O0 -Wall';
-                } else {
-                    // MSVC 风格
-                    $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
-                    if ($this->isPhpZts) {
-                        $cmd .= ' /DZTS';
-                    }
-                    $cmd .= ' /Od /W3 /wd4244 /wd4146 /nologo';
-                }
-            }
+        // 使用 Backend 层构建编译命令
+        if ($isCppFile) {
+            // C++ 文件：使用标准的编译命令构建
+            $cmd = $this->compilerBackend->buildCompileCommand(
+                $cppFile,
+                $objectFile,
+                [
+                    'optimize' => $this->optimizeLevel,
+                    'debug_info' => $this->debugInfo,
+                    'sanitize' => $this->sanitize,
+                    'cpp_std' => $this->cxxStd,
+                    'is_zts' => $this->isPhpZts,
+                    'build_mode' => $this->buildMode,
+                    'enable_profiler' => $this->enableProfiler,
+                    'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
+                    'cxxflags' => $this->cxxflags,
+                ]
+            );
+            
+            // 添加包含路径（通过 Platform 层）
+            $cmd .= ' ' . $this->parseIncludes();
         } else {
-            // Unix/Linux/macOS GCC 编译命令
-            $cmd = $this->cppCompiler . ' -c ' . $cppFile . ' -o ' . $objectFile;
-            $this->addCompilationOption($cmd, false);
+            // C 文件：不能使用 C++ 特定选项（/EHsc, /std:c++17 等）
+            // 使用 Backend 的 buildCCompileCommand() 方法
+            $cmd = $this->compilerBackend->buildCCompileCommand(
+                $cppFile,
+                $objectFile,
+                [
+                    'optimize' => 0,
+                    'suppressed_warnings' => ['4244', '4146'],
+                ]
+            );
+            
+            // 手动添加包含路径
+            $cmd .= ' ' . $this->parseIncludes();
         }
 
         if (!$parallel) {
