@@ -754,17 +754,21 @@ CODE;
                 $this->addCompilationOption($cmd, false);
             } else {
                 // C 文件：只添加基本选项，不添加 C++ 特定选项
+                // 使用 Platform 层获取包含路径
+                if ($this->platform !== null) {
+                    $cmd .= ' ' . $this->parseIncludesNew();
+                }
+                
+                // 添加平台宏定义（根据编译器类型选择语法）
                 if ($this->cppCompiler === 'clang++' || $this->cppCompiler === 'clang') {
-                    // Clang C 文件选项
-                    $cmd .= ' ' . $this->parseWindowsIncludes();
+                    // Clang/GCC 风格
                     $cmd .= ' -DZEND_WIN32 -DPHP_WIN32 -DZEND_DEBUG=0';
                     if ($this->isPhpZts) {
                         $cmd .= ' -DZTS';
                     }
                     $cmd .= ' -O0 -Wall';
                 } else {
-                    // MSVC C 文件选项
-                    $cmd .= ' ' . $this->parseWindowsIncludes();
+                    // MSVC 风格
                     $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
                     if ($this->isPhpZts) {
                         $cmd .= ' /DZTS';
