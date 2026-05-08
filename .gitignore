@@ -12,6 +12,7 @@
 /projects/laravel
 /projects/tmp
 /.php-cs-fixer.cache
+/.phpunit.cache
 *.o
 *.dll
 *.exe
