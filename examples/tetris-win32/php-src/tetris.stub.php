@@ -1,33 +1,24 @@
 <?php
 
 /**
- * Tetris Game C++ API declarations (stub)
- * These functions are implemented in C++, PHP layer only declares them
+ * Win32 API declarations (stub)
+ * C++ only provides thin wrappers around Win32 APIs.
+ * ALL game logic is implemented in PHP.
  */
 
-// 游戏控制函数
-function tetris_new(): mixed {}
-function tetris_reset(mixed $game): void {}
-function tetris_get_score(mixed $game): int {}
-function tetris_is_game_over(mixed $game): bool {}
+// Window management
+function win_create_window(string $title, int $width, int $height): int {}
+function win_show_window(int $hWnd, int $cmdShow): void {}
+function win_quit_requested(): bool {}
+function win_post_quit(int $exitCode): void {}
+function win_peek_message(): array {}
+function win_get_tick_count(): int {}
+function win_message_box(int $hWnd, string $text, string $caption, int $uType): int {}
 
-// 方块移动函数
-function tetris_rotate(mixed $game): void {}
-function tetris_move_down(mixed $game): bool {}
-function tetris_move_left(mixed $game): bool {}
-function tetris_move_right(mixed $game): bool {}
-function tetris_hard_drop(mixed $game): void {}
-
-// 获取游戏状态
-function tetris_get_board(mixed $game): array {}
-function tetris_get_current_piece(mixed $game): array {}
-
-// Windows 窗口函数
-function tetris_create_window(string $title): int {}
-function tetris_show_window(int $hWnd, int $cmdShow): bool {}
-function tetris_render(mixed $game, int $hWnd): void {}
-function tetris_handle_key(mixed $game, int $keyCode): void {}
-
-// 工具函数
-function tetris_messagebox(int $hWnd, string $text, string $caption, int $uType): int {}
-function tetris_post_quit(int $exitCode): void {}
+// GDI drawing primitives
+function win_begin_paint(int $hWnd): int {}
+function win_end_paint(int $hWnd, int $hdc): void {}
+function win_fill_rect(int $hdc, int $x, int $y, int $w, int $h, int $rgb): void {}
+function win_draw_block(int $hdc, int $x, int $y, int $size, int $rgb): void {}
+function win_draw_line(int $hdc, int $x1, int $y1, int $x2, int $y2, int $rgb): void {}
+function win_draw_text(int $hdc, int $x, int $y, string $text, int $fontSize, int $rgb, int $bold): void {}

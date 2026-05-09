@@ -1,222 +1,198 @@
+/**
+ * Tetris Win32 API Layer
+ * 
+ * C++ only wraps Win32 APIs as thin drawing primitives.
+ * ALL game logic lives in PHP to showcase the AOT compiler.
+ */
+
 #include <phpx.h>
 #include <windows.h>
-#include <cstdlib>
+#include <cstdio>
 
 using namespace php;
 
-// Game constants
-#define BLOCK_SIZE 30
-#define BOARD_WIDTH 10
-#define BOARD_HEIGHT 20
+// ============================================================
+// Win32 Window & Message
+// ============================================================
 
-// Colors for each piece type
-static const COLORREF COLORS[7] = {
-    RGB(0, 255, 255),   // I - Cyan
-    RGB(255, 255, 0),   // O - Yellow
-    RGB(128, 0, 128),   // T - Purple
-    RGB(0, 255, 0),     // S - Green
-    RGB(255, 0, 0),     // Z - Red
-    RGB(0, 0, 255),     // J - Blue
-    RGB(255, 165, 0)    // L - Orange
-};
+static bool g_quitRequested = false;
 
-// Simple game state - must inherit from Box
-class TetrisBox : public Box {
-public:
-    int board[BOARD_HEIGHT][BOARD_WIDTH];
-    int score;
-    bool gameOver;
-    
-    TetrisBox() : score(0), gameOver(false) {
-        memset(board, 0, sizeof(board));
+LRESULT CALLBACK TetrisWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_CLOSE:
+            g_quitRequested = true;
+            PostQuitMessage(0);
+            return 0;
+        case WM_DESTROY:
+            g_quitRequested = true;
+            PostQuitMessage(0);
+            return 0;
     }
-    
-    void reset() {
-        score = 0;
-        gameOver = false;
-        memset(board, 0, sizeof(board));
-    }
-};
-
-// Create new game instance - returns Box
-var php_tetris_new() {
-    return {new TetrisBox()};
+    return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
-// Reset game
-void php_tetris_reset(var box) {
-    auto tetris = box.toBox<TetrisBox>();
-    tetris->reset();
-}
+// Create window, returns hWnd
+Int php_win_create_window(String title, Int width, Int height) {
+    SetConsoleOutputCP(65001);
 
-// Get score
-Int php_tetris_get_score(var box) {
-    auto tetris = box.toBox<TetrisBox>();
-    return tetris->score;
-}
-
-// Check if game over
-Bool php_tetris_is_game_over(var box) {
-    auto tetris = box.toBox<TetrisBox>();
-    return tetris->gameOver;
-}
-
-// Move piece down
-Bool php_tetris_move_down(var box) {
-    auto tetris = box.toBox<TetrisBox>();
-    if (tetris->gameOver) return false;
-    // Simplified: just increase score for testing
-    tetris->score += 10;
-    return true;
-}
-
-// Move piece left
-Bool php_tetris_move_left(var box) {
-    auto tetris = box.toBox<TetrisBox>();
-    if (tetris->gameOver) return false;
-    return true;
-}
-
-// Move piece right  
-Bool php_tetris_move_right(var box) {
-    auto tetris = box.toBox<TetrisBox>();
-    if (tetris->gameOver) return false;
-    return true;
-}
-
-// Rotate piece
-void php_tetris_rotate(var box) {
-    auto tetris = box.toBox<TetrisBox>();
-    if (!tetris->gameOver) {
-        tetris->score += 5;
-    }
-}
-
-// Hard drop
-void php_tetris_hard_drop(var box) {
-    auto tetris = box.toBox<TetrisBox>();
-    if (!tetris->gameOver) {
-        tetris->score += 50;
-    }
-}
-
-// Get board state
-Array php_tetris_get_board(var box) {
-    auto tetris = box.toBox<TetrisBox>();
-    Array result;
-    for (int i = 0; i < BOARD_HEIGHT; i++) {
-        Array row;
-        for (int j = 0; j < BOARD_WIDTH; j++) {
-            row.append(tetris->board[i][j]);
-        }
-        result.append(row);
-    }
-    return result;
-}
-
-// Get current piece info
-Array php_tetris_get_current_piece(var box) {
-    Array result;
-    result.append(0); // shape
-    result.append(5); // x position
-    result.append(0); // y position
-    result.append(0); // type
-    return result;
-}
-
-// Create game window
-Int php_tetris_create_window(String title) {
     WNDCLASS wc;
     ZeroMemory(&wc, sizeof(wc));
     wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = DefWindowProc;
+    wc.lpfnWndProc = TetrisWndProc;
     wc.hInstance = GetModuleHandle(NULL);
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszClassName = "TetrisWindow";
-    
     RegisterClass(&wc);
-    
+
     HWND hWnd = CreateWindowEx(
-        0,
-        "TetrisWindow",
-        title.data(),
+        0, "TetrisWindow", title.data(),
         WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        BLOCK_SIZE * BOARD_WIDTH + 200,
-        BLOCK_SIZE * BOARD_HEIGHT + 40,
-        NULL,
-        NULL,
-        GetModuleHandle(NULL),
-        NULL
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        (int)width, (int)height,
+        NULL, NULL, GetModuleHandle(NULL), NULL
     );
-    
     return (Int)hWnd;
 }
 
 // Show window
-Bool php_tetris_show_window(Int hWnd, Int cmdShow) {
-    return ShowWindow((HWND)hWnd, (int)cmdShow);
+void php_win_show_window(Int hWnd, Int cmdShow) {
+    ShowWindow((HWND)hWnd, (int)cmdShow);
 }
 
-// Render game
-void php_tetris_render(var box, Int hWnd) {
-    auto tetris = box.toBox<TetrisBox>();
-    HDC hdc = GetDC((HWND)hWnd);
-    
-    // Clear background
-    RECT rect;
-    rect.left = 0;
-    rect.top = 0;
-    rect.right = BLOCK_SIZE * BOARD_WIDTH;
-    rect.bottom = BLOCK_SIZE * BOARD_HEIGHT;
-    FillRect(hdc, &rect, (HBRUSH)GetStockObject(BLACK_BRUSH));
-    
-    // Draw board
-    for (int i = 0; i < BOARD_HEIGHT; i++) {
-        for (int j = 0; j < BOARD_WIDTH; j++) {
-            if (tetris->board[i][j]) {
-                HBRUSH brush = CreateSolidBrush(COLORS[tetris->board[i][j] - 1]);
-                RECT blockRect;
-                blockRect.left = j * BLOCK_SIZE;
-                blockRect.top = i * BLOCK_SIZE;
-                blockRect.right = (j + 1) * BLOCK_SIZE;
-                blockRect.bottom = (i + 1) * BLOCK_SIZE;
-                FillRect(hdc, &blockRect, brush);
-                DeleteObject(brush);
-            }
-        }
-    }
-    
-    ReleaseDC((HWND)hWnd, hdc);
-}
-
-// Handle keyboard input
-void php_tetris_handle_key(var box, Int keyCode) {
-    auto tetris = box.toBox<TetrisBox>();
-    // Simplified: just increase score for testing
-    tetris->score += 1;
+// Check if quit was requested (by WndProc)
+Bool php_win_quit_requested() {
+    return g_quitRequested;
 }
 
 // Post quit message
-void php_tetris_post_quit(Int exitCode) {
+void php_win_post_quit(Int exitCode) {
     PostQuitMessage((int)exitCode);
 }
 
-// Show message box with UTF-8 support
-Int php_tetris_messagebox(Int hWnd, String text, String caption, Int uType) {
+// PeekMessage wrapper - returns [hwnd, message, wParam, lParam] or empty array
+Array php_win_peek_message() {
+    MSG msg;
+    ZeroMemory(&msg, sizeof(msg));
+    if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+        Array result;
+        result.append((Int)msg.hwnd);
+        result.append((Int)msg.message);
+        result.append((Int)msg.wParam);
+        result.append((Int)msg.lParam);
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+        return result;
+    }
+    return Array();
+}
+
+// GetTickCount
+Int php_win_get_tick_count() {
+    return (Int)GetTickCount();
+}
+
+// MessageBox with UTF-8 support
+Int php_win_message_box(Int hWnd, String text, String caption, Int uType) {
     int wtext_len = MultiByteToWideChar(CP_UTF8, 0, text.data(), -1, NULL, 0);
     wchar_t* wtext = new wchar_t[wtext_len];
     MultiByteToWideChar(CP_UTF8, 0, text.data(), -1, wtext, wtext_len);
-    
+
     int wcaption_len = MultiByteToWideChar(CP_UTF8, 0, caption.data(), -1, NULL, 0);
     wchar_t* wcaption = new wchar_t[wcaption_len];
     MultiByteToWideChar(CP_UTF8, 0, caption.data(), -1, wcaption, wcaption_len);
-    
+
     int result = MessageBoxW((HWND)hWnd, wtext, wcaption, (UINT)uType);
-    
+
     delete[] wtext;
     delete[] wcaption;
     return result;
+}
+
+// ============================================================
+// Win32 GDI Drawing Primitives
+// ============================================================
+
+// Begin a double-buffered frame. Returns memDC handle as int.
+Int php_win_begin_paint(Int hWnd) {
+    HDC hdc = GetDC((HWND)hWnd);
+    RECT rc;
+    GetClientRect((HWND)hWnd, &rc);
+
+    HDC memDC = CreateCompatibleDC(hdc);
+    HBITMAP memBitmap = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
+    SelectObject(memDC, memBitmap);
+
+    // Release the screen DC now - we only needed it to create compatible objects
+    ReleaseDC((HWND)hWnd, hdc);
+
+    return (Int)memDC;
+}
+
+// End the double-buffered frame: blit back-buffer to screen and cleanup.
+void php_win_end_paint(Int hWnd, Int hdcHandle) {
+    HDC memDC = (HDC)hdcHandle;
+    RECT rc;
+    GetClientRect((HWND)hWnd, &rc);
+
+    // Blit memDC -> screen
+    HDC hdc = GetDC((HWND)hWnd);
+    BitBlt(hdc, 0, 0, rc.right, rc.bottom, memDC, 0, 0, SRCCOPY);
+    ReleaseDC((HWND)hWnd, hdc);
+
+    // Cleanup memDC
+    DeleteDC(memDC);
+}
+
+// Fill rectangle with RGB color
+void php_win_fill_rect(Int hdc, Int x, Int y, Int w, Int h, Int rgbColor) {
+    HBRUSH brush = CreateSolidBrush((COLORREF)rgbColor);
+    RECT r = {(int)x, (int)y, (int)(x + w), (int)(y + h)};
+    FillRect((HDC)hdc, &r, brush);
+    DeleteObject(brush);
+}
+
+// Draw a colored block with border
+void php_win_draw_block(Int hdc, Int x, Int y, Int size, Int rgbColor) {
+    COLORREF color = (COLORREF)rgbColor;
+    // Fill interior
+    HBRUSH brush = CreateSolidBrush(color);
+    RECT r = {(int)x + 1, (int)y + 1, (int)(x + size - 1), (int)(y + size - 1)};
+    FillRect((HDC)hdc, &r, brush);
+    DeleteObject(brush);
+    // Draw border
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(
+        (BYTE)(GetRValue(color) * 0.6),
+        (BYTE)(GetGValue(color) * 0.6),
+        (BYTE)(GetBValue(color) * 0.6)));
+    HPEN oldPen = (HPEN)SelectObject((HDC)hdc, borderPen);
+    HBRUSH oldBrush = (HBRUSH)SelectObject((HDC)hdc, GetStockObject(NULL_BRUSH));
+    Rectangle((HDC)hdc, (int)x, (int)y, (int)(x + size), (int)(y + size));
+    SelectObject((HDC)hdc, oldBrush);
+    SelectObject((HDC)hdc, oldPen);
+    DeleteObject(borderPen);
+}
+
+// Draw a line
+void php_win_draw_line(Int hdc, Int x1, Int y1, Int x2, Int y2, Int rgbColor) {
+    HPEN pen = CreatePen(PS_SOLID, 1, (COLORREF)rgbColor);
+    HPEN oldPen = (HPEN)SelectObject((HDC)hdc, pen);
+    MoveToEx((HDC)hdc, (int)x1, (int)y1, NULL);
+    LineTo((HDC)hdc, (int)x2, (int)y2);
+    SelectObject((HDC)hdc, oldPen);
+    DeleteObject(pen);
+}
+
+// Draw text at position with given font size and color
+void php_win_draw_text(Int hdc, Int x, Int y, String text, Int fontSize, Int rgbColor, Int bold) {
+    SetTextColor((HDC)hdc, (COLORREF)rgbColor);
+    SetBkMode((HDC)hdc, TRANSPARENT);
+    HFONT hFont = CreateFont((int)fontSize, 0, 0, 0,
+        bold ? FW_BOLD : FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Arial");
+    HFONT oldFont = (HFONT)SelectObject((HDC)hdc, hFont);
+    TextOutA((HDC)hdc, (int)x, (int)y, text.data(), (int)strlen(text.data()));
+    SelectObject((HDC)hdc, oldFont);
+    DeleteObject(hFont);
 }
