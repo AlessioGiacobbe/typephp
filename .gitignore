@@ -5,6 +5,7 @@
 /logs
 /build
 /vendor
+/node_modules
 /tmp
 /projects/wordpress
 /projects/workerman

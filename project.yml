@@ -5,6 +5,24 @@ cxx-std: c++17
 cxx-flags:
   - -Wall
 
+# Windows 资源文件配置（图标、版本信息等）
+# 仅在 Windows 平台编译 bin 模式时生效
+resource:
+  # 图标文件路径（相对于 project.yml 所在目录，也支持绝对路径）
+  icon: swoole-logo.ico
+  # 版本信息
+  version-info:
+    file-version: 0.1.0.1052
+    product-version: 0.1.0
+    company-name: "上海识沃网络科技有限公司"
+    file-description: "Swoole AOT Compiler"
+    internal-name: "swoole-compiler"
+    legal-copyright: "Copyright (C) 2026 上海识沃网络科技有限公司"
+    legal-trademarks: "Swoole is a trademark of 上海识沃网络科技有限公司"
+    original-filename: "swoole_compiler.exe"
+    product-name: "Swoole Compiler"
+    comments: "PHP 原生编译器，可将 PHP 项目编译为 Windows/Linux/macOS 平台原生的可执行文件"
+
 sources:
   - ./src/Php
   - ./src/Core

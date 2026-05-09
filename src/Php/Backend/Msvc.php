@@ -375,28 +375,50 @@ class Msvc extends CompilerBackend
     public function buildLinkOptions(array $config = []): string
     {
         $cmd = '';
-        
+
         // 调试
         if (!empty($config['debug'])) {
             $cmd .= ' /DEBUG';
         }
-        
+
         // Windows 子系统
         if (!empty($config['no_console'])) {
             $cmd .= ' ' . $this->platform->getSubsystemOptions(true);
         }
-        
+
         // CRT 配置
         $cmd .= ' ' . $this->platform->getCrtConfig();
-        
+
         // 扩展模块选项
         if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
             $cmd .= ' /DLL';
         }
-        
+
         // nologo
         $cmd .= ' /nologo';
-        
+
+        return $cmd;
+    }
+
+    /**
+     * 编译 Windows 资源文件 (.rc) 为目标文件 (.res)
+     *
+     * 使用 rc.exe（MSVC 资源编译器）将 .rc 文件编译为 .res 文件
+     * .res 文件可以直接传给 link.exe 作为输入
+     *
+     * @param string $rcFile  资源文件路径 (.rc)
+     * @param string $resFile 输出资源文件路径 (.res)
+     * @return string 编译命令
+     */
+    public function compileResourceFile(string $rcFile, string $resFile): string
+    {
+        // rc.exe 是 MSVC 自带的资源编译器
+        // /nologo: 不显示版权信息
+        // /fo: 指定输出文件
+        $cmd = 'rc.exe /nologo';
+        $cmd .= ' /fo ' . escapeshellarg($resFile);
+        $cmd .= ' ' . escapeshellarg($rcFile);
+
         return $cmd;
     }
 }

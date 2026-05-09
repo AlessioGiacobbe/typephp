@@ -19,6 +19,7 @@ use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\Redo;
 use PhpAot\Php\Exception\SyntaxError;
 use PhpAot\Php\Exception\Unsupported;
+use PhpAot\Php\Generator\ResourceFileGenerator;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Foreach_;
@@ -38,6 +39,9 @@ class Translator extends Preprocessor
     protected array $ignoreExtensions = [];
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
+
+    // Windows 资源文件配置（图标、版本信息等）
+    protected array $resourceConfig = [];
 
     // 类静态属性初始值
     protected array $defaultStaticPropertyList = [];
@@ -753,6 +757,9 @@ CODE;
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/ps_title.c';
         }
 
+        // Windows 平台：编译资源文件（图标、版本信息等）
+        $this->compileResourceFile();
+
         if (!$this->getPlatform()->supportsPcntlParallelCompile() or $job <= 1) {
             return $this->compileSourceFile($sourceFiles);
         }
@@ -892,9 +899,115 @@ CODE;
         $this->climate->{$style}($message);
     }
 
+    // ========================================================================
+    // Windows 资源文件支持
+    // ========================================================================
+
+    /**
+     * 检查是否配置了 Windows 资源信息
+     */
+    public function hasResourceFile(): bool
+    {
+        if (!$this->isWindows()) {
+            return false;
+        }
+        $generator = $this->createResourceGenerator();
+        return $generator !== null && $generator->hasResource();
+    }
+
+    /**
+     * 获取 .rc 资源文件路径
+     */
+    public function getResourceRcFile(): string
+    {
+        return $this->getBuildDir() . DIRECTORY_SEPARATOR . 'app_resource.rc';
+    }
+
+    /**
+     * 获取 .res 编译后的资源文件路径
+     */
+    public function getResourceResFile(): string
+    {
+        return $this->getBuildDir() . DIRECTORY_SEPARATOR . 'app_resource.res';
+    }
+
+    /**
+     * 创建资源文件生成器
+     */
+    protected function createResourceGenerator(): ?ResourceFileGenerator
+    {
+        if (empty($this->resourceConfig)) {
+            return null;
+        }
+        $projectDir = $this->resourceConfig['_projectDir'] ?? getcwd();
+        return new ResourceFileGenerator($this->resourceConfig, $projectDir);
+    }
+
+    /**
+     * 编译 Windows 资源文件
+     *
+     * 如果配置了 resource 选项，生成 .rc 文件并使用 rc.exe 编译为 .res
+     * .res 文件会在 build 阶段被链接到最终的 exe 中
+     */
+    protected function compileResourceFile(): void
+    {
+        if (!$this->isWindows()) {
+            return;
+        }
+
+        $generator = $this->createResourceGenerator();
+        if ($generator === null || !$generator->hasResource()) {
+            return;
+        }
+
+        // 生成 .rc 文件
+        $rcFile = $this->getResourceRcFile();
+        $rcContent = $generator->generate();
+        // 写入 UTF-8 BOM，确保 rc.exe 正确识别编码，避免中文乱码
+        $this->writeFile($rcFile, "\xEF\xBB\xBF" . $rcContent);
+        $this->climate->info('Generated resource file: ' . $rcFile);
+
+        // 使用 MSVC 的 rc.exe 编译 .rc -> .res
+        $backend = $this->getCompilerBackend();
+        if ($backend instanceof \PhpAot\Php\Backend\Msvc) {
+            $resFile = $this->getResourceResFile();
+            $cmd = $backend->compileResourceFile($rcFile, $resFile);
+            $this->climate->comment($cmd);
+
+            exec($cmd . ' 2>&1', $output, $ret);
+
+            if (!empty($output)) {
+                foreach ($output as $line) {
+                    $this->climate->out($line);
+                }
+            }
+
+            if ($ret !== 0) {
+                $this->error('Resource compilation failed: ' . $rcFile);
+            }
+
+            if (!file_exists($resFile)) {
+                $this->error('Resource file not generated: ' . $resFile);
+            }
+
+            $this->climate->green('Resource compiled: ' . $resFile);
+        } else {
+            $this->climate->warning('Resource files are only supported with MSVC backend on Windows');
+        }
+    }
+
     public function build(array $objectFiles): void
     {
         $targetFile = $this->getTargetFileName();
+
+        // Windows 平台：将 .res 资源文件加入链接
+        if ($this->isWindows() && $this->hasResourceFile()) {
+            $resFile = $this->getResourceResFile();
+            if (file_exists($resFile)) {
+                $objectFiles[] = $resFile;
+            }
+        }
+
         $linkCmd = $this->buildLinkCommand($objectFiles, $targetFile);
         $this->climate->comment($linkCmd);
 
@@ -1239,6 +1352,26 @@ CODE;
                 }
                 $this->ignorePaths[] = $realPath;
             }
+        }
+
+        // 读取 resource（Windows 资源配置：图标、版本信息等）
+        $resource = $cfg['resource'] ?? null;
+        if (!empty($resource)) {
+            if (!is_array($resource)) {
+                $this->error('`resource` must be array');
+            }
+            // 验证图标文件是否存在
+            if (!empty($resource['icon'])) {
+                $iconPath = $resource['icon'];
+                if (!preg_match('/^[A-Za-z]:\\|^\//', $iconPath)) {
+                    $iconPath = $projectDir . DIRECTORY_SEPARATOR . $iconPath;
+                }
+                if (!file_exists($iconPath)) {
+                    $this->error('Icon file not exists: `' . $resource['icon'] . '`');
+                }
+            }
+            $this->resourceConfig = $resource;
+            $this->resourceConfig['_projectDir'] = $projectDir;
         }
 
         return $list;

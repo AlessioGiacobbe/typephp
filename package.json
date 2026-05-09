@@ -1,0 +1,25 @@
+{
+  "name": "compiler",
+  "version": "1.0.0",
+  "description": "- 需要 PHP-8.2 以上版本 - 需要 GCC-9 以上版本，支持 C++17 标准 - 需要 CMake-3.24 以上版本",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@git.code-galaxy.net:aot/compiler.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "sharp": "^0.34.5"
+  }
+}
