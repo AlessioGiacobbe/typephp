@@ -174,7 +174,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected int $floatPrecision = 17;
     protected bool $debug = false;
     protected bool $formatCode = true;
-    protected bool $printBacktraceOnError = false;
+    protected bool $printBacktraceOnError = true;
     protected bool $noLiteralStrings = false;
     protected bool $noConsole = false;  // Windows: hide console window
     protected string $sanitize = '';    // Sanitizer type (address, undefined, etc.)
@@ -1800,9 +1800,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif (!$this->isInheritedFrom($objectClass, $returnClass)) {
                 $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
             }
-            // 把子类当做父类返回时，父类必须是抽象类
-            if ($objectClass and $objectClass !== $returnClass and !$this->isAbstractClass($returnClass)) {
-                $this->fatalError($v, "When returning a subclass `$objectClass` instance as parent type, the parent class `$returnClass` must be abstract");
+            // 把子类当做父类返回时，父类必须是抽象类或者接口
+            if ($objectClass and $objectClass !== $returnClass and !$this->isAbstractClass($returnClass) and !$this->hasInterface($returnClass)) {
+                $this->fatalError($v, "When returning a subclass `$objectClass` instance as parent type, the parent class `$returnClass` must be abstract/interface");
             }
         }
 

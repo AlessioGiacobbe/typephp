@@ -5,7 +5,8 @@ ref call arg
 function main()
 {
     $zip = new ZipArchive();
-    if ($zip->open(__DIR__ . '/../../examples/test.zip') === TRUE) {
+    $path = realpath(__DIR__ . '/../../../data/test.zip');
+    if ($zip->open($path) === TRUE) {
         for ($idx = 0; $s = $zip->statIndex($idx); $idx++) {
             $rs = $zip->getExternalAttributesIndex($idx, $opsys, $attr);
             var_dump($rs, $idx, $opsys, $attr);
@@ -33,6 +34,10 @@ int(3)
 int(2176057344)
 bool(true)
 int(2)
+int(3)
+int(2176057344)
+bool(true)
+int(3)
 int(3)
 int(2176057344)
 OK

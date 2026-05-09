@@ -218,7 +218,8 @@ class SimpleType {
     public /* readonly */ string $name;
     public /* readonly */ bool $isBuiltin;
 
-    public static function fromNode(Node $node): SimpleType {
+    public static function fromNode(Node $node): SimpleType|ArrayType
+    {
         if ($node instanceof Node\Name) {
             if ($node->toLowerString() === 'static') {
                 // PHP internally considers "static" a builtin type.
@@ -244,7 +245,7 @@ class SimpleType {
         throw new Exception("Unexpected node type");
     }
 
-    public static function fromString(string $typeString): SimpleType
+    public static function fromString(string $typeString): SimpleType|ArrayType
     {
         switch (strtolower($typeString)) {
             case "void":
