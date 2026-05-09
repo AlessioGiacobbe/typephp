@@ -187,4 +187,13 @@ class Reflection
         $methodDef = $classRef->getMethod($method);
         return $methodDef->getReturnType() ? $methodDef->getReturnType()->getName() : null;
     }
+
+    public static function isAbstractClass(string $name): bool
+    {
+        $class = self::getClass($name);
+        if (!$class) {
+            return false;
+        }
+        return $class->isAbstract();
+    }
 }

@@ -173,7 +173,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $ldflags = '';
     protected int $floatPrecision = 17;
     protected bool $debug = false;
-    protected bool $formatCode = false;
+    protected bool $formatCode = true;
     protected bool $printBacktraceOnError = false;
     protected bool $noLiteralStrings = false;
     protected bool $noConsole = false;  // Windows: hide console window
@@ -1490,7 +1490,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if (!$this->hasVar($var)) {
                     $this->addLocalVar($var, self::TYPE_OBJECT);
                     // TODO 返回值类型是一个接口，只能作为 var 变量，无法作为 TypedObject
-                    if (!$this->hasInterface($rightClass)) {
+                    if (!$this->hasInterface($rightClass) and !$this->isAbstractClass($rightClass)) {
                         $this->addObject($var, $rightClass);
                     }
                 } elseif ($this->isTypedObject($var)) {
@@ -1614,6 +1614,18 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function isInternalClass(string $name): bool
     {
         return Reflection::isInternalClass($name);
+    }
+
+    protected function isAbstractClass(string $name): bool
+    {
+        if ($this->isInternalClass($name)) {
+            return Reflection::isAbstractClass($name);
+        }
+        if ($this->hasClass($name)) {
+            $classDef = $this->getClass($name);
+            return $classDef->isAbstract();
+        }
+        return false;
     }
 
     protected function isInternalInterface(string $name): bool
@@ -1787,6 +1799,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 // TODO 返回值的类型无法确定，或者是一个接口，无法继承关系，需要插入动态类型检测代码
             } elseif (!$this->isInheritedFrom($objectClass, $returnClass)) {
                 $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
+            }
+            // 把子类当做父类返回时，父类必须是抽象类
+            if ($objectClass !== $returnClass and !$this->isAbstractClass($returnClass)) {
+                $this->fatalError($v, 'When returning a subclass instance as its parent type, the parent class must be abstract');
             }
         }
 

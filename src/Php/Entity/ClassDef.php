@@ -9,6 +9,7 @@
 namespace PhpAot\Php\Entity;
 
 use PhpAot\Php\Context\FunctionContext;
+use PhpParser\Modifiers;
 use PhpParser\Node\Stmt\Trait_;
 
 class ClassDef extends ClassLikeDef
@@ -90,5 +91,10 @@ class ClassDef extends ClassLikeDef
     public function getConstant($name): ConstantDef
     {
         return $this->constants[$name];
+    }
+
+    public function isAbstract(): bool
+    {
+        return $this->flags & Modifiers::ABSTRACT;
     }
 }
