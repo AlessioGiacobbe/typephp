@@ -1801,8 +1801,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
             }
             // 把子类当做父类返回时，父类必须是抽象类
-            if ($objectClass !== $returnClass and !$this->isAbstractClass($returnClass)) {
-                $this->fatalError($v, 'When returning a subclass instance as its parent type, the parent class must be abstract');
+            if ($objectClass and $objectClass !== $returnClass and !$this->isAbstractClass($returnClass)) {
+                $this->fatalError($v, "When returning a subclass `$objectClass` instance as parent type, the parent class `$returnClass` must be abstract");
             }
         }
 
