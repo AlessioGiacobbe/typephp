@@ -153,19 +153,6 @@ class Reflection
         return $args[$index];
     }
 
-    public static function isReferenceArg(string $fnName, string $className, int $index): ?string
-    {
-        if ($className) {
-            $param = self::getClassMethodParameter($className, $fnName, $index);
-        } else {
-            $param = self::getFunctionParameter($fnName, $index);
-        }
-        if (!$param) {
-            return null;
-        }
-        return $param->isPassedByReference() ? $param->getName() : null;
-    }
-
     public static function hasMethod(string $extends, string $method): bool
     {
         $class = self::getClass($extends);

@@ -2324,13 +2324,14 @@ class EvaluatedValue
                     }
                 }
 
-                foreach ($allConstInfos as $const) {
-                    if ($constName != $const->cValue) {
+                foreach ($allConstInfos as $name => $const) {
+                    if ($constName != $name) {
                         continue;
                     }
 
                     $constType = ($const->phpDocType ?? $const->type)->tryToSimpleType();
                     if ($constType) {
+                        // 这里返回的并不是真正的值，而是一个类型的占位符，最终的运算由编译器完成，此处仅用于 ArgInfo 处理
                         if ($constType->isBool()) {
                             return true;
                         } elseif ($constType->isInt()) {
@@ -2338,7 +2339,6 @@ class EvaluatedValue
                         } elseif ($constType->isFloat()) {
                             return M_PI;
                         } elseif ($constType->isString()) {
-                            var_dump($const);
                             return $const->name;
                         } elseif ($constType->isArray()) {
                             return [];

@@ -87,6 +87,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string VALUE_TRUE = 'php::true_';
     public const string LITERAL_STRINGS = '_literal_strings';
     public const string ANON_CLASS = '_anon_class_';
+    public const string DYNAMIC_CALLED_CLASS = '__dynamic_called_class__';
     public const string STATIC_VAR = '_static_var_';
     public const string GLOBAL_VAR = '_global_var_';
     public const string OBJECT_PROP = '_object_prop_';
@@ -3017,6 +3018,20 @@ class CompilerBase extends \PhpAot\Core\Translator
         return Symbol::argList() . '{' . implode(', ', $listArgs) . '}, ' . $tmpVar . '.array()';
     }
 
+    protected function isReferenceArgument($funcName, $className, $argIndex): bool
+    {
+        if ($className) {
+            // 动态调用类方法，无法判断参数是否为引用
+            if ($className === self::DYNAMIC_CALLED_CLASS) {
+                return false;
+            }
+            $param = Reflection::getClassMethodParameter($className, $funcName, $argIndex);
+        } else {
+            $param = Reflection::getFunctionParameter($funcName, $argIndex);
+        }
+        return $param && $param->isPassedByReference();
+    }
+
     protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
     {
         $list_args = [];
@@ -3028,7 +3043,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($arg->name !== null) {
                 return $this->parseNamedCallArgs($args, $i, $list_args);
             }
-            $byRef = $funcName && Reflection::isReferenceArg($funcName, $className, $i);
+            $byRef = $funcName && $this->isReferenceArgument($funcName, $className, $i);
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
                 if ($byRef) {
@@ -4596,7 +4611,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         try {
             // 类名为空，这是一个 var ，类型是 any ，编译期无法获得它的类型，需要动态调用
-            $class = empty($class) ? '__DYNAMIC-CALLED-CLASS__' : $class;
+            $class = empty($class) ? self::DYNAMIC_CALLED_CLASS : $class;
             return $object . '.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($this->genArray([$object, $method]));
