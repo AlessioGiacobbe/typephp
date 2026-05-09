@@ -103,7 +103,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string OP_NOP = "if (0) {}\n";
     protected string $lang = 'PHP';
     protected string $cppCompiler = '';
-    protected bool $isWindows = false;
     protected array $literalStrings = [];
     protected int $literalStringIndex = 0;
     protected int $anonClassIndex = 0;
@@ -315,7 +314,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         try {
             $this->platform = PlatformFactory::create();
-            $this->isWindows = $this->platform instanceof Windows;
             $this->cppCompiler = CompilerFactory::detectCompilerName($this->platform);
 
             if ($this->platform instanceof Windows) {
@@ -423,7 +421,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if ($this->platform === null) {
             $this->platform = PlatformFactory::create();
-            $this->isWindows = $this->platform instanceof Windows;
         }
 
         return $this->platform;
