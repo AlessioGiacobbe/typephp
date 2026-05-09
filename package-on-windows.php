@@ -80,6 +80,7 @@ $requiredFiles = [
     $compilerExe,
     'README.md',
     'LICENSE.md',
+    'composer.json',
     'examples/hello.php',
 ];
 
@@ -191,6 +192,7 @@ mkdir("{$topLevelDir}/examples", 0755, true);
 $projectFiles = [
     'README.md' => '.',
     'LICENSE.md' => '.',
+    'composer.json' => '.',
     'examples/hello.php' => 'examples',
 ];
 
@@ -207,9 +209,20 @@ foreach ($projectFiles as $src => $destDir) {
 $win32HelloDir = 'examples/win32-hello';
 if (is_dir($win32HelloDir)) {
     echo "  复制: {$win32HelloDir} -> examples/win32-hello/\n";
-    copyDirectory($win32HelloDir, "{$topLevelDir}/examples/win32-hello");
+    // 排除 .obj 文件（MSVC 目标文件）
+    copyDirectory($win32HelloDir, "{$topLevelDir}/examples/win32-hello", [], null, ['obj']);
 } else {
     echo "  警告: {$win32HelloDir} 目录不存在\n";
+}
+
+// 复制 tetris-win32 示例目录（俄罗斯方块游戏）
+$tetrisWin32Dir = 'examples/tetris-win32';
+if (is_dir($tetrisWin32Dir)) {
+    echo "  复制: {$tetrisWin32Dir} -> examples/tetris-win32/\n";
+    // 排除 .obj 文件（MSVC 目标文件）
+    copyDirectory($tetrisWin32Dir, "{$topLevelDir}/examples/tetris-win32", [], null, ['obj']);
+} else {
+    echo "  警告: {$tetrisWin32Dir} 目录不存在\n";
 }
 
 echo "项目文件复制完成\n\n";
@@ -405,9 +418,11 @@ echo "  - phpx/lib/ (PHPX 库文件)\n";
 echo "  - phpx/src/misc/ (PHPX 辅助工具和头文件)\n";
 echo "  - PHP 运行时环境 (完整目录结构)\n";
 echo "  - vendor/ (Composer 依赖包，无需再次安装)\n";
+echo "  - composer.json (Composer 配置文件)\n";
 echo "  - README.md/LICENSE.md (文档)\n";
 echo "  - examples/hello.php (PHP 示例代码)\n";
-echo "  - examples/win32-hello/ (Windows GUI 编程实例)\n\n";
+echo "  - examples/win32-hello/ (Windows GUI 编程实例)\n";
+echo "  - examples/tetris-win32/ (俄罗斯方块游戏实例)\n\n";
 echo "使用说明:\n";
 echo "  1. 解压到任意目录\n";
 echo "  2. 确保 PHP 8.4+ 已安装并添加到 PATH\n";
@@ -419,8 +434,9 @@ echo "  3. 运行: php swoole_compiler.php <your_script.php>\n\n";
  * @param string $dest 目标目录
  * @param array $excludeDirs 要排除的目录列表（相对于 src 的路径）
  * @param string $baseSrc 原始源目录（用于计算相对路径）
+ * @param array $excludeExtensions 要排除的文件扩展名列表（不含点）
  */
-function copyDirectory(string $src, string $dest, array $excludeDirs = [], ?string $baseSrc = null): void
+function copyDirectory(string $src, string $dest, array $excludeDirs = [], ?string $baseSrc = null, array $excludeExtensions = []): void
 {
     if (!is_dir($src)) {
         return;
@@ -439,6 +455,14 @@ function copyDirectory(string $src, string $dest, array $excludeDirs = [], ?stri
         $srcPath = "{$src}/{$file}";
         $destPath = "{$dest}/{$file}";
         
+        // 如果是文件，检查扩展名是否在排除列表中
+        if (is_file($srcPath) && !empty($excludeExtensions)) {
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            if (in_array($ext, $excludeExtensions)) {
+                continue;
+            }
+        }
+        
         // 计算相对于 baseSrc 的路径
         $relativePath = str_replace('\\', '/', substr($srcPath, strlen($baseSrc) + 1));
         
@@ -456,7 +480,7 @@ function copyDirectory(string $src, string $dest, array $excludeDirs = [], ?stri
         }
         
         if (is_dir($srcPath)) {
-            copyDirectory($srcPath, $destPath, $excludeDirs, $baseSrc);
+            copyDirectory($srcPath, $destPath, $excludeDirs, $baseSrc, $excludeExtensions);
         } else {
             copy($srcPath, $destPath);
         }
