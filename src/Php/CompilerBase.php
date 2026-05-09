@@ -4007,12 +4007,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseForeachArray(Foreach_ $node, string $iteratorVar): string
     {
-        $code = 'for (auto iter = ' . $iteratorVar . '.begin(); iter != ' . $iteratorVar . '.end(); ++iter) {' . PHP_EOL;
+        $tmpVar = $this->genTmpVarName();
+        $code = "for (auto $tmpVar = $iteratorVar.begin(); $tmpVar != $iteratorVar.end(); ++$tmpVar) {" . PHP_EOL;
         $this->indentLevel++;
         if ($node->keyVar) {
             $keyVar = $this->parseIdentifier($node->keyVar);
             $this->checkVar($node, $keyVar);
-            $code .= $this->getIndent() . ' ' . $keyVar . ' = iter.key();' . PHP_EOL;
+            $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.key();' . PHP_EOL;
         }
 
         if ($node->byRef and !$this->isVarExpr($node->valueVar)) {
@@ -4025,7 +4026,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 abort($node->valueVar);
             }
             $dim = $this->parseIdentifier($node->valueVar->dim);
-            $code .= $this->getIndent() . "{$array}.offsetSet({$dim}, iter.value());";
+            $code .= $this->getIndent() . "{$array}.offsetSet({$dim}, {$tmpVar}.value());";
         } else {
             $valueVar = $this->parseIdentifier($node->valueVar);
             if ($node->byRef) {
@@ -4034,10 +4035,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } elseif ($this->getVarType($valueVar) !== self::TYPE_REF) {
                     $this->fatalError($node, 'Cannot assign value to reference of type');
                 }
-                $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.valueRef();' . PHP_EOL;
+                $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.valueRef();' . PHP_EOL;
             } else {
                 $this->checkVar($node, $valueVar);
-                $code .= $this->getIndent() . ' ' . $valueVar . ' = iter.value();' . PHP_EOL;
+                $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.value();' . PHP_EOL;
             }
         }
 
@@ -4081,11 +4082,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function formatCppCode(string $file): void
     {
         if (!$this->formatCode) {
-            return;
-        }
-
-        // Windows 下可能没有 clang-format，跳过格式化
-        if ($this->getPlatform() instanceof Windows) {
             return;
         }
 
