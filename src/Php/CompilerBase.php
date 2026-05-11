@@ -1039,6 +1039,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         foreach ($this->functionDef->argInfoList as $argInfo) {
             $this->addArgument($argInfo->name, $argInfo->type);
+            if ($argInfo->class
+                and !$this->isAbstractClass($argInfo->class)
+                and !$this->hasInterface($argInfo->class)
+                and !$this->isInternalClass($argInfo->class)) {
+                $this->addObject($argInfo->name, $argInfo->class);
+            }
         }
 
         $stmts = '';
@@ -1248,6 +1254,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseStmts(array $stmts): string
     {
+        $this->context->enterScope();
         $lines     = [];
         $inLoopTop = $this->context->inLoop;
         $last = array_key_last($stmts);
@@ -1351,6 +1358,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($lines as $line) {
             $code .= $this->getIndent() . $line . PHP_EOL;
         }
+        $this->context->leaveScope();
 
         return $code;
     }
@@ -1522,6 +1530,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                         if ($right->name->toString() === 'array') {
                             if ($this->hasVar($var)) {
                                 $this->fatalError($left, "Cannot re-assign `\${$var}` to std::array");
+                            }
+                            if ($this->context->scopeLevel > 1) {
+                                $this->fatalError($left, 'Must create std::array in the top-level scope of the function');
                             }
                             $this->addLocalVar($var, self::TYPE_STD_ARRAY);
                             return $this->parseStdArray($var, $right);
@@ -1881,6 +1892,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function addObject(string $name, string $class): void
     {
+        if ($this->hasInterface($class) or $this->isAbstractClass($class)) {
+            $this->error("Cannot create an instance of abstract/interface `$class`");
+        }
         $this->context->objects[$name] = $class;
     }
 
@@ -3784,7 +3798,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function isInheritedFrom(string $class, string $expected): bool
     {
         $internal = ($this->isInternalClass($expected) or $this->isInternalInterface($expected));
-        $isInterface = $this->hasInterface($expected);
+        $isInterface = ($this->hasInterface($expected) or $this->isInternalInterface($expected));
         // 类不存在，说明这是一个动态类，跳过静态检查，需要运行时检查
         if (!$this->hasClass($class)) {
             return true;

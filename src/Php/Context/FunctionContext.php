@@ -39,6 +39,11 @@ class FunctionContext
     public array $beforeStmtLines = [];
     public array $afterStmtLines = [];
     public array $objectProps;
+    public int $scopeLevel = 0;
+    /**
+     * @var array<int, ScopeContext>
+     */
+    public array $scopeLayouts = [];
 
     public function __construct()
     {
@@ -49,8 +54,22 @@ class FunctionContext
         $this->objectProps = [];
         $this->ceWrappers = [];
         $this->tmpVarIndex = 0;
+        $this->scopeLayouts = [];
+        $this->scopeLevel = 0;
         $this->inLoop = false;
         $this->inClosure = false;
         $this->inAssignExpr = false;
+    }
+
+    public function enterScope(): void
+    {
+        $this->scopeLayouts[$this->scopeLevel] = new ScopeContext();
+        $this->scopeLevel++;
+    }
+
+    public function leaveScope(): void
+    {
+        unset($this->scopeLayouts[$this->scopeLevel]);
+        $this->scopeLevel--;
     }
 }
