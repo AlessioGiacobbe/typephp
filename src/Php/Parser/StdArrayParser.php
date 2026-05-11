@@ -108,6 +108,7 @@ trait StdArrayParser
     {
         $tmp = $expr;
         $nesting = [];
+        $totalBytes = 0;
 
         while (true) {
             if (count($tmp->args) !== 2) {
@@ -116,6 +117,7 @@ trait StdArrayParser
             if (!$this->isScalarInt($tmp->args[1]->value)) {
                 $this->fatalError($tmp, 'std::array() expects second argument to be an integer');
             }
+            $byte = 0;
             $size = $tmp->args[1]->value->value;
             $nesting[] = $size;
             $typeExpr = $tmp->args[0]->value;
@@ -126,12 +128,15 @@ trait StdArrayParser
                 switch ($typeExpr->name->name) {
                     case 'type_int':
                         $type = self::TYPE_INT;
+                        $byte = 8;
                         break;
                     case 'type_float':
                         $type = self::TYPE_FLOAT;
+                        $byte = 8;
                         break;
                     case 'type_bool':
                         $type = self::TYPE_BOOL;
+                        $byte = 1;
                         break;
                     default:
                         $this->fatalError($tmp, 'An incorrect `std::array` definition');
@@ -139,6 +144,7 @@ trait StdArrayParser
                 }
                 break;
             }
+            $totalBytes += $size * $byte;
             if ($this->isStaticCall($typeExpr)) {
                 $tmp = $typeExpr;
                 if (!$this->isNameExpr($tmp->class) || !$this->isIdExpr($tmp->name) || $tmp->class->toString() !== 'std' || $tmp->name->toString() !== 'array') {
@@ -158,6 +164,7 @@ trait StdArrayParser
             'decl' => $decl,
             'type' => $type,
             'sizes' => array_reverse($nesting),
+            'bytes' => $totalBytes,
         ];
         return '// ' . $decl;
     }

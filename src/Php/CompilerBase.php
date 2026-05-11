@@ -102,6 +102,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string OP_NOT_EMPTY = 'notEmpty';
     public const string OP_REFVAL = 'toReference';
     public const string OP_NOP = "if (0) {}\n";
+    // 超过65536字节的数组，将从栈上转移到堆
+    public const int MAX_BYTES_IN_STACK = 65536;
     protected string $lang = 'PHP';
     protected string $cppCompiler = '';
     protected array $literalStrings = [];
@@ -5367,8 +5369,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->getIndent();
             if ($type === self::TYPE_STD_ARRAY) {
                 $info = $this->context->stdArrays[$name];
-                $code .= "auto {$name}_unique_ptr = std::make_unique<{$info['decl']}>();\n";
-                $code .= $this->getIndent() . ' auto &' . $name . ' = *' . $name . '_unique_ptr;';
+                if ($info['bytes'] > self::MAX_BYTES_IN_STACK) {
+                    $code .= "auto {$name}_unique_ptr = std::make_unique<{$info['decl']}>();\n";
+                    $code .= $this->getIndent() . ' auto &' . $name . ' = *' . $name . '_unique_ptr;';
+                } else {
+                    $code .= $info['decl'] . ' ' . $name . '{};';
+                }
             } else {
                 $code .= $type . ' ' . $name;
                 if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
