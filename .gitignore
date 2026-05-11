@@ -7,11 +7,7 @@
 /vendor
 /node_modules
 /tmp
-/projects/wordpress
-/projects/workerman
-/projects/thinkphp
-/projects/laravel
-/projects/tmp
+/projects
 /.php-cs-fixer.cache
 /.phpunit.cache
 *.o
