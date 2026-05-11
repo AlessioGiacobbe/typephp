@@ -1,0 +1,412 @@
+<?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+namespace PhpAot\Php\Parser;
+
+use PhpAot\Php\Symbol;
+use PhpParser\Node\Expr;
+use PhpParser\NodeAbstract;
+
+trait StdContainerParser
+{
+    protected function isStdContainer(string $var): bool
+    {
+        return $this->hasLocalVar($var) and in_array($this->getVarType($var), [
+                self::TYPE_STD_ARRAY,
+                self::TYPE_STD_VECTOR,
+                self::TYPE_STD_MAP,
+                self::TYPE_STD_UNORDERED_MAP,
+            ], true);
+    }
+
+    protected function isStdArray(string $var): bool
+    {
+        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_ARRAY;
+    }
+
+    protected function isStdVector(string $var): bool
+    {
+        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_VECTOR;
+    }
+
+    protected function isStdMap(string $var): bool
+    {
+        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_MAP;
+    }
+
+    protected function isStdUnorderedMap(string $var): bool
+    {
+        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_UNORDERED_MAP;
+    }
+
+    protected function isStdArrayExpr(Expr\ArrayDimFetch $expr): bool
+    {
+        $info = $this->getStdArrayInfo($expr);
+        return $info !== null;
+    }
+
+    protected function isStdContainerExpr(Expr\ArrayDimFetch $expr): bool
+    {
+        return $this->isStdArrayExpr($expr) || $this->getStdContainerInfo($expr) !== null;
+    }
+
+    protected function fillStdArray(Expr\StaticCall $expr): string
+    {
+        if (!$this->isVarExpr($expr->args[0]->value) or !$this->isStdArray($this->parseIdentifier($expr->args[0]->value))) {
+            $this->fatalError($expr, 'fill() only support std::array');
+        }
+        $array = $this->parseIdentifier($expr->args[0]->value);
+        $valueExpr = $this->parseExpr($expr->args[1]->value);
+        $type = $this->context->stdArrays[$array]['type'];
+        $value = $this->convertExprFromType($type, $valueExpr);
+        return "{$array}.fill({$value})";
+    }
+
+    protected function getStdArrayInfo(Expr\ArrayDimFetch $expr): ?array
+    {
+        $tmp = $expr->var;
+        while (true) {
+            if ($this->isArrayDimFetch($tmp)) {
+                $tmp = $tmp->var;
+            } elseif ($this->isVarExpr($tmp) and $this->isStdArray($this->parseVariable($tmp))) {
+                return $this->context->stdArrays[$this->parseVariable($tmp)];
+            } else {
+                return null;
+            }
+        }
+    }
+
+    protected function getStdContainerInfo(Expr\ArrayDimFetch $expr): ?array
+    {
+        $tmp = $expr->var;
+        while (true) {
+            if ($this->isArrayDimFetch($tmp)) {
+                $tmp = $tmp->var;
+            } elseif ($this->isVarExpr($tmp)) {
+                $var = $this->parseVariable($tmp);
+                if ($this->isStdVector($var) || $this->isStdMap($var) || $this->isStdUnorderedMap($var)) {
+                    return $this->context->stdContainers[$var];
+                }
+                return null;
+            } else {
+                return null;
+            }
+        }
+    }
+
+    protected function parseStdArrayAssign(NodeAbstract $left, NodeAbstract $right): string
+    {
+        $info = $this->getStdArrayInfo($left);
+        $arrayDimFetch = $this->parseStdArrayDimFetch($left);
+        return $arrayDimFetch . ' = ' . $this->convertExprFromType($info['type'], $this->parseExpr($right));
+    }
+
+    protected function parseStdContainerAssign(Expr\ArrayDimFetch $left, NodeAbstract $right): string
+    {
+        if ($this->isStdArrayExpr($left)) {
+            return $this->parseStdArrayAssign($left, $right);
+        }
+
+        $info = $this->getStdContainerInfo($left);
+        if ($info['kind'] === 'vector' && $left->dim === null) {
+            if (!$this->isVarExpr($left->var)) {
+                $this->fatalError($left, 'std::vector append only supports a vector variable');
+            }
+            $vector = $this->parseVariable($left->var);
+            return $vector . '.push_back(' . $this->convertExprFromType($info['type'], $this->parseExpr($right)) . ')';
+        }
+        if ($left->dim === null) {
+            $this->fatalError($left, 'std map expects a key');
+        }
+
+        return $this->parseStdContainerOffsetSet($left, $this->convertExprFromType($info['type'], $this->parseExpr($right)));
+    }
+
+    protected function parseStdArrayAssignOp(Expr\AssignOp $expr, string $op): string
+    {
+        $binaryOp = $this->removeAssignOp($op);
+        if ($binaryOp === '.') {
+            $this->fatalError($expr, 'Cannot concat string to std::array');
+        }
+
+        $info = $this->getStdArrayInfo($expr->var);
+        $arrayDimFetch = $this->parseStdArrayDimFetch($expr->var);
+        return $arrayDimFetch . ' ' . $binaryOp . '= ' . $this->convertExprFromType($info['type'], $this->parseExpr($expr->expr));
+    }
+
+    protected function parseStdContainerAssignOp(Expr\AssignOp $expr, string $op): string
+    {
+        if ($this->isStdArrayExpr($expr->var)) {
+            return $this->parseStdArrayAssignOp($expr, $op);
+        }
+
+        $binaryOp = $this->removeAssignOp($op);
+        if ($binaryOp === '.') {
+            $this->fatalError($expr, 'Cannot concat string to std container');
+        }
+
+        $info = $this->getStdContainerInfo($expr->var);
+        $containerDimFetch = $this->parseStdContainerDimFetch($expr->var);
+        return $containerDimFetch . ' ' . $binaryOp . '= ' . $this->convertExprFromType($info['type'], $this->parseExpr($expr->expr));
+    }
+
+    protected function parseStdArrayDimFetch(Expr\ArrayDimFetch $expr): string
+    {
+        $tmp = $expr;
+        $nesting = [];
+        $level = 0;
+        $info = $this->getStdArrayInfo($expr);
+
+        while (true) {
+            if ($this->isArrayDimFetch($tmp)) {
+                if ($tmp->dim === null) {
+                    $this->fatalError($tmp, 'std::array expects an index');
+                }
+                $size = $info['sizes'][$level];
+                if ($this->isScalarInt($tmp->dim)) {
+                    if ($tmp->dim->value < 0 || $tmp->dim->value >= $size) {
+                        $this->fatalError($tmp, "std::array index out of bounds: index {$tmp->dim->value}, size {$size}");
+                    }
+                }
+                $index = $this->parseExpr($tmp->dim);
+                $nesting[] = '[' . Symbol::safeIndex($this->convertIntExpr($index), $info['sizes'][$level]) . ']';
+                $tmp = $tmp->var;
+                $level++;
+            } else {
+                $nesting[] = $this->parseVariable($tmp);
+                break;
+            }
+        }
+
+        $nesting = array_reverse($nesting);
+        $expr->setAttribute('stdArrayDimFetch', ['var' => $nesting[0], 'accessLevel' => $level, 'totalLevel' => count($info['sizes'])]);
+
+        return implode('', $nesting);
+    }
+
+    protected function parseStdContainerDimFetch(Expr\ArrayDimFetch $expr): string
+    {
+        if ($this->isStdArrayExpr($expr)) {
+            return $this->parseStdArrayDimFetch($expr);
+        }
+
+        $info = $this->getStdContainerInfo($expr);
+        $tmp = $expr;
+        $dims = [];
+        while (true) {
+            if ($this->isArrayDimFetch($tmp)) {
+                $dims[] = $tmp->dim;
+                $tmp = $tmp->var;
+            } else {
+                break;
+            }
+        }
+        if (!$this->isVarExpr($tmp)) {
+            $this->fatalError($expr, 'std container expects a variable');
+        }
+        if (count($dims) !== 1) {
+            $this->fatalError($expr, 'Nested std::vector/std::map/std::unordered_map access is not supported');
+        }
+        $dim = $dims[0];
+        if ($dim === null) {
+            $this->fatalError($expr, 'std container expects an index');
+        }
+
+        $container = $this->parseVariable($tmp);
+        $index = $this->parseExpr($dim);
+        $key = $info['kind'] === 'vector' ? $this->convertIntExpr($index) : $this->convertStdContainerKey($info, $index);
+        $access = $container . '.offsetGet(' . $key . ')';
+        $expr->setAttribute('stdContainerDimFetch', ['var' => $container, 'accessLevel' => 1, 'totalLevel' => 1]);
+
+        return $access;
+    }
+
+    protected function parseStdContainerOffsetSet(Expr\ArrayDimFetch $expr, string $value): string
+    {
+        $info = $this->getStdContainerInfo($expr);
+        if ($expr->dim === null) {
+            $this->fatalError($expr, 'std container expects an index');
+        }
+        if (!$this->isVarExpr($expr->var)) {
+            $this->fatalError($expr, 'std container expects a variable');
+        }
+        $container = $this->parseVariable($expr->var);
+        $indexExpr = $this->parseExpr($expr->dim);
+        $index = $info['kind'] === 'vector' ? $this->convertIntExpr($indexExpr) : $this->convertStdContainerKey($info, $indexExpr);
+        return $container . '.offsetSet(' . $index . ', ' . $value . ')';
+    }
+
+    protected function convertStdContainerKey(array $info, string $index): string
+    {
+        if ($info['keyType'] === self::TYPE_STR) {
+            return $this->convertStringExpr($index);
+        }
+        return $this->convertIntExpr($index);
+    }
+
+    protected function parseStdNativeType(NodeAbstract $expr, string $owner): string
+    {
+        if (!$this->isClassConstFetch($expr)) {
+            $this->fatalError($expr, "{$owner} expects a native_types class constant");
+        }
+        if (!$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name) || $expr->class->toString() !== 'native_types') {
+            $this->fatalError($expr, "An incorrect `{$owner}` definition");
+        }
+        return match ($expr->name->name) {
+            'type_int' => self::TYPE_INT,
+            'type_float' => self::TYPE_FLOAT,
+            'type_bool' => self::TYPE_BOOL,
+            default => $this->fatalError($expr, "An incorrect `{$owner}` definition"),
+        };
+    }
+
+    protected function parseStdMapKeyType(NodeAbstract $expr, string $owner): string
+    {
+        if (!$this->isClassConstFetch($expr) || !$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)) {
+            $this->fatalError($expr, "{$owner} expects a native_types or complex_types class constant");
+        }
+        if ($expr->class->toString() === 'native_types' && $expr->name->name === 'type_int') {
+            return self::TYPE_INT;
+        }
+        if ($expr->class->toString() === 'complex_types' && in_array($expr->name->name, ['type_string', 'type_str'], true)) {
+            return self::TYPE_STR;
+        }
+        $this->fatalError($expr, "{$owner} key only supports native_types::type_int, complex_types::type_string or complex_types::type_str");
+    }
+
+    protected function getStdMapDecl(string $containerType, string $keyType, string $valueType): string
+    {
+        $decl = $containerType . '<' . $valueType;
+        if ($keyType === self::TYPE_STR) {
+            $decl .= ', ' . self::TYPE_STR;
+        }
+        return $decl . '>';
+    }
+
+    protected function parseStdArray(string $var, Expr\StaticCall $expr): string
+    {
+        $tmp = $expr;
+        $nesting = [];
+        $totalBytes = 0;
+
+        while (true) {
+            if (count($tmp->args) !== 2) {
+                $this->fatalError($tmp, 'std::array() expects two arguments');
+            }
+            if (!$this->isScalarInt($tmp->args[1]->value)) {
+                $this->fatalError($tmp, 'std::array() expects second argument to be an integer');
+            }
+            $byte = 0;
+            $size = $tmp->args[1]->value->value;
+            $nesting[] = $size;
+            $typeExpr = $tmp->args[0]->value;
+            if ($this->isClassConstFetch($typeExpr)) {
+                if (!$this->isNameExpr($typeExpr->class) || !$this->isIdExpr($typeExpr->name) || $typeExpr->class->toString() !== 'native_types') {
+                    $this->fatalError($tmp, 'An incorrect `std::array` definition');
+                }
+                switch ($typeExpr->name->name) {
+                    case 'type_int':
+                        $type = self::TYPE_INT;
+                        $byte = 8;
+                        break;
+                    case 'type_float':
+                        $type = self::TYPE_FLOAT;
+                        $byte = 8;
+                        break;
+                    case 'type_bool':
+                        $type = self::TYPE_BOOL;
+                        $byte = 1;
+                        break;
+                    default:
+                        $this->fatalError($tmp, 'An incorrect `std::array` definition');
+                        break;
+                }
+                break;
+            }
+            $totalBytes += $size * $byte;
+            if ($this->isStaticCall($typeExpr)) {
+                $tmp = $typeExpr;
+                if (!$this->isNameExpr($tmp->class) || !$this->isIdExpr($tmp->name) || $tmp->class->toString() !== 'std' || $tmp->name->toString() !== 'array') {
+                    $this->fatalError($tmp, 'An incorrect `std::array` definition');
+                }
+            } else {
+                $this->fatalError($tmp, 'std::array() expects first argument to be a class constant');
+            }
+        }
+
+        $decl = str_repeat(self::TYPE_STD_ARRAY . '<', count($nesting));
+        $decl .= $type;
+        for ($i = count($nesting) - 1; $i >= 0; $i--) {
+            $decl .= ', ' . $nesting[$i] . '>';
+        }
+        $this->context->stdArrays[$var] = [
+            'decl' => $decl,
+            'type' => $type,
+            'sizes' => array_reverse($nesting),
+            'bytes' => $totalBytes,
+        ];
+        return '// ' . $decl;
+    }
+
+    protected function parseStdVector(string $var, Expr\StaticCall $expr): string
+    {
+        if (count($expr->args) < 1 || count($expr->args) > 2) {
+            $this->fatalError($expr, 'std::vector() expects one or two arguments');
+        }
+        $type = $this->parseStdNativeType($expr->args[0]->value, 'std::vector');
+        $size = null;
+        if (count($expr->args) === 2) {
+            if (!$this->isScalarInt($expr->args[1]->value)) {
+                $this->fatalError($expr, 'std::vector() expects second argument to be an integer');
+            }
+            $size = $expr->args[1]->value->value;
+        }
+        $decl = self::TYPE_STD_VECTOR . '<' . $type . '>';
+        $this->context->stdContainers[$var] = [
+            'kind' => 'vector',
+            'decl' => $decl,
+            'type' => $type,
+            'size' => $size,
+        ];
+        return '// ' . $decl;
+    }
+
+    protected function parseStdMap(string $var, Expr\StaticCall $expr): string
+    {
+        if (count($expr->args) !== 2) {
+            $this->fatalError($expr, 'std::map() expects two arguments');
+        }
+        $keyType = $this->parseStdMapKeyType($expr->args[0]->value, 'std::map');
+        $valueType = $this->parseStdNativeType($expr->args[1]->value, 'std::map');
+        $decl = $this->getStdMapDecl(self::TYPE_STD_MAP, $keyType, $valueType);
+        $this->context->stdContainers[$var] = [
+            'kind' => 'map',
+            'decl' => $decl,
+            'type' => $valueType,
+            'keyType' => $keyType,
+        ];
+        return '// ' . $decl;
+    }
+
+    protected function parseStdUnorderedMap(string $var, Expr\StaticCall $expr): string
+    {
+        if (count($expr->args) !== 2) {
+            $this->fatalError($expr, 'std::unordered_map() expects two arguments');
+        }
+        $keyType = $this->parseStdMapKeyType($expr->args[0]->value, 'std::unordered_map');
+        $valueType = $this->parseStdNativeType($expr->args[1]->value, 'std::unordered_map');
+        $decl = $this->getStdMapDecl(self::TYPE_STD_UNORDERED_MAP, $keyType, $valueType);
+        $this->context->stdContainers[$var] = [
+            'kind' => 'unordered_map',
+            'decl' => $decl,
+            'type' => $valueType,
+            'keyType' => $keyType,
+        ];
+        return '// ' . $decl;
+    }
+}

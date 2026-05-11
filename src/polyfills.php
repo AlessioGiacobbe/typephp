@@ -13,6 +13,14 @@ class native_types
     public const type_bool = 'bool';
 }
 
+class complex_types {
+    public const type_any = 'any';
+    public const type_str = 'string';
+    public const type_string = 'string';
+    public const type_array = 'array';
+    public const type_object = 'object';
+}
+
 class std
 {
     public static function int(mixed $value): int

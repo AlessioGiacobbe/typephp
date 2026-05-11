@@ -19,6 +19,11 @@ class FunctionContext
      * @var array<string, array>
      */
     public array $stdArrays = [];
+
+    /**
+     * @var array<string, array>
+     */
+    public array $stdContainers = [];
     public array $localVars = [];
     public array $staticVars = [];
     public array $globalVars = [];
@@ -51,6 +56,8 @@ class FunctionContext
         $this->staticVars = [];
         $this->arguments = [];
         $this->objects = [];
+        $this->stdArrays = [];
+        $this->stdContainers = [];
         $this->objectProps = [];
         $this->ceWrappers = [];
         $this->tmpVarIndex = 0;

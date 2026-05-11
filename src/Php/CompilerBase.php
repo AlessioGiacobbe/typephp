@@ -27,7 +27,7 @@ use PhpAot\Php\Generator\ClosureGenerator;
 use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
 use PhpAot\Php\Generator\Utils;
-use PhpAot\Php\Parser\StdArrayParser;
+use PhpAot\Php\Parser\StdContainerParser;
 use PhpAot\Php\Platform\Linux;
 use PhpAot\Php\Platform\Macos;
 use PhpAot\Php\Platform\PlatformBase;
@@ -58,7 +58,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     use PlaceHolderGenerator;
     use PropertyPromotion;
     use MagicMethodDetector;
-    use StdArrayParser;
+    use StdContainerParser;
     use Utils;
 
     public const string TYPE_VAR = 'php::Var';
@@ -71,6 +71,9 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_OBJECT = 'php::Object';
     public const string TYPE_ARRAY = 'php::Array';
     public const string TYPE_STD_ARRAY = 'php::StdArray';
+    public const string TYPE_STD_VECTOR = 'php::StdVector';
+    public const string TYPE_STD_MAP = 'php::StdMap';
+    public const string TYPE_STD_UNORDERED_MAP = 'php::StdUnorderedMap';
     public const string TYPE_ARGS = 'php::Args';
     public const string TYPE_STR = 'php::Str';
     public const string TYPE_REF = 'php::Ref';
@@ -1529,15 +1532,27 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } elseif ($this->isStaticCall($right) and $this->isNameExpr($right->class) and $this->isIdExpr($right->name)) {
                     $class = $this->parseIdentifier($right->class);
                     if ($class === 'std') {
-                        if ($right->name->toString() === 'array') {
+                        if (in_array($right->name->toString(), ['array', 'vector', 'map', 'unordered_map'], true)) {
                             if ($this->hasVar($var)) {
-                                $this->fatalError($left, "Cannot re-assign `\${$var}` to std::array");
+                                $this->fatalError($left, "Cannot re-assign `\${$var}` to std::{$right->name->toString()}");
                             }
                             if ($this->context->scopeLevel > 1) {
-                                $this->fatalError($left, 'Must create std::array in the top-level scope of the function');
+                                $this->fatalError($left, "Must create std::{$right->name->toString()} in the top-level scope of the function");
                             }
-                            $this->addLocalVar($var, self::TYPE_STD_ARRAY);
-                            return $this->parseStdArray($var, $right);
+                            if ($right->name->toString() === 'array') {
+                                $this->addLocalVar($var, self::TYPE_STD_ARRAY);
+                                return $this->parseStdArray($var, $right);
+                            }
+                            if ($right->name->toString() === 'vector') {
+                                $this->addLocalVar($var, self::TYPE_STD_VECTOR);
+                                return $this->parseStdVector($var, $right);
+                            }
+                            if ($right->name->toString() === 'map') {
+                                $this->addLocalVar($var, self::TYPE_STD_MAP);
+                                return $this->parseStdMap($var, $right);
+                            }
+                            $this->addLocalVar($var, self::TYPE_STD_UNORDERED_MAP);
+                            return $this->parseStdUnorderedMap($var, $right);
                         } else {
                             $valueExpr = $this->parseStdCall($right);
                             if (!$this->hasVar($var)) {
@@ -1548,7 +1563,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                 } elseif ($this->isVarExpr($right)) {
                     $rightVar = $this->parseIdentifier($right);
-                    $type = $this->getVarType($rightVar);
+                    $type = $this->isStdContainer($rightVar) ? self::TYPE_ARRAY : $this->getVarType($rightVar);
                     if ($this->isTypedObject($rightVar) and $this->isTypedObject($var)) {
                         $leftClass = $this->getObjectType($var);
                         $rightClass = $this->getObjectType($rightVar);
@@ -1568,8 +1583,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->getVarType($tmp) === self::TYPE_STR and $left->dim === null) {
                 $this->fatalError($left, 'Cannot use [] for strings');
             }
-            if ($this->isStdArrayExpr($left)) {
-                return $this->parseStdArrayAssign($left, $right);
+            if ($this->isStdContainerExpr($left)) {
+                return $this->parseStdContainerAssign($left, $right);
             }
             return $this->parseAssignArrayDim($left, $right);
         }
@@ -2068,7 +2083,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function detectVarType($var): string
     {
         $name = $this->parseIdentifier($var);
-        if ($this->isStdArray($name)) {
+        if ($this->isStdContainer($name)) {
             return self::TYPE_ARRAY;
         }
         return $this->getVarType($name);
@@ -2164,6 +2179,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                     } else {
                         return self::TYPE_ARRAY;
                     }
+                }
+                if ($this->isStdContainerExpr($expr)) {
+                    if (!$expr->hasAttribute('stdContainerDimFetch')) {
+                        $this->parseStdContainerDimFetch($expr);
+                    }
+                    $attr = $expr->getAttribute('stdContainerDimFetch');
+                    return $this->context->stdContainers[$attr['var']]['type'];
                 }
                 break;
             case 'Expr_New':
@@ -2617,8 +2639,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         if ($this->isArrayDimFetch($node->var)) {
-            if ($this->isStdArrayExpr($node->var)) {
-                return $this->parseStdArrayAssignOp($node, $op);
+            if ($this->isStdContainerExpr($node->var)) {
+                return $this->parseStdContainerAssignOp($node, $op);
             }
             /**
              * $count[$r] -= 1;
@@ -2762,8 +2784,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseArrayDimFetch(Expr\ArrayDimFetch $node, bool $write): string
     {
-        if ($this->isStdArrayExpr($node)) {
-            return $this->parseStdArrayDimFetch($node);
+        if ($this->isStdContainerExpr($node)) {
+            if ($write && $node->dim === null) {
+                return $this->parseIdentifier($node->var);
+            }
+            return $this->parseStdContainerDimFetch($node);
         }
 
         $var = $this->parseIdentifier($node->var);
@@ -3170,17 +3195,23 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseArg(Node\Arg $arg): string
     {
-        if ($this->isArrayDimFetch($arg->value) and $this->isStdArrayExpr($arg->value)) {
-            $valueExpr = $this->parseStdArrayDimFetch($arg->value);
-            $attr = $arg->value->getAttribute('stdArrayDimFetch');
-            if ($attr['accessLevel'] === $attr['totalLevel']) {
-                return $this->convertExprFromType($this->context->stdArrays[$attr['var']]['type'], $valueExpr);
+        if ($this->isArrayDimFetch($arg->value) and $this->isStdContainerExpr($arg->value)) {
+            if ($this->isStdArrayExpr($arg->value)) {
+                $valueExpr = $this->parseStdArrayDimFetch($arg->value);
+                $attr = $arg->value->getAttribute('stdArrayDimFetch');
+                if ($attr['accessLevel'] === $attr['totalLevel']) {
+                    return $this->convertExprFromType($this->context->stdArrays[$attr['var']]['type'], $valueExpr);
+                } else {
+                    return $this->convertArrayExpr($valueExpr);
+                }
             } else {
-                return $this->convertArrayExpr($valueExpr);
+                $valueExpr = $this->parseStdContainerDimFetch($arg->value);
+                $attr = $arg->value->getAttribute('stdContainerDimFetch');
+                return $this->convertExprFromType($this->context->stdContainers[$attr['var']]['type'], $valueExpr);
             }
         }
         $expr = $this->parseIdentifier($arg->value);
-        if ($this->isVarExpr($arg->value) and $this->isStdArray($arg->value->name)) {
+        if ($this->isVarExpr($arg->value) and $this->isStdContainer($arg->value->name)) {
             return $this->convertArrayExpr($expr);
         }
         return $expr;
@@ -5375,6 +5406,18 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } else {
                     $code .= $info['decl'] . ' ' . $name . '{};';
                 }
+            } elseif ($type === self::TYPE_STD_VECTOR) {
+                $info = $this->context->stdContainers[$name];
+                $code .= $info['decl'] . ' ' . $name;
+                if ($info['size'] !== null) {
+                    $code .= '(' . $info['size'] . ')';
+                } else {
+                    $code .= '{}';
+                }
+                $code .= ';';
+            } elseif ($type === self::TYPE_STD_MAP || $type === self::TYPE_STD_UNORDERED_MAP) {
+                $info = $this->context->stdContainers[$name];
+                $code .= $info['decl'] . ' ' . $name . '{};';
             } else {
                 $code .= $type . ' ' . $name;
                 if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
