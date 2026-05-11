@@ -426,7 +426,7 @@ class Translator extends Preprocessor
                 exit(1);
             }
         }
-        $file = $this->getBuildDir() . '/extension-' . $this->getModuleName() . '.cc';
+        $file = $this->getBuildDir() . '/extension-' . $this->targetName . '.cc';
         $this->localHeaders = $this->argInfoHeaderFiles;
         $this->genClassCeList();
         $this->indentLevel++;

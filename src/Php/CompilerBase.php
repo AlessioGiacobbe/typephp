@@ -2672,7 +2672,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseAssignOp($expr, '&=');
     }
 
-    private function parseAssignOpBitwiseOr(Expr\AssignOp\BitwiseOr $expr): string
+    protected function parseAssignOpBitwiseOr(Expr\AssignOp\BitwiseOr $expr): string
     {
         return $this->parseAssignOp($expr, '|=');
     }
@@ -2682,7 +2682,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseAssignOp($expr, '**=');
     }
 
-    protected function error(string $msg): never
+    public function error(string $msg): never
     {
         if ($this->forTest) {
             throw new TestError($msg);

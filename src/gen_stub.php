@@ -3397,6 +3397,9 @@ class AttributeInfo {
                 }
             }
             if ($initValue === '') {
+                if ($arg->value instanceof Expr\Array_ && count($arg->value->items) > 0) {
+                    getTranslator()->error("Array arguments to attributes are not supported");
+                }
                 $value = EvaluatedValue::createFromExpression($arg->value, null, null, $allConstInfos);
                 $code .= $value->initializeZval(
                     "attribute_{$escapedAttributeName}_{$nameSuffix}->args[$i].value",
