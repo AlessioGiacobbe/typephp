@@ -5353,14 +5353,16 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->getIndent();
             if ($type === self::TYPE_STD_ARRAY) {
                 $info = $this->context->stdArrays[$name];
-                $code .= $info['decl'] . ' ' . $name . '{}';
+                $code .= "auto {$name}_unique_ptr = std::make_unique<{$info['decl']}>();\n";
+                $code .= $this->getIndent() . ' auto &' . $name . ' = *' . $name . '_unique_ptr;';
             } else {
                 $code .= $type . ' ' . $name;
                 if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
                     $code .= ' = 0';
                 }
+                $code .= ';';
             }
-            $code .= ';' . PHP_EOL;
+            $code .= PHP_EOL;
         }
         foreach ($this->context->globalVars as $name => $type) {
             $code .= $this->getIndent() . self::TYPE_VAR . ' &' . $name . ' = ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
