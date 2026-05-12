@@ -7,4 +7,9 @@ class UndefineTest extends \BaseTest
         $this->exec('The variable `$u1` is undefined', 'undefined-vars-01.php');
         $this->exec('Unsupported unset type `Expr_FuncCall`', 'unset-01.php');
     }
+
+    public function testUnsetEmptyArrayDimFetch()
+    {
+        $this->exec('Cannot use [] for array unset', 'unset-array-dim-fetch-empty.php');
+    }
 }

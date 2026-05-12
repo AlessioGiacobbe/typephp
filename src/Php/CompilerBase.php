@@ -4037,6 +4037,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $lines = [];
         foreach ($vars as $var) {
             if ($this->isArrayDimFetch($var)) {
+                if ($var->dim === null) {
+                    $this->fatalError($var, 'Cannot use [] for array unset');
+                }
                 $array = $this->parseIdentifier($var->var);
                 $dim = $this->parseIdentifier($var->dim);
                 $lines[] = $array . '.offsetUnset(' . $dim . ');';
