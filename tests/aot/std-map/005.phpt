@@ -23,8 +23,7 @@ function main() {
     $map["b"] = 7;
     $map["c"] = 3;
 
-    $ptr = std::unsafe_ptr($map);
-    std_map_unsafe_ptr_update($ptr);
+    std_map_unsafe_ptr_update($map);
     var_dump($map["c"]);
 }
 ?>

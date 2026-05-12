@@ -9,10 +9,8 @@ function std_unordered_map_unsafe_ptr_type_mismatch(UnsafePtr $unsafePtr): void
 
 function main() {
     $map = std::unordered_map(native_types::type_int, native_types::type_int);
-    $ptr = std::unsafe_ptr($map);
-
     try {
-        std_unordered_map_unsafe_ptr_type_mismatch($ptr);
+        std_unordered_map_unsafe_ptr_type_mismatch($map);
     } catch (TypeError $e) {
         echo $e->getMessage(), "\n";
     }

@@ -9,10 +9,8 @@ function std_map_unsafe_ptr_type_mismatch(UnsafePtr $unsafePtr): void
 
 function main() {
     $map = std::map(complex_types::type_str, native_types::type_int);
-    $ptr = std::unsafe_ptr($map);
-
     try {
-        std_map_unsafe_ptr_type_mismatch($ptr);
+        std_map_unsafe_ptr_type_mismatch($map);
     } catch (TypeError $e) {
         echo $e->getMessage(), "\n";
     }

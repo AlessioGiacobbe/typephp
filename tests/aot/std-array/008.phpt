@@ -9,10 +9,8 @@ function std_array_unsafe_ptr_type_mismatch(UnsafePtr $unsafePtr): void
 
 function main() {
     $array = std::array(native_types::type_int, 3);
-    $ptr = std::unsafe_ptr($array);
-
     try {
-        std_array_unsafe_ptr_type_mismatch($ptr);
+        std_array_unsafe_ptr_type_mismatch($array);
     } catch (TypeError $e) {
         echo $e->getMessage(), "\n";
     }

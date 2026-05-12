@@ -23,8 +23,32 @@ class AssignTest extends \BaseTest
     public function testStdUnsafeCastRequiresUnsafePtr()
     {
         $this->exec(
-            'std::unsafe_cast() expects second argument to be declared as UnsafePtr',
+            'std::unsafe_cast() expects second argument to be an UnsafePtr parameter',
             'std-unsafe-cast-requires-unsafe-ptr.php'
+        );
+    }
+
+    public function testStdUnsafeCastRejectsUnsafePtrLocalCopy()
+    {
+        $this->exec(
+            'std::unsafe_cast() expects second argument to be an UnsafePtr parameter',
+            'std-unsafe-cast-rejects-unsafe-ptr-local-copy.php'
+        );
+    }
+
+    public function testStdUnsafePtrParameterCannotBeReassigned()
+    {
+        $this->exec(
+            'Cannot re-assign UnsafePtr parameter `$unsafePtr`',
+            'std-unsafe-ptr-parameter-cannot-be-reassigned.php'
+        );
+    }
+
+    public function testStdUnsafePtrArgumentRequiresContainer()
+    {
+        $this->exec(
+            'Argument `unsafePtr` must be a std container variable for UnsafePtr parameter',
+            'std-unsafe-ptr-argument-requires-container.php'
         );
     }
 }

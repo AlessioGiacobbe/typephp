@@ -15,8 +15,7 @@ function main() {
     $vector[1] = 7;
     $vector[2] = 3;
 
-    $ptr = std::unsafe_ptr($vector);
-    std_vector_unsafe_ptr_update($ptr);
+    std_vector_unsafe_ptr_update($vector);
     var_dump($vector[2]);
 }
 ?>

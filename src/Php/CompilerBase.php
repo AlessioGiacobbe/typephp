@@ -1050,9 +1050,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         foreach ($this->functionDef->argInfoList as $argInfo) {
             $this->addArgument($argInfo->name, $argInfo->type);
-            if ($argInfo->unsafePtr) {
-                $this->addUnsafePtr($argInfo->name);
-            }
             if ($argInfo->class
                 and !$this->isAbstractClass($argInfo->class)
                 and !$this->hasInterface($argInfo->class)
@@ -1499,6 +1496,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($var === 'this_') {
             $this->fatalError($left, 'Cannot re-assign $this');
         }
+        if ($this->isVarExpr($left) and $this->isUnsafePtrParameter($var)) {
+            $this->fatalError($left, "Cannot re-assign UnsafePtr parameter `\${$var}`");
+        }
 
         $type = $this->detectTypeOfExpr($right);
 
@@ -1575,9 +1575,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                             if (!$this->hasVar($var)) {
                                 $this->addLocalVar($var, $right->getAttribute('nativeType'));
                             }
-                            if ($right->getAttribute('unsafePtr')) {
-                                $this->addUnsafePtr($var);
-                            }
                             return $var . ' = ' . $valueExpr;
                         }
                     }
@@ -1609,8 +1606,20 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->parseAssignArrayDim($left, $right);
         }
 
-        $rightExpr = $this->parseExpr($right);
+        $rightExpr = $this->parseAssignRightExpr($right);
         return $var . ' = ' . $this->convertExprType($rightExpr, $this->detectTypeOfExpr($left), $this->detectTypeOfExpr($right));
+    }
+
+    protected function parseAssignRightExpr(Expr $right): string
+    {
+        $rightExpr = $this->parseExpr($right);
+        if ($this->isVarExpr($right)) {
+            $rightVar = $this->parseIdentifier($right);
+            if ($this->isStdContainer($rightVar)) {
+                return $this->convertArrayExpr($rightExpr);
+            }
+        }
+        return $rightExpr;
     }
 
     protected function parseEcho(mixed $v): string
@@ -1896,11 +1905,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->context->localVars[$name] = $type;
     }
 
-    protected function addUnsafePtr(string $name): void
-    {
-        $this->context->unsafePtrs[$name] = true;
-    }
-
     protected function registerStdType(string $key): int
     {
         if (isset($this->stdTypeMap[$key])) {
@@ -1909,11 +1913,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $typeId = count($this->stdTypeMap) + 1;
         $this->stdTypeMap[$key] = $typeId;
         return $typeId;
-    }
-
-    protected function isUnsafePtr(string $name): bool
-    {
-        return isset($this->context->unsafePtrs[$name]);
     }
 
     protected function addTmpVar(string $type): string
@@ -3061,6 +3060,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         foreach ($args as $i => $arg) {
             $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
+            if ($argInfo->unsafePtr) {
+                $argList[] = $this->getUnsafePtrConvertedArg($arg, $argInfo);
+                continue;
+            }
             if ($argInfo->variadic) {
                 $argsSlice = array_slice($args, $i);
                 if (count($argsSlice) === 1 and $argsSlice[0]->unpack) {
@@ -3966,6 +3969,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->convertExprType($expr, $argInfo->type, $type);
     }
 
+    protected function getUnsafePtrConvertedArg(Node\Arg $arg, ArgInfo $argInfo): string
+    {
+        if (!$this->isVarExpr($arg->value)) {
+            $this->fatalError($arg, "Argument `{$argInfo->name}` must be a std container variable for UnsafePtr parameter");
+        }
+
+        $var = $this->parseVariable($arg->value);
+        if (!$this->hasVar($var)) {
+            $this->fatalError($arg, 'Undefined variable `$' . $var . '`');
+        }
+        if (!$this->isStdContainer($var)) {
+            $this->fatalError($arg, "Argument `{$argInfo->name}` must be a std container variable for UnsafePtr parameter");
+        }
+
+        $info = $this->getStdContainerVarInfo($var);
+        return 'php_create_unsafe_ptr(&' . $var . ', ' . $info['typeId'] . ')';
+    }
+
     protected function convertExprType(string $expr, $leftType, $rightType): string
     {
         if ($leftType === self::TYPE_FLOAT or $rightType === self::TYPE_FLOAT) {
@@ -4634,6 +4655,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->context->inAssignExpr = false;
 
         if ($this->isVarExpr($expr->var)) {
+            if ($this->isUnsafePtrParameter($left)) {
+                $this->fatalError($expr->var, "Cannot re-assign UnsafePtr parameter `\${$left}`");
+            }
             if (!$this->hasVar($left)) {
                 $this->addLocalVar($left, self::TYPE_REF);
             } else {
@@ -5424,9 +5448,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $expr->setAttribute('nativeType', $type);
             $valueExpr = $this->parseExpr($expr->args[0]->value);
             return $this->convertExprFromType($type, $valueExpr);
-        } elseif ($func === 'unsafe_ptr') {
-            $expr->setAttribute('nativeType', self::TYPE_VAR);
-            return $this->parseStdUnsafePtr($expr);
         } else {
             $this->fatalError($expr, 'Unknown std method: ' . $func);
         }
@@ -5438,6 +5459,19 @@ class CompilerBase extends \PhpAot\Core\Translator
             and !$type instanceof UnionType
             and !$type instanceof NullableType
             and $this->parseIdentifier($type) === 'UnsafePtr';
+    }
+
+    protected function isUnsafePtrParameter(string $name): bool
+    {
+        if (!$this->functionDef) {
+            return false;
+        }
+        foreach ($this->functionDef->argInfoList as $argInfo) {
+            if ($argInfo->name === $name) {
+                return $argInfo->unsafePtr;
+            }
+        }
+        return false;
     }
 
     protected function parseParentMethodCall(Expr\StaticCall $expr): string

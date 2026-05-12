@@ -15,8 +15,7 @@ function main() {
     $array[1] = 7;
     $array[2] = 3;
 
-    $ptr = std::unsafe_ptr($array);
-    std_array_unsafe_ptr_update($ptr);
+    std_array_unsafe_ptr_update($array);
     var_dump($array[2]);
 }
 ?>

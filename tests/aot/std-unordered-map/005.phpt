@@ -15,8 +15,7 @@ function main() {
     $map[2] = 7;
     $map[3] = 3;
 
-    $ptr = std::unsafe_ptr($map);
-    std_unordered_map_unsafe_ptr_update($ptr);
+    std_unordered_map_unsafe_ptr_update($map);
     var_dump($map[3]);
 }
 ?>

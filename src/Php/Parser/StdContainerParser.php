@@ -372,28 +372,6 @@ trait StdContainerParser
         return 'php::toObject(' . $valueExpr . ', ' . $this->getClassEntryPtr($class) . ', true)';
     }
 
-    protected function parseStdUnsafePtr(Expr\StaticCall $expr): string
-    {
-        if (count($expr->args) !== 1) {
-            $this->fatalError($expr, 'std::unsafe_ptr() expects one argument');
-        }
-        $arg = $expr->args[0]->value;
-        if (!$this->isVarExpr($arg)) {
-            $this->fatalError($expr, 'std::unsafe_ptr() expects a std container variable');
-        }
-        $container = $this->parseVariable($arg);
-        if (!$this->isStdContainer($container)) {
-            $this->fatalError($expr, 'std::unsafe_ptr() only supports std container variables');
-        }
-
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-        $this->addUnsafePtr($tmpVar);
-        $expr->setAttribute('unsafePtr', true);
-        $info = $this->getStdContainerVarInfo($container);
-        $this->context->beforeStmtLines[] = $tmpVar . ' = php_create_unsafe_ptr(&' . $container . ', ' . $info['typeId'] . ');';
-        return $tmpVar;
-    }
-
     protected function parseStdUnsafeCastAssign(string $var, Expr\StaticCall $expr): string
     {
         if (count($expr->args) !== 2) {
@@ -414,8 +392,8 @@ trait StdContainerParser
         if (!$this->hasVar($unsafePtr)) {
             $this->fatalError($expr->args[1]->value, 'Undefined variable `$' . $unsafePtr . '`');
         }
-        if (!$this->isUnsafePtr($unsafePtr)) {
-            $this->fatalError($expr->args[1]->value, 'std::unsafe_cast() expects second argument to be declared as UnsafePtr');
+        if (!$this->isUnsafePtrParameter($unsafePtr)) {
+            $this->fatalError($expr->args[1]->value, 'std::unsafe_cast() expects second argument to be an UnsafePtr parameter');
         }
 
         if ($containerType === 'array') {

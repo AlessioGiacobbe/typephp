@@ -17,10 +17,8 @@ function std_vector_unsafe_ptr_class_type_mismatch(UnsafePtr $unsafePtr): void
 
 function main() {
     $vector = std::vector(StdVectorUnsafeCastBase::class);
-    $ptr = std::unsafe_ptr($vector);
-
     try {
-        std_vector_unsafe_ptr_class_type_mismatch($ptr);
+        std_vector_unsafe_ptr_class_type_mismatch($vector);
     } catch (TypeError $e) {
         echo $e->getMessage(), "\n";
     }

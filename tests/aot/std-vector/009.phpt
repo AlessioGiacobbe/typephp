@@ -14,8 +14,7 @@ namespace StdVectorUnsafeCastNs {
         public static function run(): void
         {
             $vector = std::vector(self::class);
-            $ptr = std::unsafe_ptr($vector);
-            self::update($ptr);
+            self::update($vector);
         }
     }
 }
