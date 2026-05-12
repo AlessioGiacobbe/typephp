@@ -10,18 +10,24 @@ namespace PhpAot\Php\Parser;
 
 use PhpAot\Php\Symbol;
 use PhpParser\Node\Expr;
+use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 
 trait StdContainerParser
 {
     protected function isStdContainer(string $var): bool
     {
-        return $this->hasLocalVar($var) and in_array($this->getVarType($var), [
-                self::TYPE_STD_ARRAY,
-                self::TYPE_STD_VECTOR,
-                self::TYPE_STD_MAP,
-                self::TYPE_STD_UNORDERED_MAP,
-            ], true);
+        return $this->hasLocalVar($var) and $this->isStdContainerType($this->getVarType($var));
+    }
+
+    protected function isStdContainerType(string $type): bool
+    {
+        return in_array($type, [
+            self::TYPE_STD_ARRAY,
+            self::TYPE_STD_VECTOR,
+            self::TYPE_STD_MAP,
+            self::TYPE_STD_UNORDERED_MAP,
+        ], true);
     }
 
     protected function isStdArray(string $var): bool
@@ -70,6 +76,28 @@ trait StdContainerParser
             return $this->context->stdArrays[$var];
         }
         return $this->context->stdContainers[$var];
+    }
+
+    protected function getStdContainerKeyType(string $var): string
+    {
+        if ($this->isStdVector($var) or $this->isStdArray($var)) {
+            return self::TYPE_INT;
+        }
+        return $this->getStdContainerVarInfo($var)['keyType'];
+    }
+
+    protected function getStdContainerValueType(string $var, string $valueVar): string
+    {
+        $info = $this->getStdContainerVarInfo($var);
+        if ($this->isStdArray($var)) {
+            return count($info['sizes']) > 1 ? self::TYPE_ARRAY : $info['type'];
+        }
+        if ($info['type'] === self::TYPE_OBJECT and $info['class']) {
+            $this->addObject($valueVar, $info['class']);
+        } else {
+            unset($this->context->objects[$valueVar]);
+        }
+        return $info['type'];
     }
 
     protected function getStdArrayDecl(string $type, array $sizes): string
@@ -315,6 +343,56 @@ trait StdContainerParser
         return implode('', $nesting);
     }
 
+    protected function parseForeachStdContainer(Foreach_ $node): string
+    {
+        $container = $this->parseIdentifier($node->expr);
+        if ($this->isStdMap($container) or $this->isStdUnorderedMap($container)) {
+            $this->context->stdContainers[$container]['locking'] = true;
+        }
+        $iterator = $this->genTmpVarName();
+        $code = "for (auto $iterator = $container.begin(); $iterator != $container.end(); ++$iterator) {" . PHP_EOL;
+        $this->indentLevel++;
+        if ($node->keyVar) {
+            $keyVar = $this->parseIdentifier($node->keyVar);
+            $this->checkVar($node, $keyVar, $this->getStdContainerKeyType($container));
+            if ($this->isStdVector($container) or $this->isStdArray($container)) {
+                $code .= $this->getIndent() . "$keyVar = $iterator - $container.begin();" . PHP_EOL;
+            } else {
+                $code .= $this->getIndent() . "$keyVar = {$iterator}->first;" . PHP_EOL;
+            }
+        }
+
+        if ($node->byRef) {
+            $this->fatalError($node, 'Cannot use & with std container foreach');
+        }
+
+        if (!$this->isVarExpr($node->valueVar)) {
+            $this->fatalError($node, 'Cannot assign value to std container foreach');
+        }
+
+        $valueVar = $this->parseIdentifier($node->valueVar);
+        $this->checkVar($node, $valueVar, $this->getStdContainerValueType($container, $valueVar));
+
+        if ($this->isStdVector($container) or $this->isStdArray($container)) {
+            $code .= $this->getIndent() . "$valueVar = *$iterator;" . PHP_EOL;
+        } else {
+            $code .= $this->getIndent() . "$valueVar = {$iterator}->second;" . PHP_EOL;
+        }
+
+        $body = $this->parseStmts($node->stmts);
+        $this->indentLevel--;
+
+        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
+        $code .= $body . PHP_EOL;
+
+        $code .= $this->getIndent() . '}';
+        unset($this->context->objects[$valueVar]);
+        if ($this->isStdMap($container) or $this->isStdUnorderedMap($container)) {
+            $this->context->stdContainers[$container]['locking'] = false;
+        }
+        return $code;
+    }
+
     protected function parseStdContainerDimFetch(Expr\ArrayDimFetch $expr): string
     {
         if ($this->isStdArrayExpr($expr)) {
@@ -532,11 +610,7 @@ trait StdContainerParser
 
     protected function getStdMapDecl(string $containerType, string $keyType, string $valueType): string
     {
-        $decl = $containerType . '<' . $valueType;
-        if ($keyType === self::TYPE_STR) {
-            $decl .= ', ' . self::TYPE_STR;
-        }
-        return $decl . '>';
+        return $containerType . '<' . $keyType . ', ' . $valueType . '>';
     }
 
     protected function parseStdArray(string $var, Expr\StaticCall $expr): string

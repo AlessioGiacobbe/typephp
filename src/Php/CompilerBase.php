@@ -4041,6 +4041,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($var, 'Cannot use [] for array unset');
                 }
                 $array = $this->parseIdentifier($var->var);
+                if (($this->isStdMap($array) or $this->isStdUnorderedMap($array))
+                    and !empty($this->context->stdContainers[$array]['locking'])) {
+                    $this->fatalError($var, 'Cannot delete element in std container in foreach loop');
+                }
                 $dim = $this->parseIdentifier($var->dim);
                 $lines[] = $array . '.offsetUnset(' . $dim . ');';
             } elseif ($this->isPropertyFetch($var)) {
@@ -4229,6 +4233,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $this->fatalError($node, 'Cannot use & with foreach');
                     }
                     return $this->parseForeachObject($node);
+                } elseif ($this->isStdContainerType($type)) {
+                    return $this->parseForeachStdContainer($node);
                 }
             }
         }
@@ -5313,13 +5319,17 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function checkVar(NodeAbstract $node, string $name): void
+    protected function checkVar(NodeAbstract $node, string $name, string $defaultType = self::TYPE_VAR): void
     {
         if (!$this->hasVar($name)) {
-            $this->addLocalVar($name, self::TYPE_VAR);
-        } else {
+            $this->addLocalVar($name, $defaultType);
+        } elseif ($defaultType === self::TYPE_VAR) {
             if ($this->getVarType($name) !== self::TYPE_VAR) {
                 $this->fatalError($node, 'Cannot assign value to variable $' . $name . ' of type ' . $this->getVarType($name));
+            }
+        } else {
+            if ($this->getVarType($name) !== $defaultType) {
+                $this->fatalError($node, 'Cannot assign value to variable $' . $name . ' of type ' . $this->getVarType($name) . ' with type ' . $defaultType);
             }
         }
     }
