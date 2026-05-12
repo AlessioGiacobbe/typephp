@@ -1503,6 +1503,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         $type = $this->detectTypeOfExpr($right);
 
         if ($this->isVarExpr($left)) {
+            if ($this->isStdContainer($var)) {
+                $copyAssign = $this->parseStdContainerCopyAssign($var, $right);
+                if ($copyAssign !== null) {
+                    return $copyAssign;
+                }
+            }
             // 类型推断，获取对象的类名，如果不是对象则返回空字符串
             $rightClass = $this->detectClassOfExpr($right);
             // 右值是一个对象，已获得类的名称，左值必须与右值的类一致
@@ -1608,6 +1614,21 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $rightExpr = $this->parseAssignRightExpr($right);
         return $var . ' = ' . $this->convertExprType($rightExpr, $this->detectTypeOfExpr($left), $this->detectTypeOfExpr($right));
+    }
+
+    protected function parseStdContainerCopyAssign(string $leftVar, Expr $right): ?string
+    {
+        $rightInfo = $this->getStdContainerExprInfo($right);
+        if ($rightInfo === null) {
+            return null;
+        }
+
+        $leftInfo = $this->getStdContainerVarInfo($leftVar);
+        if (!$this->isSameStdContainerInfo($leftInfo, $rightInfo)) {
+            $this->fatalError($right, 'Cannot copy std container with different type');
+        }
+
+        return $leftVar . ' = ' . $this->parseStdContainerCopyExpr($right);
     }
 
     protected function parseAssignRightExpr(Expr $right): string

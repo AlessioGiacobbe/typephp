@@ -72,6 +72,83 @@ trait StdContainerParser
         return $this->context->stdContainers[$var];
     }
 
+    protected function getStdArrayDecl(string $type, array $sizes): string
+    {
+        $decl = str_repeat(self::TYPE_STD_ARRAY . '<', count($sizes));
+        $decl .= $type;
+        for ($i = count($sizes) - 1; $i >= 0; $i--) {
+            $decl .= ', ' . $sizes[$i] . '>';
+        }
+        return $decl;
+    }
+
+    protected function getStdValueTypeBytes(string $type): int
+    {
+        return match ($type) {
+            self::TYPE_BOOL => 1,
+            self::TYPE_INT, self::TYPE_FLOAT => 8,
+            default => 16,
+        };
+    }
+
+    protected function getNestedStdArrayInfo(array $info, int $accessLevel): ?array
+    {
+        $sizes = array_reverse($info['sizes']);
+        if ($accessLevel >= count($sizes)) {
+            return null;
+        }
+
+        $nestedSizes = array_slice($sizes, $accessLevel);
+        return [
+            'kind' => 'array',
+            'decl' => $this->getStdArrayDecl($info['type'], $nestedSizes),
+            'type' => $info['type'],
+            'class' => $info['class'],
+            'sizes' => array_reverse($nestedSizes),
+            'bytes' => array_product($nestedSizes) * $this->getStdValueTypeBytes($info['type']),
+        ];
+    }
+
+    protected function getStdArrayDimFetchContainerInfo(Expr\ArrayDimFetch $expr): ?array
+    {
+        if (!$expr->hasAttribute('stdArrayDimFetch')) {
+            $this->parseStdArrayDimFetch($expr);
+        }
+        $attr = $expr->getAttribute('stdArrayDimFetch');
+        return $this->getNestedStdArrayInfo($this->context->stdArrays[$attr['var']], $attr['accessLevel']);
+    }
+
+    protected function isSameStdContainerInfo(array $leftInfo, array $rightInfo): bool
+    {
+        return $this->getStdTypeKey($leftInfo) === $this->getStdTypeKey($rightInfo);
+    }
+
+    protected function getStdContainerExprInfo(NodeAbstract $expr): ?array
+    {
+        if ($this->isVarExpr($expr)) {
+            $var = $this->parseVariable($expr);
+            if ($this->isStdContainer($var)) {
+                return $this->getStdContainerVarInfo($var);
+            }
+            return null;
+        }
+        if ($this->isArrayDimFetch($expr) and $this->isStdArrayExpr($expr)) {
+            return $this->getStdArrayDimFetchContainerInfo($expr);
+        }
+        return null;
+    }
+
+    protected function parseStdContainerCopyExpr(NodeAbstract $expr): string
+    {
+        if ($this->isVarExpr($expr)) {
+            return $this->parseVariable($expr);
+        }
+        if ($this->isArrayDimFetch($expr) and $this->isStdArrayExpr($expr)) {
+            return $this->parseStdArrayDimFetch($expr);
+        }
+        return $this->parseExpr($expr);
+    }
+
     protected function isStdArrayExpr(Expr\ArrayDimFetch $expr): bool
     {
         $info = $this->getStdArrayInfo($expr);
@@ -130,6 +207,15 @@ trait StdContainerParser
     {
         $info = $this->getStdArrayInfo($left);
         $arrayDimFetch = $this->parseStdArrayDimFetch($left);
+        $attr = $left->getAttribute('stdArrayDimFetch');
+        if ($attr['accessLevel'] < $attr['totalLevel']) {
+            $leftInfo = $this->getNestedStdArrayInfo($info, $attr['accessLevel']);
+            $rightInfo = $this->getStdContainerExprInfo($right);
+            if ($rightInfo !== null and $this->isSameStdContainerInfo($leftInfo, $rightInfo)) {
+                return $arrayDimFetch . ' = ' . $this->parseStdContainerCopyExpr($right);
+            }
+            $this->fatalError($right, 'Cannot assign non-matching value to nested std::array');
+        }
         return $arrayDimFetch . ' = ' . $this->convertStdValueExpr($info, $right);
     }
 
@@ -163,6 +249,10 @@ trait StdContainerParser
 
         $info = $this->getStdArrayInfo($expr->var);
         $arrayDimFetch = $this->parseStdArrayDimFetch($expr->var);
+        $attr = $expr->var->getAttribute('stdArrayDimFetch');
+        if ($attr['accessLevel'] < $attr['totalLevel']) {
+            $this->fatalError($expr, 'Cannot use assign operator on nested std::array');
+        }
         return $arrayDimFetch . ' ' . $binaryOp . '= ' . $this->convertExprFromType($info['type'], $this->parseExpr($expr->expr));
     }
 
@@ -185,8 +275,7 @@ trait StdContainerParser
     protected function parseStdArrayDimFetch(Expr\ArrayDimFetch $expr): string
     {
         $tmp = $expr;
-        $nesting = [];
-        $level = 0;
+        $dims = [];
         $info = $this->getStdArrayInfo($expr);
 
         while (true) {
@@ -194,24 +283,34 @@ trait StdContainerParser
                 if ($tmp->dim === null) {
                     $this->fatalError($tmp, 'std::array expects an index');
                 }
-                $size = $info['sizes'][$level];
-                if ($this->isScalarInt($tmp->dim)) {
-                    if ($tmp->dim->value < 0 || $tmp->dim->value >= $size) {
-                        $this->fatalError($tmp, "std::array index out of bounds: index {$tmp->dim->value}, size {$size}");
-                    }
-                }
-                $index = $this->parseExpr($tmp->dim);
-                $nesting[] = '[' . Symbol::safeIndex($this->convertIntExpr($index), $info['sizes'][$level]) . ']';
+                $dims[] = $tmp->dim;
                 $tmp = $tmp->var;
-                $level++;
             } else {
-                $nesting[] = $this->parseVariable($tmp);
                 break;
             }
         }
+        if (!$this->isVarExpr($tmp)) {
+            $this->fatalError($expr, 'std::array expects a variable');
+        }
 
-        $nesting = array_reverse($nesting);
-        $expr->setAttribute('stdArrayDimFetch', ['var' => $nesting[0], 'accessLevel' => $level, 'totalLevel' => count($info['sizes'])]);
+        $dims = array_reverse($dims);
+        $sizes = array_reverse($info['sizes']);
+        if (count($dims) > count($sizes)) {
+            $this->fatalError($expr, 'std::array access level exceeds array dimensions');
+        }
+
+        $nesting = [$this->parseVariable($tmp)];
+        foreach ($dims as $level => $dim) {
+            $size = $sizes[$level];
+            if ($this->isScalarInt($dim)) {
+                if ($dim->value < 0 || $dim->value >= $size) {
+                    $this->fatalError($dim, "std::array index out of bounds: index {$dim->value}, size {$size}");
+                }
+            }
+            $index = $this->parseExpr($dim);
+            $nesting[] = '[' . Symbol::safeIndex($this->convertIntExpr($index), $size) . ']';
+        }
+        $expr->setAttribute('stdArrayDimFetch', ['var' => $nesting[0], 'accessLevel' => count($dims), 'totalLevel' => count($sizes)]);
 
         return implode('', $nesting);
     }
@@ -460,11 +559,7 @@ trait StdContainerParser
             if ($this->isClassConstFetch($typeExpr)) {
                 $typeInfo = $this->parseStdValueTypeInfo($typeExpr, 'std::array');
                 $type = $typeInfo['type'];
-                $byte = match ($type) {
-                    self::TYPE_BOOL => 1,
-                    self::TYPE_INT, self::TYPE_FLOAT => 8,
-                    default => 16,
-                };
+                $byte = $this->getStdValueTypeBytes($type);
                 break;
             }
             if ($this->isStaticCall($typeExpr)) {
@@ -478,11 +573,7 @@ trait StdContainerParser
         }
         $totalBytes = array_product($nesting) * $byte;
 
-        $decl = str_repeat(self::TYPE_STD_ARRAY . '<', count($nesting));
-        $decl .= $type;
-        for ($i = count($nesting) - 1; $i >= 0; $i--) {
-            $decl .= ', ' . $nesting[$i] . '>';
-        }
+        $decl = $this->getStdArrayDecl($type, $nesting);
         $this->context->stdArrays[$var] = $this->addStdTypeId([
             'kind' => 'array',
             'decl' => $decl,
