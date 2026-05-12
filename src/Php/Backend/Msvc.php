@@ -137,7 +137,8 @@ class Msvc extends CompilerBackend
         
         // 优化级别（C 文件通常使用较低的优化）
         $optimizeLevel = $options['optimize'] ?? 0;
-        $cmd .= ' /O' . ($optimizeLevel >= 2 ? '2' : ($optimizeLevel === 0 ? 'd' : '1'));
+        $optMap = [0 => '/Od', 1 => '/O1', 2 => '/O2', 3 => '/Ox'];
+        $cmd .= ' ' . ($optMap[$optimizeLevel] ?? '/O2');
         
         // 警告级别
         $cmd .= ' /W3';
@@ -236,7 +237,7 @@ class Msvc extends CompilerBackend
             $cmd .= ' /Od /Zi';
         } else {
             $optimizeLevel = $options['optimize'] ?? 2;
-            $optMap = [0 => '/Od', 1 => '/O2', 2 => '/O2', 3 => '/Ox'];
+            $optMap = [0 => '/Od', 1 => '/O1', 2 => '/O2', 3 => '/Ox'];
             $cmd .= ' ' . ($optMap[$optimizeLevel] ?? '/O2');
         }
         
@@ -324,7 +325,7 @@ class Msvc extends CompilerBackend
             $cmd .= ' /Od /Zi';
         } else {
             $optimizeLevel = $config['optimize'] ?? 2;
-            $optMap = [0 => '/Od', 1 => '/O2', 2 => '/O2', 3 => '/Ox'];
+            $optMap = [0 => '/Od', 1 => '/O1', 2 => '/O2', 3 => '/Ox'];
             $cmd .= ' ' . ($optMap[$optimizeLevel] ?? '/O2');
         }
         
