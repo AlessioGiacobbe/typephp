@@ -63,5 +63,5 @@ int(1)
 int(2)
 int(3)
 int(4)
-std container value expects exact object of class `StdContainerClassValue`
-std container value expects exact object of class `StdContainerClassValue`
+The parameter `object` must be instance of class `StdContainerClassValue`, object of `StdContainerClassValueChild` given
+The parameter `object` must be instance of class `StdContainerClassValue`, object of `StdContainerClassValueOther` given

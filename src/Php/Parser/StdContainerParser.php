@@ -342,10 +342,7 @@ trait StdContainerParser
             return $this->convertObjectExpr($valueExpr);
         }
 
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-        $this->context->beforeStmtLines[] = "{$tmpVar} = {$valueExpr};";
-        $this->context->beforeStmtLines[] = 'if (!' . $tmpVar . '.isObject() || ' . $tmpVar . '.ce() != ' . $this->getClassEntryPtr($class) . ') { zend_throw_error(NULL, "std container value expects exact object of class `%s`", "' . $this->escapeString($class) . '"); php::setDebugInfo(); if (php::throw_impl) { php::throw_impl(EG(exception)); } }';
-        return self::TYPE_OBJECT . '(' . $tmpVar . ')';
+        return  'php::toObject(' . $valueExpr . ', ' . $this->getClassEntryPtr($class). ', true)';
     }
 
     protected function parseStdMapKeyType(NodeAbstract $expr, string $owner): string
