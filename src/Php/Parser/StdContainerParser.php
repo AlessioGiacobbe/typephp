@@ -44,6 +44,34 @@ trait StdContainerParser
         return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_UNORDERED_MAP;
     }
 
+    protected function getStdTypeKey(array $info): string
+    {
+        $parts = [
+            'kind=' . $info['kind'],
+            'decl=' . $info['decl'],
+            'type=' . $info['type'],
+            'class=' . ($info['class'] ?? ''),
+        ];
+        if (isset($info['keyType'])) {
+            $parts[] = 'keyType=' . $info['keyType'];
+        }
+        return implode(';', $parts);
+    }
+
+    protected function addStdTypeId(array $info): array
+    {
+        $info['typeId'] = $this->registerStdType($this->getStdTypeKey($info));
+        return $info;
+    }
+
+    protected function getStdContainerVarInfo(string $var): array
+    {
+        if ($this->isStdArray($var)) {
+            return $this->context->stdArrays[$var];
+        }
+        return $this->context->stdContainers[$var];
+    }
+
     protected function isStdArrayExpr(Expr\ArrayDimFetch $expr): bool
     {
         $info = $this->getStdArrayInfo($expr);
@@ -309,12 +337,12 @@ trait StdContainerParser
             if (!$this->classDef) {
                 $this->fatalError($expr, "{$owner} class value cannot use self::class outside class scope");
             }
-            $class = $this->class;
+            $class = $this->getNamespacedClassName($this->class);
         } elseif ($class === 'parent') {
             if (!$this->classDef || !$this->classDef->extends) {
                 $this->fatalError($expr, "{$owner} class value cannot use parent::class because current class does not extend any class");
             }
-            $class = $this->classDef->extends;
+            $class = $this->getNamespacedClassName('\\' . $this->classDef->extends);
         } else {
             $class = $this->getNamespacedClassName($class);
         }
@@ -361,7 +389,8 @@ trait StdContainerParser
         $tmpVar = $this->addTmpVar(self::TYPE_VAR);
         $this->addUnsafePtr($tmpVar);
         $expr->setAttribute('unsafePtr', true);
-        $this->context->beforeStmtLines[] = 'Z_PTR_P(' . $tmpVar . '.ptr()) = &' . $container . ';';
+        $info = $this->getStdContainerVarInfo($container);
+        $this->context->beforeStmtLines[] = $tmpVar . ' = php_create_unsafe_ptr(&' . $container . ', ' . $info['typeId'] . ');';
         return $tmpVar;
     }
 
@@ -476,13 +505,14 @@ trait StdContainerParser
         for ($i = count($nesting) - 1; $i >= 0; $i--) {
             $decl .= ', ' . $nesting[$i] . '>';
         }
-        $this->context->stdArrays[$var] = [
+        $this->context->stdArrays[$var] = $this->addStdTypeId([
+            'kind' => 'array',
             'decl' => $decl,
             'type' => $type,
             'class' => $typeInfo['class'],
             'sizes' => array_reverse($nesting),
             'bytes' => $totalBytes,
-        ];
+        ]);
         return '// ' . $decl;
     }
 
@@ -501,13 +531,13 @@ trait StdContainerParser
             $size = $expr->args[1]->value->value;
         }
         $decl = self::TYPE_STD_VECTOR . '<' . $type . '>';
-        $this->context->stdContainers[$var] = [
+        $this->context->stdContainers[$var] = $this->addStdTypeId([
             'kind' => 'vector',
             'decl' => $decl,
             'type' => $type,
             'class' => $typeInfo['class'],
             'size' => $size,
-        ];
+        ]);
         return '// ' . $decl;
     }
 
@@ -520,13 +550,13 @@ trait StdContainerParser
         $valueTypeInfo = $this->parseStdValueTypeInfo($expr->args[1]->value, 'std::map');
         $valueType = $valueTypeInfo['type'];
         $decl = $this->getStdMapDecl(self::TYPE_STD_MAP, $keyType, $valueType);
-        $this->context->stdContainers[$var] = [
+        $this->context->stdContainers[$var] = $this->addStdTypeId([
             'kind' => 'map',
             'decl' => $decl,
             'type' => $valueType,
             'class' => $valueTypeInfo['class'],
             'keyType' => $keyType,
-        ];
+        ]);
         return '// ' . $decl;
     }
 
@@ -539,13 +569,13 @@ trait StdContainerParser
         $valueTypeInfo = $this->parseStdValueTypeInfo($expr->args[1]->value, 'std::unordered_map');
         $valueType = $valueTypeInfo['type'];
         $decl = $this->getStdMapDecl(self::TYPE_STD_UNORDERED_MAP, $keyType, $valueType);
-        $this->context->stdContainers[$var] = [
+        $this->context->stdContainers[$var] = $this->addStdTypeId([
             'kind' => 'unordered_map',
             'decl' => $decl,
             'type' => $valueType,
             'class' => $valueTypeInfo['class'],
             'keyType' => $keyType,
-        ];
+        ]);
         return '// ' . $decl;
     }
 }

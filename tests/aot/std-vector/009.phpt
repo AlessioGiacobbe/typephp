@@ -1,0 +1,30 @@
+--TEST--
+std vector: namespaced self class value unsafe_cast
+--FILE--
+<?php
+namespace StdVectorUnsafeCastNs {
+    class Holder
+    {
+        public static function update(UnsafePtr $unsafePtr): void
+        {
+            $vector = std::unsafe_cast(std::vector(self::class), $unsafePtr);
+            echo "ok\n";
+        }
+
+        public static function run(): void
+        {
+            $vector = std::vector(self::class);
+            $ptr = std::unsafe_ptr($vector);
+            self::update($ptr);
+        }
+    }
+}
+
+namespace {
+    function main() {
+        StdVectorUnsafeCastNs\Holder::run();
+    }
+}
+?>
+--EXPECT--
+ok

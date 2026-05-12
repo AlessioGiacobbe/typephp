@@ -118,6 +118,10 @@ class CompilerBase extends \PhpAot\Core\Translator
      * @var array<string, int>
      */
     protected array $classMap = [];
+    /**
+     * @var array<string, int>
+     */
+    protected array $stdTypeMap = [];
     protected int $funcIndex = 0;
 
     /**
@@ -1895,6 +1899,16 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function addUnsafePtr(string $name): void
     {
         $this->context->unsafePtrs[$name] = true;
+    }
+
+    protected function registerStdType(string $key): int
+    {
+        if (isset($this->stdTypeMap[$key])) {
+            return $this->stdTypeMap[$key];
+        }
+        $typeId = count($this->stdTypeMap) + 1;
+        $this->stdTypeMap[$key] = $typeId;
+        return $typeId;
     }
 
     protected function isUnsafePtr(string $name): bool
@@ -5468,7 +5482,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($type === self::TYPE_STD_ARRAY) {
                 $info = $this->context->stdArrays[$name];
                 if (isset($info['unsafePtr'])) {
-                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(Z_PTR_P(' . $info['unsafePtr'] . '.ptr()));';
+                    $unsafePtrBox = $this->genTmpVarName();
+                    $code .= 'auto *' . $unsafePtrBox . ' = ' . $info['unsafePtr'] . '.toBox<php::UnsafePtr>();' . PHP_EOL;
+                    $code .= $this->getIndent() . 'if (UNEXPECTED(' . $unsafePtrBox . '->type_id != ' . $info['typeId'] . ')) {' . PHP_EOL;
+                    $code .= $this->getIndent() . '    php::throwException("RuntimeException", "std::unsafe_cast(): UnsafePtr type mismatch");' . PHP_EOL;
+                    $code .= $this->getIndent() . '}' . PHP_EOL;
+                    $code .= $this->getIndent();
+                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(' . $unsafePtrBox . '->ptr);';
                 } elseif ($info['bytes'] > self::MAX_BYTES_IN_STACK) {
                     $code .= "auto {$name}_unique_ptr = std::make_unique<{$info['decl']}>();\n";
                     $code .= $this->getIndent() . ' auto &' . $name . ' = *' . $name . '_unique_ptr;';
@@ -5478,7 +5498,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($type === self::TYPE_STD_VECTOR) {
                 $info = $this->context->stdContainers[$name];
                 if (isset($info['unsafePtr'])) {
-                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(Z_PTR_P(' . $info['unsafePtr'] . '.ptr()));';
+                    $unsafePtrBox = $this->genTmpVarName();
+                    $code .= 'auto *' . $unsafePtrBox . ' = ' . $info['unsafePtr'] . '.toBox<php::UnsafePtr>();' . PHP_EOL;
+                    $code .= $this->getIndent() . 'if (UNEXPECTED(' . $unsafePtrBox . '->type_id != ' . $info['typeId'] . ')) {' . PHP_EOL;
+                    $code .= $this->getIndent() . '    php::throwException("RuntimeException", "std::unsafe_cast(): UnsafePtr type mismatch");' . PHP_EOL;
+                    $code .= $this->getIndent() . '}' . PHP_EOL;
+                    $code .= $this->getIndent();
+                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(' . $unsafePtrBox . '->ptr);';
                 } else {
                     $code .= $info['decl'] . ' ' . $name;
                     if ($info['size'] !== null) {
@@ -5491,7 +5517,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($type === self::TYPE_STD_MAP || $type === self::TYPE_STD_UNORDERED_MAP) {
                 $info = $this->context->stdContainers[$name];
                 if (isset($info['unsafePtr'])) {
-                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(Z_PTR_P(' . $info['unsafePtr'] . '.ptr()));';
+                    $unsafePtrBox = $this->genTmpVarName();
+                    $code .= 'auto *' . $unsafePtrBox . ' = ' . $info['unsafePtr'] . '.toBox<php::UnsafePtr>();' . PHP_EOL;
+                    $code .= $this->getIndent() . 'if (UNEXPECTED(' . $unsafePtrBox . '->type_id != ' . $info['typeId'] . ')) {' . PHP_EOL;
+                    $code .= $this->getIndent() . '    php::throwException("RuntimeException", "std::unsafe_cast(): UnsafePtr type mismatch");' . PHP_EOL;
+                    $code .= $this->getIndent() . '}' . PHP_EOL;
+                    $code .= $this->getIndent();
+                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(' . $unsafePtrBox . '->ptr);';
                 } else {
                     $code .= $info['decl'] . ' ' . $name . '{};';
                 }
