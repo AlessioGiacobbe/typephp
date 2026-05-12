@@ -5482,13 +5482,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($type === self::TYPE_STD_ARRAY) {
                 $info = $this->context->stdArrays[$name];
                 if (isset($info['unsafePtr'])) {
-                    $unsafePtrBox = $this->genTmpVarName();
-                    $code .= 'auto *' . $unsafePtrBox . ' = ' . $info['unsafePtr'] . '.toBox<php::UnsafePtr>();' . PHP_EOL;
-                    $code .= $this->getIndent() . 'if (UNEXPECTED(' . $unsafePtrBox . '->type_id != ' . $info['typeId'] . ')) {' . PHP_EOL;
-                    $code .= $this->getIndent() . '    php::throwException("RuntimeException", "std::unsafe_cast(): UnsafePtr type mismatch");' . PHP_EOL;
-                    $code .= $this->getIndent() . '}' . PHP_EOL;
-                    $code .= $this->getIndent();
-                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(' . $unsafePtrBox . '->ptr);';
+                    $code .= 'auto &' . $name . ' = php_unsafe_cast<' . $info['decl'] . '>(' . $info['unsafePtr'] . ', ' . $info['typeId'] . ');';
                 } elseif ($info['bytes'] > self::MAX_BYTES_IN_STACK) {
                     $code .= "auto {$name}_unique_ptr = std::make_unique<{$info['decl']}>();\n";
                     $code .= $this->getIndent() . ' auto &' . $name . ' = *' . $name . '_unique_ptr;';
@@ -5498,13 +5492,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($type === self::TYPE_STD_VECTOR) {
                 $info = $this->context->stdContainers[$name];
                 if (isset($info['unsafePtr'])) {
-                    $unsafePtrBox = $this->genTmpVarName();
-                    $code .= 'auto *' . $unsafePtrBox . ' = ' . $info['unsafePtr'] . '.toBox<php::UnsafePtr>();' . PHP_EOL;
-                    $code .= $this->getIndent() . 'if (UNEXPECTED(' . $unsafePtrBox . '->type_id != ' . $info['typeId'] . ')) {' . PHP_EOL;
-                    $code .= $this->getIndent() . '    php::throwException("RuntimeException", "std::unsafe_cast(): UnsafePtr type mismatch");' . PHP_EOL;
-                    $code .= $this->getIndent() . '}' . PHP_EOL;
-                    $code .= $this->getIndent();
-                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(' . $unsafePtrBox . '->ptr);';
+                    $code .= 'auto &' . $name . ' = php_unsafe_cast<' . $info['decl'] . '>(' . $info['unsafePtr'] . ', ' . $info['typeId'] . ');';
                 } else {
                     $code .= $info['decl'] . ' ' . $name;
                     if ($info['size'] !== null) {
@@ -5517,13 +5505,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($type === self::TYPE_STD_MAP || $type === self::TYPE_STD_UNORDERED_MAP) {
                 $info = $this->context->stdContainers[$name];
                 if (isset($info['unsafePtr'])) {
-                    $unsafePtrBox = $this->genTmpVarName();
-                    $code .= 'auto *' . $unsafePtrBox . ' = ' . $info['unsafePtr'] . '.toBox<php::UnsafePtr>();' . PHP_EOL;
-                    $code .= $this->getIndent() . 'if (UNEXPECTED(' . $unsafePtrBox . '->type_id != ' . $info['typeId'] . ')) {' . PHP_EOL;
-                    $code .= $this->getIndent() . '    php::throwException("RuntimeException", "std::unsafe_cast(): UnsafePtr type mismatch");' . PHP_EOL;
-                    $code .= $this->getIndent() . '}' . PHP_EOL;
-                    $code .= $this->getIndent();
-                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(' . $unsafePtrBox . '->ptr);';
+                    $code .= 'auto &' . $name . ' = php_unsafe_cast<' . $info['decl'] . '>(' . $info['unsafePtr'] . ', ' . $info['typeId'] . ');';
                 } else {
                     $code .= $info['decl'] . ' ' . $name . '{};';
                 }

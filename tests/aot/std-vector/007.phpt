@@ -13,7 +13,7 @@ function main() {
 
     try {
         std_vector_unsafe_ptr_type_mismatch($ptr);
-    } catch (RuntimeException $e) {
+    } catch (TypeError $e) {
         echo $e->getMessage(), "\n";
     }
 }

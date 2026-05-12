@@ -21,7 +21,7 @@ function main() {
 
     try {
         std_vector_unsafe_ptr_class_type_mismatch($ptr);
-    } catch (RuntimeException $e) {
+    } catch (TypeError $e) {
         echo $e->getMessage(), "\n";
     }
 }
