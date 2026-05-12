@@ -339,10 +339,9 @@ trait StdContainerParser
             if ($rightClass !== $class) {
                 $this->fatalError($expr, "Cannot assign object of class `{$rightClass}` to std container value of class `{$class}`");
             }
-            return $this->convertObjectExpr($valueExpr);
         }
 
-        return  'php::toObject(' . $valueExpr . ', ' . $this->getClassEntryPtr($class). ', true)';
+        return 'php::toObject(' . $valueExpr . ', ' . $this->getClassEntryPtr($class) . ', true)';
     }
 
     protected function parseStdMapKeyType(NodeAbstract $expr, string $owner): string

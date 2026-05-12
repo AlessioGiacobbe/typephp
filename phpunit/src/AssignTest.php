@@ -11,4 +11,12 @@ class AssignTest extends \BaseTest
     {
         $this->exec('Cannot re-assign typed object `$obj1` from `stdClass` to `ArrayObject`', 're-assign-2.php');
     }
+
+    public function testStdContainerStaticClassMismatch()
+    {
+        $this->exec(
+            'Cannot assign object of class `StdContainerStaticChild` to std container value of class `StdContainerStaticBase`',
+            'std-container-static-class-mismatch.php'
+        );
+    }
 }
