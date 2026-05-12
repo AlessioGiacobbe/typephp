@@ -61,9 +61,8 @@ trait StdContainerParser
             $this->fatalError($expr, 'fill() only support std::array');
         }
         $array = $this->parseIdentifier($expr->args[0]->value);
-        $valueExpr = $this->parseExpr($expr->args[1]->value);
-        $type = $this->context->stdArrays[$array]['type'];
-        $value = $this->convertExprFromType($type, $valueExpr);
+        $info = $this->context->stdArrays[$array];
+        $value = $this->convertStdValueExpr($info, $expr->args[1]->value);
         return "{$array}.fill({$value})";
     }
 
@@ -103,7 +102,7 @@ trait StdContainerParser
     {
         $info = $this->getStdArrayInfo($left);
         $arrayDimFetch = $this->parseStdArrayDimFetch($left);
-        return $arrayDimFetch . ' = ' . $this->convertExprFromType($info['type'], $this->parseExpr($right));
+        return $arrayDimFetch . ' = ' . $this->convertStdValueExpr($info, $right);
     }
 
     protected function parseStdContainerAssign(Expr\ArrayDimFetch $left, NodeAbstract $right): string
@@ -118,13 +117,13 @@ trait StdContainerParser
                 $this->fatalError($left, 'std::vector append only supports a vector variable');
             }
             $vector = $this->parseVariable($left->var);
-            return $vector . '.push_back(' . $this->convertExprFromType($info['type'], $this->parseExpr($right)) . ')';
+            return $vector . '.push_back(' . $this->convertStdValueExpr($info, $right) . ')';
         }
         if ($left->dim === null) {
             $this->fatalError($left, 'std map expects a key');
         }
 
-        return $this->parseStdContainerOffsetSet($left, $this->convertExprFromType($info['type'], $this->parseExpr($right)));
+        return $this->parseStdContainerOffsetSet($left, $this->convertStdValueExpr($info, $right));
     }
 
     protected function parseStdArrayAssignOp(Expr\AssignOp $expr, string $op): string
@@ -265,6 +264,90 @@ trait StdContainerParser
         };
     }
 
+    protected function parseStdValueTypeInfo(NodeAbstract $expr, string $owner): array
+    {
+        if (!$this->isClassConstFetch($expr)) {
+            $this->fatalError($expr, "{$owner} expects a native_types or complex_types class constant");
+        }
+        if (!$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)) {
+            $this->fatalError($expr, "An incorrect `{$owner}` definition");
+        }
+        if ($expr->class->toString() === 'native_types') {
+            return ['type' => $this->parseStdNativeType($expr, $owner), 'class' => null];
+        }
+        if ($expr->class->toString() === 'complex_types') {
+            return [
+                'type' => match ($expr->name->name) {
+                    'type_str', 'type_string' => self::TYPE_STR,
+                    'type_array' => self::TYPE_ARRAY,
+                    'type_object' => self::TYPE_OBJECT,
+                    'type_any', 'type_var', 'type_variant' => self::TYPE_VAR,
+                    default => $this->fatalError($expr, "An incorrect `{$owner}` definition"),
+                },
+                'class' => null,
+            ];
+        }
+        if ($expr->name->name !== 'class') {
+            $this->fatalError($expr, "{$owner} class value only supports ClassName::class");
+        }
+        $class = $this->parseStdClassValueType($expr, $owner);
+        return ['type' => self::TYPE_OBJECT, 'class' => $class];
+    }
+
+    protected function parseStdValueType(NodeAbstract $expr, string $owner): string
+    {
+        return $this->parseStdValueTypeInfo($expr, $owner)['type'];
+    }
+
+    protected function parseStdClassValueType(Expr\ClassConstFetch $expr, string $owner): string
+    {
+        $class = $this->parseIdentifier($expr->class);
+        if ($class === 'static') {
+            $this->fatalError($expr, "{$owner} class value does not support static::class");
+        }
+        if ($class === 'self' || $class === 'this_') {
+            if (!$this->classDef) {
+                $this->fatalError($expr, "{$owner} class value cannot use self::class outside class scope");
+            }
+            $class = $this->class;
+        } elseif ($class === 'parent') {
+            if (!$this->classDef || !$this->classDef->extends) {
+                $this->fatalError($expr, "{$owner} class value cannot use parent::class because current class does not extend any class");
+            }
+            $class = $this->classDef->extends;
+        } else {
+            $class = $this->getNamespacedClassName($class);
+        }
+        if ($this->hasInterface($class)) {
+            $this->fatalError($expr, "{$owner} class value cannot use interface `{$class}`");
+        }
+        if ($this->isAbstractClass($class)) {
+            $this->fatalError($expr, "{$owner} class value cannot use abstract class `{$class}`");
+        }
+        return $class;
+    }
+
+    protected function convertStdValueExpr(array $info, NodeAbstract $expr): string
+    {
+        $valueExpr = $this->parseExpr($expr);
+        $class = $info['class'] ?? null;
+        if ($class === null) {
+            return $this->convertExprFromType($info['type'], $valueExpr);
+        }
+        $rightClass = $this->detectClassOfExpr($expr);
+        if ($rightClass !== '') {
+            if ($rightClass !== $class) {
+                $this->fatalError($expr, "Cannot assign object of class `{$rightClass}` to std container value of class `{$class}`");
+            }
+            return $this->convertObjectExpr($valueExpr);
+        }
+
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $this->context->beforeStmtLines[] = "{$tmpVar} = {$valueExpr};";
+        $this->context->beforeStmtLines[] = 'if (!' . $tmpVar . '.isObject() || ' . $tmpVar . '.ce() != ' . $this->getClassEntryPtr($class) . ') { zend_throw_error(NULL, "std container value expects exact object of class `%s`", "' . $this->escapeString($class) . '"); php::setDebugInfo(); if (php::throw_impl) { php::throw_impl(EG(exception)); } }';
+        return self::TYPE_OBJECT . '(' . $tmpVar . ')';
+    }
+
     protected function parseStdMapKeyType(NodeAbstract $expr, string $owner): string
     {
         if (!$this->isClassConstFetch($expr) || !$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)) {
@@ -306,29 +389,15 @@ trait StdContainerParser
             $nesting[] = $size;
             $typeExpr = $tmp->args[0]->value;
             if ($this->isClassConstFetch($typeExpr)) {
-                if (!$this->isNameExpr($typeExpr->class) || !$this->isIdExpr($typeExpr->name) || $typeExpr->class->toString() !== 'native_types') {
-                    $this->fatalError($tmp, 'An incorrect `std::array` definition');
-                }
-                switch ($typeExpr->name->name) {
-                    case 'type_int':
-                        $type = self::TYPE_INT;
-                        $byte = 8;
-                        break;
-                    case 'type_float':
-                        $type = self::TYPE_FLOAT;
-                        $byte = 8;
-                        break;
-                    case 'type_bool':
-                        $type = self::TYPE_BOOL;
-                        $byte = 1;
-                        break;
-                    default:
-                        $this->fatalError($tmp, 'An incorrect `std::array` definition');
-                        break;
-                }
+                $typeInfo = $this->parseStdValueTypeInfo($typeExpr, 'std::array');
+                $type = $typeInfo['type'];
+                $byte = match ($type) {
+                    self::TYPE_BOOL => 1,
+                    self::TYPE_INT, self::TYPE_FLOAT => 8,
+                    default => 16,
+                };
                 break;
             }
-            $totalBytes += $size * $byte;
             if ($this->isStaticCall($typeExpr)) {
                 $tmp = $typeExpr;
                 if (!$this->isNameExpr($tmp->class) || !$this->isIdExpr($tmp->name) || $tmp->class->toString() !== 'std' || $tmp->name->toString() !== 'array') {
@@ -338,6 +407,7 @@ trait StdContainerParser
                 $this->fatalError($tmp, 'std::array() expects first argument to be a class constant');
             }
         }
+        $totalBytes = array_product($nesting) * $byte;
 
         $decl = str_repeat(self::TYPE_STD_ARRAY . '<', count($nesting));
         $decl .= $type;
@@ -347,6 +417,7 @@ trait StdContainerParser
         $this->context->stdArrays[$var] = [
             'decl' => $decl,
             'type' => $type,
+            'class' => $typeInfo['class'],
             'sizes' => array_reverse($nesting),
             'bytes' => $totalBytes,
         ];
@@ -358,7 +429,8 @@ trait StdContainerParser
         if (count($expr->args) < 1 || count($expr->args) > 2) {
             $this->fatalError($expr, 'std::vector() expects one or two arguments');
         }
-        $type = $this->parseStdNativeType($expr->args[0]->value, 'std::vector');
+        $typeInfo = $this->parseStdValueTypeInfo($expr->args[0]->value, 'std::vector');
+        $type = $typeInfo['type'];
         $size = null;
         if (count($expr->args) === 2) {
             if (!$this->isScalarInt($expr->args[1]->value)) {
@@ -371,6 +443,7 @@ trait StdContainerParser
             'kind' => 'vector',
             'decl' => $decl,
             'type' => $type,
+            'class' => $typeInfo['class'],
             'size' => $size,
         ];
         return '// ' . $decl;
@@ -382,12 +455,14 @@ trait StdContainerParser
             $this->fatalError($expr, 'std::map() expects two arguments');
         }
         $keyType = $this->parseStdMapKeyType($expr->args[0]->value, 'std::map');
-        $valueType = $this->parseStdNativeType($expr->args[1]->value, 'std::map');
+        $valueTypeInfo = $this->parseStdValueTypeInfo($expr->args[1]->value, 'std::map');
+        $valueType = $valueTypeInfo['type'];
         $decl = $this->getStdMapDecl(self::TYPE_STD_MAP, $keyType, $valueType);
         $this->context->stdContainers[$var] = [
             'kind' => 'map',
             'decl' => $decl,
             'type' => $valueType,
+            'class' => $valueTypeInfo['class'],
             'keyType' => $keyType,
         ];
         return '// ' . $decl;
@@ -399,12 +474,14 @@ trait StdContainerParser
             $this->fatalError($expr, 'std::unordered_map() expects two arguments');
         }
         $keyType = $this->parseStdMapKeyType($expr->args[0]->value, 'std::unordered_map');
-        $valueType = $this->parseStdNativeType($expr->args[1]->value, 'std::unordered_map');
+        $valueTypeInfo = $this->parseStdValueTypeInfo($expr->args[1]->value, 'std::unordered_map');
+        $valueType = $valueTypeInfo['type'];
         $decl = $this->getStdMapDecl(self::TYPE_STD_UNORDERED_MAP, $keyType, $valueType);
         $this->context->stdContainers[$var] = [
             'kind' => 'unordered_map',
             'decl' => $decl,
             'type' => $valueType,
+            'class' => $valueTypeInfo['class'],
             'keyType' => $keyType,
         ];
         return '// ' . $decl;

@@ -15,6 +15,8 @@ class native_types
 
 class complex_types {
     public const type_any = 'any';
+    public const type_var = 'any';
+    public const type_variant = 'any';
     public const type_str = 'string';
     public const type_string = 'string';
     public const type_array = 'array';
@@ -39,6 +41,21 @@ class std
     }
 
     public static function array(mixed $type, int $size): array
+    {
+        return [];
+    }
+
+    public static function map(mixed $key_type, mixed $value_type): array
+    {
+        return [];
+    }
+
+    public static function unordered_map(mixed $key_type, mixed $value_type): array
+    {
+        return [];
+    }
+
+    public static function vector(mixed $value_type): array
     {
         return [];
     }

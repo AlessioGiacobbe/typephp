@@ -1767,6 +1767,23 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             }
         }
+        if ($this->isArrayDimFetch($expr) and $this->isStdContainerExpr($expr)) {
+            if ($this->isStdArrayExpr($expr)) {
+                if (!$expr->hasAttribute('stdArrayDimFetch')) {
+                    $this->parseStdArrayDimFetch($expr);
+                }
+                $attr = $expr->getAttribute('stdArrayDimFetch');
+                if ($attr['accessLevel'] === $attr['totalLevel']) {
+                    return $this->context->stdArrays[$attr['var']]['class'] ?? '';
+                }
+                return '';
+            }
+            if (!$expr->hasAttribute('stdContainerDimFetch')) {
+                $this->parseStdContainerDimFetch($expr);
+            }
+            $attr = $expr->getAttribute('stdContainerDimFetch');
+            return $this->context->stdContainers[$attr['var']]['class'] ?? '';
+        }
         if ($this->isMethodCall($expr) and $this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
             $object = $this->parseVariable($expr->var);
             try {
@@ -4533,6 +4550,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if ($type === self::TYPE_BOOL) {
             return $this->convertBoolExpr($expr);
+        }
+        if ($type === self::TYPE_STR) {
+            return $this->convertStringExpr($expr);
+        }
+        if ($type === self::TYPE_ARRAY) {
+            return $this->convertArrayExpr($expr);
+        }
+        if ($type === self::TYPE_OBJECT) {
+            return $this->convertObjectExpr($expr);
         }
 
         return $expr;
