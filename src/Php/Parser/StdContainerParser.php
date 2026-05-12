@@ -344,6 +344,72 @@ trait StdContainerParser
         return 'php::toObject(' . $valueExpr . ', ' . $this->getClassEntryPtr($class) . ', true)';
     }
 
+    protected function parseStdUnsafePtr(Expr\StaticCall $expr): string
+    {
+        if (count($expr->args) !== 1) {
+            $this->fatalError($expr, 'std::unsafe_ptr() expects one argument');
+        }
+        $arg = $expr->args[0]->value;
+        if (!$this->isVarExpr($arg)) {
+            $this->fatalError($expr, 'std::unsafe_ptr() expects a std container variable');
+        }
+        $container = $this->parseVariable($arg);
+        if (!$this->isStdContainer($container)) {
+            $this->fatalError($expr, 'std::unsafe_ptr() only supports std container variables');
+        }
+
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $this->addUnsafePtr($tmpVar);
+        $expr->setAttribute('unsafePtr', true);
+        $this->context->beforeStmtLines[] = 'Z_PTR_P(' . $tmpVar . '.ptr()) = &' . $container . ';';
+        return $tmpVar;
+    }
+
+    protected function parseStdUnsafeCastAssign(string $var, Expr\StaticCall $expr): string
+    {
+        if (count($expr->args) !== 2) {
+            $this->fatalError($expr, 'std::unsafe_cast() expects two arguments');
+        }
+        $typeExpr = $expr->args[0]->value;
+        if (!$this->isStaticCall($typeExpr) || !$this->isNameExpr($typeExpr->class) || !$this->isIdExpr($typeExpr->name) || $typeExpr->class->toString() !== 'std') {
+            $this->fatalError($expr->args[0]->value, 'std::unsafe_cast() expects first argument to be a std container type expression');
+        }
+        $containerType = $typeExpr->name->toString();
+        if (!in_array($containerType, ['array', 'vector', 'map', 'unordered_map'], true)) {
+            $this->fatalError($expr->args[0]->value, 'std::unsafe_cast() expects first argument to be a std container type expression');
+        }
+        if (!$this->isVarExpr($expr->args[1]->value)) {
+            $this->fatalError($expr->args[1]->value, 'std::unsafe_cast() expects second argument to be an UnsafePtr variable');
+        }
+        $unsafePtr = $this->parseVariable($expr->args[1]->value);
+        if (!$this->hasVar($unsafePtr)) {
+            $this->fatalError($expr->args[1]->value, 'Undefined variable `$' . $unsafePtr . '`');
+        }
+        if (!$this->isUnsafePtr($unsafePtr)) {
+            $this->fatalError($expr->args[1]->value, 'std::unsafe_cast() expects second argument to be declared as UnsafePtr');
+        }
+
+        if ($containerType === 'array') {
+            $this->addLocalVar($var, self::TYPE_STD_ARRAY);
+            $this->parseStdArray($var, $typeExpr);
+            $this->context->stdArrays[$var]['unsafePtr'] = $unsafePtr;
+            return '// reinterpret_cast<' . $this->context->stdArrays[$var]['decl'] . '*>(' . $unsafePtr . ')';
+        }
+
+        if ($containerType === 'vector') {
+            $this->addLocalVar($var, self::TYPE_STD_VECTOR);
+            $this->parseStdVector($var, $typeExpr);
+        } elseif ($containerType === 'map') {
+            $this->addLocalVar($var, self::TYPE_STD_MAP);
+            $this->parseStdMap($var, $typeExpr);
+        } else {
+            $this->addLocalVar($var, self::TYPE_STD_UNORDERED_MAP);
+            $this->parseStdUnorderedMap($var, $typeExpr);
+        }
+        $this->context->stdContainers[$var]['unsafePtr'] = $unsafePtr;
+        return '// reinterpret_cast<' . $this->context->stdContainers[$var]['decl'] . '*>(' . $unsafePtr . ')';
+    }
+
     protected function parseStdMapKeyType(NodeAbstract $expr, string $owner): string
     {
         if (!$this->isClassConstFetch($expr) || !$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)) {

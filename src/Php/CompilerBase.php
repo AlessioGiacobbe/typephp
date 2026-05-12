@@ -144,6 +144,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         'callable' => self::TYPE_VAR,
         // iterable 类型，可以是数组或者对象
         'iterable' => self::TYPE_VAR,
+        // 编译器符号类型，C++ 层仍使用 php::Var 承载 null zval 中的 value.ptr
+        'UnsafePtr' => self::TYPE_VAR,
     ];
     protected array $globalHeaders = [
         'phpx.h',
@@ -1044,6 +1046,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         foreach ($this->functionDef->argInfoList as $argInfo) {
             $this->addArgument($argInfo->name, $argInfo->type);
+            if ($argInfo->unsafePtr) {
+                $this->addUnsafePtr($argInfo->name);
+            }
             if ($argInfo->class
                 and !$this->isAbstractClass($argInfo->class)
                 and !$this->hasInterface($argInfo->class)
@@ -1532,7 +1537,15 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } elseif ($this->isStaticCall($right) and $this->isNameExpr($right->class) and $this->isIdExpr($right->name)) {
                     $class = $this->parseIdentifier($right->class);
                     if ($class === 'std') {
-                        if (in_array($right->name->toString(), ['array', 'vector', 'map', 'unordered_map'], true)) {
+                        if ($right->name->toString() === 'unsafe_cast') {
+                            if ($this->hasVar($var)) {
+                                $this->fatalError($left, "Cannot re-assign `\${$var}` to std::unsafe_cast()");
+                            }
+                            if ($this->context->scopeLevel > 1) {
+                                $this->fatalError($left, 'Must use std::unsafe_cast() in the top-level scope of the function');
+                            }
+                            return $this->parseStdUnsafeCastAssign($var, $right);
+                        } elseif (in_array($right->name->toString(), ['array', 'vector', 'map', 'unordered_map'], true)) {
                             if ($this->hasVar($var)) {
                                 $this->fatalError($left, "Cannot re-assign `\${$var}` to std::{$right->name->toString()}");
                             }
@@ -1557,6 +1570,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                             $valueExpr = $this->parseStdCall($right);
                             if (!$this->hasVar($var)) {
                                 $this->addLocalVar($var, $right->getAttribute('nativeType'));
+                            }
+                            if ($right->getAttribute('unsafePtr')) {
+                                $this->addUnsafePtr($var);
                             }
                             return $var . ' = ' . $valueExpr;
                         }
@@ -1874,6 +1890,16 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function addLocalVar(string $name, string $type): void
     {
         $this->context->localVars[$name] = $type;
+    }
+
+    protected function addUnsafePtr(string $name): void
+    {
+        $this->context->unsafePtrs[$name] = true;
+    }
+
+    protected function isUnsafePtr(string $name): bool
+    {
+        return isset($this->context->unsafePtrs[$name]);
     }
 
     protected function addTmpVar(string $type): string
@@ -2282,6 +2308,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if ($param->byRef) {
             return self::TYPE_REF;
+        }
+        if ($this->isUnsafePtrTypeDecl($param->type)) {
+            $argInfo->unsafePtr = true;
+            return self::TYPE_VAR;
         }
         $class = '';
         $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
@@ -5380,9 +5410,20 @@ class CompilerBase extends \PhpAot\Core\Translator
             $expr->setAttribute('nativeType', $type);
             $valueExpr = $this->parseExpr($expr->args[0]->value);
             return $this->convertExprFromType($type, $valueExpr);
+        } elseif ($func === 'unsafe_ptr') {
+            $expr->setAttribute('nativeType', self::TYPE_VAR);
+            return $this->parseStdUnsafePtr($expr);
         } else {
             $this->fatalError($expr, 'Unknown std method: ' . $func);
         }
+    }
+
+    protected function isUnsafePtrTypeDecl(?NodeAbstract $type): bool
+    {
+        return $type !== null
+            and !$type instanceof UnionType
+            and !$type instanceof NullableType
+            and $this->parseIdentifier($type) === 'UnsafePtr';
     }
 
     protected function parseParentMethodCall(Expr\StaticCall $expr): string
@@ -5426,7 +5467,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->getIndent();
             if ($type === self::TYPE_STD_ARRAY) {
                 $info = $this->context->stdArrays[$name];
-                if ($info['bytes'] > self::MAX_BYTES_IN_STACK) {
+                if (isset($info['unsafePtr'])) {
+                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(Z_PTR_P(' . $info['unsafePtr'] . '.ptr()));';
+                } elseif ($info['bytes'] > self::MAX_BYTES_IN_STACK) {
                     $code .= "auto {$name}_unique_ptr = std::make_unique<{$info['decl']}>();\n";
                     $code .= $this->getIndent() . ' auto &' . $name . ' = *' . $name . '_unique_ptr;';
                 } else {
@@ -5434,16 +5477,24 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } elseif ($type === self::TYPE_STD_VECTOR) {
                 $info = $this->context->stdContainers[$name];
-                $code .= $info['decl'] . ' ' . $name;
-                if ($info['size'] !== null) {
-                    $code .= '(' . $info['size'] . ')';
+                if (isset($info['unsafePtr'])) {
+                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(Z_PTR_P(' . $info['unsafePtr'] . '.ptr()));';
                 } else {
-                    $code .= '{}';
+                    $code .= $info['decl'] . ' ' . $name;
+                    if ($info['size'] !== null) {
+                        $code .= '(' . $info['size'] . ')';
+                    } else {
+                        $code .= '{}';
+                    }
+                    $code .= ';';
                 }
-                $code .= ';';
             } elseif ($type === self::TYPE_STD_MAP || $type === self::TYPE_STD_UNORDERED_MAP) {
                 $info = $this->context->stdContainers[$name];
-                $code .= $info['decl'] . ' ' . $name . '{};';
+                if (isset($info['unsafePtr'])) {
+                    $code .= 'auto &' . $name . ' = *reinterpret_cast<' . $info['decl'] . '*>(Z_PTR_P(' . $info['unsafePtr'] . '.ptr()));';
+                } else {
+                    $code .= $info['decl'] . ' ' . $name . '{};';
+                }
             } else {
                 $code .= $type . ' ' . $name;
                 if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {

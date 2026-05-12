@@ -19,4 +19,12 @@ class AssignTest extends \BaseTest
             'std-container-static-class-mismatch.php'
         );
     }
+
+    public function testStdUnsafeCastRequiresUnsafePtr()
+    {
+        $this->exec(
+            'std::unsafe_cast() expects second argument to be declared as UnsafePtr',
+            'std-unsafe-cast-requires-unsafe-ptr.php'
+        );
+    }
 }
