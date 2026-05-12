@@ -30,7 +30,7 @@ class Baz {
 }
 
 class FooB {
-    function configure(FooA $o) {
+    function configure(EsmtpTransport $o) {
         $o->send('Hello World', 'foo@bar');
     }
 }

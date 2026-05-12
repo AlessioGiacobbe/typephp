@@ -5323,10 +5323,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if (!$this->hasVar($name)) {
             $this->addLocalVar($name, $defaultType);
-        } elseif ($defaultType === self::TYPE_VAR) {
-            if ($this->getVarType($name) !== self::TYPE_VAR) {
-                $this->fatalError($node, 'Cannot assign value to variable $' . $name . ' of type ' . $this->getVarType($name));
-            }
         } else {
             if ($this->getVarType($name) !== $defaultType) {
                 $this->fatalError($node, 'Cannot assign value to variable $' . $name . ' of type ' . $this->getVarType($name) . ' with type ' . $defaultType);
