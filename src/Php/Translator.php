@@ -341,7 +341,7 @@ class Translator extends Preprocessor
             try {
                 if (FileScanner::isPhpFile($file)) {
                     $cppFile = $this->convertFile($file);
-                } elseif (FileScanner::isCppFile($file)) {
+                } elseif (FileScanner::isNativeSourceFile($file)) {
                     $cppFile = $file;
                 } else {
                     continue;
@@ -689,6 +689,33 @@ CODE;
         return in_array($extension, ['cc', 'cpp', 'cxx'], true);
     }
 
+    /**
+     * 根据文件扩展名获取语言类型标识（用于 -x 参数）.
+     *
+     * @return string|null 语言标识（c, assembler, objective-c, objective-c++），
+     *                     或 null 表示使用默认检测（C++ 文件）
+     */
+    protected function getLanguageFromExtension(string $filePath): ?string
+    {
+        $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        return match ($ext) {
+            'c' => 'c',
+            's', 'S' => 'assembler',
+            'm' => 'objective-c',
+            'mm' => 'objective-c++',
+            'cc', 'cpp', 'cxx' => null,
+            default => null,
+        };
+    }
+
+    /**
+     * 判断文件是否为原生编译型源文件（C/C++/汇编/ObjC 等）.
+     */
+    protected function isNativeSourceFile(string $filePath): bool
+    {
+        return FileScanner::isNativeSourceFile($filePath);
+    }
+
     public function compileFile(string $cppFile, string $objectFile, bool $parallel = false): void
     {
         if ($this->hasObjectFileCache($cppFile)) {
@@ -699,24 +726,32 @@ CODE;
             return;
         }
 
-        // 判断是否为 C++ 文件
-        $isCppFile = $this->isCppFile($cppFile);
+        // 检测文件语言类型
+        $language = $this->getLanguageFromExtension($cppFile);
 
         // 使用 Backend 层构建编译命令
-        if ($isCppFile) {
+        if ($language === null) {
             // C++ 文件：使用标准的编译命令构建
             $cmd = $this->getCompilerBackend()->buildCompileCommand(
                 $cppFile,
                 $objectFile,
                 $this->getCompileCommandOptions()
             );
-        } else {
-            // C 文件：不能使用 C++ 特定选项（/EHsc, /std:c++17 等）
-            // 使用 Backend 的 buildCCompileCommand() 方法
+        } elseif ($language === 'c') {
+            // C 文件：使用 buildCCompileCommand，后端自动添加 -x c 或 /TC
             $cmd = $this->getCompilerBackend()->buildCCompileCommand(
                 $cppFile,
                 $objectFile,
                 $this->getCCompileCommandOptions()
+            );
+        } else {
+            // 其他原生源文件（assembler, objective-c, objective-c++）
+            // 使用 buildNativeCompileCommand，传入语言类型以添加 -x 标志
+            $cmd = $this->getCompilerBackend()->buildNativeCompileCommand(
+                $cppFile,
+                $objectFile,
+                $this->getNativeCompileCommandOptions($language),
+                $language
             );
         }
 

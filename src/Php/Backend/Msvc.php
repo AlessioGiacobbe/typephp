@@ -120,41 +120,60 @@ class Msvc extends CompilerBackend
     {
         $cmd = $this->getCompilerCommand();
         $cmd .= ' /c';
+        $cmd .= ' /TC';
         $cmd .= ' ' . escapeshellarg($sourceFile);
         $cmd .= ' /Fo' . escapeshellarg($outputFile);
 
         if (!empty($options['include_paths'])) {
             $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
         }
-        
+
         // 平台宏定义
         $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
-        
+
         // ZTS 支持
         if ($this->platform instanceof Windows && $this->platform->isZts()) {
             $cmd .= ' /DZTS';
         }
-        
+
         // 优化级别（C 文件通常使用较低的优化）
         $optimizeLevel = $options['optimize'] ?? 0;
         $optMap = [0 => '/Od', 1 => '/O1', 2 => '/O2', 3 => '/Ox'];
         $cmd .= ' ' . ($optMap[$optimizeLevel] ?? '/O2');
-        
+
         // 警告级别
         $cmd .= ' /W3';
-        
+
         // 禁用常见警告
         $suppressedWarnings = $options['suppressed_warnings'] ?? ['4244', '4146'];
         foreach ($suppressedWarnings as $code) {
             $cmd .= " /wd{$code}";
         }
-        
+
         // nologo
         $cmd .= ' /nologo';
-        
+
         // 注意：C 文件不使用 /EHsc, /std:c++17, /MD 等 C++ 特定选项
-        
+
         return $cmd;
+    }
+
+    /**
+     * 构建原生源文件的编译命令
+     *
+     * MSVC 仅支持 C 文件（/TC），汇编和 ObjC 文件不受支持
+     *
+     * @param string $language 语言标识
+     */
+    public function buildNativeCompileCommand(string $sourceFile, string $outputFile, array $options = [], string $language = ''): string
+    {
+        if ($language === 'c') {
+            return $this->buildCCompileCommand($sourceFile, $outputFile, $options);
+        }
+
+        throw new \RuntimeException(
+            "MSVC does not support compiling source file of language '{$language}': {$sourceFile}"
+        );
     }
 
     public function buildLinkCommand(array $objectFiles, string $outputFile, array $options = []): string

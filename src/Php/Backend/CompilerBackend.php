@@ -76,6 +76,18 @@ abstract class CompilerBackend
     ): string;
 
     /**
+     * 构建原生源文件的编译命令（汇编/Objective-C 等，使用 -x 指定语言）
+     *
+     * @param string $language GCC/Clang 语言标识（assembler, objective-c, objective-c++ 等）
+     */
+    abstract public function buildNativeCompileCommand(
+        string $sourceFile,
+        string $outputFile,
+        array $options = [],
+        string $language = ''
+    ): string;
+
+    /**
      * 构建完整的链接命令
      */
     abstract public function buildLinkCommand(

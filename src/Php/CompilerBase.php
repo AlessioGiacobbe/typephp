@@ -2581,6 +2581,25 @@ class CompilerBase extends \PhpAot\Core\Translator
         ];
     }
 
+    /**
+     * 获取原生源文件（汇编/ObjC 等）的编译选项，不含 C++ 特定标志.
+     *
+     * @param string $language 语言标识（assembler, objective-c, objective-c++）
+     */
+    protected function getNativeCompileCommandOptions(string $language = ''): array
+    {
+        return [
+            'include_paths' => $this->getIncludePaths(),
+            'optimize' => $this->optimizeLevel,
+            'debug' => $this->debug,
+            'sanitize' => $this->sanitize,
+            'is_zts' => $this->isPhpZts,
+            'build_mode' => $this->buildMode,
+            'enable_profiler' => $this->enableProfiler,
+            'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
+        ];
+    }
+
     protected function getLinkCommandOptions(): array
     {
         $options = [

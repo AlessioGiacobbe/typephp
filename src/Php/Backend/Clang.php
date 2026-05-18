@@ -177,7 +177,7 @@ class Clang extends CompilerBackend
     public function buildCCompileCommand(string $sourceFile, string $outputFile, array $options = []): string
     {
         $cmd = $this->getCompilerCommand();
-        
+
         // Windows 下需要 MSVC 兼容模式
         if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
             $cmd .= ' -fms-compatibility';
@@ -185,30 +185,64 @@ class Clang extends CompilerBackend
             $cmd .= ' -fdelayed-template-parsing';
             $cmd .= ' -fms-extensions';
         }
-        
+
         $cmd .= ' -c';
+        $cmd .= ' -x c';
         $cmd .= ' ' . escapeshellarg($sourceFile);
         $cmd .= ' -o ' . escapeshellarg($outputFile);
 
         if (!empty($options['include_paths'])) {
             $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
         }
-        
+
         // 优化级别（C 文件通常使用较低的优化）
         $optimizeLevel = $options['optimize'] ?? 0;
-        
+
         // 调试模式
         if (!empty($options['debug'])) {
             $cmd .= ' -O0 -g';
         } else {
             $cmd .= ' -O' . $optimizeLevel;
         }
-        
+
         // 警告级别
         $cmd .= ' -Wall';
-        
+
         // 注意：C 文件不使用 -std=c++17 等 C++ 特定选项
-        
+
+        return $cmd;
+    }
+
+    /**
+     * 构建原生源文件的编译命令（汇编/Objective-C 等）
+     *
+     * @param string $language 语言标识（assembler, objective-c, objective-c++）
+     */
+    public function buildNativeCompileCommand(string $sourceFile, string $outputFile, array $options = [], string $language = ''): string
+    {
+        $cmd = $this->getCompilerCommand();
+
+        // Windows 下需要 MSVC 兼容模式
+        if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
+            $cmd .= ' -fms-compatibility';
+            $cmd .= ' -fms-compatibility-version=19.40';
+            $cmd .= ' -fdelayed-template-parsing';
+            $cmd .= ' -fms-extensions';
+        }
+
+        $cmd .= ' -c';
+        if ($language !== '') {
+            $cmd .= ' -x ' . $language;
+        }
+        $cmd .= ' ' . escapeshellarg($sourceFile);
+        $cmd .= ' -o ' . escapeshellarg($outputFile);
+
+        if (!empty($options['include_paths'])) {
+            $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
+        }
+
+        $cmd .= $this->buildCompileOptions($options);
+
         return $cmd;
     }
 

@@ -13,6 +13,17 @@ class FileScanner
     public const array PHP_EXT = ['php'];
 
     public const array CPP_EXT = ['cpp', 'cxx', 'cc'];
+
+    public const array C_EXT = ['c'];
+
+    public const array ASM_EXT = ['s', 'S'];
+
+    public const array OBJC_EXT = ['m'];
+
+    public const array OBJCXX_EXT = ['mm'];
+
+    public const array NATIVE_SRC_EXT = ['cpp', 'cxx', 'cc', 'c', 's', 'S', 'm', 'mm'];
+
     private string $directory;
     private array $excludePatterns;
 
@@ -46,6 +57,11 @@ class FileScanner
         return in_array(self::getFileExt($file), self::CPP_EXT);
     }
 
+    public static function isNativeSourceFile(string $file): bool
+    {
+        return in_array(self::getFileExt($file), self::NATIVE_SRC_EXT);
+    }
+
     public function addExcludePattern(string $pattern): self
     {
         $this->excludePatterns[] = $pattern;
@@ -74,9 +90,7 @@ class FileScanner
 
         foreach ($iterator as $file) {
             if ($file->isFile()) {
-                if (self::isPhpFile($file)) {
-                    $filePath = $file->getPathname();
-                } elseif (self::isCppFile($file)) {
+                if (self::isPhpFile($file) || self::isNativeSourceFile($file)) {
                     $filePath = $file->getPathname();
                 } else {
                     continue;
