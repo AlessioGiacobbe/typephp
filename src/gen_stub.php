@@ -4866,7 +4866,9 @@ function parseFunctionLike(
             }
 
             if ($param->default instanceof Expr\ClassConstFetch && $param->default->class->toLowerString() === "self") {
-                throw new Exception('The exact class name must be used instead of "self"');
+                $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name);
+            } else {
+                $defaultValue = $param->default ? $prettyPrinter->prettyPrintExpr($param->default) : null;
             }
 
             $foundVariadic = $param->variadic;
@@ -4877,7 +4879,7 @@ function parseFunctionLike(
                 $param->variadic,
                 $type,
                 isset($docParamTypes[$varName]) ? Type::fromString($docParamTypes[$varName]) : null,
-                $param->default ? $prettyPrinter->prettyPrintExpr($param->default) : null,
+                $defaultValue,
                 AttributeInfo::createFromGroups($param->attrGroups)
             );
             if (!$param->default && !$param->variadic) {

@@ -1423,9 +1423,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list  = [];
 
         $list[] = $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($next);
-        $right  = new Variable($tmpVar);
+        $rightVar  = new Variable($tmpVar);
         foreach ($chain as $var) {
-            $list[] = $this->getIndent() . $this->parseAssignFinally($var, $right);
+            $list[] = $this->getIndent() . $this->parseAssignFinally($var, $rightVar);
         }
 
         return implode(";\n" . $this->getIndent(), $list);
@@ -2349,7 +2349,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $class = '';
         $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
-        if ($class) {
+        if ($class and !$this->hasInterface($class) and !$this->isAbstractClass($class)) {
             $this->addObject($var, $class);
             $argInfo->class = $class;
         }
