@@ -128,6 +128,12 @@ Options:
                 Run the tests multiple times in the same process and check the
                 output of the last execution (CLI SAPI only).
 
+    --no-aot    Run tests without AOT compilation (plain PHP mode).
+
+    --compiler <path>
+                Use specified compiler binary (default: ./bin/compiler.php).
+                For bootstrap testing, use: --compiler ./swoole_compiler
+
     --bless     Bless failed tests using scripts/dev/bless_tests.php.
 
 HELP;
@@ -149,7 +155,7 @@ function main(): void
            $end_time, $environment,
            $exts_skipped, $exts_tested, $exts_to_test, $failed_tests_file,
            $ignored_by_ext, $ini_overwrites, $colorize,
-           $log_format, $no_clean, $no_aot, $no_file_cache,
+           $log_format, $no_clean, $no_aot, $compiler_path, $no_file_cache,
            $pass_options, $php, $php_cgi, $preload,
            $result_tests_file, $slow_min_ms, $start_time,
            $temp_source, $temp_target, $test_cnt,
@@ -494,6 +500,9 @@ function main(): void
                 case '--no-aot':
                     $no_aot = true;
                     break;
+                case '--compiler':
+                    $compiler_path = $argv[++$i];
+                    break;
                 case '--color':
                     $colorize = true;
                     break;
@@ -664,6 +673,9 @@ function main(): void
 
     if (!$php) {
         $php = getenv('TEST_PHP_EXECUTABLE') ?: PHP_BINARY;
+    }
+    if (!$compiler_path) {
+        $compiler_path = './bin/compiler.php';
     }
 
     $php_cgi = getenv('TEST_PHP_CGI_EXECUTABLE') ?: get_binary($php, 'php-cgi', 'sapi/cgi/php-cgi');
@@ -1811,6 +1823,7 @@ function run_test(string $php, $file, array $env): string
     global $slow_min_ms;
     global $preload, $file_cache;
     global $num_repeats;
+    global $compiler_path;
     // Parallel testing
     global $workerID;
     global $show_progress;
@@ -4201,6 +4214,8 @@ function debug()
 
 function compile_php_file(string $file): string
 {
+    global $compiler_path;
+
     $data = trim(file_get_contents($file));
     if (!str_starts_with($data, '<?php') or !str_ends_with($data, '?>')) {
         throw new Exception('Invalid PHP file');
@@ -4208,7 +4223,7 @@ function compile_php_file(string $file): string
     if (!str_contains($data, 'function main()')) {
         file_put_contents($file, "<?php\nfunction main() {\n" . substr($data, 5, -2) . "\n}\n");
     }
-    system('./bin/compiler.php ' . $file);
+    system($compiler_path . ' ' . $file);
     $binary_file = str_replace('-', '_', basename($file, '.php'));
     if (!file_exists($binary_file)) {
         throw new Exception('Compilation failed');
