@@ -29,7 +29,7 @@ use Symfony\Component\Yaml\Yaml;
 
 class Translator extends Preprocessor
 {
-    public const string VERSION = '0.1.0';
+    public const string VERSION = '0.2.0';
     public const string APP_NAME = 'Swoole-Compiler (AOT)';
     protected string $targetName = 'app';
     protected array $sourceDirs = [];
