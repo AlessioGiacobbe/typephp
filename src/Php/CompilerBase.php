@@ -1095,7 +1095,16 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->genPropertyPromotion($argInfo);
         }
         $this->indentLevel--;
-        $code .= $this->genDebugInfo();
+        // 构建 PHP 级别的函数名用于 debug backtrace
+        if ($this->class) {
+            $debugName = $this->class . '::' . $this->function;
+        } else {
+            $debugName = $this->function;
+            if ($this->namespace) {
+                $debugName = $this->namespace . '\\' . $debugName;
+            }
+        }
+        $code .= $this->genDebugInfo(null, $debugName, $v->getStartLine());
 
         // 函数中存在动态调用的函数，需要在运行时动态切换作用域
         if ($this->methodDef and $this->methodDef->hasDynamicCall) {
@@ -5541,12 +5550,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'this_.call(' . $this->getMethodPtr($parentClass, $method) . ', ' . $this->parseCallArgs($expr->args) . ')';
     }
 
-    protected function genDebugInfo(?NodeAbstract $stmt = null): string
+    protected function genDebugInfo(?NodeAbstract $stmt = null, string $functionName = '', int $startLine = 0): string
     {
         $code = '';
         if ($this->debug) {
             if ($stmt) {
                 $code .= 'php::traceDebugInfo("' . $this->escapeString($this->file) . '", ' . $stmt->getLine() . ');' . PHP_EOL;
+            } elseif ($functionName) {
+                $code .= 'php::enableDebugInfo();' . PHP_EOL;
+                $code .= 'php::pushDebugFrame("' . $this->escapeString($this->file) . '", ' . $startLine . ', "' . $this->escapeString($functionName) . '");' . PHP_EOL;
+                $code .= 'ON_SCOPE_EXIT(php::popDebugFrame());' . PHP_EOL;
             } else {
                 $code .= 'php::enableDebugInfo();' . PHP_EOL;
             }
