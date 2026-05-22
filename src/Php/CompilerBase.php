@@ -573,6 +573,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->parseAssignOpMod($expr);
             case 'Expr_AssignOp_Concat':
                 return $this->parseAssignOpConcat($expr);
+            case 'Expr_AssignOp_ShiftLeft':
+                return $this->parseAssignOpShiftLeft($expr);
             case 'Expr_AssignOp_ShiftRight':
                 return $this->parseAssignOpShiftRight($expr);
             case 'Expr_AssignOp_BitwiseAnd':
@@ -4156,6 +4158,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
         return $getProperty;
+    }
+
+    protected function parseAssignOpShiftLeft(Expr\AssignOp\ShiftLeft $node): string
+    {
+        return $this->parseAssignOp($node, '<<=');
     }
 
     protected function parseAssignOpShiftRight(Expr\AssignOp\ShiftRight $node): string
