@@ -2203,6 +2203,64 @@ $firstChar = safeCharAccess($str, 0);
 
 ---
 
+### 12. eval() 中的变量作用域限制
+
+**状态**: 部分支持  
+**PHP 版本**: 所有版本  
+**描述**: AOT 编译器支持 `eval()` 语言结构，但 eval 内执行的 PHP 代码无法访问编译后函数的局部变量，只能通过 `$GLOBALS` 或 `return` 语句与编译代码交互。
+
+**示例代码**:
+```
+<?php
+function main() {
+    $x = 10;
+
+    // ❌ 限制：eval 中无法访问编译后的局部变量
+    eval('$x += 5;');          // Warning: Undefined variable $x
+    var_dump($x);              // 仍然是 10，未被修改
+
+    // ✅ 正确：通过 return 返回值
+    $result = eval('return 10 + 5;');
+    var_dump($result);         // int(15)
+
+    // ✅ 正确：通过 $GLOBALS 交互
+    eval('$GLOBALS["__v"] = 42;');
+    var_dump($GLOBALS["__v"]); // int(42)
+
+    // ❌ 限制：复杂表达式中的局部变量也不可用
+    $name = "world";
+    eval('echo "Hello, $name";');  // Warning: Undefined variable $name
+}
+```
+
+**原因**:
+- AOT 编译器将 PHP 局部变量编译为 C++ 栈变量，eval 在独立的 PHP 运行时上下文中执行
+- eval 内的 PHP 代码由 Zend VM 解释执行，无法感知编译后的 C++ 栈帧
+- 这是 AOT 编译模式与动态解释执行的本质冲突
+
+**相关测试文件**:
+- `tests/aot/eval-test.phpt`
+
+**替代方案**:
+1. **使用 return 返回值**
+   ```php
+   $result = eval('return some_computation();');
+   ```
+
+2. **使用 $GLOBALS 进行数据交换**
+   ```php
+   eval('$GLOBALS["key"] = $value;');
+   ```
+
+3. **将变量值嵌入 eval 字符串**
+   ```php
+   $x = 10;
+   eval('$result = ' . $x . ' + 5;');
+   return $result;
+   ```
+
+---
+
 ### 7. 游离代码（全局可执行表达式）
 
 **状态**: 不支持  
