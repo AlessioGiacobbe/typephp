@@ -285,6 +285,9 @@ class Translator extends Preprocessor
 
     public function prepare(string $path): array
     {
+        $this->funcSymbols['shell_exec'] = $this->getFuncPtr('shell_exec');
+        $this->funcSymbols['define'] = $this->getFuncPtr('define');
+
         // 根据平台检查库文件（仅在构建二进制文件时需要）
         if ($this->isBuildModeBin()) {
             foreach ($this->getPlatform()->getBuildLibraryWarnings($this->getPhpDir(), $this->getPhpxDir(), $this->buildMode) as $message) {
@@ -564,7 +567,7 @@ CODE;
         $code .= '// register constants' . PHP_EOL;
         foreach ($this->constants as $name => $const) {
             $code .= "{$name} = {$const->value};\n";
-            $code .= 'php::define(' . $this->genCharPtr($const->name, true) . ', ' . $name . ');' . PHP_EOL;
+            $code .= 'php::call(' . $this->funcSymbols['define'] . ', { ' . $this->genCharPtr($const->name, true) . ', ' . $name . ' });' . PHP_EOL;
         }
         $code .= '// global vars ' . PHP_EOL;
         foreach ($this->globalVars as $name => $type) {

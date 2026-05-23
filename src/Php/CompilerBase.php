@@ -162,6 +162,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     ];
     protected array $localHeaders = [];
     protected array $internalFunctions = [];
+    protected array $funcSymbols = [];
     protected array $internalConstants = [];
 
     /**
@@ -5182,7 +5183,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($expr->parts as $part) {
             $list[] = $this->identifierToStr($part);
         }
-        return 'php::shell_exec(php::concat({' . implode(', ', $list) . '}))';
+        return 'php::call(' . $this->funcSymbols['shell_exec'] . ', { php::concat({' . implode(', ', $list) . '}) })';
     }
 
     protected function parseGoto(Node\Stmt\Goto_ $v): string
