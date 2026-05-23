@@ -155,8 +155,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         'phpx.h',
         'phpx_helper.h',
         'phpx_func.h',
-        'php_func_decl.h',
-        'php_global_var_decl.h',
         'php_aot_helper.h',
     ];
     protected array $localHeaders = [];

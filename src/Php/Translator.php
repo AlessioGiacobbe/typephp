@@ -779,8 +779,8 @@ CODE;
         $job = $this->maxJob;
 
         // 生成所有函数声明、全局变量声明的头文件
-        $this->genFunctionDeclaration($this->getIncludeDir() . '/php_func_decl.h');
-        $this->genExternGlobalVars($this->getIncludeDir() . '/php_global_var_decl.h');
+        $this->genFunctionDeclaration($this->getIncludeDir() . "/php_{$this->targetName}_func_decl.h");
+        $this->genExternGlobalVars($this->getIncludeDir() . "/php_{$this->targetName}_global_var_decl.h");
 
         // 生成扩展模块的源文件
         $sourceFiles[] = $this->genExtension();
@@ -1133,7 +1133,10 @@ CODE;
 
     public function genIncludeHeaderFiles(): string
     {
-        $headers = array_merge($this->globalHeaders, $this->localHeaders);
+        $headers = array_merge($this->globalHeaders, [
+            "php_{$this->targetName}_func_decl.h",
+            "php_{$this->targetName}_global_var_decl.h",
+        ], $this->localHeaders);
         $lines = [];
         foreach ($headers as $header) {
             $lines[] = '#include <' . $header . '>';
