@@ -354,7 +354,7 @@ class Preprocessor extends CompilerBase
         $this->parseParams($v->params, $functionDef);
 
         // main 函数，返回值必须为 void 类型，参数必须为空或者 argc, argv 两个参数
-        if (!$this->class and !$this->namespace and $fnName === 'main') {
+        if (!$this->class and !$this->namespace and $fnName === self::ENTRY_FUNCTION) {
             if (count($v->params) > 0) {
                 if (count($v->params) != 2) {
                     $this->fatalError($v, 'The parameters of the main function must be `(int $argc, array $argv)`.');

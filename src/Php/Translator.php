@@ -62,7 +62,7 @@ class Translator extends Preprocessor
         // 只读取命令行参数，不立即应用（等待 YAML 解析后再应用）
         // 这样可以确保优先级：命令行 > YAML > 默认值
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
-        unset($this->internalFunctions['main']);
+        unset($this->internalFunctions[self::ENTRY_FUNCTION]);
         $this->internalConstants = get_defined_constants();
         if ($this->climate->arguments->defined('help')) {
             $this->showUsage();
@@ -286,7 +286,7 @@ class Translator extends Preprocessor
     public function prepare(string $path): array
     {
         // 根据平台检查库文件（仅在构建二进制文件时需要）
-        if ($this->buildMode === 'bin') {
+        if ($this->isBuildModeBin()) {
             foreach ($this->getPlatform()->getBuildLibraryWarnings($this->getPhpDir(), $this->getPhpxDir(), $this->buildMode) as $message) {
                 $this->climate->warning($message['warning']);
                 if (!empty($message['info'])) {
@@ -420,8 +420,8 @@ class Translator extends Preprocessor
 
     public function genExtension(): string
     {
-        if ($this->buildMode == 'bin') {
-            if (!$this->hasFunction('main')) {
+        if ($this->isBuildModeBin()) {
+            if (!$this->hasFunction(self::ENTRY_FUNCTION)) {
                 $this->climate->red('When the build mode is a binary executable file, the `main()` function must be defined');
                 exit(1);
             }
@@ -433,7 +433,7 @@ class Translator extends Preprocessor
 
         $code = $this->genIncludeHeaderFiles();
 
-        if ($this->buildMode === 'bin') {
+        if ($this->isBuildModeBin()) {
             $cliHeaders = [
                 '#include "php_cli_process_title.h"',
                 '#include "php_cli_process_title_arginfo.h"',
@@ -522,13 +522,13 @@ CODE;
 
         $code .= "// clang-format off\n";
         $code .= "static const zend_function_entry ext_functions[] = {\n";
-        if ($this->buildMode === 'bin') {
+        if ($this->isBuildModeBin()) {
             $code .= $this->getIndent() . "PHP_FE(cli_set_process_title,        arginfo_cli_set_process_title)\n";
             $code .= $this->getIndent() . "PHP_FE(cli_get_process_title,        arginfo_cli_get_process_title)\n";
         }
 
         foreach ($this->functions as $functionDef) {
-            if ($this->buildMode === 'ext' and $functionDef->name === 'main') {
+            if ($this->isBuildModeExt() and $functionDef->name === self::ENTRY_FUNCTION) {
                 continue;
             }
             if ($functionDef->method) {
@@ -612,8 +612,8 @@ CODE;
         $code .= 'php::request_init();' . PHP_EOL;
         $code .= 'php_app_init();' . PHP_EOL;
 
-        if ($this->buildMode === 'bin') {
-            if (count($this->functions['main']->argInfoList) == 2) {
+        if ($this->isBuildModeBin()) {
+            if (count($this->functions[self::ENTRY_FUNCTION]->argInfoList) == 2) {
                 $code .= 'php::eval("global $argc, $argv; main($argc, $argv);");' . PHP_EOL;
             } else {
                 $code .= 'php::eval("main();");' . PHP_EOL;
@@ -646,7 +646,7 @@ zend_module_entry {$moduleName}_module_entry = {
 CODE;
         $code .= PHP_EOL . PHP_EOL;
 
-        if ($this->buildMode === 'ext') {
+        if ($this->isBuildModeExt()) {
             $code .= "ZEND_GET_MODULE({$moduleName});\n";
         } else {
             $code .= 'zend_module_entry *' . self::PREFIX . 'embed_get_module() {' . PHP_EOL;
@@ -786,7 +786,7 @@ CODE;
         $sourceFiles[] = $this->genExtension();
 
         // embed 需要 main 函数，以及 cli 的内置函数定义
-        if ($this->getBuildMode() == 'bin') {
+        if ($this->isBuildModeBin()) {
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/main.cc';
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_cli_process_title.c';
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/ps_title.c';
@@ -1321,13 +1321,13 @@ CODE;
             $list = $this->getFilesFromDir($projectDir);
         }
 
-        // 读取 cxxflags（支持中横线和下划线）
-        $cxxflags = $cfg['cxx-flags'] ?? $cfg['cxxflags'] ?? null;
-        if (!empty($cxxflags)) {
-            if (is_array($cxxflags)) {
-                $this->cxxflags = implode(' ', $cxxflags);
+        // 读取 cxx-flags（支持中横线和下划线）
+        $cxxFlags = $cfg['cxx-flags'] ?? $cfg['cxxflags'] ?? null;
+        if (!empty($cxxFlags)) {
+            if (is_array($cxxFlags)) {
+                $this->cxxFlags = implode(' ', $cxxFlags);
             } else {
-                $this->cxxflags = str_replace("\n", ' ', $cxxflags);
+                $this->cxxFlags = str_replace("\n", ' ', $cxxFlags);
             }
         }
 
@@ -1363,11 +1363,11 @@ CODE;
         if (!empty($buildMode)) {
             // 映射常见的类型名称到内部 buildMode
             $modeMap = [
-                'extension' => 'ext',
-                'ext' => 'ext',
-                'binary' => 'bin',
-                'bin' => 'bin',
-                'cli' => 'bin',
+                'extension' => self::BUILD_MODE_EXT,
+                'ext' => self::BUILD_MODE_EXT,
+                'binary' => self::BUILD_MODE_BIN,
+                'bin' => self::BUILD_MODE_BIN,
+                'cli' => self::BUILD_MODE_BIN,
             ];
             $mappedMode = $modeMap[strtolower($buildMode)] ?? $buildMode;
             $this->setBuildMode($mappedMode);
@@ -2119,11 +2119,6 @@ CODE;
         $code .= '}' . PHP_EOL;
 
         return $code;
-    }
-
-    protected function parseTrait(Node\Stmt\Trait_ $trait)
-    {
-        throw new Unsupported('Unsupported Trait ');
     }
 
     private function getRegisterClassFunctionArgDef(ClassDef|InterfaceDef $classDef): string

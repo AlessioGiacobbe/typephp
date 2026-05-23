@@ -116,7 +116,7 @@ class Constants
             'prefix' => 'm',
             'description' => 'Build mode, -m bin(binary) or -m ext(extension), default: bin',
             'required' => false,
-            'defaultValue' => 'bin',
+            'defaultValue' => CompilerBase::BUILD_MODE_BIN,
         ],
         'debug-line' => [
             'longPrefix' => 'debug-line',

@@ -62,11 +62,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     use Utils;
 
     public const string TYPE_VAR = 'php::Var';
-
     public const string TYPE_BOOL = 'php::Bool';
-
     public const string TYPE_INT = 'php::Int';
-
     public const string TYPE_FLOAT = 'php::Float';
     public const string TYPE_OBJECT = 'php::Object';
     public const string TYPE_ARRAY = 'php::Array';
@@ -78,10 +75,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_STR = 'php::Str';
     public const string TYPE_REF = 'php::Ref';
     public const string TYPE_VOID = 'void';
+
     public const int DECL_TYPE_OF_RETURN = 1;
     public const int DECL_TYPE_OF_PROPERTY = 2;
     public const int DECL_TYPE_OF_CONST = 3;
     public const int DECL_TYPE_OF_PARAM = 4;
+
     public const string VALUE_NAN = 'std::numeric_limits<double>::quiet_NaN()';
     public const string VALUE_INF = 'std::numeric_limits<double>::infinity()';
     public const string VALUE_NULL = 'php::null';
@@ -107,6 +106,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string OP_NOP = "if (0) {}\n";
     // 超过65536字节的数组，将从栈上转移到堆
     public const int MAX_BYTES_IN_STACK = 65536;
+    public const string BUILD_MODE_BIN = 'bin';
+    public const string BUILD_MODE_EXT = 'ext';
+    public const string ENTRY_FUNCTION = 'main';
+    public const string PHPX_VENDOR_DIR = '/vendor/swoole/phpx';
+
     protected string $lang = 'PHP';
     protected string $cppCompiler = '';
     protected array $literalStrings = [];
@@ -154,7 +158,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $globalHeaders = [
         'phpx.h',
         'phpx_helper.h',
-        'phpx_func.h',
         'php_aot_helper.h',
     ];
     protected array $localHeaders = [];
@@ -176,8 +179,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $constData = [];
     protected int $optimizeLevel = 0;
     protected int $maxJob = 4;
-    protected string $buildMode = 'bin';
-    protected string $cxxflags = '';
+    protected string $buildMode = self::BUILD_MODE_BIN;
+    protected string $cxxFlags = '';
     protected string $cxxStd = 'c++17';
     protected string $ldflags = '';
     protected int $floatPrecision = 17;
@@ -397,25 +400,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         // 尝试使用 Composer 安装的 phpx
-        $composerPhpxDir = $this->rootPath . '/vendor/swoole/phpx';
+        $composerPhpxDir = $this->rootPath . self::PHPX_VENDOR_DIR;
         if (is_dir($composerPhpxDir)) {
             return $composerPhpxDir;
         }
 
-        $composerPhpxVendorDir = $this->rootPath . '/vendor/swoole/phpx-vendor';
-        if (is_dir($composerPhpxVendorDir)) {
-            return $composerPhpxVendorDir;
-        }
-
         if (defined('ROOT_PATH')) {
-            $rootPhpxDir = ROOT_PATH . '/vendor/swoole/phpx';
+            $rootPhpxDir = ROOT_PATH . self::PHPX_VENDOR_DIR;
             if (is_dir($rootPhpxDir)) {
                 return $rootPhpxDir;
-            }
-
-            $rootPhpxVendorDir = ROOT_PATH . '/vendor/swoole/phpx-vendor';
-            if (is_dir($rootPhpxVendorDir)) {
-                return $rootPhpxVendorDir;
             }
         }
 
@@ -459,6 +452,16 @@ class CompilerBase extends \PhpAot\Core\Translator
     public function isMacos(): bool
     {
         return $this->getPlatform() instanceof Macos;
+    }
+
+    public function isBuildModeBin(): bool
+    {
+        return $this->buildMode === self::BUILD_MODE_BIN;
+    }
+
+    public function isBuildModeExt(): bool
+    {
+        return $this->buildMode === self::BUILD_MODE_EXT;
     }
 
     public function getPhpDir(): string
@@ -2477,7 +2480,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         // extension 和 bin 模式都需要链接 PHP 库
         if ($platform instanceof Windows) {
             // Windows: 根据构建模式选择不同的库
-            if ($this->buildMode === 'bin') {
+            if ($this->isBuildModeBin()) {
                 // bin 模式：需要同时链接 php8ts.lib 和 php8embed.lib
                 // 注意：php8ts.lib 必须在 php8embed.lib 之前，因为 embed 依赖 core
                 // php8ts.lib 提供 PHP 核心全局符号（executor_globals, compiler_globals, sapi_globals）
@@ -2537,7 +2540,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 'build_mode' => $this->buildMode,
                 'enable_profiler' => $this->enableProfiler,
                 'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
-                'cxxflags' => $this->cxxflags,
+                'cxxflags' => $this->cxxFlags,
             ];
             
             $cmd .= $this->getCompilerBackend()->buildCompileOptions($config);
@@ -2583,7 +2586,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             'build_mode' => $this->buildMode,
             'enable_profiler' => $this->enableProfiler,
             'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
-            'cxxflags' => $this->cxxflags,
+            'cxxflags' => $this->cxxFlags,
         ];
     }
 
