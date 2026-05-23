@@ -1272,6 +1272,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '';
     }
 
+    protected function parseBlockStmts(array $stmts): string
+    {
+        $this->indentLevel++;
+        $code = $this->parseStmts($stmts);
+        $this->indentLevel--;
+        return $code;
+    }
+
     protected function parseStmts(array $stmts): string
     {
         $this->context->enterScope();
@@ -2699,9 +2707,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code .= implode(', ', $list_loop);
         $code .= ') {' . PHP_EOL;
 
-        $this->indentLevel++;
-        $code .= $this->parseStmts($stmts);
-        $this->indentLevel--;
+        $code .= $this->parseBlockStmts($stmts);
 
         $code .= $this->getIndent() . '}' . PHP_EOL;
 
@@ -3480,27 +3486,21 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'if (' . $cond . ') {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->parseStmts($v->stmts);
-        $this->indentLevel--;
+        $code .= $this->parseBlockStmts($v->stmts);
         $code .= $this->getIndent() . '}';
 
         if ($v->elseifs) {
             foreach ($v->elseifs as $elseif) {
                 $elseifCond = $this->parseExpr($elseif->cond);
                 $code .= ' else if (' . $elseifCond . ') {' . PHP_EOL;
-                $this->indentLevel++;
-                $code .= $this->parseStmts($elseif->stmts);
-                $this->indentLevel--;
+                $code .= $this->parseBlockStmts($elseif->stmts);
                 $code .= $this->getIndent() . '}';
             }
         }
 
         if ($v->else) {
             $code .= ' else {' . PHP_EOL;
-            $this->indentLevel++;
-            $code .= $this->parseStmts($v->else->stmts);
-            $this->indentLevel--;
+            $code .= $this->parseBlockStmts($v->else->stmts);
             $code .= $this->getIndent() . '}';
         }
 
@@ -3566,9 +3566,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'while (' . $cond . ') {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->parseStmts($stmts);
-        $this->indentLevel--;
+        $code .= $this->parseBlockStmts($stmts);
         $code .= $this->getIndent() . '}' . PHP_EOL;
 
         return $code;
@@ -3652,9 +3650,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $cond  = $this->parseExpr($v->cond);
         $code  = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'do {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->parseStmts($stmts);
-        $this->indentLevel--;
+        $code .= $this->parseBlockStmts($stmts);
         $code .= $this->getIndent() . '} while (' . $cond . ');' . PHP_EOL;
 
         return $code;
@@ -4351,9 +4347,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                     $code .= $this->getIndent() . 'case ' . $this->parseScalar($case->cond) . ': {' . PHP_EOL;
                 }
-                $this->indentLevel++;
-                $code .= $this->parseStmts($case->stmts);
-                $this->indentLevel--;
+                $code .= $this->parseBlockStmts($case->stmts);
                 $code .= $this->getIndent() . '}' . PHP_EOL;
             }
             $this->indentLevel--;
@@ -5118,9 +5112,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $stmts = $v->stmts;
 
         $code .= PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->parseStmts($stmts);
-        $this->indentLevel--;
+        $code .= $this->parseBlockStmts($stmts);
         $code .= $this->getIndent() . '}' . PHP_EOL;
 
         $catches = $v->catches;
