@@ -1551,10 +1551,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
                     }
                 } else {
-                    if ($this->getVarType($var) === self::TYPE_ARRAY) {
-                        $this->fatalError($left, "Cannot re-assign `\${$var}` from object to array");
-                    }
-                    // TODO 右值是一个类型对象，但左值是一个 var ，许可，但无法标记对象类型
+                    $this->checkVarAssignExpr($left, $this->getVarType($var), self::TYPE_OBJECT);
                 }
             } else {
                 if ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
@@ -5448,7 +5445,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isNativeType($toType) and $this->isNativeType($fromType)) {
             return true;
         }
-        $this->fatalError($left, "Cannot re-assign variable from `{$fromType}` to `{$toType}`");
+        $varName = 'variable';
+        if ($this->isVarExpr($left)) {
+            $varName = '`$' . $this->parseIdentifier($left) . '`';
+        }
+        $this->fatalError($left, "Cannot re-assign $varName from `{$fromType}` to `{$toType}`");
     }
 
     protected function mustNoCall(NodeAbstract $node): void
