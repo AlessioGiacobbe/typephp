@@ -268,11 +268,11 @@ bool(true)
 string(1) "x"
 string(1) "z"
 string(15) "one, two, three"
-int(4)
-string(1) "c"
+int(2)
+NULL
 int(3)
 string(1) "b"
-int(1)
+int(2)
 string(1) "d"
 int(1)
 int(1)
