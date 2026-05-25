@@ -1,8 +1,7 @@
 <?php
 use native_types;
-
 function main()
 {
-    $obj = [];
-    $obj = new stdClass();
+    $x = [1, 2];
+    $x = "hello";
 }
