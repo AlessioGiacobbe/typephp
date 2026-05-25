@@ -203,6 +203,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $useNamespaces = [];
     protected array $useAliases = [];
     protected array $useFunctions = [];
+    protected array $useConstants = [];
 
     /**
      * 原始类名，不包含命名空间.
@@ -817,6 +818,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->useNamespaces = [];
         $this->useAliases = [];
         $this->useFunctions = [];
+        $this->useConstants = [];
         $this->namespace = '';
     }
 
@@ -2248,7 +2250,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $method = $this->parseIdentifier($expr->name);
                     $nativeFunc = $this->findNativeMethod($expr, $object, $method);
                     if ($nativeFunc) {
-                        $funcDef = $this->functions[$nativeFunc];
+                        $funcDef = $this->getFunction($nativeFunc);
                         return $funcDef->returnType;
                     }
                     if ($this->isTypedObject($object)) {
@@ -2989,10 +2991,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $possibleFunctionNames[] = $this->escapeName($this->escapeNamespace($this->useAliases[$funcName]));
             }
             if ($this->namespace) {
-                $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $funcName;
+                $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $this->escapeName($funcName);
             }
             if (isset($this->useFunctions[$funcName])) {
-                $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$funcName]) . self::NAMESPACE_SEPARATOR . $funcName;
+                $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$funcName]) . self::NAMESPACE_SEPARATOR . $this->escapeName($funcName);
             }
             // 复杂命名空间规则，组合命名空间
             // 例子：use foo\bar;  bar\fn();
@@ -3078,7 +3080,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseNativeCallArgs(array $callArgs, string $nativeFunc): string
     {
         $argList = [];
-        $functionDef = $this->functions[$nativeFunc];
+        $functionDef = $this->getFunction($nativeFunc);
         $args = [];
         $hasNamedArg = false;
         // 对命名参数进行重排
@@ -3731,11 +3733,17 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $classDef = $expr->class;
                 $className = $this->genAnonClassName();
                 $classDef->name = new Node\Identifier($className);
-                // 继承父类可能是 use 的名称，需要转换成全限定名称
+                // 继承父类和接口可能是 use 的名称，需要转换成全限定名称
                 // TODO 匿名类的属性、常量、方法参数中都可能会用相对类名，都需要转为全限定名称
                 if ($classDef->extends !== null) {
                     $parentClass = $this->getNamespacedClassName($classDef->extends->toString());
                     $classDef->extends = new Node\Name\FullyQualified($parentClass);
+                }
+                if (!empty($classDef->implements)) {
+                    foreach ($classDef->implements as $i => $iface) {
+                        $ifaceName = $this->getNamespacedClassName($iface->toString());
+                        $classDef->implements[$i] = new Node\Name\FullyQualified($ifaceName);
+                    }
                 }
                 $this->context->beforeStmtLines[] = 'static THREAD_LOCAL bool ' . $className . '_defined = false;';
                 $classCode = $this->genEmbeddedCode($classDef);
@@ -3822,8 +3830,21 @@ class CompilerBase extends \PhpAot\Core\Translator
             abort($expr);
         }
         $name = $this->parseIdentifier($expr->name);
+        $name = ltrim($name, '\\');
         if ($this->isNameExpr($expr->name) and $this->hasConstant($name)) {
             return $this->getConstant($name);
+        }
+        if ($this->namespace and $this->isNameExpr($expr->name) and !str_contains($name, '\\')) {
+            $nsName = $this->namespace . '\\' . $name;
+            if ($this->hasConstant($nsName)) {
+                return $this->getConstant($nsName);
+            }
+        }
+        if ($this->isNameExpr($expr->name) and isset($this->useConstants[$name])) {
+            $importedName = $this->useConstants[$name];
+            if ($this->hasConstant($importedName)) {
+                return $this->getConstant($importedName);
+            }
         }
         if ($name === 'null') {
             return self::VALUE_NULL;
@@ -3852,6 +3873,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if (isset($this->useAliases[$name])) {
                 $name = $this->useAliases[$name];
+            } elseif (isset($this->useConstants[$name])) {
+                $name = $this->useConstants[$name];
             } else {
                 $fullName = $this->getNamespacedClassName($name);
                 if ($fullName) {
@@ -3920,10 +3943,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getArgInfo(Node $arg, string $funcName, int $index): ArgInfo
     {
-        if (!isset($this->functions[$funcName])) {
+        if (!$this->hasFunction($funcName)) {
             $this->fatalError($arg, "Function `{$funcName}` is undefined, you must adjust the order of function definition");
         }
-        $funcDef = $this->functions[$funcName];
+        $funcDef = $this->getFunction($funcName);
         if (!array_key_exists($index, $funcDef->argInfoList)) {
             $this->fatalError($arg, "Argument `{$index}` of function `{$funcName}` not found");
         }
@@ -5323,7 +5346,21 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $lastIndex = strrpos($id, '\\');
                 $fn = substr($id, $lastIndex + 1);
                 $ns = substr($id, 0, $lastIndex);
-                $this->useFunctions[$fn] = $ns;
+                if ($use->alias) {
+                    $this->useFunctions[$use->alias->toString()] = $ns;
+                } else {
+                    $this->useFunctions[$fn] = $ns;
+                }
+            } elseif ($type === Node\Stmt\Use_::TYPE_CONSTANT) {
+                $lastIndex = strrpos($id, '\\');
+                $cn = substr($id, $lastIndex + 1);
+                $ns = substr($id, 0, $lastIndex);
+                $fullName = $ns . '\\' . $cn;
+                if ($use->alias) {
+                    $this->useConstants[$use->alias->toString()] = $fullName;
+                } else {
+                    $this->useConstants[$cn] = $fullName;
+                }
             } else {
                 if ($id === 'native_types') {
                     $this->nativeTypes = true;
@@ -5336,6 +5373,18 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
         return $code;
+    }
+
+    protected function parseGroupUse(Node\Stmt\GroupUse $node): void
+    {
+        $prefix = $node->prefix;
+        $uses = [];
+        foreach ($node->uses as $use) {
+            $fullName = Node\Name::concat($prefix, $use->name);
+            $uses[] = new Node\UseItem($fullName, $use->alias, $use->type);
+        }
+        $syntheticUse = new Node\Stmt\Use_($uses, $node->type);
+        $this->parseUse($syntheticUse);
     }
 
     protected function parseErrorSuppress(Expr\ErrorSuppress $expr): string
@@ -5680,7 +5729,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if ($this->isCallExpr($expr->expr)) {
                 $nativeCall = $expr->expr->getAttribute('nativeCall');
-                if ($nativeCall and $this->functions[$nativeCall]->returnType === self::TYPE_VOID) {
+                if ($nativeCall and $this->getFunction($nativeCall)->returnType === self::TYPE_VOID) {
                     return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
                 }
             }

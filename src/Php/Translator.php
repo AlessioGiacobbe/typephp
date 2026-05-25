@@ -1470,6 +1470,9 @@ CODE;
                 case 'Stmt_Use':
                     $cppCode .= $this->parseUse($v) . PHP_EOL;
                     break;
+                case 'Stmt_GroupUse':
+                    $this->parseGroupUse($v);
+                    break;
                 case 'Stmt_Function':
                     $cppCode .= $this->parseFunction($v) . PHP_EOL;
                     break;
@@ -1608,6 +1611,9 @@ CODE;
                     break;
                 case 'Stmt_Use':
                     $code .= $this->parseUse($v2) . PHP_EOL;
+                    break;
+                case 'Stmt_GroupUse':
+                    $this->parseGroupUse($v2);
                     break;
                 case 'Stmt_Interface':
                     break;

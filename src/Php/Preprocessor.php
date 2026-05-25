@@ -148,6 +148,9 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Use':
                     $this->parseUse($v);
                     break;
+                case 'Stmt_GroupUse':
+                    $this->parseGroupUse($v);
+                    break;
                 case 'Stmt_Declare':
                 case 'Stmt_Nop':
                     break;
@@ -219,6 +222,9 @@ class Preprocessor extends CompilerBase
                     break;
                 case 'Stmt_Use':
                     $this->parseUse($v2);
+                    break;
+                case 'Stmt_GroupUse':
+                    $this->parseGroupUse($v2);
                     break;
                 case 'Stmt_Const':
                     break;
