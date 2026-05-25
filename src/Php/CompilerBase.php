@@ -137,6 +137,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $zendTypeMap = [
         'int' => self::TYPE_INT,
         'float' => self::TYPE_FLOAT,
+        'double' => self::TYPE_FLOAT,
         'bool' => self::TYPE_BOOL,
         'false' => self::TYPE_BOOL,
         'true' => self::TYPE_BOOL,
@@ -1616,8 +1617,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
                     }
                 }
+                // 变量第一次被赋值，确定其类型，由于 PHP 的变量作用域是 function 级的，在 for/while 块中声明的变量，可以在块外使用
                 if (!$this->hasVar($var)) {
-                    $this->addLocalVar($var, $type);
+                    $this->addLocalVar($var, $this->isNativeType($type) ? $this->getNativeType($type) : $type);
                 } else {
                     $this->checkVarAssignExpr($left, $this->getVarType($var), $type);
                 }
@@ -2195,14 +2197,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         switch ($exprType) {
             case 'Expr_Cast_Int':
             case 'Scalar_Int':
-                return $this->getNativeType(self::TYPE_INT);
+                return self::TYPE_INT;
             case 'Expr_Cast_Float':
             case 'Expr_Cast_Double':
             case 'Scalar_Float':
-                return $this->getNativeType(self::TYPE_FLOAT);
+                return self::TYPE_FLOAT;
             case 'Expr_Cast_Bool':
             case 'Scalar_Bool':
-                return $this->getNativeType(self::TYPE_BOOL);
+                return self::TYPE_BOOL;
             case 'Expr_Array':
             case 'Expr_Cast_Array':
                 return self::TYPE_ARRAY;
@@ -4334,14 +4336,17 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->hasConstant($name)) {
             return $this->getConstantType($name);
         }
+        if ($this->isInternalConstant($name)) {
+            return $this->getTypeFromZendType(gettype($this->internalConstants[$name]));
+        }
         if ($name === 'true') {
-            return $this->getNativeType(self::TYPE_BOOL);
+            return self::TYPE_BOOL;
         }
         if ($name === 'false') {
-            return $this->getNativeType(self::TYPE_BOOL);
+            return self::TYPE_BOOL;
         }
         if ($name === 'NAN' or $name === 'INF') {
-            return $this->getNativeType(self::TYPE_FLOAT);
+            return self::TYPE_FLOAT;
         }
         return self::TYPE_VAR;
     }
