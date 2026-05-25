@@ -59,6 +59,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     use PropertyPromotion;
     use MagicMethodDetector;
     use StdContainerParser;
+    use UniversalMethodCall;
     use Utils;
 
     public const string TYPE_VAR = 'php::Var';
@@ -67,6 +68,17 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_FLOAT = 'php::Float';
     public const string TYPE_OBJECT = 'php::Object';
     public const string TYPE_ARRAY = 'php::Array';
+    public const string TYPE_RESOURCE = 'php::Resource';
+    public const string TYPE_STREAM = 'php::Stream';
+
+    private const array STREAM_FUNCTIONS = [
+        'fopen',
+        'tmpfile',
+        'fsockopen',
+        'stream_socket_client',
+        'stream_socket_accept',
+        'popen',
+    ];
     public const string TYPE_STD_ARRAY = 'php::StdArray';
     public const string TYPE_STD_VECTOR = 'php::StdVector';
     public const string TYPE_STD_MAP = 'php::StdMap';
@@ -782,6 +794,37 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return self::TYPE_VAR;
+    }
+
+    /**
+     * Resolve the type of an arbitrary expression for universal method call dispatch.
+     * Delegates to detectTypeOfExpr — returns null when the type cannot be determined
+     * at compile time (i.e. detectTypeOfExpr returns TYPE_VAR).
+     */
+    protected function resolveExprType(Node\Expr $expr): ?string
+    {
+        $type = $this->detectTypeOfExpr($expr);
+        return $type !== self::TYPE_VAR ? $type : null;
+    }
+
+    /**
+     * Resolve the ClassDef for an object expression (variable or $this).
+     */
+    private function resolveObjectClassDef(Node\Expr $expr): ?ClassDef
+    {
+        if ($expr instanceof Expr\Variable) {
+            $name = $this->parseIdentifier($expr);
+            if ($name === 'this_' && $this->classDef) {
+                return $this->classDef;
+            }
+            if ($this->isTypedObject($name)) {
+                $className = $this->getObjectType($name);
+                if ($this->hasClass($className)) {
+                    return $this->getClass($className);
+                }
+            }
+        }
+        return null;
     }
 
     protected function resetFunction(): void
@@ -2237,6 +2280,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_FuncCall':
                 if ($this->isNameExpr($expr->name)) {
                     $name = $this->parseIdentifier($expr->name);
+                    if (in_array($name, self::STREAM_FUNCTIONS) || $name === 'stream_cast') {
+                        return self::TYPE_STREAM;
+                    }
                     if ($this->hasFunction($name)) {
                         return $this->getFunction($name)->returnType;
                     }
@@ -2244,26 +2290,76 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 break;
             case 'Expr_MethodCall':
-                if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
-                    $object = $this->parseIdentifier($expr->var);
+                if ($this->isNamedMethod($expr->name)) {
                     $method = $this->parseIdentifier($expr->name);
-                    $nativeFunc = $this->findNativeMethod($expr, $object, $method);
-                    if ($nativeFunc) {
-                        $funcDef = $this->getFunction($nativeFunc);
-                        return $funcDef->returnType;
+                    // Class definition resolution (handles this_, typed VarExpr)
+                    $classDef = $this->resolveObjectClassDef($expr->var);
+                    if ($classDef !== null && $classDef->hasMethod($method)) {
+                        return $classDef->getMethod($method)->getReturnType();
                     }
-                    if ($this->isTypedObject($object)) {
-                        return $this->detectMethodCallReturnType($this->getObjectType($object), $method);
+                    if ($this->isVarExpr($expr->var)) {
+                        $object = $this->parseIdentifier($expr->var);
+                        $nativeFunc = $this->findNativeMethod($expr, $object, $method);
+                        if ($nativeFunc) {
+                            $funcDef = $this->getFunction($nativeFunc);
+                            return $funcDef->returnType;
+                        }
+                        if ($this->isTypedObject($object)) {
+                            return $this->detectMethodCallReturnType($this->getObjectType($object), $method);
+                        }
+                        $type = $this->getVarType($object);
+                    } else {
+                        $type = $this->detectTypeOfExpr($expr->var);
+                    }
+                    if ($type !== self::TYPE_VAR && !$this->checkArgType($type, self::TYPE_OBJECT)) {
+                        $retType = $this->detectUniversalMethodReturnType($type, $method);
+                        if ($retType !== null) {
+                            return $retType;
+                        }
+                    }
+                }
+                break;
+            case 'Expr_StaticCall':
+                if ($this->isNameExpr($expr->class) && $this->isIdExpr($expr->name)) {
+                    $className = $this->parseIdentifier($expr->class);
+                    if ($className === 'self') {
+                        $className = $this->getFullClassName();
+                    } elseif ($className === 'parent') {
+                        if ($this->classDef->extends) {
+                            $className = $this->classDef->extends;
+                        } else {
+                            break;
+                        }
+                    } elseif ($className === 'static') {
+                        break;
+                    } else {
+                        $className = $this->getNamespacedClassName($className);
+                    }
+                    if ($this->hasClass($className)) {
+                        $classDef = $this->getClass($className);
+                        $methodName = $this->parseIdentifier($expr->name);
+                        if ($classDef->hasMethod($methodName)) {
+                            return $classDef->getMethod($methodName)->getReturnType();
+                        }
                     }
                 }
                 break;
             case 'Expr_PropertyFetch':
-                if ($this->isVarExpr($expr->var) and $this->isIdExpr($expr->name)) {
-                    $this->parsePropertyFetch($expr);
-                    if ($expr->getAttribute('nativePropertyVar')) {
-                        $propVar = $expr->getAttribute('nativePropertyVar');
-                        $info = $this->context->objectProps[$propVar];
-                        return $info['type'];
+                if ($this->isIdExpr($expr->name)) {
+                    // Class definition property type
+                    $propName = $this->parseIdentifier($expr->name);
+                    $classDef = $this->resolveObjectClassDef($expr->var);
+                    if ($classDef !== null && $classDef->hasProperty($propName)) {
+                        return $classDef->getProperty($propName)->type;
+                    }
+                    // Native property var type
+                    if ($this->isVarExpr($expr->var)) {
+                        $this->parsePropertyFetch($expr);
+                        if ($expr->getAttribute('nativePropertyVar')) {
+                            $propVar = $expr->getAttribute('nativePropertyVar');
+                            $info = $this->context->objectProps[$propVar];
+                            return $info['type'];
+                        }
                     }
                 }
                 break;
@@ -3037,6 +3133,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $name = $this->parseIdentifier($expr->name);
             if (in_array($name, Constants::UNSUPPORTED_FUNCTIONS)) {
                 $this->fatalError($expr, 'Unsupported function: `' . $name . '`');
+            }
+            if ($name === 'stream_cast') {
+                return $this->parseExpr($expr->args[0]->value);
             }
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
@@ -4799,7 +4898,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
             $type = $this->getVarType($object);
             if (!$this->checkArgType($type, self::TYPE_OBJECT)) {
-                $this->fatalError($expr, 'Cannot call method `' . $expr->name->toString() . '()` on variable of type ' . $type);
+                $methodName = $expr->name->toString();
+                // 非对象类型可使用内置方法
+                $fn = $this->findUniversalMethodAnyType($type, $methodName);
+                if ($fn) {
+                    if ($type === self::TYPE_STREAM) {
+                        return $this->genStreamNullGuard($expr, $object, $methodName, $fn);
+                    }
+                    return $this->parseUniversalMethodCall($expr, $object, $method, $fn);
+                }
             }
             $this->context->beforeStmtLines[] = '// Method Call: ' . $object . '->' . $this->parseIdentifier($expr->name) . '()';
             try {
@@ -4814,6 +4921,27 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } catch (DynamicCall) {
                 $magicMethod = true;
+            }
+        }
+
+        // 表达式返回值也可使用内置方法：fn()->method(), $obj->fn()->method(), Foo::fn()->method(), $obj->prop->method()
+        if (!$this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
+            $type = $this->resolveExprType($expr->var);
+            if ($type !== null and !$this->checkArgType($type, self::TYPE_OBJECT)) {
+                $methodName = $expr->name->toString();
+                $fn = $this->findUniversalMethodAnyType($type, $methodName);
+                if ($fn) {
+                    // Wrap receiver in type conversion for direct_method handlers
+                    // since the raw expression (often from php::call()) is php::Variant
+                    $receiver = $object;
+                    if ($fn['handler'] === 'direct_method') {
+                        $receiver = $this->wrapUniversalReceiver($type, $object);
+                    }
+                    if ($type === self::TYPE_STREAM) {
+                        return $this->genStreamNullGuard($expr, $receiver, $methodName, $fn);
+                    }
+                    return $this->parseUniversalMethodCall($expr, $receiver, $methodName, $fn, false);
+                }
             }
         }
 
@@ -4837,7 +4965,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $object . '.call(' . $methodPtr . ')';
         }
         try {
-            // 类名为空，这是一个 var ，类型是 any ，编译期无法获得它的类型，需要动态调用
             $class = empty($class) ? self::DYNAMIC_CALLED_CLASS : $class;
             return $object . '.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
         } catch (PlaceHolder) {
@@ -5661,6 +5788,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } else {
                     $code .= $info['decl'] . ' ' . $name . '{};';
                 }
+            } elseif ($type === self::TYPE_STREAM) {
+                $code .= self::TYPE_VAR . ' ' . $name . ';';
             } else {
                 $code .= $type . ' ' . $name;
                 if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
