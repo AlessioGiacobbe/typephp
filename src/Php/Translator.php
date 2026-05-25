@@ -285,6 +285,7 @@ class Translator extends Preprocessor
 
     public function prepare(string $path): array
     {
+        // 预先添加一些函数符号，在编译阶段部分语法会转为函数调用
         $this->funcSymbols['shell_exec'] = $this->getFuncPtr('shell_exec');
         $this->funcSymbols['define'] = $this->getFuncPtr('define');
 
