@@ -215,6 +215,29 @@ trait UniversalMethodCall
             'eof'               => ['handler' => 'php_fn', 'fn' => 'feof', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             'getChar'           => ['handler' => 'php_fn', 'fn' => 'fgetc', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
             'getLine'           => ['handler' => 'php_fn', 'fn' => 'fgets', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            // --- stream_* functions ---
+            'getContents'       => ['handler' => 'php_fn', 'fn' => 'stream_get_contents', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'getMetaData'       => ['handler' => 'php_fn', 'fn' => 'stream_get_meta_data', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'isLocal'           => ['handler' => 'php_fn', 'fn' => 'stream_is_local', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'isTTY'             => ['handler' => 'php_fn', 'fn' => 'stream_isatty', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'setBlocking'       => ['handler' => 'php_fn', 'fn' => 'stream_set_blocking', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
+            'setChunkSize'      => ['handler' => 'php_fn', 'fn' => 'stream_set_chunk_size', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'setReadBuffer'     => ['handler' => 'php_fn', 'fn' => 'stream_set_read_buffer', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'setTimeout'        => ['handler' => 'php_fn', 'fn' => 'stream_set_timeout', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
+            'setWriteBuffer'    => ['handler' => 'php_fn', 'fn' => 'stream_set_write_buffer', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'supportsLock'      => ['handler' => 'php_fn', 'fn' => 'stream_supports_lock', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'copy'              => ['handler' => 'php_fn', 'fn' => 'stream_copy_to_stream', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
+            // --- stream_socket_* functions ---
+            'accept'            => ['handler' => 'php_fn', 'fn' => 'stream_socket_accept', 'return_type' => self::TYPE_STREAM, 'min_args' => 0, 'max_args' => 1],
+            'enableCrypto'      => ['handler' => 'php_fn', 'fn' => 'stream_socket_enable_crypto', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
+            'getSocketName'     => ['handler' => 'php_fn', 'fn' => 'stream_socket_get_name', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
+            'recvFrom'          => ['handler' => 'php_fn', 'fn' => 'stream_socket_recvfrom', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
+            'sendTo'            => ['handler' => 'php_fn', 'fn' => 'stream_socket_sendto', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
+            'shutdown'          => ['handler' => 'php_fn', 'fn' => 'stream_socket_shutdown', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
+            'getRecord'         => ['handler' => 'php_fn', 'fn' => 'stream_get_line', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            // --- stream filters ---
+            'appendFilter'      => ['handler' => 'php_fn', 'fn' => 'stream_filter_append', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'prependFilter'     => ['handler' => 'php_fn', 'fn' => 'stream_filter_prepend', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
         ],
     ];
 
@@ -236,6 +259,20 @@ trait UniversalMethodCall
         return static::UNIVERSAL_METHODS[$type][$method]['return_type'] ?? null;
     }
 
+    private const array TYPE_EXTENSION_PREFIX = [
+        self::TYPE_INT    => 'int',
+        self::TYPE_FLOAT  => 'float',
+        self::TYPE_BOOL   => 'bool',
+        self::TYPE_STR    => 'str',
+        self::TYPE_ARRAY  => 'array',
+        self::TYPE_STREAM => 'stream',
+    ];
+
+    protected function camelToSnake(string $name): string
+    {
+        return strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $name));
+    }
+
     /**
      * Search all type tables for a method. Returns [type, def] or null.
      */
@@ -247,10 +284,61 @@ trait UniversalMethodCall
                 if ($def !== null) {
                     return $def;
                 }
+                $ext = $this->findExtensionMethod($searchType, $method);
+                if ($ext !== null) {
+                    return $ext;
+                }
             }
             return null;
         }
-        return static::UNIVERSAL_METHODS[$type][$method] ?? null;
+        $builtin = static::UNIVERSAL_METHODS[$type][$method] ?? null;
+        if ($builtin !== null) {
+            return $builtin;
+        }
+        return $this->findExtensionMethod($type, $method);
+    }
+
+    /**
+     * Look up an extension function for the given type+method.
+     * Extension functions follow the naming convention: {typePrefix}_{snake_case_method}
+     */
+    protected function findExtensionMethod(string $type, string $method): ?array
+    {
+        $prefix = self::TYPE_EXTENSION_PREFIX[$type] ?? null;
+        if ($prefix === null) {
+            return null;
+        }
+
+        $snakeMethod = $this->camelToSnake($method);
+        $baseName = $prefix . '_' . $snakeMethod;
+
+        $funcName = $this->resolveExtensionFunctionName($baseName);
+        if ($funcName === null) {
+            return null;
+        }
+
+        return [
+            'handler'      => 'php_fn',
+            'fn'           => $funcName,
+            'receiver_pos' => 1,
+            'return_type'  => self::TYPE_VAR,
+            'min_args'     => 0,
+            'max_args'     => -1,
+        ];
+    }
+
+    protected function resolveExtensionFunctionName(string $funcName): ?string
+    {
+        if ($this->hasFunction($funcName)) {
+            return $funcName;
+        }
+        if ($this->namespace) {
+            $nsFunc = $this->namespace . '\\' . $funcName;
+            if ($this->hasFunction($nsFunc)) {
+                return $nsFunc;
+            }
+        }
+        return null;
     }
 
     /**
@@ -288,25 +376,14 @@ trait UniversalMethodCall
         $this->context->beforeStmtLines[] = $streamVar . ' = ' . $receiver . ';';
 
         $methodCall = match ($def['handler']) {
-            'php_fn'        => $this->genUniversalPhpFn($streamVar, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0, $def['const_args'] ?? []),
-            'direct_method' => $this->genUniversalDirectMethod($streamVar, $def['method'], $expr->args, $def['int_cast_args'] ?? []),
-            'cpp_fn'        => $this->genUniversalCppFn($streamVar, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
+            'php_fn'        => $this->genUniversalPhpFn('php::toStream(' . $streamVar . ')', $def['fn'], $expr->args, $def['receiver_pos'] ?? 0, $def['const_args'] ?? []),
+            'direct_method' => $this->genUniversalDirectMethod('php::toStream(' . $streamVar . ')', $def['method'], $expr->args, $def['int_cast_args'] ?? []),
+            'cpp_fn'        => $this->genUniversalCppFn('php::toStream(' . $streamVar . ')', $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
             default         => null,
         };
 
-        $errorMsg = "Cannot call method '{$method}' on a closed or invalid stream resource";
-        $lambda = "[&]() -> php::Variant {\n";
-        $this->indentLevel++;
-        $lambda .= $this->getIndent() . "if (!{$streamVar}.isResource()) {\n";
-        $lambda .= $this->getIndent() . "throwError(\"{$errorMsg}\");\n";
-        $lambda .= $this->getIndent() . "return php::null;\n";
-        $lambda .= $this->getIndent() . "}\n";
-        $this->indentLevel--;
-        $lambda .= $this->getIndent() . "return {$methodCall};\n";
-        $lambda .= "}()";
-
         $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-        $this->context->beforeStmtLines[] = "{$tmpVar} = {$lambda};";
+        $this->context->beforeStmtLines[] = "{$tmpVar} = {$methodCall};";
         return $tmpVar;
     }
 

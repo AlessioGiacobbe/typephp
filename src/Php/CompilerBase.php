@@ -167,6 +167,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         'iterable' => self::TYPE_VAR,
         // 编译器符号类型，C++ 层仍使用 php::Var 承载 null zval 中的 value.ptr
         'UnsafePtr' => self::TYPE_VAR,
+        'stream' => self::TYPE_STREAM,
     ];
     protected array $globalHeaders = [
         'phpx.h',
@@ -2477,6 +2478,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $class = '';
         $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
+        // stream 是伪类型，实际运行时依然作为 var 处理
+        if ($type === self::TYPE_STREAM) {
+            $type = self::TYPE_VAR;
+        }
         if ($class and !$this->hasInterface($class) and !$this->isAbstractClass($class)) {
             $this->addObject($var, $class);
             $argInfo->class = $class;
@@ -4064,7 +4069,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getReturnType(): string
     {
-        return $this->functionDef->returnType;
+        $type = $this->functionDef->returnType;
+        if ($type === self::TYPE_STREAM) {
+            return self::TYPE_VAR;
+        }
+        return $type;
     }
 
     protected function getReturnClass(): string

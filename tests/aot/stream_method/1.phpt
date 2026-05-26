@@ -40,7 +40,7 @@ function main()
         @fopen($tmpfile, 'INVALID_MODE')->write('data');
         var_dump(false); // should not reach here
     } catch (\Error $e) {
-        var_dump(str_contains($e->getMessage(), 'closed or invalid stream resource'));
+        var_dump(str_contains($e->getMessage(), 'Invalid stream resource'));
     }
 
     unlink($tmpfile);
