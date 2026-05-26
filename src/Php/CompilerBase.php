@@ -3018,6 +3018,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePreInc(Expr\PreInc $expr): string
     {
+        $type = $this->detectVarType($expr->var);
+        if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+            $this->fatalError($expr, 'Cannot use ++ on ' . $type . '. Use += 1 instead (Big* types are immutable).');
+        }
         return '++' . $this->parseIdentifier($expr->var);
     }
 
@@ -3721,6 +3725,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
                 $this->errorUndefinedVariable($expr->var);
             }
+            $type = $this->detectVarType($expr->var);
+            if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+                $opName = $op === '+' ? '++' : '--';
+                $this->fatalError($expr, "Cannot use {$opName} on {$type}. Use " . ($op === '+' ? '+= 1' : '-= 1') . ' instead (Big* types are immutable).');
+            }
             return $var . str_repeat($op, 2);
         }
         if ($this->isStaticPropertyFetch($expr->var)) {
@@ -3828,6 +3837,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePreDec(Expr\PreDec $expr): string
     {
+        $type = $this->detectVarType($expr->var);
+        if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+            $this->fatalError($expr, 'Cannot use -- on ' . $type . '. Use -= 1 instead (Big* types are immutable).');
+        }
         return '--' . $this->parseIdentifier($expr->var);
     }
 
