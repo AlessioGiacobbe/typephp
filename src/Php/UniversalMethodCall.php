@@ -340,10 +340,19 @@ trait UniversalMethodCall
                 if ($def !== null) {
                     return $def['return_type'];
                 }
+                $ext = $this->findExtensionMethod($searchType, $method);
+                if ($ext !== null) {
+                    return $ext['return_type'];
+                }
             }
             return null;
         }
-        return static::UNIVERSAL_METHODS[$type][$method]['return_type'] ?? null;
+        $builtin = static::UNIVERSAL_METHODS[$type][$method]['return_type'] ?? null;
+        if ($builtin !== null) {
+            return $builtin;
+        }
+        $ext = $this->findExtensionMethod($type, $method);
+        return $ext ? $ext['return_type'] : null;
     }
 
     private const array TYPE_EXTENSION_PREFIX = [
@@ -407,11 +416,13 @@ trait UniversalMethodCall
             return null;
         }
 
+        $funcDef = $this->getFunction($funcName);
+
         return [
             'handler'      => 'php_fn',
             'fn'           => $funcName,
             'receiver_pos' => 1,
-            'return_type'  => self::TYPE_VAR,
+            'return_type'  => $funcDef->returnType,
             'min_args'     => 0,
             'max_args'     => -1,
         ];
@@ -421,12 +432,6 @@ trait UniversalMethodCall
     {
         if ($this->hasFunction($funcName)) {
             return $funcName;
-        }
-        if ($this->namespace) {
-            $nsFunc = $this->namespace . '\\' . $funcName;
-            if ($this->hasFunction($nsFunc)) {
-                return $nsFunc;
-            }
         }
         return null;
     }
