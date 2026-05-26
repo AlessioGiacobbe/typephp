@@ -2283,6 +2283,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if (in_array($name, self::STREAM_FUNCTIONS) || $name === 'stream_cast') {
                         return self::TYPE_STREAM;
                     }
+                    if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
+                        return self::TYPE_OBJECT;
+                    }
                     if ($this->hasFunction($name)) {
                         return $this->getFunction($name)->returnType;
                     }
@@ -2295,6 +2298,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     // Class definition resolution (handles this_, typed VarExpr)
                     $classDef = $this->resolveObjectClassDef($expr->var);
                     if ($classDef !== null && $classDef->hasMethod($method)) {
+                        if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
+                            return self::TYPE_OBJECT;
+                        }
                         return $classDef->getMethod($method)->getReturnType();
                     }
                     if ($this->isVarExpr($expr->var)) {
@@ -2321,6 +2327,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 break;
             case 'Expr_StaticCall':
                 if ($this->isNameExpr($expr->class) && $this->isIdExpr($expr->name)) {
+                    // First-class callable syntax creates a Closure, not a method return value
+                    if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
+                        return self::TYPE_OBJECT;
+                    }
                     $className = $this->parseIdentifier($expr->class);
                     if ($className === 'self') {
                         $className = $this->getFullClassName();

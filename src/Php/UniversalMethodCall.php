@@ -39,7 +39,7 @@ trait UniversalMethodCall
         self::TYPE_STR => [
             // --- stdext string_methods (all use PHP standard functions) ---
             'length'                => ['handler' => 'php_fn', 'fn' => 'strlen', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'isEmpty'               => ['handler' => 'str_is_empty', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'isEmpty'               => ['handler' => 'direct_method', 'method' => 'empty', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             'lower'                 => ['handler' => 'php_fn', 'fn' => 'strtolower', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
             'upper'                 => ['handler' => 'php_fn', 'fn' => 'strtoupper', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
             'lowerFirst'            => ['handler' => 'php_fn', 'fn' => 'lcfirst', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
@@ -56,7 +56,7 @@ trait UniversalMethodCall
             'trim'                  => ['handler' => 'php_fn', 'fn' => 'trim', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
             'lTrim'                 => ['handler' => 'php_fn', 'fn' => 'ltrim', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
             'rTrim'                 => ['handler' => 'php_fn', 'fn' => 'rtrim', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'parseStr'              => ['handler' => 'php_fn', 'fn' => 'swoole_parse_str', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'parseStr'              => ['handler' => 'cpp_fn', 'fn' => 'php::fn::parse_str', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
             'parseUrl'              => ['handler' => 'php_fn', 'fn' => 'parse_url', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 1],
             'contains'              => ['handler' => 'php_fn', 'fn' => 'str_contains', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
             'incr'                  => ['handler' => 'php_fn', 'fn' => 'str_increment', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
@@ -90,16 +90,16 @@ trait UniversalMethodCall
             'md5'                   => ['handler' => 'php_fn', 'fn' => 'md5', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
             'sha1'                  => ['handler' => 'php_fn', 'fn' => 'sha1', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
             'crc32'                 => ['handler' => 'php_fn', 'fn' => 'crc32', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'hash'                  => ['handler' => 'php_fn', 'fn' => 'swoole_hash', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
-            'hashCode'              => ['handler' => 'php_fn', 'fn' => 'crc32', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'hash'                  => ['handler' => 'php_fn', 'fn' => 'hash', 'receiver_pos' => 2, 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
+            'hashCode'              => ['handler' => 'direct_method', 'method' => 'hashCode', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
             'base64Decode'          => ['handler' => 'php_fn', 'fn' => 'base64_decode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
             'base64Encode'          => ['handler' => 'php_fn', 'fn' => 'base64_encode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
             'urlDecode'             => ['handler' => 'php_fn', 'fn' => 'urldecode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
             'urlEncode'             => ['handler' => 'php_fn', 'fn' => 'urlencode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
             'rawUrlEncode'          => ['handler' => 'php_fn', 'fn' => 'rawurlencode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
             'rawUrlDecode'          => ['handler' => 'php_fn', 'fn' => 'rawurldecode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'match'                 => ['handler' => 'php_fn', 'fn' => 'swoole_str_match', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'matchAll'              => ['handler' => 'php_fn', 'fn' => 'swoole_str_match_all', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'match'                 => ['handler' => 'direct_method', 'method' => 'match', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3, 'int_cast_args' => [1, 2]],
+            'matchAll'              => ['handler' => 'direct_method', 'method' => 'matchAll', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3, 'int_cast_args' => [1, 2]],
             'isNumeric'             => ['handler' => 'php_fn', 'fn' => 'is_numeric', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             // mbstring
             'mbUpperFirst'          => ['handler' => 'php_fn', 'fn' => 'mb_ucfirst', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
@@ -127,8 +127,8 @@ trait UniversalMethodCall
             // serialize
             'unserialize'           => ['handler' => 'php_fn', 'fn' => 'unserialize', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
             'unmarshal'             => ['handler' => 'php_fn', 'fn' => 'unserialize', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
-            'jsonDecode'            => ['handler' => 'php_fn', 'fn' => 'swoole_str_json_decode', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 2],
-            'jsonDecodeToObject'    => ['handler' => 'php_fn', 'fn' => 'swoole_str_json_decode_to_object', 'return_type' => self::TYPE_OBJECT, 'min_args' => 0, 'max_args' => 2],
+            'jsonDecode'            => ['handler' => 'php_fn', 'fn' => 'json_decode', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 2, 'const_args' => [1 => 'true']],
+            'jsonDecodeToObject'    => ['handler' => 'php_fn', 'fn' => 'json_decode', 'return_type' => self::TYPE_OBJECT, 'min_args' => 0, 'max_args' => 2, 'const_args' => [1 => 'false']],
             // phpx C++ methods (no PHP function equivalent)
             'equals'                => ['handler' => 'direct_method', 'method' => 'equals', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
             'append'                => ['handler' => 'direct_method_mutate', 'method' => 'append', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
@@ -136,7 +136,6 @@ trait UniversalMethodCall
             'toInt'                 => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
             'toFloat'               => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
             'toBool'                => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'toString'              => ['handler' => 'identity', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
         ],
         self::TYPE_ARRAY => [
             // --- stdext array_methods (all use PHP standard functions) ---
@@ -175,7 +174,6 @@ trait UniversalMethodCall
             'merge'             => ['handler' => 'php_fn', 'fn' => 'array_merge', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
             'contains'          => ['handler' => 'php_fn', 'fn' => 'in_array', 'receiver_pos' => 2, 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
             'join'              => ['handler' => 'php_fn', 'fn' => 'implode', 'receiver_pos' => 2, 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
-            'isTyped'           => ['handler' => 'php_fn', 'fn' => 'swoole_array_is_typed', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
             'isEmpty'           => ['handler' => 'direct_method', 'method' => 'empty', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             // mutating via PHP reference functions
             'sort'              => ['handler' => 'php_fn_ref', 'fn' => 'sort', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
@@ -185,8 +183,8 @@ trait UniversalMethodCall
             'unshift'           => ['handler' => 'php_fn_ref', 'fn' => 'array_unshift', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => -1],
             'splice'            => ['handler' => 'php_fn_ref', 'fn' => 'array_splice', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3],
             'walk'              => ['handler' => 'php_fn_ref', 'fn' => 'array_walk', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
-            'replaceStr'        => ['handler' => 'php_fn', 'fn' => 'swoole_array_replace_str', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
-            'iReplaceStr'       => ['handler' => 'php_fn', 'fn' => 'swoole_array_ireplace_str', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
+            'replaceStr'        => ['handler' => 'php_fn', 'fn' => 'str_replace', 'receiver_pos' => 3, 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
+            'iReplaceStr'       => ['handler' => 'php_fn', 'fn' => 'str_ireplace', 'receiver_pos' => 3, 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
             // serialize
             'serialize'         => ['handler' => 'php_fn', 'fn' => 'serialize', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
             'marshal'           => ['handler' => 'php_fn', 'fn' => 'serialize', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
@@ -267,13 +265,12 @@ trait UniversalMethodCall
             'calc_op'              => $this->genUniversalCalcOp($receiver, $def['op'], $expr->args),
             'calc_inc'             => '(' . $receiver . ' + 1)',
             'calc_dec'             => '(' . $receiver . ' - 1)',
-            'direct_method'        => $this->genUniversalDirectMethod($receiver, $def['method'], $expr->args),
+            'direct_method'        => $this->genUniversalDirectMethod($receiver, $def['method'], $expr->args, $def['int_cast_args'] ?? []),
             'direct_method_mutate' => $this->genUniversalMutatingMethod($receiver, $def['method'], $expr->args),
             'convert_fn'           => $this->genUniversalConvertFn($receiver, $def['fn'], $def['return_type']),
-            'str_is_empty'         => '(' . $receiver . '.length() == 0)',
-            'identity'             => $receiver,
-            'php_fn'               => $this->genUniversalPhpFn($receiver, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
+            'php_fn'               => $this->genUniversalPhpFn($receiver, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0, $def['const_args'] ?? []),
             'php_fn_ref'           => $this->genUniversalPhpFnRef($receiver, $def['fn'], $expr->args, $def['return_type']),
+            'cpp_fn'               => $this->genUniversalCppFn($receiver, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
             default                => null,
         };
     }
@@ -291,18 +288,21 @@ trait UniversalMethodCall
         $this->context->beforeStmtLines[] = $streamVar . ' = ' . $receiver . ';';
 
         $methodCall = match ($def['handler']) {
-            'php_fn'        => $this->genUniversalPhpFn($streamVar, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
-            'direct_method' => $this->genUniversalDirectMethod($streamVar, $def['method'], $expr->args),
+            'php_fn'        => $this->genUniversalPhpFn($streamVar, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0, $def['const_args'] ?? []),
+            'direct_method' => $this->genUniversalDirectMethod($streamVar, $def['method'], $expr->args, $def['int_cast_args'] ?? []),
+            'cpp_fn'        => $this->genUniversalCppFn($streamVar, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
             default         => null,
         };
 
         $errorMsg = "Cannot call method '{$method}' on a closed or invalid stream resource";
         $lambda = "[&]() -> php::Variant {\n";
-        $lambda .= "if (!{$streamVar}.isResource()) {\n";
-        $lambda .= "throwError(\"{$errorMsg}\");\n";
-        $lambda .= "return php::null;\n";
-        $lambda .= "}\n";
-        $lambda .= "return {$methodCall};\n";
+        $this->indentLevel++;
+        $lambda .= $this->getIndent() . "if (!{$streamVar}.isResource()) {\n";
+        $lambda .= $this->getIndent() . "throwError(\"{$errorMsg}\");\n";
+        $lambda .= $this->getIndent() . "return php::null;\n";
+        $lambda .= $this->getIndent() . "}\n";
+        $this->indentLevel--;
+        $lambda .= $this->getIndent() . "return {$methodCall};\n";
         $lambda .= "}()";
 
         $tmpVar = $this->addTmpVar(self::TYPE_VAR);
@@ -352,14 +352,18 @@ trait UniversalMethodCall
         return '(' . $object . ' ' . $op . ' ' . $argExpr . ')';
     }
 
-    protected function genUniversalDirectMethod(string $object, string $cppMethod, array $args): string
+    protected function genUniversalDirectMethod(string $object, string $cppMethod, array $args, array $intCastArgs = []): string
     {
         if (empty($args)) {
             return $object . '.' . $cppMethod . '()';
         }
         $argExprs = [];
-        foreach ($args as $arg) {
-            $argExprs[] = $this->parseExpr($arg->value);
+        foreach ($args as $i => $arg) {
+            $expr = $this->parseExpr($arg->value);
+            if (in_array($i, $intCastArgs, true)) {
+                $expr = 'php::toInt(' . $expr . ')';
+            }
+            $argExprs[] = $expr;
         }
         return $object . '.' . $cppMethod . '(' . implode(', ', $argExprs) . ')';
     }
@@ -375,7 +379,12 @@ trait UniversalMethodCall
         return 'php::' . $fn . '(' . $receiver . ')';
     }
 
-    protected function genUniversalPhpFn(string $receiver, string $phpFunc, array $args, int $receiverPos = 0): string
+    /**
+     * @param int $receiverPos Position of the receiver in the final argument list.
+     *  0 (default) = receiver first. Non-zero values are 1-indexed (1 = before 1st user arg,
+     *  2 = before 2nd, etc.). e.g. hash(algo, data, binary) needs receiver as data → receiverPos=2.
+     */
+    protected function genUniversalPhpFn(string $receiver, string $phpFunc, array $args, int $receiverPos = 0, array $constArgs = []): string
     {
         $argExprs = [];
         $userArgs = [];
@@ -400,7 +409,51 @@ trait UniversalMethodCall
             }
         }
 
+        if ($constArgs) {
+            $maxPos = max(array_keys($constArgs));
+            $totalSlots = max(count($argExprs) + count($constArgs), $maxPos + 1);
+            $final = [];
+            $regIdx = 0;
+            for ($i = 0; $i < $totalSlots; $i++) {
+                if (isset($constArgs[$i])) {
+                    $final[] = $constArgs[$i];
+                } else {
+                    $final[] = $argExprs[$regIdx++];
+                }
+            }
+            $argExprs = $final;
+        }
+
         return 'php::call(' . $this->getFuncPtr($phpFunc) . ', php::ArgList{' . implode(', ', $argExprs) . '})';
+    }
+
+    // Same receiverPos semantics as genUniversalPhpFn.
+    protected function genUniversalCppFn(string $receiver, string $cppFunc, array $args, int $receiverPos = 0): string
+    {
+        $argExprs = [];
+        $userArgs = [];
+        foreach ($args as $arg) {
+            $userArgs[] = $this->parseExpr($arg->value);
+        }
+
+        if ($receiverPos === 0) {
+            $argExprs = [$receiver];
+            foreach ($userArgs as $ua) {
+                $argExprs[] = $ua;
+            }
+        } else {
+            foreach ($userArgs as $i => $ua) {
+                if ($i === $receiverPos - 1) {
+                    $argExprs[] = $receiver;
+                }
+                $argExprs[] = $ua;
+            }
+            if ($receiverPos > count($userArgs)) {
+                $argExprs[] = $receiver;
+            }
+        }
+
+        return $cppFunc . '(' . implode(', ', $argExprs) . ')';
     }
 
     protected function genUniversalPhpFnRef(string $receiver, string $phpFunc, array $args, string $returnType): string

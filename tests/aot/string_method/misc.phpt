@@ -112,10 +112,6 @@ function main()
     $s = "O'Reilly";
     var_dump($s->addSlashes());
 
-    // toString (identity)
-    $s = "hello";
-    var_dump($s->toString());
-
     // toInt / toFloat / toBool
     $s = "123";
     var_dump($s->toInt());
@@ -182,7 +178,6 @@ string(1) "a"
 string(1) "c"
 string(11) "Hello World"
 string(9) "O\'Reilly"
-string(5) "hello"
 int(123)
 float(3.14)
 bool(true)
