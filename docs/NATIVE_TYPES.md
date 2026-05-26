@@ -1,12 +1,18 @@
-# AOT 编译器原生类型支持说明
+# AOT 编译器类型系统说明
 
 ## ⚠️ 重要提示
 
-**AOT 编译器目前仅支持 3 种原生类型（Native Types）**:
+**AOT 编译器支持 6 种原生/高精度类型**:
 
+### 基础原生类型
 1. ✅ `std::int` - 原生整数类型 (zend_long, 8 字节)
 2. ✅ `std::float` - 原生浮点类型 (double, 8 字节)
 3. ✅ `std::bool` - 原生布尔类型 (bool, 1 字节)
+
+### 高精度数值类型
+4. ✅ `std::bigInt` - 任意精度整数 (基于 GMP `mpz_class`)
+5. ✅ `std::decimal` - 任意精度十进制数 (基于 libmpdec, ~50 位有效数字)
+6. ✅ `std::bigFloat` - 任意精度浮点数 (基于 MPFR)
 
 ---
 
@@ -144,11 +150,14 @@ $obj = objval(new MyClass(), 'MyClass');  // 不需要
 
 ## 类型映射表
 
-| PHP 类型声明 | C++ 类型 | Zend 类型 | 内存 | 性能 | 状态 |
-|------------|---------|----------|------|------|------|
+| PHP 类型声明 | C++ 类型 | 底层实现 | 内存 | 性能 | 状态 |
+|------------|---------|---------|------|------|------|
 | `int` | `php::Int` | `zend_long` | 8B | ⚡ 高性能 | ✅ 原生 |
 | `float` | `php::Float` | `double` | 8B | ⚡ 高性能 | ✅ 原生 |
 | `bool` | `php::Bool` | `bool` | 1B | ⚡ 高性能 | ✅ 原生 |
+| `bigInt` | `php::Var` (Box\<BigInt\>) | `mpz_class` (GMP) | ~32B+ | 🐢 标准 | ✅ 装箱 |
+| `decimal` | `php::Var` (Box\<Decimal\>) | `decimal::Decimal` (libmpdec) | ~64B+ | 🐢 标准 | ✅ 装箱 |
+| `bigFloat` | `php::Var` (Box\<BigFloat\>) | `mpfr_t` (MPFR) | ~32B+ | 🐢 标准 | ✅ 装箱 |
 | `string` | `php::Str` | `zend_string*` | 指针 | 🐢 标准 | ❌ ZVAL |
 | `array` | `php::Array` | `zval*` | 指针 | 🐢 标准 | ❌ ZVAL |
 | `object` | `php::Object` | `zend_object*` | 指针 | 🐢 标准 | ❌ ZVAL |
@@ -161,6 +170,9 @@ $obj = objval(new MyClass(), 'MyClass');  // 不需要
 | **int** | `php::Int` | `std::int(值)`<br>`function foo(int $x)` | 8B | ⚡ 高性能 | ✅ 原生 |
 | **float** | `php::Float` | `std::float(值)`<br>`function foo(float $x)` | 8B | ⚡ 高性能 | ✅ 原生 |
 | **bool** | `php::Bool` | `std::bool(值)`<br>`function foo(bool $x)` | 1B | ⚡ 高性能 | ✅ 原生 |
+| **bigInt** | `php::Var` (Box\<BigInt\>) | `std::bigInt(值)` | ~32B+ | 🐢 标准 | ✅ 装箱 |
+| **decimal** | `php::Var` (Box\<Decimal\>) | `std::decimal(值)` | ~64B+ | 🐢 标准 | ✅ 装箱 |
+| **bigFloat** | `php::Var` (Box\<BigFloat\>) | `std::bigFloat(值)` | ~32B+ | 🐢 标准 | ✅ 装箱 |
 | **string** | `php::Str` | 无<br>`function foo(string $x)` | 指针 | 🐢 标准 | ❌ ZVAL |
 | **array** | `php::Array` | 无<br>`function foo(array $x)` | 指针 | 🐢 标准 | ❌ ZVAL |
 | **object** | `php::Object` | 无<br>`function foo(object $x)` | 指针 | 🐢 标准 | ❌ ZVAL |
@@ -184,21 +196,104 @@ function process(string $name, array $data) {
 }
 ```
 
-## 使用建议
+## 二元运算类型提升规则
 
-### ✅ 推荐使用原生类型的场景
-- 数值密集计算
-- 循环计数器
-- 递归算法
-- 性能关键路径
+AOT 编译器在执行 `+`、`-`、`*`、`/`、`%` 等二元运算时，按以下优先级确定运算类型：
 
-### ⚠️ 使用 ZVAL 的场景
-- 字符串处理
-- 数组操作
-- 对象操作
-- 通用业务逻辑
+### 规则优先级
+
+```
+BigFloat / Decimal / BigInt 参与
+  → 提升到最高精度类型进行计算
+  ↓ 未命中
+
+任一边为 Var
+  → 两边均转为 Var，使用 ZendVM binary_op 函数
+  ↓ 未命中
+
+任一边为 Float
+  → 两边均转为 Float (double)
+  ↓ 未命中
+
+两边均为 Int
+  → 使用 Int (int64_t)
+```
+
+### 规则一：Var 主导
+
+当运算数中至少有一边是 `Var` 类型（非 `use native_types` 声明），两边均作为 `Var` 处理，使用 ZendVM 的 `add_function` / `div_function` 等运算函数，完全遵循 PHP 原生类型转换（type juggling）语义。
+
+```php
+$a = 10;        // Var，存 int(10)
+$b = 2.5;       // Var，存 float(2.5)
+$c = $a + $b;   // 两边为 Var → ZendVM 运算 → float(12.5)
+```
+
+C++ 代码生成：`int64_t` 和 `double` 值通过 `php::Variant` 的模板构造函数（`phpx.h:557`）隐式转为 `php::Var`，再调用 `Variant::operator+()` → ZendVM 的 `add_function`。
+
+### 规则二：Float 优先于 Int
+
+当两边均为原生类型（通过 `use native_types` 或 `std::int()`/`std::float()` 声明），如果任一边是 Float，则两边均转为 Float 运算。仅当两边都是 Int 才使用整数运算。
+
+```php
+use native_types;
+$a = 10;        // php::Int
+$b = 2.5;       // php::Float
+$c = $a + $b;   // Float + Float → double 加法
+
+$d = 5;         // php::Int
+$e = 3;         // php::Int
+$f = $d + $e;   // Int + Int → int64_t 加法
+```
+
+> **注意**：原生类型变量在运算中**不会改变自身类型**。如 `Int += Float` 在 C++ 中执行 `int64_t += double`，结果截断为 int64_t，与 PHP 行为不同（PHP 中变量会变为 float）。这是 `use native_types` 有意为之的语义。
+
+### 规则三：大数类型精度提升
+
+当运算数中包含 `BigInt`、`Decimal` 或 `BigFloat` 时，按精度层级提升：`BigFloat > Decimal > BigInt > Float > Int`。
+
+| 左操作数 | 右操作数 | 结果类型 |
+|---------|---------|---------|
+| BigInt | BigInt | BigInt（除法 `/` 得 Decimal） |
+| BigInt | Decimal | Decimal |
+| Decimal | Decimal | Decimal |
+| BigFloat | BigInt | BigFloat |
+| BigFloat | Decimal | BigFloat |
+| BigFloat | BigFloat | BigFloat |
+| BigInt | Int | BigInt |
+| BigInt | Float | Decimal |
+| Decimal | Int | Decimal |
+| Decimal | Float | Decimal |
+| BigFloat | Int | BigFloat |
+| BigFloat | Float | BigFloat |
+
+### 类型提升完整矩阵
+
+| | Int | Float | Var | BigInt | Decimal | BigFloat |
+|------|-----|-------|-----|--------|---------|----------|
+| **Int** | Int | Float | Var | BigInt | Decimal | BigFloat |
+| **Float** | Float | Float | Var | Decimal | Decimal | BigFloat |
+| **Var** | Var | Var | Var | Var | Var | Var |
+| **BigInt** | BigInt | Decimal | Var | BigInt | Decimal | BigFloat |
+| **Decimal** | Decimal | Decimal | Var | Decimal | Decimal | BigFloat |
+| **BigFloat** | BigFloat | BigFloat | Var | BigFloat | BigFloat | BigFloat |
+
+> **说明**：Var 行/列全部为 Var，因为 Var 主导规则优先级最高（除 Big* 类型外）。Big* 类型参与时，Var 退让，以高精度类型为准。
+
+### 复合赋值运算符
+
+`+=`、`-=`、`*=`、`/=`、`%=` 等复合赋值运算符遵循相同的类型提升规则，但 RHS 会被转换为 LHS 变量的类型。若 LHS 为 Var，RHS 保持原类型（Var 的 `operator+=` 接管）；若 LHS 为原生类型，RHS 显式转换为该类型。
+
+```php
+$a = 10;        // Var
+$a += 2.5;      // Var::operator+=(float) → ZendVM → $a 变为 float(12.5)
+
+use native_types;
+$b = 10;        // php::Int
+$b += 2.5;      // int64_t += double → C++ 隐式截断 → $b = 12 (Int)
+```
 
 ---
 
-**最后更新**: 2024 年 3 月 18 日  
+**最后更新**: 2026 年 5 月 26 日  
 **适用版本**: PHP AOT Compiler v1.x

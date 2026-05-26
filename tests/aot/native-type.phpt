@@ -26,6 +26,9 @@ function main()
 
     $i = std::int(10);
     var_dump($i / 4);
+
+    $j = 2.5;
+    var_dump($j * 4);
 }
 ?>
 --EXPECT--
@@ -36,3 +39,4 @@ int(99)
 float(2026)
 float(2.5)
 int(2)
+float(10)

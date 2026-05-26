@@ -1955,14 +1955,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
-        if ($leftType === self::TYPE_FLOAT) {
+        // Only promote between native types (Int ↔ Float).  When one side is
+        // php::Var, let the Variant operator handle type coercion so that
+        // run-time PHP type-juggling rules are followed correctly.
+        if ($leftType === self::TYPE_FLOAT && $rightType === self::TYPE_INT) {
             $rightExpr = $this->convertExprType($rightExpr, self::TYPE_FLOAT, $rightType);
-        } elseif ($rightType === self::TYPE_FLOAT) {
+        } elseif ($rightType === self::TYPE_FLOAT && $leftType === self::TYPE_INT) {
             $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_FLOAT);
-        } elseif ($leftType === self::TYPE_INT) {
-            $rightExpr = $this->convertExprType($rightExpr, self::TYPE_INT, $rightType);
-        } elseif ($rightType === self::TYPE_INT) {
-            $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_INT);
         }
 
         if ($op === '%' and !($leftType === self::TYPE_INT and $rightType === self::TYPE_INT)) {
