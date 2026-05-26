@@ -1,0 +1,51 @@
+--TEST--
+stream extension method support
+--FILE--
+<?php
+
+function stream_read_chunk($stream, int $size): string
+{
+    return fread($stream, $size);
+}
+
+function stream_count_lines($stream): int
+{
+    $count = 0;
+    $pos = ftell($stream);
+    rewind($stream);
+    while (!feof($stream)) {
+        $line = fgets($stream);
+        if ($line !== false) {
+            $count++;
+        }
+    }
+    fseek($stream, $pos);
+    return $count;
+}
+
+function main()
+{
+    require __DIR__ . '/../../../src/Assert.php';
+
+    $tmpfile = tempnam(sys_get_temp_dir(), 'aot');
+
+    // Test 1: stream_read_chunk extension → readChunk()
+    $fp = fopen($tmpfile, 'w+');
+    $fp->write("hello world");
+    $fp->seek(0);
+    Assert::eq($fp->readChunk(5), "hello");
+    $fp->close();
+
+    // Test 2: stream_count_lines extension → countLines()
+    $fp2 = fopen($tmpfile, 'w+');
+    $fp2->write("line1\nline2\nline3");
+    $fp2->seek(0);
+    Assert::eq($fp2->countLines(), 3);
+    $fp2->close();
+
+    unlink($tmpfile);
+    echo "OK\n";
+}
+?>
+--EXPECT--
+OK
