@@ -139,7 +139,9 @@ $obj = objval(new MyClass(), 'MyClass');  // 不需要
 | **时机** | 运行时优化 | 编译期推断 |
 | **语法** | `std::int(值)` | `objval(变量，'类名')` |
 
----## ❌ 不支持的类型
+---
+
+## ❌ 不支持的类型
 
 以下类型**不使用**原生类型，仍然使用 ZVAL:
 
@@ -195,6 +197,247 @@ function process(string $name, array $data) {
     print_r($data);
 }
 ```
+
+## 使用建议
+
+### ✅ 推荐使用原生类型的场景
+- 数值密集计算
+- 循环计数器
+- 递归算法
+- 性能关键路径
+
+### ⚠️ 使用 ZVAL 的场景
+- 字符串处理
+- 数组操作
+- 对象操作
+- 通用业务逻辑
+
+---
+
+## 高精度数值类型：BigInt / Decimal / BigFloat
+
+AOT 编译器支持三种高精度数值类型，用于处理超出 int64/double 精度的计算。
+
+### 底层 C++ 库
+
+| 类型 | C++ 库 | 关键头文件 |
+|------|--------|----------|
+| **BigInt** | GMP (`libgmp-dev`) | `<gmpxx.h>`, `phpx_big_int.h` |
+| **Decimal** | libmpdec (`libmpdec-dev`) | `<decimal.hh>`, `phpx_decimal.h` |
+| **BigFloat** | MPFR (`libmpfr-dev`) | `<mpfr.h>`, `phpx_big_float.h` |
+
+BigInt、Decimal、BigFloat 均继承自 `php::Box`，存储于 `php::Variant` 内部。它们属于"装箱类型"（Boxed Type），不像 Int/Float 那样直接映射为 C++ 标量，因此在声明和运算上有所不同。
+
+### 声明与构造
+
+```php
+use native_types;
+
+// 从整数字面量构造 BigInt
+$a = std::bigInt(100);
+$b = std::bigInt("123456789012345678901234567890");  // 超长整数字符串
+
+// 从字符串构造 Decimal（避免浮点精度丢失）
+$c = std::decimal("123.456");
+$d = std::decimal(42);  // 也可从 int 构造
+
+// 从 int / float / 字符串构造 BigFloat
+$e = std::bigFloat(100.5);
+$f = std::bigFloat(42);
+$g = std::bigFloat("3.14159265358979323846");
+```
+
+> **重要**：`std::bigInt()` / `std::decimal()` / `std::bigFloat()` 是**编译期函数**，在生成的 C++ 代码中直接构造对应类型，无运行时函数调用开销。
+
+### 算术运算符
+
+所有标准二元运算符均已重载：`+`、`-`、`*`、`/`、`%`（取模）、`**`（幂运算）。编译器将其映射为静态方法调用。
+
+```php
+$a = std::bigInt(100);
+$b = std::bigInt(200);
+
+$sum = $a + $b;     // → php::BigInt::add($a, $b)
+$diff = $a - $b;    // → php::BigInt::sub($a, $b)
+$prod = $a * $b;    // → php::BigInt::mul($a, $b)
+$quot = $a / $b;    // → php::BigInt::div($a, $b)
+$mod = $a % $b;     // → php::BigInt::mod($a, $b)
+$pow = $a ** 3;     // → php::BigInt::pow($a, 3)
+
+// 一元取负
+$neg = -$a;         // → php::BigInt::neg($a)
+```
+
+**类型提升**：当 Big* 类型与 Int/Float 混合运算时，Int/Float 自动提升为对应的高精度类型。详见下文"二元运算类型提升规则"。
+
+**BigInt 除法**：`BigInt / BigInt` 在 `parseBinaryOp` 中返回 BigInt（整数除法，同 PHP int 语义）。若需要高精度除法，应先将操作数转为 Decimal 或使用 `BigInt::div` 的 Decimal 结果。
+
+### 比较运算符
+
+所有标准比较运算符均可使用：`<`、`>`、`<=`、`>=`、`==`、`!=`、`<=>`（太空船）。
+
+```php
+$a = std::bigInt(100);
+$b = 200;
+
+echo (int)($a < $b);    // → php::BigInt::cmp($a, $b) < 0
+echo (int)($a > $b);    // → php::BigInt::cmp($a, $b) > 0
+echo (int)($a == 100);  // → php::BigInt::cmp($a, 100) == 0
+echo (int)($a <=> $b); // → php::BigInt::cmp($a, $b)
+```
+
+C++ 实现：比较结果通过 `php::BigInt::cmp()` / `php::Decimal::cmp()` / `php::BigFloat::cmp()` 获得，返回负/零/正 int 表示小于/等于/大于。
+
+### 通用方法 (Universal Methods)
+
+BigInt、Decimal、BigFloat 支持通过 `$value->method()` 语法调用一系列零成本抽象方法。
+
+#### BigInt 方法
+
+| 方法 | 参数 | 返回类型 | C++ 实现 | 说明 |
+|------|------|---------|---------|------|
+| `add($x)` | 1 | BigInt | `BigInt::add()` | 加法 |
+| `sub($x)` | 1 | BigInt | `BigInt::sub()` | 减法 |
+| `mul($x)` | 1 | BigInt | `BigInt::mul()` | 乘法 |
+| `div($x)` | 1 | BigInt | `BigInt::div()` | 整数除法 |
+| `mod($x)` | 1 | BigInt | `BigInt::mod()` | 取模 |
+| `pow($x)` | 1 | BigInt | `BigInt::pow()` | 幂运算 |
+| `neg()` | 0 | BigInt | `BigInt::neg()` | 取负 |
+| `abs()` | 0 | BigInt | `BigInt::abs()` | 绝对值 |
+| `gcd($x)` | 1 | BigInt | `BigInt::gcd()` | 最大公约数 |
+| `cmp($x)` | 1 | Int | `BigInt::cmp()` | 比较 |
+| `toString()` | 0 | Str | `BigInt::toString()` | 转字符串 |
+| `toInt()` | 0 | Int | `BigInt::toInt()` | 转整数 (可能截断) |
+| `toFloat()` | 0 | Float | `BigInt::toFloat()` | 转浮点 (可能丢精度) |
+
+```php
+$a = std::bigInt("12345678901234567890");
+echo $a->toString();    // "12345678901234567890"
+echo $a->add(1)->toString();  // "12345678901234567891"
+echo $a->abs()->toString();   // "12345678901234567890"
+echo $a->gcd(15)->toInt();    // 15
+```
+
+#### Decimal 方法
+
+| 方法 | 参数 | 返回类型 | C++ 实现 | 说明 |
+|------|------|---------|---------|------|
+| `add($x)` | 1 | Decimal | `Decimal::add()` | 加法 |
+| `sub($x)` | 1 | Decimal | `Decimal::sub()` | 减法 |
+| `mul($x)` | 1 | Decimal | `Decimal::mul()` | 乘法 |
+| `div($x)` | 1 | Decimal | `Decimal::div()` | 除法 |
+| `mod($x)` | 1 | Decimal | `Decimal::mod()` | 取模 |
+| `neg()` | 0 | Decimal | `Decimal::neg()` | 取负 |
+| `abs()` | 0 | Decimal | `Decimal::abs()` | 绝对值 |
+| `cmp($x)` | 1 | Int | `Decimal::cmp()` | 比较 |
+| `toString()` | 0 | Str | `Decimal::toString()` | 转字符串 |
+| `toInt()` | 0 | Int | `Decimal::toInt()` | 截断取整 |
+| `toFloat()` | 0 | Float | `Decimal::toFloat()` | 转浮点 (约 15 位精度) |
+
+```php
+$d = std::decimal("123.456");
+echo $d->toInt();         // 123
+echo $d->mul(2)->toString();  // "246.912"
+echo $d->div(3)->toString();  // "41.152"
+```
+
+#### BigFloat 方法
+
+| 方法 | 参数 | 返回类型 | C++ 实现 | 说明 |
+|------|------|---------|---------|------|
+| `add($x)` | 1 | BigFloat | `BigFloat::add()` | 加法 |
+| `sub($x)` | 1 | BigFloat | `BigFloat::sub()` | 减法 |
+| `mul($x)` | 1 | BigFloat | `BigFloat::mul()` | 乘法 |
+| `div($x)` | 1 | BigFloat | `BigFloat::div()` | 除法 |
+| `neg()` | 0 | BigFloat | `BigFloat::neg()` | 取负 |
+| `abs()` | 0 | BigFloat | `BigFloat::abs()` | 绝对值 |
+| `cmp($x)` | 1 | Int | `BigFloat::cmp()` | 比较 |
+| `toString()` | 0 | Str | `BigFloat::toString()` | 转字符串 |
+| `toInt()` | 0 | Int | `BigFloat::toInt()` | 截断取整 |
+| `toFloat()` | 0 | Float | `BigFloat::toFloat()` | 转 double (约 15 位精度) |
+
+```php
+$bf = std::bigFloat(3.14159265);
+echo $bf->mul(2)->toString();      // "6.2831853..."
+echo $bf->div(2)->toFloat();       // 1.570796325
+echo $bf->cmp(3.0);                // > 0
+```
+
+### 类型转换
+
+```php
+// BigInt → Decimal（精确）
+$big = std::bigInt("12345678901234567890");
+$dec = std::decimal($big->toString());
+// 或直接使用内置转换：
+// $dec = $big->toDecimal();  // 待实现
+
+// Decimal → BigInt（截断小数部分）
+$d = std::decimal("123.456");
+$i = std::bigInt($d->toInt());  // 123
+
+// Int → BigInt
+$bi = std::bigInt(42);
+
+// Float → BigFloat
+$bf = std::bigFloat(3.14);
+
+// BigInt → BigFloat
+$bf2 = std::bigFloat($big->toString());
+```
+
+> **跨类型隐式转换限制**：BigFloat 与 BigInt/Decimal 之间不能隐式混合运算。编译器会报错提示使用 `std::bigFloat()` 显式转换。这是为了防止意外的精度损失。
+
+### C++ API 参考
+
+Big* 类型在 `phpx` 库中提供以下核心函数：
+
+```cpp
+// 构造
+php::Variant php::newBigInt(const std::string &s);
+php::Variant php::newBigInt(php::Int v);
+php::Variant php::newDecimal(const String &s);
+php::Variant php::newDecimal(php::Int v);
+php::Variant php::newBigFloat(const String &s);
+php::Variant php::newBigFloat(php::Int v);
+php::Variant php::newBigFloat(php::Float v);
+
+// BigInt 算术（均返回 Variant）
+php::BigInt::add(a, b)   php::BigInt::sub(a, b)   php::BigInt::mul(a, b)
+php::BigInt::div(a, b)   php::BigInt::mod(a, b)   php::BigInt::pow(a, b)
+php::BigInt::neg(a)      php::BigInt::abs(a)      php::BigInt::gcd(a, b)
+php::BigInt::cmp(a, b)
+
+// Decimal 算术
+php::Decimal::add(a, b)  php::Decimal::sub(a, b)  php::Decimal::mul(a, b)
+php::Decimal::div(a, b)  php::Decimal::mod(a, b)
+php::Decimal::neg(a)     php::Decimal::abs(a)     php::Decimal::cmp(a, b)
+
+// BigFloat 算术
+php::BigFloat::add(a, b) php::BigFloat::sub(a, b) php::BigFloat::mul(a, b)
+php::BigFloat::div(a, b)
+php::BigFloat::neg(a)    php::BigFloat::abs(a)    php::BigFloat::cmp(a, b)
+
+// 类型转换
+php::BigInt::toString(a)   php::BigInt::toInt(a)   php::BigInt::toFloat(a)
+php::Decimal::toString(a)  php::Decimal::toInt(a)  php::Decimal::toFloat(a)
+php::BigFloat::toString(a) php::BigFloat::toInt(a) php::BigFloat::toFloat(a)
+```
+
+所有静态方法接收 `Variant` 参数，内部通过 `.toBox<BigInt>()` / `.toBox<Decimal>()` / `.toBox<BigFloat>()` 提取底层对象。若参数类型不匹配，抛出运行时错误。
+
+### 超长字面量识别
+
+AOT 编译器在解析前会对 PHP 源码进行预扫描，自动识别超出 int64/double 精度的数值字面量：
+
+```
+\d{19,}                     → 自动转为 std::bigInt("...")
+\d+\.\d{16,}               → 自动转为 std::decimal("...")
+```
+
+例如源码中写 `123456789000000000000000000000000000000000000000000001`（54 位），编译器自动处理为 `std::bigInt("123456789000000000000000000000000000000000000000000001")`，无需手动包装。
+
+---
 
 ## 二元运算类型提升规则
 
