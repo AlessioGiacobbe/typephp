@@ -286,11 +286,51 @@ trait UniversalMethodCall
             'appendFilter'      => ['handler' => 'php_fn', 'fn' => 'stream_filter_append', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
             'prependFilter'     => ['handler' => 'php_fn', 'fn' => 'stream_filter_prepend', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
         ],
+        self::TYPE_BIGINT => [
+            'add'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::add', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'sub'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::sub', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'mul'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::mul', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'div'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::div', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'mod'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::mod', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'pow'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::pow', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'neg'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::neg', 'return_type' => self::TYPE_BIGINT, 'min_args' => 0, 'max_args' => 0],
+            'cmp'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::cmp', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'abs'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::abs', 'return_type' => self::TYPE_BIGINT, 'min_args' => 0, 'max_args' => 0],
+            'gcd'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::gcd', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'toString'     => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'toInt'        => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toFloat'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+        ],
+        self::TYPE_DECIMAL => [
+            'add'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::add', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'sub'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::sub', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'mul'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::mul', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'div'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::div', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'mod'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::mod', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'neg'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::neg', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
+            'cmp'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::cmp', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'abs'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::abs', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
+            'toString' => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'toInt'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toFloat'  => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+        ],
+        self::TYPE_BIGFLOAT => [
+            'add'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::add', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
+            'sub'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::sub', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
+            'mul'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::mul', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
+            'div'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::div', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
+            'neg'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::neg', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
+            'cmp'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::cmp', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'abs'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::abs', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
+            'toString' => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'toInt'    => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toFloat'  => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+        ],
     ];
 
     private const array MUTATING_HANDLERS = ['direct_method_mutate', 'php_fn_ref'];
 
-    private const array TYPE_SEARCH_ORDER = [self::TYPE_STR, self::TYPE_ARRAY, self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL, self::TYPE_STREAM];
+    private const array TYPE_SEARCH_ORDER = [self::TYPE_STR, self::TYPE_ARRAY, self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL, self::TYPE_STREAM, self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT];
 
     protected function detectUniversalMethodReturnType(string $type, string $method): ?string
     {
@@ -313,6 +353,9 @@ trait UniversalMethodCall
         self::TYPE_STR    => 'str',
         self::TYPE_ARRAY  => 'array',
         self::TYPE_STREAM => 'stream',
+        self::TYPE_BIGINT => 'bigint',
+        self::TYPE_DECIMAL => 'decimal',
+        self::TYPE_BIGFLOAT => 'bigfloat',
     ];
 
     protected function camelToSnake(string $name): string
