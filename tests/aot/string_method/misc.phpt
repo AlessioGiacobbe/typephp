@@ -86,11 +86,6 @@ function main()
     var_dump($n2->isNumeric());
     var_dump($n3->isNumeric());
 
-    // append (mutating)
-    $s = "hello";
-    $s->append(" world");
-    var_dump($s);
-
     // substr
     $s = "hello world";
     var_dump($s->substr(6));
@@ -169,7 +164,6 @@ bool(true)
 bool(true)
 bool(true)
 bool(false)
-string(11) "hello world"
 string(5) "world"
 string(5) "hello"
 string(5) "world"

@@ -173,7 +173,6 @@ trait UniversalMethodCall
             'jsonDecodeToObject'    => ['handler' => 'php_fn', 'fn' => 'json_decode', 'return_type' => self::TYPE_OBJECT, 'min_args' => 0, 'max_args' => 2, 'const_args' => [1 => 'false']],
             // phpx C++ methods (no PHP function equivalent)
             'equals'                => ['handler' => 'direct_method', 'method' => 'equals', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
-            'append'                => ['handler' => 'direct_method_mutate', 'method' => 'append', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
             // conversions
             'toInt'                 => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
             'toFloat'               => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
@@ -400,6 +399,9 @@ trait UniversalMethodCall
     /**
      * Look up an extension function for the given type+method.
      * Extension functions follow the naming convention: {typePrefix}_{snake_case_method}
+     *
+     * Checks compiled user-defined functions first, then falls back to PHP internal
+     * functions using reflection to resolve parameter counts and return types.
      */
     protected function findExtensionMethod(string $type, string $method): ?array
     {
@@ -409,23 +411,114 @@ trait UniversalMethodCall
         }
 
         $snakeMethod = $this->camelToSnake($method);
-        $baseName = $prefix . '_' . $snakeMethod;
+        $funcName = $prefix . '_' . $snakeMethod;
 
-        $funcName = $this->resolveExtensionFunctionName($baseName);
-        if ($funcName === null) {
+        $resolvedName = $this->resolveExtensionFunctionName($funcName);
+        if ($resolvedName !== null) {
+            $funcDef = $this->getFunction($resolvedName);
+            if (!$this->validateExtensionFirstParam($type, $funcDef)) {
+                return null;
+            }
+            return [
+                'handler'      => 'php_fn',
+                'fn'           => $resolvedName,
+                'receiver_pos' => 1,
+                'return_type'  => $funcDef->returnType,
+                'min_args'     => 0,
+                'max_args'     => -1,
+            ];
+        }
+
+        if ($this->isInternalFunction($funcName)) {
+            return $this->buildInternalExtensionMethod($type, $funcName);
+        }
+
+        return null;
+    }
+
+    private function buildInternalExtensionMethod(string $type, string $funcName): ?array
+    {
+        $ref = Reflection::getFunction($funcName);
+        if ($ref === null) {
             return null;
         }
 
-        $funcDef = $this->getFunction($funcName);
+        $totalParams = $ref->getNumberOfParameters();
+        if ($totalParams < 1) {
+            return null;
+        }
+
+        if (!$this->validateInternalExtensionFirstParam($type, $funcName)) {
+            return null;
+        }
+
+        $phpType = Reflection::getFunctionReturnType($funcName);
+        $returnType = $phpType ? ($this->zendTypeMap[$phpType] ?? self::TYPE_VAR) : self::TYPE_VAR;
+
+        $requiredParams = $ref->getNumberOfRequiredParameters();
+        $minArgs = max(0, $requiredParams - 1);
+        $maxArgs = max(0, $totalParams - 1);
+
+        if ($totalParams > 0) {
+            $lastParam = Reflection::getFunctionParameter($funcName, $totalParams - 1);
+            if ($lastParam !== null && $lastParam->isVariadic()) {
+                $maxArgs = -1;
+            }
+        }
 
         return [
             'handler'      => 'php_fn',
             'fn'           => $funcName,
             'receiver_pos' => 1,
-            'return_type'  => $funcDef->returnType,
-            'min_args'     => 0,
-            'max_args'     => -1,
+            'return_type'  => $returnType,
+            'min_args'     => $minArgs,
+            'max_args'     => $maxArgs,
         ];
+    }
+
+    private function validateExtensionFirstParam(string $type, \PhpAot\Php\Entity\FunctionDef $funcDef): bool
+    {
+        if (empty($funcDef->argInfoList)) {
+            return false;
+        }
+        $firstParam = $funcDef->argInfoList[0];
+        // Stream is a PHP pseudo-type; its params are always untyped (TYPE_VAR) or references
+        if ($type === self::TYPE_STREAM) {
+            return $firstParam->byRef || $firstParam->type === self::TYPE_VAR || $firstParam->type === self::TYPE_REF;
+        }
+        if ($firstParam->byRef) {
+            return $type === self::TYPE_ARRAY;
+        }
+        $paramType = $firstParam->type;
+        if ($paramType === self::TYPE_VAR) {
+            return false;
+        }
+        return $paramType === $type;
+    }
+
+    private function validateInternalExtensionFirstParam(string $type, string $funcName): bool
+    {
+        $param = Reflection::getFunctionParameter($funcName, 0);
+        if ($param === null) {
+            return false;
+        }
+        // Stream pseudo-type: accept untyped or by-reference first params
+        if ($type === self::TYPE_STREAM) {
+            return true;
+        }
+        if ($param->isPassedByReference()) {
+            return $type === self::TYPE_ARRAY;
+        }
+        $paramType = $param->getType();
+        if ($paramType === null) {
+            return false;
+        }
+        if ($paramType instanceof \ReflectionNamedType) {
+            $phpName = $paramType->getName();
+            $compilerType = $this->zendTypeMap[$phpName] ?? null;
+            return $compilerType === $type;
+        }
+        return false;
     }
 
     protected function resolveExtensionFunctionName(string $funcName): ?string
