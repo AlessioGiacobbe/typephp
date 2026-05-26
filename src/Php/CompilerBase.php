@@ -3036,7 +3036,17 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($node->var, 'Cannot assign to undefined variable');
             }
             $type         = $this->detectVarType($node->var);
-            $rightExprStr = $this->convertExprType($expr, $type, $this->detectTypeOfExpr($node->expr));
+            $rightType    = $this->detectTypeOfExpr($node->expr);
+
+            // Big* types: expand compound assignment to static method call.
+            // BigInt/BigDecimal/BigFloat are immutable Box types stored inside
+            // php::Var — Variant::operator+= calls ZendVM add_function which
+            // cannot handle them.  We must generate `$v = Type::add($v, $x)`.
+            if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+                return $this->parseBigAssignOp($node, $var, $type, $expr, $rightType, $op);
+            }
+
+            $rightExprStr = $this->convertExprType($expr, $type, $rightType);
             if ($this->isAssignOpConcat($op)) {
                 if ($this->isArrayVar($node->var)) {
                     $this->fatalError($node->var, 'Cannot concat string to array');
@@ -3071,6 +3081,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat(" .
                     $this->convertVarType($tmpVar, $var) . ', ' .
                     $this->convertExprType($expr, $type, $rightType) . ');';
+            } elseif ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+                $bigAssign = $this->parseBigAssignOpExpr($var, $type, $expr, $rightType, $binaryOp, $node->var);
+                $this->context->beforeStmtLines[] = "{$tmpVar} = {$bigAssign};";
             } else {
                 $this->context->beforeStmtLines[] = "{$tmpVar} = " .
                     $this->convertVarType($tmpVar, $var) . ' ' .
@@ -3085,6 +3098,56 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $var . '.append(' . $expr . ')';
         }
         return $var . ' ' . $op . ' (' . $expr . ')';
+    }
+
+    /**
+     * Expand a Big* compound-assignment into `$v = Type::method($v, $rhs)`.
+     *
+     * BigInt/BigDecimal/BigFloat are immutable Box types — Variant operator+=
+     * goes through ZendVM add_function which does not understand them, so we
+     * must emit the static-method form instead.
+     */
+    protected function parseBigAssignOp(Expr\AssignOp $node, string $var, string $type, string $expr, string $rightType, string $op): string
+    {
+        $binaryOp = $this->removeAssignOp($op);
+        $bigExpr  = $this->parseBigAssignOpExpr($var, $type, $expr, $rightType, $binaryOp, $node->var);
+        return $var . ' = ' . $bigExpr;
+    }
+
+    /**
+     * Generate the C++ expression for a Big* binary operation.
+     *
+     * @param NodeAbstract $errorNode node to blame on unsupported operators
+     */
+    protected function parseBigAssignOpExpr(string $leftExpr, string $leftType, string $rightExpr, string $rightType, string $binaryOp, NodeAbstract $errorNode): string
+    {
+        [$class, $opMap] = match ($leftType) {
+            self::TYPE_BIGINT   => ['BigInt',   ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod']],
+            self::TYPE_DECIMAL  => ['Decimal',  ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod']],
+            self::TYPE_BIGFLOAT => ['BigFloat', ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div']],
+        };
+
+        $method = $opMap[$binaryOp] ?? null;
+        if ($method === null) {
+            $this->fatalError($errorNode, "Unsupported compound assignment operator '{$binaryOp}' for type {$leftType}");
+        }
+
+        // Set uses flag
+        if ($leftType === self::TYPE_BIGINT) {
+            $this->usesBigInt = true;
+        } elseif ($leftType === self::TYPE_DECIMAL) {
+            $this->usesDecimal = true;
+        } elseif ($leftType === self::TYPE_BIGFLOAT) {
+            $this->usesBigFloat = true;
+        }
+
+        $convertedRight = match ($leftType) {
+            self::TYPE_BIGINT   => $this->convertBigIntExpr($rightExpr, $rightType),
+            self::TYPE_DECIMAL  => $this->convertDecimalExpr($rightExpr, $rightType),
+            self::TYPE_BIGFLOAT => $this->convertBigFloatExpr($rightExpr, $rightType),
+        };
+
+        return 'php::' . $class . '::' . $method . '(' . $leftExpr . ', ' . $convertedRight . ')';
     }
 
     protected function parseAssignOpConcat(Expr\AssignOp\Concat $expr): string
