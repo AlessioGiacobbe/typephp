@@ -167,6 +167,14 @@ trait Utils
         return false;
     }
 
+    /**
+     * Strip PHP numeric literal underscores (e.g. 1_000_000 → 1000000).
+     */
+    protected function stripNumericUnderscores(string $rawValue): string
+    {
+        return str_replace('_', '', $rawValue);
+    }
+
     protected function trimBrackets(string $str): string
     {
         if ($this->isClosedExpr($str, '')) {
