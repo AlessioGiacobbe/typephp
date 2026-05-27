@@ -10,6 +10,7 @@
 /projects
 /.php-cs-fixer.cache
 /.phpunit.cache
+/__pycache__
 *.o
 *.dll
 *.exe
