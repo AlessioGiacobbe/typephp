@@ -2782,26 +2782,19 @@ class CompilerBase extends \PhpAot\Core\Translator
             $libraries[] = 'user32.lib';   // Windows UI 函数（CreateWindow, MessageBox 等）
             $libraries[] = 'gdi32.lib';    // GDI 图形函数
             $libraries[] = 'kernel32.lib'; // 核心 Windows API
+            $libraries[] = 'gmp.lib';
+            $libraries[] = 'gmpxx.lib';
+            $libraries[] = 'mpfr.lib';
+            $libraries[] = 'libmpdec.lib';
+            $libraries[] = 'libmpdec++.lib';
         } else {
             // Linux/macOS: extension 和 bin 模式都需要添加 php 库
             $libraries[] = 'php';
-        }
-
-        // GMP — BigInt arbitrary-precision arithmetic
-        if (!$platform instanceof Windows) {
             $libraries[] = 'gmp';
             $libraries[] = 'gmpxx';
-        }
-
-        // libmpdec — Decimal arbitrary-precision decimal
-        if (!$platform instanceof Windows) {
+            $libraries[] = 'mpfr';
             $libraries[] = 'mpdec++';
             $libraries[] = 'mpdec';
-        }
-
-        // MPFR — BigFloat arbitrary-precision float
-        if (!$platform instanceof Windows) {
-            $libraries[] = 'mpfr';
         }
 
         return $libraries;

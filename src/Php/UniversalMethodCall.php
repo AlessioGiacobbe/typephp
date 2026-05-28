@@ -9,342 +9,342 @@ use PhpParser\NodeAbstract;
 trait UniversalMethodCall
 {
     protected const array UNIVERSAL_METHODS = [
-        self::TYPE_INT => [
-            'add'      => ['handler' => 'calc_op', 'op' => '+', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'sub'      => ['handler' => 'calc_op', 'op' => '-', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'mul'      => ['handler' => 'calc_op', 'op' => '*', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'div'      => ['handler' => 'calc_op', 'op' => '/', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'mod'      => ['handler' => 'calc_op', 'op' => '%', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'inc'      => ['handler' => 'calc_inc', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'dec'      => ['handler' => 'calc_dec', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'  => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toString' => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toBool'   => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+        CompilerBase::TYPE_INT => [
+            'add'      => ['handler' => 'calc_op', 'op' => '+', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'sub'      => ['handler' => 'calc_op', 'op' => '-', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'mul'      => ['handler' => 'calc_op', 'op' => '*', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'div'      => ['handler' => 'calc_op', 'op' => '/', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'mod'      => ['handler' => 'calc_op', 'op' => '%', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'inc'      => ['handler' => 'calc_inc', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'dec'      => ['handler' => 'calc_dec', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toFloat'  => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'toString' => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'toBool'   => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             // math
-            'abs'     => ['handler' => 'php_fn', 'fn' => 'abs', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'ceil'    => ['handler' => 'php_fn', 'fn' => 'ceil', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'floor'   => ['handler' => 'php_fn', 'fn' => 'floor', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'round'   => ['handler' => 'php_fn', 'fn' => 'round', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 2],
-            'sqrt'    => ['handler' => 'php_fn', 'fn' => 'sqrt', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'pow'     => ['handler' => 'php_fn', 'fn' => 'pow', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 1],
-            'log'     => ['handler' => 'php_fn', 'fn' => 'log', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 1],
-            'log10'   => ['handler' => 'php_fn', 'fn' => 'log10', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'exp'     => ['handler' => 'php_fn', 'fn' => 'exp', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'sin'     => ['handler' => 'php_fn', 'fn' => 'sin', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'cos'     => ['handler' => 'php_fn', 'fn' => 'cos', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'tan'     => ['handler' => 'php_fn', 'fn' => 'tan', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'asin'    => ['handler' => 'php_fn', 'fn' => 'asin', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'acos'    => ['handler' => 'php_fn', 'fn' => 'acos', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'atan'    => ['handler' => 'php_fn', 'fn' => 'atan', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'atan2'   => ['handler' => 'php_fn', 'fn' => 'atan2', 'return_type' => self::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
-            'deg2rad' => ['handler' => 'php_fn', 'fn' => 'deg2rad', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'rad2deg' => ['handler' => 'php_fn', 'fn' => 'rad2deg', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'max'     => ['handler' => 'php_fn', 'fn' => 'max', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'min'     => ['handler' => 'php_fn', 'fn' => 'min', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'abs'     => ['handler' => 'php_fn', 'fn' => 'abs', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'ceil'    => ['handler' => 'php_fn', 'fn' => 'ceil', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'floor'   => ['handler' => 'php_fn', 'fn' => 'floor', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'round'   => ['handler' => 'php_fn', 'fn' => 'round', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 2],
+            'sqrt'    => ['handler' => 'php_fn', 'fn' => 'sqrt', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'pow'     => ['handler' => 'php_fn', 'fn' => 'pow', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 1],
+            'log'     => ['handler' => 'php_fn', 'fn' => 'log', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 1],
+            'log10'   => ['handler' => 'php_fn', 'fn' => 'log10', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'exp'     => ['handler' => 'php_fn', 'fn' => 'exp', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'sin'     => ['handler' => 'php_fn', 'fn' => 'sin', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'cos'     => ['handler' => 'php_fn', 'fn' => 'cos', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'tan'     => ['handler' => 'php_fn', 'fn' => 'tan', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'asin'    => ['handler' => 'php_fn', 'fn' => 'asin', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'acos'    => ['handler' => 'php_fn', 'fn' => 'acos', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'atan'    => ['handler' => 'php_fn', 'fn' => 'atan', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'atan2'   => ['handler' => 'php_fn', 'fn' => 'atan2', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
+            'deg2rad' => ['handler' => 'php_fn', 'fn' => 'deg2rad', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'rad2deg' => ['handler' => 'php_fn', 'fn' => 'rad2deg', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'max'     => ['handler' => 'php_fn', 'fn' => 'max', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'min'     => ['handler' => 'php_fn', 'fn' => 'min', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
         ],
-        self::TYPE_FLOAT => [
-            'add'      => ['handler' => 'calc_op', 'op' => '+', 'return_type' => self::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
-            'sub'      => ['handler' => 'calc_op', 'op' => '-', 'return_type' => self::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
-            'mul'      => ['handler' => 'calc_op', 'op' => '*', 'return_type' => self::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
-            'div'      => ['handler' => 'calc_op', 'op' => '/', 'return_type' => self::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
-            'inc'      => ['handler' => 'calc_inc', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'dec'      => ['handler' => 'calc_dec', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toInt'    => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toString' => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toBool'   => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+        CompilerBase::TYPE_FLOAT => [
+            'add'      => ['handler' => 'calc_op', 'op' => '+', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
+            'sub'      => ['handler' => 'calc_op', 'op' => '-', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
+            'mul'      => ['handler' => 'calc_op', 'op' => '*', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
+            'div'      => ['handler' => 'calc_op', 'op' => '/', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
+            'inc'      => ['handler' => 'calc_inc', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'dec'      => ['handler' => 'calc_dec', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'toInt'    => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toString' => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'toBool'   => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             // math
-            'abs'     => ['handler' => 'php_fn', 'fn' => 'abs', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'ceil'    => ['handler' => 'php_fn', 'fn' => 'ceil', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'floor'   => ['handler' => 'php_fn', 'fn' => 'floor', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'round'   => ['handler' => 'php_fn', 'fn' => 'round', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 2],
-            'sqrt'    => ['handler' => 'php_fn', 'fn' => 'sqrt', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'pow'     => ['handler' => 'php_fn', 'fn' => 'pow', 'return_type' => self::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
-            'log'     => ['handler' => 'php_fn', 'fn' => 'log', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 1],
-            'log10'   => ['handler' => 'php_fn', 'fn' => 'log10', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'exp'     => ['handler' => 'php_fn', 'fn' => 'exp', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'sin'     => ['handler' => 'php_fn', 'fn' => 'sin', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'cos'     => ['handler' => 'php_fn', 'fn' => 'cos', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'tan'     => ['handler' => 'php_fn', 'fn' => 'tan', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'asin'    => ['handler' => 'php_fn', 'fn' => 'asin', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'acos'    => ['handler' => 'php_fn', 'fn' => 'acos', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'atan'    => ['handler' => 'php_fn', 'fn' => 'atan', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'atan2'   => ['handler' => 'php_fn', 'fn' => 'atan2', 'return_type' => self::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
-            'deg2rad' => ['handler' => 'php_fn', 'fn' => 'deg2rad', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'rad2deg' => ['handler' => 'php_fn', 'fn' => 'rad2deg', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'max'     => ['handler' => 'php_fn', 'fn' => 'max', 'return_type' => self::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
-            'min'     => ['handler' => 'php_fn', 'fn' => 'min', 'return_type' => self::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
+            'abs'     => ['handler' => 'php_fn', 'fn' => 'abs', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'ceil'    => ['handler' => 'php_fn', 'fn' => 'ceil', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'floor'   => ['handler' => 'php_fn', 'fn' => 'floor', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'round'   => ['handler' => 'php_fn', 'fn' => 'round', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 2],
+            'sqrt'    => ['handler' => 'php_fn', 'fn' => 'sqrt', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'pow'     => ['handler' => 'php_fn', 'fn' => 'pow', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
+            'log'     => ['handler' => 'php_fn', 'fn' => 'log', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 1],
+            'log10'   => ['handler' => 'php_fn', 'fn' => 'log10', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'exp'     => ['handler' => 'php_fn', 'fn' => 'exp', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'sin'     => ['handler' => 'php_fn', 'fn' => 'sin', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'cos'     => ['handler' => 'php_fn', 'fn' => 'cos', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'tan'     => ['handler' => 'php_fn', 'fn' => 'tan', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'asin'    => ['handler' => 'php_fn', 'fn' => 'asin', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'acos'    => ['handler' => 'php_fn', 'fn' => 'acos', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'atan'    => ['handler' => 'php_fn', 'fn' => 'atan', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'atan2'   => ['handler' => 'php_fn', 'fn' => 'atan2', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
+            'deg2rad' => ['handler' => 'php_fn', 'fn' => 'deg2rad', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'rad2deg' => ['handler' => 'php_fn', 'fn' => 'rad2deg', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'max'     => ['handler' => 'php_fn', 'fn' => 'max', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
+            'min'     => ['handler' => 'php_fn', 'fn' => 'min', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
         ],
-        self::TYPE_BOOL => [
-            'toInt'    => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toString' => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+        CompilerBase::TYPE_BOOL => [
+            'toInt'    => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toString' => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
         ],
-        self::TYPE_STR => [
+        CompilerBase::TYPE_STR => [
             // --- stdext string_methods (all use PHP standard functions) ---
-            'length'                => ['handler' => 'php_fn', 'fn' => 'strlen', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'isEmpty'               => ['handler' => 'direct_method', 'method' => 'empty', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'lower'                 => ['handler' => 'php_fn', 'fn' => 'strtolower', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'upper'                 => ['handler' => 'php_fn', 'fn' => 'strtoupper', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'lowerFirst'            => ['handler' => 'php_fn', 'fn' => 'lcfirst', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'upperFirst'            => ['handler' => 'php_fn', 'fn' => 'ucfirst', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'upperWords'            => ['handler' => 'php_fn', 'fn' => 'ucwords', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'addCSlashes'           => ['handler' => 'php_fn', 'fn' => 'addcslashes', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
-            'addSlashes'            => ['handler' => 'php_fn', 'fn' => 'addslashes', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'chunkSplit'            => ['handler' => 'php_fn', 'fn' => 'chunk_split', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
-            'countChars'            => ['handler' => 'php_fn', 'fn' => 'count_chars', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 1],
-            'htmlEntityDecode'      => ['handler' => 'php_fn', 'fn' => 'html_entity_decode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
-            'htmlEntityEncode'      => ['handler' => 'php_fn', 'fn' => 'htmlentities', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 3],
-            'htmlSpecialCharsEncode' => ['handler' => 'php_fn', 'fn' => 'htmlspecialchars', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 3],
-            'htmlSpecialCharsDecode' => ['handler' => 'php_fn', 'fn' => 'htmlspecialchars_decode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'trim'                  => ['handler' => 'php_fn', 'fn' => 'trim', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
-            'lTrim'                 => ['handler' => 'php_fn', 'fn' => 'ltrim', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'rTrim'                 => ['handler' => 'php_fn', 'fn' => 'rtrim', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'parseStr'              => ['handler' => 'cpp_fn', 'fn' => 'php::fn::parse_str', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
-            'parseUrl'              => ['handler' => 'php_fn', 'fn' => 'parse_url', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 1],
-            'contains'              => ['handler' => 'php_fn', 'fn' => 'str_contains', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
-            'incr'                  => ['handler' => 'php_fn', 'fn' => 'str_increment', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'decr'                  => ['handler' => 'php_fn', 'fn' => 'str_decrement', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'pad'                   => ['handler' => 'php_fn', 'fn' => 'str_pad', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 3],
-            'repeat'                => ['handler' => 'php_fn', 'fn' => 'str_repeat', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
-            'replace'               => ['handler' => 'php_fn', 'fn' => 'str_replace', 'receiver_pos' => 3, 'return_type' => self::TYPE_STR, 'min_args' => 2, 'max_args' => 3],
-            'iReplace'              => ['handler' => 'php_fn', 'fn' => 'str_ireplace', 'receiver_pos' => 3, 'return_type' => self::TYPE_STR, 'min_args' => 2, 'max_args' => 3],
-            'shuffle'               => ['handler' => 'php_fn', 'fn' => 'str_shuffle', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'split'                 => ['handler' => 'php_fn', 'fn' => 'explode', 'receiver_pos' => 2, 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
-            'startsWith'            => ['handler' => 'php_fn', 'fn' => 'str_starts_with', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
-            'endsWith'              => ['handler' => 'php_fn', 'fn' => 'str_ends_with', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
-            'wordCount'             => ['handler' => 'php_fn', 'fn' => 'str_word_count', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 2],
-            'iCompare'              => ['handler' => 'php_fn', 'fn' => 'strcasecmp', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'compare'               => ['handler' => 'php_fn', 'fn' => 'strcmp', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'find'                  => ['handler' => 'php_fn', 'fn' => 'strstr', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
-            'iFind'                 => ['handler' => 'php_fn', 'fn' => 'stristr', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
-            'stripTags'             => ['handler' => 'php_fn', 'fn' => 'strip_tags', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
-            'stripCSlashes'         => ['handler' => 'php_fn', 'fn' => 'stripcslashes', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'stripSlashes'          => ['handler' => 'php_fn', 'fn' => 'stripslashes', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'iIndexOf'              => ['handler' => 'php_fn', 'fn' => 'stripos', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
-            'indexOf'               => ['handler' => 'php_fn', 'fn' => 'strpos', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
-            'lastIndexOf'           => ['handler' => 'php_fn', 'fn' => 'strrpos', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
-            'iLastIndexOf'          => ['handler' => 'php_fn', 'fn' => 'strripos', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
-            'lastCharIndexOf'       => ['handler' => 'php_fn', 'fn' => 'strrchr', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 1],
-            'substr'                => ['handler' => 'php_fn', 'fn' => 'substr', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
-            'substrCompare'         => ['handler' => 'php_fn', 'fn' => 'substr_compare', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 4],
-            'substrCount'           => ['handler' => 'php_fn', 'fn' => 'substr_count', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
-            'substrReplace'         => ['handler' => 'php_fn', 'fn' => 'substr_replace', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 3],
-            'reverse'               => ['handler' => 'php_fn', 'fn' => 'strrev', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'md5'                   => ['handler' => 'php_fn', 'fn' => 'md5', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'sha1'                  => ['handler' => 'php_fn', 'fn' => 'sha1', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'crc32'                 => ['handler' => 'php_fn', 'fn' => 'crc32', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'hash'                  => ['handler' => 'php_fn', 'fn' => 'hash', 'receiver_pos' => 2, 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
-            'hashCode'              => ['handler' => 'direct_method', 'method' => 'hashCode', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'base64Decode'          => ['handler' => 'php_fn', 'fn' => 'base64_decode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'base64Encode'          => ['handler' => 'php_fn', 'fn' => 'base64_encode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'urlDecode'             => ['handler' => 'php_fn', 'fn' => 'urldecode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'urlEncode'             => ['handler' => 'php_fn', 'fn' => 'urlencode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'rawUrlEncode'          => ['handler' => 'php_fn', 'fn' => 'rawurlencode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'rawUrlDecode'          => ['handler' => 'php_fn', 'fn' => 'rawurldecode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'match'                 => ['handler' => 'direct_method', 'method' => 'match', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3, 'int_cast_args' => [1, 2]],
-            'matchAll'              => ['handler' => 'direct_method', 'method' => 'matchAll', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3, 'int_cast_args' => [1, 2]],
-            'isNumeric'             => ['handler' => 'php_fn', 'fn' => 'is_numeric', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'length'                => ['handler' => 'php_fn', 'fn' => 'strlen', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'isEmpty'               => ['handler' => 'direct_method', 'method' => 'empty', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'lower'                 => ['handler' => 'php_fn', 'fn' => 'strtolower', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'upper'                 => ['handler' => 'php_fn', 'fn' => 'strtoupper', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'lowerFirst'            => ['handler' => 'php_fn', 'fn' => 'lcfirst', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'upperFirst'            => ['handler' => 'php_fn', 'fn' => 'ucfirst', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'upperWords'            => ['handler' => 'php_fn', 'fn' => 'ucwords', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'addCSlashes'           => ['handler' => 'php_fn', 'fn' => 'addcslashes', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
+            'addSlashes'            => ['handler' => 'php_fn', 'fn' => 'addslashes', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'chunkSplit'            => ['handler' => 'php_fn', 'fn' => 'chunk_split', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'countChars'            => ['handler' => 'php_fn', 'fn' => 'count_chars', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 1],
+            'htmlEntityDecode'      => ['handler' => 'php_fn', 'fn' => 'html_entity_decode', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'htmlEntityEncode'      => ['handler' => 'php_fn', 'fn' => 'htmlentities', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 3],
+            'htmlSpecialCharsEncode' => ['handler' => 'php_fn', 'fn' => 'htmlspecialchars', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 3],
+            'htmlSpecialCharsDecode' => ['handler' => 'php_fn', 'fn' => 'htmlspecialchars_decode', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'trim'                  => ['handler' => 'php_fn', 'fn' => 'trim', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'lTrim'                 => ['handler' => 'php_fn', 'fn' => 'ltrim', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'rTrim'                 => ['handler' => 'php_fn', 'fn' => 'rtrim', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'parseStr'              => ['handler' => 'cpp_fn', 'fn' => 'php::fn::parse_str', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'parseUrl'              => ['handler' => 'php_fn', 'fn' => 'parse_url', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 1],
+            'contains'              => ['handler' => 'php_fn', 'fn' => 'str_contains', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
+            'incr'                  => ['handler' => 'php_fn', 'fn' => 'str_increment', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'decr'                  => ['handler' => 'php_fn', 'fn' => 'str_decrement', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'pad'                   => ['handler' => 'php_fn', 'fn' => 'str_pad', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 3],
+            'repeat'                => ['handler' => 'php_fn', 'fn' => 'str_repeat', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
+            'replace'               => ['handler' => 'php_fn', 'fn' => 'str_replace', 'receiver_pos' => 3, 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 2, 'max_args' => 3],
+            'iReplace'              => ['handler' => 'php_fn', 'fn' => 'str_ireplace', 'receiver_pos' => 3, 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 2, 'max_args' => 3],
+            'shuffle'               => ['handler' => 'php_fn', 'fn' => 'str_shuffle', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'split'                 => ['handler' => 'php_fn', 'fn' => 'explode', 'receiver_pos' => 2, 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
+            'startsWith'            => ['handler' => 'php_fn', 'fn' => 'str_starts_with', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
+            'endsWith'              => ['handler' => 'php_fn', 'fn' => 'str_ends_with', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
+            'wordCount'             => ['handler' => 'php_fn', 'fn' => 'str_word_count', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 2],
+            'iCompare'              => ['handler' => 'php_fn', 'fn' => 'strcasecmp', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'compare'               => ['handler' => 'php_fn', 'fn' => 'strcmp', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'find'                  => ['handler' => 'php_fn', 'fn' => 'strstr', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
+            'iFind'                 => ['handler' => 'php_fn', 'fn' => 'stristr', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
+            'stripTags'             => ['handler' => 'php_fn', 'fn' => 'strip_tags', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'stripCSlashes'         => ['handler' => 'php_fn', 'fn' => 'stripcslashes', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'stripSlashes'          => ['handler' => 'php_fn', 'fn' => 'stripslashes', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'iIndexOf'              => ['handler' => 'php_fn', 'fn' => 'stripos', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
+            'indexOf'               => ['handler' => 'php_fn', 'fn' => 'strpos', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
+            'lastIndexOf'           => ['handler' => 'php_fn', 'fn' => 'strrpos', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
+            'iLastIndexOf'          => ['handler' => 'php_fn', 'fn' => 'strripos', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
+            'lastCharIndexOf'       => ['handler' => 'php_fn', 'fn' => 'strrchr', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 1],
+            'substr'                => ['handler' => 'php_fn', 'fn' => 'substr', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
+            'substrCompare'         => ['handler' => 'php_fn', 'fn' => 'substr_compare', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 4],
+            'substrCount'           => ['handler' => 'php_fn', 'fn' => 'substr_count', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
+            'substrReplace'         => ['handler' => 'php_fn', 'fn' => 'substr_replace', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 3],
+            'reverse'               => ['handler' => 'php_fn', 'fn' => 'strrev', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'md5'                   => ['handler' => 'php_fn', 'fn' => 'md5', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'sha1'                  => ['handler' => 'php_fn', 'fn' => 'sha1', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'crc32'                 => ['handler' => 'php_fn', 'fn' => 'crc32', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'hash'                  => ['handler' => 'php_fn', 'fn' => 'hash', 'receiver_pos' => 2, 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
+            'hashCode'              => ['handler' => 'direct_method', 'method' => 'hashCode', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'base64Decode'          => ['handler' => 'php_fn', 'fn' => 'base64_decode', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'base64Encode'          => ['handler' => 'php_fn', 'fn' => 'base64_encode', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'urlDecode'             => ['handler' => 'php_fn', 'fn' => 'urldecode', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'urlEncode'             => ['handler' => 'php_fn', 'fn' => 'urlencode', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'rawUrlEncode'          => ['handler' => 'php_fn', 'fn' => 'rawurlencode', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'rawUrlDecode'          => ['handler' => 'php_fn', 'fn' => 'rawurldecode', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'match'                 => ['handler' => 'direct_method', 'method' => 'match', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3, 'int_cast_args' => [1, 2]],
+            'matchAll'              => ['handler' => 'direct_method', 'method' => 'matchAll', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3, 'int_cast_args' => [1, 2]],
+            'isNumeric'             => ['handler' => 'php_fn', 'fn' => 'is_numeric', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             // mbstring
-            'mbUpperFirst'          => ['handler' => 'php_fn', 'fn' => 'mb_ucfirst', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'mbLowerFirst'          => ['handler' => 'php_fn', 'fn' => 'mb_lcfirst', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'mbTrim'                => ['handler' => 'php_fn', 'fn' => 'mb_trim', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'mbSubstrCount'         => ['handler' => 'php_fn', 'fn' => 'mb_substr_count', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 2],
-            'mbSubstr'              => ['handler' => 'php_fn', 'fn' => 'mb_substr', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 3],
-            'mbUpper'               => ['handler' => 'php_fn', 'fn' => 'mb_strtoupper', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'mbLower'               => ['handler' => 'php_fn', 'fn' => 'mb_strtolower', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'mbFind'                => ['handler' => 'php_fn', 'fn' => 'mb_strstr', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'mbIndexOf'             => ['handler' => 'php_fn', 'fn' => 'mb_strpos', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'mbLastIndexOf'         => ['handler' => 'php_fn', 'fn' => 'mb_strrpos', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'mbILastIndexOf'        => ['handler' => 'php_fn', 'fn' => 'mb_strripos', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'mbLastCharIndexOf'     => ['handler' => 'php_fn', 'fn' => 'mb_strrchr', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'mbILastCharIndex'      => ['handler' => 'php_fn', 'fn' => 'mb_strrichr', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'mbLength'              => ['handler' => 'php_fn', 'fn' => 'mb_strlen', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 1],
-            'mbIFind'               => ['handler' => 'php_fn', 'fn' => 'mb_stristr', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'mbIIndexOf'            => ['handler' => 'php_fn', 'fn' => 'mb_stripos', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'mbCut'                 => ['handler' => 'php_fn', 'fn' => 'mb_strcut', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 3],
-            'mbRTrim'               => ['handler' => 'php_fn', 'fn' => 'mb_rtrim', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'mbLTrim'               => ['handler' => 'php_fn', 'fn' => 'mb_ltrim', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'mbDetectEncoding'      => ['handler' => 'php_fn', 'fn' => 'mb_detect_encoding', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
-            'mbConvertEncoding'     => ['handler' => 'php_fn', 'fn' => 'mb_convert_encoding', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
-            'mbConvertCase'         => ['handler' => 'php_fn', 'fn' => 'mb_convert_case', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'mbUpperFirst'          => ['handler' => 'php_fn', 'fn' => 'mb_ucfirst', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'mbLowerFirst'          => ['handler' => 'php_fn', 'fn' => 'mb_lcfirst', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'mbTrim'                => ['handler' => 'php_fn', 'fn' => 'mb_trim', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'mbSubstrCount'         => ['handler' => 'php_fn', 'fn' => 'mb_substr_count', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 2],
+            'mbSubstr'              => ['handler' => 'php_fn', 'fn' => 'mb_substr', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 3],
+            'mbUpper'               => ['handler' => 'php_fn', 'fn' => 'mb_strtoupper', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'mbLower'               => ['handler' => 'php_fn', 'fn' => 'mb_strtolower', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'mbFind'                => ['handler' => 'php_fn', 'fn' => 'mb_strstr', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'mbIndexOf'             => ['handler' => 'php_fn', 'fn' => 'mb_strpos', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'mbLastIndexOf'         => ['handler' => 'php_fn', 'fn' => 'mb_strrpos', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'mbILastIndexOf'        => ['handler' => 'php_fn', 'fn' => 'mb_strripos', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'mbLastCharIndexOf'     => ['handler' => 'php_fn', 'fn' => 'mb_strrchr', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'mbILastCharIndex'      => ['handler' => 'php_fn', 'fn' => 'mb_strrichr', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'mbLength'              => ['handler' => 'php_fn', 'fn' => 'mb_strlen', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 1],
+            'mbIFind'               => ['handler' => 'php_fn', 'fn' => 'mb_stristr', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'mbIIndexOf'            => ['handler' => 'php_fn', 'fn' => 'mb_stripos', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'mbCut'                 => ['handler' => 'php_fn', 'fn' => 'mb_strcut', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 3],
+            'mbRTrim'               => ['handler' => 'php_fn', 'fn' => 'mb_rtrim', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'mbLTrim'               => ['handler' => 'php_fn', 'fn' => 'mb_ltrim', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'mbDetectEncoding'      => ['handler' => 'php_fn', 'fn' => 'mb_detect_encoding', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'mbConvertEncoding'     => ['handler' => 'php_fn', 'fn' => 'mb_convert_encoding', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
+            'mbConvertCase'         => ['handler' => 'php_fn', 'fn' => 'mb_convert_case', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
             // serialize
-            'unserialize'           => ['handler' => 'php_fn', 'fn' => 'unserialize', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
-            'unmarshal'             => ['handler' => 'php_fn', 'fn' => 'unserialize', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
-            'jsonDecode'            => ['handler' => 'php_fn', 'fn' => 'json_decode', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 2, 'const_args' => [1 => 'true']],
-            'jsonDecodeToObject'    => ['handler' => 'php_fn', 'fn' => 'json_decode', 'return_type' => self::TYPE_OBJECT, 'min_args' => 0, 'max_args' => 2, 'const_args' => [1 => 'false']],
+            'unserialize'           => ['handler' => 'php_fn', 'fn' => 'unserialize', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
+            'unmarshal'             => ['handler' => 'php_fn', 'fn' => 'unserialize', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
+            'jsonDecode'            => ['handler' => 'php_fn', 'fn' => 'json_decode', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 2, 'const_args' => [1 => 'true']],
+            'jsonDecodeToObject'    => ['handler' => 'php_fn', 'fn' => 'json_decode', 'return_type' => CompilerBase::TYPE_OBJECT, 'min_args' => 0, 'max_args' => 2, 'const_args' => [1 => 'false']],
             // phpx C++ methods (no PHP function equivalent)
-            'equals'                => ['handler' => 'direct_method', 'method' => 'equals', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
+            'equals'                => ['handler' => 'direct_method', 'method' => 'equals', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
             // conversions
-            'toInt'                 => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'               => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toBool'                => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'toInt'                 => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toFloat'               => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'toBool'                => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
         ],
-        self::TYPE_ARRAY => [
+        CompilerBase::TYPE_ARRAY => [
             // --- stdext array_methods (all use PHP standard functions) ---
-            'all'               => ['handler' => 'php_fn', 'fn' => 'array_all', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
-            'any'               => ['handler' => 'php_fn', 'fn' => 'array_any', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
-            'changeKeyCase'     => ['handler' => 'php_fn', 'fn' => 'array_change_key_case', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 1],
-            'chunk'             => ['handler' => 'php_fn', 'fn' => 'array_chunk', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
-            'column'            => ['handler' => 'php_fn', 'fn' => 'array_column', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
-            'countValues'       => ['handler' => 'php_fn', 'fn' => 'array_count_values', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
-            'diff'              => ['handler' => 'php_fn', 'fn' => 'array_diff', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
-            'diffAssoc'         => ['handler' => 'php_fn', 'fn' => 'array_diff_assoc', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
-            'diffKey'           => ['handler' => 'php_fn', 'fn' => 'array_diff_key', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
-            'filter'            => ['handler' => 'php_fn', 'fn' => 'array_filter', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 2],
-            'find'              => ['handler' => 'php_fn', 'fn' => 'array_find', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 1],
-            'flip'              => ['handler' => 'php_fn', 'fn' => 'array_flip', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
-            'intersect'         => ['handler' => 'php_fn', 'fn' => 'array_intersect', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
-            'intersectAssoc'    => ['handler' => 'php_fn', 'fn' => 'array_intersect_assoc', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
-            'isList'            => ['handler' => 'php_fn', 'fn' => 'array_is_list', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'keyExists'         => ['handler' => 'php_fn', 'fn' => 'array_key_exists', 'receiver_pos' => 2, 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
-            'keyFirst'          => ['handler' => 'php_fn', 'fn' => 'array_key_first', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
-            'keyLast'           => ['handler' => 'php_fn', 'fn' => 'array_key_last', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
-            'keys'              => ['handler' => 'php_fn', 'fn' => 'array_keys', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 2],
-            'map'               => ['handler' => 'php_fn', 'fn' => 'array_map', 'receiver_pos' => 2, 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
-            'pad'               => ['handler' => 'php_fn', 'fn' => 'array_pad', 'return_type' => self::TYPE_ARRAY, 'min_args' => 2, 'max_args' => 2],
-            'product'           => ['handler' => 'php_fn', 'fn' => 'array_product', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
-            'rand'              => ['handler' => 'php_fn', 'fn' => 'array_rand', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 1],
-            'reduce'            => ['handler' => 'php_fn', 'fn' => 'array_reduce', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
-            'replace'           => ['handler' => 'php_fn', 'fn' => 'array_replace', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
-            'reverse'           => ['handler' => 'php_fn', 'fn' => 'array_reverse', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 1],
-            'search'            => ['handler' => 'php_fn', 'fn' => 'array_search', 'receiver_pos' => 2, 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
-            'slice'             => ['handler' => 'php_fn', 'fn' => 'array_slice', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3],
-            'sum'               => ['handler' => 'php_fn', 'fn' => 'array_sum', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
-            'unique'            => ['handler' => 'php_fn', 'fn' => 'array_unique', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 1],
-            'values'            => ['handler' => 'php_fn', 'fn' => 'array_values', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
-            'count'             => ['handler' => 'php_fn', 'fn' => 'count', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'merge'             => ['handler' => 'php_fn', 'fn' => 'array_merge', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
-            'contains'          => ['handler' => 'php_fn', 'fn' => 'in_array', 'receiver_pos' => 2, 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
-            'join'              => ['handler' => 'php_fn', 'fn' => 'implode', 'receiver_pos' => 2, 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
-            'isEmpty'           => ['handler' => 'direct_method', 'method' => 'empty', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'all'               => ['handler' => 'php_fn', 'fn' => 'array_all', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
+            'any'               => ['handler' => 'php_fn', 'fn' => 'array_any', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
+            'changeKeyCase'     => ['handler' => 'php_fn', 'fn' => 'array_change_key_case', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 1],
+            'chunk'             => ['handler' => 'php_fn', 'fn' => 'array_chunk', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
+            'column'            => ['handler' => 'php_fn', 'fn' => 'array_column', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
+            'countValues'       => ['handler' => 'php_fn', 'fn' => 'array_count_values', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'diff'              => ['handler' => 'php_fn', 'fn' => 'array_diff', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
+            'diffAssoc'         => ['handler' => 'php_fn', 'fn' => 'array_diff_assoc', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
+            'diffKey'           => ['handler' => 'php_fn', 'fn' => 'array_diff_key', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
+            'filter'            => ['handler' => 'php_fn', 'fn' => 'array_filter', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 2],
+            'find'              => ['handler' => 'php_fn', 'fn' => 'array_find', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 1],
+            'flip'              => ['handler' => 'php_fn', 'fn' => 'array_flip', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'intersect'         => ['handler' => 'php_fn', 'fn' => 'array_intersect', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
+            'intersectAssoc'    => ['handler' => 'php_fn', 'fn' => 'array_intersect_assoc', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
+            'isList'            => ['handler' => 'php_fn', 'fn' => 'array_is_list', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'keyExists'         => ['handler' => 'php_fn', 'fn' => 'array_key_exists', 'receiver_pos' => 2, 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
+            'keyFirst'          => ['handler' => 'php_fn', 'fn' => 'array_key_first', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
+            'keyLast'           => ['handler' => 'php_fn', 'fn' => 'array_key_last', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
+            'keys'              => ['handler' => 'php_fn', 'fn' => 'array_keys', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 2],
+            'map'               => ['handler' => 'php_fn', 'fn' => 'array_map', 'receiver_pos' => 2, 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
+            'pad'               => ['handler' => 'php_fn', 'fn' => 'array_pad', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 2, 'max_args' => 2],
+            'product'           => ['handler' => 'php_fn', 'fn' => 'array_product', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
+            'rand'              => ['handler' => 'php_fn', 'fn' => 'array_rand', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 1],
+            'reduce'            => ['handler' => 'php_fn', 'fn' => 'array_reduce', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
+            'replace'           => ['handler' => 'php_fn', 'fn' => 'array_replace', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
+            'reverse'           => ['handler' => 'php_fn', 'fn' => 'array_reverse', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 1],
+            'search'            => ['handler' => 'php_fn', 'fn' => 'array_search', 'receiver_pos' => 2, 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 2],
+            'slice'             => ['handler' => 'php_fn', 'fn' => 'array_slice', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3],
+            'sum'               => ['handler' => 'php_fn', 'fn' => 'array_sum', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
+            'unique'            => ['handler' => 'php_fn', 'fn' => 'array_unique', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 1],
+            'values'            => ['handler' => 'php_fn', 'fn' => 'array_values', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'count'             => ['handler' => 'php_fn', 'fn' => 'count', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'merge'             => ['handler' => 'php_fn', 'fn' => 'array_merge', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => -1],
+            'contains'          => ['handler' => 'php_fn', 'fn' => 'in_array', 'receiver_pos' => 2, 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
+            'join'              => ['handler' => 'php_fn', 'fn' => 'implode', 'receiver_pos' => 2, 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
+            'isEmpty'           => ['handler' => 'direct_method', 'method' => 'empty', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             // mutating via PHP reference functions
-            'sort'              => ['handler' => 'php_fn_ref', 'fn' => 'sort', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
-            'pop'               => ['handler' => 'php_fn_ref', 'fn' => 'array_pop', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
-            'push'              => ['handler' => 'php_fn_ref', 'fn' => 'array_push', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => -1],
-            'shift'             => ['handler' => 'php_fn_ref', 'fn' => 'array_shift', 'return_type' => self::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
-            'unshift'           => ['handler' => 'php_fn_ref', 'fn' => 'array_unshift', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => -1],
-            'splice'            => ['handler' => 'php_fn_ref', 'fn' => 'array_splice', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3],
-            'walk'              => ['handler' => 'php_fn_ref', 'fn' => 'array_walk', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
-            'sortDesc'          => ['handler' => 'php_fn_ref', 'fn' => 'rsort', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
-            'keySort'           => ['handler' => 'php_fn_ref', 'fn' => 'ksort', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
-            'valueSort'         => ['handler' => 'php_fn_ref', 'fn' => 'asort', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
-            'combine'           => ['handler' => 'php_fn', 'fn' => 'array_combine', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
-            'fillKeys'          => ['handler' => 'php_fn', 'fn' => 'array_fill_keys', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
-            'replaceStr'        => ['handler' => 'php_fn', 'fn' => 'str_replace', 'receiver_pos' => 3, 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
-            'iReplaceStr'       => ['handler' => 'php_fn', 'fn' => 'str_ireplace', 'receiver_pos' => 3, 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
+            'sort'              => ['handler' => 'php_fn_ref', 'fn' => 'sort', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
+            'pop'               => ['handler' => 'php_fn_ref', 'fn' => 'array_pop', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
+            'push'              => ['handler' => 'php_fn_ref', 'fn' => 'array_push', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => -1],
+            'shift'             => ['handler' => 'php_fn_ref', 'fn' => 'array_shift', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 0],
+            'unshift'           => ['handler' => 'php_fn_ref', 'fn' => 'array_unshift', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => -1],
+            'splice'            => ['handler' => 'php_fn_ref', 'fn' => 'array_splice', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 3],
+            'walk'              => ['handler' => 'php_fn_ref', 'fn' => 'array_walk', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
+            'sortDesc'          => ['handler' => 'php_fn_ref', 'fn' => 'rsort', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
+            'keySort'           => ['handler' => 'php_fn_ref', 'fn' => 'ksort', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
+            'valueSort'         => ['handler' => 'php_fn_ref', 'fn' => 'asort', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
+            'combine'           => ['handler' => 'php_fn', 'fn' => 'array_combine', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
+            'fillKeys'          => ['handler' => 'php_fn', 'fn' => 'array_fill_keys', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
+            'replaceStr'        => ['handler' => 'php_fn', 'fn' => 'str_replace', 'receiver_pos' => 3, 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
+            'iReplaceStr'       => ['handler' => 'php_fn', 'fn' => 'str_ireplace', 'receiver_pos' => 3, 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 2],
             // serialize
-            'serialize'         => ['handler' => 'php_fn', 'fn' => 'serialize', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'marshal'           => ['handler' => 'php_fn', 'fn' => 'serialize', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'jsonEncode'        => ['handler' => 'php_fn', 'fn' => 'json_encode', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'serialize'         => ['handler' => 'php_fn', 'fn' => 'serialize', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'marshal'           => ['handler' => 'php_fn', 'fn' => 'serialize', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'jsonEncode'        => ['handler' => 'php_fn', 'fn' => 'json_encode', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
             // phpx C++ methods (no PHP function equivalent)
-            'set'               => ['handler' => 'direct_method_mutate', 'method' => 'set', 'return_type' => self::TYPE_ARRAY, 'min_args' => 2, 'max_args' => 2],
-            'get'               => ['handler' => 'direct_method', 'method' => 'get', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 1],
-            'del'               => ['handler' => 'direct_method_mutate', 'method' => 'del', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
-            'clean'             => ['handler' => 'direct_method_mutate', 'method' => 'clean', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'set'               => ['handler' => 'direct_method_mutate', 'method' => 'set', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 2, 'max_args' => 2],
+            'get'               => ['handler' => 'direct_method', 'method' => 'get', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 1],
+            'del'               => ['handler' => 'direct_method_mutate', 'method' => 'del', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
+            'clean'             => ['handler' => 'direct_method_mutate', 'method' => 'clean', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
             // conversions
-            'toInt'             => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'           => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toBool'            => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'toString'          => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'toInt'             => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toFloat'           => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+            'toBool'            => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'toString'          => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
         ],
-        self::TYPE_STREAM => [
+        CompilerBase::TYPE_STREAM => [
             // --- stdext stream_methods ---
-            'write'             => ['handler' => 'php_fn', 'fn' => 'fwrite', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 2],
-            'read'              => ['handler' => 'php_fn', 'fn' => 'fread', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
-            'close'             => ['handler' => 'php_fn', 'fn' => 'fclose', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'dataSync'          => ['handler' => 'php_fn', 'fn' => 'fdatasync', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'sync'              => ['handler' => 'php_fn', 'fn' => 'fsync', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'truncate'          => ['handler' => 'php_fn', 'fn' => 'ftruncate', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
-            'stat'              => ['handler' => 'php_fn', 'fn' => 'fstat', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
-            'seek'              => ['handler' => 'php_fn', 'fn' => 'fseek', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 2],
-            'tell'              => ['handler' => 'php_fn', 'fn' => 'ftell', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'lock'              => ['handler' => 'php_fn', 'fn' => 'flock', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
-            'eof'               => ['handler' => 'php_fn', 'fn' => 'feof', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'getChar'           => ['handler' => 'php_fn', 'fn' => 'fgetc', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'getLine'           => ['handler' => 'php_fn', 'fn' => 'fgets', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
+            'write'             => ['handler' => 'php_fn', 'fn' => 'fwrite', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 2],
+            'read'              => ['handler' => 'php_fn', 'fn' => 'fread', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
+            'close'             => ['handler' => 'php_fn', 'fn' => 'fclose', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'dataSync'          => ['handler' => 'php_fn', 'fn' => 'fdatasync', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'sync'              => ['handler' => 'php_fn', 'fn' => 'fsync', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'truncate'          => ['handler' => 'php_fn', 'fn' => 'ftruncate', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 1],
+            'stat'              => ['handler' => 'php_fn', 'fn' => 'fstat', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'seek'              => ['handler' => 'php_fn', 'fn' => 'fseek', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 2],
+            'tell'              => ['handler' => 'php_fn', 'fn' => 'ftell', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'lock'              => ['handler' => 'php_fn', 'fn' => 'flock', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
+            'eof'               => ['handler' => 'php_fn', 'fn' => 'feof', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'getChar'           => ['handler' => 'php_fn', 'fn' => 'fgetc', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'getLine'           => ['handler' => 'php_fn', 'fn' => 'fgets', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
             // --- stream_* functions ---
-            'getContents'       => ['handler' => 'php_fn', 'fn' => 'stream_get_contents', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
-            'getMetaData'       => ['handler' => 'php_fn', 'fn' => 'stream_get_meta_data', 'return_type' => self::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
-            'isLocal'           => ['handler' => 'php_fn', 'fn' => 'stream_is_local', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'isTTY'             => ['handler' => 'php_fn', 'fn' => 'stream_isatty', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'setBlocking'       => ['handler' => 'php_fn', 'fn' => 'stream_set_blocking', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
-            'setChunkSize'      => ['handler' => 'php_fn', 'fn' => 'stream_set_chunk_size', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'setReadBuffer'     => ['handler' => 'php_fn', 'fn' => 'stream_set_read_buffer', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'setTimeout'        => ['handler' => 'php_fn', 'fn' => 'stream_set_timeout', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
-            'setWriteBuffer'    => ['handler' => 'php_fn', 'fn' => 'stream_set_write_buffer', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'supportsLock'      => ['handler' => 'php_fn', 'fn' => 'stream_supports_lock', 'return_type' => self::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'copy'              => ['handler' => 'php_fn', 'fn' => 'stream_copy_to_stream', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
+            'getContents'       => ['handler' => 'php_fn', 'fn' => 'stream_get_contents', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'getMetaData'       => ['handler' => 'php_fn', 'fn' => 'stream_get_meta_data', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'isLocal'           => ['handler' => 'php_fn', 'fn' => 'stream_is_local', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'isTTY'             => ['handler' => 'php_fn', 'fn' => 'stream_isatty', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'setBlocking'       => ['handler' => 'php_fn', 'fn' => 'stream_set_blocking', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
+            'setChunkSize'      => ['handler' => 'php_fn', 'fn' => 'stream_set_chunk_size', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'setReadBuffer'     => ['handler' => 'php_fn', 'fn' => 'stream_set_read_buffer', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'setTimeout'        => ['handler' => 'php_fn', 'fn' => 'stream_set_timeout', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
+            'setWriteBuffer'    => ['handler' => 'php_fn', 'fn' => 'stream_set_write_buffer', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'supportsLock'      => ['handler' => 'php_fn', 'fn' => 'stream_supports_lock', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
+            'copy'              => ['handler' => 'php_fn', 'fn' => 'stream_copy_to_stream', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
             // --- stream_socket_* functions ---
-            'accept'            => ['handler' => 'php_fn', 'fn' => 'stream_socket_accept', 'return_type' => self::TYPE_STREAM, 'min_args' => 0, 'max_args' => 1],
-            'enableCrypto'      => ['handler' => 'php_fn', 'fn' => 'stream_socket_enable_crypto', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
-            'getSocketName'     => ['handler' => 'php_fn', 'fn' => 'stream_socket_get_name', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
-            'recvFrom'          => ['handler' => 'php_fn', 'fn' => 'stream_socket_recvfrom', 'return_type' => self::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
-            'sendTo'            => ['handler' => 'php_fn', 'fn' => 'stream_socket_sendto', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
-            'shutdown'          => ['handler' => 'php_fn', 'fn' => 'stream_socket_shutdown', 'return_type' => self::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
-            'getRecord'         => ['handler' => 'php_fn', 'fn' => 'stream_get_line', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
+            'accept'            => ['handler' => 'php_fn', 'fn' => 'stream_socket_accept', 'return_type' => CompilerBase::TYPE_STREAM, 'min_args' => 0, 'max_args' => 1],
+            'enableCrypto'      => ['handler' => 'php_fn', 'fn' => 'stream_socket_enable_crypto', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
+            'getSocketName'     => ['handler' => 'php_fn', 'fn' => 'stream_socket_get_name', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 1],
+            'recvFrom'          => ['handler' => 'php_fn', 'fn' => 'stream_socket_recvfrom', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 1, 'max_args' => 2],
+            'sendTo'            => ['handler' => 'php_fn', 'fn' => 'stream_socket_sendto', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 3],
+            'shutdown'          => ['handler' => 'php_fn', 'fn' => 'stream_socket_shutdown', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
+            'getRecord'         => ['handler' => 'php_fn', 'fn' => 'stream_get_line', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
             // --- stream filters ---
-            'appendFilter'      => ['handler' => 'php_fn', 'fn' => 'stream_filter_append', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
-            'prependFilter'     => ['handler' => 'php_fn', 'fn' => 'stream_filter_prepend', 'return_type' => self::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'appendFilter'      => ['handler' => 'php_fn', 'fn' => 'stream_filter_append', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
+            'prependFilter'     => ['handler' => 'php_fn', 'fn' => 'stream_filter_prepend', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 3],
         ],
-        self::TYPE_BIGINT => [
-            'add'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::add', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
-            'sub'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::sub', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
-            'mul'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::mul', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
-            'div'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::div', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
-            'mod'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::mod', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
-            'pow'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::pow', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
-            'neg'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::neg', 'return_type' => self::TYPE_BIGINT, 'min_args' => 0, 'max_args' => 0],
-            'cmp'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::cmp', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'abs'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::abs', 'return_type' => self::TYPE_BIGINT, 'min_args' => 0, 'max_args' => 0],
-            'gcd'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::gcd', 'return_type' => self::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
-            'divmod'       => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::divmod', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
-            'powmod'       => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::powmod', 'return_type' => self::TYPE_BIGINT, 'min_args' => 2, 'max_args' => 2],
-            'sqrt'         => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::sqrt', 'return_type' => self::TYPE_BIGINT, 'min_args' => 0, 'max_args' => 0],
-            'toString'     => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toInt'        => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+        CompilerBase::TYPE_BIGINT => [
+            'add'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::add', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'sub'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::sub', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'mul'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::mul', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'div'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::div', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'mod'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::mod', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'pow'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::pow', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'neg'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::neg', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 0, 'max_args' => 0],
+            'cmp'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::cmp', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'abs'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::abs', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 0, 'max_args' => 0],
+            'gcd'          => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::gcd', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
+            'divmod'       => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::divmod', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
+            'powmod'       => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::powmod', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 2, 'max_args' => 2],
+            'sqrt'         => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::sqrt', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 0, 'max_args' => 0],
+            'toString'     => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'toInt'        => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toFloat'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
         ],
-        self::TYPE_DECIMAL => [
-            'add'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::add', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
-            'sub'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::sub', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
-            'mul'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::mul', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
-            'div'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::div', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
-            'mod'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::mod', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
-            'pow'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::pow', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
-            'neg'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::neg', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
-            'cmp'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::cmp', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'abs'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::abs', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
-            'divmod'   => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::divmod', 'return_type' => self::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
-            'powmod'   => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::powmod', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 2, 'max_args' => 2],
-            'sqrt'     => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::sqrt', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
-            'floor'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::floor', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
-            'ceil'     => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::ceil', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
-            'round'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::round', 'return_type' => self::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 1],
-            'toString' => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toInt'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'  => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+        CompilerBase::TYPE_DECIMAL => [
+            'add'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::add', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'sub'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::sub', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'mul'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::mul', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'div'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::div', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'mod'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::mod', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'pow'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::pow', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 1, 'max_args' => 1],
+            'neg'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::neg', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
+            'cmp'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::cmp', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'abs'      => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::abs', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
+            'divmod'   => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::divmod', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
+            'powmod'   => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::powmod', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 2, 'max_args' => 2],
+            'sqrt'     => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::sqrt', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
+            'floor'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::floor', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
+            'ceil'     => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::ceil', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
+            'round'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::round', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 1],
+            'toString' => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'toInt'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toFloat'  => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
         ],
-        self::TYPE_BIGFLOAT => [
-            'add'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::add', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
-            'sub'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::sub', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
-            'mul'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::mul', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
-            'div'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::div', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
-            'neg'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::neg', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
-            'cmp'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::cmp', 'return_type' => self::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
-            'abs'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::abs', 'return_type' => self::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toString' => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toString', 'return_type' => self::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toInt'    => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toInt', 'return_type' => self::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'  => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toFloat', 'return_type' => self::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
+        CompilerBase::TYPE_BIGFLOAT => [
+            'add'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::add', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
+            'sub'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::sub', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
+            'mul'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::mul', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
+            'div'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::div', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
+            'neg'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::neg', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
+            'cmp'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::cmp', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
+            'abs'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::abs', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
+            'toString' => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
+            'toInt'    => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
+            'toFloat'  => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
         ],
     ];
 
     private const array MUTATING_HANDLERS = ['direct_method_mutate', 'php_fn_ref'];
 
-    private const array TYPE_SEARCH_ORDER = [self::TYPE_STR, self::TYPE_ARRAY, self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL, self::TYPE_STREAM, self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT];
+    private const array TYPE_SEARCH_ORDER = [CompilerBase::TYPE_STR, CompilerBase::TYPE_ARRAY, CompilerBase::TYPE_INT, CompilerBase::TYPE_FLOAT, CompilerBase::TYPE_BOOL, CompilerBase::TYPE_STREAM, CompilerBase::TYPE_BIGINT, CompilerBase::TYPE_DECIMAL, CompilerBase::TYPE_BIGFLOAT];
 
     protected function detectUniversalMethodReturnType(string $type, string $method): ?string
     {
-        if ($type === self::TYPE_VAR) {
-            foreach (self::TYPE_SEARCH_ORDER as $searchType) {
+        if ($type === CompilerBase::TYPE_VAR) {
+            foreach (CompilerBase::TYPE_SEARCH_ORDER as $searchType) {
                 $def = static::UNIVERSAL_METHODS[$searchType][$method] ?? null;
                 if ($def !== null) {
                     return $def['return_type'];
@@ -365,15 +365,15 @@ trait UniversalMethodCall
     }
 
     private const array TYPE_EXTENSION_PREFIX = [
-        self::TYPE_INT    => 'int',
-        self::TYPE_FLOAT  => 'float',
-        self::TYPE_BOOL   => 'bool',
-        self::TYPE_STR    => 'str',
-        self::TYPE_ARRAY  => 'array',
-        self::TYPE_STREAM => 'stream',
-        self::TYPE_BIGINT => 'bigint',
-        self::TYPE_DECIMAL => 'decimal',
-        self::TYPE_BIGFLOAT => 'bigfloat',
+        CompilerBase::TYPE_INT    => 'int',
+        CompilerBase::TYPE_FLOAT  => 'float',
+        CompilerBase::TYPE_BOOL   => 'bool',
+        CompilerBase::TYPE_STR    => 'str',
+        CompilerBase::TYPE_ARRAY  => 'array',
+        CompilerBase::TYPE_STREAM => 'stream',
+        CompilerBase::TYPE_BIGINT => 'bigint',
+        CompilerBase::TYPE_DECIMAL => 'decimal',
+        CompilerBase::TYPE_BIGFLOAT => 'bigfloat',
     ];
 
     protected function camelToSnake(string $name): string
@@ -386,8 +386,8 @@ trait UniversalMethodCall
      */
     protected function findUniversalMethodAnyType(string $type, string $method): ?array
     {
-        if ($type === self::TYPE_VAR) {
-            foreach (self::TYPE_SEARCH_ORDER as $searchType) {
+        if ($type === CompilerBase::TYPE_VAR) {
+            foreach (CompilerBase::TYPE_SEARCH_ORDER as $searchType) {
                 $def = static::UNIVERSAL_METHODS[$searchType][$method] ?? null;
                 if ($def !== null) {
                     return $def;
@@ -415,7 +415,7 @@ trait UniversalMethodCall
      */
     protected function findExtensionMethod(string $type, string $method): ?array
     {
-        $prefix = self::TYPE_EXTENSION_PREFIX[$type] ?? null;
+        $prefix = CompilerBase::TYPE_EXTENSION_PREFIX[$type] ?? null;
         if ($prefix === null) {
             return null;
         }
@@ -463,7 +463,7 @@ trait UniversalMethodCall
         }
 
         $phpType = Reflection::getFunctionReturnType($funcName);
-        $returnType = $phpType ? ($this->zendTypeMap[$phpType] ?? self::TYPE_VAR) : self::TYPE_VAR;
+        $returnType = $phpType ? ($this->zendTypeMap[$phpType] ?? CompilerBase::TYPE_VAR) : CompilerBase::TYPE_VAR;
 
         $requiredParams = $ref->getNumberOfRequiredParameters();
         $minArgs = max(0, $requiredParams - 1);
@@ -493,14 +493,14 @@ trait UniversalMethodCall
         }
         $firstParam = $funcDef->argInfoList[0];
         // Stream is a PHP pseudo-type; its params are always untyped (TYPE_VAR) or references
-        if ($type === self::TYPE_STREAM) {
-            return $firstParam->byRef || $firstParam->type === self::TYPE_VAR || $firstParam->type === self::TYPE_REF;
+        if ($type === CompilerBase::TYPE_STREAM) {
+            return $firstParam->byRef || $firstParam->type === CompilerBase::TYPE_VAR || $firstParam->type === CompilerBase::TYPE_REF;
         }
         if ($firstParam->byRef) {
-            return $type === self::TYPE_ARRAY;
+            return $type === CompilerBase::TYPE_ARRAY;
         }
         $paramType = $firstParam->type;
-        if ($paramType === self::TYPE_VAR) {
+        if ($paramType === CompilerBase::TYPE_VAR) {
             return false;
         }
         return $paramType === $type;
@@ -513,11 +513,11 @@ trait UniversalMethodCall
             return false;
         }
         // Stream pseudo-type: accept untyped or by-reference first params
-        if ($type === self::TYPE_STREAM) {
+        if ($type === CompilerBase::TYPE_STREAM) {
             return true;
         }
         if ($param->isPassedByReference()) {
-            return $type === self::TYPE_ARRAY;
+            return $type === CompilerBase::TYPE_ARRAY;
         }
         $paramType = $param->getType();
         if ($paramType === null) {
@@ -570,7 +570,7 @@ trait UniversalMethodCall
         $this->validateUniversalMethodArgs($expr, $method, $def, false);
 
         // Evaluate receiver into temp var to avoid double evaluation
-        $streamVar = $this->addTmpVar(self::TYPE_VAR);
+        $streamVar = $this->addTmpVar(CompilerBase::TYPE_VAR);
         $this->context->beforeStmtLines[] = $streamVar . ' = ' . $receiver . ';';
 
         $methodCall = match ($def['handler']) {
@@ -580,7 +580,7 @@ trait UniversalMethodCall
             default         => null,
         };
 
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $tmpVar = $this->addTmpVar(CompilerBase::TYPE_VAR);
         $this->context->beforeStmtLines[] = "{$tmpVar} = {$methodCall};";
         return $tmpVar;
     }
@@ -592,11 +592,11 @@ trait UniversalMethodCall
     private function wrapUniversalReceiver(string $type, string $expr): string
     {
         $convFns = [
-            self::TYPE_ARRAY  => 'toArray',
-            self::TYPE_STR    => 'toString',
-            self::TYPE_INT    => 'toInt',
-            self::TYPE_FLOAT  => 'toFloat',
-            self::TYPE_BOOL   => 'toBool',
+            CompilerBase::TYPE_ARRAY  => 'toArray',
+            CompilerBase::TYPE_STR    => 'toString',
+            CompilerBase::TYPE_INT    => 'toInt',
+            CompilerBase::TYPE_FLOAT  => 'toFloat',
+            CompilerBase::TYPE_BOOL   => 'toBool',
         ];
         if (isset($convFns[$type])) {
             return 'php::' . $convFns[$type] . '(' . $expr . ')';
@@ -733,8 +733,8 @@ trait UniversalMethodCall
 
     protected function genUniversalPhpFnRef(string $receiver, string $phpFunc, array $args, string $returnType): string
     {
-        $tmpRef = $this->addTmpVar(self::TYPE_REF);
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $tmpRef = $this->addTmpVar(CompilerBase::TYPE_REF);
+        $tmpVar = $this->addTmpVar(CompilerBase::TYPE_VAR);
         $argExprs = ['&' . $tmpRef];
         foreach ($args as $arg) {
             $argExprs[] = $this->parseExpr($arg->value);
