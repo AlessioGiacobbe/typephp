@@ -604,6 +604,10 @@ CODE;
                 if ($constant->type === self::TYPE_ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
                     $code .= $constName . ".unset();\n";
+
+                    $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
+                    $classConstStr = $this->genCharPtr($constant->name);
+                    $code .= "php::updateConstant($classNameStr, $classConstStr, php::null);\n";
                 }
             }
         }
@@ -1278,6 +1282,9 @@ CODE;
                     $code .= "do {\n";
                     $code .= $constant->arrayExpr;
                     $code .= $constName . ' = ' . $constant->value . ";\n";
+                    $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
+                    $classConstStr = $this->genCharPtr($constant->name);
+                    $code .= "php::updateConstant($classNameStr, $classConstStr, {$constant->value});\n";
                     $code .= "} while(0);\n";
                 }
             }
