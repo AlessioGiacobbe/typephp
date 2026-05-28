@@ -6064,6 +6064,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         // 保护方法，只能当前类和子类使用
         if ($flags & Modifiers::PROTECTED) {
+            if (!$this->classDef) {
+                return false;
+            }
             return $this->isInheritedFrom($this->classDef->getNamespacedName(false), $classDef->getNamespacedName(false));
         }
         // 类外部调用，只允许调用 public 方法

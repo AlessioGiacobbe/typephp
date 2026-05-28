@@ -2458,7 +2458,7 @@ class EvaluatedValue
             } elseif (!($this->expr instanceof String_)) {
                 throw new Exception("Expression at line " . $this->expr->getStartLine() . " must be a scalar string");
             }
-            $expr = preg_replace("/(^'|'$)/", '"', $expr);
+            $expr = preg_replace("/(^'|'$)/", '"', getTranslator()->escapeString($expr));
         } elseif ($this->type->isInt() or $this->type->isFloat()) {
             return strval($this->value);
         } elseif ($this->type->isBool()) {

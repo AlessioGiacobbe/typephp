@@ -28,7 +28,7 @@ trait Utils
         }
     }
 
-    protected function genCharPtr(string $str, bool $escape = false): string
+    public function genCharPtr(string $str, bool $escape = false): string
     {
         return '"' . ($escape ? $this->escapeString($str) : $str) . '"';
     }
@@ -48,7 +48,7 @@ trait Utils
         return 'R"(' . $str . ')"';
     }
 
-    protected function escapeString(string $str): string
+    public function escapeString(string $str): string
     {
         $str = addcslashes($str, "\\\"\n\r\t\v\f\0\x01..\x1f\x7f..\xff");
         // C++ trigraph
