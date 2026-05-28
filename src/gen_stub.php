@@ -2309,12 +2309,12 @@ class EvaluatedValue
                         if (isset($allConstInfos[$constName])) {
                             return $allConstInfos[$constName]->getValue($allConstInfos)->value;
                         } else {
-                            return getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $expr->name->toString());
+                            return getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $expr->name->toString(), ClassInfo::$currentClass);
                         }
                     } elseif ($expr->name->__toString() === 'class') {
                         return $class;
                     } else {
-                        return getTranslator()->getClassConstValue($expr, $class, $expr->name->__toString());
+                        return getTranslator()->getClassConstValue($expr, $class, $expr->name->__toString(), ClassInfo::$currentClass);
                     }
                 } else {
                     $constName = $expr->name->__toString();
@@ -4525,6 +4525,8 @@ class FileInfo {
                     $this->getMinimumPhpVersionIdCompatibility(),
                     $this->isUndocumentable
                 );
+                // 清理当前类名，避免污染
+                ClassInfo::$currentClass = '';
                 continue;
             }
 
@@ -4582,6 +4584,7 @@ class FileInfo {
         foreach ($this->classInfos as $class) {
             ClassInfo::$currentClass = $class->name->toString();
             $code .= "\n" . $class->getRegistration($allConstInfos);
+            ClassInfo::$currentClass = '';
         }
 
         return $code;
@@ -4866,7 +4869,7 @@ function parseFunctionLike(
             }
 
             if ($param->default instanceof Expr\ClassConstFetch && $param->default->class->toLowerString() === "self") {
-                $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name);
+                $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name, ClassInfo::$currentClass);
             } else {
                 $defaultValue = $param->default ? $prettyPrinter->prettyPrintExpr($param->default) : null;
             }

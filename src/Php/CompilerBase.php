@@ -892,7 +892,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return strtolower($fullClassName . '::' . $method);
     }
 
-    public function getNamespacedClassName(string $class): string
+    public function getNamespacedClassName(string $class, string $currentNamespace = ''): string
     {
         if ($class === '') {
             $this->error('Class name can not be empty');
@@ -920,7 +920,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
-        $currentNamespace = $this->namespace;
+        if (!$currentNamespace) {
+            $currentNamespace = $this->namespace;
+        }
         if (!empty($currentNamespace)) {
             return trim($currentNamespace, '\\') . '\\' . $class;
         }
