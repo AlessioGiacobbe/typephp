@@ -1941,13 +1941,26 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
+            // Bitwise shifts: right operand is shift amount, must stay as Int
+            if ($op === '<<' || $op === '>>') {
+                if ($leftType !== self::TYPE_BIGINT) {
+                    $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
+                }
+                if ($rightType === self::TYPE_BIGINT) {
+                    $rightExpr = 'php::BigInt::toInt(' . $rightExpr . ')';
+                } elseif ($rightType !== self::TYPE_INT) {
+                    $rightExpr = $this->convertExprType($rightExpr, $rightType, self::TYPE_INT);
+                }
+                $method = ($op === '<<') ? 'bitShiftLeft' : 'bitShiftRight';
+                return 'php::BigInt::' . $method . '(' . $leftExpr . ', ' . $rightExpr . ')';
+            }
                         if ($leftType !== self::TYPE_BIGINT) {
                 $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
             }
             if ($rightType !== self::TYPE_BIGINT) {
                 $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
             }
-            $arithOpMap = ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod'];
+            $arithOpMap = ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod', '&' => 'bitAnd', '|' => 'bitOr', '^' => 'bitXor'];
             $method = $arithOpMap[$op] ?? null;
             if ($method) {
                 return 'php::BigInt::' . $method . '(' . $leftExpr . ', ' . $rightExpr . ')';
@@ -2373,6 +2386,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         switch ($exprType) {
             case 'Expr_UnaryMinus':
                 return $this->detectTypeOfExpr($expr->expr);
+            case 'Expr_BitwiseNot':
+                $inner = $this->detectTypeOfExpr($expr->expr);
+                return $inner === self::TYPE_BIGINT ? self::TYPE_BIGINT : self::TYPE_INT;
             case 'Expr_Cast_Int':
                 return self::TYPE_INT;
             case 'Scalar_Int':
@@ -2564,6 +2580,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_New':
                 return self::TYPE_OBJECT;
             case 'Expr_Assign':
+            case 'Expr_AssignOp_BitwiseAnd':
+            case 'Expr_AssignOp_BitwiseOr':
+            case 'Expr_AssignOp_BitwiseXor':
                 return $this->detectVarType($expr->var);
             case 'Expr_Variable':
                 return $this->detectVarType($expr);
@@ -3122,7 +3141,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseBigAssignOpExpr(string $leftExpr, string $leftType, string $rightExpr, string $rightType, string $binaryOp, NodeAbstract $errorNode, ?NodeAbstract $rightNode = null): string
     {
         [$class, $opMap] = match ($leftType) {
-            self::TYPE_BIGINT   => ['BigInt',   ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod']],
+            self::TYPE_BIGINT   => ['BigInt',   ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod', '&' => 'bitAnd', '|' => 'bitOr', '^' => 'bitXor', '<<' => 'bitShiftLeft', '>>' => 'bitShiftRight']],
             self::TYPE_DECIMAL  => ['Decimal',  ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod']],
             self::TYPE_BIGFLOAT => ['BigFloat', ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div']],
         };
@@ -3132,8 +3151,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->fatalError($errorNode, "Unsupported compound assignment operator '{$binaryOp}' for type {$leftType}");
         }
 
+        // For bitwise shifts, the right operand is a shift amount (Int), not BigInt
+        $isShift = ($binaryOp === '<<' || $binaryOp === '>>');
         $convertedRight = match ($leftType) {
-            self::TYPE_BIGINT   => $this->convertBigIntExpr($rightExpr, $rightType),
+            self::TYPE_BIGINT   => $isShift ? $rightExpr : $this->convertBigIntExpr($rightExpr, $rightType),
             self::TYPE_DECIMAL  => $this->convertDecimalExpr($rightExpr, $rightType, $rightNode),
             self::TYPE_BIGFLOAT => $this->convertBigFloatExpr($rightExpr, $rightType),
         };
@@ -3847,8 +3868,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseBitwiseNot(Expr\BitwiseNot $expr): string
     {
+        $type = $this->detectTypeOfExpr($expr->expr);
+        if ($type === self::TYPE_BIGINT) {
+            return 'php::BigInt::bitNot(' . $this->parseExpr($expr->expr) . ')';
+        }
         $var = $this->parseIdentifier($expr->expr);
-
         return '~' . $var;
     }
 
