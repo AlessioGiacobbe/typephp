@@ -69,7 +69,19 @@ trait FuncCallOptimizer
                 case 'boolval':
                     return $this->convertBoolExpr($this->parseExpr($expr->args[0]->value));
                 case 'strval':
-                    return $this->convertStringExpr($this->parseExpr($expr->args[0]->value));
+                    $arg = $expr->args[0]->value;
+                    $type = $this->detectTypeOfExpr($arg);
+                    $parsed = $this->parseExpr($arg);
+                    if ($type === self::TYPE_BIGINT) {
+                        return 'php::BigInt::toString(' . $parsed . ')';
+                    }
+                    if ($type === self::TYPE_BIGFLOAT) {
+                        return 'php::BigFloat::toString(' . $parsed . ')';
+                    }
+                    if ($type === self::TYPE_DECIMAL) {
+                        return 'php::Decimal::toString(' . $parsed . ')';
+                    }
+                    return $this->convertStringExpr($parsed);
                 default:
                     break;
             }
@@ -91,10 +103,58 @@ trait FuncCallOptimizer
             }
         }
         if ($name === 'abs') {
+            $type = $this->detectTypeOfExpr($expr->args[0]->value);
+            if ($type === self::TYPE_BIGINT) {
+                return 'php::BigInt::abs(' . $this->parseExpr($expr->args[0]->value) . ')';
+            }
+            if ($type === self::TYPE_BIGFLOAT) {
+                return 'php::BigFloat::abs(' . $this->parseExpr($expr->args[0]->value) . ')';
+            }
+            if ($type === self::TYPE_DECIMAL) {
+                return 'php::Decimal::abs(' . $this->parseExpr($expr->args[0]->value) . ')';
+            }
             return 'php::math::abs(' . $getArg(0) . ')';
         }
         if ($name === 'pow') {
+            $type = $this->detectTypeOfExpr($expr->args[0]->value);
+            if ($type === self::TYPE_BIGINT) {
+                return 'php::BigInt::pow(' . $this->parseExpr($expr->args[0]->value) . ', ' . $this->parseExpr($expr->args[1]->value) . ')';
+            }
+            if ($type === self::TYPE_DECIMAL) {
+                return 'php::Decimal::pow(' . $this->parseExpr($expr->args[0]->value) . ', ' . $this->parseExpr($expr->args[1]->value) . ')';
+            }
             return 'php::math::pow(' . $getArg(0) . ', ' . $getArg(1) . ')';
+        }
+        if ($name === 'sqrt') {
+            $type = $this->detectTypeOfExpr($expr->args[0]->value);
+            if ($type === self::TYPE_BIGINT) {
+                return 'php::BigInt::sqrt(' . $this->parseExpr($expr->args[0]->value) . ')';
+            }
+            if ($type === self::TYPE_DECIMAL) {
+                return 'php::Decimal::sqrt(' . $this->parseExpr($expr->args[0]->value) . ')';
+            }
+        }
+        if ($name === 'floor') {
+            $type = $this->detectTypeOfExpr($expr->args[0]->value);
+            if ($type === self::TYPE_DECIMAL) {
+                return 'php::Decimal::floor(' . $this->parseExpr($expr->args[0]->value) . ')';
+            }
+        }
+        if ($name === 'ceil') {
+            $type = $this->detectTypeOfExpr($expr->args[0]->value);
+            if ($type === self::TYPE_DECIMAL) {
+                return 'php::Decimal::ceil(' . $this->parseExpr($expr->args[0]->value) . ')';
+            }
+        }
+        if ($name === 'round') {
+            $type = $this->detectTypeOfExpr($expr->args[0]->value);
+            if ($type === self::TYPE_DECIMAL) {
+                $arg0 = $this->parseExpr($expr->args[0]->value);
+                if (count($expr->args) >= 2) {
+                    return 'php::Decimal::round(' . $arg0 . ', ' . $this->parseExpr($expr->args[1]->value) . ')';
+                }
+                return 'php::Decimal::round(' . $arg0 . ')';
+            }
         }
         if ($name === 'strlen') {
             return 'php::fn::strlen(' . $getArg(0) . ')';

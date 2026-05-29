@@ -1781,7 +1781,16 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($expr instanceof Expr\Assign) {
                 $this->fatalError($expr, 'Cannot echo assign expression');
             } else {
-                $lines[] = 'php::echo(' . $this->parseExpr($expr) . ');';
+                $type = $this->detectTypeOfExpr($expr);
+                $parsed = $this->parseExpr($expr);
+                if ($type === self::TYPE_BIGINT) {
+                    $parsed = 'php::BigInt::toString(' . $parsed . ')';
+                } elseif ($type === self::TYPE_BIGFLOAT) {
+                    $parsed = 'php::BigFloat::toString(' . $parsed . ')';
+                } elseif ($type === self::TYPE_DECIMAL) {
+                    $parsed = 'php::Decimal::toString(' . $parsed . ')';
+                }
+                $lines[] = 'php::echo(' . $parsed . ');';
             }
         }
 
@@ -2460,6 +2469,25 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_FuncCall':
                 if ($this->isNameExpr($expr->name)) {
                     $name = $this->parseIdentifier($expr->name);
+                    // Math function optimization: propagate Big* return types
+                    if (in_array($name, ['abs', 'pow', 'sqrt', 'floor', 'ceil', 'round'], true) && !empty($expr->args)) {
+                        $argType = $this->detectTypeOfExpr($expr->args[0]->value);
+                        if (
+                            $argType === self::TYPE_BIGINT
+                            && in_array($name, ['abs', 'pow', 'sqrt'], true)
+                        ) {
+                            return self::TYPE_BIGINT;
+                        }
+                        if (
+                            $argType === self::TYPE_DECIMAL
+                            && in_array($name, ['abs', 'pow', 'sqrt', 'floor', 'ceil', 'round'], true)
+                        ) {
+                            return self::TYPE_DECIMAL;
+                        }
+                        if ($argType === self::TYPE_BIGFLOAT && $name === 'abs') {
+                            return self::TYPE_BIGFLOAT;
+                        }
+                    }
                     if (in_array($name, self::STREAM_FUNCTIONS) || $name === 'stream_cast') {
                         return self::TYPE_STREAM;
                     }
@@ -2976,15 +3004,29 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseBinaryOpConcat(Expr\BinaryOp\Concat $expr): string
     {
-        $left = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
+        $left = $this->parseExpr($expr->left);
+        $right = $this->parseExpr($expr->right);
 
         $leftType = $this->detectTypeOfExpr($expr->left);
         $rightType = $this->detectTypeOfExpr($expr->right);
         if ($leftType === self::TYPE_VOID or $rightType === self::TYPE_VOID) {
             $this->fatalError($expr, 'Cannot concat void');
         }
-        return Symbol::concat() . '(' . $this->convertStringExpr($left) . ', ' . $this->convertStringExpr($right) . ')';
+        return Symbol::concat() . '(' . $this->convertExprToStringByType($left, $leftType) . ', ' . $this->convertExprToStringByType($right, $rightType) . ')';
+    }
+
+    protected function convertExprToStringByType(string $expr, $type): string
+    {
+        if ($type === self::TYPE_BIGINT) {
+            return 'php::BigInt::toString(' . $expr . ')';
+        }
+        if ($type === self::TYPE_BIGFLOAT) {
+            return 'php::BigFloat::toString(' . $expr . ')';
+        }
+        if ($type === self::TYPE_DECIMAL) {
+            return 'php::Decimal::toString(' . $expr . ')';
+        }
+        return $this->convertStringExpr($expr);
     }
 
     protected function parseFor(Node\Stmt\For_ $v): string
@@ -4348,7 +4390,18 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastString(Expr\Cast\String_ $node): string
     {
-        return $this->convertStringExpr($this->parseExpr($node->expr));
+        $type = $this->detectTypeOfExpr($node->expr);
+        $expr = $this->parseExpr($node->expr);
+        if ($type === self::TYPE_BIGINT) {
+            return 'php::BigInt::toString(' . $expr . ')';
+        }
+        if ($type === self::TYPE_BIGFLOAT) {
+            return 'php::BigFloat::toString(' . $expr . ')';
+        }
+        if ($type === self::TYPE_DECIMAL) {
+            return 'php::Decimal::toString(' . $expr . ')';
+        }
+        return $this->convertStringExpr($expr);
     }
 
     protected function parseCastBool(Expr\Cast\Bool_ $node): string
