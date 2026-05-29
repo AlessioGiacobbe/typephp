@@ -1113,10 +1113,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         foreach ($this->functionDef->argInfoList as $argInfo) {
             $this->addArgument($argInfo->name, $argInfo->type);
-            if ($argInfo->class
-                and !$this->isAbstractClass($argInfo->class)
-                and !$this->hasInterface($argInfo->class)
-                and !$this->isInternalClass($argInfo->class)) {
+            if ($argInfo->class) {
                 $this->addObject($argInfo->name, $argInfo->class);
             }
         }
@@ -1656,10 +1653,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($rightClass) {
                 if (!$this->hasVar($var)) {
                     $this->addLocalVar($var, self::TYPE_OBJECT);
-                    // TODO 返回值类型是一个接口，只能作为 var 变量，无法作为 TypedObject
-                    if (!$this->hasInterface($rightClass) and !$this->isAbstractClass($rightClass)) {
-                        $this->addObject($var, $rightClass);
-                    }
+                    $this->addObject($var, $rightClass);
                 } elseif ($this->isTypedObject($var)) {
                     $leftClass = $this->getObjectType($var);
                     // 对象的类不一致，不能互相赋值，必须使用 objval() 对齐类型
@@ -2202,8 +2196,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function addObject(string $name, string $class): void
     {
-        if ($this->hasInterface($class) or $this->isAbstractClass($class)) {
-            $this->error("Cannot create an instance of abstract/interface `$class`");
+        // 接口、抽象类、内部类、非原生类，无法作为 TypedObject 使用
+        if ($this->hasInterface($class) or
+            $this->isInternalClass($class) or
+            $this->isAbstractClass($class) or
+            !$this->hasClass($class)) {
+            return;
         }
         $this->context->objects[$name] = $class;
     }
@@ -2671,7 +2669,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $type = self::TYPE_VAR;
         }
         if ($class and !$this->hasInterface($class) and !$this->isAbstractClass($class)) {
-            $this->addObject($var, $class);
             $argInfo->class = $class;
         }
         return $type;
