@@ -2,9 +2,9 @@
 std map: unsafe_cast type mismatch
 --FILE--
 <?php
-function std_map_unsafe_ptr_type_mismatch(UnsafePtr $unsafePtr): void
+function std_map_unsafe_ptr_type_mismatch($source): void
 {
-    $map = std::unsafe_cast(std::map(complex_types::type_str, native_types::type_float), $unsafePtr);
+    $map = std::unsafe_cast(std::map(complex_types::type_str, native_types::type_float), $source);
 }
 
 function main() {
@@ -17,4 +17,4 @@ function main() {
 }
 ?>
 --EXPECT--
-std::unsafe_cast(): UnsafePtr type mismatch
+std::unsafe_cast(): std container type mismatch

@@ -88,12 +88,11 @@ class PreprocessorTest extends TestCase
         $this->assertEquals('php::Object obj', $result);
     }
 
-    public function testGenArgumentDeclarationUnsafePtr(): void
+    public function testGenArgumentDeclarationVar(): void
     {
         $arg = new ArgInfo();
         $arg->name = 'container';
         $arg->type = 'php::Var';
-        $arg->unsafePtr = true;
         $result = $this->invokeMethod('genArgumentDeclaration', $arg);
         $this->assertEquals('php::Var container', $result);
     }

@@ -2,9 +2,9 @@
 std array: unsafe_cast type mismatch
 --FILE--
 <?php
-function std_array_unsafe_ptr_type_mismatch(UnsafePtr $unsafePtr): void
+function std_array_unsafe_ptr_type_mismatch($source): void
 {
-    $array = std::unsafe_cast(std::array(native_types::type_float, 3), $unsafePtr);
+    $array = std::unsafe_cast(std::array(native_types::type_float, 3), $source);
 }
 
 function main() {
@@ -17,4 +17,4 @@ function main() {
 }
 ?>
 --EXPECT--
-std::unsafe_cast(): UnsafePtr type mismatch
+std::unsafe_cast(): std container type mismatch

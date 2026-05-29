@@ -1,10 +1,10 @@
 --TEST--
-std array: UnsafePtr unsafe_cast
+std array: unsafe_cast
 --FILE--
 <?php
-function std_array_unsafe_ptr_update(UnsafePtr $unsafePtr): void
+function std_array_unsafe_ptr_update($source): void
 {
-    $array = std::unsafe_cast(std::array(native_types::type_int, 3), $unsafePtr);
+    $array = std::unsafe_cast(std::array(native_types::type_int, 3), $source);
     var_dump($array[1]);
     $array[2] = 9;
 }

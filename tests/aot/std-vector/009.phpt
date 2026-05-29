@@ -5,9 +5,9 @@ std vector: namespaced self class value unsafe_cast
 namespace StdVectorUnsafeCastNs {
     class Holder
     {
-        public static function update(UnsafePtr $unsafePtr): void
+        public static function update($source): void
         {
-            $vector = std::unsafe_cast(std::vector(self::class), $unsafePtr);
+            $vector = std::unsafe_cast(std::vector(self::class), $source);
             echo "ok\n";
         }
 

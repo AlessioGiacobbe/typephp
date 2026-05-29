@@ -22,7 +22,6 @@ class ArgInfoTest extends TestCase
         $this->assertFalse($arg->variadic);
         $this->assertFalse($arg->nullable);
         $this->assertFalse($arg->property);
-        $this->assertFalse($arg->unsafePtr);
     }
 
     public function testNameAndType(): void
@@ -85,15 +84,6 @@ class ArgInfoTest extends TestCase
 
         $arg->property = true;
         $this->assertTrue($arg->property);
-    }
-
-    public function testUnsafePtr(): void
-    {
-        $arg = new ArgInfo();
-        $this->assertFalse($arg->unsafePtr);
-
-        $arg->unsafePtr = true;
-        $this->assertTrue($arg->unsafePtr);
     }
 
     public function testAllFlagsCombined(): void

@@ -1,17 +1,14 @@
 --TEST--
-std map: UnsafePtr unsafe_cast
+std map: unsafe_cast
 --FILE--
 <?php
-function std_map_unsafe_ptr_update(UnsafePtr $unsafePtr): void
+function std_map_unsafe_ptr_update($source): void
 {
-    $map = std::unsafe_cast(std::map(complex_types::type_str, native_types::type_int), $unsafePtr);
+    $map = std::unsafe_cast(std::map(complex_types::type_str, native_types::type_int), $source);
     var_dump($map["b"]);
     $map["c"] = 9;
 
-    $GLOBALS['unsafe_ptr'] = $unsafePtr;
-    var_dump($GLOBALS['unsafe_ptr']);
-
-    unset($unsafePtr);
+    unset($source);
 
     $array = (array)$map;
     var_dump(count($array));
@@ -29,6 +26,5 @@ function main() {
 ?>
 --EXPECT--
 int(7)
-NULL
 int(3)
 int(9)

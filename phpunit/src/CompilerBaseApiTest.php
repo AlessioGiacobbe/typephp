@@ -82,7 +82,6 @@ class CompilerBaseApiTest extends TestCase
         $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('null'));
         $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('callable'));
         $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('iterable'));
-        $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('UnsafePtr'));
     }
 
     public function testGetTypeFromZendTypeUnknown(): void

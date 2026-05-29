@@ -1,10 +1,10 @@
 --TEST--
-std vector: UnsafePtr unsafe_cast
+std vector: unsafe_cast
 --FILE--
 <?php
-function std_vector_unsafe_ptr_update(UnsafePtr $unsafePtr): void
+function std_vector_unsafe_ptr_update($source): void
 {
-    $vector = std::unsafe_cast(std::vector(native_types::type_int), $unsafePtr);
+    $vector = std::unsafe_cast(std::vector(native_types::type_int), $source);
     var_dump($vector[1]);
     $vector[2] = 9;
 }

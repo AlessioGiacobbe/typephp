@@ -169,7 +169,7 @@ trait StdContainerParser
     protected function parseStdContainerCopyExpr(NodeAbstract $expr): string
     {
         if ($this->isVarExpr($expr)) {
-            return $this->parseVariable($expr);
+            return $this->parseVariable($expr) . '_ref';
         }
         if ($this->isArrayDimFetch($expr) and $this->isStdArrayExpr($expr)) {
             return $this->parseStdArrayDimFetch($expr);
@@ -196,7 +196,7 @@ trait StdContainerParser
         $array = $this->parseIdentifier($expr->args[0]->value);
         $info = $this->context->stdArrays[$array];
         $value = $this->convertStdValueExpr($info, $expr->args[1]->value);
-        return "{$array}.fill({$value})";
+        return "{$array}_ref.fill({$value})";
     }
 
     protected function getStdArrayInfo(Expr\ArrayDimFetch $expr): ?array
@@ -259,7 +259,7 @@ trait StdContainerParser
                 $this->fatalError($left, 'std::vector append only supports a vector variable');
             }
             $vector = $this->parseVariable($left->var);
-            return $vector . '.push_back(' . $this->convertStdValueExpr($info, $right) . ')';
+            return $vector . '_ref.push_back(' . $this->convertStdValueExpr($info, $right) . ')';
         }
         if ($left->dim === null) {
             $this->fatalError($left, 'std map expects a key');
@@ -327,7 +327,8 @@ trait StdContainerParser
             $this->fatalError($expr, 'std::array access level exceeds array dimensions');
         }
 
-        $nesting = [$this->parseVariable($tmp)];
+        $baseVar = $this->parseVariable($tmp);
+        $nesting = [$baseVar . '_ref'];
         foreach ($dims as $level => $dim) {
             $size = $sizes[$level];
             if ($this->isScalarInt($dim)) {
@@ -338,7 +339,7 @@ trait StdContainerParser
             $index = $this->parseExpr($dim);
             $nesting[] = '[' . Symbol::safeIndex($this->convertIntExpr($index), $size) . ']';
         }
-        $expr->setAttribute('stdArrayDimFetch', ['var' => $nesting[0], 'accessLevel' => count($dims), 'totalLevel' => count($sizes)]);
+        $expr->setAttribute('stdArrayDimFetch', ['var' => $baseVar, 'accessLevel' => count($dims), 'totalLevel' => count($sizes)]);
 
         return implode('', $nesting);
     }
@@ -350,13 +351,13 @@ trait StdContainerParser
             $this->context->stdContainers[$container]['locking'] = true;
         }
         $iterator = $this->genTmpVarName();
-        $code = "for (auto $iterator = $container.begin(); $iterator != $container.end(); ++$iterator) {" . PHP_EOL;
+        $code = "for (auto $iterator = {$container}_ref.begin(); $iterator != {$container}_ref.end(); ++$iterator) {" . PHP_EOL;
         $this->indentLevel++;
         if ($node->keyVar) {
             $keyVar = $this->parseIdentifier($node->keyVar);
             $this->checkVar($node, $keyVar, $this->getStdContainerKeyType($container));
             if ($this->isStdVector($container) or $this->isStdArray($container)) {
-                $code .= $this->getIndent() . "$keyVar = $iterator - $container.begin();" . PHP_EOL;
+                $code .= $this->getIndent() . "$keyVar = $iterator - {$container}_ref.begin();" . PHP_EOL;
             } else {
                 $code .= $this->getIndent() . "$keyVar = {$iterator}->first;" . PHP_EOL;
             }
@@ -424,7 +425,7 @@ trait StdContainerParser
         $container = $this->parseVariable($tmp);
         $index = $this->parseExpr($dim);
         $key = $info['kind'] === 'vector' ? $this->convertIntExpr($index) : $this->convertStdContainerKey($info, $index);
-        $access = $container . '.offsetGet(' . $key . ')';
+        $access = $container . '_ref.offsetGet(' . $key . ')';
         $expr->setAttribute('stdContainerDimFetch', ['var' => $container, 'accessLevel' => 1, 'totalLevel' => 1]);
 
         return $access;
@@ -442,7 +443,7 @@ trait StdContainerParser
         $container = $this->parseVariable($expr->var);
         $indexExpr = $this->parseExpr($expr->dim);
         $index = $info['kind'] === 'vector' ? $this->convertIntExpr($indexExpr) : $this->convertStdContainerKey($info, $indexExpr);
-        return $container . '.offsetSet(' . $index . ', ' . $value . ')';
+        return $container . '_ref.offsetSet(' . $index . ', ' . $value . ')';
     }
 
     protected function convertStdContainerKey(array $info, string $index): string
@@ -563,21 +564,18 @@ trait StdContainerParser
             $this->fatalError($expr->args[0]->value, 'std::unsafe_cast() expects first argument to be a std container type expression');
         }
         if (!$this->isVarExpr($expr->args[1]->value)) {
-            $this->fatalError($expr->args[1]->value, 'std::unsafe_cast() expects second argument to be an UnsafePtr variable');
+            $this->fatalError($expr->args[1]->value, 'std::unsafe_cast() expects second argument to be a variable');
         }
-        $unsafePtr = $this->parseVariable($expr->args[1]->value);
-        if (!$this->hasVar($unsafePtr)) {
-            $this->fatalError($expr->args[1]->value, 'Undefined variable `$' . $unsafePtr . '`');
-        }
-        if (!$this->isUnsafePtrParameter($unsafePtr)) {
-            $this->fatalError($expr->args[1]->value, 'std::unsafe_cast() expects second argument to be an UnsafePtr parameter');
+        $sourceVar = $this->parseVariable($expr->args[1]->value);
+        if (!$this->hasVar($sourceVar)) {
+            $this->fatalError($expr->args[1]->value, 'Undefined variable `$' . $sourceVar . '`');
         }
 
         if ($containerType === 'array') {
             $this->addLocalVar($var, self::TYPE_STD_ARRAY);
             $this->parseStdArray($var, $typeExpr);
-            $this->context->stdArrays[$var]['unsafePtr'] = $unsafePtr;
-            return '// php_unsafe_cast<' . $this->context->stdArrays[$var]['decl'] . '>(' . $unsafePtr . ')';
+            $this->context->stdArrays[$var]['unsafePtr'] = $sourceVar;
+            return '// php_unsafe_cast<' . $this->context->stdArrays[$var]['decl'] . '>(' . $sourceVar . ')';
         }
 
         if ($containerType === 'vector') {
@@ -590,8 +588,8 @@ trait StdContainerParser
             $this->addLocalVar($var, self::TYPE_STD_UNORDERED_MAP);
             $this->parseStdUnorderedMap($var, $typeExpr);
         }
-        $this->context->stdContainers[$var]['unsafePtr'] = $unsafePtr;
-        return '// php_unsafe_cast<' . $this->context->stdContainers[$var]['decl'] . '>(' . $unsafePtr . ')';
+        $this->context->stdContainers[$var]['unsafePtr'] = $sourceVar;
+        return '// php_unsafe_cast<' . $this->context->stdContainers[$var]['decl'] . '>(' . $sourceVar . ')';
     }
 
     protected function parseStdMapKeyType(NodeAbstract $expr, string $owner): string

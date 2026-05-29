@@ -21,5 +21,4 @@ class ArgInfo
     public bool $variadic = false;
     public bool $nullable = false;
     public bool $property = false;
-    public bool $unsafePtr = false;
 }

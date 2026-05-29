@@ -1,10 +1,10 @@
 --TEST--
-std unordered map: UnsafePtr unsafe_cast
+std unordered map: unsafe_cast
 --FILE--
 <?php
-function std_unordered_map_unsafe_ptr_update(UnsafePtr $unsafePtr): void
+function std_unordered_map_unsafe_ptr_update($source): void
 {
-    $map = std::unsafe_cast(std::unordered_map(native_types::type_int, native_types::type_int), $unsafePtr);
+    $map = std::unsafe_cast(std::unordered_map(native_types::type_int, native_types::type_int), $source);
     var_dump($map[2]);
     $map[3] = 9;
 }
