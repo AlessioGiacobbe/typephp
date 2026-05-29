@@ -2307,14 +2307,14 @@ class EvaluatedValue
                     if ($class === 'self') {
                         $constName = ClassInfo::$currentClass . "::" . $expr->name->__toString();
                         if (isset($allConstInfos[$constName])) {
-                            return $allConstInfos[$constName]->getValue($allConstInfos)->value;
+                            return formatConstValue($allConstInfos[$constName]->getValue($allConstInfos)->value);
                         } else {
-                            return getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $expr->name->toString(), ClassInfo::$currentClass);
+                            return formatConstValue(getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $expr->name->toString()));
                         }
                     } elseif ($expr->name->__toString() === 'class') {
                         return $class;
                     } else {
-                        return getTranslator()->getClassConstValue($expr, $class, $expr->name->__toString(), ClassInfo::$currentClass);
+                        return formatConstValue(getTranslator()->getClassConstValue($expr, $class, $expr->name->__toString(), ClassInfo::$currentClass));
                     }
                 } else {
                     $constName = $expr->name->__toString();
@@ -2352,11 +2352,7 @@ class EvaluatedValue
                 if (isset($definedConstants[$constName])) {
                     $constValue = $definedConstants[$constName];
                     if (is_scalar($constValue)) {
-                        if (is_string($constValue)) {
-                            return '"' . $constValue . '"';
-                        } else {
-                            return $constValue;
-                        }
+                        return formatConstValue($constValue);
                     }
                 }
 
@@ -4869,7 +4865,7 @@ function parseFunctionLike(
             }
 
             if ($param->default instanceof Expr\ClassConstFetch && $param->default->class->toLowerString() === "self") {
-                $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name, ClassInfo::$currentClass);
+                $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name);
             } else {
                 $defaultValue = $param->default ? $prettyPrinter->prettyPrintExpr($param->default) : null;
             }
@@ -6184,6 +6180,18 @@ function initPhpParser() {
     }
 
     $isInitialized = true;
+}
+
+function formatConstValue(mixed $constValue)
+{
+    if (is_string($constValue)) {
+        if (str_starts_with($constValue, '"') and str_ends_with($constValue, '"')) {
+            return $constValue;
+        }
+        return '"' . $constValue . '"';
+    } else {
+        return $constValue;
+    }
 }
 
 function getTranslator(): Translator

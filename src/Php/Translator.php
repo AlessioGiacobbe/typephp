@@ -1195,11 +1195,11 @@ CODE;
      * 仅用于 gen_stub 脚本
      * @throws \Exception
      */
-    public function getClassConstValue(NodeAbstract $expr, string $_class, string $name, string $currentClass): mixed
+    public function getClassConstValue(NodeAbstract $expr, string $_class, string $name, string $currentClass = ''): mixed
     {
         $namespace = $this->namespace;
-        if (!$namespace) {
-            $namespace = (string)strstr($currentClass, '\\', true);
+        if (!$namespace and $currentClass and !str_contains($_class, '\\')) {
+            $namespace = $this->getNamespaceOfClass($currentClass);
         }
         $class = $this->getNamespacedClassName($_class, $namespace);
         $nativeConst = $this->findNativeClassConst($expr, $class, $name);

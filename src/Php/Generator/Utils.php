@@ -183,4 +183,15 @@ trait Utils
 
         return $str;
     }
+
+    protected function getNamespaceOfClass(string $class): string
+    {
+        $lastPos = strrpos($class, '\\');
+        if ($lastPos !== false) {
+            $namespace = substr($class, 0, $lastPos);
+        } else {
+            $namespace = '';
+        }
+        return $namespace;
+    }
 }
