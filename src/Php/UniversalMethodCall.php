@@ -352,7 +352,7 @@ trait UniversalMethodCall
     protected function detectUniversalMethodReturnType(string $type, string $method): ?string
     {
         if ($type === CompilerBase::TYPE_VAR) {
-            foreach (CompilerBase::TYPE_SEARCH_ORDER as $searchType) {
+            foreach (self::TYPE_SEARCH_ORDER as $searchType) {
                 $def = static::UNIVERSAL_METHODS[$searchType][$method] ?? null;
                 if ($def !== null) {
                     return $def['return_type'];
@@ -364,7 +364,7 @@ trait UniversalMethodCall
             }
             return null;
         }
-        $builtin = static::UNIVERSAL_METHODS[$type][$method]['return_type'] ?? null;
+        $builtin = self::UNIVERSAL_METHODS[$type][$method]['return_type'] ?? null;
         if ($builtin !== null) {
             return $builtin;
         }
@@ -395,8 +395,8 @@ trait UniversalMethodCall
     protected function findUniversalMethodAnyType(string $type, string $method): ?array
     {
         if ($type === CompilerBase::TYPE_VAR) {
-            foreach (CompilerBase::TYPE_SEARCH_ORDER as $searchType) {
-                $def = static::UNIVERSAL_METHODS[$searchType][$method] ?? null;
+            foreach (self::TYPE_SEARCH_ORDER as $searchType) {
+                $def = self::UNIVERSAL_METHODS[$searchType][$method] ?? null;
                 if ($def !== null) {
                     return $def;
                 }
@@ -407,7 +407,7 @@ trait UniversalMethodCall
             }
             return null;
         }
-        $builtin = static::UNIVERSAL_METHODS[$type][$method] ?? null;
+        $builtin = self::UNIVERSAL_METHODS[$type][$method] ?? null;
         if ($builtin !== null) {
             return $builtin;
         }
@@ -423,7 +423,7 @@ trait UniversalMethodCall
      */
     protected function findExtensionMethod(string $type, string $method): ?array
     {
-        $prefix = CompilerBase::TYPE_EXTENSION_PREFIX[$type] ?? null;
+        $prefix = self::TYPE_EXTENSION_PREFIX[$type] ?? null;
         if ($prefix === null) {
             return null;
         }
@@ -501,14 +501,14 @@ trait UniversalMethodCall
         }
         $firstParam = $funcDef->argInfoList[0];
         // Stream is a PHP pseudo-type; its params are always untyped (TYPE_VAR) or references
-        if ($type === CompilerBase::TYPE_STREAM) {
-            return $firstParam->byRef || $firstParam->type === CompilerBase::TYPE_VAR || $firstParam->type === CompilerBase::TYPE_REF;
+        if ($type === self::TYPE_STREAM) {
+            return $firstParam->byRef || $firstParam->type === self::TYPE_VAR || $firstParam->type === self::TYPE_REF;
         }
         if ($firstParam->byRef) {
-            return $type === CompilerBase::TYPE_ARRAY;
+            return $type === self::TYPE_ARRAY;
         }
         $paramType = $firstParam->type;
-        if ($paramType === CompilerBase::TYPE_VAR) {
+        if ($paramType === self::TYPE_VAR) {
             return false;
         }
         return $paramType === $type;
@@ -521,11 +521,11 @@ trait UniversalMethodCall
             return false;
         }
         // Stream pseudo-type: accept untyped or by-reference first params
-        if ($type === CompilerBase::TYPE_STREAM) {
+        if ($type === self::TYPE_STREAM) {
             return true;
         }
         if ($param->isPassedByReference()) {
-            return $type === CompilerBase::TYPE_ARRAY;
+            return $type === self::TYPE_ARRAY;
         }
         $paramType = $param->getType();
         if ($paramType === null) {
@@ -578,7 +578,7 @@ trait UniversalMethodCall
         $this->validateUniversalMethodArgs($expr, $method, $def, false);
 
         // Evaluate receiver into temp var to avoid double evaluation
-        $streamVar = $this->addTmpVar(CompilerBase::TYPE_VAR);
+        $streamVar = $this->addTmpVar(self::TYPE_VAR);
         $this->context->beforeStmtLines[] = $streamVar . ' = ' . $receiver . ';';
 
         $methodCall = match ($def['handler']) {
@@ -588,7 +588,7 @@ trait UniversalMethodCall
             default         => null,
         };
 
-        $tmpVar = $this->addTmpVar(CompilerBase::TYPE_VAR);
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
         $this->context->beforeStmtLines[] = "{$tmpVar} = {$methodCall};";
         return $tmpVar;
     }
@@ -600,11 +600,11 @@ trait UniversalMethodCall
     private function wrapUniversalReceiver(string $type, string $expr): string
     {
         $convFns = [
-            CompilerBase::TYPE_ARRAY  => 'toArray',
-            CompilerBase::TYPE_STR    => 'toString',
-            CompilerBase::TYPE_INT    => 'toInt',
-            CompilerBase::TYPE_FLOAT  => 'toFloat',
-            CompilerBase::TYPE_BOOL   => 'toBool',
+            self::TYPE_ARRAY  => 'toArray',
+            self::TYPE_STR    => 'toString',
+            self::TYPE_INT    => 'toInt',
+            self::TYPE_FLOAT  => 'toFloat',
+            self::TYPE_BOOL   => 'toBool',
         ];
         if (isset($convFns[$type])) {
             return 'php::' . $convFns[$type] . '(' . $expr . ')';
@@ -741,8 +741,8 @@ trait UniversalMethodCall
 
     protected function genUniversalPhpFnRef(string $receiver, string $phpFunc, array $args, string $returnType): string
     {
-        $tmpRef = $this->addTmpVar(CompilerBase::TYPE_REF);
-        $tmpVar = $this->addTmpVar(CompilerBase::TYPE_VAR);
+        $tmpRef = $this->addTmpVar(self::TYPE_REF);
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
         $argExprs = ['&' . $tmpRef];
         foreach ($args as $arg) {
             $argExprs[] = $this->parseExpr($arg->value);
