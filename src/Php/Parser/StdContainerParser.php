@@ -103,7 +103,7 @@ trait StdContainerParser
     protected function getStdArrayDecl(string $type, array $sizes): string
     {
         $decl = str_repeat(self::TYPE_STD_ARRAY . '<', count($sizes));
-        $decl .= $type;
+        $decl .= $this->getStdContainerElementType($type);
         for ($i = count($sizes) - 1; $i >= 0; $i--) {
             $decl .= ', ' . $sizes[$i] . '>';
         }
@@ -454,6 +454,14 @@ trait StdContainerParser
         return $this->convertIntExpr($index);
     }
 
+    protected function getStdContainerElementType(string $type): string
+    {
+        return match ($type) {
+            self::TYPE_BIGINT, self::TYPE_BIGFLOAT, self::TYPE_DECIMAL, self::TYPE_STREAM => self::TYPE_VAR,
+            default => $type,
+        };
+    }
+
     protected function parseStdNativeType(NodeAbstract $expr, string $owner): string
     {
         if (!$this->isClassConstFetch($expr)) {
@@ -466,6 +474,9 @@ trait StdContainerParser
             'type_int' => self::TYPE_INT,
             'type_float' => self::TYPE_FLOAT,
             'type_bool' => self::TYPE_BOOL,
+            'type_bigint' => self::TYPE_BIGINT,
+            'type_bigfloat' => self::TYPE_BIGFLOAT,
+            'type_decimal' => self::TYPE_DECIMAL,
             default => $this->fatalError($expr, "An incorrect `{$owner}` definition"),
         };
     }
@@ -488,6 +499,7 @@ trait StdContainerParser
                     'type_array' => self::TYPE_ARRAY,
                     'type_object' => self::TYPE_OBJECT,
                     'type_any', 'type_var', 'type_variant' => self::TYPE_VAR,
+                    'type_stream' => self::TYPE_STREAM,
                     default => $this->fatalError($expr, "An incorrect `{$owner}` definition"),
                 },
                 'class' => null,
@@ -538,7 +550,11 @@ trait StdContainerParser
         $valueExpr = $this->parseExpr($expr);
         $class = $info['class'] ?? null;
         if ($class === null) {
-            return $this->convertExprFromType($info['type'], $valueExpr);
+            $targetType = $info['type'];
+            if ($targetType === self::TYPE_BIGINT || $targetType === self::TYPE_BIGFLOAT || $targetType === self::TYPE_DECIMAL || $targetType === self::TYPE_STREAM) {
+                return $this->convertStdVarBackedExpr($targetType, $valueExpr, $expr);
+            }
+            return $this->convertExprFromType($targetType, $valueExpr);
         }
         $rightClass = $this->detectClassOfExpr($expr);
         if ($rightClass !== '') {
@@ -548,6 +564,27 @@ trait StdContainerParser
         }
 
         return 'php::toObject(' . $valueExpr . ', ' . $this->getClassEntryPtr($class) . ', true)';
+    }
+
+    protected function convertStdVarBackedExpr(string $targetType, string $valueExpr, NodeAbstract $expr): string
+    {
+        $sourceType = $this->detectTypeOfExpr($expr);
+        if ($sourceType === $targetType) {
+            return $valueExpr;
+        }
+        if ($targetType === self::TYPE_STREAM) {
+            return $valueExpr;
+        }
+        if ($targetType === self::TYPE_BIGINT) {
+            return $this->convertBigIntExpr($valueExpr, $sourceType);
+        }
+        if ($targetType === self::TYPE_BIGFLOAT) {
+            return $this->convertBigFloatExpr($valueExpr, $sourceType);
+        }
+        if ($targetType === self::TYPE_DECIMAL) {
+            return $this->convertDecimalExpr($valueExpr, $sourceType, $expr);
+        }
+        return $valueExpr;
     }
 
     protected function parseStdUnsafeCastAssign(string $var, Expr\StaticCall $expr): string
@@ -608,7 +645,7 @@ trait StdContainerParser
 
     protected function getStdMapDecl(string $containerType, string $keyType, string $valueType): string
     {
-        return $containerType . '<' . $keyType . ', ' . $valueType . '>';
+        return $containerType . '<' . $keyType . ', ' . $this->getStdContainerElementType($valueType) . '>';
     }
 
     protected function parseStdArray(string $var, Expr\StaticCall $expr): string
@@ -671,7 +708,7 @@ trait StdContainerParser
             }
             $size = $expr->args[1]->value->value;
         }
-        $decl = self::TYPE_STD_VECTOR . '<' . $type . '>';
+        $decl = self::TYPE_STD_VECTOR . '<' . $this->getStdContainerElementType($type) . '>';
         $this->context->stdContainers[$var] = $this->addStdTypeId([
             'kind' => 'vector',
             'decl' => $decl,
