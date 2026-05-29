@@ -5,7 +5,7 @@ ref call arg
 function main()
 {
     $zip = new ZipArchive();
-    $path = realpath(__DIR__ . '/../../../data/test.zip');
+    $path = realpath(__DIR__ . '/../../../../data/test.zip');
     if ($zip->open($path) === TRUE) {
         for ($idx = 0; $s = $zip->statIndex($idx); $idx++) {
             $rs = $zip->getExternalAttributesIndex($idx, $opsys, $attr);

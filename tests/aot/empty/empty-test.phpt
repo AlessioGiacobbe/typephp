@@ -2,7 +2,7 @@
 empty (linked expr)
 --FILE--
 <?php
-include __DIR__ . '/static_property_test.inc';
+include __DIR__ . '/../static_property_test.inc';
 $arr = array(
     array(2, 2)
 );

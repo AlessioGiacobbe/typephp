@@ -51,7 +51,7 @@ class Helper {
 
 function main()
 {
-    require __DIR__ . '/../../src/Assert.php';
+    require __DIR__ . '/../../../src/Assert.php';
 
     // --- Test 1: FuncCall -> universal method ---
     Assert::eq(getString()->length(), 11);

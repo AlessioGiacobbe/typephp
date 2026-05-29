@@ -30,7 +30,7 @@ function main() {
 --EXPECTF--
 __LINE__: int(%d)
 __FILE__: string(%d) "magic-constants.php"
-__DIR__: string(%d) "aot"
+__DIR__: string(%d) "basic"
 __FUNCTION__ in function: string(%d) "testFunction"
 __METHOD__: string(%d) "TestMagicConst::testMethod"
 __CLASS__: string(%d) "TestMagicConst"

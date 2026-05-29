@@ -3,7 +3,7 @@ Static Class Property Read/Write Test
 --FILE--
 <?php
 
-include __DIR__ . '/static_property_test.inc';
+include __DIR__ . '/../static_property_test.inc';
 
 // Test reading static properties
 echo "Initial public property: " . TestClass::$public_static_property . "\n";
