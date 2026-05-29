@@ -1825,6 +1825,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         return Reflection::isInternalClass($name);
     }
 
+    protected function isNativeClass(string $name): bool
+    {
+        return $this->hasClass($name);
+    }
+
+    protected function isInterface(string $name): bool
+    {
+        return $this->hasInterface($name) or $this->isInternalInterface($name);
+    }
+
     protected function isAbstractClass(string $name): bool
     {
         if ($this->isInternalClass($name)) {
@@ -2196,14 +2206,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function addObject(string $name, string $class): void
     {
-        // 接口、抽象类、内部类、非原生类，无法作为 TypedObject 使用
-        if ($this->hasInterface($class) or
-            $this->isInternalClass($class) or
-            $this->isAbstractClass($class) or
-            !$this->hasClass($class)) {
-            return;
+        // 接口、抽象类、非原生类，无法作为 TypedObject 使用
+        if (!$this->isInterface($class) and !$this->isAbstractClass($class) and
+            ($this->isNativeClass($class) or $this->isInternalClass($class))) {
+            $this->context->objects[$name] = $class;
         }
-        $this->context->objects[$name] = $class;
     }
 
     protected function hasVar(string $name): bool
