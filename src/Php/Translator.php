@@ -119,7 +119,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
         $climate->tab()->out('-v, --version        Show version');
         $climate->tab()->out('-h, --help           Show this help message');
-        $climate->tab()->out('-f, --force          Force compile even if cache exists');
+        $climate->tab()->out('-f, --force          Force recompile phpx misc files (ignore cache)');
         $climate->tab()->out('-m, --mode <mode>    Compilation mode, -m bin(binary) or -m ext(extension), default: bin');
         $climate->tab()->out('-r, --run           Run the compiled binary after build');
         $climate->tab()->out('-j, --job <num>      Number of parallel compilation jobs (default: 4)');
@@ -206,11 +206,6 @@ class Translator extends Preprocessor
     public function convertFile(string $file): string
     {
         $file = realpath($file);
-        if ($this->hasCppFileCache($file)) {
-            $this->climate->darkGray('skip: ' . $file . ', cache exists');
-
-            return $this->getCppFile($file);
-        }
         $phpCode = $this->loadFile($file);
         $this->localHeaders = [];
         while (true) {
@@ -693,22 +688,8 @@ CODE;
         return self::MODULE_NAME_PREFIX . $this->targetName;
     }
 
-    public function hasObjectFileCache(string $cppFile): bool
-    {
-        if (!$this->enableCache or $this->climate->arguments->defined('force')) {
-            return false;
-        }
-        $objectFile = $this->getObjectFile($cppFile);
-        if (file_exists($objectFile) and filemtime($objectFile) > filemtime($cppFile)) {
-            return true;
-        }
-
-        return false;
-    }
-
     /**
-     * 检查 phpx/src/misc/ 下的源文件是否已有有效缓存。
-     * 独立于 enableCache，始终生效（除非指定 --force）。
+     * 检查 phpx/src/misc/ 下的源文件是否已有有效缓存，始终生效（除非指定 --force）。
      * 仅检查 .o 文件是否比源文件和 phpx 头文件更新。
      */
     public function hasMiscObjectFileCache(string $cppFile): bool
@@ -795,14 +776,6 @@ CODE;
             if (!$parallel) {
                 $this->climate->darkGray('[cache] skip: ' . $cppFile);
             }
-            return;
-        }
-
-        if ($this->hasObjectFileCache($cppFile)) {
-            if (!$parallel) {
-                $this->climate->darkGray('skip: ' . $cppFile . ', cache exists');
-            }
-
             return;
         }
 

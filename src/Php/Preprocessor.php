@@ -26,8 +26,6 @@ use PhpParser\NodeTraverser;
 
 class Preprocessor extends CompilerBase
 {
-    protected bool $enableCache = false;
-
     public function sortFiles(array &$list): void
     {
         $sorter = new StringSort();
@@ -87,27 +85,8 @@ class Preprocessor extends CompilerBase
         return $info['dirname'] . $this->getPlatform()->getPathSeparator() . $info['filename'] . $ext;
     }
 
-    public function hasCppFileCache(string $file): bool
-    {
-        if (!$this->enableCache or $this->climate->arguments->defined('force')) {
-            return false;
-        }
-        $cppFile = $this->getCppFile($file);
-        if (file_exists($cppFile) and filemtime($cppFile) > filemtime($file)) {
-            return true;
-        }
-
-        return false;
-    }
-
     public function prepareFile(string $file): void
     {
-        if ($this->hasCppFileCache($file)) {
-            $this->climate->darkGray('skip: ' . $file . ', cache exists');
-
-            return;
-        }
-
         $phpCode = $this->loadFile($file);
         $this->symbolCallInFile[$this->file] = [];
         $this->resetFile();

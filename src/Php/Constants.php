@@ -107,7 +107,7 @@ class Constants
         'force' => [
             'prefix' => 'f',
             'longPrefix' => 'force',
-            'description' => 'Force compile even if cache exists',
+            'description' => 'Force recompile phpx misc files (ignore cache)',
             'required' => false,
             'noValue' => true,
         ],
