@@ -11,6 +11,9 @@ class native_types
     public const type_int = 'int';
     public const type_float = 'float';
     public const type_bool = 'bool';
+    public const type_bigint = 'bigint';
+    public const type_bigfloat = 'bigfloat';
+    public const type_decimal = 'decimal';
 }
 
 class complex_types {
@@ -21,6 +24,7 @@ class complex_types {
     public const type_string = 'string';
     public const type_array = 'array';
     public const type_object = 'object';
+    public const type_stream = 'stream';
 }
 
 class std

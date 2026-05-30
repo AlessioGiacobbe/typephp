@@ -467,10 +467,10 @@ trait StdContainerParser
         if (!$this->isClassConstFetch($expr)) {
             $this->fatalError($expr, "{$owner} expects a native_types class constant");
         }
-        if (!$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name) || $expr->class->toString() !== 'native_types') {
+        if (!$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name) || strtolower($expr->class->toString()) !== 'native_types') {
             $this->fatalError($expr, "An incorrect `{$owner}` definition");
         }
-        return match ($expr->name->name) {
+        return match (strtolower($expr->name->name)) {
             'type_int' => self::TYPE_INT,
             'type_float' => self::TYPE_FLOAT,
             'type_bool' => self::TYPE_BOOL,
@@ -489,12 +489,13 @@ trait StdContainerParser
         if (!$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)) {
             $this->fatalError($expr, "An incorrect `{$owner}` definition");
         }
-        if ($expr->class->toString() === 'native_types') {
+        $className = strtolower($expr->class->toString());
+        if ($className === 'native_types') {
             return ['type' => $this->parseStdNativeType($expr, $owner), 'class' => null];
         }
-        if ($expr->class->toString() === 'complex_types') {
+        if ($className === 'complex_types') {
             return [
-                'type' => match ($expr->name->name) {
+                'type' => match (strtolower($expr->name->name)) {
                     'type_str', 'type_string' => self::TYPE_STR,
                     'type_array' => self::TYPE_ARRAY,
                     'type_object' => self::TYPE_OBJECT,
@@ -634,10 +635,12 @@ trait StdContainerParser
         if (!$this->isClassConstFetch($expr) || !$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)) {
             $this->fatalError($expr, "{$owner} expects a native_types or complex_types class constant");
         }
-        if ($expr->class->toString() === 'native_types' && $expr->name->name === 'type_int') {
+        $className = strtolower($expr->class->toString());
+        $constName = strtolower($expr->name->name);
+        if ($className === 'native_types' && $constName === 'type_int') {
             return self::TYPE_INT;
         }
-        if ($expr->class->toString() === 'complex_types' && in_array($expr->name->name, ['type_string', 'type_str'], true)) {
+        if ($className === 'complex_types' && in_array($constName, ['type_string', 'type_str'], true)) {
             return self::TYPE_STR;
         }
         $this->fatalError($expr, "{$owner} key only supports native_types::type_int, complex_types::type_string or complex_types::type_str");

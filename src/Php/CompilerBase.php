@@ -169,6 +169,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         // iterable 类型，可以是数组或者对象
         'iterable' => self::TYPE_VAR,
         'stream' => self::TYPE_STREAM,
+        'bigint' => self::TYPE_BIGINT,
+        'bigfloat' => self::TYPE_BIGFLOAT,
+        'decimal' => self::TYPE_DECIMAL,
     ];
     protected array $globalHeaders = [
         'phpx.h',
@@ -1058,11 +1061,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             return self::TYPE_VAR;
         } else {
             $typeName = $this->parseIdentifier($type);
+            $typeNameLower = strtolower($typeName);
             // 属性和类常量的类型不能声明为 void/never ，只有返回值可以
-            if ($what !== self::DECL_TYPE_OF_RETURN and ($typeName === 'void' or $typeName === 'never')) {
+            if ($what !== self::DECL_TYPE_OF_RETURN and ($typeNameLower === 'void' or $typeNameLower === 'never')) {
                 $this->fatalError($type, 'The type `void`/`never` is allowed only for return type');
-            } elseif (isset($this->zendTypeMap[$typeName])) {
-                return $this->getTypeFromZendType($typeName);
+            } elseif (isset($this->zendTypeMap[$typeNameLower])) {
+                return $this->getTypeFromZendType($typeNameLower);
             } else {
                 if ($typeName === 'self') {
                     $class = $this->getFullClassName();
@@ -1636,7 +1640,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($var === 'this_') {
             $this->fatalError($left, 'Cannot re-assign $this');
         }
-        $type = $this->detectTypeOfExpr($right);
+        $finalVarType = $type = $this->detectTypeOfExpr($right);
 
         if ($this->isVarExpr($left)) {
             if ($this->isStdContainer($var)) {
@@ -1669,6 +1673,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $type = self::TYPE_VAR;
                         if (!$this->hasVar($var)) {
                             $this->addLocalVar($var, $type);
+                            $finalVarType = $type;
                         }
                         return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
                     } else {
@@ -1709,7 +1714,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                         } else {
                             $valueExpr = $this->parseStdCall($right);
                             if (!$this->hasVar($var)) {
-                                $this->addLocalVar($var, $right->getAttribute('nativeType'));
+                                $finalVarType = $right->getAttribute('nativeType');
+                                $this->addLocalVar($var, $finalVarType);
                             }
                             return $var . ' = ' . $valueExpr;
                         }
@@ -1725,7 +1731,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 // 变量第一次被赋值，确定其类型，由于 PHP 的变量作用域是 function 级的，在 for/while 块中声明的变量，可以在块外使用
                 if (!$this->hasVar($var)) {
-                    $this->addLocalVar($var, $this->isNativeType($type) ? $this->getNativeType($type) : $type);
+                    $finalVarType = $this->isNativeType($type) ? $this->getNativeType($type) : $type;
+                    $this->addLocalVar($var, $finalVarType);
                 } else {
                     $this->checkVarAssignExpr($left, $this->getVarType($var), $type);
                 }
@@ -1744,7 +1751,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $rightExpr = $this->parseAssignRightExpr($right);
-        return $var . ' = ' . $this->convertExprType($rightExpr, $this->detectTypeOfExpr($left), $this->detectTypeOfExpr($right));
+        $leftExprType = $this->detectTypeOfExpr($left);
+        $rightExprType = $this->detectTypeOfExpr($right);
+        if ($finalVarType === self::TYPE_VAR) {
+            return $var . ' = ' . $rightExpr;
+        } else {
+            return $var . ' = ' . $this->convertExprType($rightExpr, $leftExprType, $rightExprType);
+        }
     }
 
     protected function parseStdContainerCopyAssign(string $leftVar, Expr $right): ?string
@@ -2455,14 +2468,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return self::TYPE_FLOAT;
                 }
                 if ($leftType === self::TYPE_INT || $rightType === self::TYPE_INT) {
-                    // 除法存在特殊性，若未能整除，会返回浮点数，其他则一律视为整数
-                    if ($exprType === 'Expr_BinaryOp_Div') {
-                        if ($leftType === self::TYPE_INT && $rightType === self::TYPE_INT) {
-                            return self::TYPE_INT;
-                        } else {
-                            return self::TYPE_VAR;
-                        }
-                    }
                     return self::TYPE_INT;
                 }
                 break;
@@ -2540,12 +2545,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                         return self::TYPE_OBJECT;
                     }
                     $className = $this->parseIdentifier($expr->class);
-                    if ($className === 'std') {
-                        $method = $this->parseIdentifier($expr->name);
+                    if (strtolower($className) === 'std') {
+                        $method = strtolower($this->parseIdentifier($expr->name));
                         return match ($method) {
-                            'bigInt' => self::TYPE_BIGINT,
+                            'bigint' => self::TYPE_BIGINT,
                             'decimal' => self::TYPE_DECIMAL,
-                            'bigFloat' => self::TYPE_BIGFLOAT,
+                            'bigfloat' => self::TYPE_BIGFLOAT,
                             default => self::TYPE_VAR,
                         };
                     }
@@ -5990,11 +5995,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->useConstants[$cn] = $fullName;
                 }
             } else {
-                if ($id === 'native_types') {
+                $idLower = strtolower($id);
+                if ($idLower === 'native_types') {
                     $this->nativeTypes = true;
-                } elseif ($id === 'decimal_types') {
+                } elseif ($idLower === 'decimal_types') {
                     $this->decimalTypes = true;
-                } elseif ($id === 'bigint_types') {
+                } elseif ($idLower === 'bigint_types') {
                     $this->bigintTypes = true;
                 } else {
                     $this->useNamespaces[] = $id;
@@ -6184,14 +6190,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseStdCall(Expr\StaticCall $expr): string
     {
-        $func = $this->parseIdentifier($expr->name);
+        $func = strtolower($this->parseIdentifier($expr->name));
         $type = match ($func) {
             'int' => self::TYPE_INT,
             'float' => self::TYPE_FLOAT,
             'bool' => self::TYPE_BOOL,
-            'bigInt' => self::TYPE_BIGINT,
+            'bigint' => self::TYPE_BIGINT,
             'decimal' => self::TYPE_DECIMAL,
-            'bigFloat' => self::TYPE_BIGFLOAT,
+            'bigfloat' => self::TYPE_BIGFLOAT,
             default => '',
         };
         if ($type) {

@@ -15,11 +15,11 @@ function main(): void {
     $total = $subtotal + $tax;
 
     echo "小计: " . round($subtotal, 2) . "\n";        // 89.97
-    echo "税额: " . round($tax, 4) . "\n";             // 7.1976
+    echo "税额: " . round($tax, 20) . "\n";             // 7.19760000000000000000
     echo "总计: " . round($total, 2) . "\n";           // 97.17
 }
 ?>
 --EXPECT--
 小计: 89.97
-税额: 7.1976
+税额: 7.19760000000000000000
 总计: 97.17
