@@ -707,6 +707,53 @@ CODE;
     }
 
     /**
+     * 检查 phpx/src/misc/ 下的源文件是否已有有效缓存。
+     * 独立于 enableCache，始终生效（除非指定 --force）。
+     * 仅检查 .o 文件是否比源文件和 phpx 头文件更新。
+     */
+    public function hasMiscObjectFileCache(string $cppFile): bool
+    {
+        if ($this->climate->arguments->defined('force')) {
+            return false;
+        }
+
+        $objectFile = $this->getObjectFile($cppFile);
+        if (!file_exists($objectFile)) {
+            return false;
+        }
+
+        $objectMtime = filemtime($objectFile);
+        if ($objectMtime <= filemtime($cppFile)) {
+            return false;
+        }
+
+        $phpxDir = $this->getPhpxDir();
+        $headerDirs = [$phpxDir . '/include', $phpxDir . '/src/misc'];
+
+        foreach ($headerDirs as $dir) {
+            if (!is_dir($dir)) {
+                continue;
+            }
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+            );
+            foreach ($iterator as $file) {
+                if ($file->getExtension() === 'h' && $file->getMTime() > $objectMtime) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public function isPhpxMiscFile(string $cppFile): bool
+    {
+        $miscDir = $this->getPhpxDir() . '/src/misc/';
+        return str_starts_with($cppFile, $miscDir);
+    }
+
+    /**
      * 判断文件是否为 C++ 源文件
      */
     protected function isCppFile(string $filePath): bool
@@ -744,6 +791,13 @@ CODE;
 
     public function compileFile(string $cppFile, string $objectFile, bool $parallel = false): void
     {
+        if ($this->isPhpxMiscFile($cppFile) && $this->hasMiscObjectFileCache($cppFile)) {
+            if (!$parallel) {
+                $this->climate->darkGray('[cache] skip: ' . $cppFile);
+            }
+            return;
+        }
+
         if ($this->hasObjectFileCache($cppFile)) {
             if (!$parallel) {
                 $this->climate->darkGray('skip: ' . $cppFile . ', cache exists');
