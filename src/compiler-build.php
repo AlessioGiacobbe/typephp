@@ -3,27 +3,25 @@ use PhpAot\Php\Translator;
 
 function main(int $argc, array $argv): void
 {
-    define("ROOT_PATH", getcwd());
-    define('DEBUG', true);
+    if (!defined('ROOT_PATH')) {
+        define("ROOT_PATH", getcwd());
+    }
 
-    require ROOT_PATH . '/vendor/autoload.php';
-
+    require_once ROOT_PATH . '/vendor/autoload.php';
     global $translator;
 
     $translator = new Translator(ROOT_PATH);
-    if (empty($argv[1])) {
-        $translator->showUsage();
-        exit(0);
-    }
-
     $translator->setIndent('    ');
     // 扫描所有 PHP 文件，预处理
-    $path = $argv[1];
-    $files = $translator->prepare($path);
+    $files = $translator->prepare($translator->parseArgv($argv));
     // 生成 C++ 文件
     $sourceFiles = $translator->convert($files);
     // 编译所有 C++ 文件
     $objectFiles = $translator->compile($sourceFiles);
     // 连接所有目标文件，生成可执行文件
-    $translator->build($objectFiles);
+    $binaryFile = $translator->build($objectFiles);
+    // 如果指定了 --run / -r，编译完成后立即执行
+    if ($translator->isRunRequested()) {
+        $translator->run($binaryFile); // never returns
+    }
 }
