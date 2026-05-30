@@ -3,6 +3,6 @@
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/../src/polyfills.php';
 require __DIR__ . '/../src/gen_stub.php';
-require __DIR__ . '/../src/compiler-build.php';
+require __DIR__ . '/../src/compiler.php';
 
 main($argc, $argv);
