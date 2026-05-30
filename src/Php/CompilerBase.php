@@ -163,6 +163,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         'object' => self::TYPE_OBJECT,
         'mixed' => self::TYPE_VAR,
         'null' => self::TYPE_VAR,
+        'any' => self::TYPE_VAR,
         // callable 类型，可以是字符串、数组、对象
         // 1) 'foo' 函数名称字符串, 2) [ $obj, 'bar' ] 对象方法数组, 3) Closure 对象， 4) [ 'class', 'staticMethod'] 类名+静态方法数组
         'callable' => self::TYPE_VAR,

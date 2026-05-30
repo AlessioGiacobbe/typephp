@@ -235,11 +235,15 @@ class SimpleType {
         }
 
         if ($node instanceof Node\Identifier) {
-            if ($node->toLowerString() === 'array') {
+            $name = $node->toLowerString();
+            if ($name === 'array') {
                 return ArrayType::createGenericArray();
             }
+            if ($name === 'any') {
+                return new SimpleType('mixed', true);
+            }
 
-            return new SimpleType($node->toLowerString(), true);
+            return new SimpleType($name, true);
         }
 
         throw new Exception("Unexpected node type");
@@ -264,6 +268,8 @@ class SimpleType {
             case "never":
             case "ref":
                 return new SimpleType(strtolower($typeString), true);
+            case "any":
+                return new SimpleType('mixed', true);
             case "array":
                 return ArrayType::createGenericArray();
             case "self":
