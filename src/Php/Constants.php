@@ -118,6 +118,12 @@ class Constants
             'required' => false,
             'defaultValue' => CompilerBase::BUILD_MODE_BIN,
         ],
+        'run' => [
+            'prefix' => 'r',
+            'longPrefix' => 'run',
+            'description' => 'Run the compiled binary after build',
+            'noValue' => true,
+        ],
         // 内部开发选项，用于定位特定行的翻译问题，请勿写入用户文档
         'debug-line' => [
             'longPrefix' => 'debug-line',

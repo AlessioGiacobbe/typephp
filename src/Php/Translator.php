@@ -78,6 +78,22 @@ class Translator extends Preprocessor
         $this->detectPlatform();
     }
 
+    public function parseArgv(array $argv)
+    {
+        $path = null;
+        for ($i = 1; $i < count($argv); $i++) {
+            if ($argv[$i] !== '' && $argv[$i][0] !== '-') {
+                $path = $argv[$i];
+                break;
+            }
+        }
+        if (empty($path)) {
+            $this->showUsage();
+            exit(1);
+        }
+        return $path;
+    }
+
     public function showUsage(): void
     {
         $climate = $this->climate;
@@ -105,6 +121,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-h, --help           Show this help message');
         $climate->tab()->out('-f, --force          Force compile even if cache exists');
         $climate->tab()->out('-m, --mode <mode>    Compilation mode, -m bin(binary) or -m ext(extension), default: bin');
+        $climate->tab()->out('-r, --run           Run the compiled binary after build');
         $climate->tab()->out('-j, --job <num>      Number of parallel compilation jobs (default: 4)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->tab()->out('--no-console         Hide console window (Windows only, GUI application)');
@@ -121,6 +138,7 @@ class Translator extends Preprocessor
         $climate->tab()->out($cmd . ' app.php --sanitize=address  (Enable AddressSanitizer)');
         $climate->tab()->out($cmd . ' app.php --cxx-std=c++17  (Use C++17 standard)');
         $climate->tab()->out($cmd . ' app.php --no-literal-strings  (Disable string optimization)');
+        $climate->tab()->out($cmd . ' app.php -r -O2 -- --flag1 value1');
         $climate->br();
     }
 
@@ -1039,7 +1057,7 @@ CODE;
         }
     }
 
-    public function build(array $objectFiles): void
+    public function build(array $objectFiles): string
     {
         $targetFile = $this->getTargetFileName();
 
@@ -1075,6 +1093,40 @@ CODE;
         }
 
         $this->climate->green('Build successful: ' . $targetFile);
+
+        return $targetFile;
+    }
+
+    public function isRunRequested(): bool
+    {
+        return $this->climate->arguments->defined('run');
+    }
+
+    public function run(string $targetFile): never
+    {
+        if ($this->buildMode !== self::BUILD_MODE_BIN) {
+            $this->climate->error('--run is only supported in binary mode (-m bin), not extension mode (-m ext)');
+            exit(1);
+        }
+
+        if (DIRECTORY_SEPARATOR !== '\\' && !str_starts_with($targetFile, '/')) {
+            $targetFile = './' . $targetFile;
+        }
+
+        $targetArgs = $this->getTargetArgs();
+        $command = escapeshellcmd($targetFile);
+        if (!empty($targetArgs)) {
+            $command .= ' ' . implode(' ', array_map('escapeshellarg', $targetArgs));
+        }
+
+        fwrite(STDERR, "Running: {$command}\n");
+        passthru($command, $exitCode);
+        exit($exitCode);
+    }
+
+    public function getTargetArgs(): array
+    {
+        return $this->climate->arguments->trailingArray() ?? [];
     }
 
     public function genFunctionDeclaration(string $file): void
