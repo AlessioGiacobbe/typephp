@@ -457,7 +457,7 @@ trait StdContainerParser
     protected function getStdContainerElementType(string $type): string
     {
         return match ($type) {
-            self::TYPE_BIGINT, self::TYPE_BIGFLOAT, self::TYPE_DECIMAL, self::TYPE_STREAM => self::TYPE_VAR,
+            self::TYPE_BIGINT, self::TYPE_BIGFLOAT, self::TYPE_DECIMAL, self::TYPE_STREAM, self::TYPE_BOX => self::TYPE_VAR,
             default => $type,
         };
     }
@@ -501,6 +501,7 @@ trait StdContainerParser
                     'type_object' => self::TYPE_OBJECT,
                     'type_any', 'type_var', 'type_variant' => self::TYPE_VAR,
                     'type_stream' => self::TYPE_STREAM,
+                    'type_box' => self::TYPE_BOX,
                     default => $this->fatalError($expr, "An incorrect `{$owner}` definition"),
                 },
                 'class' => null,
@@ -552,7 +553,7 @@ trait StdContainerParser
         $class = $info['class'] ?? null;
         if ($class === null) {
             $targetType = $info['type'];
-            if ($targetType === self::TYPE_BIGINT || $targetType === self::TYPE_BIGFLOAT || $targetType === self::TYPE_DECIMAL || $targetType === self::TYPE_STREAM) {
+            if ($targetType === self::TYPE_BIGINT || $targetType === self::TYPE_BIGFLOAT || $targetType === self::TYPE_DECIMAL || $targetType === self::TYPE_STREAM || $targetType === self::TYPE_BOX) {
                 return $this->convertStdVarBackedExpr($targetType, $valueExpr, $expr);
             }
             return $this->convertExprFromType($targetType, $valueExpr);
@@ -573,7 +574,7 @@ trait StdContainerParser
         if ($sourceType === $targetType) {
             return $valueExpr;
         }
-        if ($targetType === self::TYPE_STREAM) {
+        if ($targetType === self::TYPE_STREAM || $targetType === self::TYPE_BOX) {
             return $valueExpr;
         }
         if ($targetType === self::TYPE_BIGINT) {

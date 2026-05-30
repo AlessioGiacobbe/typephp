@@ -347,7 +347,7 @@ trait UniversalMethodCall
 
     private const array MUTATING_HANDLERS = ['direct_method_mutate', 'php_fn_ref'];
 
-    private const array TYPE_SEARCH_ORDER = [CompilerBase::TYPE_STR, CompilerBase::TYPE_ARRAY, CompilerBase::TYPE_INT, CompilerBase::TYPE_FLOAT, CompilerBase::TYPE_BOOL, CompilerBase::TYPE_STREAM, CompilerBase::TYPE_BIGINT, CompilerBase::TYPE_DECIMAL, CompilerBase::TYPE_BIGFLOAT];
+    private const array TYPE_SEARCH_ORDER = [CompilerBase::TYPE_STR, CompilerBase::TYPE_ARRAY, CompilerBase::TYPE_INT, CompilerBase::TYPE_FLOAT, CompilerBase::TYPE_BOOL, CompilerBase::TYPE_STREAM, CompilerBase::TYPE_BIGINT, CompilerBase::TYPE_DECIMAL, CompilerBase::TYPE_BIGFLOAT, CompilerBase::TYPE_BOX];
 
     protected function detectUniversalMethodReturnType(string $type, string $method): ?string
     {
@@ -382,6 +382,7 @@ trait UniversalMethodCall
         CompilerBase::TYPE_BIGINT => 'bigint',
         CompilerBase::TYPE_DECIMAL => 'decimal',
         CompilerBase::TYPE_BIGFLOAT => 'bigfloat',
+        CompilerBase::TYPE_BOX => 'box',
     ];
 
     protected function camelToSnake(string $name): string

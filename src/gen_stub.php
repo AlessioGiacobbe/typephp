@@ -269,7 +269,9 @@ class SimpleType {
             case "ref":
                 return new SimpleType(strtolower($typeString), true);
             case "any":
-                return new SimpleType('mixed', true);
+                return new SimpleType('any', true);
+            case "box":
+                return new SimpleType('box', true);
             case "array":
                 return ArrayType::createGenericArray();
             case "self":
@@ -389,6 +391,8 @@ class SimpleType {
             case "callable":
                 return ["IS_CALLABLE", "MAY_BE_CALLABLE"];
             case "mixed":
+            case "any":
+            case "box":
                 return ["IS_MIXED", "MAY_BE_ANY"];
             case "void":
                 return ["IS_VOID", "MAY_BE_VOID"];
@@ -449,6 +453,8 @@ class SimpleType {
             case "resource":
                 return "MAY_BE_ARRAY_OF_RESOURCE";
             case "mixed":
+            case "any":
+            case "box":
                 return "MAY_BE_ARRAY_OF_ANY";
             case "ref":
                 return "MAY_BE_ARRAY_OF_REF";
@@ -470,6 +476,8 @@ class SimpleType {
             case "iterable":
                 return "MAY_BE_ARRAY|MAY_BE_ARRAY_KEY_ANY|MAY_BE_ARRAY_OF_ANY|MAY_BE_OBJECT";
             case "mixed":
+            case "any":
+            case "box":
                 return "MAY_BE_ANY|MAY_BE_ARRAY_KEY_ANY|MAY_BE_ARRAY_OF_ANY";
         }
 
@@ -2763,7 +2771,7 @@ class ConstInfo extends VariableLike
     {
         $type = $this->phpDocType ?? $this->type;
         $simpleType = $type ? $type->tryToSimpleType() : null;
-        if ($simpleType && $simpleType->name === "mixed") {
+        if ($simpleType && ($simpleType->name === "mixed" || $simpleType->name === "any" || $simpleType->name === "box")) {
             $simpleType = null;
         }
 
@@ -3037,6 +3045,8 @@ class StringBuilder {
         "false" => "ZEND_STR_FALSE",
         "null" => "ZEND_STR_NULL_LOWERCASE",
         "mixed" => "ZEND_STR_MIXED",
+        "any" => "ZEND_STR_MIXED",
+        "box" => "ZEND_STR_MIXED",
     ];
 
     // NEW in 8.1

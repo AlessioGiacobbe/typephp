@@ -25,6 +25,7 @@ class complex_types {
     public const type_array = 'array';
     public const type_object = 'object';
     public const type_stream = 'stream';
+    public const type_box = 'box';
 }
 
 class std

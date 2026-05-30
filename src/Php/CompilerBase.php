@@ -73,6 +73,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_BIGINT = 'php::BigInt';
     public const string TYPE_DECIMAL = 'php::Decimal';
     public const string TYPE_BIGFLOAT = 'php::BigFloat';
+    public const string TYPE_BOX = 'php::Box';
 
     private const array STREAM_FUNCTIONS = [
         'fopen',
@@ -173,6 +174,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         'bigint' => self::TYPE_BIGINT,
         'bigfloat' => self::TYPE_BIGFLOAT,
         'decimal' => self::TYPE_DECIMAL,
+        'box' => self::TYPE_BOX,
     ];
     protected array $globalHeaders = [
         'phpx.h',
@@ -2699,8 +2701,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $class = '';
         $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
-        // stream 是伪类型，实际运行时依然作为 var 处理
-        if ($type === self::TYPE_STREAM) {
+        // stream/box 是伪类型，实际运行时依然作为 var 处理
+        if ($type === self::TYPE_STREAM || $type === self::TYPE_BOX) {
             $type = self::TYPE_VAR;
         }
         if ($class and !$this->hasInterface($class) and !$this->isAbstractClass($class)) {
