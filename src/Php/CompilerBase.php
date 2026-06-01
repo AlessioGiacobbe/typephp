@@ -75,6 +75,21 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_BIGFLOAT = 'php::BigFloat';
     public const string TYPE_BOX = 'php::Box';
 
+    /**
+     * to* conversion methods are keywords with mandated return types. */
+    public const array TO_METHOD_TYPE_MAP = [
+        'toInt'      => self::TYPE_INT,
+        'toFloat'    => self::TYPE_FLOAT,
+        'toString'   => self::TYPE_STR,
+        'toBool'     => self::TYPE_BOOL,
+        'toArray'    => self::TYPE_ARRAY,
+        'toStream'   => self::TYPE_STREAM,
+        'toBigInt'   => self::TYPE_BIGINT,
+        'toBigFloat' => self::TYPE_BIGFLOAT,
+        'toDecimal'  => self::TYPE_DECIMAL,
+        'toObject'   => self::TYPE_OBJECT,
+    ];
+
     private const array STREAM_FUNCTIONS = [
         'fopen',
         'tmpfile',
@@ -1652,7 +1667,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->addObject($var, $rightClass);
                 } elseif ($this->isTypedObject($var)) {
                     $leftClass = $this->getObjectType($var);
-                    // 对象的类不一致，不能互相赋值，必须使用 objval() 对齐类型
+                    // 对象的类不一致，不能互相赋值，必须使用 toObject() 对齐类型
                     // 注意这里必须使用绝对相等比较，即使存在继承关系，类的方法也可能不一致
                     if ($leftClass !== $rightClass) {
                         $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
@@ -1661,6 +1676,18 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->checkVarAssignExpr($left, $this->getVarType($var), self::TYPE_OBJECT);
                 }
             } else {
+                if ($this->isMethodCall($right) and $this->isNamedMethod($right->name)) {
+                    $methodName = $right->name->toString();
+                    if (in_array($methodName, ['toStdArray', 'toStdVector', 'toStdMap', 'toStdUnorderedMap'], true)) {
+                        if ($this->hasVar($var)) {
+                            $this->fatalError($left, "Cannot re-assign `\${$var}` to {$methodName}()");
+                        }
+                        if ($this->context->scopeLevel > 1) {
+                            $this->fatalError($left, "Must use {$methodName}() in the top-level scope of the function");
+                        }
+                        return $this->parseToStdAssign($var, $right);
+                    }
+                }
                 if ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
                     $fn = $this->parseIdentifier($right->name);
                     if (count($right->args) === 1 and $fn === 'any') {
@@ -1676,15 +1703,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } elseif ($this->isStaticCall($right) and $this->isNameExpr($right->class) and $this->isIdExpr($right->name)) {
                     $class = $this->parseIdentifier($right->class);
                     if ($class === 'std') {
-                        if ($right->name->toString() === 'unsafe_cast') {
-                            if ($this->hasVar($var)) {
-                                $this->fatalError($left, "Cannot re-assign `\${$var}` to std::unsafe_cast()");
-                            }
-                            if ($this->context->scopeLevel > 1) {
-                                $this->fatalError($left, 'Must use std::unsafe_cast() in the top-level scope of the function');
-                            }
-                            return $this->parseStdUnsafeCastAssign($var, $right);
-                        } elseif (in_array($right->name->toString(), ['array', 'vector', 'map', 'unordered_map'], true)) {
+                        if (in_array($right->name->toString(), ['array', 'vector', 'map', 'unordered_map'], true)) {
                             if ($this->hasVar($var)) {
                                 $this->fatalError($left, "Cannot re-assign `\${$var}` to std::{$right->name->toString()}");
                             }
@@ -2035,22 +2054,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->getObjectType($object);
             }
         }
-        if ($this->isFuncCallExpr($expr) and $this->isNameExpr($expr->name)) {
-            $fn = $this->parseIdentifier($expr->name);
-            if (count($expr->args) === 2 and $fn === 'objval') {
-                $argClass = $expr->args[1]->value;
-                if ($this->isScalarString($argClass)) {
-                    return $this->getNamespacedClassName($argClass->value);
-                }
-                if ($this->isClassConstFetch($argClass)) {
-                    if ($this->isNameExpr($argClass->class) and $this->isIdExpr($argClass->name) and $this->parseIdentifier($argClass->name) === 'class') {
-                        return $this->getNamespacedClassName($this->parseIdentifier($argClass->class));
-                    }
-                } else {
-                    $this->fatalError($expr, 'The second parameter of objval() function only supports string literals or `ClassName::class` constant');
-                }
-            }
-        }
         if ($this->isArrayDimFetch($expr) and $this->isStdContainerExpr($expr)) {
             if ($this->isStdArrayExpr($expr)) {
                 if (!$expr->hasAttribute('stdArrayDimFetch')) {
@@ -2068,14 +2071,28 @@ class CompilerBase extends \PhpAot\Core\Translator
             $attr = $expr->getAttribute('stdContainerDimFetch');
             return $this->context->stdContainers[$attr['var']]['class'] ?? '';
         }
-        if ($this->isMethodCall($expr) and $this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
-            $object = $this->parseVariable($expr->var);
-            try {
-                $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
-                if ($nativeFunc) {
-                    return $this->getFunction($nativeFunc)->returnClass;
+        if ($this->isMethodCall($expr) and $this->isNamedMethod($expr->name)) {
+            $method = $this->parseIdentifier($expr->name);
+            if ($method === 'toObject' and !empty($expr->args)) {
+                $argClass = $expr->args[0]->value;
+                if ($this->isScalarString($argClass)) {
+                    return $this->getNamespacedClassName($argClass->value);
                 }
-            } catch (DynamicCall) {
+                if ($this->isClassConstFetch($argClass)) {
+                    if ($this->isNameExpr($argClass->class) and $this->isIdExpr($argClass->name) and $this->parseIdentifier($argClass->name) === 'class') {
+                        return $this->getNamespacedClassName($this->parseIdentifier($argClass->class));
+                    }
+                }
+            }
+            if ($this->isVarExpr($expr->var)) {
+                $object = $this->parseVariable($expr->var);
+                try {
+                    $nativeFunc = $this->findNativeMethod($expr, $object, $method);
+                    if ($nativeFunc) {
+                        return $this->getFunction($nativeFunc)->returnClass;
+                    }
+                } catch (DynamicCall) {
+                }
             }
         }
         if ($this->isStaticCall($expr) and $this->isNameExpr($expr->class) and $this->isNamedMethod($expr->name)) {
@@ -2502,6 +2519,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_MethodCall':
                 if ($this->isNamedMethod($expr->name)) {
                     $method = $this->parseIdentifier($expr->name);
+                    // to* methods are keywords — their return type is mandated regardless of receiver
+                    if (isset(self::TO_METHOD_TYPE_MAP[$method])) {
+                        return self::TO_METHOD_TYPE_MAP[$method];
+                    }
                     // Class definition resolution (handles this_, typed VarExpr)
                     $classDef = $this->resolveObjectClassDef($expr->var);
                     if ($classDef !== null && $classDef->hasMethod($method)) {
@@ -5376,6 +5397,26 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $left . ' = &' . $tmpVar;
     }
 
+    protected function genToObjectCall(Expr\MethodCall $expr, string $receiver): string
+    {
+        if (empty($expr->args)) {
+            return 'php::toObject(' . $receiver . ')';
+        }
+        $argClass = $expr->args[0]->value;
+        if ($this->isScalarString($argClass)) {
+            $className = $this->getNamespacedClassName($argClass->value);
+        } elseif ($this->isClassConstFetch($argClass)) {
+            if ($this->isNameExpr($argClass->class) and $this->isIdExpr($argClass->name) and $this->parseIdentifier($argClass->name) === 'class') {
+                $className = $this->getNamespacedClassName($this->parseIdentifier($argClass->class));
+            } else {
+                $this->fatalError($expr, 'The first parameter of toObject() only supports string literals or `ClassName::class` constant');
+            }
+        } else {
+            $this->fatalError($expr, 'The first parameter of toObject() only supports string literals or `ClassName::class` constant');
+        }
+        return 'php::toObject(' . $receiver . ', ' . $this->getClassEntryPtr($className) . ', true)';
+    }
+
     protected function parseMethodCall(Expr\MethodCall $expr): string
     {
         $class = '';
@@ -5391,6 +5432,22 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $magicMethod = false;
         $method = $this->identifierToStr($expr->name, literal: true);
+
+        // to* conversion methods are language keywords — always dispatched directly
+        if ($this->isNamedMethod($expr->name)) {
+            $methodName = $expr->name->toString();
+            if (isset(self::TO_METHOD_TYPE_MAP[$methodName])) {
+                if ($this->isVarExpr($expr->var)) {
+                    $receiverType = $this->getVarType($object);
+                } else {
+                    $receiverType = $this->detectTypeOfExpr($expr->var);
+                }
+                if ($methodName === 'toObject') {
+                    return $this->genToObjectCall($expr, $object);
+                }
+                return $this->genToConvertCall($object, $methodName, $receiverType);
+            }
+        }
 
         // 可转为原生调用的 MethodCall
         if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {

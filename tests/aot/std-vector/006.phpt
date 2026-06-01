@@ -4,7 +4,7 @@ std vector: unsafe_cast
 <?php
 function std_vector_unsafe_ptr_update($source): void
 {
-    $vector = std::unsafe_cast(std::vector(native_types::type_int), $source);
+    $vector = $source->toStdVector(native_types::type_int);
     var_dump($vector[1]);
     $vector[2] = 9;
 }

@@ -10,6 +10,9 @@ namespace PhpAot\Php\Parser;
 
 use PhpAot\Php\Symbol;
 use PhpParser\Node\Expr;
+use PhpParser\Node\Expr\StaticCall;
+use PhpParser\Node\Name;
+use PhpParser\Node\Identifier;
 use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 
@@ -589,43 +592,44 @@ trait StdContainerParser
         return $valueExpr;
     }
 
-    protected function parseStdUnsafeCastAssign(string $var, Expr\StaticCall $expr): string
+    protected function parseToStdAssign(string $var, Expr\MethodCall $expr): string
     {
-        if (count($expr->args) !== 2) {
-            $this->fatalError($expr, 'std::unsafe_cast() expects two arguments');
+        $methodName = $expr->name->toString();
+        $containerType = match ($methodName) {
+            'toStdArray'        => 'array',
+            'toStdVector'       => 'vector',
+            'toStdMap'          => 'map',
+            'toStdUnorderedMap' => 'unordered_map',
+        };
+
+        if (!$this->isVarExpr($expr->var)) {
+            $this->fatalError($expr->var, "{$methodName}() must be called on a variable");
         }
-        $typeExpr = $expr->args[0]->value;
-        if (!$this->isStaticCall($typeExpr) || !$this->isNameExpr($typeExpr->class) || !$this->isIdExpr($typeExpr->name) || $typeExpr->class->toString() !== 'std') {
-            $this->fatalError($expr->args[0]->value, 'std::unsafe_cast() expects first argument to be a std container type expression');
-        }
-        $containerType = $typeExpr->name->toString();
-        if (!in_array($containerType, ['array', 'vector', 'map', 'unordered_map'], true)) {
-            $this->fatalError($expr->args[0]->value, 'std::unsafe_cast() expects first argument to be a std container type expression');
-        }
-        if (!$this->isVarExpr($expr->args[1]->value)) {
-            $this->fatalError($expr->args[1]->value, 'std::unsafe_cast() expects second argument to be a variable');
-        }
-        $sourceVar = $this->parseVariable($expr->args[1]->value);
+        $sourceVar = $this->parseVariable($expr->var);
         if (!$this->hasVar($sourceVar)) {
-            $this->fatalError($expr->args[1]->value, 'Undefined variable `$' . $sourceVar . '`');
+            $this->fatalError($expr->var, 'Undefined variable `$' . $sourceVar . '`');
         }
+
+        $name = new Name('std');
+        $method = new Identifier($containerType);
+        $fakeCall = new StaticCall($name, $method, $expr->args);
 
         if ($containerType === 'array') {
             $this->addLocalVar($var, self::TYPE_STD_ARRAY);
-            $this->parseStdArray($var, $typeExpr);
+            $this->parseStdArray($var, $fakeCall);
             $this->context->stdArrays[$var]['unsafePtr'] = $sourceVar;
             return '// php_unsafe_cast<' . $this->context->stdArrays[$var]['decl'] . '>(' . $sourceVar . ')';
         }
 
         if ($containerType === 'vector') {
             $this->addLocalVar($var, self::TYPE_STD_VECTOR);
-            $this->parseStdVector($var, $typeExpr);
+            $this->parseStdVector($var, $fakeCall);
         } elseif ($containerType === 'map') {
             $this->addLocalVar($var, self::TYPE_STD_MAP);
-            $this->parseStdMap($var, $typeExpr);
+            $this->parseStdMap($var, $fakeCall);
         } else {
             $this->addLocalVar($var, self::TYPE_STD_UNORDERED_MAP);
-            $this->parseStdUnorderedMap($var, $typeExpr);
+            $this->parseStdUnorderedMap($var, $fakeCall);
         }
         $this->context->stdContainers[$var]['unsafePtr'] = $sourceVar;
         return '// php_unsafe_cast<' . $this->context->stdContainers[$var]['decl'] . '>(' . $sourceVar . ')';

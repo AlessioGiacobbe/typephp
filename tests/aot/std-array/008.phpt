@@ -4,7 +4,7 @@ std array: unsafe_cast type mismatch
 <?php
 function std_array_unsafe_ptr_type_mismatch($source): void
 {
-    $array = std::unsafe_cast(std::array(native_types::type_float, 3), $source);
+    $array = $source->toStdArray(native_types::type_float, 3);
 }
 
 function main() {
@@ -17,4 +17,4 @@ function main() {
 }
 ?>
 --EXPECT--
-std::unsafe_cast(): std container type mismatch
+std container type mismatch

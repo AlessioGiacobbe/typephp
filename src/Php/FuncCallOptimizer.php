@@ -87,11 +87,6 @@ trait FuncCallOptimizer
             }
         } elseif (count($expr->args) == 2) {
             switch ($name) {
-                case 'objval':
-                    $arg1 = $expr->args[0]->value;
-                    $arg2 = $expr->args[1]->value;
-                    return $this->convertObjectExpr($this->parseExpr($arg1), $this->parseExpr($arg2));
-
                 case 'define':
                     $arg1 = $expr->args[0]->value;
                     if ($this->isScalarString($arg1) and !$this->isValidDefineName($arg1->value)) {

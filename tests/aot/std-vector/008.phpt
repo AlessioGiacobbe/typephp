@@ -12,7 +12,7 @@ class StdVectorUnsafeCastOther
 
 function std_vector_unsafe_ptr_class_type_mismatch($source): void
 {
-    $vector = std::unsafe_cast(std::vector(StdVectorUnsafeCastOther::class), $source);
+    $vector = $source->toStdVector(StdVectorUnsafeCastOther::class);
 }
 
 function main() {
@@ -25,4 +25,4 @@ function main() {
 }
 ?>
 --EXPECT--
-std::unsafe_cast(): std container type mismatch
+std container type mismatch

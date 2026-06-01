@@ -4,7 +4,7 @@ std unordered map: unsafe_cast type mismatch
 <?php
 function std_unordered_map_unsafe_ptr_type_mismatch($source): void
 {
-    $map = std::unsafe_cast(std::unordered_map(native_types::type_int, native_types::type_float), $source);
+    $map = $source->toStdUnorderedMap(native_types::type_int, native_types::type_float);
 }
 
 function main() {
@@ -17,4 +17,4 @@ function main() {
 }
 ?>
 --EXPECT--
-std::unsafe_cast(): std container type mismatch
+std container type mismatch

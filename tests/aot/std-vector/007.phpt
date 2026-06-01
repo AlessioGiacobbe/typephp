@@ -4,7 +4,7 @@ std vector: unsafe_cast type mismatch
 <?php
 function std_vector_unsafe_ptr_type_mismatch($source): void
 {
-    $vector = std::unsafe_cast(std::vector(native_types::type_float), $source);
+    $vector = $source->toStdVector(native_types::type_float);
 }
 
 function main() {
@@ -17,4 +17,4 @@ function main() {
 }
 ?>
 --EXPECT--
-std::unsafe_cast(): std container type mismatch
+std container type mismatch

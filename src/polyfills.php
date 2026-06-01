@@ -70,11 +70,6 @@ class std
         return null;
     }
 
-    public static function unsafe_cast(mixed $type, mixed $ptr): mixed
-    {
-        return $ptr;
-    }
-
     public static function fill(array $array, mixed $value): void
     {
         for ($i = 0; $i < count($array); $i++) {

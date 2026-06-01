@@ -4,7 +4,7 @@ std map: unsafe_cast
 <?php
 function std_map_unsafe_ptr_update($source): void
 {
-    $map = std::unsafe_cast(std::map(complex_types::type_str, native_types::type_int), $source);
+    $map = $source->toStdMap(complex_types::type_str, native_types::type_int);
     var_dump($map["b"]);
     $map["c"] = 9;
 

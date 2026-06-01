@@ -17,9 +17,6 @@ trait UniversalMethodCall
             'mod'      => ['handler' => 'calc_op', 'op' => '%', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
             'inc'      => ['handler' => 'calc_inc', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
             'dec'      => ['handler' => 'calc_dec', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'  => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toString' => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toBool'   => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             // math
             'abs'     => ['handler' => 'php_fn', 'fn' => 'abs', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
             'ceil'    => ['handler' => 'php_fn', 'fn' => 'ceil', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
@@ -49,9 +46,6 @@ trait UniversalMethodCall
             'div'      => ['handler' => 'calc_op', 'op' => '/', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
             'inc'      => ['handler' => 'calc_inc', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
             'dec'      => ['handler' => 'calc_dec', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toInt'    => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toString' => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toBool'   => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
             // math
             'abs'     => ['handler' => 'php_fn', 'fn' => 'abs', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
             'ceil'    => ['handler' => 'php_fn', 'fn' => 'ceil', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
@@ -75,8 +69,6 @@ trait UniversalMethodCall
             'min'     => ['handler' => 'php_fn', 'fn' => 'min', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 1, 'max_args' => 1],
         ],
         CompilerBase::TYPE_BOOL => [
-            'toInt'    => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toString' => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
         ],
         CompilerBase::TYPE_STR => [
             // --- stdext string_methods (all use PHP standard functions) ---
@@ -173,10 +165,6 @@ trait UniversalMethodCall
             'jsonDecodeToObject'    => ['handler' => 'php_fn', 'fn' => 'json_decode', 'return_type' => CompilerBase::TYPE_OBJECT, 'min_args' => 0, 'max_args' => 2, 'const_args' => [1 => 'false']],
             // phpx C++ methods (no PHP function equivalent)
             'equals'                => ['handler' => 'direct_method', 'method' => 'equals', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 2],
-            // conversions
-            'toInt'                 => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'               => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toBool'                => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
         ],
         CompilerBase::TYPE_ARRAY => [
             // --- stdext array_methods (all use PHP standard functions) ---
@@ -240,11 +228,6 @@ trait UniversalMethodCall
             'get'               => ['handler' => 'direct_method', 'method' => 'get', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 1, 'max_args' => 1],
             'del'               => ['handler' => 'direct_method_mutate', 'method' => 'del', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
             'clean'             => ['handler' => 'direct_method_mutate', 'method' => 'clean', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
-            // conversions
-            'toInt'             => ['handler' => 'convert_fn', 'fn' => 'toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'           => ['handler' => 'convert_fn', 'fn' => 'toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toBool'            => ['handler' => 'convert_fn', 'fn' => 'toBool', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 0, 'max_args' => 0],
-            'toString'          => ['handler' => 'convert_fn', 'fn' => 'toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
         ],
         CompilerBase::TYPE_STREAM => [
             // --- stdext stream_methods ---
@@ -299,9 +282,6 @@ trait UniversalMethodCall
             'divmod'       => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::divmod', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 1, 'max_args' => 1],
             'powmod'       => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::powmod', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 2, 'max_args' => 2],
             'sqrt'         => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::sqrt', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 0, 'max_args' => 0],
-            'toString'     => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toInt'        => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
             'bitAnd'       => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::bitAnd', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
             'bitOr'        => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::bitOr', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
             'bitXor'       => ['handler' => 'cpp_fn', 'fn' => 'php::BigInt::bitXor', 'return_type' => CompilerBase::TYPE_BIGINT, 'min_args' => 1, 'max_args' => 1],
@@ -327,9 +307,6 @@ trait UniversalMethodCall
             'floor'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::floor', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
             'ceil'     => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::ceil', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 0],
             'round'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::round', 'return_type' => CompilerBase::TYPE_DECIMAL, 'min_args' => 0, 'max_args' => 1],
-            'toString' => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toInt'    => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'  => ['handler' => 'cpp_fn', 'fn' => 'php::Decimal::toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
         ],
         CompilerBase::TYPE_BIGFLOAT => [
             'add'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::add', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 1, 'max_args' => 1],
@@ -339,9 +316,6 @@ trait UniversalMethodCall
             'neg'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::neg', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
             'cmp'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::cmp', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
             'abs'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::abs', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
-            'toString' => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toString', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],
-            'toInt'    => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toInt', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 0, 'max_args' => 0],
-            'toFloat'  => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::toFloat', 'return_type' => CompilerBase::TYPE_FLOAT, 'min_args' => 0, 'max_args' => 0],
         ],
     ];
 
@@ -351,19 +325,6 @@ trait UniversalMethodCall
 
     protected function detectUniversalMethodReturnType(string $type, string $method): ?string
     {
-        if ($type === CompilerBase::TYPE_VAR) {
-            foreach (self::TYPE_SEARCH_ORDER as $searchType) {
-                $def = static::UNIVERSAL_METHODS[$searchType][$method] ?? null;
-                if ($def !== null) {
-                    return $def['return_type'];
-                }
-                $ext = $this->findExtensionMethod($searchType, $method);
-                if ($ext !== null) {
-                    return $ext['return_type'];
-                }
-            }
-            return null;
-        }
         $builtin = self::UNIVERSAL_METHODS[$type][$method]['return_type'] ?? null;
         if ($builtin !== null) {
             return $builtin;
@@ -390,24 +351,36 @@ trait UniversalMethodCall
         return strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $name));
     }
 
+    private const array TO_CONVERT_FN = [
+        CompilerBase::TYPE_BIGINT   => ['toInt' => 'php::BigInt::toInt', 'toFloat' => 'php::BigInt::toFloat', 'toString' => 'php::BigInt::toString'],
+        CompilerBase::TYPE_BIGFLOAT => ['toInt' => 'php::BigFloat::toInt', 'toFloat' => 'php::BigFloat::toFloat', 'toString' => 'php::BigFloat::toString'],
+        CompilerBase::TYPE_DECIMAL  => ['toInt' => 'php::Decimal::toInt', 'toFloat' => 'php::Decimal::toFloat', 'toString' => 'php::Decimal::toString'],
+    ];
+
     /**
-     * Search all type tables for a method. Returns [type, def] or null.
+     * Generate C++ code for a to* keyword conversion call.
      */
+    protected function genToConvertCall(string $receiver, string $method, string $receiverType = ''): string
+    {
+        if ($receiverType !== '' && isset(self::TO_CONVERT_FN[$receiverType][$method])) {
+            return self::TO_CONVERT_FN[$receiverType][$method] . '(' . $receiver . ')';
+        }
+        return match ($method) {
+            'toInt'       => 'php::toInt(' . $receiver . ')',
+            'toFloat'     => 'php::toFloat(' . $receiver . ')',
+            'toString'    => 'php::toString(' . $receiver . ')',
+            'toBool'      => 'php::toBool(' . $receiver . ')',
+            'toArray'     => 'php::toArray(' . $receiver . ')',
+            'toStream'    => 'php::toStream(' . $receiver . ')',
+            'toBigInt'    => 'php::BigInt::newInstance(' . $receiver . ')',
+            'toBigFloat'  => 'php::BigFloat::newInstance(' . $receiver . ')',
+            'toDecimal'   => 'php::Decimal::newInstance(' . $receiver . ')',
+            default       => $receiver,
+        };
+    }
+
     protected function findUniversalMethodAnyType(string $type, string $method): ?array
     {
-        if ($type === CompilerBase::TYPE_VAR) {
-            foreach (self::TYPE_SEARCH_ORDER as $searchType) {
-                $def = self::UNIVERSAL_METHODS[$searchType][$method] ?? null;
-                if ($def !== null) {
-                    return $def;
-                }
-                $ext = $this->findExtensionMethod($searchType, $method);
-                if ($ext !== null) {
-                    return $ext;
-                }
-            }
-            return null;
-        }
         $builtin = self::UNIVERSAL_METHODS[$type][$method] ?? null;
         if ($builtin !== null) {
             return $builtin;

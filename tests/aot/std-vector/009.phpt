@@ -7,7 +7,7 @@ namespace StdVectorUnsafeCastNs {
     {
         public static function update($source): void
         {
-            $vector = std::unsafe_cast(std::vector(self::class), $source);
+            $vector = $source->toStdVector(self::class);
             echo "ok\n";
         }
 
