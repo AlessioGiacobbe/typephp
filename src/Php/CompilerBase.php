@@ -5412,8 +5412,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($type === self::TYPE_STREAM) {
                         return $this->genStreamNullGuard($expr, $object, $methodName, $fn);
                     }
-                    return $this->parseUniversalMethodCall($expr, $object, $method, $fn);
+                    return $this->parseUniversalMethodCall($expr, $object, $methodName, $fn);
                 }
+                $this->fatalError($expr, "Cannot call method `{$methodName}()` on variable of type {$type}");
             }
             $this->context->beforeStmtLines[] = '// Method Call: ' . $object . '->' . $this->parseIdentifier($expr->name) . '()';
             try {

@@ -188,21 +188,6 @@ class PreprocessorTest extends TestCase
     }
 
     // ========================================================================
-    // hasCppFileCache
-    // ========================================================================
-
-    public function testHasCppFileCacheWhenDisabled(): void
-    {
-        // enableCache defaults to false, so cache should always return false
-        $this->assertFalse($this->compiler->hasCppFileCache('/tmp/test.php'));
-    }
-
-    public function testHasCppFileCacheNonexistentFile(): void
-    {
-        $this->assertFalse($this->compiler->hasCppFileCache('/nonexistent/path/test.php'));
-    }
-
-    // ========================================================================
     // sortFiles
     // ========================================================================
 

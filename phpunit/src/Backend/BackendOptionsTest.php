@@ -441,7 +441,7 @@ class BackendOptionsTest extends TestCase
         
         // O1
         $opt1 = $compiler->buildCompileOptions(['optimize' => 1]);
-        $this->assertStringContainsString('/O2', $opt1);
+        $this->assertStringContainsString('/O1', $opt1);
         
         // O2
         $opt2 = $compiler->buildCompileOptions(['optimize' => 2]);
