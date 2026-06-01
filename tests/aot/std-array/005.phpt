@@ -28,7 +28,7 @@ function main() {
     $objects = std::array(complex_types::type_object, 2);
     $objects[0] = new StdArrayComplexValue(28);
     var_dump($objects[0] instanceof StdArrayComplexValue);
-    $object = objval($objects[0], StdArrayComplexValue::class);
+    $object = $objects[0]->toObject(StdArrayComplexValue::class);
     var_dump($object->getValue());
 
     $variants = std::array(complex_types::type_any, 2);

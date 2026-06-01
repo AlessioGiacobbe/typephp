@@ -83,13 +83,6 @@ class std
     }
 }
 
-function objval(mixed $obj, string $class): object
-{
-    if ($obj instanceof $class) {
-        return $obj;
-    }
-    throw new Exception('Invalid object type');
-}
 
 function &refval(&$var)
 {

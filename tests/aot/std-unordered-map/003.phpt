@@ -28,7 +28,7 @@ function main() {
     $objects = std::unordered_map(native_types::type_int, complex_types::type_object);
     $objects[2] = new StdUnorderedMapComplexValue(21);
     var_dump($objects[2] instanceof StdUnorderedMapComplexValue);
-    $object = objval($objects[2], StdUnorderedMapComplexValue::class);
+    $object = $objects[2]->toObject(StdUnorderedMapComplexValue::class);
     var_dump($object->getValue());
 
     $variants = std::unordered_map(native_types::type_int, complex_types::type_var);

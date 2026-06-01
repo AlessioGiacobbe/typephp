@@ -28,7 +28,7 @@ function main() {
     $objects = std::map(complex_types::type_string, complex_types::type_object);
     $objects["item"] = new StdMapComplexValue(14);
     var_dump($objects["item"] instanceof StdMapComplexValue);
-    $object = objval($objects["item"], StdMapComplexValue::class);
+    $object = $objects["item"]->toObject(StdMapComplexValue::class);
     var_dump($object->getValue());
 
     $variants = std::map(native_types::type_int, complex_types::type_any);

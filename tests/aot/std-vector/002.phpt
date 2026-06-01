@@ -28,7 +28,7 @@ function main() {
     $objects = std::vector(complex_types::type_object);
     $objects[] = new StdVectorComplexValue(7);
     var_dump($objects[0] instanceof StdVectorComplexValue);
-    $object = objval($objects[0], StdVectorComplexValue::class);
+    $object = $objects[0]->toObject(StdVectorComplexValue::class);
     var_dump($object->getValue());
 
     $variants = std::vector(complex_types::type_variant);

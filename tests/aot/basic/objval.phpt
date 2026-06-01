@@ -25,10 +25,10 @@ function main()
     $obj = new TestObjval(1, 2);
     $arr = array();
     $arr['obj'] = $obj;
-    $obj2 = objval($arr['obj'], 'TestObjval');
+    $obj2 = $arr['obj']->toObject('TestObjval');
     var_dump($obj2->test());
 
-    $obj3 = objval($obj, TestObjval::class);
+    $obj3 = $obj->toObject(TestObjval::class);
     var_dump($obj3->test());
 }
 ?>

@@ -18,7 +18,7 @@ namespace TestApp\Command {
         public function callCommand(string $class): Command
         {
             $array = ['object' => new Command($class)];
-            return objval($array['object'], Command::class);
+            return $array['object']->toObject(Command::class);
         }
     }
 }
