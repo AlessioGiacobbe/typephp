@@ -695,8 +695,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Scalar_Int':
             case 'Scalar_Float':
             case 'Scalar_String':
+                return $this->parseIdentifier($expr);
             case 'Expr_Variable':
                 $varName = $this->parseIdentifier($expr);
+                $this->requireVar($expr, $varName);
                 if ($this->isStdContainer($varName)) {
                     return $varName . '_ref';
                 }
@@ -811,17 +813,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return self::TYPE_VAR;
-    }
-
-    /**
-     * Resolve the type of an arbitrary expression for universal method call dispatch.
-     * Delegates to detectTypeOfExpr — returns null when the type cannot be determined
-     * at compile time (i.e. detectTypeOfExpr returns TYPE_VAR).
-     */
-    protected function resolveExprType(Node\Expr $expr): ?string
-    {
-        $type = $this->detectTypeOfExpr($expr);
-        return $type !== self::TYPE_VAR ? $type : null;
     }
 
     /**
@@ -5434,8 +5425,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         // 表达式返回值也可使用内置方法：fn()->method(), $obj->fn()->method(), Foo::fn()->method(), $obj->prop->method()
         if (!$this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
-            $type = $this->resolveExprType($expr->var);
-            if ($type !== null and !$this->checkArgType($type, self::TYPE_OBJECT)) {
+            $type = $this->detectTypeOfExpr($expr->var);
+            if ($type !== self::TYPE_VAR && !$this->checkArgType($type, self::TYPE_OBJECT)) {
                 $methodName = $expr->name->toString();
                 $fn = $this->findUniversalMethodAnyType($type, $methodName);
                 if ($fn) {
