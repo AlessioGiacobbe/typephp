@@ -230,6 +230,13 @@ class SimpleType {
                 return new SimpleType(ClassInfo::$currentClass, false);
             }
 
+            $name = $node->toLowerString();
+
+            // stream/box are compiler pseudo-types, treated like resource (mixed in arginfo)
+            if ($name === 'stream' || $name === 'box') {
+                return new SimpleType($name, true);
+            }
+
             $class = $node->isFullyQualified() ? $node->toString() : getTranslator()->getNamespacedClassName($node->toString());
             return new SimpleType($class, false);
         }
@@ -271,7 +278,8 @@ class SimpleType {
             case "any":
                 return new SimpleType('any', true);
             case "box":
-                return new SimpleType('box', true);
+            case "stream":
+                return new SimpleType($typeString, true);
             case "array":
                 return ArrayType::createGenericArray();
             case "self":
@@ -393,6 +401,7 @@ class SimpleType {
             case "mixed":
             case "any":
             case "box":
+            case "stream":
                 return ["IS_MIXED", "MAY_BE_ANY"];
             case "void":
                 return ["IS_VOID", "MAY_BE_VOID"];
@@ -455,6 +464,7 @@ class SimpleType {
             case "mixed":
             case "any":
             case "box":
+            case "stream":
                 return "MAY_BE_ARRAY_OF_ANY";
             case "ref":
                 return "MAY_BE_ARRAY_OF_REF";
@@ -478,6 +488,7 @@ class SimpleType {
             case "mixed":
             case "any":
             case "box":
+            case "stream":
                 return "MAY_BE_ANY|MAY_BE_ARRAY_KEY_ANY|MAY_BE_ARRAY_OF_ANY";
         }
 
@@ -2771,7 +2782,7 @@ class ConstInfo extends VariableLike
     {
         $type = $this->phpDocType ?? $this->type;
         $simpleType = $type ? $type->tryToSimpleType() : null;
-        if ($simpleType && ($simpleType->name === "mixed" || $simpleType->name === "any" || $simpleType->name === "box")) {
+        if ($simpleType && ($simpleType->name === "mixed" || $simpleType->name === "any" || $simpleType->name === "box" || $simpleType->name === "stream")) {
             $simpleType = null;
         }
 
@@ -3047,6 +3058,7 @@ class StringBuilder {
         "mixed" => "ZEND_STR_MIXED",
         "any" => "ZEND_STR_MIXED",
         "box" => "ZEND_STR_MIXED",
+        "stream" => "ZEND_STR_MIXED",
     ];
 
     // NEW in 8.1
