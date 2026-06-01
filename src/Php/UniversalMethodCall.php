@@ -474,9 +474,9 @@ trait UniversalMethodCall
             return false;
         }
         $firstParam = $funcDef->argInfoList[0];
-        // Stream is a PHP pseudo-type; its params are always untyped (TYPE_VAR) or references
-        if ($type === self::TYPE_STREAM) {
-            return $firstParam->byRef || $firstParam->type === self::TYPE_VAR || $firstParam->type === self::TYPE_REF;
+        // Stream/Box are PHP pseudo-types; their params may be typed or untyped
+        if ($type === self::TYPE_STREAM || $type === self::TYPE_BOX) {
+            return $firstParam->byRef || $firstParam->type === self::TYPE_VAR || $firstParam->type === self::TYPE_REF || $firstParam->type === $type;
         }
         if ($firstParam->byRef) {
             return $type === self::TYPE_ARRAY;

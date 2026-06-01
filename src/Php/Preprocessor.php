@@ -63,7 +63,11 @@ class Preprocessor extends CompilerBase
 
     protected function genArgumentDeclaration(ArgInfo $argInfo): string
     {
-        return $argInfo->type . ' ' . $argInfo->name;
+        $type = $argInfo->type;
+        if ($type === self::TYPE_STREAM || $type === self::TYPE_BOX) {
+            $type = self::TYPE_VAR;
+        }
+        return $type . ' ' . $argInfo->name;
     }
 
     public function getCppFile(string $file): string

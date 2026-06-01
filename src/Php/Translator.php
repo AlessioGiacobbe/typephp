@@ -1948,8 +1948,9 @@ CODE;
                         $argExpr = 'php::getCallArg(' . $k . ')';
                     }
                 }
+                $cppType = ($argInfo->type === self::TYPE_STREAM || $argInfo->type === self::TYPE_BOX) ? self::TYPE_VAR : $argInfo->type;
                 $expr = $this->convertExprFromType($argInfo->type, $argExpr);
-                $cppCode .= $this->getIndent() . $argInfo->type . ' ' . $var . ' = ' . $expr . ';' . PHP_EOL;
+                $cppCode .= $this->getIndent() . $cppType . ' ' . $var . ' = ' . $expr . ';' . PHP_EOL;
             }
             $callParams .= 'arg_' . $argInfo->name . ',';
         }
