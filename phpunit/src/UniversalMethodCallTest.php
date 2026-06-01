@@ -16,4 +16,9 @@ class UniversalMethodCallTest extends \BaseTest
     {
         $this->exec('Cannot call mutating method `push()` on a non-variable expression', 'universal-method-mutating-expr.php');
     }
+
+    public function testVoidMethodCall()
+    {
+        $this->exec('Cannot call method on void', 'void-method-call.php');
+    }
 }

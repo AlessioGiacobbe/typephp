@@ -5438,6 +5438,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 } else {
                     $receiverType = $this->detectTypeOfExpr($expr->var);
                 }
+                if ($receiverType === self::TYPE_VOID) {
+                    $this->fatalError($expr->var, 'Cannot call method on void');
+                }
                 if ($methodName === 'toObject') {
                     return $this->genToObjectCall($expr, $object);
                 }
@@ -5479,6 +5482,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 表达式返回值也可使用内置方法：fn()->method(), $obj->fn()->method(), Foo::fn()->method(), $obj->prop->method()
         if (!$this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
             $type = $this->detectTypeOfExpr($expr->var);
+            if ($type === self::TYPE_VOID) {
+                $this->fatalError($expr->var, 'Cannot call method on void');
+            }
             if ($type !== self::TYPE_VAR && !$this->checkArgType($type, self::TYPE_OBJECT)) {
                 $methodName = $expr->name->toString();
                 $fn = $this->findUniversalMethodAnyType($type, $methodName);
