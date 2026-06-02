@@ -702,28 +702,7 @@ trait UniversalMethodCall
      */
     protected function genUniversalPhpFn(string $receiver, string $phpFunc, array $args, int $receiverPos = 0, array $constArgs = []): string
     {
-        $argExprs = [];
-        $userArgs = [];
-        foreach ($args as $arg) {
-            $userArgs[] = $this->parseExpr($arg->value);
-        }
-
-        if ($receiverPos === 0) {
-            $argExprs = [$receiver];
-            foreach ($userArgs as $ua) {
-                $argExprs[] = $ua;
-            }
-        } else {
-            foreach ($userArgs as $i => $ua) {
-                if ($i === $receiverPos - 1) {
-                    $argExprs[] = $receiver;
-                }
-                $argExprs[] = $ua;
-            }
-            if ($receiverPos > count($userArgs)) {
-                $argExprs[] = $receiver;
-            }
-        }
+        $argExprs = $this->buildReceiverArgs($receiver, $args, $receiverPos);
 
         if ($constArgs) {
             $maxPos = max(array_keys($constArgs));
@@ -746,7 +725,12 @@ trait UniversalMethodCall
     // Same receiverPos semantics as genUniversalPhpFn.
     protected function genUniversalCppFn(string $receiver, string $cppFunc, array $args, int $receiverPos = 0): string
     {
-        $argExprs = [];
+        $argExprs = $this->buildReceiverArgs($receiver, $args, $receiverPos);
+        return $cppFunc . '(' . implode(', ', $argExprs) . ')';
+    }
+
+    private function buildReceiverArgs(string $receiver, array $args, int $receiverPos): array
+    {
         $userArgs = [];
         foreach ($args as $arg) {
             $userArgs[] = $this->parseExpr($arg->value);
@@ -758,6 +742,7 @@ trait UniversalMethodCall
                 $argExprs[] = $ua;
             }
         } else {
+            $argExprs = [];
             foreach ($userArgs as $i => $ua) {
                 if ($i === $receiverPos - 1) {
                     $argExprs[] = $receiver;
@@ -769,7 +754,7 @@ trait UniversalMethodCall
             }
         }
 
-        return $cppFunc . '(' . implode(', ', $argExprs) . ')';
+        return $argExprs;
     }
 
     protected function genUniversalPhpFnRef(string $receiver, string $phpFunc, array $args, string $returnType): string

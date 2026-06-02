@@ -5344,16 +5344,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return 'php::toObject(' . $receiver . ')';
         }
-        $argClass = $expr->args[0]->value;
-        if ($this->isScalarString($argClass)) {
-            $className = $this->getNamespacedClassName($argClass->value);
-        } elseif ($this->isClassConstFetch($argClass)) {
-            if ($this->isNameExpr($argClass->class) and $this->isIdExpr($argClass->name) and $this->parseIdentifier($argClass->name) === 'class') {
-                $className = $this->getNamespacedClassName($this->parseIdentifier($argClass->class));
-            } else {
-                $this->fatalError($expr, 'The first parameter of toObject() only supports string literals or `ClassName::class` constant');
-            }
-        } else {
+        $className = $this->resolveClassNameArg($expr->args[0]->value);
+        if ($className === '') {
             $this->fatalError($expr, 'The first parameter of toObject() only supports string literals or `ClassName::class` constant');
         }
         return 'php::toObject(' . $receiver . ', ' . $this->getClassEntryPtr($className) . ', true)';
