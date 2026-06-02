@@ -124,4 +124,9 @@ class AssignTest extends \BaseTest
     {
         $this->exec("Cannot re-assign `\$x` from `php::Str` to `php::Array`", 're-assign-str-to-array.php');
     }
+
+    public function testStrictTypesZeroNotAllowed()
+    {
+        $this->exec("declare(strict_types=0) is not allowed, only strict_types=1 is supported", 'declare-strict-types-zero.php');
+    }
 }
