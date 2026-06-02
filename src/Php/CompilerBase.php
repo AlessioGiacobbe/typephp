@@ -1810,14 +1810,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($expr, 'Cannot echo assign expression');
             } else {
                 $type = $this->detectTypeOfExpr($expr);
-                $parsed = $this->parseExpr($expr);
-                if ($type === self::TYPE_BIGINT) {
-                    $parsed = 'php::BigInt::toString(' . $parsed . ')';
-                } elseif ($type === self::TYPE_BIGFLOAT) {
-                    $parsed = 'php::BigFloat::toString(' . $parsed . ')';
-                } elseif ($type === self::TYPE_DECIMAL) {
-                    $parsed = 'php::Decimal::toString(' . $parsed . ')';
-                }
+                $parsed = $this->convertExprToStringByType($this->parseExpr($expr), $type);
                 $lines[] = 'php::echo(' . $parsed . ');';
             }
         }
