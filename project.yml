@@ -28,6 +28,6 @@ sources:
   - ./src/Core
   - ./src/functions.php
   - ./src/gen_stub.php
-  - ./src/compiler-build.php
+  - ./src/compiler.php
   - vendor/nikic/php-parser/lib/PhpParser/NodeVisitor.php
   - vendor/nikic/php-parser/lib/PhpParser/NodeVisitorAbstract.php
