@@ -729,34 +729,25 @@ trait StdContainerParser
 
     protected function parseStdMap(string $var, Expr\StaticCall $expr): string
     {
-        if (count($expr->args) !== 2) {
-            $this->fatalError($expr, 'std::map() expects two arguments');
-        }
-        $keyType = $this->parseStdMapKeyType($expr->args[0]->value, 'std::map');
-        $valueTypeInfo = $this->parseStdValueTypeInfo($expr->args[1]->value, 'std::map');
-        $valueType = $valueTypeInfo['type'];
-        $decl = $this->getStdMapDecl(self::TYPE_STD_MAP, $keyType, $valueType);
-        $this->context->stdContainers[$var] = $this->addStdTypeId([
-            'kind' => 'map',
-            'decl' => $decl,
-            'type' => $valueType,
-            'class' => $valueTypeInfo['class'],
-            'keyType' => $keyType,
-        ]);
-        return '// ' . $decl;
+        return $this->parseStdMapBase($var, $expr, 'std::map', self::TYPE_STD_MAP, 'map');
     }
 
     protected function parseStdUnorderedMap(string $var, Expr\StaticCall $expr): string
     {
+        return $this->parseStdMapBase($var, $expr, 'std::unordered_map', self::TYPE_STD_UNORDERED_MAP, 'unordered_map');
+    }
+
+    private function parseStdMapBase(string $var, Expr\StaticCall $expr, string $funcName, string $containerType, string $kind): string
+    {
         if (count($expr->args) !== 2) {
-            $this->fatalError($expr, 'std::unordered_map() expects two arguments');
+            $this->fatalError($expr, $funcName . '() expects two arguments');
         }
-        $keyType = $this->parseStdMapKeyType($expr->args[0]->value, 'std::unordered_map');
-        $valueTypeInfo = $this->parseStdValueTypeInfo($expr->args[1]->value, 'std::unordered_map');
+        $keyType = $this->parseStdMapKeyType($expr->args[0]->value, $funcName);
+        $valueTypeInfo = $this->parseStdValueTypeInfo($expr->args[1]->value, $funcName);
         $valueType = $valueTypeInfo['type'];
-        $decl = $this->getStdMapDecl(self::TYPE_STD_UNORDERED_MAP, $keyType, $valueType);
+        $decl = $this->getStdMapDecl($containerType, $keyType, $valueType);
         $this->context->stdContainers[$var] = $this->addStdTypeId([
-            'kind' => 'unordered_map',
+            'kind' => $kind,
             'decl' => $decl,
             'type' => $valueType,
             'class' => $valueTypeInfo['class'],
