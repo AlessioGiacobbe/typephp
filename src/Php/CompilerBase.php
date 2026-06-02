@@ -3979,82 +3979,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseBinaryOpEqual(Expr\BinaryOp\Equal $expr): string
     {
-        $leftType = $this->detectTypeOfExpr($expr->left);
-        $rightType = $this->detectTypeOfExpr($expr->right);
-        if ($leftType === self::TYPE_BIGFLOAT || $rightType === self::TYPE_BIGFLOAT) {
-                        $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            if ($leftType !== self::TYPE_BIGFLOAT) {
-                $leftExpr = $this->convertBigFloatExpr($leftExpr, $leftType);
-            }
-            if ($rightType !== self::TYPE_BIGFLOAT) {
-                $rightExpr = $this->convertBigFloatExpr($rightExpr, $rightType);
-            }
-            return 'php::BigFloat::cmp(' . $leftExpr . ', ' . $rightExpr . ') == 0';
-        }
-        if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
-                        $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            if ($leftType !== self::TYPE_BIGINT) {
-                $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
-            }
-            if ($rightType !== self::TYPE_BIGINT) {
-                $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
-            }
-            return 'php::BigInt::cmp(' . $leftExpr . ', ' . $rightExpr . ') == 0';
-        }
-        if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
-                        $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            if ($leftType !== self::TYPE_DECIMAL) {
-                $leftExpr = $this->convertDecimalExpr($leftExpr, $leftType, $expr->left);
-            }
-            if ($rightType !== self::TYPE_DECIMAL) {
-                $rightExpr = $this->convertDecimalExpr($rightExpr, $rightType, $expr->right);
-            }
-            return 'php::Decimal::cmp(' . $leftExpr . ', ' . $rightExpr . ') == 0';
-        }
-        return 'php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
+        return $this->genBigNumericCmp($expr, ' == 0')
+            ?? 'php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
     }
 
     protected function parseBinaryOpNotEqual(Expr\BinaryOp\NotEqual $expr): string
     {
-        $leftType = $this->detectTypeOfExpr($expr->left);
-        $rightType = $this->detectTypeOfExpr($expr->right);
-        if ($leftType === self::TYPE_BIGFLOAT || $rightType === self::TYPE_BIGFLOAT) {
-                        $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            if ($leftType !== self::TYPE_BIGFLOAT) {
-                $leftExpr = $this->convertBigFloatExpr($leftExpr, $leftType);
-            }
-            if ($rightType !== self::TYPE_BIGFLOAT) {
-                $rightExpr = $this->convertBigFloatExpr($rightExpr, $rightType);
-            }
-            return 'php::BigFloat::cmp(' . $leftExpr . ', ' . $rightExpr . ') != 0';
-        }
-        if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
-                        $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            if ($leftType !== self::TYPE_BIGINT) {
-                $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
-            }
-            if ($rightType !== self::TYPE_BIGINT) {
-                $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
-            }
-            return 'php::BigInt::cmp(' . $leftExpr . ', ' . $rightExpr . ') != 0';
-        }
-        if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
-                        $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            if ($leftType !== self::TYPE_DECIMAL) {
-                $leftExpr = $this->convertDecimalExpr($leftExpr, $leftType, $expr->left);
-            }
-            if ($rightType !== self::TYPE_DECIMAL) {
-                $rightExpr = $this->convertDecimalExpr($rightExpr, $rightType, $expr->right);
-            }
-            return 'php::Decimal::cmp(' . $leftExpr . ', ' . $rightExpr . ') != 0';
-        }
-        return '!php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
+        return $this->genBigNumericCmp($expr, ' != 0')
+            ?? '!php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
     }
 
     protected function parseBinaryOpIdentical(Expr\BinaryOp $expr): string
@@ -4248,10 +4180,17 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseBinaryOpSpaceship(Expr\BinaryOp\Spaceship $expr): string
     {
+        return $this->genBigNumericCmp($expr)
+            ?? 'php::compare(' . $this->parseIdentifier($expr->left) . ', ' . $this->parseIdentifier($expr->right) . ')';
+    }
+
+    protected function genBigNumericCmp(Expr\BinaryOp $expr, string $suffix = ''): ?string
+    {
         $leftType = $this->detectTypeOfExpr($expr->left);
         $rightType = $this->detectTypeOfExpr($expr->right);
+
         if ($leftType === self::TYPE_BIGFLOAT || $rightType === self::TYPE_BIGFLOAT) {
-                        $leftExpr = $this->parseExpr($expr->left);
+            $leftExpr = $this->parseExpr($expr->left);
             $rightExpr = $this->parseExpr($expr->right);
             if ($leftType !== self::TYPE_BIGFLOAT) {
                 $leftExpr = $this->convertBigFloatExpr($leftExpr, $leftType);
@@ -4259,10 +4198,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($rightType !== self::TYPE_BIGFLOAT) {
                 $rightExpr = $this->convertBigFloatExpr($rightExpr, $rightType);
             }
-            return 'php::BigFloat::cmp(' . $leftExpr . ', ' . $rightExpr . ')';
+            return 'php::BigFloat::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
         }
         if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
-                        $leftExpr = $this->parseExpr($expr->left);
+            $leftExpr = $this->parseExpr($expr->left);
             $rightExpr = $this->parseExpr($expr->right);
             if ($leftType !== self::TYPE_BIGINT) {
                 $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
@@ -4270,10 +4209,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($rightType !== self::TYPE_BIGINT) {
                 $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
             }
-            return 'php::BigInt::cmp(' . $leftExpr . ', ' . $rightExpr . ')';
+            return 'php::BigInt::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
         }
         if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
-                        $leftExpr = $this->parseExpr($expr->left);
+            $leftExpr = $this->parseExpr($expr->left);
             $rightExpr = $this->parseExpr($expr->right);
             if ($leftType !== self::TYPE_DECIMAL) {
                 $leftExpr = $this->convertDecimalExpr($leftExpr, $leftType, $expr->left);
@@ -4281,11 +4220,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($rightType !== self::TYPE_DECIMAL) {
                 $rightExpr = $this->convertDecimalExpr($rightExpr, $rightType, $expr->right);
             }
-            return 'php::Decimal::cmp(' . $leftExpr . ', ' . $rightExpr . ')';
+            return 'php::Decimal::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
         }
-        $left  = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-        return 'php::compare(' . $left . ', ' . $right . ')';
+
+        return null;
     }
 
     /**
@@ -4429,18 +4367,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastString(Expr\Cast\String_ $node): string
     {
-        $type = $this->detectTypeOfExpr($node->expr);
-        $expr = $this->parseExpr($node->expr);
-        if ($type === self::TYPE_BIGINT) {
-            return 'php::BigInt::toString(' . $expr . ')';
-        }
-        if ($type === self::TYPE_BIGFLOAT) {
-            return 'php::BigFloat::toString(' . $expr . ')';
-        }
-        if ($type === self::TYPE_DECIMAL) {
-            return 'php::Decimal::toString(' . $expr . ')';
-        }
-        return $this->convertStringExpr($expr);
+        return $this->convertExprToStringByType(
+            $this->parseExpr($node->expr),
+            $this->detectTypeOfExpr($node->expr)
+        );
     }
 
     protected function parseCastBool(Expr\Cast\Bool_ $node): string
