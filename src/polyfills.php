@@ -89,7 +89,3 @@ function any(mixed $var): mixed
     return $var;
 }
 
-function stream_cast($stream)
-{
-    return $stream;
-}

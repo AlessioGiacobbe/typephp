@@ -1,5 +1,5 @@
 --TEST--
-stream_cast() pseudo-function for stream type casting
+toStream() keyword method for stream type casting
 --FILE--
 <?php
 
@@ -7,36 +7,36 @@ function main()
 {
     require __DIR__ . '/../../../src/Assert.php';
 
-    // Test 1: stream_cast identity — on an already-inferred stream variable
+    // Test 1: toStream() on an already-inferred stream variable
     $tmpfile = tempnam(sys_get_temp_dir(), 'aot');
     $fp = fopen($tmpfile, 'w+');
     $fp->write("hello world");
     $fp->seek(0);
-    $data = stream_cast($fp)->read(5);
+    $data = $fp->toStream()->read(5);
     var_dump($data);
     $fp->close();
 
-    // Test 2: stream_cast on array elements where type isn't known
+    // Test 2: toStream() on array elements where type isn't known
     $pipes = [];
     $pipes[0] = fopen($tmpfile, 'w');
-    $w = stream_cast($pipes[0]);
+    $w = $pipes[0]->toStream();
     $w->write("test data from pipe");
     $w->close();
 
     $pipes[1] = fopen($tmpfile, 'r');
-    $r = stream_cast($pipes[1]);
+    $r = $pipes[1]->toStream();
     $data2 = $r->read(1024);
     var_dump($data2);
     $r->close();
 
-    // Test 3: stream_cast in expression context (method chaining)
+    // Test 3: toStream() in expression context (method chaining)
     $fp2 = fopen($tmpfile, 'w');
-    stream_cast($fp2)->write("chain test");
-    stream_cast($fp2)->close();
+    $fp2->toStream()->write("chain test");
+    $fp2->toStream()->close();
 
     $fp3 = fopen($tmpfile, 'r');
-    var_dump(stream_cast($fp3)->read(10));
-    stream_cast($fp3)->close();
+    var_dump($fp3->toStream()->read(10));
+    $fp3->toStream()->close();
 
     unlink($tmpfile);
     echo "OK\n";

@@ -617,8 +617,8 @@ trait StdContainerParser
         if ($containerType === 'array') {
             $this->addLocalVar($var, self::TYPE_STD_ARRAY);
             $this->parseStdArray($var, $fakeCall);
-            $this->context->stdArrays[$var]['unsafePtr'] = $sourceVar;
-            return '// php_unsafe_cast<' . $this->context->stdArrays[$var]['decl'] . '>(' . $sourceVar . ')';
+            $this->context->stdArrays[$var]['boxExpr'] = $sourceVar;
+            return '// StdContainer<' . $this->context->stdArrays[$var]['decl'] . '>(' . $sourceVar . ')';
         }
 
         if ($containerType === 'vector') {
@@ -631,8 +631,8 @@ trait StdContainerParser
             $this->addLocalVar($var, self::TYPE_STD_UNORDERED_MAP);
             $this->parseStdUnorderedMap($var, $fakeCall);
         }
-        $this->context->stdContainers[$var]['unsafePtr'] = $sourceVar;
-        return '// php_unsafe_cast<' . $this->context->stdContainers[$var]['decl'] . '>(' . $sourceVar . ')';
+        $this->context->stdContainers[$var]['boxExpr'] = $sourceVar;
+        return '// StdContainer<' . $this->context->stdArrays[$var]['decl'] . '>(' . $sourceVar . ')';
     }
 
     protected function parseStdMapKeyType(NodeAbstract $expr, string $owner): string

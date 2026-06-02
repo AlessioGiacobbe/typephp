@@ -3,5 +3,5 @@ function main()
 {
     $tmpfile = tempnam(sys_get_temp_dir(), 'aot');
     $fp = fopen($tmpfile, 'w');
-    stream_cast()->write('data');
+    $fp->toStream()->write('data');
 }

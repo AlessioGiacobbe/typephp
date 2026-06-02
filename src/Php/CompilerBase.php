@@ -2506,7 +2506,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                             return self::TYPE_BIGFLOAT;
                         }
                     }
-                    if (in_array($name, self::STREAM_FUNCTIONS) || $name === 'stream_cast') {
+                    if (in_array($name, self::STREAM_FUNCTIONS)) {
                         return self::TYPE_STREAM;
                     }
                     if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
@@ -3465,9 +3465,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $name = $this->parseIdentifier($expr->name);
             if (in_array($name, Constants::UNSUPPORTED_FUNCTIONS)) {
                 $this->fatalError($expr, 'Unsupported function: `' . $name . '`');
-            }
-            if ($name === 'stream_cast') {
-                return $this->parseExpr($expr->args[0]->value);
             }
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
@@ -6366,8 +6363,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->getIndent();
             if ($type === self::TYPE_STD_ARRAY) {
                 $info = $this->context->stdArrays[$name];
-                if (isset($info['unsafePtr'])) {
-                    $code .= 'auto &' . $name . '_ref = php_unsafe_cast<' . $info['decl'] . '>(' . $info['unsafePtr'] . ', ' . $info['typeId'] . ');';
+                if (isset($info['boxExpr'])) {
+                    $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';
                 } else {
                     $containerType = 'php::StdContainerBox<' . $info['decl'] . '>';
                     $code .= 'php::Var ' . $name . ' = php::Var(new ' . $containerType . '(' . $info['typeId'] . '));' . PHP_EOL;
@@ -6375,8 +6372,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } elseif ($type === self::TYPE_STD_VECTOR) {
                 $info = $this->context->stdContainers[$name];
-                if (isset($info['unsafePtr'])) {
-                    $code .= 'auto &' . $name . '_ref = php_unsafe_cast<' . $info['decl'] . '>(' . $info['unsafePtr'] . ', ' . $info['typeId'] . ');';
+                if (isset($info['boxExpr'])) {
+                    $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';
                 } else {
                     $containerType = 'php::StdContainerBox<' . $info['decl'] . '>';
                     if ($info['size'] !== null) {
@@ -6389,8 +6386,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } elseif ($type === self::TYPE_STD_MAP || $type === self::TYPE_STD_UNORDERED_MAP) {
                 $info = $this->context->stdContainers[$name];
-                if (isset($info['unsafePtr'])) {
-                    $code .= 'auto &' . $name . '_ref = php_unsafe_cast<' . $info['decl'] . '>(' . $info['unsafePtr'] . ', ' . $info['typeId'] . ');';
+                if (isset($info['boxExpr'])) {
+                    $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';
                 } else {
                     $containerType = 'php::StdContainerBox<' . $info['decl'] . '>';
                     $code .= 'php::Var ' . $name . ' = php::Var(new ' . $containerType . '(' . $info['typeId'] . '));' . PHP_EOL;
