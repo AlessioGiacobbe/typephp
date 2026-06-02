@@ -309,7 +309,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         '_ENV'     => self::TYPE_ARRAY,
     ];
     protected array $globalVars = [];
-    protected bool $strictTypes = false;
     protected bool $nativeTypes = false;
     protected bool $decimalTypes = false;
     protected bool $bigintTypes = false;
@@ -873,7 +872,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function resetFile(): void
     {
         $this->indentLevel = 0;
-        $this->strictTypes = false;
         $this->nativeTypes = false;
         $this->decimalTypes = false;
         $this->bigintTypes = false;
@@ -5898,7 +5896,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($v, 'declare(encoding="' . $value . '") is not supported, only UTF-8 is supported');
                 }
             } elseif ($key === 'strict_types') {
-                $this->strictTypes = boolval(intval($value));
+                if (!($declare->value instanceof Node\Scalar\Int_) or $declare->value->value !== 1) {
+                    $this->fatalError($v, 'declare(strict_types=0) is not allowed, only strict_types=1 is supported');
+                }
             } else {
                 $this->fatalError($v, 'declare(' . $key . '=' . $value . ') is not supported');
             }
@@ -5998,20 +5998,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($toType === self::TYPE_REF or $fromType === self::TYPE_REF) {
             return true;
         }
-        if ($toType === self::TYPE_OBJECT and $fromType === self::TYPE_OBJECT) {
+        // 类型一致，可以互相赋值
+        if ($toType === $fromType) {
             return true;
-        }
-        if ($toType === self::TYPE_ARRAY and $fromType === self::TYPE_ARRAY) {
-            return true;
-        }
-        if ($toType === self::TYPE_STR) {
-            if ($fromType === self::TYPE_STR) {
-                return true;
-            }
-            if (!$this->strictTypes) {
-                $this->warning($left, "Attempt to implicitly convert `{$fromType}` to `{$toType}`");
-                return true;
-            }
         }
         // 原生类型可以互相转换，由 C++ 底层完成
         if ($this->isNativeType($toType) and $this->isNativeType($fromType)) {
