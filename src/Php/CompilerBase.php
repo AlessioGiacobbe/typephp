@@ -5444,34 +5444,23 @@ class CompilerBase extends \PhpAot\Core\Translator
         $magicMethod = false;
         $method = $this->identifierToStr($expr->name, literal: true);
 
-        // to* conversion methods are language keywords — always dispatched directly
+        // keyword methods (to* builtins + __ extensions) — dispatched before type-specific logic
         if ($this->isNamedMethod($expr->name)) {
             $methodName = $expr->name->toString();
+            $receiverType = $this->isVarExpr($expr->var) ? $this->getVarType($object) : $this->detectTypeOfExpr($expr->var);
+            if ($receiverType === self::TYPE_VOID) {
+                $this->fatalError($expr->var, 'Cannot call method on void');
+            }
+            // to* builtins
             if (isset(self::KEYWORD_METHOD_MAP[$methodName])) {
-                if ($this->isVarExpr($expr->var)) {
-                    $receiverType = $this->getVarType($object);
-                } else {
-                    $receiverType = $this->detectTypeOfExpr($expr->var);
-                }
-                if ($receiverType === self::TYPE_VOID) {
-                    $this->fatalError($expr->var, 'Cannot call method on void');
-                }
                 if ($methodName === 'toObject') {
                     return $this->genToObjectCall($expr, $object);
                 }
                 return $this->genToConvertCall($object, $methodName, $receiverType);
             }
-            // keyword extension methods (__ functions) — dispatched before type-specific logic
+            // __ keyword extensions
             $kwExt = $this->findKeywordExtensionMethod($methodName);
             if ($kwExt) {
-                if ($this->isVarExpr($expr->var)) {
-                    $receiverType = $this->getVarType($object);
-                } else {
-                    $receiverType = $this->detectTypeOfExpr($expr->var);
-                }
-                if ($receiverType === self::TYPE_VOID) {
-                    $this->fatalError($expr->var, 'Cannot call method on void');
-                }
                 return $this->parseUniversalMethodCall($expr, $object, $methodName, $kwExt, $this->isVarExpr($expr->var));
             }
         }
