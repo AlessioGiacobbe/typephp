@@ -592,7 +592,7 @@ trait UniversalMethodCall
             'calc_dec'             => '(' . $receiver . ' - 1)',
             'direct_method'        => $this->genUniversalDirectMethod($receiver, $def['method'], $expr->args, $def['int_cast_args'] ?? []),
             'direct_method_mutate' => $this->genUniversalMutatingMethod($receiver, $def['method'], $expr->args),
-            'convert_fn'           => $this->genUniversalConvertFn($receiver, $def['fn'], $def['return_type']),
+            'convert_fn'           => $this->genUniversalConvertFn($receiver, $def['fn']),
             'php_fn'               => $this->genUniversalPhpFn($receiver, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0, $def['const_args'] ?? []),
             'php_fn_ref'           => $this->genUniversalPhpFnRef($receiver, $def['fn'], $expr->args, $def['return_type']),
             'cpp_fn'               => $this->genUniversalCppFn($receiver, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
@@ -688,7 +688,7 @@ trait UniversalMethodCall
         return '(' . $call . ', ' . $object . ')';
     }
 
-    protected function genUniversalConvertFn(string $receiver, string $fn, string $type): string
+    protected function genUniversalConvertFn(string $receiver, string $fn): string
     {
         return 'php::' . $fn . '(' . $receiver . ')';
     }

@@ -1744,7 +1744,7 @@ CODE;
         $traitMethods = [];
         $traitConstants = [];
         $traitProperties = [];
-        $classDef = $this->getClass($className);
+        $classDef = $this->getClass($className->toString());
 
         foreach ($stmt->stmts as $classStmt) {
             if ($classStmt instanceof Node\Stmt\ClassMethod) {

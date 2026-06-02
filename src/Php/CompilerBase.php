@@ -5876,6 +5876,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$phpCode) {
             throw new \Exception('Can not read file: ' . $file);
         }
+        if (!mb_check_encoding($phpCode, 'UTF-8')) {
+            throw new \Exception('File encoding must be UTF-8, got: ' . mb_detect_encoding($phpCode, ['UTF-8', 'ISO-8859-1', 'GBK', 'Shift_JIS'], true) . ' in ' . $file);
+        }
         $this->file     = realpath($file);
         $this->dir      = dirname($this->file);
         $this->stubFile = $this->isStubFile($file);
