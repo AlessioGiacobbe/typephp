@@ -137,8 +137,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string OP_NOT_EMPTY = 'notEmpty';
     public const string OP_REFVAL = 'toReference';
     public const string OP_NOP = "if (0) {}\n";
-    // 超过65536字节的数组，将从栈上转移到堆
-    public const int MAX_BYTES_IN_STACK = 65536;
     public const string BUILD_MODE_BIN = 'bin';
     public const string BUILD_MODE_EXT = 'ext';
     public const string ENTRY_FUNCTION = 'main';
@@ -2876,62 +2874,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseLibs(): string
     {
         return $this->getPlatform()->getLibraryFlags($this->getLibraries());
-    }
-
-
-    /**
-     * 添加编译选项
-     */
-    protected function addCompilationOption(string &$cmd, bool $link): void
-    {
-        if (!$link) {
-            // 编译时选项
-            
-            // 先添加包含路径（平台相关）
-            $cmd .= ' ' . $this->parseIncludes();
-            
-            // 再添加编译选项（编译器相关）
-            $config = [
-                'optimize' => $this->optimizeLevel,
-                'debug' => $this->debug,
-                'sanitize' => $this->sanitize,
-                'cpp_std' => $this->cxxStd,
-                'is_zts' => $this->isPhpZts,
-                'build_mode' => $this->buildMode,
-                'enable_profiler' => $this->enableProfiler,
-                'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
-                'cxxflags' => $this->cxxFlags,
-            ];
-            
-            $cmd .= $this->getCompilerBackend()->buildCompileOptions($config);
-        } else {
-            // 链接时选项
-            
-            // 先添加库路径（平台相关）
-            $cmd .= ' ' . $this->parseLdflags();
-            
-            // 再添加链接选项（编译器相关）
-            $config = [
-                'debug' => $this->debug,
-                'no_console' => $this->noConsole,
-                'build_mode' => $this->buildMode,
-                'sanitize' => $this->sanitize,
-            ];
-            
-            // 添加 RPATH（通过 Platform 层获取，仅 macOS 需要）
-            $rpaths = $this->getPlatform()->getDefaultRpaths(
-                $this->getPhpxDir(),
-                $this->getPhpDir()
-            );
-            if (!empty($rpaths)) {
-                $config['rpath'] = $rpaths;
-            }
-            
-            $cmd .= $this->getCompilerBackend()->buildLinkOptions($config);
-            
-            // 最后添加库文件（平台相关，必须在链接选项之后）
-            $cmd .= ' ' . $this->parseLibs();
-        }
     }
 
     protected function getCompileCommandOptions(): array

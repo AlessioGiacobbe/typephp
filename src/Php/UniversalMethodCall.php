@@ -321,8 +321,6 @@ trait UniversalMethodCall
 
     private const array MUTATING_HANDLERS = ['direct_method_mutate', 'php_fn_ref'];
 
-    private const array TYPE_SEARCH_ORDER = [CompilerBase::TYPE_STR, CompilerBase::TYPE_ARRAY, CompilerBase::TYPE_INT, CompilerBase::TYPE_FLOAT, CompilerBase::TYPE_BOOL, CompilerBase::TYPE_STREAM, CompilerBase::TYPE_BIGINT, CompilerBase::TYPE_DECIMAL, CompilerBase::TYPE_BIGFLOAT, CompilerBase::TYPE_BOX];
-
     protected function detectUniversalMethodReturnType(string $type, string $method): ?string
     {
         $builtin = self::UNIVERSAL_METHODS[$type][$method]['return_type'] ?? null;
