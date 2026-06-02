@@ -89,3 +89,8 @@ function any(mixed $var): mixed
     return $var;
 }
 
+function objval(mixed $var, string $className): mixed
+{
+    return $var;
+}
+

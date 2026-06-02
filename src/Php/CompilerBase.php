@@ -2073,18 +2073,16 @@ class CompilerBase extends \PhpAot\Core\Translator
             $attr = $expr->getAttribute('stdContainerDimFetch');
             return $this->context->stdContainers[$attr['var']]['class'] ?? '';
         }
+        if ($this->isFuncCallExpr($expr) and $this->isNameExpr($expr->name)) {
+            $fn = $this->parseIdentifier($expr->name);
+            if (count($expr->args) === 2 and $fn === 'objval') {
+                return $this->resolveClassNameArg($expr->args[1]->value);
+            }
+        }
         if ($this->isMethodCall($expr) and $this->isNamedMethod($expr->name)) {
             $method = $this->parseIdentifier($expr->name);
             if ($method === 'toObject' and !empty($expr->args)) {
-                $argClass = $expr->args[0]->value;
-                if ($this->isScalarString($argClass)) {
-                    return $this->getNamespacedClassName($argClass->value);
-                }
-                if ($this->isClassConstFetch($argClass)) {
-                    if ($this->isNameExpr($argClass->class) and $this->isIdExpr($argClass->name) and $this->parseIdentifier($argClass->name) === 'class') {
-                        return $this->getNamespacedClassName($this->parseIdentifier($argClass->class));
-                    }
-                }
+                return $this->resolveClassNameArg($expr->args[0]->value);
             }
             if ($this->isVarExpr($expr->var)) {
                 $object = $this->parseVariable($expr->var);
@@ -2109,6 +2107,19 @@ class CompilerBase extends \PhpAot\Core\Translator
             $nativeFunc = $this->getNativeMethod($expr, $class, $method);
             if ($nativeFunc) {
                 return $this->getFunction($nativeFunc)->returnClass;
+            }
+        }
+        return '';
+    }
+
+    protected function resolveClassNameArg(NodeAbstract $arg): string
+    {
+        if ($this->isScalarString($arg)) {
+            return $this->getNamespacedClassName($arg->value);
+        }
+        if ($this->isClassConstFetch($arg)) {
+            if ($this->isNameExpr($arg->class) and $this->isIdExpr($arg->name) and $this->parseIdentifier($arg->name) === 'class') {
+                return $this->getNamespacedClassName($this->parseIdentifier($arg->class));
             }
         }
         return '';
