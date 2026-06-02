@@ -76,8 +76,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_BOX = 'php::Box';
 
     /**
-     * to* conversion methods are keywords with mandated return types. */
-    public const array TO_METHOD_TYPE_MAP = [
+     * Keyword methods (to* builtins) with mandated return types.
+     * Use findKeywordMethod() for unified lookup including keyword extension methods.
+     */
+    public const array KEYWORD_METHOD_MAP = [
         'toInt'      => self::TYPE_INT,
         'toFloat'    => self::TYPE_FLOAT,
         'toString'   => self::TYPE_STR,
@@ -2519,9 +2521,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_MethodCall':
                 if ($this->isNamedMethod($expr->name)) {
                     $method = $this->parseIdentifier($expr->name);
-                    // to* methods are keywords — their return type is mandated regardless of receiver
-                    if (isset(self::TO_METHOD_TYPE_MAP[$method])) {
-                        return self::TO_METHOD_TYPE_MAP[$method];
+                    // keyword methods (to* builtins + __ extensions) — return type is known regardless of receiver
+                    $kwType = $this->findKeywordMethod($method);
+                    if ($kwType !== null) {
+                        return $kwType;
                     }
                     // Class definition resolution (handles this_, typed VarExpr)
                     $classDef = $this->resolveObjectClassDef($expr->var);
@@ -5444,7 +5447,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         // to* conversion methods are language keywords — always dispatched directly
         if ($this->isNamedMethod($expr->name)) {
             $methodName = $expr->name->toString();
-            if (isset(self::TO_METHOD_TYPE_MAP[$methodName])) {
+            if (isset(self::KEYWORD_METHOD_MAP[$methodName])) {
                 if ($this->isVarExpr($expr->var)) {
                     $receiverType = $this->getVarType($object);
                 } else {
@@ -5457,6 +5460,19 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return $this->genToObjectCall($expr, $object);
                 }
                 return $this->genToConvertCall($object, $methodName, $receiverType);
+            }
+            // keyword extension methods (__ functions) — dispatched before type-specific logic
+            $kwExt = $this->findKeywordExtensionMethod($methodName);
+            if ($kwExt) {
+                if ($this->isVarExpr($expr->var)) {
+                    $receiverType = $this->getVarType($object);
+                } else {
+                    $receiverType = $this->detectTypeOfExpr($expr->var);
+                }
+                if ($receiverType === self::TYPE_VOID) {
+                    $this->fatalError($expr->var, 'Cannot call method on void');
+                }
+                return $this->parseUniversalMethodCall($expr, $object, $methodName, $kwExt, $this->isVarExpr($expr->var));
             }
         }
 

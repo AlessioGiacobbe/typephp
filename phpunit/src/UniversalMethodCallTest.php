@@ -21,4 +21,5 @@ class UniversalMethodCallTest extends \BaseTest
     {
         $this->exec('Cannot call method on void', 'void-method-call.php');
     }
+
 }

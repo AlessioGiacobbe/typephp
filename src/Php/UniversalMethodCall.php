@@ -428,6 +428,65 @@ trait UniversalMethodCall
         return null;
     }
 
+    /**
+     * Look up a keyword extension method: function __snake_case in root namespace
+     * whose first parameter is mixed/any. Callable as $receiver->camelCase() on any type.
+     */
+    protected function findKeywordExtensionMethod(string $method): ?array
+    {
+        $snakeMethod = $this->camelToSnake($method);
+        $funcName = '__' . $snakeMethod;
+
+        if (!$this->hasFunction($funcName)) {
+            return null;
+        }
+
+        $funcDef = $this->getFunction($funcName);
+
+        // Must be in root namespace
+        if ($funcDef->namespace !== '') {
+            return null;
+        }
+
+        // First param must be mixed/any (TYPE_VAR)
+        if (empty($funcDef->argInfoList)) {
+            return null;
+        }
+        $firstParam = $funcDef->argInfoList[0];
+        if ($firstParam->type !== CompilerBase::TYPE_VAR) {
+            return null;
+        }
+
+        $totalParams = count($funcDef->argInfoList);
+        $minArgs = max(0, $funcDef->argCountRequired - 1);
+        $maxArgs = $totalParams - 1;
+        if ($funcDef->hasVariadicArg()) {
+            $maxArgs = -1;
+        }
+
+        return [
+            'handler'      => 'php_fn',
+            'fn'           => $funcName,
+            'receiver_pos' => 1,
+            'return_type'  => $funcDef->returnType,
+            'min_args'     => $minArgs,
+            'max_args'     => $maxArgs,
+        ];
+    }
+
+    /**
+     * Unified keyword method lookup (to* builtins + __ extension methods).
+     * Returns the return type string, or null if the method is not a keyword method.
+     */
+    protected function findKeywordMethod(string $method): ?string
+    {
+        if (isset(CompilerBase::KEYWORD_METHOD_MAP[$method])) {
+            return CompilerBase::KEYWORD_METHOD_MAP[$method];
+        }
+        $kwExt = $this->findKeywordExtensionMethod($method);
+        return $kwExt ? $kwExt['return_type'] : null;
+    }
+
     private function buildInternalExtensionMethod(string $type, string $funcName): ?array
     {
         $ref = Reflection::getFunction($funcName);
