@@ -207,8 +207,6 @@ class ArrayType extends SimpleType {
             return false;
         }
 
-        assert(get_class($other) === self::class);
-
         return Type::equals($this->keyType, $other->keyType) &&
             Type::equals($this->valueType, $other->valueType);
     }
