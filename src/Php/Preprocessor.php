@@ -280,6 +280,14 @@ class Preprocessor extends CompilerBase
             if ($param->type and $param->type instanceof NullableType) {
                 $argInfo->nullable = true;
             }
+            if ($param->type instanceof NullableType or $param->type instanceof UnionType) {
+                $typeInfo = $this->buildTypeCheckFromNode($param->type);
+                if (!empty($typeInfo['check'])) {
+                    $argInfo->typeCheck = $typeInfo['check'];
+                    $argInfo->typeStr = $typeInfo['typeStr'];
+                    $argInfo->typeNode = $param->type;
+                }
+            }
             if ($param->variadic) {
                 $list[] = self::TYPE_ARRAY . ' ' . $name;
             } else {
@@ -339,6 +347,15 @@ class Preprocessor extends CompilerBase
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
         $functionDef->returnClass = $class;
         $functionDef->stub = $this->stubFile;
+
+        if ($v->returnType instanceof NullableType or $v->returnType instanceof UnionType) {
+            $typeInfo = $this->buildTypeCheckFromNode($v->returnType);
+            if (!empty($typeInfo['check'])) {
+                $functionDef->returnTypeCheck = $typeInfo['check'];
+                $functionDef->returnTypeStr = $typeInfo['typeStr'];
+                $functionDef->returnTypeNode = $v->returnType;
+            }
+        }
 
         $this->parseParams($v->params, $functionDef);
 

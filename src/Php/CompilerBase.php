@@ -1095,6 +1095,189 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
     /**
+     * Build type-check descriptor array from UnionType or NullableType AST node.
+     * Returns ['check' => array, 'typeStr' => string] or empty check array if no check needed.
+     */
+    protected function buildTypeCheckFromNode(NodeAbstract $typeNode): array
+    {
+        $check = [];
+        $names = [];
+
+        if ($typeNode instanceof NullableType) {
+            $subTypes = [$typeNode->type];
+            $isNullable = true;
+        } elseif ($typeNode instanceof UnionType) {
+            $subTypes = $typeNode->types;
+            $isNullable = false;
+        } else {
+            return ['check' => [], 'typeStr' => ''];
+        }
+
+        foreach ($subTypes as $subType) {
+            $name = $this->parseIdentifier($subType);
+            $nameLower = strtolower($name);
+
+            if ($nameLower === 'void' or $nameLower === 'never') {
+                $this->fatalError($subType, "Type '{$nameLower}' cannot be part of a union type");
+            }
+
+            if ($nameLower === 'mixed') {
+                // mixed accepts everything — don't add any check
+                $names[] = $name;
+                continue;
+            }
+
+            $entry = match ($nameLower) {
+                'int' => ['kind' => 'isInt'],
+                'float', 'double' => ['kind' => 'isFloat'],
+                'bool' => ['kind' => 'isBool'],
+                'string' => ['kind' => 'isString'],
+                'array' => ['kind' => 'isArray'],
+                'object' => ['kind' => 'isObject'],
+                'null' => ['kind' => 'isNull'],
+                'true' => ['kind' => 'isTrue'],
+                'false' => ['kind' => 'isFalse'],
+                'resource' => ['kind' => 'isResource'],
+                'callable' => ['kind' => 'callable'],
+                'iterable' => ['kind' => 'iterable'],
+                default => null,
+            };
+
+            if ($entry !== null) {
+                $check[] = $entry;
+            } else {
+                // Class/interface type
+                if ($name === 'self') {
+                    $class = $this->getFullClassName();
+                } elseif ($name === 'parent') {
+                    $class = $this->classDef->extends ?? '';
+                } elseif ($name === 'static') {
+                    $class = 'static';
+                } else {
+                    $class = $this->getNamespacedClassName($name);
+                }
+                if ($class) {
+                    $check[] = ['kind' => 'instanceof', 'class' => $class];
+                }
+            }
+            $names[] = $name;
+        }
+
+        if ($isNullable) {
+            // NullableType: prepend null to both check array and typeStr
+            array_unshift($check, ['kind' => 'isNull']);
+            $typeStr = '?' . implode('|', $names);
+        } else {
+            $typeStr = implode('|', $names);
+        }
+
+        if (empty($check)) {
+            return ['check' => [], 'typeStr' => $typeStr];
+        }
+
+        return ['check' => $check, 'typeStr' => $typeStr];
+    }
+
+    /**
+     * Generate a C++ boolean expression for a single type descriptor entry.
+     */
+    protected function genSingleTypeCondition(string $varName, array $entry): string
+    {
+        $v = $varName;
+        return match ($entry['kind']) {
+            'isInt' => $v . '.isInt()',
+            'isFloat' => $v . '.isFloat()',
+            'isBool' => $v . '.isBool()',
+            'isString' => $v . '.isString()',
+            'isArray' => $v . '.isArray()',
+            'isObject' => $v . '.isObject()',
+            'isNull' => $v . '.isNull()',
+            'isTrue' => $v . '.isTrue()',
+            'isFalse' => $v . '.isFalse()',
+            'isResource' => $v . '.isResource()',
+            'callable' => $v . '.isCallable()',
+            'iterable' => '(' . $v . '.isArray() || (' . $v . '.isObject() && php::instanceOf(' . $v . ', zend_ce_traversable)))',
+            'instanceof' => $entry['class'] === 'static'
+                ? '(' . $v . '.isObject() && php::instanceOf(' . $v . ', php_get_called_ce(this_)))'
+                : '(' . $v . '.isObject() && php::instanceOf(' . $v . ', ' . $this->getClassEntryPtr($entry['class']) . '))',
+            default => '',
+        };
+    }
+
+    /**
+     * Generate C++ runtime type-check block for a function parameter with union/nullable type.
+     */
+    protected function genUnionParamCheck(ArgInfo $argInfo, int $argIndex): string
+    {
+        if (empty($argInfo->typeCheck)) {
+            return '';
+        }
+
+        $varName = $argInfo->name;
+        $conditions = [];
+        foreach ($argInfo->typeCheck as $entry) {
+            $cond = $this->genSingleTypeCondition($varName, $entry);
+            if ($cond !== '') {
+                $conditions[] = $cond;
+            }
+        }
+        if (empty($conditions)) {
+            return '';
+        }
+
+        $orExpr = implode(' || ', $conditions);
+        $fnName = $this->functionDef->getNamespacedName();
+        $msgExpr = 'php::concat(php::concat(php::Str("' . $fnName . '(): Argument #' . ($argIndex + 1)
+                 . ' ($' . $varName . ') must be of type ' . $argInfo->typeStr . ', "), '
+                 . $varName . '.typeStr()), php::Str(" given"))';
+
+        $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+
+        return $code;
+    }
+
+    /**
+     * Generate C++ runtime type-check block for a function return value with union/nullable type.
+     */
+    protected function genUnionReturnCheck(string $varName): string
+    {
+        $typeCheck = $this->functionDef->returnTypeCheck;
+        if (empty($typeCheck)) {
+            return '';
+        }
+
+        $conditions = [];
+        foreach ($typeCheck as $entry) {
+            $cond = $this->genSingleTypeCondition($varName, $entry);
+            if ($cond !== '') {
+                $conditions[] = $cond;
+            }
+        }
+        if (empty($conditions)) {
+            return '';
+        }
+
+        $orExpr = implode(' || ', $conditions);
+        $fnName = $this->functionDef->getNamespacedName();
+        $typeStr = $this->functionDef->returnTypeStr;
+
+        $msgExpr = 'php::concat(php::concat(php::Str("' . $fnName . '(): Return value must be of type '
+                 . $typeStr . ', "), ' . $varName . '.typeStr()), php::Str(" given"))';
+
+        $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+
+        return $code;
+    }
+
+    /**
      * @throws \Exception
      */
     protected function parseFunction(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): string
@@ -1166,6 +1349,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 continue;
             }
             $code .= $this->genPropertyPromotion($argInfo);
+        }
+        // Runtime union/nullable parameter type checks
+        foreach ($this->functionDef->argInfoList as $i => $argInfo) {
+            if (!empty($argInfo->typeCheck)) {
+                $code .= $this->genUnionParamCheck($argInfo, $i);
+            }
         }
         $this->indentLevel--;
         // 构建 PHP 级别的函数名用于 debug backtrace
@@ -2119,6 +2308,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($v->expr === null) {
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {
                 return 'return;';
+            } elseif ($this->functionDef->returnTypeCheck) {
+                $tmpVar = $this->genTmpVarName();
+                $this->addLocalVar($tmpVar, self::TYPE_VAR);
+                $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
+                $code .= $this->genUnionReturnCheck($tmpVar);
+                $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+                return $code;
             } else {
                 return 'return ' . self::VALUE_NULL . ';';
             }
@@ -2153,9 +2349,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $exprCode = $this->convertExprType($expr, $returnType, $type);
-        // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
-        // 将 Indirect 赋值给临时变量后，使用 Ctor::Copy 解除了 Indirect，保证内存安全
-        if (!$this->isVarExpr($v->expr) and !$this->isScalar($v->expr)) {
+        // Union/nullable return type: always use tmpVar for runtime check
+        if ($this->functionDef->returnTypeCheck) {
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
+            $code .= $this->genUnionReturnCheck($tmpVar);
+            $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
+        } elseif (!$this->isVarExpr($v->expr) and !$this->isScalar($v->expr)) {
+            // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
+            // 将 Indirect 赋值给临时变量后，使用 Ctor::Copy 解除了 Indirect，保证内存安全
             $tmpVar = $this->genTmpVarName();
             // 必须提前声明变量，否则在末尾声明并 return 可能会被 gcc 优化掉
             $this->addLocalVar($tmpVar, $returnType);
@@ -6301,6 +6504,14 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if ($this->functionDef->returnType === self::TYPE_VOID) {
             return '';
+        }
+        if ($this->functionDef->returnTypeCheck) {
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
+            $code .= $this->genUnionReturnCheck($tmpVar);
+            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+            return $code;
         }
         if ($this->functionDef->returnType === self::TYPE_INT
             or $this->functionDef->returnType === self::TYPE_FLOAT

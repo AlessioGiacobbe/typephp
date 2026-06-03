@@ -9,6 +9,7 @@
 namespace PhpAot\Php\Entity;
 
 use PhpAot\Php\ArgInfo;
+use PhpParser\NodeAbstract;
 
 class FunctionDef
 {
@@ -29,6 +30,15 @@ class FunctionDef
      * @var string 必须是带有命名空间的完整类名
      */
     public string $returnClass = '';
+
+    /** Same format as ArgInfo::$typeCheck. Null means no runtime return type check. */
+    public ?array $returnTypeCheck = null;
+
+    /** Human-readable return type string for error messages. */
+    public string $returnTypeStr = '';
+
+    /** Original union/nullable return type AST node. */
+    public ?NodeAbstract $returnTypeNode = null;
 
     public function __construct(string $name, string $returnType, string $namespace)
     {

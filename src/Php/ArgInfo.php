@@ -9,6 +9,7 @@
 namespace PhpAot\Php;
 
 use PhpParser\Node\Expr;
+use PhpParser\NodeAbstract;
 
 class ArgInfo
 {
@@ -21,4 +22,16 @@ class ArgInfo
     public bool $variadic = false;
     public bool $nullable = false;
     public bool $property = false;
+
+    /**
+     * Each element: ['kind' => 'isInt'|'isFloat'|...|'instanceof', 'class' => '']
+     * Null means no runtime type check needed.
+     */
+    public ?array $typeCheck = null;
+
+    /** Human-readable type string for error messages, e.g. "int|string", "?int" */
+    public string $typeStr = '';
+
+    /** Original union/nullable AST node. Only set when typeCheck is non-null. */
+    public ?NodeAbstract $typeNode = null;
 }
