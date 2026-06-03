@@ -1214,17 +1214,17 @@ class CompilerBase extends \PhpAot\Core\Translator
         switch ($type) {
             case 'Scalar_Int':
                 if ($this->bigintTypes) {
-                    return 'php::newBigInt(' . $expr->value . ')';
+                    return 'php::toBigInt(' . $expr->value . ')';
                 }
                 return $expr->value . $this->getPlatform()->getIntegerLiteralSuffix();
             case 'Scalar_Float':
                 if ($this->isBigIntLiteral($expr)) {
-                    return 'php::newBigInt(' . $this->getLiteralString($this->getBigIntLiteralString($expr)) . ')';
+                    return 'php::toBigInt(' . $this->getLiteralString($this->getBigIntLiteralString($expr)) . ')';
                 }
                 if ($this->isDecimalLiteral($expr) || $this->decimalTypes) {
                     $rawValue = $expr->getAttribute('rawValue');
                     $clean = $rawValue !== null ? $this->stripNumericUnderscores($rawValue) : (string) $expr->value;
-                    return 'php::newDecimal(' . $this->getLiteralString($clean) . ')';
+                    return 'php::toDecimal(' . $this->getLiteralString($clean) . ')';
                 }
                 return $this->parseScalarFloat($expr);
             case 'Scalar_String':
@@ -2859,8 +2859,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $libraries[] = 'gmp';
             $libraries[] = 'gmpxx';
             $libraries[] = 'mpfr';
-            $libraries[] = 'mpdec++';
-            $libraries[] = 'mpdec';
         }
 
         return $libraries;
@@ -3992,21 +3990,21 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($node instanceof Node\Scalar\Float_) {
                 $rawValue = $node->getAttribute('rawValue');
                 $clean = $rawValue !== null ? $this->stripNumericUnderscores($rawValue) : (string) $node->value;
-                                return 'php::newDecimal(' . $this->getLiteralString($clean) . ')';
+                                return 'php::toDecimal(' . $this->getLiteralString($clean) . ')';
             }
             $this->fatalError($node, 'Cannot convert float expression to Decimal, use a literal value or string instead');
         }
         if ($fromType === self::TYPE_STR) {
             if ($node instanceof Node\Scalar\String_) {
-                return 'php::newDecimal(' . $this->getLiteralString($node->value) . ')';
+                return 'php::toDecimal(' . $this->getLiteralString($node->value) . ')';
             }
-            return 'php::newDecimal(php::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toDecimal(php::toString(' . $this->trimBrackets($expr) . '))';
         }
         if ($fromType === self::TYPE_INT) {
-            return 'php::newDecimal(php::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toDecimal(php::toString(' . $this->trimBrackets($expr) . '))';
         }
         if ($fromType === self::TYPE_BIGINT) {
-            return 'php::newDecimal(php::BigInt::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toDecimal(php::BigInt::toString(' . $this->trimBrackets($expr) . '))';
         }
         return $expr;
     }
@@ -4014,13 +4012,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function convertBigIntExpr(string $expr, string $fromType = ''): string
     {
         if ($fromType === self::TYPE_INT) {
-            return 'php::newBigInt(' . $this->trimBrackets($expr) . ')';
+            return 'php::toBigInt(' . $this->trimBrackets($expr) . ')';
         }
         if ($fromType === self::TYPE_FLOAT) {
             $this->fatalError(null, 'Cannot convert float to BigInt, use string or int instead');
         }
         if ($fromType === self::TYPE_STR) {
-            return 'php::newBigInt(php::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toBigInt(php::toString(' . $this->trimBrackets($expr) . '))';
         }
         return $expr;
     }
@@ -4028,13 +4026,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function convertBigFloatExpr(string $expr, string $fromType = ''): string
     {
         if ($fromType === self::TYPE_INT) {
-            return 'php::newBigFloat(' . $this->trimBrackets($expr) . ')';
+            return 'php::toBigFloat(' . $this->trimBrackets($expr) . ')';
         }
         if ($fromType === self::TYPE_FLOAT) {
-            return 'php::newBigFloat(' . $this->trimBrackets($expr) . ')';
+            return 'php::toBigFloat(' . $this->trimBrackets($expr) . ')';
         }
         if ($fromType === self::TYPE_STR) {
-            return 'php::newBigFloat(php::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toBigFloat(php::toString(' . $this->trimBrackets($expr) . '))';
         }
         if ($fromType === self::TYPE_BIGINT) {
             return 'php::BigFloat::newInstance(php::BigInt::toString(' . $this->trimBrackets($expr) . '))';
@@ -6143,7 +6141,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($expr, 'Cannot construct BigInt from float, use string or int instead');
                 }
                                 if ($argType === self::TYPE_INT) {
-                    return 'php::newBigInt(' . $this->trimBrackets($valueExpr) . ')';
+                    return 'php::toBigInt(' . $this->trimBrackets($valueExpr) . ')';
                 }
                 return 'php::BigInt::newInstance(' . $valueExpr . ')';
             }
@@ -6153,21 +6151,21 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($argNode instanceof Node\Scalar\Float_) {
                         $rawValue = $argNode->getAttribute('rawValue');
                         $clean = $rawValue !== null ? $this->stripNumericUnderscores($rawValue) : (string)$argNode->value;
-                                                return 'php::newDecimal(' . $this->getLiteralString($clean) . ')';
+                                                return 'php::toDecimal(' . $this->getLiteralString($clean) . ')';
                     }
                     $this->fatalError($expr, 'Cannot construct Decimal from float variable, use string or int instead');
                 }
                                 if ($argType === self::TYPE_INT) {
-                    return 'php::newDecimal(' . $this->trimBrackets($valueExpr) . ')';
+                    return 'php::toDecimal(' . $this->trimBrackets($valueExpr) . ')';
                 }
                 return 'php::Decimal::newInstance(' . $valueExpr . ')';
             }
             if ($type === self::TYPE_BIGFLOAT) {
                                 if ($argType === self::TYPE_INT) {
-                    return 'php::newBigFloat(' . $this->trimBrackets($valueExpr) . ')';
+                    return 'php::toBigFloat(' . $this->trimBrackets($valueExpr) . ')';
                 }
                 if ($argType === self::TYPE_FLOAT) {
-                    return 'php::newBigFloat(' . $this->trimBrackets($valueExpr) . ')';
+                    return 'php::toBigFloat(' . $this->trimBrackets($valueExpr) . ')';
                 }
                 return 'php::BigFloat::newInstance(' . $valueExpr . ')';
             }
