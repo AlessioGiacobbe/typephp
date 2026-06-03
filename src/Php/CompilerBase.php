@@ -2883,6 +2883,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             'is_zts' => $this->isPhpZts,
             'build_mode' => $this->buildMode,
             'enable_profiler' => $this->enableProfiler,
+            'prof_output' => $this->targetName . '.prof',
             'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
             'cxxflags' => $this->cxxFlags,
         ];
@@ -2920,10 +2921,16 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getLinkCommandOptions(): array
     {
+        $ldflags = $this->ldflags;
+
+        if ($this->enableProfiler) {
+            $ldflags .= ' -lprofiler';
+        }
+
         $options = [
             'library_paths' => $this->getLibraryPaths(),
             'libraries' => $this->getLibraries(),
-            'ldflags' => $this->ldflags,
+            'ldflags' => $ldflags,
             'debug' => $this->debug,
             'no_console' => $this->noConsole,
             'build_mode' => $this->buildMode,
@@ -3407,6 +3414,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $name = $this->parseIdentifier($expr->name);
             if (in_array($name, Constants::UNSUPPORTED_FUNCTIONS)) {
                 $this->fatalError($expr, 'Unsupported function: `' . $name . '`');
+            }
+            if ($name === 'objval') {
+                return $this->genObjvalCall($expr);
             }
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
@@ -5275,6 +5285,19 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $this->context->beforeStmtLines[] = $rightExpr . ';';
         return $left . ' = &' . $tmpVar;
+    }
+
+    protected function genObjvalCall(Expr\FuncCall $expr): string
+    {
+        if (count($expr->args) !== 2) {
+            $this->fatalError($expr, 'objval() requires exactly 2 arguments');
+        }
+        $receiver = $this->parseExpr($expr->args[0]->value);
+        $className = $this->resolveClassNameArg($expr->args[1]->value);
+        if ($className === '') {
+            $this->fatalError($expr, 'The second parameter of objval() only supports string literals or `ClassName::class` constant');
+        }
+        return 'php::toObject(' . $receiver . ', ' . $this->getClassEntryPtr($className) . ', true)';
     }
 
     protected function genToObjectCall(Expr\MethodCall $expr, string $receiver): string

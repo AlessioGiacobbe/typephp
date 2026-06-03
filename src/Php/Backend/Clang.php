@@ -410,6 +410,9 @@ class Clang extends CompilerBackend
         // 性能分析宏
         if (!empty($config['enable_profiler'])) {
             $cmd .= ' -DPPROF_ON=1';
+            if (!empty($config['prof_output'])) {
+                $cmd .= ' -DPROF_OUTPUT_FILE=\'"' . $config['prof_output'] . '"\'';
+            }
         }
         
         // 用户自定义编译标志

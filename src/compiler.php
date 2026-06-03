@@ -7,6 +7,12 @@ function main(int $argc, array $argv): void
         define("ROOT_PATH", getcwd());
     }
 
+    // .prof 文件分析模式：php bin/compiler.php app.prof
+    if ($argc >= 2 && str_ends_with($argv[1], '.prof')) {
+        profileAnalyze($argc, $argv);
+        return;
+    }
+
     require_once ROOT_PATH . '/vendor/autoload.php';
     global $translator;
 
@@ -24,4 +30,31 @@ function main(int $argc, array $argv): void
     if ($translator->isRunRequested()) {
         $translator->run($binaryFile); // never returns
     }
+}
+
+function profileAnalyze(int $argc, array $argv): void
+{
+    $profFile = $argv[1];
+
+    if (!file_exists($profFile)) {
+        fwrite(STDERR, "Profile file not found: {$profFile}\n");
+        exit(1);
+    }
+
+    // 从 prof 文件名推导二进制文件名（app.prof → app）
+    $binary = basename($profFile, '.prof');
+    if (!file_exists($binary) && file_exists('./' . $binary)) {
+        $binary = './' . $binary;
+    }
+
+    if (!file_exists($binary)) {
+        fwrite(STDERR, "Binary not found: {$binary} (expected from prof file name)\n");
+        fwrite(STDERR, "Usage: php bin/compiler.php <binary>.prof\n");
+        exit(1);
+    }
+
+    $cmd = 'pprof --web ' . escapeshellarg($binary) . ' ' . escapeshellarg($profFile);
+    fwrite(STDERR, "Running: {$cmd}\n");
+    passthru($cmd, $exitCode);
+    exit($exitCode);
 }

@@ -113,7 +113,7 @@ class Translator extends Preprocessor
 
         $climate->bold('OPTIONS:');
         $climate->tab()->out('-O <level>           Optimization level (0-3, default: 0)');
-        $climate->tab()->out('-p, --profile        Enable performance profiling');
+        $climate->tab()->out('--profile            Enable performance profiling (adds -lprofiler, forces recompile)');
         $climate->tab()->out('-d, --debug            Enable debug mode (auto-disable optimizations, add debug symbols)');
         $climate->tab()->out('--cxx-std <version>  C++ standard version (c++17, c++20, etc.)');
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
@@ -177,8 +177,12 @@ class Translator extends Preprocessor
             $this->noLiteralStrings = true;
         }
 
-        // 启用性能分析
+        // 启用性能分析（需强制重编译 misc 文件以确保 PPROF_ON 宏生效，仅 Linux 支持）
         if ($this->climate->arguments->defined('profile')) {
+            if (!$this->isLinux()) {
+                $this->climate->error('--profile is only supported on Linux (requires gperftools)');
+                exit(1);
+            }
             $this->enableProfiler = true;
         }
 
@@ -694,7 +698,7 @@ CODE;
      */
     public function hasMiscObjectFileCache(string $cppFile): bool
     {
-        if ($this->climate->arguments->defined('force')) {
+        if ($this->climate->arguments->defined('force') || $this->enableProfiler) {
             return false;
         }
 
