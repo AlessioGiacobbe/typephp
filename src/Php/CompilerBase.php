@@ -2742,6 +2742,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             // Linux/macOS
             $phpPaths = $platform->buildPhpIncludePaths($this->getPhpDir());
             $includePaths = array_merge($includePaths, $phpPaths);
+            // 内置 mpdecimal 头文件目录
+            $includePaths[] = $this->getPhpxDir() . '/thirdparty/mpdecimal/libmpdec';
+            $includePaths[] = $this->getPhpxDir() . '/thirdparty/mpdecimal/libmpdec++';
         }
 
         return $includePaths;
