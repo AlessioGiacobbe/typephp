@@ -148,7 +148,7 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
 
         return $fileInfo;
     } catch (Exception $e) {
-        throw new RuntimeException("In " . getTranslator()->getRelativePath($stubFile) . ": {$e->getMessage()}");
+        throw new RuntimeException("In " . getTranslator()->getRelativePath($stubFile) . ": {$e->getMessage()}\n". $e->getTraceAsString());
     }
 }
 
@@ -3246,7 +3246,8 @@ class PropertyInfo extends VariableLike
 
         $propertyName = $this->name->getDeclarationName();
 
-        if ($this->defaultValue === null) {
+        // New 操作作为属性的默认值，需编译器处理 gen_stub 作为 null 值
+        if ($this->defaultValue === null || $this->defaultValue instanceof Expr\New_) {
             $defaultValue = EvaluatedValue::null();
         } else {
             $defaultValue = EvaluatedValue::createFromExpression($this->defaultValue, null, null, $allConstInfos);
