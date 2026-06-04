@@ -8,8 +8,13 @@
 
 namespace PhpAot\Php\Context;
 
+use PhpAot\Php\Analysis\SsaBuilder;
+
 class FunctionContext
 {
+    /** SSA/e-SSA analysis for the current function. Built once per function, discarded with the context. */
+    public ?SsaBuilder $ssaBuilder = null;
+
     /**
      * @var array<string, string>
      */

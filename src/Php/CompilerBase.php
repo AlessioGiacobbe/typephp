@@ -9,6 +9,7 @@
 namespace PhpAot\Php;
 
 use League\CLImate\CLImate;
+use PhpAot\Php\Analysis\SsaBuilder;
 use PhpAot\Php\Backend\CompilerBackend;
 use PhpAot\Php\Backend\CompilerFactory;
 use PhpAot\Php\Context\FunctionContext;
@@ -28,11 +29,13 @@ use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
 use PhpAot\Php\Generator\Utils;
 use PhpAot\Php\Generator\TypeCheckGenerator;
+use PhpAot\Php\Optimizer\SsaTypeOptimizer;
 use PhpAot\Php\Parser\StdContainerTrait;
 use PhpAot\Php\Parser\AssignOpTrait;
 use PhpAot\Php\Parser\BinaryOpTrait;
 use PhpAot\Php\Parser\TypeConversionTrait;
 use PhpAot\Php\Parser\TypeDetectionTrait;
+use PhpAot\Php\Optimizer\FuncCallOptimizer;
 use PhpAot\Php\Platform\Linux;
 use PhpAot\Php\Platform\Macos;
 use PhpAot\Php\Platform\PlatformBase;
@@ -71,6 +74,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     use UniversalMethodCall;
     use Utils;
     use TypeCheckGenerator;
+    use SsaTypeOptimizer;
 
     public const string TYPE_VAR = 'php::Var';
     public const string TYPE_BOOL = 'php::Bool';
@@ -531,9 +535,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->formatCppCode($file);
     }
 
-    public function isScalarInt(Expr $position): bool
+    public function isScalarInt(Expr $expr): bool
     {
-        return $position instanceof Node\Scalar\LNumber;
+        return $expr instanceof Node\Scalar\LNumber;
     }
 
     public function getLine($node): int
@@ -1139,6 +1143,14 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($argInfo->class) {
                 $this->addObject($argInfo->name, $argInfo->class);
             }
+        }
+
+        // Build SSA/e-SSA analysis for this function
+        if ($v->stmts) {
+            $this->context->ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
+            $this->context->ssaBuilder->build();
+            // Narrow local variable types based on SSA analysis
+            $this->optimizeVarTypes();
         }
 
         $stmts = '';
