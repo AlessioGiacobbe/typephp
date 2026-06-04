@@ -3,7 +3,7 @@ Single Trait with simple trait method
 --FILE--
 <?php
 trait THello {
-    private const array CONST_ARRAY = [
+    protected const array CONST_ARRAY = [
         'test_fn_1' => ['toInt' => 123,],
         'test_fn_2' => ['toInt' => 234, ],
         'test_fn_3' => ['toInt' => 333,],

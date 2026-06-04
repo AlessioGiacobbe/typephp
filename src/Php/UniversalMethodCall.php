@@ -319,7 +319,7 @@ trait UniversalMethodCall
         ],
     ];
 
-    private const array MUTATING_HANDLERS = ['direct_method_mutate', 'php_fn_ref'];
+    protected const array MUTATING_HANDLERS = ['direct_method_mutate', 'php_fn_ref'];
 
     protected function detectUniversalMethodReturnType(string $type, string $method): ?string
     {
@@ -331,7 +331,7 @@ trait UniversalMethodCall
         return $ext ? $ext['return_type'] : null;
     }
 
-    private const array TYPE_EXTENSION_PREFIX = [
+    protected const array TYPE_EXTENSION_PREFIX = [
         CompilerBase::TYPE_INT    => 'int',
         CompilerBase::TYPE_FLOAT  => 'float',
         CompilerBase::TYPE_BOOL   => 'bool',
@@ -349,7 +349,7 @@ trait UniversalMethodCall
         return strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $name));
     }
 
-    private const array TO_CONVERT_FN = [
+    protected const array TO_CONVERT_FN = [
         CompilerBase::TYPE_BIGINT   => ['toInt' => 'php::BigInt::toInt', 'toFloat' => 'php::BigInt::toFloat', 'toString' => 'php::BigInt::toString'],
         CompilerBase::TYPE_BIGFLOAT => ['toInt' => 'php::BigFloat::toInt', 'toFloat' => 'php::BigFloat::toFloat', 'toString' => 'php::BigFloat::toString'],
         CompilerBase::TYPE_DECIMAL  => ['toInt' => 'php::Decimal::toInt', 'toFloat' => 'php::Decimal::toFloat', 'toString' => 'php::Decimal::toString'],
@@ -485,7 +485,7 @@ trait UniversalMethodCall
         return $kwExt ? $kwExt['return_type'] : null;
     }
 
-    private function buildInternalExtensionMethod(string $type, string $funcName): ?array
+    protected function buildInternalExtensionMethod(string $type, string $funcName): ?array
     {
         $ref = Reflection::getFunction($funcName);
         if ($ref === null) {
@@ -525,7 +525,7 @@ trait UniversalMethodCall
         ];
     }
 
-    private function validateExtensionFirstParam(string $type, \PhpAot\Php\Entity\FunctionDef $funcDef): bool
+    protected function validateExtensionFirstParam(string $type, \PhpAot\Php\Entity\FunctionDef $funcDef): bool
     {
         if (empty($funcDef->argInfoList)) {
             return false;
@@ -545,7 +545,7 @@ trait UniversalMethodCall
         return $paramType === $type;
     }
 
-    private function validateInternalExtensionFirstParam(string $type, string $funcName): bool
+    protected function validateInternalExtensionFirstParam(string $type, string $funcName): bool
     {
         $param = Reflection::getFunctionParameter($funcName, 0);
         if ($param === null) {
@@ -628,7 +628,7 @@ trait UniversalMethodCall
      * Wrap a non-variable receiver expression in the appropriate type conversion
      * so that direct C++ method calls (e.g. .get(), .set()) work on the correct type.
      */
-    private function wrapUniversalReceiver(string $type, string $expr): string
+    protected function wrapUniversalReceiver(string $type, string $expr): string
     {
         $convFns = [
             self::TYPE_ARRAY  => 'toArray',
@@ -643,7 +643,7 @@ trait UniversalMethodCall
         return $expr;
     }
 
-    private function validateUniversalMethodArgs(Node\Expr\MethodCall $expr, string $method, array $def, bool $isVar): void
+    protected function validateUniversalMethodArgs(Node\Expr\MethodCall $expr, string $method, array $def, bool $isVar): void
     {
         $argCount = count($expr->args);
         $maxArgs = $def['max_args'];
@@ -727,7 +727,7 @@ trait UniversalMethodCall
         return $cppFunc . '(' . implode(', ', $argExprs) . ')';
     }
 
-    private function buildReceiverArgs(string $receiver, array $args, int $receiverPos): array
+    protected function buildReceiverArgs(string $receiver, array $args, int $receiverPos): array
     {
         $userArgs = [];
         foreach ($args as $arg) {

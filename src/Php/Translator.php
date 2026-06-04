@@ -628,6 +628,30 @@ CODE;
                 }
             }
         }
+
+        // Clean up inherited array constants from child classes
+        foreach ($this->classes as $className => $classDef) {
+            $ownConstNames = [];
+            foreach ($classDef->constants as $constant) {
+                if ($constant->type === self::TYPE_ARRAY) {
+                    $ownConstNames[$constant->name] = true;
+                }
+            }
+
+            $parentName = $this->escapeClass($classDef->extends);
+            while ($parentName && isset($this->classes[$parentName])) {
+                $parentDef = $this->classes[$parentName];
+                foreach ($parentDef->constants as $constant) {
+                    if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
+                        $ownConstNames[$constant->name] = true;
+                        $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
+                        $classConstStr = $this->genCharPtr($constant->name);
+                        $code .= "php::updateConstant($classNameStr, $classConstStr, php::null);\n";
+                    }
+                }
+                $parentName = $this->escapeClass($parentDef->extends);
+            }
+        }
         $code .= '}' . PHP_EOL . PHP_EOL;
         // php_app_clean end
 
@@ -1376,6 +1400,32 @@ CODE;
                 }
             }
         }
+
+        // Propagate array constants to child classes that don't override them
+        foreach ($this->classes as $className => $classDef) {
+            $ownConstNames = [];
+            foreach ($classDef->constants as $constant) {
+                if ($constant->type === self::TYPE_ARRAY) {
+                    $ownConstNames[$constant->name] = true;
+                }
+            }
+
+            $parentName = $this->escapeClass($classDef->extends);
+            while ($parentName && isset($this->classes[$parentName])) {
+                $parentDef = $this->classes[$parentName];
+                foreach ($parentDef->constants as $constant) {
+                    if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
+                        $ownConstNames[$constant->name] = true;
+                        $constName = self::PREFIX . $this->getNativeName($constant->name, $parentDef->namespace, $parentDef->name);
+                        $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
+                        $classConstStr = $this->genCharPtr($constant->name);
+                        $code .= "php::updateConstant($classNameStr, $classConstStr, {$constName});\n";
+                    }
+                }
+                $parentName = $this->escapeClass($parentDef->extends);
+            }
+        }
+
         return $code;
     }
 
