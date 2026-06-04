@@ -2308,7 +2308,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($v->expr === null) {
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {
                 return 'return;';
-            } elseif ($this->functionDef->returnTypeCheck) {
+            } elseif ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
                 $tmpVar = $this->genTmpVarName();
                 $this->addLocalVar($tmpVar, self::TYPE_VAR);
                 $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
@@ -2350,7 +2350,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $exprCode = $this->convertExprType($expr, $returnType, $type);
         // Union/nullable return type: always use tmpVar for runtime check
-        if ($this->functionDef->returnTypeCheck) {
+        if ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
             $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
@@ -6505,7 +6505,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->functionDef->returnType === self::TYPE_VOID) {
             return '';
         }
-        if ($this->functionDef->returnTypeCheck) {
+        if ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
             $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
