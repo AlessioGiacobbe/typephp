@@ -632,7 +632,7 @@ trait StdContainerParser
             $this->parseStdUnorderedMap($var, $fakeCall);
         }
         $this->context->stdContainers[$var]['boxExpr'] = $sourceVar;
-        return '// StdContainer<' . $this->context->stdArrays[$var]['decl'] . '>(' . $sourceVar . ')';
+        return '// StdContainer<' . $this->context->stdContainers[$var]['decl'] . '>(' . $sourceVar . ')';
     }
 
     protected function parseStdMapKeyType(NodeAbstract $expr, string $owner): string
