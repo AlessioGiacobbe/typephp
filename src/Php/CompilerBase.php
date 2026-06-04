@@ -3835,15 +3835,23 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } elseif ($this->isFuncCallExpr($arg->value)) {
                 if ($this->isNameExpr($arg->value->name) and $arg->value->name->toString() === 'refval') {
-                    if (count($arg->value->args) === 1 and $this->isVarExpr($arg->value->args[0]->value)) {
-                        $name = $this->parseVariable($arg->value->args[0]->value);
+                    if (count($arg->value->args) !== 1) {
+                        $this->fatalError($arg, 'The refval function only accepts one parameter');
+                    }
+                    $inner = $arg->value->args[0]->value;
+                    if ($this->isVarExpr($inner)) {
+                        $name = $this->parseVariable($inner);
                         // 消除 refval() 函数调用，直接使用变量
-                        $arg->value = $arg->value->args[0]->value;
+                        $arg->value = $inner;
                         $list_args[] = $this->parseArgRefVar($arg, $name);
                         continue;
-                    } else {
-                        $this->fatalError($arg, 'The refval function only accepts one parameter of variable type');
                     }
+                    $expr = $this->expandRefvalExpr($inner, $arg);
+                    if ($expr !== null) {
+                        $list_args[] = $expr;
+                        continue;
+                    }
+                    $this->fatalError($arg, 'The refval function only accepts a variable, array element, or object property');
                 }
             } else {
                 if ($byRef) {
@@ -3874,6 +3882,38 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return Symbol::argList() . '{' . implode(', ', $list_args) . '}';
+    }
+
+    /**
+     * 展开 refval() 调用中的数组元素或对象属性，返回对应的 C++ 引用表达式。
+     * 若为普通变量则返回 null，由调用方自行处理。
+     */
+    protected function expandRefvalExpr(NodeAbstract $inner, Node\Arg $arg): ?string
+    {
+        if ($this->isPropertyFetch($inner) and $this->isVarExpr($inner->var)) {
+            $obj = $this->parseIdentifier($inner->var);
+            if (!$this->hasVar($obj)) {
+                $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
+            }
+            return $obj . '.attrRef(' . $this->identifierToStr($inner->name) . ')';
+        }
+        if ($this->isArrayDimFetch($inner) and $this->isVarExpr($inner->var)) {
+            $array = $this->parseIdentifier($inner->var);
+            if ($array === 'GLOBALS') {
+                $globalVar = $this->parseGlobalsArrayDimFetch($inner);
+                $ref = $this->addTmpVar(self::TYPE_REF);
+                $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
+                return '&' . $ref;
+            }
+            if (!$this->hasVar($array)) {
+                $this->fatalError($arg, 'Undefined variable `$' . $array . '`');
+            }
+            if ($inner->dim === null) {
+                $this->fatalError($arg, 'Array dimension must be a constant expression');
+            }
+            return $array . '.itemRef(' . $this->identifierToStr($inner->dim) . ')';
+        }
+        return null;
     }
 
     /**
@@ -4723,11 +4763,19 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         if ($argInfo->byRef) {
             if ($this->isRefvalCall($arg->value)) {
-                if (count($arg->value->args) === 1 and $this->isVarExpr($arg->value->args[0]->value)) {
+                if (count($arg->value->args) !== 1) {
+                    $this->fatalError($arg, 'The refval function only accepts one parameter');
+                }
+                $inner = $arg->value->args[0]->value;
+                if ($this->isVarExpr($inner)) {
                     // 消除 refval() 函数调用，直接使用变量
-                    $arg->value = $arg->value->args[0]->value;
+                    $arg->value = $inner;
                 } else {
-                    $this->fatalError($arg, 'The refval function only accepts one parameter of variable type');
+                    $expr = $this->expandRefvalExpr($inner, $arg);
+                    if ($expr !== null) {
+                        return $expr;
+                    }
+                    $this->fatalError($arg, 'The refval function only accepts a variable, array element, or object property');
                 }
             }
             if ($this->isVarExpr($arg->value)) {
