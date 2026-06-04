@@ -16,7 +16,7 @@ use PhpParser\Node\Identifier;
 use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 
-trait StdContainerParser
+trait StdContainerTrait
 {
     protected function isStdContainer(string $var): bool
     {

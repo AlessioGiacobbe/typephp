@@ -27,7 +27,12 @@ use PhpAot\Php\Generator\ClosureGenerator;
 use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
 use PhpAot\Php\Generator\Utils;
-use PhpAot\Php\Parser\StdContainerParser;
+use PhpAot\Php\Generator\TypeCheckGenerator;
+use PhpAot\Php\Parser\StdContainerTrait;
+use PhpAot\Php\Parser\AssignOpTrait;
+use PhpAot\Php\Parser\BinaryOpTrait;
+use PhpAot\Php\Parser\TypeConversionTrait;
+use PhpAot\Php\Parser\TypeDetectionTrait;
 use PhpAot\Php\Platform\Linux;
 use PhpAot\Php\Platform\Macos;
 use PhpAot\Php\Platform\PlatformBase;
@@ -58,9 +63,14 @@ class CompilerBase extends \PhpAot\Core\Translator
     use PlaceHolderGenerator;
     use PropertyPromotion;
     use MagicMethodDetector;
-    use StdContainerParser;
+    use StdContainerTrait;
+    use BinaryOpTrait;
+    use TypeConversionTrait;
+    use TypeDetectionTrait;
+    use AssignOpTrait;
     use UniversalMethodCall;
     use Utils;
+    use TypeCheckGenerator;
 
     public const string TYPE_VAR = 'php::Var';
     public const string TYPE_BOOL = 'php::Bool';
@@ -541,11 +551,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->zendTypeMap[$type] ?? self::TYPE_VAR;
     }
 
-    public function isTypedObject(string $object): bool
-    {
-        return isset($this->context->objects[$object]);
-    }
-
     public function getObjectType(string $object): string
     {
         return $this->context->objects[$object] ?? 'stdClass';
@@ -802,14 +807,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $cwd = $cwd ?: getcwd();
         return ltrim($this->removeCommonPrefix($cwd, $path), '/');
-    }
-
-    protected function isSuperGlobal(string $var): bool
-    {
-        if (isset($this->superGlobalVars[$var])) {
-            return true;
-        }
-        return false;
     }
 
     protected function removeCommonPrefix(string $short, string $long): string
@@ -1098,185 +1095,15 @@ class CompilerBase extends \PhpAot\Core\Translator
      * Build type-check descriptor array from UnionType or NullableType AST node.
      * Returns ['check' => array, 'typeStr' => string] or empty check array if no check needed.
      */
-    protected function buildTypeCheckFromNode(NodeAbstract $typeNode): array
-    {
-        $check = [];
-        $names = [];
-
-        if ($typeNode instanceof NullableType) {
-            $subTypes = [$typeNode->type];
-            $isNullable = true;
-        } elseif ($typeNode instanceof UnionType) {
-            $subTypes = $typeNode->types;
-            $isNullable = false;
-        } else {
-            return ['check' => [], 'typeStr' => ''];
-        }
-
-        foreach ($subTypes as $subType) {
-            $name = $this->parseIdentifier($subType);
-            $nameLower = strtolower($name);
-
-            if ($nameLower === 'void' or $nameLower === 'never') {
-                $this->fatalError($subType, "Type '{$nameLower}' cannot be part of a union type");
-            }
-
-            if ($nameLower === 'mixed') {
-                // mixed accepts everything — don't add any check
-                $names[] = $name;
-                continue;
-            }
-
-            $entry = match ($nameLower) {
-                'int' => ['kind' => 'isInt'],
-                'float', 'double' => ['kind' => 'isFloat'],
-                'bool' => ['kind' => 'isBool'],
-                'string' => ['kind' => 'isString'],
-                'array' => ['kind' => 'isArray'],
-                'object' => ['kind' => 'isObject'],
-                'null' => ['kind' => 'isNull'],
-                'true' => ['kind' => 'isTrue'],
-                'false' => ['kind' => 'isFalse'],
-                'resource' => ['kind' => 'isResource'],
-                'callable' => ['kind' => 'callable'],
-                'iterable' => ['kind' => 'iterable'],
-                default => null,
-            };
-
-            if ($entry !== null) {
-                $check[] = $entry;
-            } else {
-                // Class/interface type
-                if ($name === 'self') {
-                    $class = $this->getFullClassName();
-                } elseif ($name === 'parent') {
-                    $class = $this->classDef->extends ?? '';
-                } elseif ($name === 'static') {
-                    $class = 'static';
-                } else {
-                    $class = $this->getNamespacedClassName($name);
-                }
-                if ($class) {
-                    $check[] = ['kind' => 'instanceof', 'class' => $class];
-                }
-            }
-            $names[] = $name;
-        }
-
-        if ($isNullable) {
-            // NullableType: prepend null to both check array and typeStr
-            array_unshift($check, ['kind' => 'isNull']);
-            $typeStr = '?' . implode('|', $names);
-        } else {
-            $typeStr = implode('|', $names);
-        }
-
-        if (empty($check)) {
-            return ['check' => [], 'typeStr' => $typeStr];
-        }
-
-        return ['check' => $check, 'typeStr' => $typeStr];
-    }
-
     /**
      * Generate a C++ boolean expression for a single type descriptor entry.
      */
-    protected function genSingleTypeCondition(string $varName, array $entry): string
-    {
-        $v = $varName;
-        return match ($entry['kind']) {
-            'isInt' => $v . '.isInt()',
-            'isFloat' => $v . '.isFloat()',
-            'isBool' => $v . '.isBool()',
-            'isString' => $v . '.isString()',
-            'isArray' => $v . '.isArray()',
-            'isObject' => $v . '.isObject()',
-            'isNull' => $v . '.isNull()',
-            'isTrue' => $v . '.isTrue()',
-            'isFalse' => $v . '.isFalse()',
-            'isResource' => $v . '.isResource()',
-            'callable' => $v . '.isCallable()',
-            'iterable' => '(' . $v . '.isArray() || (' . $v . '.isObject() && php::instanceOf(' . $v . ', zend_ce_traversable)))',
-            'instanceof' => $entry['class'] === 'static'
-                ? '(' . $v . '.isObject() && php::instanceOf(' . $v . ', php_get_called_ce(this_)))'
-                : '(' . $v . '.isObject() && php::instanceOf(' . $v . ', ' . $this->getClassEntryPtr($entry['class']) . '))',
-            default => '',
-        };
-    }
-
     /**
      * Generate C++ runtime type-check block for a function parameter with union/nullable type.
      */
-    protected function genUnionParamCheck(ArgInfo $argInfo, int $argIndex): string
-    {
-        if (empty($argInfo->typeCheck)) {
-            return '';
-        }
-
-        $varName = $argInfo->name;
-        $conditions = [];
-        foreach ($argInfo->typeCheck as $entry) {
-            $cond = $this->genSingleTypeCondition($varName, $entry);
-            if ($cond !== '') {
-                $conditions[] = $cond;
-            }
-        }
-        if (empty($conditions)) {
-            return '';
-        }
-
-        $orExpr = implode(' || ', $conditions);
-        $fnName = $this->functionDef->getNamespacedName();
-        $msgExpr = 'php::concat(php::concat(php::Str("' . $fnName . '(): Argument #' . ($argIndex + 1)
-                 . ' ($' . $varName . ') must be of type ' . $argInfo->typeStr . ', "), '
-                 . $varName . '.typeStr()), php::Str(" given"))';
-
-        $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        return $code;
-    }
-
     /**
      * Generate C++ runtime type-check block for a function return value with union/nullable type.
      */
-    protected function genUnionReturnCheck(string $varName): string
-    {
-        $typeCheck = $this->functionDef->returnTypeCheck;
-        if (empty($typeCheck)) {
-            return '';
-        }
-
-        $conditions = [];
-        foreach ($typeCheck as $entry) {
-            $cond = $this->genSingleTypeCondition($varName, $entry);
-            if ($cond !== '') {
-                $conditions[] = $cond;
-            }
-        }
-        if (empty($conditions)) {
-            return '';
-        }
-
-        $orExpr = implode(' || ', $conditions);
-        $fnName = $this->functionDef->getNamespacedName();
-        $typeStr = $this->functionDef->returnTypeStr;
-
-        $msgExpr = 'php::concat(php::concat(php::Str("' . $fnName . '(): Return value must be of type '
-                 . $typeStr . ', "), ' . $varName . '.typeStr()), php::Str(" given"))';
-
-        $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        return $code;
-    }
-
     /**
      * @throws \Exception
      */
@@ -1428,42 +1255,11 @@ class CompilerBase extends \PhpAot\Core\Translator
      * Check if a numeric literal's rawValue represents an integer that exceeds int64 range.
      * PHP's parser converts such literals to float (Scalar_Float) when they overflow.
      */
-    private function isBigIntLiteral(Node\Scalar $expr): bool
-    {
-        $rawValue = $expr->getAttribute('rawValue');
-        if ($rawValue === null) {
-            return false;
-        }
-        $clean = $this->stripNumericUnderscores($rawValue);
-        // Must look like a decimal integer (no dot, no hex/oct/bin prefix, all digits)
-        if (!preg_match('/^\d+$/', $clean)) {
-            return false;
-        }
-        // 19+ decimal digits exceed int64 range
-        return strlen(ltrim($clean, '0')) >= 19;
-    }
-
     /**
      * Check if a Scalar_Float literal should be treated as Decimal.
      * Only "long" floats (>= 16 significant digits) that would lose precision
      * as native PHP float (double) are auto-converted.
      */
-    private function isDecimalLiteral(Node\Scalar $expr): bool
-    {
-        $rawValue = $expr->getAttribute('rawValue');
-        if ($rawValue === null) {
-            return false;
-        }
-        $clean = $this->stripNumericUnderscores($rawValue);
-        // Must have a decimal point or exponent (not a pure integer)
-        if (!preg_match('/[\.eE]/', $clean)) {
-            return false;
-        }
-        // Count significant digits (exclude ., e, E, +, -)
-        $digits = preg_replace('/[^0-9]/', '', $clean);
-        return strlen(ltrim($digits, '0')) >= 16;
-    }
-
     private function getBigIntLiteralString(Node\Scalar $expr): string
     {
         return $this->stripNumericUnderscores($expr->getAttribute('rawValue'));
@@ -1714,279 +1510,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseAssignArrayDim(NodeAbstract $left, NodeAbstract $right): string
-    {
-        if ($this->isPropertyFetch($left)) {
-            return $this->parseAssignPropertyArrayDim($left, $right);
-        }
-        $oriInAssignExpr    = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $array              = $this->parseIdentifier($left->var);
-        $this->context->inAssignExpr = $oriInAssignExpr;
-        $code               = '';
-        // 这是 PHP 的初始化+赋值写法，需要先创建数组
-        if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
-            $this->addLocalVar($array, self::TYPE_ARRAY);
-        }
-
-        $value = $this->trimBrackets($this->parseExpr($right));
-        if ($left->dim === null) {
-            return $code . "{$array}.offsetSet(" . self::VALUE_NULL . ", {$value})";
-        }
-        $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
-
-        return $code . "{$array}.offsetSet({$dim}, {$value})";
-    }
-
-    protected function parseAssignPropertyFetch(NodeAbstract $left, NodeAbstract $right): string
-    {
-        $array = $this->parseIdentifier($left->var);
-        $propName = $this->identifierToStr($left->name, literal: true);
-
-        return "{$array}.setProperty({$propName}, " . $this->trimBrackets($this->parseExpr($right)) . ')';
-    }
-
-    protected function parseRightAssociativeAssign(NodeAbstract $left, Expr\Assign $right): string
-    {
-        $chain[] = $left;
-        $next    = $right;
-        while ($this->isAssignExpr($next)) {
-            $var = $next->var;
-            $chain[] = $var;
-            $next    = $next->expr;
-        }
-        $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_VAR);
-
-        // 翻转赋值链
-        $chain = array_reverse($chain);
-        $list  = [];
-
-        $list[] = $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($next);
-        $rightVar  = new Variable($tmpVar);
-        foreach ($chain as $var) {
-            $list[] = $this->getIndent() . $this->parseAssignFinally($var, $rightVar);
-        }
-
-        return implode(";\n" . $this->getIndent(), $list);
-    }
-
-    protected function parseAssignStaticProperty($left, $right): string
-    {
-        $value    = $this->trimBrackets($this->parseExpr($right));
-        $native = $this->parseNativeStaticPropertyFetch($left);
-        if ($native) {
-            return $native . ' = ' . $value;
-        }
-        $class = $this->identifierToStr($left->class);
-        $propName = $this->identifierToStr($left->name);
-        return Symbol::setStaticProperty() . "({$class}, {$propName}, {$value})";
-    }
-
-    protected function parseAssign(Expr\Assign $v): string
-    {
-        $left  = $v->var;
-        $right = $v->expr;
-        if ($this->isAssignExpr($right)) {
-            return $this->parseRightAssociativeAssign($left, $right);
-        }
-        return $this->parseAssignFinally($left, $right);
-    }
-
-    protected function parseAssignToList(Expr $left, Expr $right): string
-    {
-        $items = $left->items;
-        $code  = '{';
-        $this->indentLevel++;
-        $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_VAR);
-        $code .= $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($right) . '; ';
-        foreach ($items as $k => $item) {
-            if (!$item) {
-                continue;
-            }
-            if ($item instanceof Expr\ArrayItem) {
-                $oriInAssignExpr = $this->context->inAssignExpr;
-                $this->context->inAssignExpr = true;
-                $var = $this->parseIdentifier($item->value);
-                $this->context->inAssignExpr = $oriInAssignExpr;
-                if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
-                    $this->addLocalVar($var, self::TYPE_VAR);
-                }
-                $code .= "{$var} = {$tmpVar}.item({$k}); ";
-            } else {
-                abort($item);
-            }
-        }
-        $this->indentLevel--;
-
-        return $code . '}';
-    }
-
-    protected function parseAssignFinally(Expr $left, Expr $right): string
-    {
-        if ($left instanceof Expr\List_) {
-            return $this->parseAssignToList($left, $right);
-        }
-
-        $oriInAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $var = $this->parseIdentifier($left);
-        $this->context->inAssignExpr = $oriInAssignExpr;
-        if ($var === 'this_') {
-            $this->fatalError($left, 'Cannot re-assign $this');
-        }
-        $finalVarType = $type = $this->detectTypeOfExpr($right);
-
-        if ($this->isVarExpr($left)) {
-            if ($this->isStdContainer($var)) {
-                $copyAssign = $this->parseStdContainerCopyAssign($var, $right);
-                if ($copyAssign !== null) {
-                    return $copyAssign;
-                }
-            }
-            // 类型推断，获取对象的类名，如果不是对象则返回空字符串
-            $rightClass = $this->detectClassOfExpr($right);
-            // 右值是一个对象，已获得类的名称，左值必须与右值的类一致
-            if ($rightClass) {
-                if (!$this->hasVar($var)) {
-                    $this->addLocalVar($var, self::TYPE_OBJECT);
-                    $this->addObject($var, $rightClass);
-                } elseif ($this->isTypedObject($var)) {
-                    $leftClass = $this->getObjectType($var);
-                    // 对象的类不一致，不能互相赋值，必须使用 toObject() 对齐类型
-                    // 注意这里必须使用绝对相等比较，即使存在继承关系，类的方法也可能不一致
-                    if ($leftClass !== $rightClass) {
-                        $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
-                    }
-                } else {
-                    $this->checkVarAssignExpr($left, $this->getVarType($var), self::TYPE_OBJECT);
-                }
-            } else {
-                if ($this->isMethodCall($right) and $this->isNamedMethod($right->name)) {
-                    $methodName = $right->name->toString();
-                    if (in_array($methodName, ['toStdArray', 'toStdVector', 'toStdMap', 'toStdUnorderedMap'], true)) {
-                        if ($this->hasVar($var)) {
-                            $this->fatalError($left, "Cannot re-assign `\${$var}` to {$methodName}()");
-                        }
-                        if ($this->context->scopeLevel > 1) {
-                            $this->fatalError($left, "Must use {$methodName}() in the top-level scope of the function");
-                        }
-                        return $this->parseToStdAssign($var, $right);
-                    }
-                }
-                if ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
-                    $fn = $this->parseIdentifier($right->name);
-                    if (count($right->args) === 1 and $fn === 'any') {
-                        $type = self::TYPE_VAR;
-                        if (!$this->hasVar($var)) {
-                            $this->addLocalVar($var, $type);
-                            $finalVarType = $type;
-                        }
-                        return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
-                    } else {
-                        $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
-                    }
-                } elseif ($this->isStaticCall($right) and $this->isNameExpr($right->class) and $this->isIdExpr($right->name)) {
-                    $class = $this->parseIdentifier($right->class);
-                    if ($class === 'std') {
-                        if (in_array($right->name->toString(), ['array', 'vector', 'map', 'unordered_map'], true)) {
-                            if ($this->hasVar($var)) {
-                                $this->fatalError($left, "Cannot re-assign `\${$var}` to std::{$right->name->toString()}");
-                            }
-                            if ($this->context->scopeLevel > 1) {
-                                $this->fatalError($left, "Must create std::{$right->name->toString()} in the top-level scope of the function");
-                            }
-                            if ($right->name->toString() === 'array') {
-                                $this->addLocalVar($var, self::TYPE_STD_ARRAY);
-                                return $this->parseStdArray($var, $right);
-                            }
-                            if ($right->name->toString() === 'vector') {
-                                $this->addLocalVar($var, self::TYPE_STD_VECTOR);
-                                return $this->parseStdVector($var, $right);
-                            }
-                            if ($right->name->toString() === 'map') {
-                                $this->addLocalVar($var, self::TYPE_STD_MAP);
-                                return $this->parseStdMap($var, $right);
-                            }
-                            $this->addLocalVar($var, self::TYPE_STD_UNORDERED_MAP);
-                            return $this->parseStdUnorderedMap($var, $right);
-                        } else {
-                            $valueExpr = $this->parseStdCall($right);
-                            if (!$this->hasVar($var)) {
-                                $finalVarType = $right->getAttribute('nativeType');
-                                $this->addLocalVar($var, $finalVarType);
-                            }
-                            return $var . ' = ' . $valueExpr;
-                        }
-                    }
-                } elseif ($this->isVarExpr($right)) {
-                    $rightVar = $this->parseIdentifier($right);
-                    $type = $this->isStdContainer($rightVar) ? self::TYPE_ARRAY : $this->getVarType($rightVar);
-                    if ($this->isTypedObject($rightVar) and $this->isTypedObject($var)) {
-                        $leftClass = $this->getObjectType($var);
-                        $rightClass = $this->getObjectType($rightVar);
-                        $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
-                    }
-                }
-                // 变量第一次被赋值，确定其类型，由于 PHP 的变量作用域是 function 级的，在 for/while 块中声明的变量，可以在块外使用
-                if (!$this->hasVar($var)) {
-                    $finalVarType = $this->isNativeType($type) ? $this->getNativeType($type) : $type;
-                    $this->addLocalVar($var, $finalVarType);
-                } else {
-                    $this->checkVarAssignExpr($left, $this->getVarType($var), $type);
-                }
-            }
-        } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
-            return $this->parseAssignPropertyFetch($left, $right);
-        } elseif ($this->isArrayDimFetch($left) and $this->isVarExpr($left->var)) {
-            $tmp = $this->parseIdentifier($left->var);
-            if ($this->getVarType($tmp) === self::TYPE_STR and $left->dim === null) {
-                $this->fatalError($left, 'Cannot use [] for strings');
-            }
-            if ($this->isStdContainerExpr($left)) {
-                return $this->parseStdContainerAssign($left, $right);
-            }
-            return $this->parseAssignArrayDim($left, $right);
-        }
-
-        $rightExpr = $this->parseAssignRightExpr($right);
-        $leftExprType = $this->detectTypeOfExpr($left);
-        $rightExprType = $this->detectTypeOfExpr($right);
-        if ($finalVarType === self::TYPE_VAR) {
-            return $var . ' = ' . $rightExpr;
-        } else {
-            return $var . ' = ' . $this->convertExprType($rightExpr, $leftExprType, $rightExprType);
-        }
-    }
-
-    protected function parseStdContainerCopyAssign(string $leftVar, Expr $right): ?string
-    {
-        $rightInfo = $this->getStdContainerExprInfo($right);
-        if ($rightInfo === null) {
-            return null;
-        }
-
-        $leftInfo = $this->getStdContainerVarInfo($leftVar);
-        if (!$this->isSameStdContainerInfo($leftInfo, $rightInfo)) {
-            $this->fatalError($right, 'Cannot copy std container with different type');
-        }
-
-        return $leftVar . '_ref = ' . $this->parseStdContainerCopyExpr($right);
-    }
-
-    protected function parseAssignRightExpr(Expr $right): string
-    {
-        $rightExpr = $this->parseExpr($right);
-        if ($this->isVarExpr($right)) {
-            $rightVar = $this->parseIdentifier($right);
-            if ($this->isStdContainer($rightVar)) {
-                return $this->convertArrayExpr($rightExpr);
-            }
-        }
-        return $rightExpr;
-    }
-
     protected function parseEcho(mixed $v): string
     {
         $lines = [];
@@ -2001,83 +1524,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return implode("\n" . $this->getIndent(), $lines);
-    }
-
-    protected function isFloatStr(string $str): bool
-    {
-        return filter_var($str, FILTER_VALIDATE_FLOAT) !== false;
-    }
-
-    protected function isIntStr(string $str): bool
-    {
-        return filter_var($str, FILTER_VALIDATE_INT) !== false;
-    }
-
-    protected function isBoolStr(string $str): bool
-    {
-        return $str === 'true' || $str === 'false';
-    }
-
-    protected function isNativeType(string $type): bool
-    {
-        return in_array($type, [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL]);
-    }
-
-    protected function isNativeTypeVar(string $var): bool
-    {
-        return $this->isNativeType($this->getVarType($var));
-    }
-
-    protected function isInternalFunction(string $name): bool
-    {
-        return array_key_exists($name, $this->internalFunctions);
-    }
-
-    protected function isInternalClass(string $name): bool
-    {
-        return Reflection::isInternalClass($name);
-    }
-
-    protected function isNativeClass(string $name): bool
-    {
-        return $this->hasClass($name);
-    }
-
-    protected function isInterface(string $name): bool
-    {
-        return $this->hasInterface($name) or $this->isInternalInterface($name);
-    }
-
-    protected function isAbstractClass(string $name): bool
-    {
-        if ($this->isInternalClass($name)) {
-            return Reflection::isAbstractClass($name);
-        }
-        if ($this->hasClass($name)) {
-            $classDef = $this->getClass($name);
-            return $classDef->isAbstract();
-        }
-        return false;
-    }
-
-    protected function isInternalInterface(string $name): bool
-    {
-        return Reflection::isInternalInterface($name);
-    }
-
-    protected function isInternalConstant(string $name): bool
-    {
-        return array_key_exists($name, $this->internalConstants);
-    }
-
-    protected function isAssignOpConcat(string $op): bool
-    {
-        return $op === '.=';
-    }
-
-    protected function isAssignOpPow(string $op): bool
-    {
-        return $op === '**=';
     }
 
     /**
@@ -2098,117 +1544,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return $this->parseIdentifier($expr);
-    }
-
-    protected function parseBinaryOp(NodeAbstract $left, NodeAbstract $right, string $op): string
-    {
-        // 运算逻辑，优先转为数字
-        $leftExpr  = $this->parseNumericIdentifier($left);
-        $rightExpr = $this->parseNumericIdentifier($right);
-
-        $this->checkVarMustExist($left, $leftExpr);
-        $this->checkVarMustExist($right, $rightExpr);
-
-        $leftType  = $this->detectTypeOfExpr($left);
-        $rightType = $this->detectTypeOfExpr($right);
-
-        if ($leftType === self::TYPE_BIGFLOAT || $rightType === self::TYPE_BIGFLOAT) {
-            // BigFloat cannot implicitly mix with BigInt or Decimal — risk of precision loss
-            if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
-                $this->fatalError($left, 'Cannot mix BigFloat and BigInt implicitly. Use std::bigFloat() to convert explicitly.');
-            }
-            if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
-                $this->fatalError($left, 'Cannot mix BigFloat and Decimal implicitly. Use std::bigFloat() to convert explicitly.');
-            }
-                        if ($leftType !== self::TYPE_BIGFLOAT) {
-                $leftExpr = $this->convertBigFloatExpr($leftExpr, $leftType);
-            }
-            if ($rightType !== self::TYPE_BIGFLOAT) {
-                $rightExpr = $this->convertBigFloatExpr($rightExpr, $rightType);
-            }
-            $arithOpMap = ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div'];
-            $method = $arithOpMap[$op] ?? null;
-            if ($method) {
-                return 'php::BigFloat::' . $method . '(' . $leftExpr . ', ' . $rightExpr . ')';
-            }
-            $cmpOpMap = ['<' => '< 0', '>' => '> 0', '<=' => '<= 0', '>=' => '>= 0'];
-            if (isset($cmpOpMap[$op])) {
-                return 'php::toBool(php::BigFloat::cmp(' . $leftExpr . ', ' . $rightExpr . ') ' . $cmpOpMap[$op] . ')';
-            }
-        }
-
-        if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
-            // BigInt and Decimal cannot implicitly mix — risk of precision loss
-            if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
-                $this->fatalError($left, 'Cannot mix BigInt and Decimal implicitly. Use std::decimal() or std::bigInt() to convert explicitly.');
-            }
-                        if ($leftType !== self::TYPE_DECIMAL) {
-                $leftExpr = $this->convertDecimalExpr($leftExpr, $leftType, $left);
-            }
-            if ($rightType !== self::TYPE_DECIMAL) {
-                $rightExpr = $this->convertDecimalExpr($rightExpr, $rightType, $right);
-            }
-            $arithOpMap = ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod'];
-            $method = $arithOpMap[$op] ?? null;
-            if ($method) {
-                return 'php::Decimal::' . $method . '(' . $leftExpr . ', ' . $rightExpr . ')';
-            }
-            $cmpOpMap = ['<' => '< 0', '>' => '> 0', '<=' => '<= 0', '>=' => '>= 0'];
-            if (isset($cmpOpMap[$op])) {
-                return 'php::toBool(php::Decimal::cmp(' . $leftExpr . ', ' . $rightExpr . ') ' . $cmpOpMap[$op] . ')';
-            }
-        }
-
-        if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
-            // Bitwise shifts: right operand is shift amount, must stay as Int
-            if ($op === '<<' || $op === '>>') {
-                if ($leftType !== self::TYPE_BIGINT) {
-                    $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
-                }
-                if ($rightType === self::TYPE_BIGINT) {
-                    $rightExpr = 'php::BigInt::toInt(' . $rightExpr . ')';
-                } elseif ($rightType !== self::TYPE_INT) {
-                    $rightExpr = $this->convertExprType($rightExpr, $rightType, self::TYPE_INT);
-                }
-                $method = ($op === '<<') ? 'bitShiftLeft' : 'bitShiftRight';
-                return 'php::BigInt::' . $method . '(' . $leftExpr . ', ' . $rightExpr . ')';
-            }
-                        if ($leftType !== self::TYPE_BIGINT) {
-                $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
-            }
-            if ($rightType !== self::TYPE_BIGINT) {
-                $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
-            }
-            $arithOpMap = ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod', '&' => 'bitAnd', '|' => 'bitOr', '^' => 'bitXor'];
-            $method = $arithOpMap[$op] ?? null;
-            if ($method) {
-                return 'php::BigInt::' . $method . '(' . $leftExpr . ', ' . $rightExpr . ')';
-            }
-            $cmpOpMap = ['<' => '< 0', '>' => '> 0', '<=' => '<= 0', '>=' => '>= 0'];
-            if (isset($cmpOpMap[$op])) {
-                return 'php::toBool(php::BigInt::cmp(' . $leftExpr . ', ' . $rightExpr . ') ' . $cmpOpMap[$op] . ')';
-            }
-        }
-
-        // Only promote between native types (Int ↔ Float).  When one side is
-        // php::Var, let the Variant operator handle type coercion so that
-        // run-time PHP type-juggling rules are followed correctly.
-        if ($leftType === self::TYPE_FLOAT && $rightType === self::TYPE_INT) {
-            $rightExpr = $this->convertExprType($rightExpr, self::TYPE_FLOAT, $rightType);
-        } elseif ($rightType === self::TYPE_FLOAT && $leftType === self::TYPE_INT) {
-            $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_FLOAT);
-        }
-
-        if ($op === '%' and !($leftType === self::TYPE_INT and $rightType === self::TYPE_INT)) {
-            return 'php::math::mod(' . $leftExpr . ', ' . $rightExpr . ')';
-        }
-
-        return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
-    }
-
-    protected function parseBinaryOpPlus(Expr\BinaryOp\Plus $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '+');
     }
 
     protected function detectClassOfExpr(NodeAbstract $expr): string
@@ -2370,11 +1705,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return $code;
-    }
-
-    protected function parseBinaryOpMul(Expr\BinaryOp\Mul $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '*');
     }
 
     protected function addLocalVar(string $name, string $type): void
@@ -3176,33 +2506,6 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
 
-    protected function parseBinaryOpConcat(Expr\BinaryOp\Concat $expr): string
-    {
-        $left = $this->parseExpr($expr->left);
-        $right = $this->parseExpr($expr->right);
-
-        $leftType = $this->detectTypeOfExpr($expr->left);
-        $rightType = $this->detectTypeOfExpr($expr->right);
-        if ($leftType === self::TYPE_VOID or $rightType === self::TYPE_VOID) {
-            $this->fatalError($expr, 'Cannot concat void');
-        }
-        return Symbol::concat() . '(' . $this->convertExprToStringByType($left, $leftType) . ', ' . $this->convertExprToStringByType($right, $rightType) . ')';
-    }
-
-    protected function convertExprToStringByType(string $expr, $type): string
-    {
-        if ($type === self::TYPE_BIGINT) {
-            return 'php::BigInt::toString(' . $expr . ')';
-        }
-        if ($type === self::TYPE_BIGFLOAT) {
-            return 'php::BigFloat::toString(' . $expr . ')';
-        }
-        if ($type === self::TYPE_DECIMAL) {
-            return 'php::Decimal::toString(' . $expr . ')';
-        }
-        return $this->convertStringExpr($expr);
-    }
-
     protected function parseFor(Node\Stmt\For_ $v): string
     {
         $init  = $v->init;
@@ -3242,11 +2545,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseBinaryOpSmaller(Expr\BinaryOp\Smaller $expr): string
-    {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '<'));
-    }
-
     protected function parsePreInc(Expr\PreInc $expr): string
     {
         $type = $this->detectVarType($expr->var);
@@ -3256,85 +2554,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '++' . $this->parseIdentifier($expr->var);
     }
 
-    protected function removeAssignOp(string $op): string
-    {
-        return str_replace('=', '', $op);
-    }
-
-    protected function parseAssignOp(Expr\AssignOp $node, string $op): string
-    {
-        $var          = $this->parseIdentifier($node->var);
-        $expr         = $this->parseIdentifier($node->expr);
-
-        if ($this->isVarExpr($node->var)) {
-            if (!$this->hasVar($var)) {
-                $this->fatalError($node->var, 'Cannot assign to undefined variable');
-            }
-            $type         = $this->detectVarType($node->var);
-            $rightType    = $this->detectTypeOfExpr($node->expr);
-
-            // Big* types: expand compound assignment to static method call.
-            // BigInt/BigDecimal/BigFloat are immutable Box types stored inside
-            // php::Var — Variant::operator+= calls ZendVM add_function which
-            // cannot handle them.  We must generate `$v = Type::add($v, $x)`.
-            if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
-                return $this->parseBigAssignOp($node, $var, $type, $expr, $rightType, $op);
-            }
-
-            $rightExprStr = $this->convertExprType($expr, $type, $rightType);
-            if ($this->isAssignOpConcat($op)) {
-                if ($this->isArrayVar($node->var)) {
-                    $this->fatalError($node->var, 'Cannot concat string to array');
-                }
-                return $var . '.append(' . $rightExprStr . ')';
-            }
-            if ($this->isAssignOpPow($op)) {
-                $powExpr = 'php::math::pow(' . $var . ', ' . $rightExprStr . ')';
-                return $var . ' = ' . $this->convertVarType($var, $powExpr);
-            }
-            return $var . ' ' . $op . ' ' . $rightExprStr;
-        }
-
-        if ($this->isArrayDimFetch($node->var)) {
-            if ($this->isStdContainerExpr($node->var)) {
-                return $this->parseStdContainerAssignOp($node, $op);
-            }
-            /**
-             * $count[$r] -= 1;
-             * 需要转为下面语句：
-             * $tmp_var = $count[$r] - 1;
-             * $count[$r] = $tmp_var;.
-             */
-            $type      = $this->detectVarType($node->var);
-            $rightType = $this->detectTypeOfExpr($node->expr);
-            $tmpVar    = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, $rightType);
-            $dim      = $this->parseIdentifier($node->var->dim);
-            $binaryOp = $this->removeAssignOp($op);
-
-            if ($binaryOp === '.') {
-                $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat(" .
-                    $this->convertVarType($tmpVar, $var) . ', ' .
-                    $this->convertExprType($expr, $type, $rightType) . ');';
-            } elseif ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
-                $bigAssign = $this->parseBigAssignOpExpr($var, $type, $expr, $rightType, $binaryOp, $node->var, $node->expr);
-                $this->context->beforeStmtLines[] = "{$tmpVar} = {$bigAssign};";
-            } else {
-                $this->context->beforeStmtLines[] = "{$tmpVar} = " .
-                    $this->convertVarType($tmpVar, $var) . ' ' .
-                    $binaryOp . ' ' .
-                    $this->convertExprType($expr, $type, $rightType) . ';';
-            }
-
-            return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
-        }
-
-        if ($this->isAssignOpConcat($op)) {
-            return $var . '.append(' . $expr . ')';
-        }
-        return $var . ' ' . $op . ' (' . $expr . ')';
-    }
-
     /**
      * Expand a Big* compound-assignment into `$v = Type::method($v, $rhs)`.
      *
@@ -3342,87 +2561,11 @@ class CompilerBase extends \PhpAot\Core\Translator
      * goes through ZendVM add_function which does not understand them, so we
      * must emit the static-method form instead.
      */
-    protected function parseBigAssignOp(Expr\AssignOp $node, string $var, string $type, string $expr, string $rightType, string $op): string
-    {
-        $binaryOp = $this->removeAssignOp($op);
-        $bigExpr  = $this->parseBigAssignOpExpr($var, $type, $expr, $rightType, $binaryOp, $node->var, $node->expr);
-        return $var . ' = ' . $bigExpr;
-    }
-
     /**
      * Generate the C++ expression for a Big* binary operation.
      *
      * @param NodeAbstract $errorNode node to blame on unsupported operators
      */
-    protected function parseBigAssignOpExpr(string $leftExpr, string $leftType, string $rightExpr, string $rightType, string $binaryOp, NodeAbstract $errorNode, ?NodeAbstract $rightNode = null): string
-    {
-        [$class, $opMap] = match ($leftType) {
-            self::TYPE_BIGINT   => ['BigInt',   ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod', '&' => 'bitAnd', '|' => 'bitOr', '^' => 'bitXor', '<<' => 'bitShiftLeft', '>>' => 'bitShiftRight']],
-            self::TYPE_DECIMAL  => ['Decimal',  ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod']],
-            self::TYPE_BIGFLOAT => ['BigFloat', ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div']],
-        };
-
-        $method = $opMap[$binaryOp] ?? null;
-        if ($method === null) {
-            $this->fatalError($errorNode, "Unsupported compound assignment operator '{$binaryOp}' for type {$leftType}");
-        }
-
-        // For bitwise shifts, the right operand is a shift amount (Int), not BigInt
-        $isShift = ($binaryOp === '<<' || $binaryOp === '>>');
-        $convertedRight = match ($leftType) {
-            self::TYPE_BIGINT   => $isShift ? $rightExpr : $this->convertBigIntExpr($rightExpr, $rightType),
-            self::TYPE_DECIMAL  => $this->convertDecimalExpr($rightExpr, $rightType, $rightNode),
-            self::TYPE_BIGFLOAT => $this->convertBigFloatExpr($rightExpr, $rightType),
-        };
-
-        return 'php::' . $class . '::' . $method . '(' . $leftExpr . ', ' . $convertedRight . ')';
-    }
-
-    protected function parseAssignOpConcat(Expr\AssignOp\Concat $expr): string
-    {
-        return $this->parseAssignOp($expr, '.=');
-    }
-
-    protected function parseAssignOpPlus(Expr\AssignOp\Plus $expr): string
-    {
-        return $this->parseAssignOp($expr, '+=');
-    }
-
-    protected function parseAssignOpMinus(Expr\AssignOp\Minus $expr): string
-    {
-        return $this->parseAssignOp($expr, '-=');
-    }
-
-    protected function parseAssignOpMod(Expr\AssignOp\Mod $expr): string
-    {
-        return $this->parseAssignOp($expr, '%=');
-    }
-
-    protected function parseAssignOpMul(Expr\AssignOp\Mul $expr): string
-    {
-        return $this->parseAssignOp($expr, '*=');
-    }
-
-    protected function parseAssignOpDiv(Expr\AssignOp\Div $expr): string
-    {
-        return $this->parseAssignOp($expr, '/=');
-    }
-
-    protected function parseAssignOpBitwiseAnd(Expr\AssignOp\BitwiseAnd $expr): string
-    {
-        return $this->parseAssignOp($expr, '&=');
-    }
-
-    protected function parseAssignOpBitwiseOr(Expr\AssignOp\BitwiseOr $expr): string
-    {
-        return $this->parseAssignOp($expr, '|=');
-    }
-
-    protected function parseAssignOpPow(Expr\AssignOp\Pow $expr): string
-    {
-        return $this->parseAssignOp($expr, '**=');
-    }
-
     public function error(string $msg): never
     {
         if ($this->forTest) {
@@ -3531,31 +2674,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->context->inAssignExpr = $oriInAssignExpr;
             return $var . '.item(' . $this->trimBrackets($dim) . ', ' . $this->escapeBool($write) . ')';
         }
-    }
-
-    protected function parseArrayDimStore($array, $dim, $var): string
-    {
-        $oriInAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $id = $this->parseIdentifier($array);
-        $this->context->inAssignExpr = $oriInAssignExpr;
-
-        return $id . '.offsetSet(' . $this->trimBrackets($dim) . ', ' . $this->trimBrackets($var) . ')';
-    }
-
-    protected function parseBinaryOpShiftLeft(Expr\BinaryOp\ShiftLeft $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '<<');
-    }
-
-    protected function parseBinaryOpShiftRight(Expr\BinaryOp\ShiftRight $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '>>');
-    }
-
-    protected function parseBinaryOpMod(Expr\BinaryOp\Mod $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '%');
     }
 
     /**
@@ -4072,28 +3190,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function parseBinaryOpGreater(Expr\BinaryOp\Greater $expr): string
-    {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>'));
-    }
-
-    protected function parseBinaryOpPow(Expr\BinaryOp\Pow $expr): string
-    {
-        $leftType = $this->detectTypeOfExpr($expr->left);
-        if ($leftType === self::TYPE_BIGINT) {
-                        $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            $rightType = $this->detectTypeOfExpr($expr->right);
-            if ($rightType !== self::TYPE_BIGINT) {
-                $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
-            }
-            return 'php::BigInt::pow(' . $leftExpr . ', ' . $rightExpr . ')';
-        }
-        $left  = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
-        return 'php::math::pow(' . $left . ', ' . $right . ')';
-    }
-
     protected function parsePreDec(Expr\PreDec $expr): string
     {
         $type = $this->detectVarType($expr->var);
@@ -4101,21 +3197,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->fatalError($expr, 'Cannot use -- on ' . $type . '. Use -= 1 instead (Big* types are immutable).');
         }
         return '--' . $this->parseIdentifier($expr->var);
-    }
-
-    protected function parseBinaryOpBitwiseAnd(Expr\BinaryOp\BitwiseAnd $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '&');
-    }
-
-    protected function parseBinaryOpBitwiseOr(Expr\BinaryOp\BitwiseOr $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '|');
-    }
-
-    protected function parseBinaryOpBitwiseXor(Expr\BinaryOp\BitwiseXor $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '^');
     }
 
     protected function parseBitwiseNot(Expr\BitwiseNot $expr): string
@@ -4155,55 +3236,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code . PHP_EOL;
     }
 
-    protected function parseCompareExpr(NodeAbstract $expr): string
-    {
-        // PHPX 与 bool 值比较会出现重载错误，所以需要转换成 bool 值
-        if ($this->isScalarBool($expr)) {
-            return $this->getBoolValue($expr);
-        }
-        return $this->parseIdentifier($expr);
-    }
-
-    protected function parseBinaryOpEqual(Expr\BinaryOp\Equal $expr): string
-    {
-        return $this->genBigNumericCmp($expr, ' == 0')
-            ?? 'php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
-    }
-
-    protected function parseBinaryOpNotEqual(Expr\BinaryOp\NotEqual $expr): string
-    {
-        return $this->genBigNumericCmp($expr, ' != 0')
-            ?? '!php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
-    }
-
-    protected function parseBinaryOpIdentical(Expr\BinaryOp $expr): string
-    {
-        $left  = $this->parseCompareExpr($expr->left);
-        $right = $this->parseCompareExpr($expr->right);
-        if ($right === 'nullptr') {
-            return $left . '.isNull()';
-        }
-        return 'php::same(' . $left . ', ' . $right . ')';
-    }
-
     /**
      * 逻辑比较的运算，必须返回 bool 类型.
      */
-    protected function parseBinaryOpLogicalAnd(Expr\BinaryOp\LogicalAnd|Expr\BinaryOp\BooleanAnd $expr): string
-    {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '&&'));
-    }
-
-    protected function parseBinaryOpLogicalOr(Expr\BinaryOp\LogicalOr|Expr\BinaryOp\BooleanOr $expr): string
-    {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '||'));
-    }
-
-    protected function parseBinaryOpLogicalXor(Expr\BinaryOp\LogicalXor $expr): string
-    {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '^'));
-    }
-
     protected function parseBooleanNot(Expr\BooleanNot $expr): string
     {
         return '!(' . $this->parseExpr($expr->expr) . ')';
@@ -4222,132 +3257,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function convertIntExpr(string $expr): string
-    {
-        if (!$this->isClosedExpr($expr, 'php::toInt')) {
-            return 'php::toInt(' . $this->trimBrackets($expr) . ')';
-        }
-
-        return $expr;
-    }
-
-    protected function convertFloatExpr(string $expr): string
-    {
-        if (!$this->isClosedExpr($expr, 'php::toFloat')) {
-            return 'php::toFloat(' . $this->trimBrackets($expr) . ')';
-        }
-
-        return $expr;
-    }
-
-    protected function convertDecimalExpr(string $expr, string $fromType = '', ?NodeAbstract $node = null): string
-    {
-        if ($fromType === self::TYPE_FLOAT) {
-            if ($node instanceof Node\Scalar\Float_) {
-                $rawValue = $node->getAttribute('rawValue');
-                $clean = $rawValue !== null ? $this->stripNumericUnderscores($rawValue) : (string) $node->value;
-                                return 'php::toDecimal(' . $this->getLiteralString($clean) . ')';
-            }
-            $this->fatalError($node, 'Cannot convert float expression to Decimal, use a literal value or string instead');
-        }
-        if ($fromType === self::TYPE_STR) {
-            if ($node instanceof Node\Scalar\String_) {
-                return 'php::toDecimal(' . $this->getLiteralString($node->value) . ')';
-            }
-            return 'php::toDecimal(php::toString(' . $this->trimBrackets($expr) . '))';
-        }
-        if ($fromType === self::TYPE_INT) {
-            return 'php::toDecimal(php::toString(' . $this->trimBrackets($expr) . '))';
-        }
-        if ($fromType === self::TYPE_BIGINT) {
-            return 'php::toDecimal(php::BigInt::toString(' . $this->trimBrackets($expr) . '))';
-        }
-        return $expr;
-    }
-
-    protected function convertBigIntExpr(string $expr, string $fromType = ''): string
-    {
-        if ($fromType === self::TYPE_INT) {
-            return 'php::toBigInt(' . $this->trimBrackets($expr) . ')';
-        }
-        if ($fromType === self::TYPE_FLOAT) {
-            $this->fatalError(null, 'Cannot convert float to BigInt, use string or int instead');
-        }
-        if ($fromType === self::TYPE_STR) {
-            return 'php::toBigInt(php::toString(' . $this->trimBrackets($expr) . '))';
-        }
-        return $expr;
-    }
-
-    protected function convertBigFloatExpr(string $expr, string $fromType = ''): string
-    {
-        if ($fromType === self::TYPE_INT) {
-            return 'php::toBigFloat(' . $this->trimBrackets($expr) . ')';
-        }
-        if ($fromType === self::TYPE_FLOAT) {
-            return 'php::toBigFloat(' . $this->trimBrackets($expr) . ')';
-        }
-        if ($fromType === self::TYPE_STR) {
-            return 'php::toBigFloat(php::toString(' . $this->trimBrackets($expr) . '))';
-        }
-        if ($fromType === self::TYPE_BIGINT) {
-            return 'php::BigFloat::newInstance(php::BigInt::toString(' . $this->trimBrackets($expr) . '))';
-        }
-        if ($fromType === self::TYPE_DECIMAL) {
-            return 'php::BigFloat::newInstance(php::Decimal::toString(' . $this->trimBrackets($expr) . '))';
-        }
-        return $expr;
-    }
-
-    protected function convertStringExpr(string $expr): string
-    {
-        if (!$this->isClosedExpr($expr, 'php::toString')) {
-            return 'php::toString(' . $this->trimBrackets($expr) . ')';
-        }
-
-        return $expr;
-    }
-
-    protected function convertObjectExpr(string $expr, string $class = ''): string
-    {
-        if (!$this->isClosedExpr($expr, 'php::toObject')) {
-            if ($class === '') {
-                return 'php::toObject(' . $this->trimBrackets($expr) . ')';
-            }
-            return 'php::toObject(' . $this->trimBrackets($expr) . ', ' . $class . ')';
-        }
-
-        return $expr;
-    }
-
-    protected function convertArrayExpr(string $expr): string
-    {
-        if (!$this->isClosedExpr($expr, 'php::toArray')) {
-            return 'php::toArray(' . $this->trimBrackets($expr) . ')';
-        }
-
-        return $expr;
-    }
-
-    protected function convertBoolExpr(string $expr): string
-    {
-        if (!$this->isClosedExpr($expr, 'php::toBool')) {
-            return 'php::toBool(' . $this->trimBrackets($expr) . ')';
-        }
-
-        return $expr;
-    }
-
-    protected function parseBinaryOpSmallerOrEqual(Expr\BinaryOp\SmallerOrEqual $expr): string
-    {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '<='));
-    }
-
-    protected function parseBinaryOpGreaterOrEqual(Expr\BinaryOp\GreaterOrEqual $expr): string
-    {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>='));
-    }
-
     protected function parsePrint(Expr\Print_ $expr): string
     {
         return 'php::echo(' . $this->parseExpr($expr->expr) . ')';
@@ -4363,54 +3272,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code .= $this->getIndent() . '} while (' . $cond . ');' . PHP_EOL;
 
         return $code;
-    }
-
-    protected function parseBinaryOpSpaceship(Expr\BinaryOp\Spaceship $expr): string
-    {
-        return $this->genBigNumericCmp($expr)
-            ?? 'php::compare(' . $this->parseIdentifier($expr->left) . ', ' . $this->parseIdentifier($expr->right) . ')';
-    }
-
-    protected function genBigNumericCmp(Expr\BinaryOp $expr, string $suffix = ''): ?string
-    {
-        $leftType = $this->detectTypeOfExpr($expr->left);
-        $rightType = $this->detectTypeOfExpr($expr->right);
-
-        if ($leftType === self::TYPE_BIGFLOAT || $rightType === self::TYPE_BIGFLOAT) {
-            $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            if ($leftType !== self::TYPE_BIGFLOAT) {
-                $leftExpr = $this->convertBigFloatExpr($leftExpr, $leftType);
-            }
-            if ($rightType !== self::TYPE_BIGFLOAT) {
-                $rightExpr = $this->convertBigFloatExpr($rightExpr, $rightType);
-            }
-            return 'php::BigFloat::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
-        }
-        if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
-            $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            if ($leftType !== self::TYPE_BIGINT) {
-                $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
-            }
-            if ($rightType !== self::TYPE_BIGINT) {
-                $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
-            }
-            return 'php::BigInt::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
-        }
-        if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
-            $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
-            if ($leftType !== self::TYPE_DECIMAL) {
-                $leftExpr = $this->convertDecimalExpr($leftExpr, $leftType, $expr->left);
-            }
-            if ($rightType !== self::TYPE_DECIMAL) {
-                $rightExpr = $this->convertDecimalExpr($rightExpr, $rightType, $expr->right);
-            }
-            return 'php::Decimal::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
-        }
-
-        return null;
     }
 
     /**
@@ -4438,16 +3299,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $expr->setAttribute('replace', $tmpVar);
 
         return $tmpVar;
-    }
-
-    protected function parseBinaryOpCoalesce(Expr\BinaryOp\Coalesce $expr): string
-    {
-        return $this->parseValueSelection($expr, $expr->left, $expr->right, self::OP_ISSET);
-    }
-
-    protected function parseBinaryOpNotIdentical(Expr\BinaryOp $expr): string
-    {
-        return '!(' . $this->parseBinaryOpIdentical($expr) . ')';
     }
 
     protected function packData(string $bytes): string
@@ -4654,16 +3505,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->parseExpr($expr->expr);
     }
 
-    protected function parseBinaryOpDiv(Expr\BinaryOp\Div $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '/');
-    }
-
-    protected function parseBinaryOpMinus(Expr\BinaryOp\Minus $expr): string
-    {
-        return $this->parseBinaryOp($expr->left, $expr->right, '-');
-    }
-
     protected function parseInterpolatedString(Node\Scalar\InterpolatedString $expr): string
     {
         $parts = $expr->parts;
@@ -4813,21 +3654,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->convertExprType($expr, $argInfo->type, $type);
     }
 
-    protected function convertExprType(string $expr, $leftType, $rightType): string
-    {
-        if ($leftType === self::TYPE_FLOAT or $rightType === self::TYPE_FLOAT) {
-            return $this->convertFloatExpr($expr);
-        }
-        if ($leftType === self::TYPE_INT or $rightType === self::TYPE_INT) {
-            return $this->convertIntExpr($expr);
-        }
-        if ($leftType === self::TYPE_BOOL or $rightType === self::TYPE_BOOL) {
-            return $this->convertBoolExpr($expr);
-        }
-
-        return $expr;
-    }
-
     protected function parseExit(Expr\Exit_ $node): string
     {
         if (!$node->expr) {
@@ -4937,21 +3763,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
         return $getProperty;
-    }
-
-    protected function parseAssignOpShiftLeft(Expr\AssignOp\ShiftLeft $node): string
-    {
-        return $this->parseAssignOp($node, '<<=');
-    }
-
-    protected function parseAssignOpShiftRight(Expr\AssignOp\ShiftRight $node): string
-    {
-        return $this->parseAssignOp($node, '>>=');
-    }
-
-    protected function parseAssignOpBitwiseXor(Expr\AssignOp\BitwiseXor $node): string
-    {
-        return $this->parseAssignOp($node, '^=');
     }
 
     protected function parseMagicConst(MagicConst $expr): string
@@ -5081,17 +3892,6 @@ class CompilerBase extends \PhpAot\Core\Translator
      * 原生 int/float/bool 类型，是不支持自动转换的，例如如果 int 计算超过最大值后，会自动转为 float，除法若不能除尽，则会转为 float
      * 某些情况下高性能计算，可能需要使用原生类型，使用 $a = std::int(0) 来显式地使用原生类型
      */
-    protected function getNativeType(string $type): string
-    {
-        if ($type === self::TYPE_INT && $this->bigintTypes) {
-            return self::TYPE_BIGINT;
-        }
-        if ($type === self::TYPE_FLOAT && $this->decimalTypes) {
-            return self::TYPE_DECIMAL;
-        }
-        return $this->nativeTypes ? $type : self::TYPE_VAR;
-    }
-
     protected function detectConstType($expr): string
     {
         $name = $this->parseIdentifier($expr->name);
@@ -5454,91 +4254,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->getTypeFromZendType($returnType);
         }
         return self::TYPE_VAR;
-    }
-
-    protected function convertExprFromType(string $type, string $expr): string
-    {
-        if ($type === self::TYPE_FLOAT) {
-            return $this->convertFloatExpr($expr);
-        }
-        if ($type === self::TYPE_INT) {
-            return $this->convertIntExpr($expr);
-        }
-        if ($type === self::TYPE_BOOL) {
-            return $this->convertBoolExpr($expr);
-        }
-        if ($type === self::TYPE_STR) {
-            return $this->convertStringExpr($expr);
-        }
-        if ($type === self::TYPE_ARRAY) {
-            return $this->convertArrayExpr($expr);
-        }
-        if ($type === self::TYPE_OBJECT) {
-            return $this->convertObjectExpr($expr);
-        }
-
-        return $expr;
-    }
-
-    protected function convertVarType($var, $expr): string
-    {
-        if ($this->hasVar($var)) {
-            return $this->convertExprFromType($this->getVarType($var), $expr);
-        }
-
-        return $expr;
-    }
-
-    protected function convertToRef(NodeAbstract $expr): string
-    {
-        $this->checkLeftValue($expr);
-        $var = $this->parseIdentifier($expr);
-        if ($this->isVarExpr($expr) and $this->isNativeTypeVar($var)) {
-            $this->context->localVars[$var] = self::TYPE_VAR;
-        }
-        return $this->parseIdentifier($expr) . '.toReference()';
-    }
-
-    protected function parseAssignRef(Expr\AssignRef $expr): string
-    {
-        $this->context->inAssignExpr = true;
-        $left = $this->parseIdentifier($expr->var);
-        $this->context->inAssignExpr = false;
-
-        if ($this->isVarExpr($expr->var)) {
-            if (!$this->hasVar($left)) {
-                $this->addLocalVar($left, self::TYPE_REF);
-            } else {
-                $type = $this->getVarType($left);
-                if ($type !== self::TYPE_REF) {
-                    $this->fatalError($expr, 'Cannot assign reference to variable of type ' . $type);
-                }
-            }
-        }
-
-        $tmpVar = $this->addTmpVar(self::TYPE_REF);
-        $rightExpr = '';
-
-        if ($this->isVarExpr($expr->expr)) {
-            $rightExpr = $tmpVar . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
-        } elseif ($this->isPropertyFetch($expr->expr)) {
-            $left = $this->parseIdentifier($expr->var);
-            $object = $this->parseExpr($expr->expr->var);
-            $prop = $this->identifierToStr($expr->expr->name);
-            $rightExpr = $tmpVar . ' = ' . $object . '.attrRef(' . $prop . ')';
-        } elseif ($this->isArrayDimFetch($expr->expr)) {
-            $left = $this->parseIdentifier($expr->var);
-            $array = $this->parseIdentifier($expr->expr->var);
-            if ($expr->expr->dim == null) {
-                $this->fatalError($expr, 'Cannot assign reference to array dim fetch without dim');
-            }
-            $rightExpr = $tmpVar . ' = ' . $array . '.itemRef(' . $this->parseIdentifier($expr->expr->dim) . ')';
-        } else {
-            $this->fatalError($expr, 'Cannot assign reference to ' . $this->parseIdentifier($expr->expr));
-        }
-
-        $this->context->beforeStmtLines[] = $rightExpr . ';';
-        return $left . ' = &' . $tmpVar;
     }
 
     protected function genObjvalCall(Expr\FuncCall $expr): string
@@ -6121,11 +4836,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return self::TYPE_VAR;
     }
 
-    protected function isArrayVar($var): bool
-    {
-        return $this->isVarExpr($var) and $this->hasVar($var->name) and $this->getVarType($var->name) == self::TYPE_ARRAY;
-    }
-
     protected function setBuildDir(string $string): void
     {
         $this->buildDir = $string;
@@ -6377,20 +5087,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return self::PREFIX . $nativeFunc . '(' . $object . ', ' . $this->parseNativeCallArgs($args, $nativeFunc) . ')';
     }
 
-    protected function parseAssignPropertyArrayDim(NodeAbstract $left, NodeAbstract $right): string
-    {
-        $obj      = $this->parseIdentifier($left->var->var);
-        $propName = $this->identifierToStr($left->var->name);
-        $code     = '';
-        $value    = $this->trimBrackets($this->parseExpr($right));
-        if ($left->dim === null) {
-            return $code . "{$obj}.appendArrayProperty({$propName}, {$value})";
-        }
-        $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
-
-        return $code . "{$obj}.updateArrayProperty({$propName}, {$dim}, {$value})";
-    }
-
     protected function parseStdCall(Expr\StaticCall $expr): string
     {
         $func = strtolower($this->parseIdentifier($expr->name));
@@ -6632,26 +5328,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $fnCode;
         };
         return $this->genClosure($expr, $expr->params, $cb, $expr->uses);
-    }
-
-    protected function parseAssignOpCoalesce(Expr\AssignOp\Coalesce $expr): string
-    {
-        $this->checkLeftValue($expr->var);
-        $isset = $this->parseChainedExpr($expr->var, self::OP_ISSET);
-
-        $inAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $var = $this->parseIdentifier($expr->var);
-        $this->context->inAssignExpr = $inAssignExpr;
-
-        $right = $this->parseExpr($expr->expr);
-        if ($this->isVarExpr($expr->expr) and !$this->hasVar($right)) {
-            $this->errorUndefinedVariable($expr->expr);
-        }
-        if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
-            $this->addLocalVar($var, $this->detectTypeOfExpr($expr->expr));
-        }
-        return '(' . $isset . '?' . $var . ':(' . $var . ' = ' . $right . '))';
     }
 
     protected function isReturnStmtInLastLine(array $stmts): bool
