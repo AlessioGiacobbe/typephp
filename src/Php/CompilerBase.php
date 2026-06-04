@@ -2755,7 +2755,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             // 动态调用的函数，转换函数名为带有命名空间的全限定名称
             $name = $this->getNamespacedFuncName($name);
             $code = $this->parseFuncCallWithOptimizer($name, $expr);
-            if ($code) {
+            if ($code !== false) {
                 return $code;
             }
             $placeHolder = $this->identifierToStr($expr->name);

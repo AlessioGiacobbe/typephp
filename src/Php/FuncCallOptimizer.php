@@ -152,6 +152,9 @@ trait FuncCallOptimizer
             }
         }
         if ($name === 'strlen') {
+            if ($expr->args[0]->value instanceof Node\Scalar\String_) {
+                return strlen($expr->args[0]->value->value) . $this->getPlatform()->getIntegerLiteralSuffix();
+            }
             return 'php::fn::strlen(' . $getArg(0) . ')';
         }
         if ($name === 'ord') {
