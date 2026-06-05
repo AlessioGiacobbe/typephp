@@ -2094,10 +2094,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                     if ($this->isVarExpr($expr->var)) {
                         $object = $this->parseIdentifier($expr->var);
-                        $nativeFunc = $this->findNativeMethod($expr, $object, $method);
-                        if ($nativeFunc) {
-                            $funcDef = $this->getFunction($nativeFunc);
-                            return $funcDef->returnType;
+                        try {
+                            $nativeFunc = $this->findNativeMethod($expr, $object, $method);
+                            if ($nativeFunc) {
+                                $funcDef = $this->getFunction($nativeFunc);
+                                return $funcDef->returnType;
+                            }
+                        } catch (DynamicCall) {
+                            // Method inherited from internal class, can't resolve type statically
                         }
                         if ($this->isTypedObject($object)) {
                             return $this->detectMethodCallReturnType($this->getObjectType($object), $method);
