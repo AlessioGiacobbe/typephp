@@ -2781,6 +2781,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
                 $expr->setAttribute('nativeCall', $nativeFn);
+                // 函数调用占位符，不是真实的函数调用
+                if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
+                    return $this->genPlaceHolder($this->identifierToStr($expr->name));
+                }
                 $this->checkNativeCallArgs($expr, $this->getFunction($nativeFn), $expr->args, $name);
                 try {
                     return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
