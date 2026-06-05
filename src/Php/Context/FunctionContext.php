@@ -15,6 +15,12 @@ class FunctionContext
     /** SSA/e-SSA analysis for the current function. Built once per function, discarded with the context. */
     public ?SsaBuilder $ssaBuilder = null;
 
+    /** Map of SSA-stable object variable name => class name (SsaPropOptimizer). */
+    public array $stableObjects = [];
+
+    /** Map of hoisted property refs: objName => [propName => true] (SsaPropOptimizer). */
+    public array $hoistedProps = [];
+
     /**
      * @var array<string, string>
      */
@@ -64,6 +70,8 @@ class FunctionContext
         $this->stdArrays = [];
         $this->stdContainers = [];
         $this->objectProps = [];
+        $this->stableObjects = [];
+        $this->hoistedProps = [];
         $this->ceWrappers = [];
         $this->tmpVarIndex = 0;
         $this->scopeLayouts = [];

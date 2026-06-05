@@ -29,6 +29,7 @@ use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
 use PhpAot\Php\Generator\Utils;
 use PhpAot\Php\Generator\TypeCheckGenerator;
+use PhpAot\Php\Optimizer\SsaPropOptimizer;
 use PhpAot\Php\Optimizer\SsaTypeOptimizer;
 use PhpAot\Php\Parser\StdContainerTrait;
 use PhpAot\Php\Parser\AssignOpTrait;
@@ -75,6 +76,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     use Utils;
     use TypeCheckGenerator;
     use SsaTypeOptimizer;
+    use SsaPropOptimizer;
 
     public const string TYPE_VAR = 'php::Var';
     public const string TYPE_BOOL = 'php::Bool';
@@ -1151,6 +1153,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->context->ssaBuilder->build();
             // Narrow local variable types based on SSA analysis
             $this->optimizeVarTypes();
+            // Analyze object stability for property reference hoisting
+            $this->optimizeObjectProps();
         }
 
         $stmts = '';
@@ -3755,23 +3759,29 @@ class CompilerBase extends \PhpAot\Core\Translator
         $id = $this->getPropertyIdentifier($expr, $object, $property);
         $objectVar = $this->parseIdentifier($object);
         $getProperty = $objectVar . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
-        // 将属性设置为 native 类型的引用，以提高性能，仅适用于 this_ ，其他类型对象可能会在中间发生改变
-        // TODO 分析对象是否为 SSA , 如果是 SSA 则可以将属性设置为引用
-        if ($expr->hasAttribute('nativePropertyDef') and $this->nativeTypes and $objectVar === 'this_') {
+        if ($expr->hasAttribute('nativePropertyDef') and $this->nativeTypes) {
             /**
              * @var PropertyDef $def
              */
             $def = $expr->getAttribute('nativePropertyDef');
             if ($def->type === self::TYPE_INT or $def->type === self::TYPE_FLOAT) {
                 $propVar = $this->getObjectPropVarName($objectVar, $this->parseIdentifier($property));
-                if (!$this->hasObjectPropVar($propVar)) {
-                    $this->context->objectProps[$propVar] = [
-                        'type' => $def->type,
-                        'getter' => $getProperty,
-                    ];
+                if ($objectVar === 'this_') {
+                    if (!$this->hasObjectPropVar($propVar)) {
+                        $this->context->objectProps[$propVar] = [
+                            'type' => $def->type,
+                            'getter' => $getProperty,
+                        ];
+                    }
+                    $expr->setAttribute('nativePropertyVar', $propVar);
+                    return $propVar;
                 }
-                $expr->setAttribute('nativePropertyVar', $propVar);
-                return $propVar;
+                // SSA-stable object: lazily create reference at first access point
+                if ($this->isStableObject($objectVar)) {
+                    $result = $this->hoistStableObjectProp($objectVar, $this->parseIdentifier($property), $id, $def->type);
+                    $expr->setAttribute('nativePropertyVar', $result);
+                    return $result;
+                }
             }
         }
         return $getProperty;
