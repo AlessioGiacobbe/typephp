@@ -3258,7 +3258,11 @@ class PropertyInfo extends VariableLike
         $zvalName = "property_{$propertyName}_default_value";
         if ($this->defaultValue === null && $this->type !== null) {
             $code .= "\tzval $zvalName;\n";
-            $code .= $this->getTypeDefaultValueCode($zvalName);
+            if ($this->flags & Modifiers::READONLY || $this->classFlags & Modifiers::READONLY) {
+                $code .= "\tZVAL_UNDEF(&$zvalName);\n";
+            } else {
+                $code .= $this->getTypeDefaultValueCode($zvalName);
+            }
         } else {
             $code .= $defaultValue->initializeZval($zvalName, varName: $this->name->__toString());
         }

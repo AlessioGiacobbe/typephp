@@ -984,7 +984,7 @@ class SsaBuilder
                 $defs[] = $stmt->valueVar->name;
             }
         } elseif ($stmt instanceof Stmt\Catch_) {
-            if (is_string($stmt->var->name)) {
+            if ($stmt->var && is_string($stmt->var->name)) {
                 $defs[] = $stmt->var->name;
             }
         }
@@ -1223,7 +1223,7 @@ class SsaBuilder
 
         // Handle catch variables
         if ($stmt instanceof Stmt\Catch_) {
-            if (is_string($stmt->var->name)) {
+            if ($stmt->var && is_string($stmt->var->name)) {
                 $varName = $stmt->var->name;
                 $ssaId = $this->allocateSsaId();
                 $ssaVar = new SsaVar($ssaId, $varName, 0);
