@@ -3257,7 +3257,8 @@ class PropertyInfo extends VariableLike
 
         $zvalName = "property_{$propertyName}_default_value";
         if ($this->defaultValue === null && $this->type !== null) {
-            $code .= "\tzval $zvalName;\n\tZVAL_UNDEF(&$zvalName);\n";
+            $code .= "\tzval $zvalName;\n";
+            $code .= $this->getTypeDefaultValueCode($zvalName);
         } else {
             $code .= $defaultValue->initializeZval($zvalName, varName: $this->name->__toString());
         }
@@ -3343,6 +3344,32 @@ class PropertyInfo extends VariableLike
             $fieldsynopsisElement->appendChild(new DOMText("\n     "));
             $fieldsynopsisElement->appendChild($doc->createElement("modifier", "readonly"));
         }
+    }
+
+    private function getTypeDefaultValueCode(string $zvalName): string
+    {
+        if ($this->type->isNullable()) {
+            return "\tZVAL_NULL(&$zvalName);\n";
+        }
+        $simpleType = $this->type->tryToSimpleType();
+        if ($simpleType !== null) {
+            if ($simpleType->isInt()) {
+                return "\tZVAL_LONG(&$zvalName, 0);\n";
+            }
+            if ($simpleType->isFloat()) {
+                return "\tZVAL_DOUBLE(&$zvalName, 0.0);\n";
+            }
+            if ($simpleType->isBool()) {
+                return "\tZVAL_FALSE(&$zvalName);\n";
+            }
+            if ($simpleType->isString()) {
+                return "\tZVAL_EMPTY_STRING(&$zvalName);\n";
+            }
+            if ($simpleType->isArray()) {
+                return "\tZVAL_EMPTY_ARRAY(&$zvalName);\n";
+            }
+        }
+        return "\tZVAL_NULL(&$zvalName);\n";
     }
 }
 
