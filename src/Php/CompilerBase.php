@@ -2576,11 +2576,15 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePreInc(Expr\PreInc $expr): string
     {
+        $oriInAssignExpr = $this->context->inAssignExpr;
+        $this->context->inAssignExpr = true;
         $type = $this->detectVarType($expr->var);
         if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use ++ on ' . $type . '. Use += 1 instead (Big* types are immutable).');
         }
-        return '++' . $this->parseIdentifier($expr->var);
+        $result = '++' . $this->parseIdentifier($expr->var);
+        $this->context->inAssignExpr = $oriInAssignExpr;
+        return $result;
     }
 
     /**
@@ -3128,7 +3132,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parsePostOp(Expr\PostDec|Expr\PostInc $expr, string $op): string
     {
         if ($this->isVarExpr($expr->var) or $this->isPropertyFetch($expr->var) or $this->isArrayDimFetch($expr->var)) {
+            $oriInAssignExpr = $this->context->inAssignExpr;
+            $this->context->inAssignExpr = true;
             $var = $this->parseIdentifier($expr->var);
+            $this->context->inAssignExpr = $oriInAssignExpr;
             if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
                 $this->errorUndefinedVariable($expr->var);
             }
@@ -3221,11 +3228,15 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePreDec(Expr\PreDec $expr): string
     {
+        $oriInAssignExpr = $this->context->inAssignExpr;
+        $this->context->inAssignExpr = true;
         $type = $this->detectVarType($expr->var);
         if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use -- on ' . $type . '. Use -= 1 instead (Big* types are immutable).');
         }
-        return '--' . $this->parseIdentifier($expr->var);
+        $result = '--' . $this->parseIdentifier($expr->var);
+        $this->context->inAssignExpr = $oriInAssignExpr;
+        return $result;
     }
 
     protected function parseBitwiseNot(Expr\BitwiseNot $expr): string

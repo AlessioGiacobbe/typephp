@@ -296,7 +296,10 @@ trait AssignOpTrait
 
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
+        $oriInAssignExpr = $this->context->inAssignExpr;
+        $this->context->inAssignExpr = true;
         $var          = $this->parseIdentifier($node->var);
+        $this->context->inAssignExpr = $oriInAssignExpr;
         $expr         = $this->parseIdentifier($node->expr);
 
         if ($this->isVarExpr($node->var)) {

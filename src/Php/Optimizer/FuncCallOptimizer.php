@@ -193,7 +193,8 @@ trait FuncCallOptimizer
         if ($name === 'get_class') {
             return $this->genGetClass($expr);
         }
-        if (count($expr->args) === 1) {
+        // 除了 Node\Arg 之外，可能是 VariadicPlaceholder 占位符 (...)
+        if (count($expr->args) === 1 && $expr->args[0] instanceof Node\Arg) {
             $arg = $expr->args[0]->value;
             $type = $this->detectTypeOfExpr($arg);
             // is_* compile-time elimination when SSA-narrowed
