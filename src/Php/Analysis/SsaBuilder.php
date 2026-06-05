@@ -1466,7 +1466,9 @@ class SsaBuilder
         if ($node instanceof Expr\FuncCall || $node instanceof Expr\MethodCall
             || $node instanceof Expr\StaticCall || $node instanceof Expr\NullsafeMethodCall) {
             foreach ($node->args as $arg) {
-                $this->collectVarUses($arg->value, $vars, false);
+                if (isset($arg->value)) {
+                    $this->collectVarUses($arg->value, $vars, false);
+                }
             }
             if ($node instanceof Expr\MethodCall || $node instanceof Expr\NullsafeMethodCall) {
                 $this->collectVarUses($node->var, $vars, false);

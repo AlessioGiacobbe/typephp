@@ -58,6 +58,8 @@ trait SsaTypeOptimizer
             $hasDanger = false;
             $narrowedType = null;
 
+            $nonNarrowableType = null;
+
             foreach ($varList as $ssaVar) {
                 if ($ssaVar->flags & SsaFlags::PHI) {
                     $hasPhi = true;
@@ -69,9 +71,21 @@ trait SsaTypeOptimizer
                 }
 
                 $defType = $this->detectSsaDefType($ssaVar);
-                if ($defType === null || !isset($narrowableTypes[$defType])) {
+                if ($defType === null) {
                     $hasDanger = true;
                     break;
+                }
+                // Non-narrowable types (BigInt/BigFloat/Decimal/Stream/objects etc.)
+                // are not dangerous — they just can't be narrowed. Record the type
+                // so dependent SSA variables can resolve it later.
+                if (!isset($narrowableTypes[$defType])) {
+                    if ($nonNarrowableType === null) {
+                        $nonNarrowableType = $defType;
+                    } elseif ($nonNarrowableType !== $defType) {
+                        // Mixed non-narrowable types — can't determine a single type
+                        $nonNarrowableType = self::TYPE_VAR;
+                    }
+                    continue;
                 }
 
                 if ($narrowedType === null) {
@@ -82,7 +96,25 @@ trait SsaTypeOptimizer
                 }
             }
 
-            if ($hasDanger || $narrowedType === null) {
+            if ($hasDanger) {
+                continue;
+            }
+
+            // Mixed narrowable and non-narrowable types (e.g. $x = [1,2] then $x = 42)
+            // — can't safely narrow.
+            if ($narrowedType !== null && $nonNarrowableType !== null && $nonNarrowableType !== self::TYPE_VAR) {
+                continue;
+            }
+
+            if ($narrowedType === null) {
+                // No narrowable type found, but register Big* types so dependent
+                // SSA variables can resolve them (these types have no extra metadata).
+                if (
+                    $nonNarrowableType !== null
+                    && in_array($nonNarrowableType, [self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT, self::TYPE_STREAM], true)
+                ) {
+                    $this->context->localVars[$varName] = $nonNarrowableType;
+                }
                 continue;
             }
 

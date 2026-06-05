@@ -361,6 +361,12 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected array $classExtends = [];
 
+    /**
+     * Reverse class hierarchy: parent class (lowercase) => list of child classes (lowercase)
+     * @var array<string, string[]>
+     */
+    protected array $classSubClasses = [];
+
     public function __construct(string $rootPath)
     {
         parent::__construct();
@@ -2051,7 +2057,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                         ) {
                             return self::TYPE_DECIMAL;
                         }
-                        if ($argType === self::TYPE_BIGFLOAT && $name === 'abs') {
+                        if (
+                            $argType === self::TYPE_BIGFLOAT
+                            && in_array($name, ['abs', 'sqrt'], true)
+                        ) {
                             return self::TYPE_BIGFLOAT;
                         }
                     }
@@ -5016,6 +5025,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isNativeType($toType) and $this->isNativeType($fromType)) {
             return true;
         }
+        // BigInt/BigFloat/Decimal 与原生类型之间可能发生隐式转换，允许重新赋值
+        $bigTypes = [self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT];
+        if (in_array($toType, $bigTypes, true) or in_array($fromType, $bigTypes, true)) {
+            return true;
+        }
         $varName = 'variable';
         if ($this->isVarExpr($left)) {
             $varName = '`$' . $this->parseIdentifier($left) . '`';
@@ -5057,6 +5071,75 @@ class CompilerBase extends \PhpAot\Core\Translator
         return isset($this->classMethodOverride[$fullMethodNameLower]) and $this->classMethodOverride[$fullMethodNameLower];
     }
 
+    protected function hasSubClasses(string $classNameLower): bool
+    {
+        return !empty($this->classSubClasses[$classNameLower]);
+    }
+
+    protected function isCurrentClassFinal(): bool
+    {
+        return $this->classDef && ($this->classDef->flags & Modifiers::FINAL) !== 0;
+    }
+
+    protected function getMethodFlags(string $class, string $method): int
+    {
+        if (!$this->hasClass($class)) {
+            return 0;
+        }
+        $classDef = $this->getClass($class);
+        while (true) {
+            if ($classDef->hasMethod($method)) {
+                return $classDef->getMethod($method)->flags;
+            }
+            if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
+                return 0;
+            }
+            $classDef = $this->getClass($classDef->extends);
+        }
+    }
+
+    /**
+     * Determine whether a method call can be devirtualized to a direct native call.
+     *
+     * Returns true when the exact class is known at compile time:
+     *  1. $this->m() in a final class (no subclass possible)
+     *  2. $this->m() where m is final (can't be overridden)
+     *  3. $this->m() where m is private (not virtual)
+     *  4. $obj->m() where obj's class has no known subclasses
+     *  5. $obj->m() where obj is SSA-stable (single def, no escape)
+     */
+    protected function canDevirtualize(string $object, string $class, string $method): bool
+    {
+        // Case 1: Calling on 'this_' in a final class
+        if ($object === 'this_' && $this->isCurrentClassFinal()) {
+            return true;
+        }
+
+        // Case 2 & 3: Method is final or private
+        $flags = $this->getMethodFlags($class, $method);
+        if ($flags & (Modifiers::FINAL | Modifiers::PRIVATE)) {
+            return true;
+        }
+
+        // Case 4: Typed object whose class has no known subclasses
+        if ($object !== 'this_' && $this->hasClass($class)) {
+            $classLower = strtolower($class);
+            if (!$this->hasSubClasses($classLower) && !$this->isInterface($class)) {
+                return true;
+            }
+        }
+
+        // Case 5: SSA-stable object — compile-time proven exact type
+        if ($object !== 'this_' && isset($this->context->stableObjects[$object])) {
+            $stableClass = $this->context->stableObjects[$object];
+            if ($this->hasClass($stableClass) && !$this->isAbstractClass($stableClass)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     protected function findNativeMethod(CallLike $expr, string $object, string $method): string|false
     {
         $classDef = null;
@@ -5065,6 +5148,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             $classDef = $this->classDef;
         } elseif (isset($this->context->objects[$object])) {
             $class = $this->context->objects[$object];
+            // SSA-stable: use exact type from stableObjects (more specific than declared type)
+            if (isset($this->context->stableObjects[$object])) {
+                $class = $this->context->stableObjects[$object];
+            }
         } else {
             return false;
         }
@@ -5083,9 +5170,11 @@ class CompilerBase extends \PhpAot\Core\Translator
             $fullMethodName = $object . '::' . $method;
         }
 
-        // 存在子类同名方法，需要转为动态调用
+        // 存在子类同名方法，尝试去虚化
         if ($this->isOverrideMethod($fullMethodName)) {
-            return false;
+            if (!$this->canDevirtualize($object, $class, $method)) {
+                return false;
+            }
         }
         if ($nativeFunc) {
             $this->checkFunction($nativeFunc);
@@ -5211,6 +5300,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code = '';
         foreach ($this->context->localVars as $name => $type) {
             if (isset($this->context->arguments[$name])) {
+                continue;
+            }
+            if (isset($this->context->globalVars[$name])) {
                 continue;
             }
             $code .= $this->getIndent();

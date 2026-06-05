@@ -316,6 +316,7 @@ trait UniversalMethodCall
             'neg'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::neg', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
             'cmp'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::cmp', 'return_type' => CompilerBase::TYPE_INT, 'min_args' => 1, 'max_args' => 1],
             'abs'      => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::abs', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
+            'sqrt'     => ['handler' => 'cpp_fn', 'fn' => 'php::BigFloat::sqrt', 'return_type' => CompilerBase::TYPE_BIGFLOAT, 'min_args' => 0, 'max_args' => 0],
         ],
     ];
 

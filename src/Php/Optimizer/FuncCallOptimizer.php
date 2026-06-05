@@ -128,6 +128,9 @@ trait FuncCallOptimizer
             if ($type === self::TYPE_DECIMAL) {
                 return 'php::Decimal::sqrt(' . $this->parseExpr($expr->args[0]->value) . ')';
             }
+            if ($type === self::TYPE_BIGFLOAT) {
+                return 'php::BigFloat::sqrt(' . $this->parseExpr($expr->args[0]->value) . ')';
+            }
         }
         if ($name === 'floor') {
             $type = $this->detectTypeOfExpr($expr->args[0]->value);

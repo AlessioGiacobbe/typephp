@@ -430,6 +430,7 @@ class Preprocessor extends CompilerBase
                 $this->fatalError($class, "Class {$fullClassName} cannot extend itself");
             }
             $this->classExtends[$fullClassNameLower] = $parentClassLower;
+            $this->classSubClasses[$parentClassLower][] = $fullClassNameLower;
             if (!$this->isInternalClass($parentClassLower)) {
                 $this->symbolCallInFile[$this->file][] = $parentClassLower;
             }
