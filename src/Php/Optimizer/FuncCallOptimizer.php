@@ -193,6 +193,40 @@ trait FuncCallOptimizer
         if ($name === 'get_class') {
             return $this->genGetClass($expr);
         }
+        if (count($expr->args) === 1) {
+            $arg = $expr->args[0]->value;
+            $type = $this->detectTypeOfExpr($arg);
+            // is_* compile-time elimination when SSA-narrowed
+            if ($name === 'is_int' && $type === self::TYPE_INT) {
+                return 'true';
+            }
+            if ($name === 'is_float' && $type === self::TYPE_FLOAT) {
+                return 'true';
+            }
+            if ($name === 'is_bool' && $type === self::TYPE_BOOL) {
+                return 'true';
+            }
+            if ($name === 'is_null') {
+                return $this->parseIdentifier($arg) . '.isNull()';
+            }
+            // Compile-time count() on literal arrays
+            if ($name === 'count' && $arg instanceof Node\Expr\Array_) {
+                $itemCount = count($arg->items);
+                return $itemCount . $this->getPlatform()->getIntegerLiteralSuffix();
+            }
+            // Compile-time string operations on literals
+            if ($this->isScalarString($arg)) {
+                $val = $arg->value;
+                switch ($name) {
+                    case 'strtoupper':
+                        return $this->getLiteralString(strtoupper($val));
+                    case 'strtolower':
+                        return $this->getLiteralString(strtolower($val));
+                    case 'trim':
+                        return $this->getLiteralString(trim($val));
+                }
+            }
+        }
         return false;
     }
 

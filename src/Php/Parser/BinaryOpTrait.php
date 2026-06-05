@@ -230,7 +230,33 @@ trait BinaryOpTrait
         if ($right === 'nullptr') {
             return $left . '.isNull()';
         }
+        if ($optimized = $this->optimizeIdenticalOp($expr->left, $expr->right, $left, $right)) {
+            return $optimized;
+        }
         return 'php::same(' . $left . ', ' . $right . ')';
+    }
+
+    /**
+     * Use compile-time type info to optimize === and !== .
+     * When both sides are the same narrowed primitive type, emit direct C++ == .
+     * When both are narrowed but different types, === is always false.
+     */
+    private function optimizeIdenticalOp(NodeAbstract $astLeft, NodeAbstract $astRight, string $cppLeft, string $cppRight): ?string
+    {
+        $primitiveTypes = [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL];
+        $leftType  = $this->detectTypeOfExpr($astLeft);
+        $rightType = $this->detectTypeOfExpr($astRight);
+
+        if ($leftType === null || $rightType === null) {
+            return null;
+        }
+        if (!in_array($leftType, $primitiveTypes, true) || !in_array($rightType, $primitiveTypes, true)) {
+            return null;
+        }
+        if ($leftType === $rightType) {
+            return $cppLeft . ' == ' . $cppRight;
+        }
+        return 'false';
     }
 
     protected function parseBinaryOpLogicalAnd(Expr\BinaryOp\LogicalAnd|Expr\BinaryOp\BooleanAnd $expr): string
