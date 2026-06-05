@@ -252,6 +252,17 @@ trait AssignOpTrait
             return $this->parseAssignArrayDim($left, $right);
         }
 
+        // When the RHS is untyped (TYPE_VAR) but the LHS variable already has a known
+        // native type, use the LHS type for the conversion so that e.g.
+        //   php::Int i;  ...  i = n;  (n is php::Var)
+        // becomes  i = php::toInt(n);
+        if ($finalVarType === self::TYPE_VAR && $this->hasVar($var)) {
+            $varType = $this->getVarType($var);
+            if ($varType !== self::TYPE_VAR) {
+                $finalVarType = $varType;
+            }
+        }
+
         $rightExpr = $this->parseAssignRightExpr($right);
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
