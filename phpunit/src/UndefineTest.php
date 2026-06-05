@@ -12,4 +12,9 @@ class UndefineTest extends \BaseTest
     {
         $this->exec('Cannot use [] for array unset', 'unset-array-dim-fetch-empty.php');
     }
+
+    public function testUnsetStaticProp(): void
+    {
+        $this->exec('Attempt to unset static property', 'unset-static-prop.php');
+    }
 }

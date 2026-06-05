@@ -3736,6 +3736,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $lines[] = $this->getObjectPropVarName($object, $propName) . ' = 0;';
                     }
                 }
+            } elseif ($this->isStaticPropertyFetch($var)) {
+                $this->fatalError($var, 'Attempt to unset static property ' . $this->parseIdentifier($var->class) . '::$' . $this->parseIdentifier($var->name));
             } elseif ($this->isVarExpr($var)) {
                 $name = $this->parseIdentifier($var);
                 if (!$this->hasVar($name)) {
@@ -4650,8 +4652,29 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseNativeStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string|bool
     {
+        $class = null;
         $nativeProp = $this->findNativeStaticProperty($expr, $class);
         if ($nativeProp) {
+            // Hoist typed int/float static properties to C++ native references,
+            // analogous to the $this->intProp reference optimization.
+            if ($this->nativeTypes && $expr->hasAttribute('nativePropertyDef')) {
+                /** @var PropertyDef $def */
+                $def = $expr->getAttribute('nativePropertyDef');
+                if ($def->type === self::TYPE_INT || $def->type === self::TYPE_FLOAT) {
+                    $propName = $this->parseIdentifier($expr->name);
+                    $refVar = '_static_' . str_replace('\\', '_', $class) . '_' . $propName;
+                    if (!isset($this->context->staticPropRefs[$refVar])) {
+                        $classPtr = $this->getClassEntryPtr($class);
+                        $this->context->staticPropRefs[$refVar] = [
+                            'type' => $def->type,
+                            'classPtr' => $classPtr,
+                            'offsetExpr' => $nativeProp,
+                        ];
+                    }
+                    return $refVar;
+                }
+            }
+
             if ($expr->hasAttribute('nativeProperty')) {
                 $classPtr = $this->getClassEntryPtr($class);
                 return Symbol::getStaticProperty() . '(' . $classPtr . ', ' . $nativeProp . ')';
@@ -5372,6 +5395,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         foreach ($this->context->objectProps as $name => $info) {
             $code .= $this->getIndent() . $info['type'] . ' &' . $name . ' = Z_LVAL_P(' . $info['getter'] . '.unwrap_ptr());' . PHP_EOL;
+        }
+        foreach ($this->context->staticPropRefs as $name => $info) {
+            $getter = Symbol::getStaticProperty() . '(' . $info['classPtr'] . ', ' . $info['offsetExpr'] . ')';
+            $zvalMacro = ($info['type'] === self::TYPE_FLOAT) ? 'Z_DVAL_P' : 'Z_LVAL_P';
+            $code .= $this->getIndent() . $info['type'] . ' &' . $name . ' = ' . $zvalMacro . '(' . $getter . '.unwrap_ptr());' . PHP_EOL;
         }
         return $code;
     }

@@ -55,6 +55,8 @@ class FunctionContext
     public array $beforeStmtLines = [];
     public array $afterStmtLines = [];
     public array $objectProps;
+    /** Map of ref var name => ['type' => ..., 'class' => ..., 'prop' => ..., 'ceExpr' => ..., 'offsetExpr' => ...] */
+    public array $staticPropRefs = [];
     public int $scopeLevel = 0;
     /**
      * @var array<int, ScopeContext>
@@ -72,6 +74,7 @@ class FunctionContext
         $this->objectProps = [];
         $this->stableObjects = [];
         $this->hoistedProps = [];
+        $this->staticPropRefs = [];
         $this->ceWrappers = [];
         $this->tmpVarIndex = 0;
         $this->scopeLayouts = [];
