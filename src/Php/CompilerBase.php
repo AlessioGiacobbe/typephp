@@ -1158,8 +1158,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->context->ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
             $this->context->ssaBuilder->build();
             // Narrow local variable types based on SSA analysis
-            // TODO: 优化变量类型，不可靠，静态分析几乎无法判断是否会溢出
-            // $this->optimizeVarTypes();
+             $this->optimizeVarTypes();
             // Analyze object stability for property reference hoisting
             $this->optimizeObjectProps();
         }
