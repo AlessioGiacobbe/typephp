@@ -236,7 +236,8 @@ trait AssignOpTrait
                     $finalVarType = $this->isNativeType($type) ? $this->getNativeType($type) : $type;
                     $this->addLocalVar($var, $finalVarType);
                 } else {
-                    $this->checkVarAssignExpr($left, $this->getVarType($var), $type);
+                    $finalVarType = $this->getVarType($var);
+                    $this->checkVarAssignExpr($left, $finalVarType, $type);
                 }
             }
         } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
@@ -250,17 +251,6 @@ trait AssignOpTrait
                 return $this->parseStdContainerAssign($left, $right);
             }
             return $this->parseAssignArrayDim($left, $right);
-        }
-
-        // When the RHS is untyped (TYPE_VAR) but the LHS variable already has a known
-        // native type, use the LHS type for the conversion so that e.g.
-        //   php::Int i;  ...  i = n;  (n is php::Var)
-        // becomes  i = php::toInt(n);
-        if ($finalVarType === self::TYPE_VAR && $this->hasVar($var)) {
-            $varType = $this->getVarType($var);
-            if ($varType !== self::TYPE_VAR) {
-                $finalVarType = $varType;
-            }
         }
 
         $rightExpr = $this->parseAssignRightExpr($right);
