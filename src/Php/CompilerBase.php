@@ -1505,6 +1505,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 case 'Stmt_TryCatch':
                     $result = $this->parseTryCatch($v);
                     break;
+                case 'Stmt_Block':
+                    $result = $this->parseStmts($v->stmts);
+                    break;
                 case 'Stmt_Class':
                     $this->fatalError($v, 'Cannot declare class in function');
                     break;

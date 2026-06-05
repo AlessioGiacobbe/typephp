@@ -4,17 +4,17 @@ switch
 <?php
 function test($value) {
     switch ($value) {
-        case 100:
-            echo "gt 100\n";
-            break;
-        case 88: {
-            echo "gt 88\n";
-            break;
-        }
-        default:
+    case 100:
+        echo "gt 100\n";
+        break;
+    case 88: {
+        echo "gt 88\n";
+        break;
+    }
+    default:
         echo "default\n";
         break;
-        }
+    }
 }
 function main()
 {
