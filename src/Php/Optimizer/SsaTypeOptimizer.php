@@ -48,6 +48,7 @@ trait SsaTypeOptimizer
         }
 
         foreach ($groups as $varName => $varList) {
+            $varName = $this->escapeVarName($varName);
             // Skip parameters — they already have declared types
             if (isset($this->context->arguments[$varName])) {
                 continue;
