@@ -3568,7 +3568,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 $code .= $this->getIndent() . ' ' . $var . ' = ' . $listTmpVar . '.item(' . $k . ');' . PHP_EOL;
             } else {
-                abort($item);
+                $this->fatalError($item, 'Unsupported foreach item type');
             }
         }
         return $code;

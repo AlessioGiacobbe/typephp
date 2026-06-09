@@ -25,6 +25,7 @@
 
 namespace PhpAot\Php\Analysis;
 
+use PhpAot\Php\AstNodeType;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;
@@ -161,6 +162,8 @@ class VarState
  */
 class SsaBuilder
 {
+    use AstNodeType;
+
     /** @var SsaBlock[] All basic blocks */
     public array $blocks = [];
 
@@ -422,7 +425,7 @@ class SsaBuilder
             }
 
             // Terminal statements: end the current block
-            if ($stmt instanceof Stmt\Return_ || $stmt instanceof Stmt\Throw_) {
+            if ($this->isReturnExpr($stmt) || $this->isThrowExpr($stmt)) {
                 $currentBlock->stmts[] = $stmt;
                 if ($i < count($stmts) - 1) {
                     $currentBlock = $this->newBlock();
@@ -584,7 +587,7 @@ class SsaBuilder
                     $this->blocks[$targetId]->predecessors[] = $i;
                 }
                 // Goto does NOT fall through
-            } elseif ($lastStmt instanceof Stmt\Return_ || $lastStmt instanceof Stmt\Throw_) {
+            } elseif ($this->isReturnExpr($lastStmt) || $this->isThrowExpr($lastStmt)) {
                 // Terminal: connect to exit block
                 $block->successors[] = $this->exitBlockId;
                 $this->blocks[$this->exitBlockId]->predecessors[] = $i;
