@@ -504,37 +504,6 @@ class Preprocessor extends CompilerBase
         return $this->parseIdentifier($v->name);
     }
 
-    /**
-     * 检查父类方法是否可以被重写，私有方法不能被重写
-     */
-    protected function checkParentMethodCanBeOverridden(Node\Stmt\ClassMethod $v, string $name): void
-    {
-        $classDef = $this->classDef;
-        while (true) {
-            $extends = $classDef->extends;
-            if (!$extends) {
-                break;
-            }
-            // 父类是内置类
-            if ($classDef->inheritedFromInternalClass) {
-                if (Reflection::getClassMethodModifiers($extends, $name) & \ReflectionMethod::IS_PRIVATE) {
-                    goto _error;
-                }
-                break;
-            }
-            $classDef = $this->getClass($extends);
-            if ($classDef->hasMethod($this->method)) {
-                $methodDef = $classDef->getMethod($this->method);
-                if ($methodDef->flags & Modifiers::PRIVATE) {
-                    _error:
-                    $this->fatalError($v,
-                        'Cannot override private method `' .
-                        $classDef->getNamespacedName(false) . '::' . $this->method . '()`');
-                }
-            }
-        }
-    }
-
     protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
     {
         $this->resetFunction();
@@ -631,6 +600,23 @@ class Preprocessor extends CompilerBase
                     }
                 }
             }
+        }
+
+        $fullClassName = $this->getFullClassName();
+
+        $fullMethodName = $fullClassName . '::' . $this->method;
+        $this->classMethodOverride[strtolower($fullMethodName)] = false;
+        // 查找父类是否有同名方法，递归查找
+        $fullClassNameLower = strtolower($fullClassName);
+
+        while (isset($this->classExtends[$fullClassNameLower])) {
+            $parentClass = $this->classExtends[$fullClassNameLower];
+            $parentMethodLower = strtolower($parentClass . '::' . $this->method);
+            // 父类有同名方法，子类覆盖了父类方法，这种情况不能直接使用 C++ 函数，而是使用 ZendVM 动态调用
+            if (isset($this->classMethodOverride[$parentMethodLower])) {
+                $this->classMethodOverride[$parentMethodLower] = true;
+            }
+            $fullClassNameLower = strtolower($parentClass);
         }
 
         $this->resetMethod();
