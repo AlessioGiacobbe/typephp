@@ -10,6 +10,7 @@ namespace PhpAot\Php;
 
 use MJS\TopSort\Implementations\StringSort;
 use PhpAot\Php\Analysis\SsaBuilder;
+use PhpAot\Php\Backend\CompilerFactory;
 use PhpAot\Php\Entity\ClassDef;
 use PhpAot\Php\Entity\ClassLikeDef;
 use PhpAot\Php\Entity\ConstantDef;
@@ -22,6 +23,8 @@ use PhpAot\Php\Exception\Skip;
 use PhpAot\Php\Exception\SyntaxError;
 use PhpAot\Php\Exception\Unsupported;
 use PhpAot\Php\Generator\ResourceFileGenerator;
+use PhpAot\Php\Platform\PlatformFactory;
+use PhpAot\Php\Platform\Windows;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Foreach_;
@@ -78,6 +81,37 @@ class Translator extends Preprocessor
 
         // 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
         $this->detectPlatform();
+    }
+
+    /**
+     * 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
+     */
+    protected function detectPlatform(): void
+    {
+        try {
+            $this->platform = PlatformFactory::create();
+            $this->cppCompiler = CompilerFactory::detectCompilerName($this->platform);
+
+            if ($this->platform instanceof Windows) {
+                $libInfo = $this->platform->detectPhpLibs($this->getPhpDir());
+                $this->windowsPhpEmbedLib = $libInfo['embed'];
+                $this->windowsPhpCoreLib = $libInfo['core'];
+                $this->isPhpZts = $libInfo['is_zts'];
+
+                $this->platform = new Windows(
+                    phpLibs: [$this->windowsPhpCoreLib, $this->windowsPhpEmbedLib],
+                    isZts: $this->isPhpZts,
+                    phpSdkPath: $this->getPhpDir() . '\\SDK'
+                );
+            }
+
+            $this->compilerBackend = CompilerFactory::createByName($this->cppCompiler, $this->platform);
+            $this->climate->info(
+                "Initialized platform/backend: {$this->platform->getName()} + {$this->compilerBackend->getName()} ({$this->compilerBackend->getCompilerCommand()})"
+            );
+        } catch (\Throwable $e) {
+            $this->error($e->getMessage());
+        }
     }
 
     public function parseArgv(array $argv)
@@ -209,6 +243,24 @@ class Translator extends Preprocessor
         $this->climate->bold()->out(self::APP_NAME . ' v' . self::VERSION);
     }
 
+    protected function formatCppCode(string $file): void
+    {
+        if (!$this->formatCode) {
+            return;
+        }
+
+        $cmd = 'cd ' . $this->rootPath . ' && clang-format -i ' . $file;
+        $this->climate->info('format: ' . $this->getRelativePath($file));
+        $this->climate->comment($cmd);
+        shell_exec($cmd);
+    }
+
+    public function save(string $code, string $file): void
+    {
+        $this->writeFile($file, $code);
+        $this->formatCppCode($file);
+    }
+
     public function convertFile(string $file): string
     {
         $file = realpath($file);
@@ -232,6 +284,46 @@ class Translator extends Preprocessor
     public function getRegisterClassFunctionArgs(ClassDef|InterfaceDef $classDef): string
     {
         return implode(', ', $this->getRegisterClassFunctionCeList($classDef));
+    }
+
+    /**
+     * 初始化新的 Platform 和 Backend 抽象层
+     * 这是一个渐进式迁移，保持向后兼容
+     */
+    protected function initializeNewArchitecture(): void
+    {
+        try {
+            $platform = $this->platform ?? PlatformFactory::create();
+            $this->platform = $platform;
+
+            // 自动检测平台和编译器
+            $result = CompilerFactory::autoDetect($this->cppCompiler, $platform);
+            $this->platform = $result['platform'];
+            $this->compilerBackend = $result['compiler'];
+
+            $this->climate->info(
+                "Initialized new architecture: {$this->platform->getName()} + {$this->compilerBackend->getName()}"
+            );
+        } catch (\Exception $e) {
+            // 如果初始化失败，回退到旧逻辑
+            $this->climate->warning(
+                "Failed to initialize new architecture: {$e->getMessage()}. Using legacy mode."
+            );
+            $this->platform = null;
+            $this->compilerBackend = null;
+        }
+    }
+
+    /**
+     * 设置 C++ 编译器（从配置文件读取）
+     */
+    public function setCppCompiler(string $compiler): void
+    {
+        $this->cppCompiler = $compiler;
+        $this->climate->info("Using compiler from config: {$this->cppCompiler}");
+
+        // 重新初始化 Backend
+        $this->initializeNewArchitecture();
     }
 
     public function setBuildMode(string $mode): void
@@ -1112,6 +1204,91 @@ CODE;
         } else {
             $this->climate->warning('Resource files are only supported with MSVC backend on Windows');
         }
+    }
+
+    protected function getCompileCommandOptions(): array
+    {
+        return [
+            'include_paths' => $this->getIncludePaths(),
+            'optimize' => $this->optimizeLevel,
+            'debug' => $this->debug,
+            'sanitize' => $this->sanitize,
+            'cpp_std' => $this->cxxStd,
+            'is_zts' => $this->isPhpZts,
+            'build_mode' => $this->buildMode,
+            'enable_profiler' => $this->enableProfiler,
+            'prof_output' => $this->targetName . '.prof',
+            'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
+            'cxxflags' => $this->cxxFlags,
+        ];
+    }
+
+    protected function getCCompileCommandOptions(): array
+    {
+        return [
+            'include_paths' => $this->getIncludePaths(),
+            'optimize' => 0,
+            'debug' => $this->debug,
+            'is_zts' => $this->isPhpZts,
+            'suppressed_warnings' => ['4244', '4146'],
+        ];
+    }
+
+    /**
+     * 获取原生源文件（汇编/ObjC 等）的编译选项，不含 C++ 特定标志.
+     *
+     * @param string $language 语言标识（assembler, objective-c, objective-c++）
+     */
+    protected function getNativeCompileCommandOptions(string $language = ''): array
+    {
+        return [
+            'include_paths' => $this->getIncludePaths(),
+            'optimize' => $this->optimizeLevel,
+            'debug' => $this->debug,
+            'sanitize' => $this->sanitize,
+            'is_zts' => $this->isPhpZts,
+            'build_mode' => $this->buildMode,
+            'enable_profiler' => $this->enableProfiler,
+            'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
+        ];
+    }
+
+    protected function getLinkCommandOptions(): array
+    {
+        $ldflags = $this->ldflags;
+
+        if ($this->enableProfiler) {
+            $ldflags .= ' -lprofiler';
+        }
+
+        $options = [
+            'library_paths' => $this->getLibraryPaths(),
+            'libraries' => $this->getLibraries(),
+            'ldflags' => $ldflags,
+            'debug' => $this->debug,
+            'no_console' => $this->noConsole,
+            'build_mode' => $this->buildMode,
+            'sanitize' => $this->sanitize,
+        ];
+
+        $rpaths = $this->getPlatform()->getDefaultRpaths(
+            $this->getPhpxDir(),
+            $this->getPhpDir()
+        );
+        if (!empty($rpaths)) {
+            $options['rpath'] = $rpaths;
+        }
+
+        return $options;
+    }
+
+    protected function buildLinkCommand(array $objectFiles, string $targetFile): string
+    {
+        return $this->getCompilerBackend()->buildLinkCommand(
+            $objectFiles,
+            $targetFile,
+            $this->getLinkCommandOptions()
+        );
     }
 
     public function build(array $objectFiles): string
