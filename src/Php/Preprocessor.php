@@ -221,6 +221,19 @@ class Preprocessor extends CompilerBase
         }
     }
 
+    protected function parseParameterType(Node\Param $param, ArgInfo $argInfo, string $var): string
+    {
+        if ($param->byRef) {
+            return self::TYPE_REF;
+        }
+        $class = '';
+        $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
+        if ($class and !$this->hasInterface($class) and !$this->isAbstractClass($class)) {
+            $argInfo->class = $class;
+        }
+        return $type;
+    }
+
     /**
      * @param $params array<Node\Param>
      */

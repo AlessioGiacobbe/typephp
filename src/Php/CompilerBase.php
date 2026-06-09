@@ -2147,19 +2147,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             '}';
     }
 
-    protected function parseParameterType(Node\Param $param, ArgInfo $argInfo, string $var): string
-    {
-        if ($param->byRef) {
-            return self::TYPE_REF;
-        }
-        $class = '';
-        $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
-        if ($class and !$this->hasInterface($class) and !$this->isAbstractClass($class)) {
-            $argInfo->class = $class;
-        }
-        return $type;
-    }
-
     /**
      * 获取包含路径
      */
@@ -4818,28 +4805,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->stubFile = $this->isStubFile($file);
 
         return $phpCode;
-    }
-
-    protected function parseDeclare(mixed $v): void
-    {
-        $declares = $v->declares;
-        foreach ($declares as $declare) {
-            $key = $this->parseIdentifier($declare->key);
-            $value = $this->parseIdentifier($declare->value);
-            if ($key === 'ticks') {
-                $this->fatalError($v, 'declare(ticks=1) is not supported');
-            } elseif ($key === 'encoding') {
-                if (strtolower($value) !== 'utf-8') {
-                    $this->fatalError($v, 'declare(encoding="' . $value . '") is not supported, only UTF-8 is supported');
-                }
-            } elseif ($key === 'strict_types') {
-                if (!($declare->value instanceof Node\Scalar\Int_) or $declare->value->value !== 1) {
-                    $this->fatalError($v, 'declare(strict_types=0) is not allowed, only strict_types=1 is supported');
-                }
-            } else {
-                $this->fatalError($v, 'declare(' . $key . '=' . $value . ') is not supported');
-            }
-        }
     }
 
     protected function parseUse(Node\Stmt\Use_ $v2): string
