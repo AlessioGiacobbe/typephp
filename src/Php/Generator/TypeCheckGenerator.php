@@ -139,8 +139,8 @@ trait TypeCheckGenerator
 
         $orExpr = implode(' || ', $conditions);
         $fnName = $this->functionDef->getNamespacedName();
-        $msgExpr = 'php::concat(php::concat(php::Str("' . $fnName . '(): Argument #' . ($argIndex + 1)
-                 . ' ($' . $varName . ') must be of type ' . $argInfo->typeStr . ', "), '
+        $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($fnName, true) . ' "(): Argument #' . ($argIndex + 1)
+                 . ' ($' . $varName . ') must be of type " ' . $this->genCharPtr($argInfo->typeStr, true) . ' ", "), '
                  . $varName . '.typeStr()), php::Str(" given"))';
 
         $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
@@ -174,8 +174,8 @@ trait TypeCheckGenerator
         $fnName = $this->functionDef->getNamespacedName();
         $typeStr = $this->functionDef->returnTypeStr;
 
-        $msgExpr = 'php::concat(php::concat(php::Str("' . $fnName . '(): Return value must be of type '
-                 . $typeStr . ', "), ' . $varName . '.typeStr()), php::Str(" given"))';
+        $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($fnName, true) . ' "(): Return value must be of type " '
+                 . $this->genCharPtr($typeStr, true) . ' ", "), ' . $varName . '.typeStr()), php::Str(" given"))';
 
         $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;

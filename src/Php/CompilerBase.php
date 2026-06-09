@@ -2202,8 +2202,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             $libraries[] = 'gmp.lib';
             $libraries[] = 'gmpxx.lib';
             $libraries[] = 'mpfr.lib';
-            $libraries[] = 'libmpdec.lib';
-            $libraries[] = 'libmpdec++.lib';
+            $libraries[] = 'libmpdec-4.0.1.dll.lib';
+            $libraries[] = 'libmpdec++-4.0.1.dll.lib';
         } else {
             // Linux/macOS: extension 和 bin 模式都需要添加 php 库
             $libraries[] = 'php';
