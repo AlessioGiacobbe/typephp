@@ -84,7 +84,7 @@ trait SsaPropOptimizer
      * Walk the function body AST to find variable assignments that produce
      * typed objects. Returns map of varName => className.
      */
-    private function collectObjectAssignments(array $stmts): array
+    protected function collectObjectAssignments(array $stmts): array
     {
         $result = [];
         foreach ($stmts as $stmt) {
@@ -93,7 +93,7 @@ trait SsaPropOptimizer
         return $result;
     }
 
-    private function scanStmtForObjectAssign($stmt, array &$result): void
+    protected function scanStmtForObjectAssign($stmt, array &$result): void
     {
         if (!$stmt instanceof Node) {
             return;
@@ -139,7 +139,7 @@ trait SsaPropOptimizer
      * Resolve the class name from a `new ClassName()` expression,
      * or a function/method call that returns a known object type.
      */
-    private function resolveNewExprClass(Expr $expr): ?string
+    protected function resolveNewExprClass(Expr $expr): ?string
     {
         if ($expr instanceof Expr\New_) {
             if ($expr->class instanceof Node\Name) {
@@ -167,7 +167,7 @@ trait SsaPropOptimizer
     /**
      * Check if an object variable has a single stable SSA definition.
      */
-    private function isObjectSsaStable(SsaBuilder $ssa, string $objName): bool
+    protected function isObjectSsaStable(SsaBuilder $ssa, string $objName): bool
     {
         $foundDef = false;
 
@@ -202,7 +202,7 @@ trait SsaPropOptimizer
      * Check if an SSA definition sets the variable to an object value.
      * Accepts both `new ClassName()` and calls that return a typed object.
      */
-    private function isObjectDefinition($ssaVar): bool
+    protected function isObjectDefinition($ssaVar): bool
     {
         $def = $ssaVar->definition;
         if (!$def) {
@@ -227,7 +227,7 @@ trait SsaPropOptimizer
     /**
      * Check if a class has no magic methods that intercept property access.
      */
-    private function isClassSafeForPropHoisting(string $className): bool
+    protected function isClassSafeForPropHoisting(string $className): bool
     {
         $classDef = $this->classes[$this->escapeClass($className)] ?? null;
         if (!$classDef) {
@@ -249,7 +249,7 @@ trait SsaPropOptimizer
      *  - $ref = &$o->prop — property becomes reference, zval type changes
      *  - func(&$o->prop) or $obj->method(&$o->prop) — property passed by ref
      */
-    private function hasDangerousPropOps(string $objName, array $stmts): bool
+    protected function hasDangerousPropOps(string $objName, array $stmts): bool
     {
         foreach ($stmts as $stmt) {
             if ($this->scanDangerousPropOp($stmt, $objName)) {
@@ -259,7 +259,7 @@ trait SsaPropOptimizer
         return false;
     }
 
-    private function scanDangerousPropOp($stmt, string $objName): bool
+    protected function scanDangerousPropOp($stmt, string $objName): bool
     {
         if (!$stmt instanceof Node) {
             return false;
@@ -319,7 +319,7 @@ trait SsaPropOptimizer
     /**
      * Check if an expression is a property fetch on a specific object.
      */
-    private function isPropOfObj($node, string $objName): bool
+    protected function isPropOfObj($node, string $objName): bool
     {
         return $node instanceof Expr\PropertyFetch
             && $node->var instanceof Expr\Variable
@@ -327,7 +327,7 @@ trait SsaPropOptimizer
             && $node->var->name === $objName;
     }
 
-    private function recurseDangerousPropOp($stmt, string $objName): bool
+    protected function recurseDangerousPropOp($stmt, string $objName): bool
     {
         if ($stmt instanceof Node\Stmt\If_) {
             if ($this->hasDangerousPropOps($objName, $stmt->stmts)) return true;

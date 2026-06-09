@@ -12,7 +12,7 @@ use PhpParser\Node;
 
 trait FuncCallOptimizer
 {
-    public function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr): string
+    protected function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr): string
     {
         $this->warningUndefinedBehavior($expr);
         $funcDef = $this->functionDef;
@@ -29,7 +29,7 @@ trait FuncCallOptimizer
         return $this->genArray($list);
     }
 
-    public function genFuncGetArg(string $name, Node\Expr\FuncCall $expr)
+    protected function genFuncGetArg(string $name, Node\Expr\FuncCall $expr)
     {
         $this->warningUndefinedBehavior($expr);
         $position = $expr->args[0]->value;

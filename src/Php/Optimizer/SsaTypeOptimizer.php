@@ -21,7 +21,7 @@ trait SsaTypeOptimizer
      * Binary ops that always produce int from int operands and never overflow
      * to float. Bitwise operations and modulo are safe; arithmetic is not.
      */
-    private const SAFE_INT_BINARY_OPS = [
+    protected const array SAFE_INT_BINARY_OPS = [
         'Expr_BinaryOp_BitwiseAnd' => true,
         'Expr_BinaryOp_BitwiseOr' => true,
         'Expr_BinaryOp_BitwiseXor' => true,
@@ -33,7 +33,7 @@ trait SsaTypeOptimizer
     /**
      * Compound assignment ops that keep the variable int-typed.
      */
-    private const SAFE_INT_ASSIGN_OPS = [
+    protected const array SAFE_INT_ASSIGN_OPS = [
         'Expr_AssignOp_BitwiseAnd' => true,
         'Expr_AssignOp_BitwiseOr' => true,
         'Expr_AssignOp_BitwiseXor' => true,
@@ -169,7 +169,7 @@ trait SsaTypeOptimizer
      * Detect the type produced by a single SSA variable definition.
      * Returns null if the type cannot be determined from the AST.
      */
-    private function detectSsaDefType(\PhpAot\Php\Analysis\SsaVar $ssaVar): ?string
+    protected function detectSsaDefType(\PhpAot\Php\Analysis\SsaVar $ssaVar): ?string
     {
         $def = $ssaVar->definition;
         if (!$def) {
@@ -209,7 +209,7 @@ trait SsaTypeOptimizer
      * Check whether a TYPE_INT expression could overflow int64 at runtime
      * and produce a float in PHP.
      */
-    private function exprCanOverflowInt(NodeAbstract $expr): bool
+    protected function exprCanOverflowInt(NodeAbstract $expr): bool
     {
         // Division always produces float in PHP when operands are int
         if ($expr instanceof Node\Expr\BinaryOp\Div) {
@@ -258,7 +258,7 @@ trait SsaTypeOptimizer
         return false;
     }
 
-    private function getIntConstantValue(NodeAbstract $node): ?int
+    protected function getIntConstantValue(NodeAbstract $node): ?int
     {
         if ($node instanceof Node\Scalar\LNumber) {
             return $node->value;
@@ -266,7 +266,7 @@ trait SsaTypeOptimizer
         return null;
     }
 
-    private function isBoundaryConstant(NodeAbstract $node): bool
+    protected function isBoundaryConstant(NodeAbstract $node): bool
     {
         if ($node instanceof Node\Expr\ConstFetch
             && $node->name instanceof Node\Name) {
@@ -276,7 +276,7 @@ trait SsaTypeOptimizer
         return false;
     }
 
-    private function phiSourcesHaveMixedTypes(SsaBuilder $ssa, array $varList, string $narrowedType): bool
+    protected function phiSourcesHaveMixedTypes(SsaBuilder $ssa, array $varList, string $narrowedType): bool
     {
         foreach ($varList as $ssaVar) {
             if (($ssaVar->flags & SsaFlags::PHI) && !empty($ssaVar->phiSources)) {
@@ -300,7 +300,7 @@ trait SsaTypeOptimizer
      * (& | ^ << >> ~) and modulo (%) are safe — arithmetic can overflow
      * to float, which int64_t would wrap instead.
      */
-    private function hasDangerousIntOps(string $varName, array $stmts): bool
+    protected function hasDangerousIntOps(string $varName, array $stmts): bool
     {
         foreach ($stmts as $stmt) {
             if ($this->scanStmtForDangerousIntOps($stmt, $varName)) {
@@ -310,7 +310,7 @@ trait SsaTypeOptimizer
         return false;
     }
 
-    private function scanStmtForDangerousIntOps($stmt, string $varName): bool
+    protected function scanStmtForDangerousIntOps($stmt, string $varName): bool
     {
         if (!$stmt instanceof Node) {
             return false;
@@ -385,7 +385,7 @@ trait SsaTypeOptimizer
      * narrowed int64_t. Any other BinaryOp, AssignOp, UnaryMinus, or
      * Inc/Dec that involves $varName is a hazard.
      */
-    private function exprHasIntHazard($expr, string $varName): bool
+    protected function exprHasIntHazard($expr, string $varName): bool
     {
         if (!$expr instanceof Node) {
             return false;
@@ -477,7 +477,7 @@ trait SsaTypeOptimizer
     /**
      * Check whether $varName appears anywhere recursively in an AST node.
      */
-    private function exprUsesVar($node, string $varName): bool
+    protected function exprUsesVar($node, string $varName): bool
     {
         if (!$node instanceof Node) {
             return false;
@@ -510,14 +510,14 @@ trait SsaTypeOptimizer
         return false;
     }
 
-    private function isVarNamed($node, string $varName): bool
+    protected function isVarNamed($node, string $varName): bool
     {
         return $node instanceof Node\Expr\Variable
             && is_string($node->name)
             && $node->name === $varName;
     }
 
-    private function hasDangerousFloatOps(string $varName, array $stmts): bool
+    protected function hasDangerousFloatOps(string $varName, array $stmts): bool
     {
         foreach ($stmts as $stmt) {
             if ($this->scanStmtForDangerousFloatOps($stmt, $varName)) {
@@ -527,7 +527,7 @@ trait SsaTypeOptimizer
         return false;
     }
 
-    private function scanStmtForDangerousFloatOps($stmt, string $varName): bool
+    protected function scanStmtForDangerousFloatOps($stmt, string $varName): bool
     {
         if (!$stmt instanceof Node) {
             return false;
@@ -553,7 +553,7 @@ trait SsaTypeOptimizer
     /**
      * Recurse into compound statements (if/else, foreach, while, for, try/catch, switch).
      */
-    private function recurseForDangerousOps($stmt, string $varName, string $mode): bool
+    protected function recurseForDangerousOps($stmt, string $varName, string $mode): bool
     {
         $method = 'hasDangerous' . $mode . 'Ops';
 
