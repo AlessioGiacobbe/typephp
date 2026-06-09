@@ -620,21 +620,6 @@ class Preprocessor extends CompilerBase
             }
         }
 
-        $fullClassName = $this->getFullClassName();
-        $fullMethodName = $fullClassName . '::' . $this->method;
-        $this->classMethodOverride[strtolower($fullMethodName)] = false;
-        // 查找父类是否有同名方法，递归查找
-        $fullClassNameLower = strtolower($fullClassName);
-
-        while (isset($this->classExtends[$fullClassNameLower])) {
-            $parentClass = $this->classExtends[$fullClassNameLower];
-            $parentMethodLower = strtolower($parentClass . '::' . $v->name);
-            // 父类有同名方法，子类覆盖了父类方法，这种情况不能直接使用 C++ 函数，而是使用 ZendVM 动态调用
-            if (isset($this->classMethodOverride[$parentMethodLower])) {
-                $this->classMethodOverride[$parentMethodLower] = true;
-            }
-            $fullClassNameLower = strtolower($parentClass);
-        }
         $this->resetMethod();
     }
 

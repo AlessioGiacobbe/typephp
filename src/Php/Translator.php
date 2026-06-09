@@ -9,6 +9,7 @@
 namespace PhpAot\Php;
 
 use MJS\TopSort\Implementations\StringSort;
+use PhpAot\Php\Analysis\SsaBuilder;
 use PhpAot\Php\Entity\ClassDef;
 use PhpAot\Php\Entity\ClassLikeDef;
 use PhpAot\Php\Entity\ConstantDef;
@@ -17,6 +18,7 @@ use PhpAot\Php\Entity\InterfaceDef;
 use PhpAot\Php\Entity\MethodDef;
 use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\Redo;
+use PhpAot\Php\Exception\Skip;
 use PhpAot\Php\Exception\SyntaxError;
 use PhpAot\Php\Exception\Unsupported;
 use PhpAot\Php\Generator\ResourceFileGenerator;
@@ -2139,6 +2141,133 @@ CODE;
         return $code;
     }
 
+    /**
+     * Build type-check descriptor array from UnionType or NullableType AST node.
+     * Returns ['check' => array, 'typeStr' => string] or empty check array if no check needed.
+     */
+    /**
+     * Generate a C++ boolean expression for a single type descriptor entry.
+     */
+    /**
+     * Generate C++ runtime type-check block for a function parameter with union/nullable type.
+     */
+    /**
+     * Generate C++ runtime type-check block for a function return value with union/nullable type.
+     */
+    /**
+     * @throws \Exception
+     */
+    protected function parseFunction(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): string
+    {
+        $this->resetFunction();
+        $name = $this->getFunctionName($v);
+        $this->function = $this->parseIdentifier($v->name);
+
+        if (!$this->hasFunction($name)) {
+            $this->fatalError($v, 'Function `' . $name . '` not found');
+        }
+        $this->functionDef = $this->getFunction($name);
+
+        // 类方法不要保存到 functions 中
+        if ($this->methodDef) {
+            $this->methodDef->functionDef = $this->functionDef;
+        } else {
+            $this->functionDefineInFile[$name] = $this->functionDef;
+        }
+
+        // stub 函数，没有函数的具体实现，只有声明，实现在 C++ 或者 .so 中定义
+        if ($this->functionDef->stub) {
+            $this->resetFunction();
+            return '';
+        }
+
+        if ($this->class) {
+            $this->addArgument('this_', self::TYPE_OBJECT);
+        }
+        foreach ($this->functionDef->argInfoList as $argInfo) {
+            $this->addArgument($argInfo->name, $argInfo->type);
+            if ($argInfo->class) {
+                $this->addObject($argInfo->name, $argInfo->class);
+            }
+        }
+
+        // Build SSA/e-SSA analysis for this function
+        if ($v->stmts) {
+            $this->context->ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
+            $this->context->ssaBuilder->build();
+            // Narrow local variable types based on SSA analysis
+            $this->optimizeVarTypes();
+            // Analyze object stability for property reference hoisting
+            $this->optimizeObjectProps();
+        }
+
+        $stmts = '';
+        if ($v->stmts) {
+            $this->indentLevel++;
+            try {
+                $stmts = $this->parseStmts($v->stmts);
+                if (!$this->isReturnStmtInLastLine($v->stmts)) {
+                    $stmts .= $this->genReturnCode();
+                }
+            } catch (Skip) {
+                $this->climate->cyan('Skip function ' . $name);
+            }
+            $this->indentLevel--;
+        } else {
+            $stmts = $this->genReturnCode();
+        }
+
+        $functionDeclCode = $this->getReturnType() . ' ' . self::PREFIX . $name . '(';
+        if ($this->class) {
+            $functionDeclCode .= self::TYPE_OBJECT . ' &this_';
+            if ($this->functionDef->params) {
+                $functionDeclCode .= ', ';
+            }
+        }
+        $functionDeclCode .= $this->functionDef->params . ')';
+
+        $code = $functionDeclCode . ' {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->genScopeVarDecl();
+        $code .= "\n";
+        // Constructor Property Promotion
+        foreach ($this->functionDef->argInfoList as $argInfo) {
+            if (!$argInfo->property) {
+                continue;
+            }
+            $code .= $this->genPropertyPromotion($argInfo);
+        }
+        // Runtime union/nullable parameter type checks
+        foreach ($this->functionDef->argInfoList as $i => $argInfo) {
+            if (!empty($argInfo->typeCheck)) {
+                $code .= $this->genUnionParamCheck($argInfo, $i);
+            }
+        }
+        $this->indentLevel--;
+        // 构建 PHP 级别的函数名用于 debug backtrace
+        if ($this->class) {
+            $debugName = $this->class . '::' . $this->function;
+        } else {
+            $debugName = $this->function;
+            if ($this->namespace) {
+                $debugName = $this->namespace . '\\' . $debugName;
+            }
+        }
+        $code .= $this->genDebugInfo(null, $debugName, $v->getStartLine());
+
+        // 函数中存在动态调用的函数，需要在运行时动态切换作用域
+        if ($this->methodDef and $this->methodDef->hasDynamicCall) {
+            $code .= $this->genScopeSwitchCode();
+        }
+
+        $code .= $stmts;
+        $code .= "}\n";
+
+        $this->resetFunction();
+
+        return $code;
+    }
+
     protected function parseClassMethod(Node\Stmt\ClassMethod $v, array &$methodCodes): void
     {
         $name = $this->getMethodName($v);
@@ -2150,6 +2279,22 @@ CODE;
             // 预处理阶段没有父类的信息，只能在实现阶段检查
             $this->checkParentMethodCanBeOverridden($v, $name);
             $methodCodes[$name] = $this->parseFunction($v);
+        }
+
+        $fullClassName = $this->getFullClassName();
+        $fullMethodName = $fullClassName . '::' . $this->method;
+        $this->classMethodOverride[strtolower($fullMethodName)] = false;
+        // 查找父类是否有同名方法，递归查找
+        $fullClassNameLower = strtolower($fullClassName);
+
+        while (isset($this->classExtends[$fullClassNameLower])) {
+            $parentClass = $this->classExtends[$fullClassNameLower];
+            $parentMethodLower = strtolower($parentClass . '::' . $v->name);
+            // 父类有同名方法，子类覆盖了父类方法，这种情况不能直接使用 C++ 函数，而是使用 ZendVM 动态调用
+            if (isset($this->classMethodOverride[$parentMethodLower])) {
+                $this->classMethodOverride[$parentMethodLower] = true;
+            }
+            $fullClassNameLower = strtolower($parentClass);
         }
 
         $this->resetMethod();
