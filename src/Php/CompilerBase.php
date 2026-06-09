@@ -5270,6 +5270,8 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $tmpVar = $this->genTmpVarName();
         $this->addLocalVar($tmpVar, self::TYPE_ARRAY);
+        // 释放临时变量，避免修改数组产生数组复制操作
+        $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.clean();';
 
         $items = $node->items;
         foreach ($items as $item) {
@@ -5283,9 +5285,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
             }
         }
-
-        // 释放临时变量，避免修改数组产生数组复制操作
-        $this->context->afterStmtLines[] = $this->getIndent() . $tmpVar . '.unset();';
 
         return $tmpVar;
     }
