@@ -269,14 +269,10 @@ class Preprocessor extends CompilerBase
                 if ($this->classDef->hasProperty($name)) {
                     $this->fatalError($param, "Duplicate property `{$name}`");
                 }
-                // 将类型标准化为内部类型格式（如 array -> php::Array）
-                if ($type instanceof NodeAbstract) {
-                    $dummyClass = '';
-                    $propType = $this->parseTypeDecl($type, self::DECL_TYPE_OF_PROPERTY, $dummyClass);
-                } else {
-                    $propType = $this->zendTypeMap[strtolower($type)] ?? self::TYPE_VAR;
-                }
+                $propClass = '';
+                $propType = $this->parseTypeDecl($type, self::DECL_TYPE_OF_PROPERTY, $propClass);
                 $propertyDef = new PropertyDef($name, $param->flags, $propType, $default, $nullable);
+                $propertyDef->class = $propClass;
                 $this->classDef->properties[$name] = $propertyDef;
             }
             if ($param->variadic) {
