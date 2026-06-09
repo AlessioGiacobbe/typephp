@@ -255,25 +255,8 @@ class Preprocessor extends CompilerBase
                     $this->fatalError($param, 'Promoted properties are not supported');
                 }
                 $name = $this->parseIdentifier($param->var);
-                if ($param->type instanceof NullableType) {
-                    $type = $param->type->type;
-                    $nullable = true;
-                } elseif ($param->type instanceof UnionType) {
-                    $type = 'mixed';
-                    $nullable = false;
-                } else {
-                    $type = $param->type === null ? '' : $param->type;
-                    $nullable = false;
-                }
-                $default = $this->parseParamDefaultValue($param->default);
-                if ($this->classDef->hasProperty($name)) {
-                    $this->fatalError($param, "Duplicate property `{$name}`");
-                }
-                $propClass = '';
-                $propType = $this->parseTypeDecl($type, self::DECL_TYPE_OF_PROPERTY, $propClass);
-                $propertyDef = new PropertyDef($name, $param->flags, $propType, $default, $nullable);
-                $propertyDef->class = $propClass;
-                $this->classDef->properties[$name] = $propertyDef;
+                $nullable = $param->type instanceof NullableType;
+                $this->addClassProperty($name, $param->flags, $param->type, $param->default, $nullable, $param);
             }
             if ($param->variadic) {
                 if ($i !== $last) {
@@ -546,6 +529,34 @@ class Preprocessor extends CompilerBase
         }
     }
 
+    /**
+     * Create and register a class property with type normalization, shared by
+     * regular property declarations and constructor property promotion.
+     */
+    protected function addClassProperty(string $name, int $flags, ?NodeAbstract $typeNode, $defaultNode, bool $nullable, NodeAbstract $errorNode): PropertyDef
+    {
+        $flags = $this->parseModifiers($flags);
+        $class = '';
+        $type = $this->parseTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY, $class);
+
+        $default = null;
+        if ($defaultNode !== null) {
+            $default = $this->parseIdentifier($defaultNode);
+            if ($defaultNode->getType() == 'Expr_Array') {
+                $type = self::TYPE_ARRAY;
+            }
+        }
+
+        if ($this->classDef->hasProperty($name)) {
+            $this->fatalError($errorNode, "Duplicate property `{$name}`");
+        }
+
+        $propDef = new PropertyDef($name, $flags, $type, $default, $nullable);
+        $propDef->class = $class;
+        $this->classDef->properties[$name] = $propDef;
+        return $propDef;
+    }
+
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
         if ($v->hooks and count($v->hooks) > 0) {
@@ -553,24 +564,11 @@ class Preprocessor extends CompilerBase
         }
         $oriCtx = $this->context;
         $this->context = $this->classDef->propertyContext;
-        $flags = $this->parseModifiers($v->flags);
-        $class = '';
-        $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_PROPERTY, $class);
+        $nullable = $v->type instanceof NullableType;
 
         foreach ($v->props as $prop) {
             $propName = $this->parseIdentifier($prop->name);
-            if ($this->classDef->hasProperty($propName)) {
-                $this->fatalError($v, "Duplicate property `{$propName}`");
-            }
-            $propDef = new PropertyDef($propName, $flags, $type);
-            if ($prop->default) {
-                $propDef->default = $this->parseIdentifier($prop->default);
-                if ($prop->default->getType() == 'Expr_Array') {
-                    $propDef->type = self::TYPE_ARRAY;
-                }
-            }
-            $propDef->class = $class;
-            $this->classDef->properties[$propDef->name] = $propDef;
+            $this->addClassProperty($propName, $v->flags, $v->type, $prop->default, $nullable, $v);
         }
 
         $this->context = $oriCtx;
