@@ -605,14 +605,17 @@ class Preprocessor extends CompilerBase
         $fullClassName = $this->getFullClassName();
 
         $fullMethodName = $fullClassName . '::' . $this->method;
-        $this->classMethodOverride[strtolower($fullMethodName)] = false;
-        // 查找父类是否有同名方法，递归查找
+        $fullMethodNameLower = strtolower($fullMethodName);
         $fullClassNameLower = strtolower($fullClassName);
 
+        // 检查子类是否已覆盖此方法（子类先于父类被预处理的情况）
+        $isOverridden = $this->isMethodOverriddenInSubClasses($fullClassNameLower, $this->method);
+        $this->classMethodOverride[$fullMethodNameLower] = $isOverridden;
+
+        // 查找父类是否有同名方法，递归向上标记父类方法已被覆盖
         while (isset($this->classExtends[$fullClassNameLower])) {
             $parentClass = $this->classExtends[$fullClassNameLower];
             $parentMethodLower = strtolower($parentClass . '::' . $this->method);
-            // 父类有同名方法，子类覆盖了父类方法，这种情况不能直接使用 C++ 函数，而是使用 ZendVM 动态调用
             if (isset($this->classMethodOverride[$parentMethodLower])) {
                 $this->classMethodOverride[$parentMethodLower] = true;
             }
@@ -620,6 +623,30 @@ class Preprocessor extends CompilerBase
         }
 
         $this->resetMethod();
+    }
+
+    /**
+     * 递归检查所有子类（及子类的子类）是否已定义了同名方法，用于处理子类先于父类被预处理的情况。
+     */
+    private function isMethodOverriddenInSubClasses(string $classNameLower, string $method): bool
+    {
+        if (!isset($this->classSubClasses[$classNameLower])) {
+            return false;
+        }
+        $stack = $this->classSubClasses[$classNameLower];
+        while (!empty($stack)) {
+            $subClass = array_shift($stack);
+            $subMethodLower = $subClass . '::' . strtolower($method);
+            if (isset($this->classMethodOverride[$subMethodLower])) {
+                return true;
+            }
+            if (isset($this->classSubClasses[$subClass])) {
+                foreach ($this->classSubClasses[$subClass] as $grandChild) {
+                    $stack[] = $grandChild;
+                }
+            }
+        }
+        return false;
     }
 
     protected function parseInterface(Node\Stmt\Interface_ $v): void
