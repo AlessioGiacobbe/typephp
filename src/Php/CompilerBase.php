@@ -43,6 +43,7 @@ use PhpAot\Php\Platform\PlatformFactory;
 use PhpAot\Php\Platform\Windows;
 use PhpParser\Modifiers;
 use PhpParser\Node;
+use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\CallLike;
 use PhpParser\Node\Expr\Variable;
@@ -3550,6 +3551,29 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function parseForeachItemAsList(string $listTmpVar, array $listItems): string
+    {
+        $code = '';
+        foreach ($listItems as $k => $item) {
+            if (!$item) {
+                continue;
+            }
+            if ($item instanceof ArrayItem) {
+                $oriInAssignExpr = $this->context->inAssignExpr;
+                $this->context->inAssignExpr = true;
+                $var = $this->parseIdentifier($item->value);
+                $this->context->inAssignExpr = $oriInAssignExpr;
+                if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
+                    $this->addLocalVar($var, self::TYPE_VAR);
+                }
+                $code .= $this->getIndent() . ' ' . $var . ' = ' . $listTmpVar . '.item(' . $k . ');' . PHP_EOL;
+            } else {
+                abort($item);
+            }
+        }
+        return $code;
+    }
+
     protected function parseForeachArray(Foreach_ $node, string $iteratorVar): string
     {
         $tmpVar = $this->genTmpVarName();
@@ -3565,7 +3589,15 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->fatalError($node, 'Foreach by reference only supports variable as value');
         }
 
-        if ($this->isArrayDimFetch($node->valueVar)) {
+        if ($node->valueVar instanceof Expr\List_) {
+            if ($node->byRef) {
+                $this->fatalError($node, 'Foreach by reference cannot use list destructuring');
+            }
+            $listTmpVar = $this->genTmpVarName();
+            $this->addLocalVar($listTmpVar, self::TYPE_VAR);
+            $code .= $this->getIndent() . ' ' . $listTmpVar . ' = ' . $tmpVar . '.value();' . PHP_EOL;
+            $code .= $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
+        } elseif ($this->isArrayDimFetch($node->valueVar)) {
             $array = $this->parseIdentifier($node->valueVar->var);
             if (!$this->hasVar($array) or $node->valueVar->dim === null) {
                 abort($node->valueVar);

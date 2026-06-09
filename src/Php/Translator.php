@@ -27,6 +27,8 @@ use PhpAot\Php\Platform\PlatformFactory;
 use PhpAot\Php\Platform\Windows;
 use PhpParser\Modifiers;
 use PhpParser\Node;
+use PhpParser\Node\ArrayItem;
+use PhpParser\Node\Expr\List_;
 use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
@@ -2614,14 +2616,26 @@ CODE;
         $code .= $this->getIndent() . 'for (;' . $tmpVar . '.call("valid");  ' . $tmpVar . '.call("next")) {' . PHP_EOL;
         $this->indentLevel++;
 
-        $valueVar = $this->parseIdentifier($node->valueVar);
-        $this->checkVar($node, $valueVar);
+        if ($node->valueVar instanceof List_) {
+            $listTmpVar = $this->genTmpVarName();
+            $this->addLocalVar($listTmpVar, self::TYPE_VAR);
+            $code .= $this->getIndent() . ' ' . $listTmpVar . ' = ' . $tmpVar . '.call("current");' . PHP_EOL;
+            if ($node->keyVar) {
+                $keyVar = $this->parseIdentifier($node->keyVar);
+                $this->checkVar($node, $keyVar);
+                $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call("key");' . PHP_EOL;
+            }
+            $code .= $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
+        } else {
+            $valueVar = $this->parseIdentifier($node->valueVar);
+            $this->checkVar($node, $valueVar);
 
-        $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.call("current");' . PHP_EOL;
-        if ($node->keyVar) {
-            $keyVar = $this->parseIdentifier($node->keyVar);
-            $this->checkVar($node, $keyVar);
-            $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call("key");' . PHP_EOL;
+            $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.call("current");' . PHP_EOL;
+            if ($node->keyVar) {
+                $keyVar = $this->parseIdentifier($node->keyVar);
+                $this->checkVar($node, $keyVar);
+                $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call("key");' . PHP_EOL;
+            }
         }
         $code .= $this->parseStmts($node->stmts);
         $code .= '}' . PHP_EOL;

@@ -10,6 +10,7 @@ namespace PhpAot\Php\Parser;
 
 use PhpAot\Php\Symbol;
 use PhpParser\Node;
+use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\NodeAbstract;
@@ -107,7 +108,7 @@ trait AssignOpTrait
             if (!$item) {
                 continue;
             }
-            if ($item instanceof Expr\ArrayItem) {
+            if ($item instanceof ArrayItem) {
                 $oriInAssignExpr = $this->context->inAssignExpr;
                 $this->context->inAssignExpr = true;
                 $var = $this->parseIdentifier($item->value);
