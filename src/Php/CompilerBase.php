@@ -1682,12 +1682,84 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function checkNativeCallArgs(CallLike $expr, FunctionDef $funcDef, array $args, string $name): void
     {
+        $this->validateNativeNamedCallArgs($funcDef, $args);
+
         $argc = count($args);
         $type = str_contains($name, '::') ? 'Method' : 'Function';
         if ($argc < $funcDef->argCountRequired) {
             $this->fatalError($expr, $type . ' `' . $name . '()` requires ' . $funcDef->argCountRequired . ' arguments, ' . $argc . ' given');
         } elseif (!$funcDef->hasVariadicArg() and count($expr->args) > count($funcDef->argInfoList)) {
             $this->fatalError($expr, $type . ' `' . $name . '()` accepts ' . count($funcDef->argInfoList) . ' arguments, ' . $argc . ' given');
+        }
+    }
+
+    protected function getFunctionArgNameIndex(FunctionDef $functionDef): array
+    {
+        $argNameIndex = [];
+        foreach ($functionDef->argInfoList as $k => $argInfo) {
+            $argNameIndex[$argInfo->name] = $k;
+        }
+        return $argNameIndex;
+    }
+
+    protected function getVariadicArgIndex(FunctionDef $functionDef): ?int
+    {
+        $lastIndex = count($functionDef->argInfoList) - 1;
+        if ($lastIndex >= 0 and $functionDef->argInfoList[$lastIndex]->variadic) {
+            return $lastIndex;
+        }
+        return null;
+    }
+
+    protected function validateNativeNamedCallArgs(FunctionDef $functionDef, array $callArgs): void
+    {
+        $hasNamedArg = false;
+        $seenNamedArgs = [];
+        $providedArgIndexes = [];
+        $argNameIndex = $this->getFunctionArgNameIndex($functionDef);
+        $variadicArgIndex = $this->getVariadicArgIndex($functionDef);
+
+        foreach ($callArgs as $i => $arg) {
+            if ($this->isPlaceholderExpr($arg)) {
+                continue;
+            }
+            if ($arg->name === null) {
+                if ($hasNamedArg) {
+                    $this->fatalError($arg, 'Cannot use positional argument after named argument');
+                }
+                $providedArgIndexes[$i] = true;
+                continue;
+            }
+            if (!$this->isIdExpr($arg->name)) {
+                $this->fatalError($arg, 'Named argument must be a string');
+            }
+
+            $argName = $arg->name->name;
+            if (isset($seenNamedArgs[$argName])) {
+                $this->fatalError($arg, "Duplicate named argument `{$argName}`");
+            }
+            if (!array_key_exists($argName, $argNameIndex)) {
+                if ($variadicArgIndex === null) {
+                    $this->fatalError($arg, "Unknown named argument `{$argName}`");
+                }
+                $seenNamedArgs[$argName] = true;
+                $hasNamedArg = true;
+                continue;
+            }
+
+            $argIndex = $argNameIndex[$argName];
+            if ($variadicArgIndex !== null and $argIndex === $variadicArgIndex) {
+                $seenNamedArgs[$argName] = true;
+                $hasNamedArg = true;
+                continue;
+            }
+            if (isset($providedArgIndexes[$argIndex])) {
+                $this->fatalError($arg, "Named argument `{$argName}` overwrites previous argument");
+            }
+
+            $seenNamedArgs[$argName] = true;
+            $providedArgIndexes[$argIndex] = true;
+            $hasNamedArg = true;
         }
     }
 
@@ -2540,20 +2612,26 @@ class CompilerBase extends \PhpAot\Core\Translator
         $argList = [];
         $functionDef = $this->getFunction($nativeFunc);
         $args = [];
+        $variadicArgs = [];
         $hasNamedArg = false;
+        $argNameIndex = $this->getFunctionArgNameIndex($functionDef);
+        $variadicArgIndex = $this->getVariadicArgIndex($functionDef);
         // 对命名参数进行重排
         foreach ($callArgs as $i => $arg) {
             if ($this->isPlaceholderExpr($arg)) {
                 throw new PlaceHolder();
             }
             if ($arg->name) {
-                foreach ($functionDef->argInfoList as $k => $argInfo) {
-                    if ($argInfo->name === $arg->name->name) {
-                        $args[$k] = $arg;
-                        $hasNamedArg = true;
-                        break;
-                    }
+                $argName = $arg->name->name;
+                $k = $argNameIndex[$argName] ?? null;
+                if ($k !== null and ($variadicArgIndex === null or $k < $variadicArgIndex)) {
+                    $args[$k] = $arg;
+                } else {
+                    $variadicArgs[] = [$argName, $arg];
                 }
+                $hasNamedArg = true;
+            } elseif ($variadicArgIndex !== null and $i >= $variadicArgIndex) {
+                $variadicArgs[] = [null, $arg];
             } else {
                 $args[$i] = $arg;
             }
@@ -2562,6 +2640,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($hasNamedArg) {
             // 命名参数中间存在空洞，需要使用默认参数填充
             foreach ($functionDef->argInfoList as $k => $argInfo) {
+                if ($variadicArgIndex !== null and $k === $variadicArgIndex) {
+                    continue;
+                }
                 if (!isset($args[$k])) {
                     if ($argInfo->defaultValue === null) {
                         $this->fatalError($callArgs[$i], 'Named argument `' . $argInfo->name . '` is missing default value');
@@ -2572,42 +2653,52 @@ class CompilerBase extends \PhpAot\Core\Translator
             ksort($args);
         }
 
+        if ($variadicArgIndex !== null and $variadicArgs) {
+            $args[$variadicArgIndex] = $this->buildNativeVariadicArg($variadicArgs, $functionDef->argInfoList[$variadicArgIndex]);
+            ksort($args);
+        }
+
         // 函数只接受一个变长参数，且调用参数为空，直接传入空数组
         if (count($args) === 0 and count($functionDef->argInfoList) === 1 and $functionDef->argInfoList[0]->variadic) {
             return '{}';
         }
 
         foreach ($args as $i => $arg) {
-            $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
-            if ($argInfo->variadic) {
-                $argsSlice = array_slice($args, $i);
-                if (count($argsSlice) === 1 and $argsSlice[0]->unpack) {
-                    if ($this->isVarExpr($arg->value)) {
-                        $var =$this->parseIdentifier($arg->value);
-                        if ($this->getVarType($var) === self::TYPE_ARRAY) {
-                            $argList[] = $var;
-                            break;
-                        }
-                    }
-                    $argList[] = $this->convertArrayExpr($this->parseExpr($arg->value));
-                } else {
-                    $tmpVar = $this->addTmpVar(self::TYPE_ARRAY);
-                    foreach ($argsSlice as $item) {
-                        if ($item->unpack) {
-                            $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArg($item) . ');';
-                        } else {
-                            $this->context->beforeStmtLines[] = $tmpVar . '.append(' . $this->parseArg($item) . ');';
-                        }
-                    }
-                    $argList[] = $tmpVar;
-                    break;
-                }
-            } else {
-                $argList[] = $this->getTypeConvertedArg($arg, $argInfo);
+            if (is_string($arg)) {
+                $argList[] = $arg;
+                continue;
             }
+            $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
+            $argList[] = $this->getTypeConvertedArg($arg, $argInfo);
         }
 
         return implode(', ', $argList);
+    }
+
+    protected function buildNativeVariadicArg(array $variadicArgs, ArgInfo $argInfo): string
+    {
+        if (count($variadicArgs) === 1 and $variadicArgs[0][0] === null and $variadicArgs[0][1]->unpack) {
+            $arg = $variadicArgs[0][1];
+            if ($this->isVarExpr($arg->value)) {
+                $var = $this->parseIdentifier($arg->value);
+                if ($this->getVarType($var) === self::TYPE_ARRAY) {
+                    return $var;
+                }
+            }
+            return $this->convertArrayExpr($this->parseExpr($arg->value));
+        }
+
+        $tmpVar = $this->addTmpVar(self::TYPE_ARRAY);
+        foreach ($variadicArgs as [$name, $arg]) {
+            if ($arg->unpack) {
+                $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
+            } elseif ($name !== null) {
+                $this->context->beforeStmtLines[] = $tmpVar . '.set(' . $this->getLiteralString($name) . ', ' . $this->getTypeConvertedArg($arg, $argInfo) . ');';
+            } else {
+                $this->context->beforeStmtLines[] = $tmpVar . '.append(' . $this->getTypeConvertedArg($arg, $argInfo) . ');';
+            }
+        }
+        return $tmpVar;
     }
 
     protected function parseNamedCallArgs(array $args, int $firstIndex, array $listArgs): string
@@ -2622,6 +2713,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             if (!$this->isIdExpr($arg->name)) {
                 $this->fatalError($arg, 'Named argument must be a string');
+            }
+            if (array_key_exists($arg->name->name, $namedArgs)) {
+                $this->fatalError($arg, "Duplicate named argument `{$arg->name->name}`");
             }
             $namedArgs[$arg->name->name] = $this->parseArg($arg);
         }

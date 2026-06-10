@@ -2386,8 +2386,8 @@ CODE;
             $this->addArgument('this_', self::TYPE_OBJECT);
         }
         foreach ($this->functionDef->argInfoList as $argInfo) {
-            $this->addArgument($argInfo->name, $argInfo->type);
-            if ($argInfo->class) {
+            $this->addArgument($argInfo->name, $argInfo->variadic ? self::TYPE_ARRAY : $argInfo->type);
+            if (!$argInfo->variadic and $argInfo->class) {
                 $this->addObject($argInfo->name, $argInfo->class);
             }
         }
