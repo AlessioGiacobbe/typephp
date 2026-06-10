@@ -26,7 +26,6 @@ use PhpAot\Php\Analysis\SsaFlags;
 use PhpAot\Php\Reflection;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
-use PhpParser\NodeAbstract;
 
 trait SsaPropOptimizer
 {
@@ -329,7 +328,7 @@ trait SsaPropOptimizer
             if ($rightProp !== null) {
                 // $ref = &$o->prop changes the slot to a reference. Earlier
                 // optimized accesses remain safe only if the property is not
-                // touched again afterwards.
+                // touched again afterward.
                 $events[] = ['kind' => 'danger', 'prop' => $rightProp];
                 $this->collectPropEventsInDynamicParts($node->expr, $objName, $events);
             } else {
@@ -504,7 +503,7 @@ trait SsaPropOptimizer
         if (!$node instanceof Expr\PropertyFetch) {
             return;
         }
-        if ($node->name instanceof Node) {
+        if (!$node->name instanceof Node\Identifier) {
             $this->collectPropEvents($node->name, $objName, $events);
         }
     }
@@ -572,10 +571,6 @@ trait SsaPropOptimizer
             return $node->name->toString();
         }
 
-        if (is_string($node->name)) {
-            return $node->name;
-        }
-
         return '*';
     }
 
@@ -628,7 +623,7 @@ trait SsaPropOptimizer
             return $this->getPropNameOfObj($node, $objName) === '*';
         }
 
-        if ($node instanceof Expr\ArrayDimFetch && $node->var instanceof Node) {
+        if ($node instanceof Expr\ArrayDimFetch) {
             return $this->isDynamicPropWriteOfObj($node->var, $objName);
         }
 
