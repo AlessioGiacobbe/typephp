@@ -45,13 +45,6 @@ trait SsaPropOptimizer
             return;
         }
 
-        if ($this->class) {
-            $unsafeProps = $this->collectDangerousPropOps('this_', $ssa->getStmts());
-            if ($unsafeProps) {
-                $this->context->unsafeObjectProps['this_'] = $unsafeProps;
-            }
-        }
-
         if (empty($ssa->ssaVars)) {
             return;
         }

@@ -254,6 +254,10 @@ trait AssignOpTrait
             return $this->parseAssignArrayDim($left, $right);
         }
 
+        if ($this->isPropertyFetch($left)) {
+            $this->assertCanAssignObjectProp($left, $right);
+        }
+
         $rightExpr = $this->parseAssignRightExpr($right);
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);

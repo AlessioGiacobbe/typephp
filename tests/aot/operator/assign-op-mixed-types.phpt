@@ -1,5 +1,5 @@
 --TEST--
-Compound assignment operators with mixed Var/native types
+Compound assignment operators with mixed Var/explicit std native types
 --FILE--
 <?php
 
@@ -40,7 +40,7 @@ function main() {
     $g %= 3;
     var_dump($g);
 
-    // ===== With use native_types =====
+    // ===== Explicit std::* native types without use native_types =====
     // Int += Int
     $h = std::int(100);
     $h += 50;

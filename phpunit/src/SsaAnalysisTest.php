@@ -1154,6 +1154,25 @@ class SsaAnalysisTest extends TestCase
         $this->assertEquals(CompilerBase::TYPE_BOOL, $result);
     }
 
+    public function testDetectTypeOfExplicitStdNativeCalls(): void
+    {
+        $cases = [
+            'int' => CompilerBase::TYPE_INT,
+            'float' => CompilerBase::TYPE_FLOAT,
+            'bool' => CompilerBase::TYPE_BOOL,
+        ];
+
+        foreach ($cases as $method => $expectedType) {
+            $call = new Expr\StaticCall(
+                new Node\Name('std'),
+                new Node\Identifier($method),
+                [new Arg(new Scalar\LNumber(1))]
+            );
+
+            $this->assertSame($expectedType, $this->invoke('detectTypeOfExpr', $call));
+        }
+    }
+
     public function testDetectSsaDefTypeNull(): void
     {
         $ssaVar = new SsaVar(1, 'x');

@@ -1414,11 +1414,18 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (count($expr->args) === 2 and $fn === 'objval') {
                 return $this->resolveClassNameArg($expr->args[1]->value);
             }
+            if ($this->hasFunction($fn)) {
+                return $this->getFunction($fn)->returnClass;
+            }
         }
         if ($this->isMethodCall($expr) and $this->isNamedMethod($expr->name)) {
             $method = $this->parseIdentifier($expr->name);
             if ($method === 'toObject' and !empty($expr->args)) {
                 return $this->resolveClassNameArg($expr->args[0]->value);
+            }
+            $classDef = $this->resolveObjectClassDef($expr->var);
+            if ($classDef !== null && $classDef->hasMethod($method)) {
+                return $classDef->getMethod($method)->functionDef->returnClass;
             }
             if ($this->isVarExpr($expr->var)) {
                 $object = $this->parseVariable($expr->var);
@@ -1440,6 +1447,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $class = $this->getNamespacedClassName($class);
             $method = $this->parseIdentifier($expr->name);
+            if ($this->hasClass($class)) {
+                $classDef = $this->getClass($class);
+                if ($classDef->hasMethod($method)) {
+                    return $classDef->getMethod($method)->functionDef->returnClass;
+                }
+            }
             $nativeFunc = $this->getNativeMethod($expr, $class, $method);
             if ($nativeFunc) {
                 return $this->getFunction($nativeFunc)->returnClass;
@@ -1929,6 +1942,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if (strtolower($className) === 'std') {
                         $method = strtolower($this->parseIdentifier($expr->name));
                         return match ($method) {
+                            'int' => self::TYPE_INT,
+                            'float' => self::TYPE_FLOAT,
+                            'bool' => self::TYPE_BOOL,
                             'bigint' => self::TYPE_BIGINT,
                             'decimal' => self::TYPE_DECIMAL,
                             'bigfloat' => self::TYPE_BIGFLOAT,
@@ -3408,6 +3424,79 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'php::exit(' . $this->parseIdentifier($node->expr) . ')';
     }
 
+    protected function getFixedObjectPropDefaultValue(PropertyDef $def): ?string
+    {
+        return match ($def->type) {
+            self::TYPE_INT => $def->default ?? '0',
+            self::TYPE_FLOAT => $def->default ?? '0.0',
+            self::TYPE_BOOL => $def->default ?? 'false',
+            self::TYPE_STR => $def->default ?? self::TYPE_STR . '()',
+            self::TYPE_ARRAY => $def->default ?? self::TYPE_ARRAY . '{}',
+            default => null,
+        };
+    }
+
+    protected function isFixedObjectProp(PropertyDef $def): bool
+    {
+        return in_array($def->type, [
+            self::TYPE_INT,
+            self::TYPE_FLOAT,
+            self::TYPE_BOOL,
+            self::TYPE_STR,
+            self::TYPE_ARRAY,
+        ], true) && !$def->nullable;
+    }
+
+    protected function assertCanAssignObjectProp(Expr\PropertyFetch $left, Expr $right): void
+    {
+        if (!$left->hasAttribute('nativePropertyDef')) {
+            return;
+        }
+
+        /** @var PropertyDef $def */
+        $def = $left->getAttribute('nativePropertyDef');
+
+        if ($this->isNull($right)) {
+            if ($this->isFixedObjectProp($def)) {
+                $this->fatalError(
+                    $left,
+                    "Cannot assign null to object property `{$this->parseIdentifier($left->name)}` of fixed type `{$def->type}`"
+                );
+            }
+            return;
+        }
+
+        if ($def->type !== self::TYPE_OBJECT) {
+            return;
+        }
+
+        $rightType = $this->detectTypeOfExpr($right);
+        if ($rightType !== self::TYPE_VAR && $rightType !== self::TYPE_OBJECT) {
+            $this->fatalError(
+                $left,
+                "Cannot assign value of type `{$rightType}` to object property `{$this->parseIdentifier($left->name)}` of type `{$def->type}`"
+            );
+        }
+
+        if ($def->class === '') {
+            return;
+        }
+
+        $rightClass = $this->detectClassOfExpr($right);
+        if ($rightClass === '') {
+            $this->fatalError(
+                $left,
+                "Cannot assign object of unknown class to object property `{$this->parseIdentifier($left->name)}` of class `{$def->class}`"
+            );
+        }
+        if ($rightClass !== $def->class) {
+            $this->fatalError(
+                $left,
+                "Cannot assign object of class `{$rightClass}` to object property `{$this->parseIdentifier($left->name)}` of class `{$def->class}`"
+            );
+        }
+    }
+
     protected function parseUnset(Node\Stmt\Unset_ $node): string
     {
         $vars = $node->vars;
@@ -3430,7 +3519,31 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             } elseif ($this->isPropertyFetch($var)) {
                 $object = $this->parseIdentifier($var->var);
-                $lines[] = $object . '.unsetProperty(' . $this->identifierToStr($var->name, literal: true) . ');';
+                $restoreDefault = null;
+                if ($this->isIdExpr($var->name)) {
+                    $propertyId = $this->getPropertyIdentifier($var, $var->var, $var->name);
+                    if ($var->hasAttribute('nativePropertyDef')) {
+                        /** @var PropertyDef $def */
+                        $def = $var->getAttribute('nativePropertyDef');
+                        if ($this->isFixedObjectProp($def)) {
+                            $restoreDefault = $this->getFixedObjectPropDefaultValue($def);
+                            if ($restoreDefault === null) {
+                                $this->fatalError($var, "Cannot unset object property `{$this->parseIdentifier($var->name)}` of fixed type `{$def->type}` without default value");
+                            }
+                            $this->warning($var, "Object property `{$this->parseIdentifier($var->name)}` of fixed type cannot be unset; restoring its default value");
+                            $propName = $this->parseIdentifier($var->name);
+                            $propVar = $this->getObjectPropVarName($object, $propName);
+                            if ($this->hasObjectPropVar($propVar)) {
+                                $lines[] = $propVar . ' = ' . $restoreDefault . ';';
+                            } else {
+                                $lines[] = $object . '.attr(' . $propertyId . ', true) = ' . $restoreDefault . ';';
+                            }
+                        }
+                    }
+                }
+                if ($restoreDefault === null) {
+                    $lines[] = $object . '.unsetProperty(' . $this->identifierToStr($var->name, literal: true) . ');';
+                }
             } elseif ($this->isStaticPropertyFetch($var)) {
                 $this->fatalError($var, 'Attempt to unset static property ' . $this->parseIdentifier($var->class) . '::$' . $this->parseIdentifier($var->name));
             } elseif ($this->isVarExpr($var)) {

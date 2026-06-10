@@ -71,6 +71,14 @@ class AssignTest extends \BaseTest
         $this->exec("Cannot re-assign `\$obj` from `php::Array` to `php::Object`", 're-assign-array-to-obj.php');
     }
 
+    public function testCannotAssignSubclassToTypedObjectProperty()
+    {
+        $this->exec(
+            'Cannot assign object of class `TypedObjectPropChild` to object property `prop` of class `TypedObjectPropBase`',
+            'object-prop-subclass-mismatch.php'
+        );
+    }
+
     // === Str / Array value assigned to non-object scalar variable ===
 
     public function testStrToInt()

@@ -1,5 +1,5 @@
 --TEST--
-SSA object prop: unset typed this property keeps PHP uninitialized semantics
+SSA object prop: unset typed this property keeps AOT native slot semantics
 --FILE--
 <?php
 use native_types;
@@ -11,6 +11,7 @@ class Foo {
         var_dump(isset($this->a));
         unset($this->a);
         var_dump(isset($this->a));
+        var_dump($this->a);
         $this->a = 11;
         var_dump($this->a);
     }
@@ -23,5 +24,6 @@ function main(): void {
 ?>
 --EXPECT--
 bool(true)
-bool(false)
+bool(true)
+int(7)
 int(11)
