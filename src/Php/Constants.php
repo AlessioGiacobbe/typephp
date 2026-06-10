@@ -64,6 +64,7 @@ class Constants
 
     public const array UNSUPPORTED_FUNCTIONS = [
         'extract',
+        'get_defined_vars',
     ];
 
     public const array COMPILER_OPTIONS = [
