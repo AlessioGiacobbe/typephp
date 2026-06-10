@@ -384,6 +384,7 @@ trait StdContainerTrait
         }
 
         $body = $this->parseStmts($node->stmts);
+        $body .= $this->genLoopEndFlagCheck();
         $this->indentLevel--;
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;

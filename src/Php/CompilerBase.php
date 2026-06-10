@@ -2374,7 +2374,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code .= ') {' . PHP_EOL;
 
         $code .= $this->parseBlockStmts($stmts);
-
+        $code .= $this->genLoopEndFlagCheck();
         $code .= $this->getIndent() . '}' . PHP_EOL;
 
         return $code;
@@ -3131,6 +3131,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'while (' . $cond . ') {' . PHP_EOL;
         $code .= $this->parseBlockStmts($stmts);
+        $code .= $this->genLoopEndFlagCheck();
         $code .= $this->getIndent() . '}' . PHP_EOL;
 
         return $code;
@@ -3148,6 +3149,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code  = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'do {' . PHP_EOL;
         $code .= $this->parseBlockStmts($stmts);
+        $code .= $this->genLoopEndFlagCheck();
         $code .= $this->getIndent() . '} while (' . $cond . ');' . PHP_EOL;
 
         return $code;
@@ -3858,6 +3860,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $body = $this->parseStmts($node->stmts);
+        $body .= $this->genLoopEndFlagCheck();
         $this->indentLevel--;
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
@@ -3937,7 +3940,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code      = $this->parseBeforeStmtLines() . PHP_EOL;
 
         if ($type === self::TYPE_INT or $type === self::TYPE_BOOL) {
-            $code .= 'switch (' . $tmp_var . ') {' . PHP_EOL;
+            $code .= 'do {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . 'switch (' . $tmp_var . ') {' . PHP_EOL;
             $this->indentLevel++;
             foreach ($v->cases as $case) {
                 if (empty($case->cond)) {
@@ -3946,6 +3951,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $condType = $case->cond->getType();
                     if ($condType !== 'Scalar_Int' and $condType !== 'Scalar_Float') {
                         $this->context->localVars = $localVars;
+                        $this->indentLevel -= 2;
                         goto _fail;
                     }
                     $code .= $this->getIndent() . 'case ' . $this->parseScalar($case->cond) . ': {' . PHP_EOL;
@@ -3954,7 +3960,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $code .= $this->getIndent() . '}' . PHP_EOL;
             }
             $this->indentLevel--;
-            $code .= $this->getIndent() . '}';
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+            $code .= $this->genLoopEndFlagCheck();
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '} while(0);' . PHP_EOL;
 
             return $var_def . $code;
         }
@@ -4013,6 +4022,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $this->indentLevel--;
             $code .= $this->getIndent() . '}' . PHP_EOL;
         }
+        $code .= $this->genLoopEndFlagCheck();
         $this->indentLevel--;
         $code .= $this->getIndent() . '} while (0);';
 
@@ -4088,9 +4098,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $num = $v->num;
         if ($num) {
-            $value = $this->parseIdentifier($num);
-            if ($value > 1) {
-                $this->fatalError($v, 'Cannot break more than 1 level');
+            if ($num->value > 1) {
+                $this->context->hasMultiLevelBreak = true;
+                return '_brk_flag = ' . ($num->value - 1) . '; break;';
             }
         }
 
@@ -4102,10 +4112,33 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$this->context->inLoop) {
             $this->fatalError($v, 'Cannot continue outside loop');
         }
-        if ($v->num and $v->num->value > 1) {
-            $this->fatalError($v, 'Cannot continue more than 1 level');
+        $num = $v->num;
+        if ($num) {
+            if ($num->value > 1) {
+                $this->context->hasMultiLevelContinue = true;
+                return '_cnt_flag = ' . ($num->value - 1) . '; break;';
+            }
         }
         return 'continue;';
+    }
+
+    /**
+     * Emit flag-propagation checks at the end of a loop body.
+     *
+     * Translates multi-level break / continue into plain break / continue
+     * by decrementing a counter at each loop boundary until it reaches zero.
+     */
+    protected function genLoopEndFlagCheck(): string
+    {
+        $code = '';
+        $indent = $this->getIndent();
+        if ($this->context->hasMultiLevelBreak) {
+            $code .= "{$indent}if (_brk_flag > 0) { _brk_flag--; break; }" . PHP_EOL;
+        }
+        if ($this->context->hasMultiLevelContinue) {
+            $code .= "{$indent}if (_cnt_flag > 0) { _cnt_flag--; if (_cnt_flag == 0) continue; else break; }" . PHP_EOL;
+        }
+        return $code;
     }
 
     protected function parseScalarFloat(Node\Scalar\Float_ $expr): string
@@ -5273,6 +5306,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function genScopeVarDecl(): string
     {
         $code = '';
+        if ($this->context->hasMultiLevelBreak) {
+            $code .= $this->getIndent() . 'int _brk_flag = 0;' . PHP_EOL;
+        }
+        if ($this->context->hasMultiLevelContinue) {
+            $code .= $this->getIndent() . 'int _cnt_flag = 0;' . PHP_EOL;
+        }
         foreach ($this->context->localVars as $name => $type) {
             if (isset($this->context->arguments[$name])) {
                 continue;

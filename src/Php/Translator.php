@@ -2644,6 +2644,7 @@ CODE;
             }
         }
         $code .= $this->parseStmts($node->stmts);
+        $code .= $this->genLoopEndFlagCheck();
         $code .= '}' . PHP_EOL;
         $this->indentLevel--;
         $code .= $this->getIndent() . '} else {' . PHP_EOL;

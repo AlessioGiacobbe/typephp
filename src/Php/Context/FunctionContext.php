@@ -51,6 +51,12 @@ class FunctionContext
     public bool $inLoop = false;
     public bool $inClosure = false;
 
+    /** True if any break N (N > 1) appears in this function. */
+    public bool $hasMultiLevelBreak = false;
+
+    /** True if any continue N (N > 1) appears in this function. */
+    public bool $hasMultiLevelContinue = false;
+
     /**
      * 赋值表达式的左值，写操作，右值为读操作.
      */
