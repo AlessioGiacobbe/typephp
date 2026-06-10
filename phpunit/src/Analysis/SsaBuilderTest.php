@@ -154,6 +154,19 @@ class SsaBuilderTest extends TestCase
         $this->assertCount(2, $xVars, 'Two assignments to $x should create two SSA vars');
     }
 
+    public function testAssignOpAndIncDecCreateNewSsaVars(): void
+    {
+        $builder = $this->buildSsa('$y = 1; $y &= 3; $y++; --$y;');
+        $yVars = [];
+        foreach ($builder->ssaVars as $var) {
+            if ($var->origName === 'y' && !($var->flags & SsaFlags::PHI)) {
+                $yVars[] = $var;
+            }
+        }
+
+        $this->assertCount(4, $yVars, 'Assignment, compound assignment, and inc/dec should each define $y');
+    }
+
     public function testVarDefBlocks(): void
     {
         $builder = $this->buildSsa('$a = 1; $b = 2;');
@@ -197,6 +210,21 @@ class SsaBuilderTest extends TestCase
             if ($block->id === $entryId) continue;
             $this->assertGreaterThanOrEqual(0, $block->dominator, "Block {$block->id} should have a dominator");
         }
+    }
+
+    public function testImmediateDominatorUsesClosestDominator(): void
+    {
+        $builder = $this->buildSsa('
+            $a = 1;
+            target:
+            $b = 2;
+        ');
+
+        $exitBlock = $builder->blocks[count($builder->blocks) - 1];
+        $labelBlockId = $builder->getLabelBlock('target');
+
+        $this->assertNotNull($labelBlockId);
+        $this->assertSame($labelBlockId, $exitBlock->dominator);
     }
 
     public function testPhiFunctionPlacedAtJoin(): void
@@ -280,6 +308,40 @@ class SsaBuilderTest extends TestCase
             }
         }
         $this->assertNotNull($escapedVar, 'Call by reference should create ESCAPED SSA var');
+    }
+
+    public function testNestedCallByRefCreatesEscapedVar(): void
+    {
+        $builder = $this->buildSsa('
+            $y = some_func(refval($x));
+        ');
+
+        $escapedVar = null;
+        foreach ($builder->ssaVars as $var) {
+            if ($var->origName === 'x' && ($var->flags & SsaFlags::ESCAPED)) {
+                $escapedVar = $var;
+                break;
+            }
+        }
+        $this->assertNotNull($escapedVar, 'Nested refval($x) should create ESCAPED SSA var');
+    }
+
+    public function testCallByRefInsideLoopCreatesEscapedVar(): void
+    {
+        $builder = $this->buildSsa('
+            while ($x) {
+                some_func(refval($x));
+            }
+        ');
+
+        $escapedVar = null;
+        foreach ($builder->ssaVars as $var) {
+            if ($var->origName === 'x' && ($var->flags & SsaFlags::ESCAPED)) {
+                $escapedVar = $var;
+                break;
+            }
+        }
+        $this->assertNotNull($escapedVar, 'refval($x) inside loop body should create ESCAPED SSA var');
     }
 
     public function testRefvalCallByRefCreatesEscapedVar(): void
@@ -431,6 +493,26 @@ class SsaBuilderTest extends TestCase
         }
         $this->assertTrue($hasKey, 'foreach key variable should be defined');
         $this->assertTrue($hasValue, 'foreach value variable should be defined');
+    }
+
+    public function testLoopBodyAssignmentsCreateSsaVars(): void
+    {
+        $builder = $this->buildSsa('
+            $obj = new Foo();
+            while ($x) {
+                $obj = new Foo();
+            }
+        ');
+
+        $objVars = [];
+        foreach ($builder->ssaVars as $var) {
+            if ($var->origName === 'obj' && !($var->flags & SsaFlags::PHI)) {
+                $objVars[] = $var;
+            }
+        }
+
+        $this->assertCount(2, $objVars, 'Assignment inside loop body should be tracked as an SSA definition');
+        $this->assertContains(0, $builder->getDefBlocks('obj'));
     }
 
     public function testStaticVariableIsEscaped(): void

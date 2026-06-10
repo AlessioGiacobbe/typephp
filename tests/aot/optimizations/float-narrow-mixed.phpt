@@ -13,7 +13,8 @@ function main(): void {
     $b = 99;
     var_dump($b);
 
-    // Int compound assigns, all with int RHS → narrowed to int
+    // Int compound assigns still produce the expected runtime value,
+    // but SSA no longer uses them to prove native int narrowing.
     $c = 10;
     $c += 5;
     $c *= 3;

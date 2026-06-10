@@ -284,38 +284,118 @@ trait SsaPropOptimizer
             }
         }
 
-        // Check function/method call arguments for &$o->prop patterns
         if ($stmt instanceof Node\Stmt\Expression) {
-            $expr = $stmt->expr;
-            $args = null;
-            if ($expr instanceof Expr\FuncCall) {
-                $args = $expr->args;
-            } elseif ($expr instanceof Expr\MethodCall || $expr instanceof Expr\StaticCall
-                || $expr instanceof Expr\NullsafeMethodCall) {
-                $args = $expr->args;
+            if ($this->exprHasDangerousPropOp($stmt->expr, $objName)) {
+                return true;
             }
-            if ($args) {
-                foreach ($args as $arg) {
-                    // Explicit &$o->prop
-                    if ($arg->byRef && $this->isPropOfObj($arg->value, $objName)) {
+        }
+
+        if (($stmt instanceof Node\Stmt\If_
+            || $stmt instanceof Node\Stmt\While_
+            || $stmt instanceof Node\Stmt\Do_)
+            && $stmt->cond instanceof Node
+            && $this->exprHasDangerousPropOp($stmt->cond, $objName)) {
+            return true;
+        }
+
+        if ($stmt instanceof Node\Stmt\For_) {
+            foreach ([$stmt->init, $stmt->cond, $stmt->loop] as $exprList) {
+                foreach ($exprList as $expr) {
+                    if ($expr instanceof Node && $this->exprHasDangerousPropOp($expr, $objName)) {
                         return true;
                     }
-                    // refval($o->prop) pseudo-function
-                    if ($arg->value instanceof Expr\FuncCall
-                        && $arg->value->name instanceof Node\Name
-                        && $arg->value->name->toLowerString() === 'refval'
-                        && !empty($arg->value->args)) {
-                        $inner = $arg->value->args[0]->value;
-                        if ($this->isPropOfObj($inner, $objName)) {
-                            return true;
-                        }
-                    }
+                }
+            }
+        }
+
+        if ($stmt instanceof Node\Stmt\Foreach_ && $stmt->expr instanceof Node) {
+            if ($this->exprHasDangerousPropOp($stmt->expr, $objName)) {
+                return true;
+            }
+        }
+
+        if ($stmt instanceof Node\Stmt\Switch_ && $stmt->cond instanceof Node) {
+            if ($this->exprHasDangerousPropOp($stmt->cond, $objName)) {
+                return true;
+            }
+        }
+
+        if ($stmt instanceof Node\Stmt\Return_ && $stmt->expr instanceof Node) {
+            if ($this->exprHasDangerousPropOp($stmt->expr, $objName)) {
+                return true;
+            }
+        }
+
+        if ($stmt instanceof Node\Stmt\Echo_) {
+            foreach ($stmt->exprs as $expr) {
+                if ($expr instanceof Node && $this->exprHasDangerousPropOp($expr, $objName)) {
+                    return true;
                 }
             }
         }
 
         // Recurse into compound statements
         return $this->recurseDangerousPropOp($stmt, $objName);
+    }
+
+    protected function exprHasDangerousPropOp($expr, string $objName): bool
+    {
+        if (!$expr instanceof Node) {
+            return false;
+        }
+
+        if ($expr instanceof Expr\AssignRef && $this->isPropOfObj($expr->expr, $objName)) {
+            return true;
+        }
+
+        if ($expr instanceof Expr\FuncCall
+            && $expr->name instanceof Node\Name
+            && $expr->name->toLowerString() === 'refval'
+            && !empty($expr->args)
+            && $this->isPropOfObj($expr->args[0]->value, $objName)) {
+            return true;
+        }
+
+        if ($expr instanceof Expr\FuncCall || $expr instanceof Expr\MethodCall
+            || $expr instanceof Expr\StaticCall || $expr instanceof Expr\NullsafeMethodCall) {
+            foreach ($expr->args as $arg) {
+                if ($arg->byRef && $this->isPropOfObj($arg->value, $objName)) {
+                    return true;
+                }
+                if ($this->exprHasDangerousPropOp($arg->value, $objName)) {
+                    return true;
+                }
+            }
+            if (($expr instanceof Expr\MethodCall || $expr instanceof Expr\NullsafeMethodCall)
+                && $this->exprHasDangerousPropOp($expr->var, $objName)) {
+                return true;
+            }
+            if ($expr instanceof Expr\StaticCall && $expr->class instanceof Expr
+                && $this->exprHasDangerousPropOp($expr->class, $objName)) {
+                return true;
+            }
+            return false;
+        }
+
+        foreach (['left', 'right', 'expr', 'var', 'cond', 'if', 'else', 'dim', 'value'] as $prop) {
+            if (isset($expr->$prop) && $expr->$prop instanceof Node) {
+                if ($this->exprHasDangerousPropOp($expr->$prop, $objName)) {
+                    return true;
+                }
+            }
+        }
+
+        foreach (['args', 'exprs', 'items'] as $prop) {
+            if (isset($expr->$prop) && is_array($expr->$prop)) {
+                foreach ($expr->$prop as $item) {
+                    if ($item instanceof Node && $this->exprHasDangerousPropOp($item, $objName)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

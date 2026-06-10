@@ -13,7 +13,7 @@ function main(): void {
     $c = $a * PHP_INT_MAX;
     echo gettype($c), PHP_EOL;
 
-    // Two small ints added safely → narrowed to int
+    // Even small int arithmetic must keep PHP overflow semantics.
     $d = $a + 99;
     var_dump($d);
 }

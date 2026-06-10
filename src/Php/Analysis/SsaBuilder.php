@@ -769,8 +769,8 @@ class SsaBuilder
     }
 
     /**
-     * Find the immediate dominator: the strict dominator that is NOT
-     * dominated by any other strict dominator of b.
+     * Find the immediate dominator: the strict dominator that is dominated by
+     * all other strict dominators of b (the closest dominator to b).
      */
     private function findImmediateDominator(int $b, array $strictDom, array $dominators): int
     {
@@ -778,16 +778,15 @@ class SsaBuilder
             return $strictDom[0];
         }
 
-        // idom is the one not dominated by any other strict dominator
         foreach ($strictDom as $candidate) {
-            $dominatedByOther = false;
+            $dominatedByAllOthers = true;
             foreach ($strictDom as $other) {
-                if ($other !== $candidate && isset($dominators[$candidate][$other])) {
-                    $dominatedByOther = true;
+                if ($other !== $candidate && !isset($dominators[$candidate][$other])) {
+                    $dominatedByAllOthers = false;
                     break;
                 }
             }
-            if (!$dominatedByOther) {
+            if ($dominatedByAllOthers) {
                 return $candidate;
             }
         }
@@ -970,7 +969,19 @@ class SsaBuilder
             if ($var instanceof Expr\Variable && is_string($var->name)) {
                 $defs[] = $var->name;
             }
+        } elseif ($stmt instanceof Stmt\Expression && $stmt->expr instanceof Expr\AssignOp) {
+            $var = $stmt->expr->var;
+            if ($var instanceof Expr\Variable && is_string($var->name)) {
+                $defs[] = $var->name;
+            }
         } elseif ($stmt instanceof Stmt\Expression && $stmt->expr instanceof Expr\AssignRef) {
+            $var = $stmt->expr->var;
+            if ($var instanceof Expr\Variable && is_string($var->name)) {
+                $defs[] = $var->name;
+            }
+        } elseif ($stmt instanceof Stmt\Expression
+            && ($stmt->expr instanceof Expr\PreInc || $stmt->expr instanceof Expr\PostInc
+                || $stmt->expr instanceof Expr\PreDec || $stmt->expr instanceof Expr\PostDec)) {
             $var = $stmt->expr->var;
             if ($var instanceof Expr\Variable && is_string($var->name)) {
                 $defs[] = $var->name;
@@ -1001,13 +1012,44 @@ class SsaBuilder
         }
 
         // Recurse into compound statements for nested definitions
-        if ($stmt instanceof Stmt\TryCatch) {
-            foreach ($stmt->catches as $catch) {
-                $defs = array_merge($defs, $this->getDefinedVars($catch));
+        if ($stmt instanceof Stmt\While_ || $stmt instanceof Stmt\Do_ || $stmt instanceof Stmt\For_) {
+            foreach ($stmt->stmts as $nestedStmt) {
+                $defs = array_merge($defs, $this->getDefinedVars($nestedStmt));
             }
         }
 
-        return $defs;
+        if ($stmt instanceof Stmt\Foreach_) {
+            foreach ($stmt->stmts as $nestedStmt) {
+                $defs = array_merge($defs, $this->getDefinedVars($nestedStmt));
+            }
+        }
+
+        if ($stmt instanceof Stmt\Switch_) {
+            foreach ($stmt->cases as $case) {
+                foreach ($case->stmts as $nestedStmt) {
+                    $defs = array_merge($defs, $this->getDefinedVars($nestedStmt));
+                }
+            }
+        }
+
+        if ($stmt instanceof Stmt\TryCatch) {
+            foreach ($stmt->stmts as $nestedStmt) {
+                $defs = array_merge($defs, $this->getDefinedVars($nestedStmt));
+            }
+            foreach ($stmt->catches as $catch) {
+                $defs = array_merge($defs, $this->getDefinedVars($catch));
+                foreach ($catch->stmts as $nestedStmt) {
+                    $defs = array_merge($defs, $this->getDefinedVars($nestedStmt));
+                }
+            }
+            if ($stmt->finally) {
+                foreach ($stmt->finally->stmts as $nestedStmt) {
+                    $defs = array_merge($defs, $this->getDefinedVars($nestedStmt));
+                }
+            }
+        }
+
+        return array_values(array_unique($defs));
     }
 
     // =========================================================================
@@ -1116,6 +1158,8 @@ class SsaBuilder
      */
     private function renameDefs(Node $stmt, int $blockId, int $stmtIndex, array &$pushedVars): void
     {
+        $this->handleCallByRef($stmt, $pushedVars);
+
         // Handle unset($var) — kill the variable
         if ($stmt instanceof Stmt\Unset_) {
             foreach ($stmt->vars as $var) {
@@ -1192,6 +1236,70 @@ class SsaBuilder
             return;
         }
 
+        // Handle compound assignment: $x += expr, $x %= expr, ...
+        if ($stmt instanceof Stmt\Expression && $stmt->expr instanceof Expr\AssignOp) {
+            $var = $stmt->expr->var;
+            if ($var instanceof Expr\Variable && is_string($var->name)) {
+                $varName = $var->name;
+                $ssaId = $this->allocateSsaId();
+                $ssaVar = new SsaVar($ssaId, $varName, 0);
+                $ssaVar->definition = $stmt;
+                $this->ssaVars[$ssaId] = $ssaVar;
+
+                if (!isset($this->varStates[$varName])) {
+                    $this->varStates[$varName] = new VarState();
+                }
+                $this->varStates[$varName]->stack[] = $ssaId;
+                $pushedVars[] = [$varName, 'assign_op'];
+            }
+            return;
+        }
+
+        // Handle increment/decrement: ++$x, $x++, --$x, $x--
+        if ($stmt instanceof Stmt\Expression
+            && ($stmt->expr instanceof Expr\PreInc || $stmt->expr instanceof Expr\PostInc
+                || $stmt->expr instanceof Expr\PreDec || $stmt->expr instanceof Expr\PostDec)) {
+            $var = $stmt->expr->var;
+            if ($var instanceof Expr\Variable && is_string($var->name)) {
+                $varName = $var->name;
+                $ssaId = $this->allocateSsaId();
+                $ssaVar = new SsaVar($ssaId, $varName, 0);
+                $ssaVar->definition = $stmt;
+                $this->ssaVars[$ssaId] = $ssaVar;
+
+                if (!isset($this->varStates[$varName])) {
+                    $this->varStates[$varName] = new VarState();
+                }
+                $this->varStates[$varName]->stack[] = $ssaId;
+                $pushedVars[] = [$varName, 'inc_dec'];
+            }
+            return;
+        }
+
+        // Handle loop bodies that are not expanded into separate CFG blocks.
+        if ($stmt instanceof Stmt\While_ || $stmt instanceof Stmt\Do_) {
+            foreach ($stmt->stmts as $nestedStmt) {
+                $this->renameDefs($nestedStmt, $blockId, $stmtIndex, $pushedVars);
+            }
+            return;
+        }
+
+        if ($stmt instanceof Stmt\For_) {
+            foreach ($stmt->stmts as $nestedStmt) {
+                $this->renameDefs($nestedStmt, $blockId, $stmtIndex, $pushedVars);
+            }
+            return;
+        }
+
+        if ($stmt instanceof Stmt\Switch_) {
+            foreach ($stmt->cases as $case) {
+                foreach ($case->stmts as $nestedStmt) {
+                    $this->renameDefs($nestedStmt, $blockId, $stmtIndex, $pushedVars);
+                }
+            }
+            return;
+        }
+
         // Handle foreach value/key variables
         if ($stmt instanceof Stmt\Foreach_) {
             if ($stmt->valueVar instanceof Expr\Variable && is_string($stmt->valueVar->name)) {
@@ -1220,6 +1328,9 @@ class SsaBuilder
                 }
                 $this->varStates[$varName]->stack[] = $ssaId;
                 $pushedVars[] = [$varName, 'foreach_key'];
+            }
+            foreach ($stmt->stmts as $nestedStmt) {
+                $this->renameDefs($nestedStmt, $blockId, $stmtIndex, $pushedVars);
             }
             return;
         }
@@ -1262,13 +1373,21 @@ class SsaBuilder
 
         // Handle TryCatch: process catch variables as definitions
         if ($stmt instanceof Stmt\TryCatch) {
+            foreach ($stmt->stmts as $nestedStmt) {
+                $this->renameDefs($nestedStmt, $blockId, $stmtIndex, $pushedVars);
+            }
             foreach ($stmt->catches as $catch) {
                 $this->renameDefs($catch, $blockId, $stmtIndex, $pushedVars);
+                foreach ($catch->stmts as $nestedStmt) {
+                    $this->renameDefs($nestedStmt, $blockId, $stmtIndex, $pushedVars);
+                }
+            }
+            if ($stmt->finally) {
+                foreach ($stmt->finally->stmts as $nestedStmt) {
+                    $this->renameDefs($nestedStmt, $blockId, $stmtIndex, $pushedVars);
+                }
             }
         }
-
-        // Handle function calls that may modify variables by reference
-        $this->handleCallByRef($stmt, $pushedVars);
     }
 
     /**
@@ -1287,17 +1406,67 @@ class SsaBuilder
      */
     private function handleCallByRef(Node $stmt, array &$pushedVars): void
     {
-        if (!($stmt instanceof Stmt\Expression)) {
+        if ($stmt instanceof Stmt\Expression) {
+            $this->handleCallByRefInExpr($stmt->expr, $stmt, $pushedVars);
             return;
         }
-        $expr = $stmt->expr;
 
-        if ($expr instanceof Expr\FuncCall) {
-            $this->collectCallByRefArgs($expr->args, $stmt, $pushedVars);
+        if (($stmt instanceof Stmt\If_
+            || $stmt instanceof Stmt\While_
+            || $stmt instanceof Stmt\Do_)
+            && $stmt->cond instanceof Node) {
+            $this->handleCallByRefInExpr($stmt->cond, $stmt, $pushedVars);
         }
 
-        if ($expr instanceof Expr\MethodCall || $expr instanceof Expr\StaticCall || $expr instanceof Expr\NullsafeMethodCall) {
-            $this->collectCallByRefArgs($expr->args, $stmt, $pushedVars);
+        if ($stmt instanceof Stmt\For_) {
+            foreach ([$stmt->init, $stmt->cond, $stmt->loop] as $exprList) {
+                foreach ($exprList as $expr) {
+                    if ($expr instanceof Node) {
+                        $this->handleCallByRefInExpr($expr, $stmt, $pushedVars);
+                    }
+                }
+            }
+        }
+
+        if ($stmt instanceof Stmt\Foreach_ && $stmt->expr instanceof Node) {
+            $this->handleCallByRefInExpr($stmt->expr, $stmt, $pushedVars);
+        }
+
+        if ($stmt instanceof Stmt\Switch_ && $stmt->cond instanceof Node) {
+            $this->handleCallByRefInExpr($stmt->cond, $stmt, $pushedVars);
+        }
+
+        if ($stmt instanceof Stmt\Return_ && $stmt->expr instanceof Node) {
+            $this->handleCallByRefInExpr($stmt->expr, $stmt, $pushedVars);
+        }
+
+        if ($stmt instanceof Stmt\Echo_) {
+            foreach ($stmt->exprs as $expr) {
+                if ($expr instanceof Node) {
+                    $this->handleCallByRefInExpr($expr, $stmt, $pushedVars);
+                }
+            }
+        }
+    }
+
+    private function handleCallByRefInExpr(Node $expr, Node $callStmt, array &$pushedVars): void
+    {
+        if ($expr instanceof Expr\FuncCall || $expr instanceof Expr\MethodCall
+            || $expr instanceof Expr\StaticCall || $expr instanceof Expr\NullsafeMethodCall) {
+            $this->collectCallByRefArgs($expr->args, $callStmt, $pushedVars);
+        }
+
+        foreach ($expr->getSubNodeNames() as $subNodeName) {
+            $subNode = $expr->$subNodeName;
+            if ($subNode instanceof Node) {
+                $this->handleCallByRefInExpr($subNode, $callStmt, $pushedVars);
+            } elseif (is_array($subNode)) {
+                foreach ($subNode as $item) {
+                    if ($item instanceof Node) {
+                        $this->handleCallByRefInExpr($item, $callStmt, $pushedVars);
+                    }
+                }
+            }
         }
     }
 

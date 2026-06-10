@@ -30,6 +30,7 @@ use PhpAot\Php\Generator\Utils;
 use PhpAot\Php\Generator\TypeCheckGenerator;
 use PhpAot\Php\Optimizer\SsaPropOptimizer;
 use PhpAot\Php\Optimizer\SsaTypeOptimizer;
+use PhpAot\Php\Optimizer\LoopVarOptimizer;
 use PhpAot\Php\Parser\StdContainerTrait;
 use PhpAot\Php\Parser\AssignOpTrait;
 use PhpAot\Php\Parser\BinaryOpTrait;
@@ -76,6 +77,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     use Utils;
     use TypeCheckGenerator;
     use SsaTypeOptimizer;
+    use LoopVarOptimizer;
     use SsaPropOptimizer;
 
     public const string TYPE_VAR = 'php::Var';

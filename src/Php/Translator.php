@@ -2398,6 +2398,8 @@ CODE;
             $this->context->ssaBuilder->build();
             // Narrow local variable types based on SSA analysis
             $this->optimizeVarTypes();
+            // Narrow range-proven loop counters independent of native_types
+            $this->optimizeLoopVars();
             // Analyze object stability for property reference hoisting
             $this->optimizeObjectProps();
         }

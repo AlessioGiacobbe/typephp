@@ -15,9 +15,11 @@ use PhpAot\Php\Entity\ClassDef;
 use PhpAot\Php\Entity\MethodDef;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
+use PhpParser\Node\FunctionLike;
 use PhpParser\Node\Stmt;
 use PhpParser\Node\Arg;
 use PhpParser\Node\Scalar;
+use PhpParser\ParserFactory;
 
 class SsaAnalysisTest extends TestCase
 {
@@ -90,6 +92,25 @@ class SsaAnalysisTest extends TestCase
         $prop = new \ReflectionProperty($context, $name);
         $prop->setAccessible(true);
         $prop->setValue($context, $value);
+    }
+
+    private function optimizeLoopVarsForCode(string $code): array
+    {
+        $parser = (new ParserFactory())->createForHostVersion();
+        $stmts = $parser->parse('<?php function f($s = "") { ' . $code . ' }');
+        $this->assertNotNull($stmts);
+
+        $fn = $stmts[0];
+        $this->assertInstanceOf(FunctionLike::class, $fn);
+
+        $this->invoke('resetFunction');
+        $builder = new SsaBuilder($fn->getStmts() ?: [], []);
+        $builder->build();
+        $this->setContextProperty('ssaBuilder', $builder);
+
+        $this->invoke('optimizeLoopVars');
+
+        return $this->getContextProperty('localVars');
     }
 
     // ========================================================================
@@ -699,6 +720,27 @@ class SsaAnalysisTest extends TestCase
         $this->assertTrue($result, 'unset inside if should be detected');
     }
 
+    public function testHasDangerousPropOpsNestedRefvalInAssignment(): void
+    {
+        $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop');
+        $refvalCall = new Expr\FuncCall(new Node\Name('refval'), [new Arg($propFetch)]);
+        $funcCall = new Expr\FuncCall(new Node\Name('someFunc'), [new Arg($refvalCall)]);
+        $stmt = new Stmt\Expression(new Expr\Assign(new Expr\Variable('result'), $funcCall));
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
+        $this->assertTrue($result, 'refval($obj->prop) nested in an assignment RHS should be detected');
+    }
+
+    public function testHasDangerousPropOpsNestedByRefInReturn(): void
+    {
+        $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop');
+        $funcCall = new Expr\FuncCall(new Node\Name('someFunc'), [new Arg($propFetch, true)]);
+        $stmt = new Stmt\Return_($funcCall);
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
+        $this->assertTrue($result, 'By-ref property argument nested in return should be detected');
+    }
+
     // ========================================================================
     // SsaPropOptimizer: isObjectSsaStable
     // ========================================================================
@@ -777,6 +819,143 @@ class SsaAnalysisTest extends TestCase
     }
 
     // ========================================================================
+    // LoopVarOptimizer: range-proven counters
+    // ========================================================================
+
+    public function testLoopVarOptimizerNarrowsWhilePostDecFromConstant(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            $n = 1000;
+            while ($n--) {
+                echo $n;
+            }
+        ');
+
+        $this->assertSame(CompilerBase::TYPE_INT, $locals['n'] ?? null);
+    }
+
+    public function testLoopVarOptimizerNarrowsForCounterAndConstantBoundVar(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            $n = 20000;
+            for ($i = 0; $i < $n; $i++) {
+                echo $i;
+            }
+        ');
+
+        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
+        $this->assertSame(CompilerBase::TYPE_INT, $locals['n'] ?? null);
+    }
+
+    public function testLoopVarOptimizerNarrowsForCounterWithStrlenBound(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            for ($i = 0; $i <= strlen($s); $i++) {
+                echo $i;
+            }
+        ');
+
+        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
+    }
+
+    public function testLoopVarOptimizerNarrowsForCounterWithGenericIntFunctionBound(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            for ($i = 0; $i < time(); $i++) {
+                echo $i;
+            }
+        ');
+
+        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
+    }
+
+    public function testLoopVarOptimizerRejectsInclusiveGenericIntFunctionBound(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            for ($i = 0; $i <= time(); $i++) {
+                echo $i;
+            }
+        ');
+
+        $this->assertArrayNotHasKey('i', $locals);
+    }
+
+    public function testLoopVarOptimizerNarrowsDescendingCounterFromIntFunction(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            for ($i = time(); $i > 0; $i--) {
+                echo $i;
+            }
+        ');
+
+        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
+    }
+
+    public function testLoopVarOptimizerNarrowsDescendingCounterFromIntMethod(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            for ($i = $v->toInt(); $i > 0; --$i) {
+                echo $i;
+            }
+        ');
+
+        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
+    }
+
+    public function testLoopVarOptimizerRejectsBodyCounterMutation(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            $n = 10;
+            for ($i = 0; $i < $n; $i++) {
+                $i += 2;
+            }
+        ');
+
+        $this->assertArrayNotHasKey('i', $locals);
+    }
+
+    public function testLoopVarOptimizerRejectsNonUnitStep(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            $n = 10;
+            for ($i = 0; $i < $n; $i += 2) {
+                echo $i;
+            }
+        ');
+
+        $this->assertArrayNotHasKey('i', $locals);
+    }
+
+    public function testLoopVarOptimizerRejectsUnsafeUseAfterLoop(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            $n = 10;
+            for ($i = 0; $i < $n; $i++) {
+                echo $i;
+            }
+            $x = $i + PHP_INT_MAX;
+        ');
+
+        $this->assertArrayNotHasKey('i', $locals);
+    }
+
+    public function testLoopVarOptimizerRejectsCounterWhenBoundVarCanChangeBeforeLoop(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            $n = 10;
+            if (time()) {
+                $n = "not-int";
+            }
+            for ($i = 0; $i < $n; $i++) {
+                echo $i;
+            }
+        ');
+
+        $this->assertArrayNotHasKey('i', $locals);
+        $this->assertArrayNotHasKey('n', $locals);
+    }
+
+    // ========================================================================
     // SsaTypeOptimizer: detectSsaDefType
     // ========================================================================
 
@@ -839,6 +1018,58 @@ class SsaAnalysisTest extends TestCase
         $this->assertNull($result, 'Foreach variable definition type is unknown');
     }
 
+    public function testDetectSsaDefTypeAssignOpModIsUnknown(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $assignOp = new Expr\AssignOp\Mod(new Expr\Variable('x'), new Scalar\LNumber(10));
+        $ssaVar->definition = new Stmt\Expression($assignOp);
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertNull($result, 'Compound assignment should not prove a narrow int type');
+    }
+
+    public function testDetectSsaDefTypeAssignOpDiv(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $assignOp = new Expr\AssignOp\Div(new Expr\Variable('x'), new Scalar\LNumber(2));
+        $ssaVar->definition = new Stmt\Expression($assignOp);
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertEquals(CompilerBase::TYPE_FLOAT, $result);
+    }
+
+    public function testDetectSsaDefTypeAssignOpPlusIsUnknownForIntRhs(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $assignOp = new Expr\AssignOp\Plus(new Expr\Variable('x'), new Scalar\LNumber(1));
+        $ssaVar->definition = new Stmt\Expression($assignOp);
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertNull($result, 'Int += can overflow at runtime, so SSA should not infer a narrow int type');
+    }
+
+    public function testDetectSsaDefTypeArithmeticIntExprIsUnknown(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $expr = new Expr\BinaryOp\Plus(new Scalar\LNumber(1), new Scalar\LNumber(2));
+        $assign = new Expr\Assign(new Expr\Variable('x'), $expr);
+        $ssaVar->definition = new Stmt\Expression($assign);
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertNull($result, 'Even constant + is not used for SSA int narrowing without a range-proven fold');
+    }
+
+    public function testDetectSsaDefTypeLiteralBitwiseIntExpr(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $expr = new Expr\BinaryOp\BitwiseAnd(new Scalar\LNumber(7), new Scalar\LNumber(3));
+        $assign = new Expr\Assign(new Expr\Variable('x'), $expr);
+        $ssaVar->definition = new Stmt\Expression($assign);
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertEquals(CompilerBase::TYPE_INT, $result);
+    }
+
     // ========================================================================
     // SsaTypeOptimizer: exprCanOverflowInt
     // ========================================================================
@@ -867,7 +1098,7 @@ class SsaAnalysisTest extends TestCase
             new Scalar\LNumber(1),
             new Scalar\LNumber(2)
         );
-        $this->assertFalse($this->invoke('exprCanOverflowInt', $plus), 'Constant 1+2 should not overflow');
+        $this->assertTrue($this->invoke('exprCanOverflowInt', $plus), 'Arithmetic is treated as unsafe without range proof');
     }
 
     public function testExprCanOverflowIntPow(): void
@@ -940,6 +1171,16 @@ class SsaAnalysisTest extends TestCase
         $this->assertFalse($result, 'Bitwise AND should be safe');
     }
 
+    public function testHasDangerousIntOpsComparison(): void
+    {
+        $var = new Expr\Variable('x');
+        $comparison = new Expr\BinaryOp\Greater($var, new Scalar\LNumber(0));
+        $stmt = new Stmt\Expression($comparison);
+
+        $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
+        $this->assertFalse($result, 'Comparison reads an int but cannot overflow it');
+    }
+
     public function testHasDangerousIntOpsAssignOpPlus(): void
     {
         $var = new Expr\Variable('x');
@@ -957,7 +1198,7 @@ class SsaAnalysisTest extends TestCase
         $stmt = new Stmt\Expression($andEq);
 
         $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
-        $this->assertFalse($result, 'AssignOp\BitwiseAnd should be safe');
+        $this->assertTrue($result, 'Compound assignment should be treated as dangerous for int narrowing');
     }
 
     public function testHasDangerousIntOpsIncrement(): void
@@ -1064,6 +1305,26 @@ class SsaAnalysisTest extends TestCase
 
         $result = $this->invoke('hasDangerousFloatOps', 'x', [$stmt]);
         $this->assertTrue($result, 'Bitwise assign-op on float should be dangerous');
+    }
+
+    public function testHasDangerousFloatOpsNestedBitwiseBinary(): void
+    {
+        $var = new Expr\Variable('x');
+        $bitwise = new Expr\BinaryOp\BitwiseAnd($var, new Scalar\LNumber(1));
+        $stmt = new Stmt\Expression(new Expr\Assign(new Expr\Variable('y'), $bitwise));
+
+        $result = $this->invoke('hasDangerousFloatOps', 'x', [$stmt]);
+        $this->assertTrue($result, 'Bitwise binary op nested in an assignment should be dangerous for float');
+    }
+
+    public function testHasDangerousFloatOpsReturnMod(): void
+    {
+        $var = new Expr\Variable('x');
+        $mod = new Expr\BinaryOp\Mod($var, new Scalar\LNumber(2));
+        $stmt = new Stmt\Return_($mod);
+
+        $result = $this->invoke('hasDangerousFloatOps', 'x', [$stmt]);
+        $this->assertTrue($result, 'Modulo in return should be dangerous for float');
     }
 
     public function testHasDangerousFloatOpsArithmetic(): void

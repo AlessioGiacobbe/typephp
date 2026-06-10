@@ -13,7 +13,8 @@ function main(): void {
     $b **= 3;
     var_dump($b);
 
-    // *= with int RHS is safe → narrowed to int
+    // *= with int RHS produces the expected runtime value,
+    // but is not used as proof for native int narrowing.
     $c = 5;
     $c *= 4;
     var_dump($c);
