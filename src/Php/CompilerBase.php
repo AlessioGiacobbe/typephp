@@ -2740,7 +2740,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (array_key_exists($arg->name->name, $namedArgs)) {
                 $this->fatalError($arg, "Duplicate named argument `{$arg->name->name}`");
             }
-            $namedArgs[$arg->name->name] = $this->parseArg($arg);
+            $namedArgs[$arg->name->name] = $this->parseCallArgValue($arg);
         }
 
         $tmpVar = $this->genTmpVarName();
@@ -2868,10 +2868,32 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return $tmpVar;
                 }
             }
-            $list_args[] = $this->parseArg($arg);
+            $list_args[] = $this->parseCallArgValue($arg);
         }
 
         return Symbol::argList() . '{' . implode(', ', $list_args) . '}';
+    }
+
+    protected function parseCallArgValue(Node\Arg $arg): string
+    {
+        return $this->materializeCallArgValue($arg->value, $this->parseArg($arg));
+    }
+
+    protected function materializeCallArgValue(NodeAbstract $value, string $expr): string
+    {
+        if (!$this->shouldMaterializeCallArg($value)) {
+            return $expr;
+        }
+        return 'php_deindirect(' . $expr . ')';
+    }
+
+    protected function shouldMaterializeCallArg(NodeAbstract $value): bool
+    {
+        if ($value instanceof Expr\ArrayDimFetch) {
+            return !$this->isStdContainerExpr($value);
+        }
+
+        return $value instanceof Expr\PropertyFetch;
     }
 
     /**
@@ -3512,6 +3534,8 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             return $this->convertToRef($arg->value);
         }
+
+        $expr = $this->materializeCallArgValue($arg->value, $expr);
 
         $this->checkVarAssignExpr($arg, $argInfo->type, $type);
 
