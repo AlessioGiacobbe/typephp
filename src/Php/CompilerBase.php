@@ -3569,55 +3569,15 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function assertCanAssignObjectProp(Expr\PropertyFetch $left, Expr $right): void
     {
-        if (!$left->hasAttribute('nativePropertyDef')) {
-            return;
-        }
-
-        /** @var PropertyDef $def */
-        $def = $left->getAttribute('nativePropertyDef');
-
-        if ($this->isNull($right)) {
-            if ($this->isFixedObjectProp($def)) {
-                $this->fatalError(
-                    $left,
-                    "Cannot assign null to object property `{$this->parseIdentifier($left->name)}` of fixed type `{$def->type}`"
-                );
-            }
-            return;
-        }
-
-        if ($def->type !== self::TYPE_OBJECT) {
-            return;
-        }
-
-        $rightType = $this->detectTypeOfExpr($right);
-        if ($rightType !== self::TYPE_VAR && $rightType !== self::TYPE_OBJECT) {
-            $this->fatalError(
-                $left,
-                "Cannot assign value of type `{$rightType}` to object property `{$this->parseIdentifier($left->name)}` of type `{$def->type}`"
-            );
-        }
-
-        if ($def->class === '') {
-            return;
-        }
-
-        $rightClass = $this->detectClassOfExpr($right);
-        if ($rightClass === '') {
-            $this->fatalError(
-                $left,
-                "Cannot assign object of unknown class to object property `{$this->parseIdentifier($left->name)}` of class `{$def->class}`"
-            );
-        }
-        if ($rightClass !== $def->class) {
-            $this->fatalError(
-                $left,
-                "Cannot assign object of class `{$rightClass}` to object property `{$this->parseIdentifier($left->name)}` of class `{$def->class}`"
-            );
-        }
+        $this->assertCanAssignObjectProperty($left, $right, 'object property');
     }
 
     protected function assertCanAssignStaticProp(Expr\StaticPropertyFetch $left, Expr $right): void
+    {
+        $this->assertCanAssignObjectProperty($left, $right, 'static property');
+    }
+
+    private function assertCanAssignObjectProperty(NodeAbstract $left, Expr $right, string $label): void
     {
         if (!$left->hasAttribute('nativePropertyDef')) {
             return;
@@ -3631,7 +3591,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isFixedObjectProp($def)) {
                 $this->fatalError(
                     $left,
-                    "Cannot assign null to static property `{$propName}` of fixed type `{$def->type}`"
+                    "Cannot assign null to {$label} `{$propName}` of fixed type `{$def->type}`"
                 );
             }
             return;
@@ -3645,25 +3605,23 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($rightType !== self::TYPE_VAR && $rightType !== self::TYPE_OBJECT) {
             $this->fatalError(
                 $left,
-                "Cannot assign value of type `{$rightType}` to static property `{$propName}` of type `{$def->type}`"
+                "Cannot assign value of type `{$rightType}` to {$label} `{$propName}` of type `{$def->type}`"
             );
         }
 
-        if ($def->class === '') {
+        if ($def->class === '' or $this->isAbstractClass($def->class) or $this->isInterface($def->class) or !$this->hasClass($def->class)) {
             return;
         }
 
         $rightClass = $this->detectClassOfExpr($right);
+        // TODO 静态编译阶段无法获得准确的类型，需要在运行时检查
         if ($rightClass === '') {
-            $this->fatalError(
-                $left,
-                "Cannot assign object of unknown class to static property `{$propName}` of class `{$def->class}`"
-            );
+            return;
         }
         if ($rightClass !== $def->class) {
             $this->fatalError(
                 $left,
-                "Cannot assign object of class `{$rightClass}` to static property `{$propName}` of class `{$def->class}`"
+                "Cannot assign object of class `{$rightClass}` to {$label} `{$propName}` of class `{$def->class}`"
             );
         }
     }

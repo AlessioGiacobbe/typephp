@@ -55,11 +55,16 @@ trait LoopVarOptimizer
             if ($this->loopVarHasUnsafeUsage($varName, $stmts, $candidate['allowed'] ?? [])) {
                 continue;
             }
+            $depFailed = false;
             foreach ($candidate['deps'] ?? [] as $depName => $_) {
                 if (!$this->isLoopSsaVarStable($depName)
                     || $this->loopVarHasUnsafeUsage($depName, $stmts, $candidates[$depName]['allowed'] ?? [])) {
-                    continue 2;
+                    $depFailed = true;
+                    break;
                 }
+            }
+            if ($depFailed) {
+                continue;
             }
             $this->context->localVars[$escapedName] = self::TYPE_INT;
         }
