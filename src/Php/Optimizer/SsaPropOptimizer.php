@@ -23,6 +23,7 @@ namespace PhpAot\Php\Optimizer;
 
 use PhpAot\Php\Analysis\SsaBuilder;
 use PhpAot\Php\Analysis\SsaFlags;
+use PhpAot\Php\Reflection;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
@@ -349,6 +350,12 @@ trait SsaPropOptimizer
             }
         }
 
+        if ($node instanceof Expr\Eval_ || $node instanceof Expr\Include_) {
+            $this->collectPropEvents($node->expr, $objName, $events);
+            $events[] = ['kind' => 'danger', 'prop' => '*'];
+            return;
+        }
+
         if ($node instanceof Expr\FuncCall || $node instanceof Expr\MethodCall
             || $node instanceof Expr\StaticCall || $node instanceof Expr\NullsafeMethodCall) {
             if ($node instanceof Expr\StaticCall && $node->class instanceof Expr) {
@@ -366,13 +373,15 @@ trait SsaPropOptimizer
                     $this->collectPropEvents($arg->value, $objName, $events);
                 }
             }
-            if (($node instanceof Expr\MethodCall || $node instanceof Expr\NullsafeMethodCall)
-                && $this->isVarNamed($node->var, $objName)) {
-                $events[] = ['kind' => 'danger', 'prop' => '*'];
-            }
-            foreach ($node->args as $arg) {
-                if ($this->exprMayExposeObject($arg->value, $objName)) {
+            if (!$this->isSafeObjectExposureCall($node)) {
+                if (($node instanceof Expr\MethodCall || $node instanceof Expr\NullsafeMethodCall)
+                    && $this->isVarNamed($node->var, $objName)) {
                     $events[] = ['kind' => 'danger', 'prop' => '*'];
+                }
+                foreach ($node->args as $arg) {
+                    if ($this->exprMayExposeObject($arg->value, $objName)) {
+                        $events[] = ['kind' => 'danger', 'prop' => '*'];
+                    }
                 }
             }
             return;
@@ -428,6 +437,60 @@ trait SsaPropOptimizer
                 }
             }
         }
+    }
+
+    protected function isSafeObjectExposureCall(Expr\FuncCall|Expr\MethodCall|Expr\StaticCall|Expr\NullsafeMethodCall $node): bool
+    {
+        if ($node instanceof Expr\FuncCall) {
+            return $node->name instanceof Node\Name
+                && $this->isInternalFunctionName($node->name);
+        }
+
+        if ($node instanceof Expr\StaticCall) {
+            return $node->class instanceof Node\Name
+                && $node->name instanceof Node\Identifier
+                && $this->isInternalClassCall($this->resolveStaticCallClassForSafety($node->class), $node->name->toString());
+        }
+
+        if (!$node->name instanceof Node\Identifier) {
+            return false;
+        }
+
+        $className = $this->detectClassOfExpr($node->var);
+        return $this->isInternalClassCall($className, $node->name->toString());
+    }
+
+    protected function isInternalFunctionName(Node\Name $name): bool
+    {
+        $functionName = ltrim($name->toString(), '\\');
+
+        if (str_contains($functionName, '\\')) {
+            return false;
+        }
+
+        return $this->isInternalFunction($functionName) || $this->isInternalFunction(strtolower($functionName));
+    }
+
+    protected function resolveStaticCallClassForSafety(Node\Name $classNode): string
+    {
+        $className = $classNode->toString();
+        if ($className === 'self') {
+            return $this->classDef ? $this->getFullClassName() : '';
+        }
+        if ($className === 'parent') {
+            return $this->classDef ? $this->classDef->extends : '';
+        }
+        if ($className === 'static') {
+            return '';
+        }
+        return $this->getNamespacedClassName($className);
+    }
+
+    protected function isInternalClassCall(string $className, string $methodName): bool
+    {
+        return $className !== ''
+            && ($this->isInternalClass($className) || $this->isInternalInterface($className))
+            && Reflection::hasMethod($className, $methodName);
     }
 
     /**

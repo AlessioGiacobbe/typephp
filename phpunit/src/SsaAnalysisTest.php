@@ -819,6 +819,62 @@ class SsaAnalysisTest extends TestCase
         $this->assertSame(['a' => true], $result);
     }
 
+    public function testCollectDangerousPropOpsInternalFunctionObjectArgumentIsSafe(): void
+    {
+        $funcCall = new Expr\FuncCall(new Node\Name('gettype'), [new Arg(new Expr\Variable('obj'))]);
+        $stmt = new Stmt\Expression($funcCall);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertSame([], $result);
+    }
+
+    public function testCollectDangerousPropOpsInternalStaticMethodObjectArgumentIsSafe(): void
+    {
+        $staticCall = new Expr\StaticCall(
+            new Node\Name('DateTimeImmutable'),
+            'createFromMutable',
+            [new Arg(new Expr\Variable('obj'))]
+        );
+        $stmt = new Stmt\Expression($staticCall);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertSame([], $result);
+    }
+
+    public function testCollectDangerousPropOpsEvalInvalidatesLaterPropertyAccess(): void
+    {
+        $eval = new Expr\Eval_(new Scalar\String_('$obj->a = 99;'));
+        $stmt = new Stmt\Expression($eval);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertSame(['a' => true], $result);
+    }
+
+    public function testCollectDangerousPropOpsIncludeInvalidatesLaterPropertyAccess(): void
+    {
+        $include = new Expr\Include_(new Scalar\String_('unknown.php'), Expr\Include_::TYPE_INCLUDE);
+        $stmt = new Stmt\Expression($include);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertSame(['a' => true], $result);
+    }
+
     public function testCollectDangerousPropOpsObjectAliasWildcard(): void
     {
         $assign = new Expr\Assign(new Expr\Variable('alias'), new Expr\Variable('obj'));

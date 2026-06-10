@@ -10,17 +10,11 @@ class Foo {
     public function run(): void {
         $this->a = 1;
 
-        $fn = 'make_ref';
-        $fn($this);
+        eval('function make_ref($o): void { $ref =& $o->a; $ref = 99; } make_ref($this);');
         $this->a += 1;
 
         var_dump($this->a);
     }
-}
-
-function make_ref(Foo $o): void {
-    $ref =& $o->a;
-    $ref = 99;
 }
 
 function main(): void {
