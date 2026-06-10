@@ -22,6 +22,9 @@ trait LoopVarOptimizer
         'strlen' => true,
         'count' => true,
         'sizeof' => true,
+        'mb_strlen' => true,
+        'substr_count' => true,
+        'mb_substr_count' => true,
     ];
 
     protected function optimizeLoopVars(): void

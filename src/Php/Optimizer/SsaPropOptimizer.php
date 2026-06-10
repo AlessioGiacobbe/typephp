@@ -41,7 +41,18 @@ trait SsaPropOptimizer
     protected function optimizeObjectProps(): void
     {
         $ssa = $this->context->ssaBuilder;
-        if (!$ssa || empty($ssa->ssaVars) || !$this->nativeTypes) {
+        if (!$ssa || !$this->nativeTypes) {
+            return;
+        }
+
+        if ($this->class) {
+            $unsafeProps = $this->collectDangerousPropOps('this_', $ssa->getStmts());
+            if ($unsafeProps) {
+                $this->context->unsafeObjectProps['this_'] = $unsafeProps;
+            }
+        }
+
+        if (empty($ssa->ssaVars)) {
             return;
         }
 
@@ -72,8 +83,9 @@ trait SsaPropOptimizer
                 continue;
             }
 
-            if ($this->hasDangerousPropOps($objName, $ssa->getStmts())) {
-                continue;
+            $unsafeProps = $this->collectDangerousPropOps($objName, $ssa->getStmts());
+            if ($unsafeProps) {
+                $this->context->unsafeObjectProps[$objName] = $unsafeProps;
             }
 
             $this->context->stableObjects[$objName] = $className;
@@ -253,149 +265,223 @@ trait SsaPropOptimizer
      */
     protected function hasDangerousPropOps(string $objName, array $stmts): bool
     {
+        return $this->collectDangerousPropOps($objName, $stmts) !== [];
+    }
+
+    /**
+     * @return array<string, bool> property name map; '*' means any property may be invalidated.
+     */
+    protected function collectDangerousPropOps(string $objName, array $stmts): array
+    {
+        $events = [];
         foreach ($stmts as $stmt) {
-            if ($this->scanDangerousPropOp($stmt, $objName)) {
-                return true;
-            }
+            $this->collectPropEvents($stmt, $objName, $events);
         }
-        return false;
+        return $this->unsafePropsFromEvents($events);
     }
 
     protected function scanDangerousPropOp($stmt, string $objName): bool
     {
-        if (!$stmt instanceof Node) {
-            return false;
+        $events = [];
+        $this->collectPropEvents($stmt, $objName, $events);
+        return $this->unsafePropsFromEvents($events) !== [];
+    }
+
+    /**
+     * @param array<int, array{kind: string, prop: string}> $events
+     */
+    protected function collectPropEvents($node, string $objName, array &$events): void
+    {
+        if (!$node instanceof Node) {
+            return;
         }
 
-        // unset($o->prop) — typed property can't be unset in PHP 8,
-        // but untyped dynamic properties could be. Check anyway.
-        if ($stmt instanceof Node\Stmt\Unset_) {
-            foreach ($stmt->vars as $var) {
-                if ($this->isPropOfObj($var, $objName)) {
-                    return true;
+        if ($node instanceof Node\Stmt\Unset_) {
+            foreach ($node->vars as $var) {
+                $propName = $this->getPropNameOfObj($var, $objName);
+                if ($propName !== null) {
+                    $events[] = ['kind' => 'danger', 'prop' => $propName];
+                    $this->collectPropEventsInDynamicParts($var, $objName, $events);
+                } else {
+                    $this->collectPropEvents($var, $objName, $events);
+                }
+            }
+            return;
+        }
+
+        if ($node instanceof Expr\AssignRef) {
+            $leftProp = $this->getPropNameOfObj($node->var, $objName);
+            if ($leftProp !== null) {
+                // $o->prop =& $ref would parse the left property as a normal
+                // assignment target, so it must never use a hoisted property var.
+                $events[] = ['kind' => 'danger_always', 'prop' => $leftProp];
+                $this->collectPropEventsInDynamicParts($node->var, $objName, $events);
+            } else {
+                $this->collectPropEvents($node->var, $objName, $events);
+            }
+
+            $rightProp = $this->getPropNameOfObj($node->expr, $objName);
+            if ($rightProp !== null) {
+                // $ref = &$o->prop changes the slot to a reference. Earlier
+                // optimized accesses remain safe only if the property is not
+                // touched again afterwards.
+                $events[] = ['kind' => 'danger', 'prop' => $rightProp];
+                $this->collectPropEventsInDynamicParts($node->expr, $objName, $events);
+            } else {
+                $this->collectPropEvents($node->expr, $objName, $events);
+            }
+            return;
+        }
+
+        if ($node instanceof Expr\FuncCall
+            && $node->name instanceof Node\Name
+            && $node->name->toLowerString() === 'refval'
+            && !empty($node->args)) {
+            $propName = $this->getPropNameOfObj($node->args[0]->value, $objName);
+            if ($propName !== null) {
+                $events[] = ['kind' => 'danger', 'prop' => $propName];
+                $this->collectPropEventsInDynamicParts($node->args[0]->value, $objName, $events);
+                return;
+            }
+        }
+
+        if ($node instanceof Expr\FuncCall || $node instanceof Expr\MethodCall
+            || $node instanceof Expr\StaticCall || $node instanceof Expr\NullsafeMethodCall) {
+            if ($node instanceof Expr\StaticCall && $node->class instanceof Expr) {
+                $this->collectPropEvents($node->class, $objName, $events);
+            }
+            if ($node instanceof Expr\MethodCall || $node instanceof Expr\NullsafeMethodCall) {
+                $this->collectPropEvents($node->var, $objName, $events);
+            }
+            foreach ($node->args as $arg) {
+                $propName = $arg->byRef ? $this->getPropNameOfObj($arg->value, $objName) : null;
+                if ($propName !== null) {
+                    $events[] = ['kind' => 'danger', 'prop' => $propName];
+                    $this->collectPropEventsInDynamicParts($arg->value, $objName, $events);
+                } else {
+                    $this->collectPropEvents($arg->value, $objName, $events);
+                }
+            }
+            if (($node instanceof Expr\MethodCall || $node instanceof Expr\NullsafeMethodCall)
+                && $this->isVarNamed($node->var, $objName)) {
+                $events[] = ['kind' => 'danger', 'prop' => '*'];
+            }
+            foreach ($node->args as $arg) {
+                if ($this->exprMayExposeObject($arg->value, $objName)) {
+                    $events[] = ['kind' => 'danger', 'prop' => '*'];
+                }
+            }
+            return;
+        }
+
+        if ($node instanceof Expr\Assign) {
+            $this->collectPropEvents($node->expr, $objName, $events);
+            $this->collectPropEvents($node->var, $objName, $events);
+            if ($this->isDynamicPropWriteOfObj($node->var, $objName)) {
+                $events[] = ['kind' => 'danger', 'prop' => '*'];
+            }
+            if ($this->exprMayExposeObject($node->expr, $objName)) {
+                $events[] = ['kind' => 'danger', 'prop' => '*'];
+            }
+            return;
+        }
+
+        if ($node instanceof Expr\AssignOp || $node instanceof Expr\PreInc || $node instanceof Expr\PreDec
+            || $node instanceof Expr\PostInc || $node instanceof Expr\PostDec) {
+            $target = $node instanceof Expr\AssignOp ? $node->var : $node->var;
+            if ($node instanceof Expr\AssignOp) {
+                $this->collectPropEvents($node->expr, $objName, $events);
+            }
+            $this->collectPropEvents($target, $objName, $events);
+            if ($this->isDynamicPropWriteOfObj($target, $objName)) {
+                $events[] = ['kind' => 'danger', 'prop' => '*'];
+            }
+            return;
+        }
+
+        if ($node instanceof Expr\Closure) {
+            foreach ($node->uses as $use) {
+                if ($this->isVarNamed($use->var, $objName)) {
+                    $events[] = ['kind' => 'danger', 'prop' => '*'];
                 }
             }
         }
 
-        // $ref = &$o->prop — reference capture of property
-        if ($stmt instanceof Node\Stmt\Expression && $stmt->expr instanceof Expr\AssignRef) {
-            if ($this->isPropOfObj($stmt->expr->expr, $objName)) {
-                return true;
-            }
+        $propName = $this->getPropNameOfObj($node, $objName);
+        if ($propName !== null && $propName !== '*') {
+            $events[] = ['kind' => 'access', 'prop' => $propName];
         }
 
-        if ($stmt instanceof Node\Stmt\Expression) {
-            if ($this->exprHasDangerousPropOp($stmt->expr, $objName)) {
-                return true;
-            }
-        }
-
-        if (($stmt instanceof Node\Stmt\If_
-            || $stmt instanceof Node\Stmt\While_
-            || $stmt instanceof Node\Stmt\Do_)
-            && $stmt->cond instanceof Node
-            && $this->exprHasDangerousPropOp($stmt->cond, $objName)) {
-            return true;
-        }
-
-        if ($stmt instanceof Node\Stmt\For_) {
-            foreach ([$stmt->init, $stmt->cond, $stmt->loop] as $exprList) {
-                foreach ($exprList as $expr) {
-                    if ($expr instanceof Node && $this->exprHasDangerousPropOp($expr, $objName)) {
-                        return true;
+        foreach ($node->getSubNodeNames() as $subNodeName) {
+            $subNode = $node->$subNodeName;
+            if ($subNode instanceof Node) {
+                $this->collectPropEvents($subNode, $objName, $events);
+            } elseif (is_array($subNode)) {
+                foreach ($subNode as $item) {
+                    if ($item instanceof Node) {
+                        $this->collectPropEvents($item, $objName, $events);
                     }
                 }
             }
         }
+    }
 
-        if ($stmt instanceof Node\Stmt\Foreach_ && $stmt->expr instanceof Node) {
-            if ($this->exprHasDangerousPropOp($stmt->expr, $objName)) {
-                return true;
-            }
+    /**
+     * Dynamic property name expressions can contain normal property reads:
+     * unset($o->{$other->name}) should still record $other->name if relevant.
+     *
+     * @param array<int, array{kind: string, prop: string}> $events
+     */
+    protected function collectPropEventsInDynamicParts($node, string $objName, array &$events): void
+    {
+        if (!$node instanceof Expr\PropertyFetch) {
+            return;
         }
-
-        if ($stmt instanceof Node\Stmt\Switch_ && $stmt->cond instanceof Node) {
-            if ($this->exprHasDangerousPropOp($stmt->cond, $objName)) {
-                return true;
-            }
+        if ($node->name instanceof Node) {
+            $this->collectPropEvents($node->name, $objName, $events);
         }
+    }
 
-        if ($stmt instanceof Node\Stmt\Return_ && $stmt->expr instanceof Node) {
-            if ($this->exprHasDangerousPropOp($stmt->expr, $objName)) {
-                return true;
+    /**
+     * @param array<int, array{kind: string, prop: string}> $events
+     * @return array<string, bool>
+     */
+    protected function unsafePropsFromEvents(array $events): array
+    {
+        $liveProps = [];
+        $unsafeProps = [];
+
+        for ($i = count($events) - 1; $i >= 0; $i--) {
+            $event = $events[$i];
+            $propName = $event['prop'];
+
+            if ($event['kind'] === 'access') {
+                $liveProps[$propName] = true;
+                continue;
             }
-        }
 
-        if ($stmt instanceof Node\Stmt\Echo_) {
-            foreach ($stmt->exprs as $expr) {
-                if ($expr instanceof Node && $this->exprHasDangerousPropOp($expr, $objName)) {
-                    return true;
+            if ($event['kind'] === 'danger_always') {
+                $unsafeProps[$propName] = true;
+                continue;
+            }
+
+            if ($propName === '*') {
+                foreach ($liveProps as $liveProp => $_) {
+                    $unsafeProps[$liveProp] = true;
                 }
+            } elseif (isset($liveProps[$propName])) {
+                $unsafeProps[$propName] = true;
             }
         }
 
-        // Recurse into compound statements
-        return $this->recurseDangerousPropOp($stmt, $objName);
+        return $unsafeProps;
     }
 
     protected function exprHasDangerousPropOp($expr, string $objName): bool
     {
-        if (!$expr instanceof Node) {
-            return false;
-        }
-
-        if ($expr instanceof Expr\AssignRef && $this->isPropOfObj($expr->expr, $objName)) {
-            return true;
-        }
-
-        if ($expr instanceof Expr\FuncCall
-            && $expr->name instanceof Node\Name
-            && $expr->name->toLowerString() === 'refval'
-            && !empty($expr->args)
-            && $this->isPropOfObj($expr->args[0]->value, $objName)) {
-            return true;
-        }
-
-        if ($expr instanceof Expr\FuncCall || $expr instanceof Expr\MethodCall
-            || $expr instanceof Expr\StaticCall || $expr instanceof Expr\NullsafeMethodCall) {
-            foreach ($expr->args as $arg) {
-                if ($arg->byRef && $this->isPropOfObj($arg->value, $objName)) {
-                    return true;
-                }
-                if ($this->exprHasDangerousPropOp($arg->value, $objName)) {
-                    return true;
-                }
-            }
-            if (($expr instanceof Expr\MethodCall || $expr instanceof Expr\NullsafeMethodCall)
-                && $this->exprHasDangerousPropOp($expr->var, $objName)) {
-                return true;
-            }
-            if ($expr instanceof Expr\StaticCall && $expr->class instanceof Expr
-                && $this->exprHasDangerousPropOp($expr->class, $objName)) {
-                return true;
-            }
-            return false;
-        }
-
-        foreach (['left', 'right', 'expr', 'var', 'cond', 'if', 'else', 'dim', 'value'] as $prop) {
-            if (isset($expr->$prop) && $expr->$prop instanceof Node) {
-                if ($this->exprHasDangerousPropOp($expr->$prop, $objName)) {
-                    return true;
-                }
-            }
-        }
-
-        foreach (['args', 'exprs', 'items'] as $prop) {
-            if (isset($expr->$prop) && is_array($expr->$prop)) {
-                foreach ($expr->$prop as $item) {
-                    if ($item instanceof Node && $this->exprHasDangerousPropOp($item, $objName)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
+        $events = [];
+        $this->collectPropEvents($expr, $objName, $events);
+        return $this->unsafePropsFromEvents($events) !== [];
     }
 
     /**
@@ -403,42 +489,80 @@ trait SsaPropOptimizer
      */
     protected function isPropOfObj($node, string $objName): bool
     {
-        return $node instanceof Expr\PropertyFetch
-            && $node->var instanceof Expr\Variable
-            && is_string($node->var->name)
-            && $node->var->name === $objName;
+        return $this->getPropNameOfObj($node, $objName) !== null;
     }
 
-    protected function recurseDangerousPropOp($stmt, string $objName): bool
+    protected function getPropNameOfObj($node, string $objName): ?string
     {
-        if ($stmt instanceof Node\Stmt\If_) {
-            if ($this->hasDangerousPropOps($objName, $stmt->stmts)) return true;
-            foreach ($stmt->elseifs as $elseif) {
-                if ($this->hasDangerousPropOps($objName, $elseif->stmts)) return true;
+        if (!$node instanceof Expr\PropertyFetch
+            || !$node->var instanceof Expr\Variable
+            || !is_string($node->var->name)
+            || !$this->isVarNamed($node->var, $objName)) {
+            return null;
+        }
+
+        if ($node->name instanceof Node\Identifier) {
+            return $node->name->toString();
+        }
+
+        if (is_string($node->name)) {
+            return $node->name;
+        }
+
+        return '*';
+    }
+
+    protected function exprMayExposeObject($node, string $objName): bool
+    {
+        if (!$node instanceof Node) {
+            return false;
+        }
+
+        if ($this->isVarNamed($node, $objName)) {
+            return true;
+        }
+
+        if ($node instanceof Expr\PropertyFetch
+            && $node->var instanceof Expr\Variable
+            && is_string($node->var->name)
+            && $this->isVarNamed($node->var, $objName)) {
+            return false;
+        }
+
+        if ($node instanceof Expr\BinaryOp || $node instanceof Expr\BooleanNot
+            || $node instanceof Expr\Cast || $node instanceof Expr\UnaryMinus
+            || $node instanceof Expr\UnaryPlus) {
+            return false;
+        }
+
+        foreach ($node->getSubNodeNames() as $subNodeName) {
+            $subNode = $node->$subNodeName;
+            if ($subNode instanceof Node) {
+                if ($this->exprMayExposeObject($subNode, $objName)) {
+                    return true;
+                }
+            } elseif (is_array($subNode)) {
+                foreach ($subNode as $item) {
+                    if ($this->exprMayExposeObject($item, $objName)) {
+                        return true;
+                    }
+                }
             }
-            if ($stmt->else && $this->hasDangerousPropOps($objName, $stmt->else->stmts)) return true;
+        }
+        return false;
+    }
+
+    protected function isDynamicPropWriteOfObj($node, string $objName): bool
+    {
+        if ($node instanceof Expr\PropertyFetch
+            && $node->var instanceof Expr\Variable
+            && is_string($node->var->name)
+            && $this->isVarNamed($node->var, $objName)) {
+            return $this->getPropNameOfObj($node, $objName) === '*';
         }
 
-        if ($stmt instanceof Node\Stmt\While_ || $stmt instanceof Node\Stmt\Do_) {
-            if ($this->hasDangerousPropOps($objName, $stmt->stmts)) return true;
-        }
-
-        if ($stmt instanceof Node\Stmt\For_ || $stmt instanceof Node\Stmt\Foreach_) {
-            if ($this->hasDangerousPropOps($objName, $stmt->stmts)) return true;
-        }
-
-        if ($stmt instanceof Node\Stmt\TryCatch) {
-            if ($this->hasDangerousPropOps($objName, $stmt->stmts)) return true;
-            foreach ($stmt->catches as $catch) {
-                if ($this->hasDangerousPropOps($objName, $catch->stmts)) return true;
-            }
-            if ($stmt->finally && $this->hasDangerousPropOps($objName, $stmt->finally->stmts)) return true;
-        }
-
-        if ($stmt instanceof Node\Stmt\Switch_) {
-            foreach ($stmt->cases as $case) {
-                if ($this->hasDangerousPropOps($objName, $case->stmts)) return true;
-            }
+        if ($node instanceof Expr\ArrayDimFetch && $node->var instanceof Node) {
+            return $this->isDynamicPropWriteOfObj($node->var, $objName);
         }
 
         return false;
@@ -451,6 +575,49 @@ trait SsaPropOptimizer
     public function isStableObject(string $objName): bool
     {
         return isset($this->context->stableObjects[$objName]);
+    }
+
+    public function canHoistStableObjectProp(string $objName, string $propName): bool
+    {
+        if (!$this->isStableObject($objName)) {
+            return false;
+        }
+        return $this->canHoistObjectPropBySafety($objName, $propName);
+    }
+
+    public function canHoistObjectProp(string $objName, string $propName): bool
+    {
+        if ($objName !== 'this_' && !$this->isStableObject($objName)) {
+            return false;
+        }
+        return $this->canHoistObjectPropBySafety($objName, $propName);
+    }
+
+    protected function canHoistObjectPropBySafety(string $objName, string $propName): bool
+    {
+        $unsafeProps = $this->context->unsafeObjectProps[$objName] ?? [];
+        return !isset($unsafeProps['*']) && !isset($unsafeProps[$propName]);
+    }
+
+    /**
+     * @return array{type: string, kind: string}
+     */
+    protected function getHoistedObjectPropInfo(string $declaredType): array
+    {
+        if ($declaredType === self::TYPE_INT || $declaredType === self::TYPE_FLOAT) {
+            return ['type' => $declaredType, 'kind' => 'zval'];
+        }
+
+        return ['type' => self::TYPE_VAR, 'kind' => 'var'];
+    }
+
+    protected function getZvalValueMacroForPropType(string $type): ?string
+    {
+        return match ($type) {
+            self::TYPE_INT => 'Z_LVAL_P',
+            self::TYPE_FLOAT => 'Z_DVAL_P',
+            default => null,
+        };
     }
 
     /**
@@ -474,8 +641,12 @@ trait SsaPropOptimizer
         }
 
         $refGetter = $objName . '.attr(' . $id . ', true)';
-        $zvalMacro = ($cType === 'php::Float') ? 'Z_DVAL_P' : 'Z_LVAL_P';
-        $this->context->beforeStmtLines[] = $cType . ' &' . $propVar . ' = ' . $zvalMacro . '(' . $refGetter . '.unwrap_ptr());';
+        $zvalMacro = $this->getZvalValueMacroForPropType($cType);
+        if ($zvalMacro !== null) {
+            $this->context->beforeStmtLines[] = $cType . ' &' . $propVar . ' = ' . $zvalMacro . '(' . $refGetter . '.unwrap_ptr());';
+        } else {
+            $this->context->beforeStmtLines[] = self::TYPE_VAR . ' ' . $propVar . ' = ' . $refGetter . ';';
+        }
         $this->context->hoistedProps[$objName][$propName] = true;
 
         return $propVar;

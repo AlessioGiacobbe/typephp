@@ -3431,14 +3431,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             } elseif ($this->isPropertyFetch($var)) {
                 $object = $this->parseIdentifier($var->var);
                 $lines[] = $object . '.unsetProperty(' . $this->identifierToStr($var->name, literal: true) . ');';
-                if ($object === 'this_' and $this->isIdExpr($var->name)) {
-                    $propName = $this->parseIdentifier($var->name);
-                    if ($this->hasObjectPropVar($this->getObjectPropVarName($object, $propName))) {
-                        $this->warning($var, "Object property `{$propName}` of native types cannot be unset");
-                        $lines = [];
-                        $lines[] = $this->getObjectPropVarName($object, $propName) . ' = 0;';
-                    }
-                }
             } elseif ($this->isStaticPropertyFetch($var)) {
                 $this->fatalError($var, 'Attempt to unset static property ' . $this->parseIdentifier($var->class) . '::$' . $this->parseIdentifier($var->name));
             } elseif ($this->isVarExpr($var)) {
@@ -3496,24 +3488,26 @@ class CompilerBase extends \PhpAot\Core\Translator
              * @var PropertyDef $def
              */
             $def = $expr->getAttribute('nativePropertyDef');
-            if ($def->type === self::TYPE_INT or $def->type === self::TYPE_FLOAT) {
-                $propVar = $this->getObjectPropVarName($objectVar, $this->parseIdentifier($property));
-                if ($objectVar === 'this_') {
+            $propName = $this->parseIdentifier($property);
+            $propVar = $this->getObjectPropVarName($objectVar, $propName);
+            if ($objectVar === 'this_') {
+                if ($this->canHoistObjectProp($objectVar, $propName)) {
                     if (!$this->hasObjectPropVar($propVar)) {
+                        $info = $this->getHoistedObjectPropInfo($def->type);
                         $this->context->objectProps[$propVar] = [
-                            'type' => $def->type,
+                            'type' => $info['type'],
                             'getter' => $getProperty,
+                            'kind' => $info['kind'],
                         ];
                     }
                     $expr->setAttribute('nativePropertyVar', $propVar);
                     return $propVar;
                 }
+            } elseif ($this->canHoistStableObjectProp($objectVar, $propName)) {
                 // SSA-stable object: lazily create reference at first access point
-                if ($this->isStableObject($objectVar)) {
-                    $result = $this->hoistStableObjectProp($objectVar, $this->parseIdentifier($property), $id, $def->type);
-                    $expr->setAttribute('nativePropertyVar', $result);
-                    return $result;
-                }
+                $result = $this->hoistStableObjectProp($objectVar, $propName, $id, $def->type);
+                $expr->setAttribute('nativePropertyVar', $result);
+                return $result;
             }
         }
         return $getProperty;
@@ -5094,7 +5088,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             $code .= $this->getIndent() . self::TYPE_VAR . ' &' . $name . ' = ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
         }
         foreach ($this->context->objectProps as $name => $info) {
-            $code .= $this->getIndent() . $info['type'] . ' &' . $name . ' = Z_LVAL_P(' . $info['getter'] . '.unwrap_ptr());' . PHP_EOL;
+            if (($info['kind'] ?? 'zval') === 'var') {
+                $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $name . ' = ' . $info['getter'] . ';' . PHP_EOL;
+            } else {
+                $zvalMacro = ($info['type'] === self::TYPE_FLOAT) ? 'Z_DVAL_P' : 'Z_LVAL_P';
+                $code .= $this->getIndent() . $info['type'] . ' &' . $name . ' = ' . $zvalMacro . '(' . $info['getter'] . '.unwrap_ptr());' . PHP_EOL;
+            }
         }
         foreach ($this->context->staticPropRefs as $name => $info) {
             $getter = Symbol::getStaticProperty() . '(' . $info['classPtr'] . ', ' . $info['offsetExpr'] . ')';

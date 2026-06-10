@@ -641,9 +641,13 @@ class SsaAnalysisTest extends TestCase
         $objVar = new Expr\Variable('obj');
         $propFetch = new Expr\PropertyFetch($objVar, 'prop');
         $unset = new Stmt\Unset_([$propFetch]);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop')
+        ));
 
-        $result = $this->invoke('hasDangerousPropOps', 'obj', [$unset]);
-        $this->assertTrue($result, 'unset($obj->prop) should be detected');
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$unset, $read]);
+        $this->assertTrue($result, 'unset($obj->prop) before a later access should be detected');
     }
 
     public function testHasDangerousPropOpsUnsetDifferentObj(): void
@@ -663,9 +667,23 @@ class SsaAnalysisTest extends TestCase
         $refVar = new Expr\Variable('ref');
         $assignRef = new Expr\AssignRef($refVar, $propFetch);
         $stmt = new Stmt\Expression($assignRef);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop')
+        ));
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertTrue($result, '&$obj->prop before a later access should be detected');
+    }
+
+    public function testHasDangerousPropOpsAssignRefToProperty(): void
+    {
+        $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop');
+        $assignRef = new Expr\AssignRef($propFetch, new Expr\Variable('ref'));
+        $stmt = new Stmt\Expression($assignRef);
 
         $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
-        $this->assertTrue($result, '&$obj->prop should be detected');
+        $this->assertTrue($result, '$obj->prop =& $ref should be detected');
     }
 
     public function testHasDangerousPropOpsByRefArg(): void
@@ -675,9 +693,13 @@ class SsaAnalysisTest extends TestCase
         $arg = new Arg($propFetch, true); // byRef = true
         $funcCall = new Expr\FuncCall(new Node\Name('someFunc'), [$arg]);
         $stmt = new Stmt\Expression($funcCall);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop')
+        ));
 
-        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
-        $this->assertTrue($result, 'func(&$obj->prop) should be detected');
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertTrue($result, 'func(&$obj->prop) before a later access should be detected');
     }
 
     public function testHasDangerousPropOpsRefval(): void
@@ -689,9 +711,13 @@ class SsaAnalysisTest extends TestCase
         $arg = new Arg($refvalCall);
         $funcCall = new Expr\FuncCall(new Node\Name('someFunc'), [$arg]);
         $stmt = new Stmt\Expression($funcCall);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop')
+        ));
 
-        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
-        $this->assertTrue($result, 'func(refval($obj->prop)) should be detected');
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertTrue($result, 'func(refval($obj->prop)) before a later access should be detected');
     }
 
     public function testHasDangerousPropOpsClean(): void
@@ -715,9 +741,13 @@ class SsaAnalysisTest extends TestCase
             'elseifs' => [],
             'else' => null,
         ]);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop')
+        ));
 
-        $result = $this->invoke('hasDangerousPropOps', 'obj', [$ifStmt]);
-        $this->assertTrue($result, 'unset inside if should be detected');
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$ifStmt, $read]);
+        $this->assertTrue($result, 'unset inside if before a later access should be detected');
     }
 
     public function testHasDangerousPropOpsNestedRefvalInAssignment(): void
@@ -726,9 +756,13 @@ class SsaAnalysisTest extends TestCase
         $refvalCall = new Expr\FuncCall(new Node\Name('refval'), [new Arg($propFetch)]);
         $funcCall = new Expr\FuncCall(new Node\Name('someFunc'), [new Arg($refvalCall)]);
         $stmt = new Stmt\Expression(new Expr\Assign(new Expr\Variable('result'), $funcCall));
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop')
+        ));
 
-        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
-        $this->assertTrue($result, 'refval($obj->prop) nested in an assignment RHS should be detected');
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertTrue($result, 'refval($obj->prop) nested in an assignment RHS before a later access should be detected');
     }
 
     public function testHasDangerousPropOpsNestedByRefInReturn(): void
@@ -736,9 +770,111 @@ class SsaAnalysisTest extends TestCase
         $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop');
         $funcCall = new Expr\FuncCall(new Node\Name('someFunc'), [new Arg($propFetch, true)]);
         $stmt = new Stmt\Return_($funcCall);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'prop')
+        ));
 
-        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
-        $this->assertTrue($result, 'By-ref property argument nested in return should be detected');
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertTrue($result, 'By-ref property argument nested in return before a later access should be detected');
+    }
+
+    public function testCollectDangerousPropOpsTracksPropertyNames(): void
+    {
+        $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), 'b');
+        $assignRef = new Expr\AssignRef(new Expr\Variable('ref'), $propFetch);
+        $stmt = new Stmt\Expression($assignRef);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'b')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertSame(['b' => true], $result);
+    }
+
+    public function testCollectDangerousPropOpsDynamicPropertyWildcard(): void
+    {
+        $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), new Expr\Variable('prop'));
+        $unset = new Stmt\Unset_([$propFetch]);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$unset, $read]);
+        $this->assertSame(['a' => true], $result);
+    }
+
+    public function testCollectDangerousPropOpsObjectArgumentWildcard(): void
+    {
+        $funcCall = new Expr\FuncCall(new Node\Name('mutate'), [new Arg(new Expr\Variable('obj'))]);
+        $stmt = new Stmt\Expression($funcCall);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertSame(['a' => true], $result);
+    }
+
+    public function testCollectDangerousPropOpsObjectAliasWildcard(): void
+    {
+        $assign = new Expr\Assign(new Expr\Variable('alias'), new Expr\Variable('obj'));
+        $stmt = new Stmt\Expression($assign);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertSame(['a' => true], $result);
+    }
+
+    public function testCollectDangerousPropOpsPropertyReadDoesNotExposeObject(): void
+    {
+        $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), 'a');
+        $assign = new Expr\Assign(new Expr\Variable('value'), $propFetch);
+        $stmt = new Stmt\Expression($assign);
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt]);
+        $this->assertSame([], $result);
+    }
+
+    public function testCollectDangerousPropOpsUnsetAfterLastAccessIsSafe(): void
+    {
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+        $unset = new Stmt\Unset_([new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')]);
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$read, $unset]);
+        $this->assertSame([], $result);
+    }
+
+    public function testCollectDangerousPropOpsAssignRefToPropertyIsAlwaysUnsafe(): void
+    {
+        $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), 'a');
+        $assignRef = new Expr\AssignRef($propFetch, new Expr\Variable('ref'));
+        $stmt = new Stmt\Expression($assignRef);
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt]);
+        $this->assertSame(['a' => true], $result);
+    }
+
+    public function testCollectDangerousPropOpsObjectArgumentAfterLastAccessIsSafe(): void
+    {
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+        $funcCall = new Expr\FuncCall(new Node\Name('mutate'), [new Arg(new Expr\Variable('obj'))]);
+        $stmt = new Stmt\Expression($funcCall);
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$read, $stmt]);
+        $this->assertSame([], $result);
     }
 
     // ========================================================================
@@ -816,6 +952,25 @@ class SsaAnalysisTest extends TestCase
 
         $this->assertTrue($this->compiler->isStableObject('myObj'));
         $this->assertFalse($this->compiler->isStableObject('unknown'));
+    }
+
+    public function testCanHoistStableObjectPropAllowsCleanProperty(): void
+    {
+        $this->invoke('resetFunction');
+        $this->setContextProperty('stableObjects', ['obj' => 'App\\MyClass']);
+        $this->setContextProperty('unsafeObjectProps', ['obj' => ['b' => true]]);
+
+        $this->assertTrue($this->compiler->canHoistStableObjectProp('obj', 'a'));
+        $this->assertFalse($this->compiler->canHoistStableObjectProp('obj', 'b'));
+    }
+
+    public function testCanHoistStableObjectPropRejectsWildcard(): void
+    {
+        $this->invoke('resetFunction');
+        $this->setContextProperty('stableObjects', ['obj' => 'App\\MyClass']);
+        $this->setContextProperty('unsafeObjectProps', ['obj' => ['*' => true]]);
+
+        $this->assertFalse($this->compiler->canHoistStableObjectProp('obj', 'a'));
     }
 
     // ========================================================================

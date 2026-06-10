@@ -21,6 +21,9 @@ class FunctionContext
     /** Map of hoisted property refs: objName => [propName => true] (SsaPropOptimizer). */
     public array $hoistedProps = [];
 
+    /** Map of properties that must not be hoisted: objName => [propName|'*' => true] (SsaPropOptimizer). */
+    public array $unsafeObjectProps = [];
+
     /**
      * @var array<string, string>
      */
@@ -74,6 +77,7 @@ class FunctionContext
         $this->objectProps = [];
         $this->stableObjects = [];
         $this->hoistedProps = [];
+        $this->unsafeObjectProps = [];
         $this->staticPropRefs = [];
         $this->ceWrappers = [];
         $this->tmpVarIndex = 0;

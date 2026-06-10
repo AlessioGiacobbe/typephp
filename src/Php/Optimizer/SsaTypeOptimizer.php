@@ -580,7 +580,7 @@ trait SsaTypeOptimizer
     {
         return $node instanceof Node\Expr\Variable
             && is_string($node->name)
-            && $node->name === $varName;
+            && ($node->name === $varName || $this->escapeVarName($node->name) === $varName);
     }
 
     protected function hasDangerousFloatOps(string $varName, array $stmts): bool
