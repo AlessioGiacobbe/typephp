@@ -868,9 +868,15 @@ class ArgInfo {
                     !$this->isVariadic ? ", " . $this->getDefaultValueAsArginfoString() : ""
                 );
             }
+            if ($this->isVariadic) {
+                return sprintf(
+                    "\tZEND_ARG_VARIADIC_TYPE_INFO(%s, %s, IS_MIXED, 0)\n",
+                    $this->sendBy, $this->name
+                );
+            }
             return sprintf(
-                "\tZEND_%s_TYPE_MASK(%s, %s, %s, %s)\n",
-                $argKind, $this->sendBy, $this->name,
+                "\tZEND_ARG_TYPE_MASK(%s, %s, %s, %s)\n",
+                $this->sendBy, $this->name,
                 $arginfoType->toTypeMask(),
                 $this->getDefaultValueAsArginfoString()
             );

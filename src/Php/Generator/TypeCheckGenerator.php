@@ -126,6 +126,10 @@ trait TypeCheckGenerator
         }
 
         $varName = $argInfo->name;
+        if ($argInfo->variadic) {
+            return $this->genUnionVariadicParamCheck($argInfo, $argIndex);
+        }
+
         $conditions = [];
         foreach ($argInfo->typeCheck as $entry) {
             $cond = $this->genSingleTypeCondition($varName, $entry);
@@ -138,10 +142,7 @@ trait TypeCheckGenerator
         }
 
         $orExpr = implode(' || ', $conditions);
-        $fnName = $this->functionDef->getNamespacedName();
-        $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($fnName, true) . ' "(): Argument #' . ($argIndex + 1)
-                 . ' ($' . $varName . ') must be of type " ' . $this->genCharPtr($argInfo->typeStr, true) . ' ", "), '
-                 . $varName . '.typeStr()), php::Str(" given"))';
+        $msgExpr = $this->genUnionParamTypeErrorExpr($argInfo, $varName, (string) ($argIndex + 1));
 
         $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
@@ -150,6 +151,55 @@ trait TypeCheckGenerator
         $code .= $this->getIndent() . '}' . PHP_EOL;
 
         return $code;
+    }
+
+    protected function genUnionVariadicParamCheck(ArgInfo $argInfo, int $argIndex): string
+    {
+        $valueVar = $this->genTmpVarName();
+        $iterVar = $this->genTmpVarName();
+        $argNoVar = $this->genTmpVarName();
+
+        $conditions = [];
+        foreach ($argInfo->typeCheck as $entry) {
+            $cond = $this->genSingleTypeCondition($valueVar, $entry);
+            if ($cond !== '') {
+                $conditions[] = $cond;
+            }
+        }
+        if (empty($conditions)) {
+            return '';
+        }
+
+        $orExpr = implode(' || ', $conditions);
+        $msgExpr = $this->genUnionParamTypeErrorExpr($argInfo, $valueVar, $argNoVar);
+
+        $code = $this->getIndent() . 'for (auto ' . $iterVar . ' = ' . $argInfo->name . '.begin(); ' . $iterVar . ' != ' . $argInfo->name . '.end(); ++' . $iterVar . ') {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = ' . $iterVar . '.value();' . PHP_EOL;
+        $code .= $this->getIndent() . self::TYPE_INT . ' ' . $argNoVar . ' = ' . ($argIndex + 1) . ' + ' . $iterVar . '.index();' . PHP_EOL;
+        $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+
+        return $code;
+    }
+
+    protected function genUnionParamTypeErrorExpr(ArgInfo $argInfo, string $valueExpr, string $argNoExpr): string
+    {
+        $fnName = $this->functionDef->getNamespacedName();
+        return 'php::concat({'
+            . 'php::Str(' . $this->genCharPtr($fnName . '(): Argument #', true) . '), '
+            . 'php::toString(' . $argNoExpr . '), '
+            . 'php::Str(' . $this->genCharPtr(' ($' . $argInfo->name . ') must be of type ', true) . '), '
+            . 'php::Str(' . $this->genCharPtr($argInfo->typeStr, true) . '), '
+            . 'php::Str(", "), '
+            . $valueExpr . '.typeStr(), '
+            . 'php::Str(" given")'
+            . '})';
     }
 
     protected function genUnionReturnCheck(string $varName): string
