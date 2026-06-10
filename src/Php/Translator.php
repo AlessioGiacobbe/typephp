@@ -1613,7 +1613,10 @@ CODE;
     protected function getAbsolutePath(string $path, string $projectDir): string
     {
         $path = trim($path);
-        if ($path[0] != '/') {
+        if ($path === '') {
+            $this->error('Source path must not be empty');
+        }
+        if ($path[0] !== '/') {
             $absPath = $projectDir . '/' . $path;
         } else {
             $absPath = $path;
@@ -1948,6 +1951,7 @@ CODE;
             switch ($type2) {
                 case 'Stmt_Class':
                 case 'Stmt_Trait':
+                case 'Stmt_Enum':
                     $code .= $this->parseClass($v2);
                     break;
                 case 'Stmt_Const':
@@ -2496,7 +2500,7 @@ CODE;
                     _error:
                     $this->fatalError($v,
                         'Cannot override private method `' .
-                        $classDef->getNamespacedName(false) . '::' . $this->method . '()`');
+                        $extends . '::' . $this->method . '()`');
                 }
             }
         }
