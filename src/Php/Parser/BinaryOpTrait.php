@@ -106,6 +106,12 @@ trait BinaryOpTrait
             }
         }
 
+        // Any Big*-typed operand reaching here means no Big* block handled the operator
+        $bigTypes = [self::TYPE_BIGFLOAT, self::TYPE_DECIMAL, self::TYPE_BIGINT];
+        if (in_array($leftType, $bigTypes, true) || in_array($rightType, $bigTypes, true)) {
+            $this->fatalError($left, "Operator '{$op}' is not supported for Big* numeric types");
+        }
+
         // Only promote between native types (Int ↔ Float).  When one side is
         // php::Var, let the Variant operator handle type coercion so that
         // run-time PHP type-juggling rules are followed correctly.
