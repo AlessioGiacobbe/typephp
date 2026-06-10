@@ -1482,6 +1482,9 @@ class SsaBuilder
     private function collectCallByRefArgs(array $args, Node $callStmt, array &$pushedVars): void
     {
         foreach ($args as $arg) {
+            if ($arg instanceof Node\VariadicPlaceholder) {
+                continue;
+            }
             $varName = null;
 
             // Case 1: Explicit &$var at call site
