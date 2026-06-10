@@ -1012,6 +1012,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($typeName === 'self') {
                     $class = $this->getFullClassName();
                 } elseif ($typeName === 'parent') {
+                    if (!$this->classDef) {
+                        $this->fatalError($type, 'Cannot use "parent" type declaration outside a class');
+                    }
                     $class = $this->classDef->extends;
                 } elseif ($typeName === 'static') {
                     // static 类无法在编译期获取
@@ -2645,7 +2648,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 if (!isset($args[$k])) {
                     if ($argInfo->defaultValue === null) {
-                        $this->fatalError($callArgs[$i], 'Named argument `' . $argInfo->name . '` is missing default value');
+                        $errorNode = null;
+                        foreach ($callArgs as $a) {
+                            if ($a instanceof Node\Arg && $a->name) {
+                                $errorNode = $a;
+                                break;
+                            }
+                        }
+                        $this->fatalError($errorNode ?? reset($callArgs), 'Named argument `' . $argInfo->name . '` is missing default value');
                     }
                     $args[$k] = new Node\Arg($argInfo->defaultValue);
                 }
@@ -3214,6 +3224,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($className === 'self') {
                         $className = $this->getFullClassName();
                     } elseif ($className === 'parent') {
+                        if (!$this->classDef) {
+                            $this->fatalError($expr, 'Cannot use "parent" outside a class');
+                        }
                         $className = $this->classDef->extends;
                     } else {
                         $className = $this->getNamespacedClassName($className);
