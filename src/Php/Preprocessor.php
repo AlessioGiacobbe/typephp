@@ -266,7 +266,7 @@ class Preprocessor extends CompilerBase
                 }
             }
             $name = $this->parseIdentifier($param->var);
-            if ($this->method and $name == 'this_') {
+            if ($this->method and $name === 'this_') {
                 $this->fatalError($param, 'Cannot use `$this` as parameter of class method');
             }
             $argInfo = new ArgInfo();
@@ -411,9 +411,7 @@ class Preprocessor extends CompilerBase
         $fullClassName = $this->getFullClassName();
         $fullClassNameLower = strtolower($fullClassName);
 
-        if ($class instanceof Node\Stmt\Enum_) {
-            $flags = Modifiers::PUBLIC;
-        } elseif (!$class instanceof Node\Stmt\Trait_) {
+        if ($class instanceof Node\Stmt\Class_) {
             $flags = $class->flags;
         } else {
             $flags = Modifiers::PUBLIC;
@@ -591,8 +589,8 @@ class Preprocessor extends CompilerBase
             $this->checkRequiredArgNum($name, $this->methodDef, $v);
             $this->classDef->addMethod($this->methodDef);
         } else {
-            if (isset($class->flags) and !($class->flags & Modifiers::ABSTRACT)) {
-                $this->fatalError($v, "Class {$this->class} cannot override non-abstract method {$v->name}");
+            if (!$class instanceof Node\Stmt\Trait_ && isset($class->flags) && !($class->flags & Modifiers::ABSTRACT)) {
+                $this->fatalError($v, "Non-abstract class {$this->class} contains abstract method {$v->name}");
             }
             if ($this->method === '__construct') {
                 foreach ($v->params as $param) {
