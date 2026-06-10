@@ -45,6 +45,17 @@ trait SsaPropOptimizer
             return;
         }
 
+        if ($this->classDef && !$this->classDef->trait) {
+            if ($this->isClassSafeForPropHoisting($this->getFullClassName())) {
+                $unsafeProps = $this->collectDangerousPropOps('this_', $ssa->getStmts());
+                if ($unsafeProps) {
+                    $this->context->unsafeObjectProps['this_'] = $unsafeProps;
+                }
+            } else {
+                $this->context->unsafeObjectProps['this_'] = ['*' => true];
+            }
+        }
+
         if (empty($ssa->ssaVars)) {
             return;
         }

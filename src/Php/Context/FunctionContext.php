@@ -58,7 +58,7 @@ class FunctionContext
     public array $beforeStmtLines = [];
     public array $afterStmtLines = [];
     public array $objectProps;
-    /** Map of ref var name => ['type' => ..., 'class' => ..., 'prop' => ..., 'ceExpr' => ..., 'offsetExpr' => ...] */
+    /** Map of static property local slots. int/float use zval refs; other types use Var slots. */
     public array $staticPropRefs = [];
     public int $scopeLevel = 0;
     /**

@@ -263,6 +263,8 @@ trait AssignOpTrait
 
         if ($this->isPropertyFetch($left)) {
             $this->assertCanAssignObjectProp($left, $right);
+        } elseif ($this->isStaticPropertyFetch($left)) {
+            $this->assertCanAssignStaticProp($left, $right);
         }
 
         $rightExpr = $this->parseAssignRightExpr($right);

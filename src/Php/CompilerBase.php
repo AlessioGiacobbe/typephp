@@ -2067,6 +2067,19 @@ class CompilerBase extends \PhpAot\Core\Translator
                     }
                 }
                 break;
+            case 'Expr_StaticPropertyFetch':
+                if ($this->isIdExpr($expr->name)) {
+                    if (!$expr->hasAttribute('nativePropertyDef')) {
+                        $class = null;
+                        $this->findNativeStaticProperty($expr, $class);
+                    }
+                    if ($expr->hasAttribute('nativePropertyDef')) {
+                        /** @var PropertyDef $def */
+                        $def = $expr->getAttribute('nativePropertyDef');
+                        return $def->type;
+                    }
+                }
+                break;
             case 'Expr_ArrayDimFetch':
                 if ($this->isStdArrayExpr($expr)) {
                     if (!$expr->hasAttribute('stdArrayDimFetch')) {
@@ -3604,6 +3617,57 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function assertCanAssignStaticProp(Expr\StaticPropertyFetch $left, Expr $right): void
+    {
+        if (!$left->hasAttribute('nativePropertyDef')) {
+            return;
+        }
+
+        /** @var PropertyDef $def */
+        $def = $left->getAttribute('nativePropertyDef');
+        $propName = $this->parseIdentifier($left->name);
+
+        if ($this->isNull($right)) {
+            if ($this->isFixedObjectProp($def)) {
+                $this->fatalError(
+                    $left,
+                    "Cannot assign null to static property `{$propName}` of fixed type `{$def->type}`"
+                );
+            }
+            return;
+        }
+
+        if ($def->type !== self::TYPE_OBJECT) {
+            return;
+        }
+
+        $rightType = $this->detectTypeOfExpr($right);
+        if ($rightType !== self::TYPE_VAR && $rightType !== self::TYPE_OBJECT) {
+            $this->fatalError(
+                $left,
+                "Cannot assign value of type `{$rightType}` to static property `{$propName}` of type `{$def->type}`"
+            );
+        }
+
+        if ($def->class === '') {
+            return;
+        }
+
+        $rightClass = $this->detectClassOfExpr($right);
+        if ($rightClass === '') {
+            $this->fatalError(
+                $left,
+                "Cannot assign object of unknown class to static property `{$propName}` of class `{$def->class}`"
+            );
+        }
+        if ($rightClass !== $def->class) {
+            $this->fatalError(
+                $left,
+                "Cannot assign object of class `{$rightClass}` to static property `{$propName}` of class `{$def->class}`"
+            );
+        }
+    }
+
     protected function parseUnset(Node\Stmt\Unset_ $node): string
     {
         $vars = $node->vars;
@@ -4591,24 +4655,22 @@ class CompilerBase extends \PhpAot\Core\Translator
         $class = null;
         $nativeProp = $this->findNativeStaticProperty($expr, $class);
         if ($nativeProp) {
-            // Hoist typed int/float static properties to C++ native references,
-            // analogous to the $this->intProp reference optimization.
             if ($this->nativeTypes && $expr->hasAttribute('nativePropertyDef')) {
                 /** @var PropertyDef $def */
                 $def = $expr->getAttribute('nativePropertyDef');
-                if ($def->type === self::TYPE_INT || $def->type === self::TYPE_FLOAT) {
-                    $propName = $this->parseIdentifier($expr->name);
-                    $refVar = '_static_' . str_replace('\\', '_', $class) . '_' . $propName;
-                    if (!isset($this->context->staticPropRefs[$refVar])) {
-                        $classPtr = $this->getClassEntryPtr($class);
-                        $this->context->staticPropRefs[$refVar] = [
-                            'type' => $def->type,
-                            'classPtr' => $classPtr,
-                            'offsetExpr' => $nativeProp,
-                        ];
-                    }
-                    return $refVar;
+                $propName = $this->parseIdentifier($expr->name);
+                $refVar = '_static_' . str_replace('\\', '_', $class) . '_' . $propName;
+                if (!isset($this->context->staticPropRefs[$refVar])) {
+                    $info = $this->getHoistedObjectPropInfo($def->type);
+                    $classPtr = $this->getClassEntryPtr($class);
+                    $this->context->staticPropRefs[$refVar] = [
+                        'type' => $info['type'],
+                        'classPtr' => $classPtr,
+                        'offsetExpr' => $nativeProp,
+                        'kind' => $info['kind'],
+                    ];
                 }
+                return $refVar;
             }
 
             if ($expr->hasAttribute('nativeProperty')) {
@@ -5317,8 +5379,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         foreach ($this->context->staticPropRefs as $name => $info) {
             $getter = Symbol::getStaticProperty() . '(' . $info['classPtr'] . ', ' . $info['offsetExpr'] . ')';
-            $zvalMacro = ($info['type'] === self::TYPE_FLOAT) ? 'Z_DVAL_P' : 'Z_LVAL_P';
-            $code .= $this->getIndent() . $info['type'] . ' &' . $name . ' = ' . $zvalMacro . '(' . $getter . '.unwrap_ptr());' . PHP_EOL;
+            if (($info['kind'] ?? 'zval') === 'var') {
+                $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $name . ' = ' . $getter . ';' . PHP_EOL;
+            } else {
+                $zvalMacro = ($info['type'] === self::TYPE_FLOAT) ? 'Z_DVAL_P' : 'Z_LVAL_P';
+                $code .= $this->getIndent() . $info['type'] . ' &' . $name . ' = ' . $zvalMacro . '(' . $getter . '.unwrap_ptr());' . PHP_EOL;
+            }
         }
         return $code;
     }
