@@ -109,14 +109,21 @@ trait AssignOpTrait
                 continue;
             }
             if ($item instanceof ArrayItem) {
-                $oriInAssignExpr = $this->context->inAssignExpr;
-                $this->context->inAssignExpr = true;
-                $var = $this->parseIdentifier($item->value);
-                $this->context->inAssignExpr = $oriInAssignExpr;
-                if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
-                    $this->addLocalVar($var, self::TYPE_VAR);
+                if ($item->value instanceof Expr\List_) {
+                    $nestedTmp = $this->genTmpVarName();
+                    $this->addLocalVar($nestedTmp, self::TYPE_ARRAY);
+                    $code .= "{$nestedTmp} = {$tmpVar}.item({$k}); ";
+                    $code .= $this->parseAssignToList($item->value, new Variable($nestedTmp));
+                } else {
+                    $oriInAssignExpr = $this->context->inAssignExpr;
+                    $this->context->inAssignExpr = true;
+                    $var = $this->parseIdentifier($item->value);
+                    $this->context->inAssignExpr = $oriInAssignExpr;
+                    if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
+                        $this->addLocalVar($var, self::TYPE_VAR);
+                    }
+                    $code .= "{$var} = {$tmpVar}.item({$k}); ";
                 }
-                $code .= "{$var} = {$tmpVar}.item({$k}); ";
             } else {
                 abort($item);
             }
