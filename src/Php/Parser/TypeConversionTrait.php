@@ -76,7 +76,7 @@ trait TypeConversionTrait
             return 'php::toBigInt(' . $this->trimBrackets($expr) . ')';
         }
         if ($fromType === self::TYPE_FLOAT) {
-            $this->fatalError(null, 'Cannot convert float to BigInt, use string or int instead');
+            $this->error('Cannot convert float to BigInt, use string or int instead');
         }
         if ($fromType === self::TYPE_STR) {
             return 'php::toBigInt(php::toString(' . $this->trimBrackets($expr) . '))';

@@ -96,7 +96,7 @@ class FunctionContext
 
     public function leaveScope(): void
     {
-        unset($this->scopeLayouts[$this->scopeLevel]);
         $this->scopeLevel--;
+        unset($this->scopeLayouts[$this->scopeLevel]);
     }
 }

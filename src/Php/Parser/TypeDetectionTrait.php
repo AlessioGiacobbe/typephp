@@ -138,7 +138,7 @@ trait TypeDetectionTrait
 
     protected function isArrayVar($var): bool
     {
-        return $this->isVarExpr($var) and $this->hasVar($var->name) and $this->getVarType($var->name) == self::TYPE_ARRAY;
+        return $this->isVarExpr($var) and $this->hasVar($var->name) and $this->getVarType($var->name) === self::TYPE_ARRAY;
     }
 
 }
