@@ -11,8 +11,8 @@ namespace PhpAot\Php\Optimizer;
 
 use PhpAot\Php\Analysis\SsaBuilder;
 use PhpAot\Php\Analysis\SsaFlags;
+use PhpAot\Php\Analysis\SsaVar;
 use PhpParser\Node;
-use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 
 trait SsaTypeOptimizer
@@ -190,7 +190,7 @@ trait SsaTypeOptimizer
      * Detect the type produced by a single SSA variable definition.
      * Returns null if the type cannot be determined from the AST.
      */
-    protected function detectSsaDefType(\PhpAot\Php\Analysis\SsaVar $ssaVar): ?string
+    protected function detectSsaDefType(SsaVar $ssaVar): ?string
     {
         $def = $ssaVar->definition;
         if (!$def) {
@@ -412,13 +412,13 @@ trait SsaTypeOptimizer
             }
         }
 
-        if ($stmt instanceof Node\Stmt\Foreach_ && $stmt->expr instanceof Node) {
+        if ($stmt instanceof Node\Stmt\Foreach_) {
             if ($this->exprHasIntHazard($stmt->expr, $varName)) {
                 return true;
             }
         }
 
-        if ($stmt instanceof Node\Stmt\Switch_ && $stmt->cond instanceof Node) {
+        if ($stmt instanceof Node\Stmt\Switch_) {
             if ($this->exprHasIntHazard($stmt->cond, $varName)) {
                 return true;
             }
@@ -621,13 +621,13 @@ trait SsaTypeOptimizer
             }
         }
 
-        if ($stmt instanceof Node\Stmt\Foreach_ && $stmt->expr instanceof Node) {
+        if ($stmt instanceof Node\Stmt\Foreach_) {
             if ($this->exprHasFloatHazard($stmt->expr, $varName)) {
                 return true;
             }
         }
 
-        if ($stmt instanceof Node\Stmt\Switch_ && $stmt->cond instanceof Node) {
+        if ($stmt instanceof Node\Stmt\Switch_) {
             if ($this->exprHasFloatHazard($stmt->cond, $varName)) {
                 return true;
             }
