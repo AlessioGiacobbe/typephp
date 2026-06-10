@@ -144,12 +144,14 @@ trait SsaPropOptimizer
         if ($expr instanceof Expr\New_) {
             if ($expr->class instanceof Node\Name) {
                 $className = $expr->class->toString();
-                if ($className === 'self' || $className === 'static') {
+                if ($className === 'self') {
                     if ($this->classDef) {
-                        $className = $this->classDef->getFullName();
-                    } else {
-                        return null;
+                        return $this->getFullClassName();
                     }
+                    return null;
+                }
+                if ($className === 'static') {
+                    return null;
                 }
                 return $this->getNamespacedClassName($className);
             }

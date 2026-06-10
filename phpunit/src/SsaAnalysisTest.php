@@ -1,0 +1,1078 @@
+<?php
+
+namespace PhpAot\Tests;
+
+use PHPUnit\Framework\TestCase;
+use PhpAot\Php\Analysis\SsaBuilder;
+use PhpAot\Php\Analysis\SsaFlags;
+use PhpAot\Php\Analysis\SsaVar;
+use PhpAot\Php\Analysis\SsaBlock;
+use PhpAot\Php\Analysis\VarState;
+use PhpAot\Php\Analysis\PiConstraint;
+use PhpAot\Php\CompilerBase;
+use PhpAot\Php\CompilerTest;
+use PhpAot\Php\Entity\ClassDef;
+use PhpAot\Php\Entity\MethodDef;
+use PhpParser\Node;
+use PhpParser\Node\Expr;
+use PhpParser\Node\Stmt;
+use PhpParser\Node\Arg;
+use PhpParser\Node\Scalar;
+
+class SsaAnalysisTest extends TestCase
+{
+    private CompilerTest $compiler;
+    private \ReflectionClass $ref;
+    private string $tmpDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // SsaFlags, SsaVar, SsaBlock, etc. are defined in SsaBuilder.php
+        // but PSR-4 expects each class in its own file. Load them early.
+        require_once __DIR__ . '/../../src/Php/Analysis/SsaBuilder.php';
+        $this->tmpDir = sys_get_temp_dir() . '/ssa_test_' . uniqid();
+        mkdir($this->tmpDir, 0777, true);
+        $this->compiler = CompilerTest::create($this->tmpDir);
+        $this->ref = new \ReflectionClass($this->compiler);
+    }
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        if (is_dir($this->tmpDir)) {
+            $this->removeDirectory($this->tmpDir);
+        }
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . DIRECTORY_SEPARATOR . $file;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+        rmdir($dir);
+    }
+
+    private function invoke(string $method, ...$args): mixed
+    {
+        $m = $this->ref->getMethod($method);
+        $m->setAccessible(true);
+        return $m->invoke($this->compiler, ...$args);
+    }
+
+    private function setProperty(string $name, mixed $value): void
+    {
+        $prop = $this->ref->getProperty($name);
+        $prop->setAccessible(true);
+        $prop->setValue($this->compiler, $value);
+    }
+
+    private function getContextProperty(string $name): mixed
+    {
+        $ctxProp = $this->ref->getProperty('context');
+        $ctxProp->setAccessible(true);
+        $context = $ctxProp->getValue($this->compiler);
+        $prop = new \ReflectionProperty($context, $name);
+        $prop->setAccessible(true);
+        return $prop->getValue($context);
+    }
+
+    private function setContextProperty(string $name, mixed $value): void
+    {
+        $ctxProp = $this->ref->getProperty('context');
+        $ctxProp->setAccessible(true);
+        $context = $ctxProp->getValue($this->compiler);
+        $prop = new \ReflectionProperty($context, $name);
+        $prop->setAccessible(true);
+        $prop->setValue($context, $value);
+    }
+
+    // ========================================================================
+    // SsaFlags: constant values
+    // ========================================================================
+
+    public function testSsaFlagsAreDistinct(): void
+    {
+        $flags = [
+            SsaFlags::UNDEFINED,
+            SsaFlags::REFERENCE,
+            SsaFlags::ESCAPED,
+            SsaFlags::PHI,
+            SsaFlags::PARAM,
+            SsaFlags::KILLED,
+        ];
+        $this->assertCount(6, array_unique($flags), 'All SSA flags must be distinct powers of 2');
+    }
+
+    public function testSsaFlagsArePowersOfTwo(): void
+    {
+        $flags = [
+            SsaFlags::UNDEFINED,
+            SsaFlags::REFERENCE,
+            SsaFlags::ESCAPED,
+            SsaFlags::PHI,
+            SsaFlags::PARAM,
+            SsaFlags::KILLED,
+        ];
+        foreach ($flags as $flag) {
+            $this->assertGreaterThan(0, $flag);
+            $this->assertEquals(0, $flag & ($flag - 1), "Flag {$flag} must be a power of 2");
+        }
+    }
+
+    public function testSsaFlagValues(): void
+    {
+        $this->assertEquals(1, SsaFlags::UNDEFINED);
+        $this->assertEquals(2, SsaFlags::REFERENCE);
+        $this->assertEquals(4, SsaFlags::ESCAPED);
+        $this->assertEquals(8, SsaFlags::PHI);
+        $this->assertEquals(16, SsaFlags::PARAM);
+        $this->assertEquals(32, SsaFlags::KILLED);
+    }
+
+    // ========================================================================
+    // SsaVar
+    // ========================================================================
+
+    public function testSsaVarCreation(): void
+    {
+        $var = new SsaVar(42, 'myVar', SsaFlags::PARAM);
+        $this->assertEquals(42, $var->id);
+        $this->assertEquals('myVar', $var->origName);
+        $this->assertEquals(SsaFlags::PARAM, $var->flags);
+        $this->assertNull($var->definition);
+        $this->assertNull($var->pi);
+        $this->assertEmpty($var->phiSources);
+        $this->assertFalse($var->isConstant);
+        $this->assertNull($var->constantValue);
+    }
+
+    public function testSsaVarDefaults(): void
+    {
+        $var = new SsaVar(1, 'x');
+        $this->assertEquals(0, $var->flags);
+        $this->assertNull($var->definition);
+    }
+
+    public function testSsaVarFlagsCombinable(): void
+    {
+        $flags = SsaFlags::REFERENCE | SsaFlags::ESCAPED;
+        $var = new SsaVar(1, 'x', $flags);
+        $this->assertTrue(($var->flags & SsaFlags::REFERENCE) !== 0);
+        $this->assertTrue(($var->flags & SsaFlags::ESCAPED) !== 0);
+        $this->assertFalse(($var->flags & SsaFlags::PHI) !== 0);
+    }
+
+    // ========================================================================
+    // PiConstraint
+    // ========================================================================
+
+    public function testPiConstraintDefaults(): void
+    {
+        $pi = new PiConstraint();
+        $this->assertEquals('', $pi->narrowedType);
+        $this->assertNull($pi->condition);
+        $this->assertTrue($pi->isInstanceof);
+        $this->assertFalse($pi->hasRange);
+        $this->assertEquals(0, $pi->rangeMin);
+        $this->assertEquals(0, $pi->rangeMax);
+    }
+
+    public function testPiConstraintCustom(): void
+    {
+        $pi = new PiConstraint();
+        $pi->narrowedType = 'MyClass';
+        $pi->isInstanceof = false;
+        $pi->hasRange = true;
+        $pi->rangeMin = 1;
+        $pi->rangeMax = 10;
+
+        $this->assertEquals('MyClass', $pi->narrowedType);
+        $this->assertFalse($pi->isInstanceof);
+        $this->assertTrue($pi->hasRange);
+        $this->assertEquals(1, $pi->rangeMin);
+        $this->assertEquals(10, $pi->rangeMax);
+    }
+
+    // ========================================================================
+    // SsaBlock
+    // ========================================================================
+
+    public function testSsaBlockDefaults(): void
+    {
+        $block = new SsaBlock();
+        $this->assertEmpty($block->stmts);
+        $this->assertEmpty($block->predecessors);
+        $this->assertEmpty($block->successors);
+        $this->assertFalse($block->isGotoTarget);
+        $this->assertNull($block->labelName);
+        $this->assertFalse($block->endsWithGoto);
+        $this->assertNull($block->gotoLabel);
+        $this->assertEquals(-1, $block->branchTrueBlock);
+        $this->assertEquals(-1, $block->branchFalseBlock);
+        $this->assertEquals(-1, $block->branchJoinBlock);
+        $this->assertFalse($block->isJoinPoint);
+        $this->assertEquals(-1, $block->forceJumpTo);
+        $this->assertEmpty($block->phi);
+        $this->assertEquals(-1, $block->dominator);
+        $this->assertEmpty($block->dominatedChildren);
+        $this->assertEmpty($block->dominanceFrontier);
+    }
+
+    // ========================================================================
+    // VarState
+    // ========================================================================
+
+    public function testVarStateDefaults(): void
+    {
+        $state = new VarState();
+        $this->assertEmpty($state->stack);
+        $this->assertEquals(0, $state->counter);
+    }
+
+    // ========================================================================
+    // SsaBuilder: basic construction
+    // ========================================================================
+
+    public function testSsaBuilderEmptyFunction(): void
+    {
+        $builder = new SsaBuilder([]);
+        $builder->build();
+
+        $this->assertGreaterThanOrEqual(2, count($builder->blocks), 'Should have at least entry + exit blocks');
+        $this->assertEmpty($builder->ssaVars);
+    }
+
+    public function testSsaBuilderSimpleAssignment(): void
+    {
+        $var = new Expr\Variable('x');
+        $val = new Scalar\LNumber(42);
+        $assign = new Stmt\Expression(new Expr\Assign($var, $val));
+
+        $builder = new SsaBuilder([$assign]);
+        $builder->build();
+
+        $this->assertGreaterThan(0, count($builder->ssaVars), 'Should create SSA var for assignment');
+    }
+
+    public function testSsaBuilderWithParams(): void
+    {
+        $argInfoList = [
+            (object) ['name' => 'a', 'byRef' => false],
+            (object) ['name' => 'b', 'byRef' => true],
+        ];
+
+        $builder = new SsaBuilder([], $argInfoList);
+        $builder->build();
+
+        $paramVars = array_filter($builder->ssaVars, fn($v) => ($v->flags & SsaFlags::PARAM) !== 0);
+        $this->assertCount(2, $paramVars, 'Two parameters should create 2 PARAM SSA vars');
+
+        $bVars = array_filter($paramVars, fn($v) => $v->origName === 'b');
+        $bVar = reset($bVars);
+        $this->assertNotFalse($bVar);
+        $this->assertTrue(($bVar->flags & SsaFlags::REFERENCE) !== 0, 'byRef param should have REFERENCE flag');
+    }
+
+    public function testSsaBuilderGetStmts(): void
+    {
+        $stmts = [new Stmt\Expression(new Expr\Assign(new Expr\Variable('x'), new Scalar\LNumber(1)))];
+        $builder = new SsaBuilder($stmts);
+        $this->assertSame($stmts, $builder->getStmts());
+    }
+
+    // ========================================================================
+    // SsaBuilder: CFG with control flow
+    // ========================================================================
+
+    public function testSsaBuilderIfElseCreatesBlocks(): void
+    {
+        $cond = new Expr\Variable('cond');
+        $trueAssign = new Stmt\Expression(new Expr\Assign(new Expr\Variable('x'), new Scalar\LNumber(1)));
+        $falseAssign = new Stmt\Expression(new Expr\Assign(new Expr\Variable('x'), new Scalar\LNumber(2)));
+        $ifStmt = new Stmt\If_($cond, [
+            'stmts' => [$trueAssign],
+            'elseifs' => [],
+            'else' => new Stmt\Else_([$falseAssign]),
+        ]);
+
+        $builder = new SsaBuilder([$ifStmt]);
+        $builder->build();
+
+        $this->assertGreaterThan(4, count($builder->blocks), 'If-else should create multiple blocks');
+    }
+
+    // ========================================================================
+    // SsaBuilder: goto and labels
+    // ========================================================================
+
+    public function testSsaBuilderGotoLabel(): void
+    {
+        $label = new Stmt\Label('target');
+        $label->name = new Node\Identifier('target');
+        $gotoStmt = new Stmt\Goto_('target');
+        $gotoStmt->name = new Node\Identifier('target');
+        $assign = new Stmt\Expression(new Expr\Assign(new Expr\Variable('x'), new Scalar\LNumber(1)));
+
+        $builder = new SsaBuilder([$assign, $gotoStmt, $label, $assign]);
+        $builder->build();
+
+        $gotoBlocks = array_filter($builder->blocks, fn($b) => $b->endsWithGoto);
+        $labelBlocks = array_filter($builder->blocks, fn($b) => $b->isGotoTarget);
+
+        $this->assertCount(1, $gotoBlocks, 'Should have one block ending with goto');
+        $this->assertCount(1, $labelBlocks, 'Should have one label block');
+    }
+
+    // ========================================================================
+    // SsaBuilder: getDefBlocks
+    // ========================================================================
+
+    public function testSsaBuilderGetDefBlocks(): void
+    {
+        $assign1 = new Stmt\Expression(new Expr\Assign(new Expr\Variable('x'), new Scalar\LNumber(1)));
+        $assign2 = new Stmt\Expression(new Expr\Assign(new Expr\Variable('y'), new Scalar\LNumber(2)));
+
+        $builder = new SsaBuilder([$assign1, $assign2]);
+        $builder->build();
+
+        $xBlocks = $builder->getDefBlocks('x');
+        $yBlocks = $builder->getDefBlocks('y');
+
+        $this->assertNotEmpty($xBlocks, 'x should have def blocks');
+        $this->assertNotEmpty($yBlocks, 'y should have def blocks');
+    }
+
+    // ========================================================================
+    // SsaBuilder: buildPiConstraints
+    // ========================================================================
+
+    public function testBuildPiConstraintsInstanceof(): void
+    {
+        $var = new Expr\Variable('obj');
+        $class = new Node\Name('MyClass');
+        $instanceof = new Expr\Instanceof_($var, $class);
+        $ifStmt = new Stmt\If_($instanceof, ['stmts' => [], 'elseifs' => [], 'else' => null]);
+
+        $builder = new SsaBuilder([]);
+        $result = $builder->buildPiConstraints($ifStmt);
+
+        $this->assertArrayHasKey('obj', $result['trueVars']);
+        $this->assertArrayHasKey('obj', $result['falseVars']);
+
+        $this->assertEquals('MyClass', $result['trueVars']['obj']->narrowedType);
+        $this->assertTrue($result['trueVars']['obj']->isInstanceof);
+
+        $this->assertEquals('!MyClass', $result['falseVars']['obj']->narrowedType);
+        $this->assertFalse($result['falseVars']['obj']->isInstanceof);
+    }
+
+    public function testBuildPiConstraintsIsInt(): void
+    {
+        $arg = new Arg(new Expr\Variable('x'));
+        $funcCall = new Expr\FuncCall(new Node\Name('is_int'), [$arg]);
+        $ifStmt = new Stmt\If_($funcCall, ['stmts' => [], 'elseifs' => [], 'else' => null]);
+
+        $builder = new SsaBuilder([]);
+        $result = $builder->buildPiConstraints($ifStmt);
+
+        $this->assertArrayHasKey('x', $result['trueVars']);
+        $this->assertEquals('int', $result['trueVars']['x']->narrowedType);
+        $this->assertFalse($result['trueVars']['x']->isInstanceof);
+    }
+
+    public function testBuildPiConstraintsNegation(): void
+    {
+        $var = new Expr\Variable('obj');
+        $class = new Node\Name('MyClass');
+        $instanceof = new Expr\Instanceof_($var, $class);
+        $negated = new Expr\BooleanNot($instanceof);
+        $ifStmt = new Stmt\If_($negated, ['stmts' => [], 'elseifs' => [], 'else' => null]);
+
+        $builder = new SsaBuilder([]);
+        $result = $builder->buildPiConstraints($ifStmt);
+
+        $this->assertArrayHasKey('obj', $result['trueVars']);
+        $this->assertEquals('!MyClass', $result['trueVars']['obj']->narrowedType);
+    }
+
+    public function testBuildPiConstraintsPlainVariable(): void
+    {
+        $cond = new Expr\Variable('flag');
+        $ifStmt = new Stmt\If_($cond, ['stmts' => [], 'elseifs' => [], 'else' => null]);
+
+        $builder = new SsaBuilder([]);
+        $result = $builder->buildPiConstraints($ifStmt);
+
+        $this->assertEmpty($result['trueVars']);
+        $this->assertEmpty($result['falseVars']);
+    }
+
+    // ========================================================================
+    // SsaBuilder: dump
+    // ========================================================================
+
+    public function testSsaBuilderDump(): void
+    {
+        $assign = new Stmt\Expression(new Expr\Assign(new Expr\Variable('x'), new Scalar\LNumber(42)));
+        $builder = new SsaBuilder([$assign]);
+        $builder->build();
+
+        $dump = $builder->dump();
+        $this->assertStringContainsString('SSA Builder Dump', $dump);
+        $this->assertStringContainsString('Blocks:', $dump);
+        $this->assertStringContainsString('SSA Vars:', $dump);
+        $this->assertStringContainsString('$x', $dump);
+    }
+
+    // ========================================================================
+    // SsaPropOptimizer: resolveNewExprClass
+    // ========================================================================
+
+    public function testResolveNewExprClassFullyQualified(): void
+    {
+        $name = new Node\Name\FullyQualified('App\\Service\\User');
+        $newExpr = new Expr\New_($name);
+
+        $result = $this->invoke('resolveNewExprClass', $newExpr);
+        $this->assertEquals('App\\Service\\User', $result);
+    }
+
+    public function testResolveNewExprClassUnqualified(): void
+    {
+        $name = new Node\Name('MyClass');
+        $newExpr = new Expr\New_($name);
+
+        $this->setProperty('namespace', 'App\\Service');
+
+        $result = $this->invoke('resolveNewExprClass', $newExpr);
+        $this->assertEquals('App\\Service\\MyClass', $result);
+    }
+
+    public function testResolveNewExprClassSelf(): void
+    {
+        $name = new Node\Name('self');
+        $newExpr = new Expr\New_($name);
+
+        $classDef = new ClassDef('MyService', 0, 'App\\Service');
+        $this->setProperty('classDef', $classDef);
+        $this->setProperty('namespace', 'App\\Service');
+        $this->setProperty('class', 'MyService');
+
+        $result = $this->invoke('resolveNewExprClass', $newExpr);
+        $this->assertEquals('App\\Service\\MyService', $result);
+    }
+
+    public function testResolveNewExprClassStatic(): void
+    {
+        $name = new Node\Name('static');
+        $newExpr = new Expr\New_($name);
+
+        $classDef = new ClassDef('MyService', 0, 'App\\Service');
+        $this->setProperty('classDef', $classDef);
+        $this->setProperty('namespace', 'App\\Service');
+        $this->setProperty('class', 'MyService');
+
+        $result = $this->invoke('resolveNewExprClass', $newExpr);
+        $this->assertNull($result, 'static cannot be resolved at compile time (late static binding)');
+    }
+
+    public function testResolveNewExprClassSelfNoClassDef(): void
+    {
+        $name = new Node\Name('self');
+        $newExpr = new Expr\New_($name);
+
+        $result = $this->invoke('resolveNewExprClass', $newExpr);
+        $this->assertNull($result, 'Should return null when classDef is not set');
+    }
+
+    public function testResolveNewExprClassNotNew(): void
+    {
+        $var = new Expr\Variable('obj');
+        $result = $this->invoke('resolveNewExprClass', $var);
+        $this->assertNull($result, 'Non-New_ expressions should return null');
+    }
+
+    // ========================================================================
+    // SsaPropOptimizer: isPropOfObj
+    // ========================================================================
+
+    public function testIsPropOfObjTrue(): void
+    {
+        $objVar = new Expr\Variable('obj');
+        $propFetch = new Expr\PropertyFetch($objVar, 'propName');
+
+        $result = $this->invoke('isPropOfObj', $propFetch, 'obj');
+        $this->assertTrue($result);
+    }
+
+    public function testIsPropOfObjDifferentVar(): void
+    {
+        $objVar = new Expr\Variable('otherObj');
+        $propFetch = new Expr\PropertyFetch($objVar, 'propName');
+
+        $result = $this->invoke('isPropOfObj', $propFetch, 'obj');
+        $this->assertFalse($result);
+    }
+
+    public function testIsPropOfObjNotPropertyFetch(): void
+    {
+        $var = new Expr\Variable('obj');
+        $result = $this->invoke('isPropOfObj', $var, 'obj');
+        $this->assertFalse($result);
+    }
+
+    public function testIsPropOfObjNotVariable(): void
+    {
+        $methodCall = new Expr\MethodCall(new Expr\Variable('obj'), 'method');
+        $propFetch = new Expr\PropertyFetch($methodCall, 'propName');
+
+        $result = $this->invoke('isPropOfObj', $propFetch, 'obj');
+        $this->assertFalse($result, 'Property fetch on method call result should not match');
+    }
+
+    // ========================================================================
+    // SsaPropOptimizer: isObjectDefinition
+    // ========================================================================
+
+    public function testIsObjectDefinitionNew(): void
+    {
+        $ssaVar = new SsaVar(1, 'obj');
+        $newExpr = new Expr\New_(new Node\Name('MyClass'));
+        $assign = new Expr\Assign(new Expr\Variable('obj'), $newExpr);
+        $ssaVar->definition = new Stmt\Expression($assign);
+
+        $result = $this->invoke('isObjectDefinition', $ssaVar);
+        $this->assertTrue($result);
+    }
+
+    public function testIsObjectDefinitionNull(): void
+    {
+        $ssaVar = new SsaVar(1, 'obj');
+        $result = $this->invoke('isObjectDefinition', $ssaVar);
+        $this->assertFalse($result);
+    }
+
+    public function testIsObjectDefinitionNotAssign(): void
+    {
+        $ssaVar = new SsaVar(1, 'obj');
+        $ssaVar->definition = new Stmt\Foreach_(
+            new Expr\Variable('arr'),
+            new Expr\Variable('value')
+        );
+
+        $result = $this->invoke('isObjectDefinition', $ssaVar);
+        $this->assertFalse($result, 'Foreach is not an object definition');
+    }
+
+    // ========================================================================
+    // SsaPropOptimizer: isClassSafeForPropHoisting
+    // ========================================================================
+
+    public function testIsClassSafeForPropHoistingClean(): void
+    {
+        $classDef = new ClassDef('SafeClass', 0, 'App');
+        $this->setProperty('classes', ['app_safeclass' => $classDef]);
+
+        $result = $this->invoke('isClassSafeForPropHoisting', 'App\\SafeClass');
+        $this->assertTrue($result, 'Class without __get/__set should be safe');
+    }
+
+    public function testIsClassSafeForPropHoistingWithGet(): void
+    {
+        $classDef = new ClassDef('MagicClass', 0, 'App');
+        $classDef->methods = ['__get' => new MethodDef(0, '__get')];
+        $this->setProperty('classes', ['app_magicclass' => $classDef]);
+
+        $result = $this->invoke('isClassSafeForPropHoisting', 'App\\MagicClass');
+        $this->assertFalse($result, 'Class with __get should NOT be safe');
+    }
+
+    public function testIsClassSafeForPropHoistingWithSet(): void
+    {
+        $classDef = new ClassDef('MagicClass', 0, 'App');
+        $classDef->methods = ['__set' => new MethodDef(0, '__set')];
+        $this->setProperty('classes', ['app_magicclass' => $classDef]);
+
+        $result = $this->invoke('isClassSafeForPropHoisting', 'App\\MagicClass');
+        $this->assertFalse($result, 'Class with __set should NOT be safe');
+    }
+
+    public function testIsClassSafeForPropHoistingUnknown(): void
+    {
+        $this->setProperty('classes', []);
+
+        $result = $this->invoke('isClassSafeForPropHoisting', 'Unknown\\Class');
+        $this->assertFalse($result, 'Unknown class should NOT be safe');
+    }
+
+    // ========================================================================
+    // SsaPropOptimizer: hasDangerousPropOps
+    // ========================================================================
+
+    public function testHasDangerousPropOpsUnset(): void
+    {
+        $objVar = new Expr\Variable('obj');
+        $propFetch = new Expr\PropertyFetch($objVar, 'prop');
+        $unset = new Stmt\Unset_([$propFetch]);
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$unset]);
+        $this->assertTrue($result, 'unset($obj->prop) should be detected');
+    }
+
+    public function testHasDangerousPropOpsUnsetDifferentObj(): void
+    {
+        $objVar = new Expr\Variable('other');
+        $propFetch = new Expr\PropertyFetch($objVar, 'prop');
+        $unset = new Stmt\Unset_([$propFetch]);
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$unset]);
+        $this->assertFalse($result, 'unset on different object should not match');
+    }
+
+    public function testHasDangerousPropOpsAssignRef(): void
+    {
+        $objVar = new Expr\Variable('obj');
+        $propFetch = new Expr\PropertyFetch($objVar, 'prop');
+        $refVar = new Expr\Variable('ref');
+        $assignRef = new Expr\AssignRef($refVar, $propFetch);
+        $stmt = new Stmt\Expression($assignRef);
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
+        $this->assertTrue($result, '&$obj->prop should be detected');
+    }
+
+    public function testHasDangerousPropOpsByRefArg(): void
+    {
+        $objVar = new Expr\Variable('obj');
+        $propFetch = new Expr\PropertyFetch($objVar, 'prop');
+        $arg = new Arg($propFetch, true); // byRef = true
+        $funcCall = new Expr\FuncCall(new Node\Name('someFunc'), [$arg]);
+        $stmt = new Stmt\Expression($funcCall);
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
+        $this->assertTrue($result, 'func(&$obj->prop) should be detected');
+    }
+
+    public function testHasDangerousPropOpsRefval(): void
+    {
+        $objVar = new Expr\Variable('obj');
+        $propFetch = new Expr\PropertyFetch($objVar, 'prop');
+        $refvalArg = new Arg($propFetch);
+        $refvalCall = new Expr\FuncCall(new Node\Name('refval'), [$refvalArg]);
+        $arg = new Arg($refvalCall);
+        $funcCall = new Expr\FuncCall(new Node\Name('someFunc'), [$arg]);
+        $stmt = new Stmt\Expression($funcCall);
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
+        $this->assertTrue($result, 'func(refval($obj->prop)) should be detected');
+    }
+
+    public function testHasDangerousPropOpsClean(): void
+    {
+        $objVar = new Expr\Variable('obj');
+        $propFetch = new Expr\PropertyFetch($objVar, 'prop');
+        $assign = new Expr\Assign($propFetch, new Scalar\LNumber(42));
+        $stmt = new Stmt\Expression($assign);
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$stmt]);
+        $this->assertFalse($result, 'Regular property assignment should be safe');
+    }
+
+    public function testHasDangerousPropOpsNestedInIf(): void
+    {
+        $objVar = new Expr\Variable('obj');
+        $propFetch = new Expr\PropertyFetch($objVar, 'prop');
+        $unset = new Stmt\Unset_([$propFetch]);
+        $ifStmt = new Stmt\If_(new Expr\ConstFetch(new Node\Name('true')), [
+            'stmts' => [$unset],
+            'elseifs' => [],
+            'else' => null,
+        ]);
+
+        $result = $this->invoke('hasDangerousPropOps', 'obj', [$ifStmt]);
+        $this->assertTrue($result, 'unset inside if should be detected');
+    }
+
+    // ========================================================================
+    // SsaPropOptimizer: isObjectSsaStable
+    // ========================================================================
+
+    public function testIsObjectSsaStableSingleDef(): void
+    {
+        $builder = new SsaBuilder([]);
+        $ssaVar = new SsaVar(0, 'obj');
+        $newExpr = new Expr\New_(new Node\Name('MyClass'));
+        $assign = new Expr\Assign(new Expr\Variable('obj'), $newExpr);
+        $ssaVar->definition = new Stmt\Expression($assign);
+        $builder->ssaVars[0] = $ssaVar;
+
+        $result = $this->invoke('isObjectSsaStable', $builder, 'obj');
+        $this->assertTrue($result, 'Single SSA def from new Expr should be stable');
+    }
+
+    public function testIsObjectSsaStableWithReference(): void
+    {
+        $builder = new SsaBuilder([]);
+        $ssaVar = new SsaVar(0, 'obj', SsaFlags::REFERENCE);
+        $builder->ssaVars[0] = $ssaVar;
+
+        $result = $this->invoke('isObjectSsaStable', $builder, 'obj');
+        $this->assertFalse($result, 'REFERENCE flag should make object unstable');
+    }
+
+    public function testIsObjectSsaStableWithEscaped(): void
+    {
+        $builder = new SsaBuilder([]);
+        $ssaVar = new SsaVar(0, 'obj', SsaFlags::ESCAPED);
+        $builder->ssaVars[0] = $ssaVar;
+
+        $result = $this->invoke('isObjectSsaStable', $builder, 'obj');
+        $this->assertFalse($result, 'ESCAPED flag should make object unstable');
+    }
+
+    public function testIsObjectSsaStableWithKilled(): void
+    {
+        $builder = new SsaBuilder([]);
+        $ssaVar = new SsaVar(0, 'obj', SsaFlags::KILLED);
+        $builder->ssaVars[0] = $ssaVar;
+
+        $result = $this->invoke('isObjectSsaStable', $builder, 'obj');
+        $this->assertFalse($result, 'KILLED flag should make object unstable');
+    }
+
+    public function testIsObjectSsaStableWithPhi(): void
+    {
+        $builder = new SsaBuilder([]);
+        $ssaVar = new SsaVar(0, 'obj', SsaFlags::PHI);
+        $builder->ssaVars[0] = $ssaVar;
+
+        $result = $this->invoke('isObjectSsaStable', $builder, 'obj');
+        $this->assertFalse($result, 'PHI should be skipped, no stable def found');
+    }
+
+    public function testIsObjectSsaStableNotFound(): void
+    {
+        $builder = new SsaBuilder([]);
+        $result = $this->invoke('isObjectSsaStable', $builder, 'nonexistent');
+        $this->assertFalse($result, 'Non-existent variable should not be stable');
+    }
+
+    // ========================================================================
+    // SsaPropOptimizer: isStableObject (public method)
+    // ========================================================================
+
+    public function testIsStableObject(): void
+    {
+        $this->invoke('resetFunction');
+        $this->setContextProperty('stableObjects', ['myObj' => 'App\\MyClass']);
+
+        $this->assertTrue($this->compiler->isStableObject('myObj'));
+        $this->assertFalse($this->compiler->isStableObject('unknown'));
+    }
+
+    // ========================================================================
+    // SsaTypeOptimizer: detectSsaDefType
+    // ========================================================================
+
+    public function testDetectSsaDefTypeIntLiteral(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $assign = new Expr\Assign(new Expr\Variable('x'), new Scalar\LNumber(42));
+        $ssaVar->definition = new Stmt\Expression($assign);
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertEquals(CompilerBase::TYPE_INT, $result);
+    }
+
+    public function testDetectSsaDefTypeFloatLiteral(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $assign = new Expr\Assign(new Expr\Variable('x'), new Scalar\DNumber(3.14));
+        $ssaVar->definition = new Stmt\Expression($assign);
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertEquals(CompilerBase::TYPE_FLOAT, $result);
+    }
+
+    public function testDetectSsaDefTypeStringLiteral(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $assign = new Expr\Assign(new Expr\Variable('x'), new Scalar\String_('hello'));
+        $ssaVar->definition = new Stmt\Expression($assign);
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertEquals(CompilerBase::TYPE_STR, $result);
+    }
+
+    public function testDetectSsaDefTypeBoolLiteral(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $assign = new Expr\Assign(new Expr\Variable('x'), new Expr\ConstFetch(new Node\Name('true')));
+        $ssaVar->definition = new Stmt\Expression($assign);
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertEquals(CompilerBase::TYPE_BOOL, $result);
+    }
+
+    public function testDetectSsaDefTypeNull(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertNull($result, 'SSA var without definition should return null');
+    }
+
+    public function testDetectSsaDefTypeForeach(): void
+    {
+        $ssaVar = new SsaVar(1, 'x');
+        $ssaVar->definition = new Stmt\Foreach_(
+            new Expr\Variable('arr'),
+            new Expr\Variable('x')
+        );
+
+        $result = $this->invoke('detectSsaDefType', $ssaVar);
+        $this->assertNull($result, 'Foreach variable definition type is unknown');
+    }
+
+    // ========================================================================
+    // SsaTypeOptimizer: exprCanOverflowInt
+    // ========================================================================
+
+    public function testExprCanOverflowIntDivision(): void
+    {
+        $div = new Expr\BinaryOp\Div(
+            new Scalar\LNumber(10),
+            new Scalar\LNumber(3)
+        );
+        $this->assertTrue($this->invoke('exprCanOverflowInt', $div), 'Division always can overflow');
+    }
+
+    public function testExprCanOverflowIntBitwiseSafe(): void
+    {
+        $and = new Expr\BinaryOp\BitwiseAnd(
+            new Scalar\LNumber(0xFF),
+            new Scalar\LNumber(0x0F)
+        );
+        $this->assertFalse($this->invoke('exprCanOverflowInt', $and), 'Bitwise AND is safe');
+    }
+
+    public function testExprCanOverflowIntConstantArithmetic(): void
+    {
+        $plus = new Expr\BinaryOp\Plus(
+            new Scalar\LNumber(1),
+            new Scalar\LNumber(2)
+        );
+        $this->assertFalse($this->invoke('exprCanOverflowInt', $plus), 'Constant 1+2 should not overflow');
+    }
+
+    public function testExprCanOverflowIntPow(): void
+    {
+        $pow = new Expr\BinaryOp\Pow(
+            new Scalar\LNumber(2),
+            new Scalar\LNumber(63)
+        );
+        $this->assertTrue($this->invoke('exprCanOverflowInt', $pow), 'Pow can overflow');
+    }
+
+    public function testExprCanOverflowIntPhpIntMax(): void
+    {
+        $plus = new Expr\BinaryOp\Plus(
+            new Expr\ConstFetch(new Node\Name('PHP_INT_MAX')),
+            new Scalar\LNumber(1)
+        );
+        $this->assertTrue($this->invoke('exprCanOverflowInt', $plus), 'PHP_INT_MAX + 1 can overflow');
+    }
+
+    // ========================================================================
+    // SsaTypeOptimizer: isBoundaryConstant
+    // ========================================================================
+
+    public function testIsBoundaryConstantPhpIntMax(): void
+    {
+        $const = new Expr\ConstFetch(new Node\Name('PHP_INT_MAX'));
+        $this->assertTrue($this->invoke('isBoundaryConstant', $const));
+    }
+
+    public function testIsBoundaryConstantPhpIntMin(): void
+    {
+        $const = new Expr\ConstFetch(new Node\Name('PHP_INT_MIN'));
+        $this->assertTrue($this->invoke('isBoundaryConstant', $const));
+    }
+
+    public function testIsBoundaryConstantOther(): void
+    {
+        $const = new Expr\ConstFetch(new Node\Name('FOO'));
+        $this->assertFalse($this->invoke('isBoundaryConstant', $const));
+    }
+
+    public function testIsBoundaryConstantNonConst(): void
+    {
+        $var = new Expr\Variable('x');
+        $this->assertFalse($this->invoke('isBoundaryConstant', $var));
+    }
+
+    // ========================================================================
+    // SsaTypeOptimizer: hasDangerousIntOps
+    // ========================================================================
+
+    public function testHasDangerousIntOpsArithmeticPlus(): void
+    {
+        $var = new Expr\Variable('x');
+        $plus = new Expr\BinaryOp\Plus($var, new Scalar\LNumber(1));
+        $stmt = new Stmt\Expression($plus);
+
+        $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
+        $this->assertTrue($result, 'Arithmetic + with variable should be dangerous');
+    }
+
+    public function testHasDangerousIntOpsBitwiseAnd(): void
+    {
+        $var = new Expr\Variable('x');
+        $and = new Expr\BinaryOp\BitwiseAnd($var, new Scalar\LNumber(0xFF));
+        $stmt = new Stmt\Expression($and);
+
+        $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
+        $this->assertFalse($result, 'Bitwise AND should be safe');
+    }
+
+    public function testHasDangerousIntOpsAssignOpPlus(): void
+    {
+        $var = new Expr\Variable('x');
+        $plusEq = new Expr\AssignOp\Plus($var, new Scalar\LNumber(1));
+        $stmt = new Stmt\Expression($plusEq);
+
+        $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
+        $this->assertTrue($result, 'AssignOp\Plus should be dangerous');
+    }
+
+    public function testHasDangerousIntOpsAssignOpBitwiseAnd(): void
+    {
+        $var = new Expr\Variable('x');
+        $andEq = new Expr\AssignOp\BitwiseAnd($var, new Scalar\LNumber(0x0F));
+        $stmt = new Stmt\Expression($andEq);
+
+        $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
+        $this->assertFalse($result, 'AssignOp\BitwiseAnd should be safe');
+    }
+
+    public function testHasDangerousIntOpsIncrement(): void
+    {
+        $var = new Expr\Variable('x');
+        $postInc = new Expr\PostInc($var);
+        $stmt = new Stmt\Expression($postInc);
+
+        $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
+        $this->assertTrue($result, 'PostInc should be dangerous');
+    }
+
+    public function testHasDangerousIntOpsBitwiseNot(): void
+    {
+        $var = new Expr\Variable('x');
+        $bitNot = new Expr\BitwiseNot($var);
+        $stmt = new Stmt\Expression($bitNot);
+
+        $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
+        $this->assertFalse($result, 'BitwiseNot should be safe');
+    }
+
+    public function testHasDangerousIntOpsUnaryMinus(): void
+    {
+        $var = new Expr\Variable('x');
+        $unaryMinus = new Expr\UnaryMinus($var);
+        $stmt = new Stmt\Expression($unaryMinus);
+
+        $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
+        $this->assertTrue($result, 'UnaryMinus should be dangerous');
+    }
+
+    public function testHasDangerousIntOpsDifferentVariable(): void
+    {
+        $y = new Expr\Variable('y');
+        $plus = new Expr\BinaryOp\Plus($y, new Scalar\LNumber(1));
+        $stmt = new Stmt\Expression($plus);
+
+        $result = $this->invoke('hasDangerousIntOps', 'x', [$stmt]);
+        $this->assertFalse($result, 'Operation on different variable should be safe for x');
+    }
+
+    // ========================================================================
+    // SsaTypeOptimizer: exprHasIntHazard
+    // ========================================================================
+
+    public function testExprHasIntHazardAdd(): void
+    {
+        $var = new Expr\Variable('x');
+        $plus = new Expr\BinaryOp\Plus($var, new Scalar\LNumber(1));
+
+        $this->assertTrue($this->invoke('exprHasIntHazard', $plus, 'x'));
+    }
+
+    public function testExprHasIntHazardBitwiseAnd(): void
+    {
+        $var = new Expr\Variable('x');
+        $and = new Expr\BinaryOp\BitwiseAnd($var, new Scalar\LNumber(0xFF));
+
+        $this->assertFalse($this->invoke('exprHasIntHazard', $and, 'x'));
+    }
+
+    public function testExprHasIntHazardBitwiseOr(): void
+    {
+        $var = new Expr\Variable('x');
+        $or = new Expr\BinaryOp\BitwiseOr($var, new Scalar\LNumber(1));
+
+        $this->assertFalse($this->invoke('exprHasIntHazard', $or, 'x'));
+    }
+
+    public function testExprHasIntHazardMod(): void
+    {
+        $var = new Expr\Variable('x');
+        $mod = new Expr\BinaryOp\Mod($var, new Scalar\LNumber(10));
+
+        $this->assertFalse($this->invoke('exprHasIntHazard', $mod, 'x'));
+    }
+
+    public function testExprHasIntHazardShiftLeft(): void
+    {
+        $var = new Expr\Variable('x');
+        $shl = new Expr\BinaryOp\ShiftLeft($var, new Scalar\LNumber(2));
+
+        $this->assertFalse($this->invoke('exprHasIntHazard', $shl, 'x'));
+    }
+
+    public function testExprHasIntHazardCastInt(): void
+    {
+        $var = new Expr\Variable('x');
+        $cast = new Expr\Cast\Int_($var);
+
+        $this->assertFalse($this->invoke('exprHasIntHazard', $cast, 'x'));
+    }
+
+    // ========================================================================
+    // SsaTypeOptimizer: hasDangerousFloatOps
+    // ========================================================================
+
+    public function testHasDangerousFloatOpsBitwiseAssign(): void
+    {
+        $var = new Expr\Variable('x');
+        $andEq = new Expr\AssignOp\BitwiseAnd($var, new Scalar\LNumber(1));
+        $stmt = new Stmt\Expression($andEq);
+
+        $result = $this->invoke('hasDangerousFloatOps', 'x', [$stmt]);
+        $this->assertTrue($result, 'Bitwise assign-op on float should be dangerous');
+    }
+
+    public function testHasDangerousFloatOpsArithmetic(): void
+    {
+        $var = new Expr\Variable('x');
+        $plusEq = new Expr\AssignOp\Plus($var, new Scalar\DNumber(1.5));
+        $stmt = new Stmt\Expression($plusEq);
+
+        $result = $this->invoke('hasDangerousFloatOps', 'x', [$stmt]);
+        $this->assertFalse($result, 'Arithmetic assign-op on float should be safe');
+    }
+}
