@@ -104,14 +104,14 @@ function mandel2() {
 
 /****/
 
-function Ack($m, $n){
+function Ack(int $m, int $n){
   if($m == 0) return $n+1;
   if($n == 0) return Ack($m-1, 1);
   return Ack($m - 1, Ack($m, ($n - 1)));
 }
 
-function ackermann($n) {
-  $r = Ack(3,$n);
+function ackermann(int $n) {
+  $r = Ack(3, $n);
   print "Ack(3,$n): $r\n";
 }
 
@@ -163,7 +163,7 @@ function ary2($n) {
 
 /****/
 
-function ary3($n) {
+function ary3(int $n) {
   for ($i=0; $i<$n; $i++) {
     $X[$i] = $i + 1;
     $Y[$i] = 0;
@@ -190,7 +190,7 @@ function fibo(int $n) {
 
 /****/
 
-function hash1($n) {
+function hash1(int $n) {
   for ($i = 1; $i <= $n; $i++) {
     $X[dechex($i)] = $i;
   }
@@ -203,7 +203,7 @@ function hash1($n) {
 
 /****/
 
-function hash2($n) {
+function hash2(int $n) {
   for ($i = 0; $i < $n; $i++) {
     $hash1["foo_$i"] = $i;
     $hash2["foo_$i"] = 0;
@@ -218,12 +218,12 @@ function hash2($n) {
 
 /****/
 
-function gen_random ($n) {
+function gen_random (int $n) {
     global $LAST;
     return( ($n * ($LAST = ($LAST * IA + IC) % IM)) / IM );
 }
 
-function heapsort_r($n, &$ra) {
+function heapsort_r(int $n, &$ra) {
     $l = ($n >> 1) + 1;
     $ir = $n;
 
@@ -255,7 +255,7 @@ function heapsort_r($n, &$ra) {
     }
 }
 
-function heapsort($N) {
+function heapsort(int $N) {
   global $LAST;
 
   define("IM", 139968);
