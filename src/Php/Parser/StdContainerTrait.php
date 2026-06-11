@@ -756,4 +756,68 @@ trait StdContainerTrait
         ]);
         return '// ' . $decl;
     }
+
+    /**
+     * Generate compile-time count for std containers.
+     * Returns the C++ integer literal for the size, or false if not a std container.
+     */
+    protected function genStdContainerCount(NodeAbstract $expr): string|false
+    {
+        // Simple variable: $var
+        if ($this->isVarExpr($expr)) {
+            $var = $this->parseVariable($expr);
+            if ($this->isStdArray($var)) {
+                $info = $this->context->stdArrays[$var];
+                $sizes = array_reverse($info['sizes']);
+                return $sizes[0] . $this->getPlatform()->getIntegerLiteralSuffix();
+            }
+            if ($this->isStdVector($var)) {
+                $info = $this->context->stdContainers[$var];
+                if ($info['size'] !== null) {
+                    return $info['size'] . $this->getPlatform()->getIntegerLiteralSuffix();
+                }
+                return $var . '_ref.size()';
+            }
+            if ($this->isStdContainer($var)) {
+                return $var . '_ref.size()';
+            }
+            return false;
+        }
+
+        // ArrayDimFetch: $array[idx1][idx2]...
+        if ($this->isArrayDimFetch($expr)) {
+            $tmp = $expr;
+            $dimLevel = 0;
+            while ($this->isArrayDimFetch($tmp)) {
+                $dimLevel++;
+                $tmp = $tmp->var;
+            }
+            if ($this->isVarExpr($tmp)) {
+                $var = $this->parseVariable($tmp);
+                if ($this->isStdArray($var)) {
+                    $info = $this->context->stdArrays[$var];
+                    $outerSizes = array_reverse($info['sizes']);
+                    if ($dimLevel < count($outerSizes)) {
+                        return $outerSizes[$dimLevel] . $this->getPlatform()->getIntegerLiteralSuffix();
+                    }
+                }
+            }
+
+            if ($this->isVarExpr($tmp)) {
+                $var = $this->parseVariable($tmp);
+                if ($this->isStdVector($var)) {
+                    $info = $this->context->stdContainers[$var];
+                    if ($info['size'] !== null) {
+                        return $info['size'] . $this->getPlatform()->getIntegerLiteralSuffix();
+                    }
+                    return $var . '_ref.size()';
+                }
+                if ($this->isStdMap($var) || $this->isStdUnorderedMap($var)) {
+                    return $var . '_ref.size()';
+                }
+            }
+        }
+
+        return false;
+    }
 }
