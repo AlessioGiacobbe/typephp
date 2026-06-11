@@ -90,7 +90,7 @@ trait UniversalMethodCall
             'trim'                  => ['handler' => 'php_fn', 'fn' => 'trim', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 2],
             'lTrim'                 => ['handler' => 'php_fn', 'fn' => 'ltrim', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
             'rTrim'                 => ['handler' => 'php_fn', 'fn' => 'rtrim', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 1],
-            'parseStr'              => ['handler' => 'cpp_fn', 'fn' => 'php::fn::parse_str', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
+            'parseStr'              => ['handler' => 'cpp_fn', 'fn' => 'php::std::parse_str', 'return_type' => CompilerBase::TYPE_ARRAY, 'min_args' => 0, 'max_args' => 0],
             'parseUrl'              => ['handler' => 'php_fn', 'fn' => 'parse_url', 'return_type' => CompilerBase::TYPE_VAR, 'min_args' => 0, 'max_args' => 1],
             'contains'              => ['handler' => 'php_fn', 'fn' => 'str_contains', 'return_type' => CompilerBase::TYPE_BOOL, 'min_args' => 1, 'max_args' => 1],
             'incr'                  => ['handler' => 'php_fn', 'fn' => 'str_increment', 'return_type' => CompilerBase::TYPE_STR, 'min_args' => 0, 'max_args' => 0],

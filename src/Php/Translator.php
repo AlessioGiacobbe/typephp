@@ -972,6 +972,16 @@ CODE;
         // 生成扩展模块的源文件
         $sourceFiles[] = $this->genExtension();
 
+        // stdlib: 直接 C++ 包装的 Zend 内置函数
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_core.cpp';
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_array.cpp';
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_string.cpp';
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_url.cpp';
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_datetime.cpp';
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_fs.cpp';
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_math.cpp';
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_misc.cpp';
+
         // embed 需要 main 函数，以及 cli 的内置函数定义
         if ($this->isBuildModeBin()) {
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/main.cc';
