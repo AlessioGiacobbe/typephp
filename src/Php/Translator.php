@@ -514,13 +514,13 @@ class Translator extends Preprocessor
 
         // 确保数组大小至少为 1，避免 C/C++ 编译错误
         $classCount = max(1, count($this->classMap));
-        $lines[] = 'extern zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;
+        $lines[] = 'extern THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;
 
         $funcCount = max(1, count($this->funcMap));
-        $lines[] = 'extern zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
+        $lines[] = 'extern THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
 
         $propCount = max(1, count($this->propMap));
-        $lines[] = 'extern uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . $propCount . '];' . PHP_EOL;
+        $lines[] = 'extern THREAD_LOCAL uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . $propCount . '];' . PHP_EOL;
 
         foreach ($this->classes as $classDef) {
             foreach ($classDef->constants as $constant) {
@@ -572,13 +572,15 @@ class Translator extends Preprocessor
 
         $code .= "// class entry \n";
         // 确保数组大小至少为 1，避免 C/C++ 编译错误
-        $code .= 'zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . max(1, count($this->classMap)) . '];' . PHP_EOL;
+        $code .= 'THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . max(1, count($this->classMap)) . '];' . PHP_EOL;
 
         $code .= "// func \n";
-        $code .= 'zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . max(1, count($this->funcMap)) . '];' . PHP_EOL;
+        $code .= 'THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . max(1, count($this->funcMap)) . '];' . PHP_EOL;
 
         $code .= "// property \n";
-        $code .= 'uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . max(1, count($this->propMap)) . '];' . PHP_EOL;
+        $code .= 'THREAD_LOCAL uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . max(1, count($this->propMap)) . '];' . PHP_EOL;
+
+        $code .= "// functions \n";
 
         $code .= <<<'CODE'
 zend_class_entry *php_get_class(int class_id, const php::Str &class_name) {
@@ -748,6 +750,14 @@ CODE;
                 $parentName = $this->escapeClass($parentDef->extends);
             }
         }
+
+        // 扩展模式，需要在 RSHUTDOWN 阶段中清理函数、类、属性表
+        if ($this->isBuildModeExt()) {
+            $code .= self::FUNC_MAP." = {}\n";
+            $code .= self::CLASS_MAP." = {}\n";
+            $code .= self::PROP_MAP." = {}\n";
+        }
+
         $code .= '}' . PHP_EOL . PHP_EOL;
         // php_app_clean end
 
