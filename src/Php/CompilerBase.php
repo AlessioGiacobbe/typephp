@@ -1471,10 +1471,21 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if ($this->isClassConstFetch($arg)) {
             if ($this->isNameExpr($arg->class) and $this->isIdExpr($arg->name) and $this->parseIdentifier($arg->name) === 'class') {
-                return $this->getNamespacedClassName($this->parseIdentifier($arg->class));
+                $class = $this->parseIdentifier($arg->class);
+                if ($class === 'self') {
+                    $class = $this->class;
+                } elseif ($class === 'parent') {
+                    if (!$this->classDef || !$this->classDef->extends) {
+                        $this->fatalError($arg, 'Cannot use "parent" outside a class or class does not extend any class');
+                    }
+                    return $this->classDef->extends;
+                } elseif ($class === 'static') {
+                    $this->fatalError($arg, "'static::class' cannot be resolved at compile time, use a concrete class name or 'self::class'");
+                }
+                return $this->getNamespacedClassName($class);
             }
         }
-        return '';
+        $this->fatalError($arg, 'Only string literals or `ClassName::class` constant are supported');
     }
 
     protected function parseReturn(Node\Stmt\Return_ $v): string
@@ -4329,9 +4340,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $receiver = $this->parseExpr($expr->args[0]->value);
         $className = $this->resolveClassNameArg($expr->args[1]->value);
-        if ($className === '') {
-            $this->fatalError($expr, 'The second parameter of objval() only supports string literals or `ClassName::class` constant');
-        }
         return 'php::toObject(' . $receiver . ', ' . $this->getClassEntryPtr($className) . ', true)';
     }
 
@@ -4341,9 +4349,6 @@ class CompilerBase extends \PhpAot\Core\Translator
             return 'php::toObject(' . $receiver . ')';
         }
         $className = $this->resolveClassNameArg($expr->args[0]->value);
-        if ($className === '') {
-            $this->fatalError($expr, 'The first parameter of toObject() only supports string literals or `ClassName::class` constant');
-        }
         return 'php::toObject(' . $receiver . ', ' . $this->getClassEntryPtr($className) . ', true)';
     }
 
