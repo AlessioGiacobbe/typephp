@@ -1518,6 +1518,17 @@ CODE;
                 return $this->genCValue(constant($constName));
             }
         }
+        // Resolve enum case references. Enum cases are runtime objects; their
+        // actual values in class constant arrays are set at runtime by
+        // genClassArrayConstants() via php::getEnumCase(). Return the backing
+        // value as a placeholder so gen_stub.php's ConstExprEvaluator can complete.
+        if ($this->hasClass($class)) {
+            $classDef = $this->getClass($class);
+            if ($classDef->enum && array_key_exists($name, $classDef->enumCases)) {
+                $caseValue = $classDef->enumCases[$name];
+                return $this->genCValue($caseValue ?? $name);
+            }
+        }
         $this->fatalError($expr, "Class constant `{$class}::{$name}` not found");
     }
 

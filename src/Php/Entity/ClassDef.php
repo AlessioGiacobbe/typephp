@@ -32,6 +32,17 @@ class ClassDef extends ClassLikeDef
     public string $extends = '';
     public bool $requireCtor = false;
     public bool $enum = false;
+
+    /**
+     * Backing type for backed enums ('int' or 'string'), null for pure enums.
+     */
+    public ?string $enumBackingType = null;
+
+    /**
+     * Enum cases: case name => backing value (int/string for backed enums, null for pure enums).
+     * @var array<string, int|string|null>
+     */
+    public array $enumCases = [];
     public ?Trait_ $trait = null;
 
     /**

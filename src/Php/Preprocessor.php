@@ -438,6 +438,9 @@ class Preprocessor extends CompilerBase
 
         if ($class instanceof Node\Stmt\Enum_) {
             $this->classDef->enum = true;
+            if ($class->scalarType !== null) {
+                $this->classDef->enumBackingType = $class->scalarType->name;
+            }
         }
         if (!$class instanceof Node\Stmt\Trait_) {
             $this->classDef->implements = $this->parseImplements($class->implements);
@@ -464,7 +467,10 @@ class Preprocessor extends CompilerBase
                     $this->prepareTraitUse($v);
                     break;
                 case 'Stmt_Nop':
+                    break;
                 case 'Stmt_EnumCase':
+                    $caseName = $this->parseIdentifier($v->name);
+                    $this->classDef->enumCases[$caseName] = $v->expr?->value;
                     break;
                 case 'Stmt_ClassMethod':
                     $this->prepareClassMethod($v, $class);
