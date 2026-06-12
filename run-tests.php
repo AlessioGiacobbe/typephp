@@ -2444,7 +2444,40 @@ TEST $file
 
     global $no_aot;
     if (!$no_aot) {
-        $bin_file = compile_php_file($test_file);
+        try {
+            $bin_file = compile_php_file($test_file);
+        } catch (Throwable $e) {
+            $compileOutput = trim($e instanceof CompilationFailureException ? $e->getCompilerOutput() : '');
+            $message = $e->getMessage();
+            $compileInfo = ' (compilation failed: ' . $message . ')';
+
+            if (strpos($log_format, 'O') !== false && file_put_contents($output_filename, $compileOutput !== '' ? $compileOutput : $message) === false) {
+                error("Cannot create test output - $output_filename");
+            }
+            if (strpos($log_format, 'D') !== false && file_put_contents($diff_filename, $compileInfo . PHP_EOL) === false) {
+                error("Cannot create test diff - $diff_filename");
+            }
+            if (strpos($log_format, 'L') !== false && file_put_contents($log_filename, "
+---- AOT COMPILATION FAILED
+$message
+---- COMPILER OUTPUT
+" . ($compileOutput !== '' ? $compileOutput : '(no compiler output)') . "
+---- FAILED
+") === false) {
+                error("Cannot create test log - $log_filename");
+            }
+
+            show_result('FAIL', $tested, $tested_file, 'reason: ' . $message);
+            $PHP_FAILED_TESTS['FAILED'][] = [
+                'name' => $file,
+                'test_name' => (is_array($IN_REDIRECT) ? $IN_REDIRECT['via'] : '') . $tested . " [$tested_file]",
+                'output' => $output_filename,
+                'diff' => $diff_filename,
+                'info' => $compileInfo,
+            ];
+            $junit->markTestAs('FAIL', $shortname, $tested, null, $message, $compileOutput);
+            return 'FAILED';
+        }
         $args = substr($args, strlen(' -- '));
         $cmd = './' . $bin_file . ' ' . $args . $cmdRedirect;
     } else {
@@ -3301,6 +3334,19 @@ function show_result(
 
 class BorkageException extends Exception
 {
+}
+
+class CompilationFailureException extends RuntimeException
+{
+    public function __construct(string $message, private string $compilerOutput = '')
+    {
+        parent::__construct($message);
+    }
+
+    public function getCompilerOutput(): string
+    {
+        return $this->compilerOutput;
+    }
 }
 
 class JUnit
@@ -4218,16 +4264,28 @@ function compile_php_file(string $file): string
 
     $data = trim(file_get_contents($file));
     if (!str_starts_with($data, '<?php') or !str_ends_with($data, '?>')) {
-        throw new Exception('Invalid PHP file');
+        throw new CompilationFailureException('Invalid PHP file');
     }
+    $binary_file = str_replace('-', '_', basename($file, '.php'));
+
     if (!str_contains($data, 'function main()')) {
         file_put_contents($file, "<?php\nfunction main() {\n" . substr($data, 5, -2) . "\n}\n");
     }
-    system($compiler_path . ' ' . $file);
-    $binary_file = str_replace('-', '_', basename($file, '.php'));
-    if (!file_exists($binary_file)) {
-        throw new Exception('Compilation failed');
+
+    if (file_exists($binary_file)) {
+        @unlink($binary_file);
     }
+    clearstatcache(true, $binary_file);
+
+    $output = [];
+    $exitCode = 0;
+    exec($compiler_path . ' ' . escapeshellarg($file) . ' 2>&1', $output, $exitCode);
+    clearstatcache(true, $binary_file);
+
+    if ($exitCode !== 0 || !file_exists($binary_file)) {
+        throw new CompilationFailureException('Compilation failed', implode(PHP_EOL, $output));
+    }
+
     return $binary_file;
 }
 
