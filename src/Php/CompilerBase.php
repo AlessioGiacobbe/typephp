@@ -2585,6 +2585,23 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->fatalError($node, 'All execution code must be within a function, found stray code');
     }
 
+    protected function checkInternalFunctionArgCount(string $funcName, Node\Expr\FuncCall $expr): void
+    {
+        $ref = Reflection::getFunction($funcName);
+        if (!$ref) {
+            return;
+        }
+        $minArgs = $ref->getNumberOfRequiredParameters();
+        $maxArgs = $ref->getNumberOfParameters();
+        $actualArgCount = count($expr->args);
+        if ($minArgs > 0 && $actualArgCount < $minArgs) {
+            $this->fatalError($expr, "{$funcName}() expects at least {$minArgs} argument(s), {$actualArgCount} given");
+        }
+        if (!$ref->isVariadic() && $maxArgs > 0 && $actualArgCount > $maxArgs) {
+            $this->fatalError($expr, "{$funcName}() expects at most {$maxArgs} argument(s), {$actualArgCount} given");
+        }
+    }
+
     protected function parseFuncCall(Expr\FuncCall $expr): string
     {
         if ($this->isVarExpr($expr->name)) {
@@ -2615,6 +2632,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             // 动态调用的函数，转换函数名为带有命名空间的全限定名称
             $name = $this->getNamespacedFuncName($name);
+            $this->checkInternalFunctionArgCount($name, $expr);
             $code = $this->parseFuncCallWithOptimizer($name, $expr);
             if ($code !== false) {
                 return $code;
@@ -3058,7 +3076,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($expr->if === null) {
             return $this->parseValueSelection($expr, $expr->cond, $expr->else, self::OP_NOT_EMPTY);
         }
-        return '(' . $this->parseExpr($expr->cond) . ') ? (' . $this->parseExpr($expr->if) . ') : (' . $this->parseExpr($expr->else) . ')';
+        $if = $this->parseExpr($expr->if);
+        $else = $this->parseExpr($expr->else);
+        if ($this->detectTypeOfExpr($expr->if) !== $this->detectTypeOfExpr($expr->else)) {
+            $if = 'php::Var(' . $if . ')';
+            $else = 'php::Var(' . $else . ')';
+        }
+        return '(' . $this->parseExpr($expr->cond) . ') ? (' . $if . ') : (' . $else . ')';
     }
 
     protected function parseMatch(Expr\Match_ $expr): string

@@ -265,7 +265,7 @@ trait FuncCallOptimizer
 
         $ref = Reflection::getFunction($funcName);
         if (!$ref) {
-            return $this->_autoArgTypes[$funcName] = ['args' => '', 'variadic' => false];
+            return $this->_autoArgTypes[$funcName] = ['args' => '', 'variadic' => false, 'variadicType' => '', 'minArgs' => 0, 'maxArgs' => 0];
         }
 
         $types = [];
@@ -284,7 +284,13 @@ trait FuncCallOptimizer
             $types[] = $char;
         }
 
-        return $this->_autoArgTypes[$funcName] = ['args' => implode('_', $types), 'variadic' => $variadic, 'variadicType' => $variadicType];
+        return $this->_autoArgTypes[$funcName] = [
+            'args' => implode('_', $types),
+            'variadic' => $variadic,
+            'variadicType' => $variadicType,
+            'minArgs' => $ref->getNumberOfRequiredParameters(),
+            'maxArgs' => $ref->getNumberOfParameters(),
+        ];
     }
 
     protected function phpParamToArgChar(\ReflectionParameter $param): string

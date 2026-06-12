@@ -27,26 +27,33 @@ trait AssignOpTrait
         $array              = $this->parseIdentifier($left->var);
         $this->context->inAssignExpr = $oriInAssignExpr;
         $code               = '';
-        // 这是 PHP 的初始化+赋值写法，需要先创建数组
         if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
             $this->addLocalVar($array, self::TYPE_ARRAY);
         }
 
         $value = $this->trimBrackets($this->parseExpr($right));
+
+        $tmp = $this->genTmpVarName();
+        $this->addLocalVar($tmp, self::TYPE_VAR);
+
         if ($left->dim === null) {
-            return $code . "{$array}.offsetSet(" . self::VALUE_NULL . ", {$value})";
+            return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet(" . self::VALUE_NULL . ", {$tmp})" . '), ' . $tmp . ')';
         }
         $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
 
-        return $code . "{$array}.offsetSet({$dim}, {$value})";
+        return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet({$dim}, {$tmp})" . '), ' . $tmp . ')';
     }
 
     protected function parseAssignPropertyFetch(NodeAbstract $left, NodeAbstract $right): string
     {
         $array = $this->parseIdentifier($left->var);
         $propName = $this->identifierToStr($left->name, literal: true);
+        $rightExpr = $this->trimBrackets($this->parseExpr($right));
 
-        return "{$array}.setProperty({$propName}, " . $this->trimBrackets($this->parseExpr($right)) . ')';
+        $tmp = $this->genTmpVarName();
+        $this->addLocalVar($tmp, self::TYPE_VAR);
+        // Comma expression: store RHS → execute side effect → evaluate to stored value
+        return '((' . $tmp . ' = ' . $rightExpr . ', ' . "{$array}.setProperty({$propName}, {$tmp})" . '), ' . $tmp . ')';
     }
 
     protected function parseRightAssociativeAssign(NodeAbstract $left, Expr\Assign $right): string
@@ -535,12 +542,16 @@ trait AssignOpTrait
         $propName = $this->identifierToStr($left->var->name);
         $code     = '';
         $value    = $this->trimBrackets($this->parseExpr($right));
+
+        $tmp = $this->genTmpVarName();
+        $this->addLocalVar($tmp, self::TYPE_VAR);
+
         if ($left->dim === null) {
-            return $code . "{$obj}.appendArrayProperty({$propName}, {$value})";
+            return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$obj}.appendArrayProperty({$propName}, {$tmp})" . '), ' . $tmp . ')';
         }
         $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
 
-        return $code . "{$obj}.updateArrayProperty({$propName}, {$dim}, {$value})";
+        return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$obj}.updateArrayProperty({$propName}, {$dim}, {$tmp})" . '), ' . $tmp . ')';
     }
 
     protected function parseAssignOpCoalesce(Expr\AssignOp\Coalesce $expr): string
