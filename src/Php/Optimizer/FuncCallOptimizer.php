@@ -68,6 +68,8 @@ trait FuncCallOptimizer
             'array_is_list', 'is_dir', 'is_file', 'file_exists', 'realpath', 'time',
             'in_array', 'array_search',
             'date', 'strtotime', 'md5', 'sha1', 'hash', 'print_r',
+            'base64_encode', 'base64_decode',
+            'urlencode', 'urldecode', 'rawurlencode', 'rawurldecode',
             'json_encode', 'json_decode', 'serialize', 'unserialize',
             'random_int', 'random_bytes', 'mt_rand', 'rand',
             'strstr', 'strrpos', 'is_a', 'is_subclass_of',
