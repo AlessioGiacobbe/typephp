@@ -3178,7 +3178,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePrint(Expr\Print_ $expr): string
     {
-        return 'php::echo(' . $this->parseExpr($expr->expr) . ')';
+        return 'php::print(' . $this->parseExpr($expr->expr) . ')';
     }
 
     protected function parseDo(Node\Stmt\Do_ $v): string
