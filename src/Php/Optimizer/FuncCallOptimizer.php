@@ -18,13 +18,14 @@ use PhpParser\Node;
  */
 trait FuncCallOptimizer
 {
-    private const string A_V = 'v';
-    private const string A_S = 's';
-    private const string A_I = 'i';
-    private const string A_F = 'f';
-    private const string A_B = 'b';
-    private const string A_R = 'R';
-    private const string A_OPT = '?';
+    private const string ARG_TYPE_VAR = 'v';
+    private const string ARG_TYPE_STR = 's';
+    private const string ARG_TYPE_INT = 'i';
+    private const string ARG_TYPE_FLOAT = 'f';
+    private const string ARG_TYPE_BOOL = 'b';
+    private const string ARG_TYPE_REF = 'R';
+    private const string ARG_TYPE_ARRAY = 'A';
+    private const string ARG_OPTIONAL = '?';
 
     private const int FOLD_STRING_LEN = 1;
     private const int FOLD_STRING_CASE = 2;
@@ -149,10 +150,10 @@ trait FuncCallOptimizer
             ]],
 
             // Type conversions
-            'strval'   => ['conversion' => self::A_S],
-            'intval'   => ['conversion' => self::A_I],
-            'floatval' => ['conversion' => self::A_F],
-            'boolval'  => ['conversion' => self::A_B],
+            'strval'   => ['conversion' => self::ARG_TYPE_STR],
+            'intval'   => ['conversion' => self::ARG_TYPE_INT],
+            'floatval' => ['conversion' => self::ARG_TYPE_FLOAT],
+            'boolval'  => ['conversion' => self::ARG_TYPE_BOOL],
 
             // SSA compile-time type checks
             'is_int'    => ['constFold' => self::FOLD_SSA_TYPE, 'constFoldExtra' => self::TYPE_INT],
@@ -272,7 +273,7 @@ trait FuncCallOptimizer
             }
             $char = $this->phpParamToArgChar($param);
             if ($param->isOptional()) {
-                $char = self::A_OPT . $char;
+                $char = self::ARG_OPTIONAL . $char;
             }
             $types[] = $char;
         }
@@ -283,19 +284,20 @@ trait FuncCallOptimizer
     private function phpParamToArgChar(\ReflectionParameter $param): string
     {
         if ($param->isPassedByReference()) {
-            return self::A_R;
+            return self::ARG_TYPE_REF;
         }
         $type = $param->getType();
         if ($type instanceof \ReflectionNamedType) {
             return match ($type->getName()) {
-                'string' => self::A_S,
-                'int' => self::A_I,
-                'float' => self::A_F,
-                'bool' => self::A_B,
-                default => self::A_V,
+                'string' => self::ARG_TYPE_STR,
+                'int' => self::ARG_TYPE_INT,
+                'float' => self::ARG_TYPE_FLOAT,
+                'bool' => self::ARG_TYPE_BOOL,
+                'array' => self::ARG_TYPE_ARRAY,
+                default => self::ARG_TYPE_VAR,
             };
         }
-        return self::A_V;
+        return self::ARG_TYPE_VAR;
     }
 
     // =========================================================================
@@ -329,17 +331,27 @@ trait FuncCallOptimizer
 
     private function resolveArg(Node\Expr\FuncCall $expr, int $index, string $type): string
     {
-        $base = ($type[0] ?? '') === self::A_OPT ? substr($type, 1) : $type;
+        $base = ($type[0] ?? '') === self::ARG_OPTIONAL ? substr($type, 1) : $type;
 
-        $raw = ($base === self::A_R) ? $this->getRefArg($expr, $index) : $this->getArg($expr, $index);
+        $raw = ($base === self::ARG_TYPE_REF) ? $this->getRefArg($expr, $index) : $this->getArg($expr, $index);
 
         return match ($base) {
-            self::A_S => $this->convertStringExpr($raw),
-            self::A_I => $this->convertIntExpr($raw),
-            self::A_F => $this->convertFloatExpr($raw),
-            self::A_B => $this->convertBoolExpr($raw),
+            self::ARG_TYPE_STR => $this->convertStringExpr($raw),
+            self::ARG_TYPE_INT => $this->convertIntExpr($raw),
+            self::ARG_TYPE_FLOAT => $this->convertFloatExpr($raw),
+            self::ARG_TYPE_BOOL => $this->convertBoolExpr($raw),
+            self::ARG_TYPE_ARRAY => $this->convertStdContainerArrayExpr($expr, $index, $raw),
             default => $raw,
         };
+    }
+
+    private function convertStdContainerArrayExpr(Node\Expr\FuncCall $expr, int $index, string $raw): string
+    {
+        $arg = $expr->args[$index]->value;
+        if ($this->isVarExpr($arg) and $this->isStdContainer($arg->name)) {
+            return $this->convertArrayExpr($raw . '_ref');
+        }
+        return $this->convertArrayExpr($raw);
     }
 
     private function buildArgList(Node\Expr\FuncCall $expr, string $argTypeStr, array $defaults = []): array
@@ -353,7 +365,7 @@ trait FuncCallOptimizer
         $args = [];
 
         foreach ($types as $i => $type) {
-            $optional = ($type[0] ?? '') === self::A_OPT;
+            $optional = ($type[0] ?? '') === self::ARG_OPTIONAL;
             if ($optional && $argCount <= $i) {
                 if (isset($defaults[$i])) {
                     $args[] = $defaults[$i];
@@ -376,7 +388,7 @@ trait FuncCallOptimizer
         foreach ($expr->args as $arg) {
             $args[] = $this->parseExpr($arg->value);
         }
-        return $target . '({' . implode(', ', $args) . '})';
+        return $target . '(' . implode(', ', $args) . ')';
     }
 
     private function dispatchConversion(Node\Expr\FuncCall $expr, string $convType): string
@@ -385,7 +397,7 @@ trait FuncCallOptimizer
         $type = $this->detectTypeOfExpr($arg);
         $parsed = $this->parseExpr($arg);
 
-        if ($convType === self::A_S) {
+        if ($convType === self::ARG_TYPE_STR) {
             return match ($type) {
                 self::TYPE_BIGINT => 'php::BigInt::toString(' . $parsed . ')',
                 self::TYPE_BIGFLOAT => 'php::BigFloat::toString(' . $parsed . ')',
@@ -395,9 +407,9 @@ trait FuncCallOptimizer
         }
 
         return match ($convType) {
-            self::A_I => $this->convertIntExpr($parsed),
-            self::A_F => $this->convertFloatExpr($parsed),
-            self::A_B => $this->convertBoolExpr($parsed),
+            self::ARG_TYPE_INT => $this->convertIntExpr($parsed),
+            self::ARG_TYPE_FLOAT => $this->convertFloatExpr($parsed),
+            self::ARG_TYPE_BOOL => $this->convertBoolExpr($parsed),
             default => $parsed,
         };
     }
@@ -745,7 +757,7 @@ trait FuncCallOptimizer
 
             $key = $this->getLiteralString($var);
             $cVar = $this->escapeVarName($var);
-            $list[] = '{' . $key . ', php::Var(' . $cVar . ')}';
+            $list[] = '{' . $key . '.str(), php::Var(' . $cVar . ')}';
         }
 
         return 'php::Array{' . implode(', ', $list) . '}';
