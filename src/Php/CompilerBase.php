@@ -1553,7 +1553,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $tmpVar = $this->genTmpVarName();
             // 必须提前声明变量，否则在末尾声明并 return 可能会被 gcc 优化掉
             $this->addLocalVar($tmpVar, $returnType);
-            $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
+            $code = $tmpVar . ' = (' . $exprCode . ');' . PHP_EOL;
             // 解析表达式后可能会插入语句，因此需要在末尾添加 return 语句，而不是直接返回
             $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
         } else {

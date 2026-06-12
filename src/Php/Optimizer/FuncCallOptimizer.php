@@ -18,35 +18,35 @@ use PhpParser\Node;
  */
 trait FuncCallOptimizer
 {
-    private const string ARG_TYPE_VAR = 'v';
-    private const string ARG_TYPE_STR = 's';
-    private const string ARG_TYPE_INT = 'i';
-    private const string ARG_TYPE_FLOAT = 'f';
-    private const string ARG_TYPE_BOOL = 'b';
-    private const string ARG_TYPE_REF = 'R';
-    private const string ARG_TYPE_ARRAY = 'A';
-    private const string ARG_OPTIONAL = '?';
+    protected const string ARG_TYPE_VAR = 'v';
+    protected const string ARG_TYPE_STR = 's';
+    protected const string ARG_TYPE_INT = 'i';
+    protected const string ARG_TYPE_FLOAT = 'f';
+    protected const string ARG_TYPE_BOOL = 'b';
+    protected const string ARG_TYPE_REF = 'R';
+    protected const string ARG_TYPE_ARRAY = 'A';
+    protected const string ARG_OPTIONAL = '?';
 
-    private const int FOLD_STRING_LEN = 1;
-    private const int FOLD_STRING_CASE = 2;
-    private const int FOLD_CMP2 = 3;
-    private const int FOLD_CMP3 = 4;
-    private const int FOLD_COUNT_LITERAL = 5;
-    private const int FOLD_KNOWN_CLASS = 6;
-    private const int FOLD_KNOWN_CONSTANT = 7;
-    private const int FOLD_SSA_TYPE = 8;
+    protected const int FOLD_STRING_LEN = 1;
+    protected const int FOLD_STRING_CASE = 2;
+    protected const int FOLD_CMP2 = 3;
+    protected const int FOLD_CMP3 = 4;
+    protected const int FOLD_COUNT_LITERAL = 5;
+    protected const int FOLD_KNOWN_CLASS = 6;
+    protected const int FOLD_KNOWN_CONSTANT = 7;
+    protected const int FOLD_SSA_TYPE = 8;
 
     /** @var array<string,string|array>|null */
-    private ?array $_funcCallConfig = null;
+    protected ?array $_funcCallConfig = null;
 
     /** @var array<string,array> Cache for auto-detected arg reflection info */
-    private array $_autoArgTypes = [];
+    protected array $_autoArgTypes = [];
 
     // =========================================================================
     // Config
     // =========================================================================
 
-    private function getFuncCallConfig(): array
+    protected function getFuncCallConfig(): array
     {
         if ($this->_funcCallConfig !== null) {
             return $this->_funcCallConfig;
@@ -54,7 +54,7 @@ trait FuncCallOptimizer
         return $this->_funcCallConfig = $this->buildFuncCallConfig();
     }
 
-    private function buildFuncCallConfig(): array
+    protected function buildFuncCallConfig(): array
     {
         $simple = [
             'method_exists', 'property_exists',
@@ -224,7 +224,7 @@ trait FuncCallOptimizer
     // Generic dispatcher
     // =========================================================================
 
-    private function dispatchFuncCall(string $name, Node\Expr\FuncCall $expr, array $config): string|false
+    protected function dispatchFuncCall(string $name, Node\Expr\FuncCall $expr, array $config): string|false
     {
         $target = $config['target'] ?? null;
         if ($target === null) {
@@ -238,7 +238,8 @@ trait FuncCallOptimizer
         $defaults = $config['defaults'] ?? [];
 
         if (!empty($config['variadic']) || ($refInfo['variadic'] ?? false)) {
-            return $this->genVariadicCall($target, $expr);
+            $variadicType = $config['variadicType'] ?? $refInfo['variadicType'] ?? '';
+            return $this->genVariadicCall($target, $expr, $variadicType);
         }
 
         if (isset($config['constFold'])) {
@@ -256,7 +257,7 @@ trait FuncCallOptimizer
     // Auto-detect argument types from PHP reflection
     // =========================================================================
 
-    private function getArgReflectionInfo(string $funcName): array
+    protected function getArgReflectionInfo(string $funcName): array
     {
         if (isset($this->_autoArgTypes[$funcName])) {
             return $this->_autoArgTypes[$funcName];
@@ -269,9 +270,11 @@ trait FuncCallOptimizer
 
         $types = [];
         $variadic = false;
+        $variadicType = '';
         foreach ($ref->getParameters() as $param) {
             if ($param->isVariadic()) {
                 $variadic = true;
+                $variadicType = $this->phpParamToArgChar($param);
                 continue;
             }
             $char = $this->phpParamToArgChar($param);
@@ -281,10 +284,10 @@ trait FuncCallOptimizer
             $types[] = $char;
         }
 
-        return $this->_autoArgTypes[$funcName] = ['args' => implode('_', $types), 'variadic' => $variadic];
+        return $this->_autoArgTypes[$funcName] = ['args' => implode('_', $types), 'variadic' => $variadic, 'variadicType' => $variadicType];
     }
 
-    private function phpParamToArgChar(\ReflectionParameter $param): string
+    protected function phpParamToArgChar(\ReflectionParameter $param): string
     {
         if ($param->isPassedByReference()) {
             return self::ARG_TYPE_REF;
@@ -307,12 +310,12 @@ trait FuncCallOptimizer
     // Arg helpers
     // =========================================================================
 
-    private function getArg(Node\Expr\FuncCall $expr, int $i): string
+    protected function getArg(Node\Expr\FuncCall $expr, int $i): string
     {
         return $this->parseIdentifier($expr->args[$i]->value);
     }
 
-    private function getRefArg(Node\Expr\FuncCall $expr, int $i): string
+    protected function getRefArg(Node\Expr\FuncCall $expr, int $i): string
     {
         $arg = $expr->args[$i]->value;
         if ($this->isArrayDimFetch($arg) and $this->isVarExpr($arg->var)) {
@@ -332,7 +335,7 @@ trait FuncCallOptimizer
         return $this->getArg($expr, $i);
     }
 
-    private function resolveArg(Node\Expr\FuncCall $expr, int $index, string $type): string
+    protected function resolveArg(Node\Expr\FuncCall $expr, int $index, string $type): string
     {
         $base = ($type[0] ?? '') === self::ARG_OPTIONAL ? substr($type, 1) : $type;
 
@@ -348,7 +351,7 @@ trait FuncCallOptimizer
         };
     }
 
-    private function convertStdContainerArrayExpr(Node\Expr\FuncCall $expr, int $index, string $raw): string
+    protected function convertStdContainerArrayExpr(Node\Expr\FuncCall $expr, int $index, string $raw): string
     {
         $arg = $expr->args[$index]->value;
         if ($this->isVarExpr($arg) and $this->isStdContainer($arg->name)) {
@@ -357,7 +360,7 @@ trait FuncCallOptimizer
         return $this->convertArrayExpr($raw);
     }
 
-    private function buildArgList(Node\Expr\FuncCall $expr, string $argTypeStr, array $defaults = []): array
+    protected function buildArgList(Node\Expr\FuncCall $expr, string $argTypeStr, array $defaults = []): array
     {
         if ($argTypeStr === '') {
             return [];
@@ -385,16 +388,25 @@ trait FuncCallOptimizer
     // Variadic, conversion, Big* dispatch
     // =========================================================================
 
-    private function genVariadicCall(string $target, Node\Expr\FuncCall $expr): string
+    protected function genVariadicCall(string $target, Node\Expr\FuncCall $expr, string $variadicType = ''): string
     {
+        $base = ($variadicType !== '' && ($variadicType[0] ?? '') === self::ARG_OPTIONAL) ? substr($variadicType, 1) : $variadicType;
         $args = [];
-        foreach ($expr->args as $arg) {
-            $args[] = $this->parseExpr($arg->value);
+        foreach ($expr->args as $index => $arg) {
+            $raw = $this->parseExpr($arg->value);
+            $args[] = match ($base) {
+                self::ARG_TYPE_STR => $this->convertStringExpr($raw),
+                self::ARG_TYPE_INT => $this->convertIntExpr($raw),
+                self::ARG_TYPE_FLOAT => $this->convertFloatExpr($raw),
+                self::ARG_TYPE_BOOL => $this->convertBoolExpr($raw),
+                self::ARG_TYPE_ARRAY => $this->convertStdContainerArrayExpr($expr, $index, $raw),
+                default => $raw,
+            };
         }
         return $target . '(' . implode(', ', $args) . ')';
     }
 
-    private function dispatchConversion(Node\Expr\FuncCall $expr, string $convType): string
+    protected function dispatchConversion(Node\Expr\FuncCall $expr, string $convType): string
     {
         $arg = $expr->args[0]->value;
         $type = $this->detectTypeOfExpr($arg);
@@ -417,7 +429,7 @@ trait FuncCallOptimizer
         };
     }
 
-    private function dispatchBigType(Node\Expr\FuncCall $expr, array $dispatch): string|false
+    protected function dispatchBigType(Node\Expr\FuncCall $expr, array $dispatch): string|false
     {
         $type = $this->detectTypeOfExpr($expr->args[0]->value);
         $target = $dispatch[$type] ?? $dispatch['fallback'] ?? null;
@@ -437,7 +449,7 @@ trait FuncCallOptimizer
     // Constant folding
     // =========================================================================
 
-    private function tryConstFold(int $rule, mixed $extra, Node\Expr\FuncCall $expr): string|false
+    protected function tryConstFold(int $rule, mixed $extra, Node\Expr\FuncCall $expr): string|false
     {
         return match ($rule) {
             self::FOLD_STRING_LEN => $this->doFoldStringLen($expr),
@@ -452,7 +464,7 @@ trait FuncCallOptimizer
         };
     }
 
-    private function doFoldStringLen(Node\Expr\FuncCall $expr): string|false
+    protected function doFoldStringLen(Node\Expr\FuncCall $expr): string|false
     {
         $arg = $expr->args[0]->value;
         return ($arg instanceof Node\Scalar\String_)
@@ -460,7 +472,7 @@ trait FuncCallOptimizer
             : false;
     }
 
-    private function doFoldStringCase(Node\Expr\FuncCall $expr): string|false
+    protected function doFoldStringCase(Node\Expr\FuncCall $expr): string|false
     {
         $arg = $expr->args[0]->value;
         if (!$this->isScalarString($arg)) {
@@ -471,7 +483,7 @@ trait FuncCallOptimizer
         return $this->getLiteralString($val);
     }
 
-    private function doFoldCmp2(Node\Expr\FuncCall $expr): string|false
+    protected function doFoldCmp2(Node\Expr\FuncCall $expr): string|false
     {
         $a0 = $expr->args[0]->value;
         $a1 = $expr->args[1]->value;
@@ -485,7 +497,7 @@ trait FuncCallOptimizer
         return $result . $this->getPlatform()->getIntegerLiteralSuffix();
     }
 
-    private function doFoldCmp3(Node\Expr\FuncCall $expr): string|false
+    protected function doFoldCmp3(Node\Expr\FuncCall $expr): string|false
     {
         $a0 = $expr->args[0]->value;
         $a1 = $expr->args[1]->value;
@@ -500,7 +512,7 @@ trait FuncCallOptimizer
         return $result . $this->getPlatform()->getIntegerLiteralSuffix();
     }
 
-    private function doFoldCountLiteral(Node\Expr\FuncCall $expr): string|false
+    protected function doFoldCountLiteral(Node\Expr\FuncCall $expr): string|false
     {
         if (count($expr->args) !== 1 || !($expr->args[0] instanceof Node\Arg)) {
             return false;
@@ -512,19 +524,19 @@ trait FuncCallOptimizer
         return $this->genStdContainerCount($arg);
     }
 
-    private function doFoldKnownClass(Node\Expr\FuncCall $expr): string|false
+    protected function doFoldKnownClass(Node\Expr\FuncCall $expr): string|false
     {
         $cn = $expr->args[0]->value;
         return ($this->isScalarString($cn) && $this->hasClass($cn->value)) ? 'true' : false;
     }
 
-    private function doFoldKnownConstant(Node\Expr\FuncCall $expr): string|false
+    protected function doFoldKnownConstant(Node\Expr\FuncCall $expr): string|false
     {
         $cn = $expr->args[0]->value;
         return ($this->isScalarString($cn) && $this->hasConstant($cn->value)) ? 'true' : false;
     }
 
-    private function doFoldSsaType(Node\Expr\FuncCall $expr, mixed $expectType): string|false
+    protected function doFoldSsaType(Node\Expr\FuncCall $expr, mixed $expectType): string|false
     {
         if (count($expr->args) !== 1 || !($expr->args[0] instanceof Node\Arg)) {
             return false;
@@ -536,12 +548,12 @@ trait FuncCallOptimizer
     // Custom handlers
     // =========================================================================
 
-    private function genIsNull(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genIsNull(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         return $this->parseIdentifier($e->args[0]->value) . '.isNull()';
     }
 
-    private function genIsCallable(string $n, Node\Expr\FuncCall $e, array $c): string|false
+    protected function genIsCallable(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
         if (count($e->args) >= 3) {
             return false;
@@ -549,7 +561,7 @@ trait FuncCallOptimizer
         return $this->dispatchFuncCall('is_callable', $e, ['target' => 'php::std::is_callable']);
     }
 
-    private function genGetClassOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genGetClassOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         $obj = $e->args[0]->value;
         if ($this->isVarExpr($obj) && $this->isTypedObject($obj->name)) {
@@ -558,7 +570,7 @@ trait FuncCallOptimizer
         return 'php::std::get_class(' . $this->parseIdentifier($obj) . ')';
     }
 
-    private function genGetParentClass(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genGetParentClass(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         if (count($e->args) === 0) {
             if ($this->classDef && $this->classDef->extends) {
@@ -575,32 +587,32 @@ trait FuncCallOptimizer
         return 'php::std::get_parent_class(' . $this->parseIdentifier($arg) . ')';
     }
 
-    private function genFunctionExistsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genFunctionExistsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         return $this->genFunctionExists($n, $e);
     }
 
-    private function genFuncGetArgOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genFuncGetArgOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         return $this->genFuncGetArg($n, $e);
     }
 
-    private function genFuncGetArgsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genFuncGetArgsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         return $this->genFuncGetArgs($n, $e);
     }
 
-    private function genFuncNumArgsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genFuncNumArgsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         return $this->genFuncNumArgs($n, $e);
     }
 
-    private function genCompactOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genCompactOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         return $this->genCompactOrig($e);
     }
 
-    private function genArrayKeys(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genArrayKeys(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         $cnt = count($e->args);
         if ($cnt >= 3) {
@@ -612,12 +624,12 @@ trait FuncCallOptimizer
         return 'php::std::array_keys(' . $this->getArg($e, 0) . ')';
     }
 
-    private function genArrayKeyExists(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genArrayKeyExists(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         return $this->getArg($e, 1) . '.offsetExists(' . $this->getArg($e, 0) . ')';
     }
 
-    private function genRound(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genRound(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         $type = $this->detectTypeOfExpr($e->args[0]->value);
         if ($type === self::TYPE_DECIMAL) {
@@ -637,7 +649,7 @@ trait FuncCallOptimizer
         return 'php::std::round(' . $this->getArg($e, 0) . ')';
     }
 
-    private function genCount(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genCount(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         $folded = $this->doFoldCountLiteral($e);
         if ($folded !== false) return $folded;
@@ -647,7 +659,7 @@ trait FuncCallOptimizer
         return 'php::std::count(' . $this->getArg($e, 0) . ')';
     }
 
-    private function genDefine(string $n, Node\Expr\FuncCall $e, array $c): string|false
+    protected function genDefine(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
         $arg = $e->args[0]->value;
         if ($this->isScalarString($arg) && !$this->isValidDefineName($arg->value)) {
@@ -664,7 +676,7 @@ trait FuncCallOptimizer
     // Legacy helpers
     // =========================================================================
 
-    private function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr): string
+    protected function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr): string
     {
         $this->warningUndefinedBehavior($expr);
         $funcDef = $this->functionDef;
@@ -702,7 +714,7 @@ trait FuncCallOptimizer
         }
     }
 
-    private function genFuncNumArgs(string $name, Node\Expr\FuncCall $expr): string
+    protected function genFuncNumArgs(string $name, Node\Expr\FuncCall $expr): string
     {
         $this->warningUndefinedBehavior($expr);
         $funcDef = $this->functionDef;
@@ -728,7 +740,7 @@ trait FuncCallOptimizer
         return 'php::std::function_exists(' . $this->parseIdentifier($funcName) . ')';
     }
 
-    private function genGetClass(Node\Expr\FuncCall $expr): string
+    protected function genGetClass(Node\Expr\FuncCall $expr): string
     {
         $object = $expr->args[0]->value;
         if ($this->isVarExpr($object) and $this->isTypedObject($object->name)) {
@@ -737,7 +749,7 @@ trait FuncCallOptimizer
         return 'php::std::get_class(' . $this->parseIdentifier($object) . ')';
     }
 
-    private function genCompactOrig(Node\Expr\FuncCall $expr): string
+    protected function genCompactOrig(Node\Expr\FuncCall $expr): string
     {
         $list = [];
 
