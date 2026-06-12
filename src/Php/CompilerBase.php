@@ -217,7 +217,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         'phpx_decimal.h',
         'php_aot_helper.h',
         'php_std_core.h',
-        'php_std_url.h',
         'php_std_string.h',
         'php_std_misc.h',
         'php_std_array.h',

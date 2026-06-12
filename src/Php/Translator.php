@@ -974,7 +974,6 @@ CODE;
         $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_core.cpp';
         $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_array.cpp';
         $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_string.cpp';
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_url.cpp';
         $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_datetime.cpp';
         $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_fs.cpp';
         $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_math.cpp';

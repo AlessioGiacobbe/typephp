@@ -57,30 +57,38 @@ trait FuncCallOptimizer
     private function buildFuncCallConfig(): array
     {
         $simple = [
-            'urlencode', 'urldecode', 'rawurlencode', 'rawurldecode',
-            'base64_encode', 'method_exists', 'property_exists',
-            'implode', 'str_replace', 'array_column', 'array_reverse',
-            'array_sum', 'array_product', 'array_key_first', 'array_key_last',
-            'array_combine', 'array_flip', 'array_intersect', 'array_values',
+            'method_exists', 'property_exists',
+            'number_format',
+            'implode',
+            'array_key_first', 'array_key_last',
+            'array_values',
             'version_compare', 'gettype',
             'is_array', 'is_string', 'is_object', 'is_resource',
-            'is_scalar', 'is_numeric', 'is_callable', 'is_countable', 'is_iterable',
-            'array_is_list', 'is_dir', 'is_file', 'realpath', 'time',
-            'parse_url', 'base64_decode',
-            'in_array', 'array_search', 'array_unique', 'array_filter', 'array_reduce',
-            'date', 'strtotime', 'md5', 'print_r',
-            'strstr', 'strripos', 'strrpos', 'is_a', 'is_subclass_of',
-            'sort', 'rsort', 'asort', 'arsort', 'ksort',
-            'array_pop', 'array_shift', 'reset', 'end',
-            'microtime', 'hrtime', 'uniqid',
+            'is_scalar', 'is_numeric', 'is_countable', 'is_iterable',
+            'array_is_list', 'is_dir', 'is_file', 'file_exists', 'realpath', 'time',
+            'in_array', 'array_search',
+            'date', 'strtotime', 'md5', 'sha1', 'hash', 'print_r',
+            'json_encode', 'json_decode', 'serialize', 'unserialize',
+            'random_int', 'random_bytes', 'mt_rand', 'rand',
+            'strstr', 'strrpos', 'is_a', 'is_subclass_of',
+            'reset', 'end',
+            'uniqid',
             'dirname', 'basename',
+            // Math: trig, hyperbolic, exp/log, misc
+            'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+            'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+            'pi', 'exp', 'expm1', 'log', 'log10', 'log1p',
+            'hypot', 'deg2rad', 'rad2deg', 'fmod', 'fdiv', 'fpow', 'intdiv',
+            // Math: is_* checks
+            'is_finite', 'is_infinite', 'is_nan',
+            // Math: base conversion
+            'decbin', 'decoct', 'dechex', 'bindec', 'hexdec', 'octdec', 'base_convert',
         ];
 
         $extra = [
             // Aliases (PHP function name → C++ target name)
             'join'             => 'implode',
-            'str_ireplace'     => 'str_replace',
-            'stristr'          => 'strstr',
+            'stristr'          => 'stristr',
 
             'strlen'            => ['constFold' => self::FOLD_STRING_LEN],
             'ord'               => [],
@@ -95,28 +103,18 @@ trait FuncCallOptimizer
             'str_starts_with'   => [],
             'str_ends_with'     => [],
             'str_contains'      => [],
-            'strtr'             => [],
+
             'strncmp'           => ['constFold' => self::FOLD_CMP3],
             'strncasecmp'       => ['constFold' => self::FOLD_CMP3],
-            'htmlspecialchars'  => [],
-            'htmlentities'      => [],
-            'htmlspecialchars_decode' => [],
-            'html_entity_decode' => [],
-            'strip_tags'        => [],
             'explode'           => [],
             'strpos'            => [],
             'stripos'           => [],
             'substr'            => [],
             'str_repeat'        => [],
-            'str_pad'           => [],
-            'array_slice'       => [],
-            'array_chunk'       => [],
             'array_fill'        => [],
 
             // Variadic
-            'array_diff'         => ['variadic' => true],
             'array_merge'        => ['variadic' => true],
-            'array_merge_recursive' => ['variadic' => true],
 
             // Compile-time fold with defaults
             'class_exists'       => ['constFold' => self::FOLD_KNOWN_CLASS, 'defaults' => [1 => 'true']],
@@ -130,15 +128,18 @@ trait FuncCallOptimizer
                 self::TYPE_BIGINT => 'php::BigInt::abs',
                 self::TYPE_BIGFLOAT => 'php::BigFloat::abs',
                 self::TYPE_DECIMAL => 'php::Decimal::abs',
+                'fallback' => 'php::std::abs',
             ]],
             'pow' => ['bigDispatch' => [
                 self::TYPE_BIGINT => 'php::BigInt::pow',
                 self::TYPE_DECIMAL => 'php::Decimal::pow',
+                'fallback' => 'php::std::pow',
             ]],
             'sqrt' => ['bigDispatch' => [
                 self::TYPE_BIGINT => 'php::BigInt::sqrt',
                 self::TYPE_DECIMAL => 'php::Decimal::sqrt',
                 self::TYPE_BIGFLOAT => 'php::BigFloat::sqrt',
+                'fallback' => 'php::std::sqrt',
             ]],
             'floor' => ['bigDispatch' => [
                 self::TYPE_DECIMAL => 'php::Decimal::floor',
@@ -169,13 +170,13 @@ trait FuncCallOptimizer
             'func_get_args'      => ['handler' => 'genFuncGetArgsOptimized'],
             'func_num_args'      => ['handler' => 'genFuncNumArgsOptimized'],
             'compact'            => ['handler' => 'genCompactOptimized'],
-            'max'                => ['handler' => 'genMaxMin'],
-            'min'                => ['handler' => 'genMaxMin'],
+
             'array_keys'         => ['handler' => 'genArrayKeys'],
             'array_key_exists'   => ['handler' => 'genArrayKeyExists'],
             'round'              => ['handler' => 'genRound'],
             'count'              => ['handler' => 'genCount'],
             'define'             => ['handler' => 'genDefine'],
+            'is_callable'        => ['handler' => 'genIsCallable'],
         ];
 
         $config = $extra;
@@ -538,6 +539,14 @@ trait FuncCallOptimizer
         return $this->parseIdentifier($e->args[0]->value) . '.isNull()';
     }
 
+    private function genIsCallable(string $n, Node\Expr\FuncCall $e, array $c): string|false
+    {
+        if (count($e->args) >= 3) {
+            return false;
+        }
+        return $this->dispatchFuncCall('is_callable', $e, ['target' => 'php::std::is_callable']);
+    }
+
     private function genGetClassOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         $obj = $e->args[0]->value;
@@ -587,19 +596,6 @@ trait FuncCallOptimizer
     private function genCompactOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         return $this->genCompactOrig($e);
-    }
-
-    private function genMaxMin(string $n, Node\Expr\FuncCall $e, array $c): string
-    {
-        $target = 'php::std::' . $n;
-        if (count($e->args) == 1) {
-            return $target . '(' . $this->getArg($e, 0) . ')';
-        }
-        $a = [];
-        foreach ($e->args as $arg) {
-            $a[] = $this->parseExpr($arg->value);
-        }
-        return $target . '(php::Array{' . implode(', ', $a) . '})';
     }
 
     private function genArrayKeys(string $n, Node\Expr\FuncCall $e, array $c): string
