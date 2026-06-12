@@ -1890,6 +1890,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             case 'Expr_BitwiseNot':
                 $inner = $this->detectTypeOfExpr($expr->expr);
                 return $inner === self::TYPE_BIGINT ? self::TYPE_BIGINT : self::TYPE_INT;
+            case 'Expr_Print':
             case 'Expr_Cast_Int':
                 return self::TYPE_INT;
             case 'Scalar_Int':
