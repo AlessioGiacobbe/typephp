@@ -23,9 +23,9 @@ function main() {
 --EXPECT--
 array(1) {
   [0]=>
-  string(7) "changed"
+  string(8) "original"
 }
 array(1) {
   [0]=>
-  string(7) "changed"
+  string(8) "original"
 }
