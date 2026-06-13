@@ -24,7 +24,8 @@ function main() {
     $t = new early();
     $t->__construct();
     unset($t);
-    $t = new late();
+
+    $t2 = new late();
     //unset($t); delay to end of script
 
     echo "Done\n";
