@@ -5209,13 +5209,22 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $classDef = $this->getClass($class);
         while (true) {
-            if ($classDef->hasMethod($method)) {
-                return $classDef->getMethod($method)->flags;
+            $flags = $classDef->getMethodFlags($method);
+            if ($flags !== 0) {
+                return $flags;
             }
             if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
                 return 0;
             }
             $classDef = $this->getClass($classDef->extends);
+        }
+    }
+
+    protected function guardAbstractMethod(string $class, string $method, Node $expr): void
+    {
+        $flags = $this->getMethodFlags($class, $method);
+        if ($flags & Modifiers::ABSTRACT) {
+            $this->fatalError($expr, "Cannot call abstract method `{$class}::{$method}()`");
         }
     }
 
@@ -5392,6 +5401,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $parentClass = $this->classDef->extends;
         $method = $this->parseIdentifier($expr->name);
+        $this->guardAbstractMethod($parentClass, $method, $expr);
         // TODO 是否转为 native 调用
         if (empty($expr->args)) {
             return 'this_.call(' . $this->getMethodPtr($parentClass, $method) . ')';

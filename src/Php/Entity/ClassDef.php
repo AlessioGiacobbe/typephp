@@ -43,6 +43,11 @@ class ClassDef extends ClassLikeDef
      * @var array<string, int|string|null>
      */
     public array $enumCases = [];
+    /**
+     * Abstract method name (lowercase) => flags
+     * @var array<string, int>
+     */
+    public array $abstractMethods = [];
     public ?Trait_ $trait = null;
 
     /**
@@ -74,9 +79,31 @@ class ClassDef extends ClassLikeDef
         $this->methods[strtolower($method->name)] = $method;
     }
 
+    public function addAbstractMethod(string $name, int $flags): void
+    {
+        $this->abstractMethods[strtolower($name)] = $flags;
+    }
+
     public function hasMethod(string $method): bool
     {
         return isset($this->methods[strtolower($method)]);
+    }
+
+    public function hasAbstractMethod(string $method): bool
+    {
+        return isset($this->abstractMethods[strtolower($method)]);
+    }
+
+    /**
+     * Returns method flags for concrete or abstract methods. Returns 0 if not found.
+     */
+    public function getMethodFlags(string $method): int
+    {
+        $lower = strtolower($method);
+        if (isset($this->methods[$lower])) {
+            return $this->methods[$lower]->flags;
+        }
+        return $this->abstractMethods[$lower] ?? 0;
     }
 
     public function hasProperty(string $property): bool

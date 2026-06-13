@@ -616,6 +616,7 @@ class Preprocessor extends CompilerBase
                     }
                 }
             }
+            $this->classDef->addAbstractMethod($name, $flags);
         }
 
         $fullClassName = $this->getFullClassName();
