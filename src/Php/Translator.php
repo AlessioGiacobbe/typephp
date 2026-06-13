@@ -2638,37 +2638,46 @@ CODE;
         $tmpArrayVar = $this->genTmpVarName();
         $this->addLocalVar($tmpArrayVar, self::TYPE_ARRAY);
 
-        $code = 'if (' . $obj . '.instanceOf("IteratorAggregate")) {' . PHP_EOL;
-        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . '.call("getIterator");' . PHP_EOL . '}' . PHP_EOL;
-        $code .= 'else if (' . $obj . '.instanceOf("Iterator")) {' . PHP_EOL;
+        $IteratorAggregateCe = $this->getClassEntryPtr('IteratorAggregate');
+        $IteratorCe = $this->getClassEntryPtr('Iterator');
+        $getIteratorStr = $this->getLiteralString('getIterator');
+        $validStr = $this->getLiteralString('valid');
+        $currentStr = $this->getLiteralString('current');
+        $keyStr = $this->getLiteralString('key');
+        $nextStr = $this->getLiteralString('next');
+        $rewindStr = $this->getLiteralString('rewind');
+
+        $code = 'if (' . $obj . '.instanceOf(' . $IteratorAggregateCe . ')) {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . '.call(' . $getIteratorStr . ');' . PHP_EOL . '}' . PHP_EOL;
+        $code .= 'else if (' . $obj . '.instanceOf(' . $IteratorCe . ')) {' . PHP_EOL;
         $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . ';' . PHP_EOL . '}' . PHP_EOL;
 
         $code .= 'if (' . $tmpVar . ') {' . PHP_EOL;
 
         $this->indentLevel++;
-        $code .= $this->getIndent() . $tmpVar . '.call("rewind");' . PHP_EOL;
-        $code .= $this->getIndent() . 'for (;' . $tmpVar . '.call("valid");  ' . $tmpVar . '.call("next")) {' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpVar . '.call(' . $rewindStr . ');' . PHP_EOL;
+        $code .= $this->getIndent() . 'for (;' . $tmpVar . '.call(' . $validStr . ');  ' . $tmpVar . '.call(' . $nextStr . ')) {' . PHP_EOL;
         $this->indentLevel++;
 
         if ($node->valueVar instanceof List_) {
             $listTmpVar = $this->genTmpVarName();
             $this->addLocalVar($listTmpVar, self::TYPE_VAR);
-            $code .= $this->getIndent() . ' ' . $listTmpVar . ' = ' . $tmpVar . '.call("current");' . PHP_EOL;
+            $code .= $this->getIndent() . ' ' . $listTmpVar . ' = ' . $tmpVar . '.call(' . $currentStr . ');' . PHP_EOL;
             if ($node->keyVar) {
                 $keyVar = $this->parseIdentifier($node->keyVar);
                 $this->checkVar($node, $keyVar);
-                $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call("key");' . PHP_EOL;
+                $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call(' . $keyStr . ');' . PHP_EOL;
             }
             $code .= $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
         } else {
             $valueVar = $this->parseIdentifier($node->valueVar);
             $this->checkVar($node, $valueVar);
 
-            $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.call("current");' . PHP_EOL;
+            $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.call(' . $currentStr . ');' . PHP_EOL;
             if ($node->keyVar) {
                 $keyVar = $this->parseIdentifier($node->keyVar);
                 $this->checkVar($node, $keyVar);
-                $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call("key");' . PHP_EOL;
+                $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call(' . $keyStr . ');' . PHP_EOL;
             }
         }
         $code .= $this->parseStmts($node->stmts);
@@ -2676,7 +2685,7 @@ CODE;
         $code .= '}' . PHP_EOL;
         $this->indentLevel--;
         $code .= $this->getIndent() . '} else {' . PHP_EOL;
-        $code .= $this->getIndent() . $tmpArrayVar . ' = php::call("get_object_vars", {' . $obj . '});' . PHP_EOL;
+        $code .= $this->getIndent() . $tmpArrayVar . ' = php::call(' . $this->getFuncPtr('get_object_vars') . ', {' . $obj . '});' . PHP_EOL;
         $code .= $this->parseForeachArray($node, $tmpArrayVar);
         $this->indentLevel--;
         $code .= '}' . PHP_EOL;
