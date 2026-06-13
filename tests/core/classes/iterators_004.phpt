@@ -39,9 +39,9 @@ function main() {
     }
 
     echo "2nd try\n";
-    $obj = new c2();
+    $obj2 = new c2();
 
-    foreach($obj as $v => $w) {
+    foreach($obj2 as $v => $w) {
         echo "object:$v=>$w\n";
     }
 

@@ -58,15 +58,15 @@ function main() {
     #var_dump($array->current());
     echo "===2nd===\n";
 
-    $array = new ai();
+    $array2 = new ai();
 
-    foreach ($array as $property => $value) {
+    foreach ($array2 as $property => $value) {
         print "$property: $value\n";
     }
 
     echo "===3rd===\n";
 
-    foreach ($array as $property => $value) {
+    foreach ($array2 as $property => $value) {
         print "$property: $value\n";
     }
 }
