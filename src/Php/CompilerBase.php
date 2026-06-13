@@ -883,6 +883,33 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
     /**
+     * 将参数类型中的非完全限定类名解析为完全限定名称。
+     * 在 parseTrait 阶段调用，避免 gen_stub 时上下文丢失。
+     */
+    protected function resolveParamClassName(?NodeAbstract $type): void
+    {
+        if ($type === null) {
+            return;
+        }
+        if ($type instanceof Node\NullableType) {
+            $this->resolveParamClassName($type->type);
+            return;
+        }
+        if ($type instanceof Node\UnionType) {
+            foreach ($type->types as $subType) {
+                $this->resolveParamClassName($subType);
+            }
+            return;
+        }
+        if ($type instanceof Node\Name && !$type->isFullyQualified()) {
+            $typeName = $type->toString();
+            if (!isset($this->zendTypeMap[strtolower($typeName)]) && strtolower($typeName) !== 'self' && strtolower($typeName) !== 'static' && strtolower($typeName) !== 'parent') {
+                $type->name = '\\' . $this->getNamespacedClassName($typeName);
+            }
+        }
+    }
+
+    /**
      * 函数名称处理，补齐 namespace
      */
     public function getNamespacedFuncName(string $funcName): string
