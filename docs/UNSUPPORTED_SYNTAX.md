@@ -2261,6 +2261,110 @@ function main() {
 
 ---
 
+### 13. 类继承的编译期严格检查
+
+**状态**: 行为差异  
+**PHP 版本**: 所有版本  
+**描述**: AOT 编译器在编译期对类继承关系进行比标准 PHP 更严格的检查。以下三种情况在标准 PHP 中是运行时错误，但在 AOT 中会在编译期直接报告致命错误。
+
+#### 13.1 禁止实例化抽象类
+
+在标准 PHP 中，`new AbstractClass()` 是运行时错误；AOT 在编译期检测到此类实例化时立即报错。
+
+```php
+<?php
+abstract class AbstractBase {
+    abstract function doSomething();
+}
+
+// ❌ AOT 编译错误：abstract class `AbstractBase` cannot be instantiated
+$obj = new AbstractBase();
+```
+
+**原因**: 
+- AOT 编译器在编译期即可静态分析出抽象类的实例化
+- 提前暴露 bug，避免运行时才发现
+
+#### 13.2 禁止调用父类抽象方法
+
+在标准 PHP 中，调用父类未实现的抽象方法是运行时错误；AOT 在编译期直接拦截。
+
+```php
+<?php
+abstract class AbsBase {
+    abstract public function show();
+}
+
+class Child extends AbsBase {
+    public function run() {
+        // ❌ AOT 编译错误：Cannot call abstract method `AbsBase::show()`
+        parent::show();
+    }
+}
+```
+
+**原因**:
+- 抽象方法没有方法体，调用它必然是编程错误
+- 编译期检查可以提前发现问题
+
+#### 13.3 禁止覆盖私有方法
+
+**这是 AOT 与标准 PHP 最大的行为差异之一**。标准 PHP 允许子类定义与父类私有方法同名的方法（因为私有方法对子类不可见）。AOT 编译器禁止这种行为，以避免潜在的方法签名冲突。
+
+```php
+<?php
+class Base {
+    private function doWork() {
+        return 'base';
+    }
+}
+
+class Child extends Base {
+    // ❌ AOT 编译错误：Cannot override private method `Base::doWork()`
+    private function doWork() {
+        return 'child';
+    }
+}
+```
+
+**原因**:
+- AOT 编译器采用更严格的继承模型
+- 私有方法虽然不可见，但在符号表中仍然存在
+- 同名方法可能导致 C++ 后端的符号冲突
+- 提高代码质量和可维护性
+
+**替代方案**:
+```php
+<?php
+class Base {
+    private function doWork() {
+        return 'base';
+    }
+}
+
+class Child extends Base {
+    // ✅ 使用不同的方法名
+    private function doChildWork() {
+        return 'child';
+    }
+}
+```
+
+**与标准 PHP 的区别总结**:
+
+| 检查项 | 标准 PHP | AOT 编译器 |
+|-------|---------|------------|
+| `new AbstractClass()` | 运行时 Fatal Error | 编译期 Fatal Error |
+| `parent::abstractMethod()` | 运行时 Fatal Error | 编译期 Fatal Error |
+| 覆盖父类私有方法 | ✅ 允许 | ❌ 编译期 Fatal Error |
+
+**最佳实践建议**:
+- ✅ 避免在子类中定义与父类私有方法同名的方法
+- ✅ 使用不同的命名约定区分不同层级的方法
+- ✅ 如确需覆盖行为，考虑将父类方法改为 protected
+
+---
+
 ### 7. 游离代码（全局可执行表达式）
 
 **状态**: 不支持  
@@ -2573,7 +2677,7 @@ echo "skip Generator syntax not supported in AOT";
 
 | 类别 | 数量 | 百分比 |
 |------|------|--------|
-| 不支持的语法 | 12 | - |
+| 不支持的语法 | 13 | - |
 | 计划支持的语法 | 2 | - |
 | 已支持的语法 | 50+ | ~81% |
 
@@ -2584,6 +2688,12 @@ echo "skip Generator syntax not supported in AOT";
 ---
 
 ## 📝 更新日志
+
+### 2026-06-13
+- 新增 **类继承的编译期严格检查**: AOT 编译器在编译期对类继承关系进行比标准 PHP 更严格的检查
+- **禁止实例化抽象类**: 标准 PHP 中为运行时错误，AOT 在编译期检测
+- **禁止调用父类抽象方法**: 编译期直接拦截未实现的抽象方法调用
+- **禁止覆盖父类私有方法**: 与标准 PHP 最大的行为差异，PHP 允许而 AOT 禁止子类定义与父类私有方法同名的方法
 
 ### 2024-04-07
 - 新增 3 个不支持的语法特性
@@ -2676,7 +2786,10 @@ A: 游离代码指在函数或方法之外直接执行的可执行表达式（�
 | **变长引用参数** | ❌ 不支持 | 使用数组参数代替 |
 | **重复函数/类名** | ❌ 不支持 | 使用命名空间、不同名称或条件定义 |
 | **break/continue N** | ❌ 不支持 | 使用 goto、标志变量、函数返回或 try/catch |
-| **字符串越界访问** | ⚠️ 行为不一致 | 添加边界检查或使用 substr()
+| **字符串越界访问** | ⚠️ 行为不一致 | 添加边界检查或使用 substr() |
+| **实例化抽象类** | ❌ 编译期错误 | 改用具体子类 |
+| **调用父类抽象方法** | ❌ 编译期错误 | 实现抽象方法后调用 |
+| **覆盖父类私有方法** | ❌ 编译期错误 | 使用不同的方法名 |
 
 ### 正确的代码结构模板
 

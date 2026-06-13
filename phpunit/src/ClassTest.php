@@ -16,4 +16,14 @@ class ClassTest extends \BaseTest
     {
         $this->exec('Cannot call abstract method `AbsBase::show()`', 'parent-abstract-method.php');
     }
+
+    public function testNewAbstractClass()
+    {
+        $this->exec('abstract class `AbstractBase` cannot be instantiated', 'abstract-class-new.php');
+    }
+
+    public function testOverridePrivateMethod()
+    {
+        $this->exec('Cannot override private method `Base::doWork()`', 'override-private-method.php');
+    }
 }
