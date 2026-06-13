@@ -484,12 +484,12 @@ class Preprocessor extends CompilerBase
             }
         }
 
-        // 将 trait 方法参数中的类名解析为完全限定名称，避免 gen_stub 时上下文丢失
+        // 将 trait 方法参数中的类名升级为 FullyQualified，避免 gen_stub 时上下文丢失
         if ($class instanceof Node\Stmt\Trait_) {
             foreach ($class->stmts as $v) {
                 if ($v instanceof Node\Stmt\ClassMethod) {
                     foreach ($v->params as $param) {
-                        $this->resolveParamClassName($param->type);
+                        $param->type = $this->upgradeToFullyQualifiedName($param->type);
                     }
                 }
             }

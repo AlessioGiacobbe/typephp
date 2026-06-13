@@ -883,30 +883,42 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
     /**
-     * 将参数类型中的非完全限定类名解析为完全限定名称。
-     * 在 parseTrait 阶段调用，避免 gen_stub 时上下文丢失。
+     * 将 trait 方法参数中的类名 Name 节点升级为 Name\FullyQualified。
+     * 对于已由 parseTypeDecl() 解析的限定名（含 \），直接升级节点类型；
+     * 对于尚未解析的非限定名（如 NullableType 内层，parseTypeDecl 返回 TYPE_VAR 跳过了解析），
+     * 先通过 useAliases/useNamespaces 解析再升级。
+     * gen_stub.php 的 SimpleType::fromNode() 依赖 isFullyQualified() 判断是否需要再次解析，
+     * 若不升级为 FullyQualified，在上下文丢失后会被错误地追加当前 namespace 前缀。
      */
-    protected function resolveParamClassName(?NodeAbstract $type): void
+    protected function upgradeToFullyQualifiedName(?NodeAbstract $type): ?NodeAbstract
     {
         if ($type === null) {
-            return;
+            return null;
         }
         if ($type instanceof Node\NullableType) {
-            $this->resolveParamClassName($type->type);
-            return;
+            return new Node\NullableType($this->upgradeToFullyQualifiedName($type->type));
         }
         if ($type instanceof Node\UnionType) {
-            foreach ($type->types as $subType) {
-                $this->resolveParamClassName($subType);
+            foreach ($type->types as $i => $subType) {
+                $type->types[$i] = $this->upgradeToFullyQualifiedName($subType);
             }
-            return;
+            return $type;
         }
-        if ($type instanceof Node\Name && !$type->isFullyQualified()) {
+        if ($type instanceof Node\Name\FullyQualified) {
+            return $type;
+        }
+        if ($type instanceof Node\Name) {
             $typeName = $type->toString();
-            if (!isset($this->zendTypeMap[strtolower($typeName)]) && strtolower($typeName) !== 'self' && strtolower($typeName) !== 'static' && strtolower($typeName) !== 'parent') {
-                $type->name = '\\' . $this->getNamespacedClassName($typeName);
+            if (isset($this->zendTypeMap[strtolower($typeName)]) || in_array(strtolower($typeName), ['self', 'static', 'parent'], true)) {
+                return $type;
             }
+            if ($type->isQualified()) {
+                return new Node\Name\FullyQualified($typeName, $type->getAttributes());
+            }
+            $resolved = $this->getNamespacedClassName($typeName);
+            return new Node\Name\FullyQualified($resolved, $type->getAttributes());
         }
+        return $type;
     }
 
     /**
