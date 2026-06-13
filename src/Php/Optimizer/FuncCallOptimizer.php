@@ -73,7 +73,6 @@ trait FuncCallOptimizer
             'json_encode', 'json_decode', 'serialize', 'unserialize',
             'random_int', 'random_bytes', 'mt_rand', 'rand',
             'strstr', 'strrpos', 'is_a', 'is_subclass_of',
-            'reset', 'end',
             'uniqid',
             'dirname', 'basename',
             // Math: trig, hyperbolic, exp/log, misc
