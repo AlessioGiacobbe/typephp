@@ -1573,7 +1573,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
             }
             // 把子类当做父类返回时，父类必须是抽象类或者接口
-            if ($objectClass and $objectClass !== $returnClass and !$this->isAbstractClass($returnClass) and !$this->hasInterface($returnClass)) {
+            if ($objectClass and $objectClass !== $returnClass and !$this->isAbstractClass($returnClass) and !$this->hasInterface($returnClass) and !$this->isInternalInterface($returnClass)) {
                 $this->fatalError($v, "When returning a subclass `$objectClass` instance as parent type, the parent class `$returnClass` must be abstract/interface");
             }
         }
@@ -3563,6 +3563,19 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($isInterface) {
                 if ($classDef->implements and in_array($expected, $classDef->implements)) {
                     return true;
+                }
+                // Check transitive interface inheritance (e.g., Iterator extends Traversable)
+                foreach ($classDef->implements as $iface) {
+                    $check = $iface;
+                    while ($check && $this->hasInterface($check)) {
+                        if (strcasecmp($check, $expected) === 0) {
+                            return true;
+                        }
+                        $check = $this->getInterface($check)->extends;
+                    }
+                    if (is_subclass_of($iface, $expected)) {
+                        return true;
+                    }
                 }
             } else {
                 if (strcasecmp($class, $expected) === 0) {
