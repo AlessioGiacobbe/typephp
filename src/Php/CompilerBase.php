@@ -3076,13 +3076,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($expr->if === null) {
             return $this->parseValueSelection($expr, $expr->cond, $expr->else, self::OP_NOT_EMPTY);
         }
+        $cond = $this->parseExpr($expr->cond);
         $if = $this->parseExpr($expr->if);
         $else = $this->parseExpr($expr->else);
         if ($this->detectTypeOfExpr($expr->if) !== $this->detectTypeOfExpr($expr->else)) {
             $if = 'php::Var(' . $if . ')';
             $else = 'php::Var(' . $else . ')';
         }
-        return '(' . $this->parseExpr($expr->cond) . ') ? (' . $if . ') : (' . $else . ')';
+        return '(' . $cond . ') ? (' . $if . ') : (' . $else . ')';
     }
 
     protected function parseMatch(Expr\Match_ $expr): string
