@@ -713,7 +713,7 @@ function main(): void
     }
 
     verify_config($php);
-    write_information($user_tests, $phpdbg);
+    write_information($user_tests);
 
     if ($test_cnt) {
         putenv('NO_INTERACTION=1');
@@ -822,9 +822,9 @@ function verify_config(string $php): void
 /**
  * @param string[] $user_tests
  */
-function write_information(array $user_tests, $phpdbg): void
+function write_information(array $user_tests): void
 {
-    global $php, $php_cgi, $php_info, $ini_overwrites, $pass_options, $exts_to_test, $valgrind, $no_file_cache;
+    global $php, $php_info, $ini_overwrites, $pass_options, $exts_to_test, $valgrind, $no_file_cache;
     $php_escaped = escapeshellarg($php);
 
     // Get info from php
@@ -843,24 +843,6 @@ More .INIs  : " , (function_exists(\'php_ini_scanned_files\') ? str_replace("\n"
     $info_params = settings2params($info_params);
     $php_info = shell_exec("$php_escaped $pass_options $info_params $no_file_cache \"$info_file\"");
     define('TESTED_PHP_VERSION', shell_exec("$php_escaped -n -r \"echo PHP_VERSION;\""));
-
-    if ($php_cgi && $php != $php_cgi) {
-        $php_cgi_escaped = escapeshellarg($php_cgi);
-        $php_info_cgi = shell_exec("$php_cgi_escaped $pass_options $info_params $no_file_cache -q \"$info_file\"");
-        $php_info_sep = "\n---------------------------------------------------------------------";
-        $php_cgi_info = "$php_info_sep\nPHP         : $php_cgi $php_info_cgi$php_info_sep";
-    } else {
-        $php_cgi_info = '';
-    }
-
-    if ($phpdbg) {
-        $phpdbg_escaped = escapeshellarg($phpdbg);
-        $phpdbg_info = shell_exec("$phpdbg_escaped $pass_options $info_params $no_file_cache -qrr \"$info_file\"");
-        $php_info_sep = "\n---------------------------------------------------------------------";
-        $phpdbg_info = "$php_info_sep\nPHP         : $phpdbg $phpdbg_info$php_info_sep";
-    } else {
-        $phpdbg_info = '';
-    }
 
     if (function_exists('opcache_invalidate')) {
         opcache_invalidate($info_file, true);
@@ -905,7 +887,7 @@ More .INIs  : " , (function_exists(\'php_ini_scanned_files\') ? str_replace("\n"
     // Write test context information.
     echo "
 =====================================================================
-PHP         : $php $php_info $php_cgi_info $phpdbg_info
+PHP         : $php $php_info
 CWD         : " . TEST_PHP_SRCDIR . "
 Extra dirs  : ";
     foreach ($user_tests as $test_dir) {
