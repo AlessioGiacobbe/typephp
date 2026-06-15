@@ -344,15 +344,25 @@ trait FuncCallOptimizer
     {
         $base = ($type[0] ?? '') === self::ARG_OPTIONAL ? substr($type, 1) : $type;
 
+        if ($base === self::ARG_TYPE_ARRAY) {
+            return $this->convertStdContainerArrayExpr($expr, $index, $this->getArg($expr, $index));
+        }
+
         $raw = ($base === self::ARG_TYPE_REF) ? $this->getRefArg($expr, $index) : $this->getArg($expr, $index);
+        return $this->applyArgConversion($raw, $type);
+    }
+
+    protected function applyArgConversion(string $cxxExpr, string $type): string
+    {
+        $base = ($type[0] ?? '') === self::ARG_OPTIONAL ? substr($type, 1) : $type;
 
         return match ($base) {
-            self::ARG_TYPE_STR => $this->convertStringExpr($raw),
-            self::ARG_TYPE_INT => $this->convertIntExpr($raw),
-            self::ARG_TYPE_FLOAT => $this->convertFloatExpr($raw),
-            self::ARG_TYPE_BOOL => $this->convertBoolExpr($raw),
-            self::ARG_TYPE_ARRAY => $this->convertStdContainerArrayExpr($expr, $index, $raw),
-            default => $raw,
+            self::ARG_TYPE_STR => $this->convertStringExpr($cxxExpr),
+            self::ARG_TYPE_INT => $this->convertIntExpr($cxxExpr),
+            self::ARG_TYPE_FLOAT => $this->convertFloatExpr($cxxExpr),
+            self::ARG_TYPE_BOOL => $this->convertBoolExpr($cxxExpr),
+            self::ARG_TYPE_ARRAY => $this->convertArrayExpr($cxxExpr),
+            default => $cxxExpr,
         };
     }
 

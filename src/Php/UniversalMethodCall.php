@@ -694,6 +694,83 @@ trait UniversalMethodCall
         return 'php::' . $fn . '(' . $receiver . ')';
     }
 
+    private function mergeConstArgs(array $argExprs, array $constArgs): array
+    {
+        if (!$constArgs) {
+            return $argExprs;
+        }
+        $maxPos = max(array_keys($constArgs));
+        $totalSlots = max(count($argExprs) + count($constArgs), $maxPos + 1);
+        $merged = [];
+        $regIdx = 0;
+        for ($i = 0; $i < $totalSlots; $i++) {
+            if (isset($constArgs[$i])) {
+                $merged[] = $constArgs[$i];
+            } else {
+                $merged[] = $argExprs[$regIdx++];
+            }
+        }
+        return $merged;
+    }
+
+    /**
+     * Try to generate a direct C++ call for a php_fn method using the FuncCallOptimizer's
+     * type-aware argument resolution. Returns null if the function is not optimizable.
+     */
+    private function tryOptimizePhpFn(string $receiver, string $phpFunc, array $args, int $receiverPos, array $constArgs): ?string
+    {
+        $config = $this->getFuncCallConfig()[$phpFunc] ?? null;
+        if ($config === null) {
+            return null;
+        }
+
+        $targetName = $phpFunc;
+        if (is_string($config)) {
+            $targetName = $config;
+            $config = $this->getFuncCallConfig()[$targetName] ?? [];
+        }
+
+        // Skip entries that need FuncCall AST nodes
+        if (isset($config['handler']) || isset($config['bigDispatch']) || isset($config['conversion'])) {
+            return null;
+        }
+
+        $refInfo = $this->getArgReflectionInfo($targetName);
+        if (!empty($config['variadic']) || ($refInfo['variadic'] ?? false)) {
+            return null;
+        }
+
+        $target = $config['target'] ?? null;
+        if ($target === null) {
+            $target = 'php::fn::' . $targetName;
+        } elseif (!str_starts_with($target, 'php::')) {
+            $target = 'php::fn::' . $target;
+        }
+
+        $argTypeStr = $config['args'] ?? ($refInfo['args'] ?? '');
+        $defaults = $config['defaults'] ?? [];
+
+        $rawArgs = $this->mergeConstArgs(
+            $this->buildReceiverArgs($receiver, $args, $receiverPos),
+            $constArgs
+        );
+
+        if ($argTypeStr !== '') {
+            $types = explode('_', $argTypeStr);
+            foreach ($types as $i => $type) {
+                if (!isset($rawArgs[$i])) {
+                    if (($type[0] ?? '') === self::ARG_OPTIONAL && isset($defaults[$i])) {
+                        continue;
+                    }
+                    return null;
+                }
+                $rawArgs[$i] = $this->applyArgConversion($rawArgs[$i], $type);
+            }
+        }
+
+        return $target . '(' . implode(', ', $rawArgs) . ')';
+    }
+
     /**
      * @param int $receiverPos Position of the receiver in the final argument list.
      *  0 (default) = receiver first. Non-zero values are 1-indexed (1 = before 1st user arg,
@@ -701,22 +778,17 @@ trait UniversalMethodCall
      */
     protected function genUniversalPhpFn(string $receiver, string $phpFunc, array $args, int $receiverPos = 0, array $constArgs = []): string
     {
-        $argExprs = $this->buildReceiverArgs($receiver, $args, $receiverPos);
-
-        if ($constArgs) {
-            $maxPos = max(array_keys($constArgs));
-            $totalSlots = max(count($argExprs) + count($constArgs), $maxPos + 1);
-            $final = [];
-            $regIdx = 0;
-            for ($i = 0; $i < $totalSlots; $i++) {
-                if (isset($constArgs[$i])) {
-                    $final[] = $constArgs[$i];
-                } else {
-                    $final[] = $argExprs[$regIdx++];
-                }
-            }
-            $argExprs = $final;
+        // Try direct C++ call with type conversions first
+        $optimized = $this->tryOptimizePhpFn($receiver, $phpFunc, $args, $receiverPos, $constArgs);
+        if ($optimized !== null) {
+            return $optimized;
         }
+
+        // Fall back to dynamic php::call()
+        $argExprs = $this->mergeConstArgs(
+            $this->buildReceiverArgs($receiver, $args, $receiverPos),
+            $constArgs
+        );
 
         return 'php::call(' . $this->getFuncPtr($phpFunc) . ', php::ArgList{' . implode(', ', $argExprs) . '})';
     }
