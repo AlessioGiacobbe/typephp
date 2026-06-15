@@ -347,7 +347,7 @@ trait AssignOpTrait
                 return $var . '.append(' . $rightExprStr . ')';
             }
             if ($this->isAssignOpPow($op)) {
-                $powExpr = 'php::math::pow(' . $var . ', ' . $rightExprStr . ')';
+                $powExpr = 'php::fn::pow(' . $var . ', ' . $rightExprStr . ')';
                 return $var . ' = ' . $this->convertVarType($var, $powExpr);
             }
             return $var . ' ' . $op . ' ' . $rightExprStr;

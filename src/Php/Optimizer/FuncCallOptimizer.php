@@ -129,26 +129,26 @@ trait FuncCallOptimizer
                 self::TYPE_BIGINT => 'php::BigInt::abs',
                 self::TYPE_BIGFLOAT => 'php::BigFloat::abs',
                 self::TYPE_DECIMAL => 'php::Decimal::abs',
-                'fallback' => 'php::std::abs',
+                'fallback' => 'php::fn::abs',
             ]],
             'pow' => ['bigDispatch' => [
                 self::TYPE_BIGINT => 'php::BigInt::pow',
                 self::TYPE_DECIMAL => 'php::Decimal::pow',
-                'fallback' => 'php::std::pow',
+                'fallback' => 'php::fn::pow',
             ]],
             'sqrt' => ['bigDispatch' => [
                 self::TYPE_BIGINT => 'php::BigInt::sqrt',
                 self::TYPE_DECIMAL => 'php::Decimal::sqrt',
                 self::TYPE_BIGFLOAT => 'php::BigFloat::sqrt',
-                'fallback' => 'php::std::sqrt',
+                'fallback' => 'php::fn::sqrt',
             ]],
             'floor' => ['bigDispatch' => [
                 self::TYPE_DECIMAL => 'php::Decimal::floor',
-                'fallback' => 'php::std::floor',
+                'fallback' => 'php::fn::floor',
             ]],
             'ceil' => ['bigDispatch' => [
                 self::TYPE_DECIMAL => 'php::Decimal::ceil',
-                'fallback' => 'php::std::ceil',
+                'fallback' => 'php::fn::ceil',
             ]],
 
             // Type conversions
@@ -227,9 +227,9 @@ trait FuncCallOptimizer
     {
         $target = $config['target'] ?? null;
         if ($target === null) {
-            $target = 'php::std::' . $name;
+            $target = 'php::fn::' . $name;
         } elseif (!str_starts_with($target, 'php::')) {
-            $target = 'php::std::' . $target;
+            $target = 'php::fn::' . $target;
         }
 
         $refInfo = $this->getArgReflectionInfo($name);
@@ -563,7 +563,7 @@ trait FuncCallOptimizer
         if (count($e->args) >= 3) {
             return false;
         }
-        return $this->dispatchFuncCall('is_callable', $e, ['target' => 'php::std::is_callable']);
+        return $this->dispatchFuncCall('is_callable', $e, ['target' => 'php::fn::is_callable']);
     }
 
     protected function genGetClassOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
@@ -572,7 +572,7 @@ trait FuncCallOptimizer
         if ($this->isVarExpr($obj) && $this->isTypedObject($obj->name)) {
             return $this->getLiteralString($this->getObjectType($obj->name));
         }
-        return 'php::std::get_class(' . $this->parseIdentifier($obj) . ')';
+        return 'php::fn::get_class(' . $this->parseIdentifier($obj) . ')';
     }
 
     protected function genGetParentClass(string $n, Node\Expr\FuncCall $e, array $c): string
@@ -589,7 +589,7 @@ trait FuncCallOptimizer
             if ($cls && $cls->extends) return $this->getLiteralString($cls->extends);
             if ($cls && !$cls->extends) return 'false';
         }
-        return 'php::std::get_parent_class(' . $this->parseIdentifier($arg) . ')';
+        return 'php::fn::get_parent_class(' . $this->parseIdentifier($arg) . ')';
     }
 
     protected function genFunctionExistsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
@@ -621,12 +621,12 @@ trait FuncCallOptimizer
     {
         $cnt = count($e->args);
         if ($cnt >= 3) {
-            return 'php::std::array_keys_filter(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ', ' . $this->getArg($e, 2) . ')';
+            return 'php::fn::array_keys_filter(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ', ' . $this->getArg($e, 2) . ')';
         }
         if ($cnt >= 2) {
-            return 'php::std::array_keys_filter(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ', false)';
+            return 'php::fn::array_keys_filter(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ', false)';
         }
-        return 'php::std::array_keys(' . $this->getArg($e, 0) . ')';
+        return 'php::fn::array_keys(' . $this->getArg($e, 0) . ')';
     }
 
     protected function genArrayKeyExists(string $n, Node\Expr\FuncCall $e, array $c): string
@@ -646,12 +646,12 @@ trait FuncCallOptimizer
         }
         $args = count($e->args);
         if ($args >= 3) {
-            return 'php::std::round(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ', ' . $this->convertIntExpr($this->getArg($e, 2)) . ')';
+            return 'php::fn::round(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ', ' . $this->convertIntExpr($this->getArg($e, 2)) . ')';
         }
         if ($args >= 2) {
-            return 'php::std::round(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ')';
+            return 'php::fn::round(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ')';
         }
-        return 'php::std::round(' . $this->getArg($e, 0) . ')';
+        return 'php::fn::round(' . $this->getArg($e, 0) . ')';
     }
 
     protected function genCount(string $n, Node\Expr\FuncCall $e, array $c): string
@@ -659,9 +659,9 @@ trait FuncCallOptimizer
         $folded = $this->doFoldCountLiteral($e);
         if ($folded !== false) return $folded;
         if (count($e->args) >= 2) {
-            return 'php::std::count(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ')';
+            return 'php::fn::count(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ')';
         }
-        return 'php::std::count(' . $this->getArg($e, 0) . ')';
+        return 'php::fn::count(' . $this->getArg($e, 0) . ')';
     }
 
     protected function genDefine(string $n, Node\Expr\FuncCall $e, array $c): string|false
@@ -672,9 +672,9 @@ trait FuncCallOptimizer
         }
         $args = count($e->args) >= 3 ? 3 : 2;
         if ($args == 3) {
-            return 'php::std::define(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ', ' . $this->getArg($e, 2) . ')';
+            return 'php::fn::define(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ', ' . $this->getArg($e, 2) . ')';
         }
-        return 'php::std::define(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ')';
+        return 'php::fn::define(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ')';
     }
 
     // =========================================================================
@@ -740,9 +740,9 @@ trait FuncCallOptimizer
                 return 'true';
             }
             $funcName = $this->getLiteralString($nameLower);
-            return 'php::std::function_exists(' . $funcName . ')';
+            return 'php::fn::function_exists(' . $funcName . ')';
         }
-        return 'php::std::function_exists(' . $this->parseIdentifier($funcName) . ')';
+        return 'php::fn::function_exists(' . $this->parseIdentifier($funcName) . ')';
     }
 
     protected function genGetClass(Node\Expr\FuncCall $expr): string
@@ -751,7 +751,7 @@ trait FuncCallOptimizer
         if ($this->isVarExpr($object) and $this->isTypedObject($object->name)) {
             return $this->getLiteralString($this->getObjectType($object->name));
         }
-        return 'php::std::get_class(' . $this->parseIdentifier($object) . ')';
+        return 'php::fn::get_class(' . $this->parseIdentifier($object) . ')';
     }
 
     protected function genCompactOrig(Node\Expr\FuncCall $expr): string

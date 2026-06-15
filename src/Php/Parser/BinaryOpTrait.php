@@ -122,7 +122,7 @@ trait BinaryOpTrait
         }
 
         if ($op === '%' and !($leftType === self::TYPE_INT and $rightType === self::TYPE_INT)) {
-            return 'php::math::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+            return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
@@ -190,7 +190,7 @@ trait BinaryOpTrait
         }
         $left  = $this->parseIdentifier($expr->left);
         $right = $this->parseIdentifier($expr->right);
-        return 'php::math::pow(' . $left . ', ' . $right . ')';
+        return 'php::fn::pow(' . $left . ', ' . $right . ')';
     }
 
     protected function parseBinaryOpBitwiseAnd(Expr\BinaryOp\BitwiseAnd $expr): string

@@ -216,13 +216,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         'phpx_big_float.h',
         'phpx_decimal.h',
         'php_aot_helper.h',
-        'php_std_core.h',
-        'php_std_string.h',
-        'php_std_misc.h',
-        'php_std_array.h',
-        'php_std_datetime.h',
-        'php_std_fs.h',
-        'php_std_math.h',
+        'phpx_std.h',
     ];
     protected array $localHeaders = [];
     protected array $internalFunctions = [];
@@ -4848,6 +4842,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseThrow(mixed $expr): string
     {
+        if ($this->method === '__destruct') {
+            $this->warning($expr, "Throwing exception in {$this->getFullClassName()}::__destruct() may cause memory leak");
+        }
         if ($this->isNewExpr($expr->expr)) {
             $ex = $this->parseExpr($expr->expr);
         } elseif ($this->isVarExpr($expr->expr)) {
@@ -4937,7 +4934,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($expr->parts as $part) {
             $list[] = $this->identifierToStr($part);
         }
-        return 'php::std::shell_exec(php::concat({' . implode(', ', $list) . '}))';
+        return 'php::fn::shell_exec(php::concat({' . implode(', ', $list) . '}))';
     }
 
     protected function parseGoto(Node\Stmt\Goto_ $v): string

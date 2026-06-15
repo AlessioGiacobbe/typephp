@@ -398,7 +398,7 @@ class Translator extends Preprocessor
 
     public function prepare(string $path): array
     {
-        // shell_exec 和 define 已通过 php::std:: 直接调用，无需动态符号表
+        // shell_exec 和 define 已通过 php::fn:: 直接调用，无需动态符号表
 
         // 根据平台检查库文件（仅在构建二进制文件时需要）
         if ($this->isBuildModeBin()) {
@@ -681,7 +681,7 @@ CODE;
         $code .= '// register constants' . PHP_EOL;
         foreach ($this->constants as $name => $const) {
             $code .= "{$name} = {$const->value};\n";
-            $code .= 'php::std::define(' . $this->genCharPtr($const->name, true) . ', ' . $name . ');' . PHP_EOL;
+            $code .= 'php::fn::define(' . $this->genCharPtr($const->name, true) . ', ' . $name . ');' . PHP_EOL;
         }
         $code .= '// global vars ' . PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
@@ -969,15 +969,6 @@ CODE;
 
         // 生成扩展模块的源文件
         $sourceFiles[] = $this->genExtension();
-
-        // stdlib: 直接 C++ 包装的 Zend 内置函数
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_core.cpp';
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_array.cpp';
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_string.cpp';
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_datetime.cpp';
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_fs.cpp';
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_math.cpp';
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_std_misc.cpp';
 
         // embed 需要 main 函数，以及 cli 的内置函数定义
         if ($this->isBuildModeBin()) {
