@@ -5423,16 +5423,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
-    protected function genScopeVarDecl(): string
+    protected function genLocalVarDecl(array $localVars): string
     {
         $code = '';
-        if ($this->context->hasMultiLevelBreak) {
-            $code .= $this->getIndent() . 'int _brk_flag = 0;' . PHP_EOL;
-        }
-        if ($this->context->hasMultiLevelContinue) {
-            $code .= $this->getIndent() . 'int _cnt_flag = 0;' . PHP_EOL;
-        }
-        foreach ($this->context->localVars as $name => $type) {
+        foreach ($localVars as $name => $type) {
             if (isset($this->context->arguments[$name])) {
                 continue;
             }
@@ -5483,6 +5477,19 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             $code .= PHP_EOL;
         }
+        return $code;
+    }
+
+    protected function genScopeVarDecl(): string
+    {
+        $code = '';
+        if ($this->context->hasMultiLevelBreak) {
+            $code .= $this->getIndent() . 'int _brk_flag = 0;' . PHP_EOL;
+        }
+        if ($this->context->hasMultiLevelContinue) {
+            $code .= $this->getIndent() . 'int _cnt_flag = 0;' . PHP_EOL;
+        }
+        $code .= $this->genLocalVarDecl($this->context->localVars);
         foreach ($this->context->globalVars as $name => $type) {
             $code .= $this->getIndent() . self::TYPE_VAR . ' &' . $name . ' = ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
         }

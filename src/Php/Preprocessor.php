@@ -553,6 +553,9 @@ class Preprocessor extends CompilerBase
         $flags = $this->parseModifiers($flags);
         $class = '';
         $type = $this->parseTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY, $class);
+        $localVarCount = count($this->context->localVars);
+        $beforeStmtCount = count($this->context->beforeStmtLines);
+        $afterStmtCount = count($this->context->afterStmtLines);
 
         $default = null;
         if ($defaultNode !== null) {
@@ -568,6 +571,24 @@ class Preprocessor extends CompilerBase
 
         $propDef = new PropertyDef($name, $flags, $type, $default, $nullable);
         $propDef->class = $class;
+        if (($flags & Modifiers::STATIC) && $defaultNode !== null) {
+            $newLocalVars = array_slice($this->context->localVars, $localVarCount, null, true);
+            $newBeforeStmtLines = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
+            $newAfterStmtLines = array_slice($this->context->afterStmtLines, $afterStmtCount);
+
+            if ($newLocalVars) {
+                $propDef->defaultInit .= $this->genLocalVarDecl($newLocalVars);
+                $this->context->localVars = array_slice($this->context->localVars, 0, $localVarCount, true);
+            }
+            if ($newBeforeStmtLines) {
+                $propDef->defaultInit .= implode(PHP_EOL, $newBeforeStmtLines) . PHP_EOL;
+                $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
+            }
+            if ($newAfterStmtLines) {
+                $propDef->defaultClean .= implode(PHP_EOL, $newAfterStmtLines) . PHP_EOL;
+                $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
+            }
+        }
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
     }

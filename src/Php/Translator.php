@@ -690,7 +690,15 @@ CODE;
 
         $code .= '// static property ' . PHP_EOL;
         foreach ($this->defaultStaticPropertyList as $prop) {
-            $code .= 'php::setStaticProperty(' . $this->genCharPtr($prop->class, true) . ', ' . $this->genCharPtr($prop->name) . ', ' . $prop->default . ');' . PHP_EOL;
+            if ($prop->init || $prop->clean) {
+                $code .= "do {\n";
+                $code .= $prop->init;
+                $code .= 'php::setStaticProperty(' . $this->genCharPtr($prop->class, true) . ', ' . $this->genCharPtr($prop->name) . ', ' . $prop->default . ');' . PHP_EOL;
+                $code .= $prop->clean;
+                $code .= "} while (0);\n";
+            } else {
+                $code .= 'php::setStaticProperty(' . $this->genCharPtr($prop->class, true) . ', ' . $this->genCharPtr($prop->name) . ', ' . $prop->default . ');' . PHP_EOL;
+            }
         }
 
         $code .= '// class array constants' . PHP_EOL;
@@ -2427,6 +2435,8 @@ CODE;
                         $prop->class = $fullClassName;
                         $prop->name = $property->name;
                         $prop->default = $property->default;
+                        $prop->init = $property->defaultInit;
+                        $prop->clean = $property->defaultClean;
                         $this->defaultStaticPropertyList[$fullPropName] = $prop;
                     } else {
                         $this->defaultPropertyList[$fullPropName] = $property->default;
