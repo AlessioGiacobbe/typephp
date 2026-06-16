@@ -2067,6 +2067,35 @@ CODE;
                     if ($traitStmt instanceof Node\Stmt\ClassMethod) {
                         $methodName = strtolower($traitStmt->name->toString());
                         if (isset($traitMethods[$methodName])) {
+                            [$existingTraitName, $existingStmt] = $traitMethods[$methodName];
+                            $newAbstract = $traitStmt->isAbstract();
+                            $existingAbstract = $existingStmt->isAbstract();
+
+                            if ($newAbstract && $existingAbstract) {
+                                // Both abstract: validate signature compatibility
+                                $this->validateTraitAbstractMethodCompatibility(
+                                    $classStmt, $existingTraitName, $traitFullName,
+                                    $methodName, $existingStmt, $traitStmt
+                                );
+                                // Signatures compatible, skip this duplicate
+                                unset($traitStmts[$k1]);
+                                continue;
+                            }
+
+                            if ($newAbstract && !$existingAbstract) {
+                                // Existing concrete wins over new abstract
+                                unset($traitStmts[$k1]);
+                                continue;
+                            }
+
+                            if (!$newAbstract && $existingAbstract) {
+                                // New concrete replaces existing abstract
+                                $traitMethods[$methodName] = [$traitFullName, $traitStmt];
+                                unset($traitStmts[$k1]);
+                                continue;
+                            }
+
+                            // Both concrete — error
                             $this->fatalError($classStmt, "Trait `{$traitFullName}` method `{$methodName}` already exists");
                         }
                         $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
@@ -2085,7 +2114,7 @@ CODE;
                         if (isset($methods[$methodName])) {
                             unset($traitStmts[$k1]);
                         }
-                        $traitMethods[$methodName] = $traitStmt;
+                        $traitMethods[$methodName] = [$traitFullName, $traitStmt];
                     }
                     if ($traitStmt instanceof Node\Stmt\ClassConst) {
                         foreach ($traitStmt->consts as $k2 => $const) {
@@ -2116,6 +2145,111 @@ CODE;
                 $stmt->stmts = array_merge($stmt->stmts, $traitStmts);
             }
         }
+    }
+
+    /**
+     * Validate that two abstract trait methods have compatible signatures.
+     * PHP allows multiple traits to declare the same abstract method as long
+     * as parameters and return type are compatible.
+     */
+    protected function validateTraitAbstractMethodCompatibility(
+        Node\Stmt\TraitUse $classStmt,
+        string $traitA,
+        string $traitB,
+        string $methodName,
+        Node\Stmt\ClassMethod $a,
+        Node\Stmt\ClassMethod $b
+    ): void {
+        // Compare visibility
+        if ($a->flags !== $b->flags) {
+            $this->fatalError(
+                $classStmt,
+                "Trait `{$traitA}` and Trait `{$traitB}` define the same abstract method `{$methodName}` " .
+                'but with different visibility'
+            );
+        }
+
+        // Compare return type
+        $aRet = $a->returnType ? $this->typeNodeToString($a->returnType) : null;
+        $bRet = $b->returnType ? $this->typeNodeToString($b->returnType) : null;
+        if ($aRet !== $bRet) {
+            $this->fatalError(
+                $classStmt,
+                "Trait `{$traitA}` and Trait `{$traitB}` define the same abstract method `{$methodName}` " .
+                'but with different return types'
+            );
+        }
+
+        // Compare parameter count
+        if (count($a->params) !== count($b->params)) {
+            $this->fatalError(
+                $classStmt,
+                "Trait `{$traitA}` and Trait `{$traitB}` define the same abstract method `{$methodName}` " .
+                'but with incompatible parameter counts'
+            );
+        }
+
+        // Compare parameter types
+        foreach ($a->params as $i => $paramA) {
+            $paramB = $b->params[$i];
+            $typeA = $paramA->type ? $this->typeNodeToString($paramA->type) : null;
+            $typeB = $paramB->type ? $this->typeNodeToString($paramB->type) : null;
+            if ($typeA !== $typeB) {
+                $this->fatalError(
+                    $classStmt,
+                    "Trait `{$traitA}` and Trait `{$traitB}` define the same abstract method `{$methodName}` " .
+                    "but parameter #{$i} has incompatible types"
+                );
+            }
+            if ($paramA->byRef !== $paramB->byRef) {
+                $this->fatalError(
+                    $classStmt,
+                    "Trait `{$traitA}` and Trait `{$traitB}` define the same abstract method `{$methodName}` " .
+                    "but parameter #{$i} differs in by-reference"
+                );
+            }
+            if ($paramA->variadic !== $paramB->variadic) {
+                $this->fatalError(
+                    $classStmt,
+                    "Trait `{$traitA}` and Trait `{$traitB}` define the same abstract method `{$methodName}` " .
+                    "but parameter #{$i} differs in variadic"
+                );
+            }
+        }
+    }
+
+    /**
+     * Convert a PHP-Parser type node to a normalized string for comparison.
+     */
+    private function typeNodeToString(NodeAbstract $typeNode): string
+    {
+        if ($typeNode instanceof Node\Identifier) {
+            return $typeNode->name;
+        }
+        if ($typeNode instanceof Node\Name) {
+            return $typeNode->toString();
+        }
+        if ($typeNode instanceof Node\NullableType) {
+            return '?' . $this->typeNodeToString($typeNode->type);
+        }
+        if ($typeNode instanceof Node\UnionType) {
+            $parts = [];
+            foreach ($typeNode->types as $t) {
+                $parts[] = $this->typeNodeToString($t);
+            }
+            sort($parts);
+            return implode('|', $parts);
+        }
+        if ($typeNode instanceof Node\IntersectionType) {
+            $parts = [];
+            foreach ($typeNode->types as $t) {
+                $parts[] = $this->typeNodeToString($t);
+            }
+            sort($parts);
+            return implode('&', $parts);
+        }
+        // Fallback: use pretty printer
+        return $this->printer->prettyPrint([$typeNode]);
     }
 
     protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
