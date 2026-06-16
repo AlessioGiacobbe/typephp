@@ -85,10 +85,6 @@ class Translator extends Preprocessor
 
     protected function wrapArrayInitPlan(ArrayInitPlan $plan, string $body): string
     {
-        if (!$plan->requiresRuntimeInit()) {
-            return $body;
-        }
-
         return "do {\n" . $plan->init . $body . $plan->clean . "} while (0);\n";
     }
 
