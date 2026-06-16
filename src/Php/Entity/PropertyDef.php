@@ -16,8 +16,7 @@ class PropertyDef
     public string $type;
     public int $flags;
     public ?string $default = null;
-    public string $defaultInit = '';
-    public string $defaultClean = '';
+    public ?ArrayInitPlan $arrayInitPlan = null;
     public bool $nullable = false;
     public string $class = '';
 

@@ -11,6 +11,7 @@ namespace PhpAot\Php;
 use MJS\TopSort\Implementations\StringSort;
 use PhpAot\Php\Analysis\SsaBuilder;
 use PhpAot\Php\Backend\CompilerFactory;
+use PhpAot\Php\Entity\ArrayInitPlan;
 use PhpAot\Php\Entity\ClassDef;
 use PhpAot\Php\Entity\ClassLikeDef;
 use PhpAot\Php\Entity\ConstantDef;
@@ -50,14 +51,74 @@ class Translator extends Preprocessor
     // Windows 资源文件配置（图标、版本信息等）
     protected array $resourceConfig = [];
 
-    // 类静态属性初始值
-    protected array $defaultStaticPropertyList = [];
-
-    // 类属性初始值
-    protected array $defaultPropertyList = [];
     protected bool $useRegisterSymbolsFn = false;
 
     protected const string MODULE_NAME_PREFIX = 'app_';
+
+    protected function isConstructorNativeFunction(FunctionDef $func): bool
+    {
+        return $func->method && str_ends_with($func->name, self::NAMESPACE_SEPARATOR . '__construct');
+    }
+
+    protected function getDefaultArgumentType(ArgInfo $argInfo): string
+    {
+        $type = $argInfo->type;
+        if ($type === self::TYPE_STREAM || $type === self::TYPE_BOX) {
+            return self::TYPE_VAR;
+        }
+        return $type;
+    }
+
+    protected function getDefaultArgumentHelperName(FunctionDef $func, ArgInfo $argInfo): string
+    {
+        return self::PREFIX . 'default_arg_' . $func->name . '_' . $argInfo->name;
+    }
+
+    protected function genDefaultArgumentExpr(FunctionDef $func, ArgInfo $argInfo): string
+    {
+        if (!$argInfo->arrayInitPlan || !$argInfo->arrayInitPlan->requiresRuntimeInit()) {
+            return $argInfo->default;
+        }
+
+        return $this->getDefaultArgumentHelperName($func, $argInfo) . '()';
+    }
+
+    protected function wrapArrayInitPlan(ArrayInitPlan $plan, string $body): string
+    {
+        if (!$plan->requiresRuntimeInit()) {
+            return $body;
+        }
+
+        return "do {\n" . $plan->init . $body . $plan->clean . "} while (0);\n";
+    }
+
+    protected function genDefaultArgumentHelpers(): string
+    {
+        $code = '';
+        foreach ($this->functions as $func) {
+            foreach ($func->argInfoList as $argInfo) {
+                $plan = $argInfo->arrayInitPlan;
+                if (!$plan || !$plan->requiresRuntimeInit()) {
+                    continue;
+                }
+
+                $type = $this->getDefaultArgumentType($argInfo);
+                $helper = $this->getDefaultArgumentHelperName($func, $argInfo);
+                $code .= 'static inline ' . $type . ' ' . $helper . "() {\n";
+                $code .= $plan->init;
+                if ($plan->clean) {
+                    $code .= $type . ' retval = ' . $plan->expr . ';' . PHP_EOL;
+                    $code .= $plan->clean;
+                    $code .= 'return retval;' . PHP_EOL;
+                } else {
+                    $code .= 'return ' . $plan->expr . ';' . PHP_EOL;
+                }
+                $code .= '}' . PHP_EOL;
+            }
+        }
+
+        return $code ? $code . PHP_EOL : '';
+    }
 
     public function __construct(string $rootPath)
     {
@@ -695,15 +756,16 @@ CODE;
         }
 
         $code .= '// static property ' . PHP_EOL;
-        foreach ($this->defaultStaticPropertyList as $prop) {
-            if ($prop->init || $prop->clean) {
-                $code .= "do {\n";
-                $code .= $prop->init;
-                $code .= 'php::setStaticProperty(' . $this->genCharPtr($prop->class, true) . ', ' . $this->genCharPtr($prop->name) . ', ' . $prop->default . ');' . PHP_EOL;
-                $code .= $prop->clean;
-                $code .= "} while (0);\n";
-            } else {
-                $code .= 'php::setStaticProperty(' . $this->genCharPtr($prop->class, true) . ', ' . $this->genCharPtr($prop->name) . ', ' . $prop->default . ');' . PHP_EOL;
+        foreach ($this->classes as $classDef) {
+            foreach ($classDef->properties as $property) {
+                if (!$property->isStatic() || !$property->arrayInitPlan || !$property->default) {
+                    continue;
+                }
+                $statement = 'php::setStaticProperty('
+                    . $this->genCharPtr($classDef->getNamespacedName(false), true) . ', '
+                    . $this->genCharPtr($property->name) . ', '
+                    . $property->arrayInitPlan->expr . ');' . PHP_EOL;
+                $code .= $this->wrapArrayInitPlan($property->arrayInitPlan, $statement);
             }
         }
 
@@ -1396,6 +1458,7 @@ CODE;
             $literalStringsCount = count($this->literalStrings);
             $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
         }
+        $code .= $this->genDefaultArgumentHelpers();
 
         foreach ($this->functions as $name => $func) {
             $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
@@ -1410,8 +1473,8 @@ CODE;
                         $arg = self::TYPE_ARRAY . ' ' . $argInfo->name . ' = {}';
                     } else {
                         $arg = $this->genArgumentDeclaration($argInfo);
-                        if ($argInfo->default) {
-                            $arg .= ' = ' . $argInfo->default;
+                        if ($argInfo->default && !$this->isConstructorNativeFunction($func)) {
+                            $arg .= ' = ' . $this->genDefaultArgumentExpr($func, $argInfo);
                         }
                     }
                     $list[] = $arg;
@@ -1483,12 +1546,10 @@ CODE;
                 $code .= $classDef->ctorInit;
                 $code .= "auto obj = create_object_{$className}(class_type);\n";
                 foreach ($classDef->properties as $property) {
-                    $fullPropName = $classDef->getNamespacedName(false) . '::' . $property->name;
-                    if (isset($this->defaultPropertyList[$fullPropName])) {
-                        $code .= "do {\n";
-                        $code .= "auto value = {$this->defaultPropertyList[$fullPropName]};\n";
-                        $code .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
-                        $code .= "} while(0);\n";
+                    if (!$property->isStatic() && $property->arrayInitPlan && $property->default) {
+                        $body = "auto value = {$property->arrayInitPlan->expr};\n";
+                        $body .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
+                        $code .= $this->wrapArrayInitPlan($property->arrayInitPlan, $body);
                     }
                 }
                 $code .= $classDef->ctorClean;
@@ -2364,10 +2425,11 @@ CODE;
                 $cppCode .= '}' . PHP_EOL;
             } else {
                 if ($argInfo->default) {
+                    $defaultExpr = $this->genDefaultArgumentExpr($functionDef, $argInfo);
                     if ($argInfo->byRef) {
-                        $argExpr = 'php::getCallArgByRef(' . $k . ', ' . $argInfo->default . ')';
+                        $argExpr = 'php::getCallArgByRef(' . $k . ', ' . $defaultExpr . ')';
                     } else {
-                        $argExpr = 'php::getCallArg(' . $k . ', ' . $argInfo->default . ')';
+                        $argExpr = 'php::getCallArg(' . $k . ', ' . $defaultExpr . ')';
                     }
                 } else {
                     if ($argInfo->byRef) {
@@ -2378,7 +2440,7 @@ CODE;
                         $argExpr = 'php::getCallArg(' . $k . ')';
                     }
                 }
-                $cppType = ($argInfo->type === self::TYPE_STREAM || $argInfo->type === self::TYPE_BOX) ? self::TYPE_VAR : $argInfo->type;
+                $cppType = $this->getDefaultArgumentType($argInfo);
                 $expr = $this->convertExprFromType($argInfo->type, $argExpr);
                 $cppCode .= $this->getIndent() . $cppType . ' ' . $var . ' = ' . $expr . ';' . PHP_EOL;
             }
@@ -2435,21 +2497,8 @@ CODE;
         if ($classDef instanceof ClassDef) {
             $arrayPropCount = 0;
             foreach ($classDef->properties as $property) {
-                if ($property->type === self::TYPE_ARRAY and $property->default and $property->default !== self::TYPE_ARRAY . '{}') {
-                    $fullClassName = $classDef->getNamespacedName(false);
-                    $fullPropName = $fullClassName . '::' . $property->name;
-                    if ($property->isStatic()) {
-                        $prop = new \stdClass();
-                        $prop->class = $fullClassName;
-                        $prop->name = $property->name;
-                        $prop->default = $property->default;
-                        $prop->init = $property->defaultInit;
-                        $prop->clean = $property->defaultClean;
-                        $this->defaultStaticPropertyList[$fullPropName] = $prop;
-                    } else {
-                        $this->defaultPropertyList[$fullPropName] = $property->default;
-                        $arrayPropCount++;
-                    }
+                if ($property->type === self::TYPE_ARRAY && $property->arrayInitPlan && $property->default && !$property->isStatic()) {
+                    $arrayPropCount++;
                 }
             }
             if ($arrayPropCount > 0) {

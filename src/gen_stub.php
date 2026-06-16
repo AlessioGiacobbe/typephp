@@ -4877,7 +4877,9 @@ function parseFunctionLike(
         $foundVariadic = false;
         foreach ($func->getParams() as $i => $param) {
             if ($param->isPromoted()) {
-                $propertyItem = new Stmt\PropertyProperty($param->var->name, $param->default);
+                // For constructor promotion, the parameter default belongs to the
+                // constructor argument, not to the promoted property itself.
+                $propertyItem = new Stmt\PropertyProperty($param->var->name, null);
                 $property = new Stmt\Property($param->flags, [$propertyItem], $param->getAttributes(), $param->type, $param->attrGroups);
                 $propertyInfos[] = parseProperty(
                     $name->className,

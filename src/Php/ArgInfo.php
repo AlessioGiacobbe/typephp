@@ -8,6 +8,7 @@
 
 namespace PhpAot\Php;
 
+use PhpAot\Php\Entity\ArrayInitPlan;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 
@@ -16,6 +17,7 @@ class ArgInfo
     public string $name;
     public string $type;
     public string $default = '';
+    public ?ArrayInitPlan $arrayInitPlan = null;
     public ?Expr $defaultValue = null;
     public string $class = '';
     public bool $byRef = false;

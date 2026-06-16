@@ -9,6 +9,7 @@
 namespace PhpAot\Php;
 
 use MJS\TopSort\Implementations\StringSort;
+use PhpAot\Php\Entity\ArrayInitPlan;
 use PhpAot\Php\Entity\ClassDef;
 use PhpAot\Php\Entity\ConstantDef;
 use PhpAot\Php\Entity\FunctionDef;
@@ -256,7 +257,10 @@ class Preprocessor extends CompilerBase
                 }
                 $name = $this->parseIdentifier($param->var);
                 $nullable = $param->type instanceof NullableType;
-                $this->addClassProperty($name, $param->flags, $param->type, $param->default, $nullable, $param);
+                // Promoted property defaults belong to the constructor parameter,
+                // not to the property default table. The property itself must stay
+                // uninitialized until __construct assigns it.
+                $this->addClassProperty($name, $param->flags, $param->type, null, $nullable, $param);
             }
             if ($param->variadic) {
                 if ($i !== $last) {
@@ -293,6 +297,9 @@ class Preprocessor extends CompilerBase
                 $list[] = $this->genArgumentDeclaration($argInfo);
             }
             if ($param->default) {
+                $arrayInitPlan = $param->default instanceof Node\Expr\Array_
+                    ? $this->buildLiteralArrayInitPlan($param->default)
+                    : null;
                 if ($param->byRef) {
                     if ($this->isEmptyArray($param->default)) {
                         $argInfo->default = 'php::getEmptyArrayRef()';
@@ -300,11 +307,15 @@ class Preprocessor extends CompilerBase
                     } elseif ($this->isNull($param->default)) {
                         $argInfo->default = 'nullptr';
                         $argInfo->defaultValue = null;
+                    } elseif ($arrayInitPlan) {
+                        $argInfo->default = 'php::newReference(' . $arrayInitPlan->expr . ')';
+                        $argInfo->arrayInitPlan = $arrayInitPlan;
                     } else {
                         $argInfo->default = 'php::newReference(' . $this->parseParamDefaultValue($param->default) . ')';
                     }
                 } else {
-                    $argInfo->default = $this->parseParamDefaultValue($param->default);
+                    $argInfo->default = $arrayInitPlan ? $arrayInitPlan->expr : $this->parseParamDefaultValue($param->default);
+                    $argInfo->arrayInitPlan = $arrayInitPlan;
                     $argInfo->defaultValue = $param->default;
                 }
                 $defaultValueCount++;
@@ -500,6 +511,35 @@ class Preprocessor extends CompilerBase
         return $code;
     }
 
+    protected function buildLiteralArrayInitPlan(Node\Expr\Array_ $defaultNode): ArrayInitPlan
+    {
+        $localVarCount = count($this->context->localVars);
+        $beforeStmtCount = count($this->context->beforeStmtLines);
+        $afterStmtCount = count($this->context->afterStmtLines);
+        $expr = $this->parseIdentifier($defaultNode);
+
+        $init = '';
+        $clean = '';
+        $newLocalVars = array_slice($this->context->localVars, $localVarCount, null, true);
+        $newBeforeStmtLines = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
+        $newAfterStmtLines = array_slice($this->context->afterStmtLines, $afterStmtCount);
+
+        if ($newLocalVars) {
+            $init .= $this->genLocalVarDecl($newLocalVars);
+            $this->context->localVars = array_slice($this->context->localVars, 0, $localVarCount, true);
+        }
+        if ($newBeforeStmtLines) {
+            $init .= implode(PHP_EOL, $newBeforeStmtLines) . PHP_EOL;
+            $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
+        }
+        if ($newAfterStmtLines) {
+            $clean .= implode(PHP_EOL, $newAfterStmtLines) . PHP_EOL;
+            $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
+        }
+
+        return new ArrayInitPlan($expr, $init, $clean);
+    }
+
     protected function getMethodName(Node\Stmt\ClassMethod $v): string
     {
         return $this->parseIdentifier($v->name);
@@ -553,15 +593,16 @@ class Preprocessor extends CompilerBase
         $flags = $this->parseModifiers($flags);
         $class = '';
         $type = $this->parseTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY, $class);
-        $localVarCount = count($this->context->localVars);
-        $beforeStmtCount = count($this->context->beforeStmtLines);
-        $afterStmtCount = count($this->context->afterStmtLines);
 
         $default = null;
+        $arrayInitPlan = null;
         if ($defaultNode !== null) {
-            $default = $this->parseIdentifier($defaultNode);
-            if ($defaultNode->getType() == 'Expr_Array') {
+            if ($defaultNode instanceof Node\Expr\Array_) {
                 $type = self::TYPE_ARRAY;
+                $arrayInitPlan = $this->buildLiteralArrayInitPlan($defaultNode);
+                $default = $arrayInitPlan->expr;
+            } else {
+                $default = $this->parseIdentifier($defaultNode);
             }
         }
 
@@ -571,24 +612,7 @@ class Preprocessor extends CompilerBase
 
         $propDef = new PropertyDef($name, $flags, $type, $default, $nullable);
         $propDef->class = $class;
-        if (($flags & Modifiers::STATIC) && $defaultNode !== null) {
-            $newLocalVars = array_slice($this->context->localVars, $localVarCount, null, true);
-            $newBeforeStmtLines = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
-            $newAfterStmtLines = array_slice($this->context->afterStmtLines, $afterStmtCount);
-
-            if ($newLocalVars) {
-                $propDef->defaultInit .= $this->genLocalVarDecl($newLocalVars);
-                $this->context->localVars = array_slice($this->context->localVars, 0, $localVarCount, true);
-            }
-            if ($newBeforeStmtLines) {
-                $propDef->defaultInit .= implode(PHP_EOL, $newBeforeStmtLines) . PHP_EOL;
-                $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
-            }
-            if ($newAfterStmtLines) {
-                $propDef->defaultClean .= implode(PHP_EOL, $newAfterStmtLines) . PHP_EOL;
-                $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
-            }
-        }
+        $propDef->arrayInitPlan = $arrayInitPlan;
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
     }
