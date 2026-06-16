@@ -507,8 +507,10 @@ class Translator extends Preprocessor
             $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $this->escapeGlobalVar($name) . ';';
         }
 
-        $literalStringsCount = count($this->literalStrings);
-        $lines[] = 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+        if ($this->literalStrings) {
+            $literalStringsCount = count($this->literalStrings);
+            $lines[] = 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+        }
 
         // 确保数组大小至少为 1，避免 C/C++ 编译错误
         $classCount = max(1, count($this->classMap));
@@ -613,11 +615,15 @@ CODE;
         $code .= "\n\n";
 
         $code .= "// literal strings \n";
-        $code .= self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[] = {' . PHP_EOL;
-        foreach ($this->literalStrings as $str => $index) {
-            $code .= self::TYPE_STR . '{ZEND_STRL("' . $this->escapeString($str) . '"), true}, // [' . $index . ']' . PHP_EOL;
+        if ($this->literalStrings) {
+            $code .= self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[] = {' . PHP_EOL;
+            foreach ($this->literalStrings as $str => $index) {
+                $code .= self::TYPE_STR . '{ZEND_STRL("' . $this->escapeString($str) . '"), true}, // [' . $index . ']' . PHP_EOL;
+            }
+            $code .= '};' . PHP_EOL . PHP_EOL;
+        } else {
+            $code .= PHP_EOL;
         }
-        $code .= '};' . PHP_EOL . PHP_EOL;
 
         $code .= "// constants \n";
         foreach ($this->constants as $name => $const) {
@@ -1386,8 +1392,10 @@ CODE;
         $code = '#include <phpx.h>' . PHP_EOL;
 
         // 函数的默认值可能会使用字符串字面量，需要提前声明
-        $literalStringsCount = count($this->literalStrings);
-        $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+        if ($this->literalStrings) {
+            $literalStringsCount = count($this->literalStrings);
+            $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+        }
 
         foreach ($this->functions as $name => $func) {
             $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
