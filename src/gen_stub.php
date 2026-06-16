@@ -4930,6 +4930,9 @@ function parseFunctionLike(
 
             if ($param->default instanceof Expr\ClassConstFetch && $param->default->class->toLowerString() === "self") {
                 $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name);
+                if (!is_string($defaultValue)) {
+                    $defaultValue = var_export($defaultValue, true);
+                }
             } else {
                 $defaultValue = $param->default ? $prettyPrinter->prettyPrintExpr($param->default) : null;
             }
