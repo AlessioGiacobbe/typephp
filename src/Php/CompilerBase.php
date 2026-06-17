@@ -2431,10 +2431,44 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $code;
     }
 
+    /**
+     * Generate C++ code for dynamic property ++/-- operations.
+     *
+     * Returns null if $var is not a dynamic property fetch, so callers can
+     * fall through to their normal codegen path.
+     */
+    protected function genDynamicPropIncDec($var, string $op, bool $isPre): ?string
+    {
+        if (!$this->isPropertyFetch($var) || $var->getAttribute('nativeProperty')) {
+            return null;
+        }
+
+        $obj = $this->parseIdentifier($var->var);
+        $propName = $this->identifierToStr($var->name, literal: true);
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+
+        if ($isPre) {
+            $this->context->beforeStmtLines[] = "{$tmpVar} = {$obj}.getProperty({$propName}) {$op} 1; {$obj}.setProperty({$propName}, {$tmpVar});";
+        } else {
+            $this->context->beforeStmtLines[] = "{$tmpVar} = {$obj}.getProperty({$propName});";
+            $this->context->afterStmtLines[] = "{$obj}.setProperty({$propName}, {$tmpVar} {$op} 1);";
+        }
+
+        return $tmpVar;
+    }
+
     protected function parsePreInc(Expr\PreInc $expr): string
     {
         $oriInAssignExpr = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
+
+        $result = $this->genDynamicPropIncDec($expr->var, '+', true);
+        if ($result !== null) {
+            $this->context->inAssignExpr = $oriInAssignExpr;
+            return $result;
+        }
+
         $type = $this->detectVarType($expr->var);
         if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use ++ on ' . $type . '. Use += 1 instead (Big* types are immutable).');
@@ -3061,6 +3095,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePostOp(Expr\PostDec|Expr\PostInc $expr, string $op): string
     {
+        $result = $this->genDynamicPropIncDec($expr->var, $op, false);
+        if ($result !== null) {
+            return $result;
+        }
+
         if ($this->isVarExpr($expr->var) or $this->isPropertyFetch($expr->var) or $this->isArrayDimFetch($expr->var)) {
             $oriInAssignExpr = $this->context->inAssignExpr;
             $this->context->inAssignExpr = true;
@@ -3167,6 +3206,13 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $oriInAssignExpr = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
+
+        $result = $this->genDynamicPropIncDec($expr->var, '-', true);
+        if ($result !== null) {
+            $this->context->inAssignExpr = $oriInAssignExpr;
+            return $result;
+        }
+
         $type = $this->detectVarType($expr->var);
         if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use -- on ' . $type . '. Use -= 1 instead (Big* types are immutable).');
@@ -4713,9 +4759,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $classDef = $this->getClass($findClass);
                 if ($classDef->hasProperty($property)) {
                     $propertyDef = $classDef->getProperty($property);
-                    // 获取动态属性，但找到了静态属性，或者获取静态属性，但是是动态属性，直接返回 null
-                    if ((!$static and $propertyDef->isStatic()) or ($static and !$propertyDef->isStatic())) {
-                        return null;
+                    if (!$static and $propertyDef->isStatic()) {
+                        $this->fatalError($expr, "Cannot access static property `{$class}::\${$property}` as non-static instance property.");
+                    }
+                    if ($static and !$propertyDef->isStatic()) {
+                        $this->fatalError($expr, "Cannot access non-static property `{$class}::\${$property}` as static property.");
                     }
                     if ($propertyDef->isPublic()) {
                         break;

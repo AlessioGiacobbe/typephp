@@ -387,6 +387,23 @@ trait AssignOpTrait
             return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
         }
 
+        if ($this->isPropertyFetch($node->var) and !$node->var->getAttribute('nativeProperty')) {
+            $obj = $this->parseIdentifier($node->var->var);
+            $propName = $this->identifierToStr($node->var->name, literal: true);
+            $binaryOp = $this->removeAssignOp($op);
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            if ($this->isAssignOpConcat($op)) {
+                $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat({$obj}.getProperty({$propName}), {$expr});";
+            } elseif ($this->isAssignOpPow($op)) {
+                $this->context->beforeStmtLines[] = "{$tmpVar} = php::fn::pow({$obj}.getProperty({$propName}), {$expr});";
+            } else {
+                $this->context->beforeStmtLines[] = "{$tmpVar} = {$obj}.getProperty({$propName}) {$binaryOp} ({$expr});";
+            }
+            $this->context->afterStmtLines[] = "{$obj}.setProperty({$propName}, {$tmpVar});";
+            return $tmpVar;
+        }
+
         if ($this->isAssignOpConcat($op)) {
             return $var . '.append(' . $expr . ')';
         }
