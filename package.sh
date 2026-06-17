@@ -29,7 +29,6 @@ VERSIONED_BINARY="${BINARY_FILE}_v${VERSION_ID}"
 REQUIRED_FILES=(
     "$BINARY_FILE"
     "composer.json"
-    "composer.lock"
     "README.md"
     "LICENSE.md"
     "examples/hello.php"
@@ -191,7 +190,6 @@ echo "创建压缩包: $OUTPUT_FILE"
 zip "$OUTPUT_FILE" \
     "$VERSIONED_BINARY" \
     composer.json \
-    composer.lock \
     README.md \
     LICENSE.md \
     examples/hello.php
