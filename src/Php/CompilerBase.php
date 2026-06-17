@@ -4732,8 +4732,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($expr, 'Cannot access parent:: when current class does not extend any class');
                 }
                 $class = $this->classDef->extends;
+            } else {
+                $class = $this->getNamespacedClassName($class);
             }
-            $nativeProperty = $this->findNativeProperty($expr, $propertyName, $class, $this->namespace, true);
+            $nativeProperty = $this->findNativeProperty($expr, $propertyName, $class, true);
             if ($nativeProperty) {
                 $expr->setAttribute('nativeProperty', $nativeProperty);
                 return $nativeProperty;
@@ -4745,13 +4747,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     /**
      * @param NodeAbstract $expr 仅用于输出错误日志
      */
-    protected function findNativeProperty(NodeAbstract $expr, string $property, string $class, string $namespace = '', bool $static = false): ?string
+    protected function findNativeProperty(NodeAbstract $expr, string $property, string $class, bool $static = false): ?string
     {
         $findClass = $class;
-        if ($namespace) {
-            $findClass = $namespace . '\\' . $class;
-        }
-        $scope = $this->class ? ltrim($namespace . '\\' . $class, '\\') : '';
+        $scope = $this->class ? $class : '';
         $propertyDef = null;
         $classDef = null;
         while (true) {
