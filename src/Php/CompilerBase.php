@@ -1168,7 +1168,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $key = $this->parseIdentifier($expr);
         if (str_starts_with($key, self::LITERAL_STRINGS)) {
             $key = "{$key}.str()";
-        } elseif ($key === '0L') {
+        } elseif ($key === '0L' || $key === '0LL') {
             // 0 在 C++ 中是一个特殊的值，存在二义性，既是空指针，也是整数，这会导致产生 ambiguous 错误
             // 必须转为 php::zero 常量，保证作为 key 时正确匹配到 IntKeyMap
             $key = self::VALUE_ZERO;

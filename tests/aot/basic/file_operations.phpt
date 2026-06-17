@@ -97,8 +97,8 @@ rmdir($tempDir);
 echo "Cleanup completed\n";
 ?>
 --EXPECTF--
-Directory created: /tmp/aot_test_%s
-File created: /tmp/aot_test_%s/test.txt
+Directory created: %s
+File created: %s/test.txt
 File content:
 Hello, World!
 This is a test file.
@@ -114,8 +114,8 @@ Directory contents:
 - second_test.txt
 - test.txt
 First line from handle: Hello, World!
-File copied to: /tmp/aot_test_%s/copied_test.txt
-File moved to: /tmp/aot_test_%s/moved_test.txt
+File copied to: %s/copied_test.txt
+File moved to: %s/moved_test.txt
 Is test file a file: yes
 Is temp dir a directory: yes
 File modification time: %d-%d-%d %d:%d:%d

@@ -2461,7 +2461,7 @@ $message
             return 'FAILED';
         }
         $args = substr($args, strlen(' -- '));
-        $cmd = './' . $bin_file . ' ' . $args . $cmdRedirect;
+        $cmd = (IS_WINDOWS ? '.\\' : './') . $bin_file . ' ' . $args . $cmdRedirect;
     } else {
         $content = file_get_contents($test_file);
         if (preg_match('/function main\(\)/', $content)) {
@@ -2667,7 +2667,7 @@ COMMAND $cmd
                 $file = substr($test_file, 0, strlen($test_file) - 4);
                 @unlink($file . '.cc');
                 @unlink($file . '.cc.o');
-                @unlink('./' . $bin_file);
+                @unlink($bin_file);
             }
         }
         @unlink($tmp_post);
@@ -4249,6 +4249,9 @@ function compile_php_file(string $file): string
         throw new CompilationFailureException('Invalid PHP file');
     }
     $binary_file = str_replace('-', '_', basename($file, '.php'));
+    if (IS_WINDOWS) {
+        $binary_file .= '.exe';
+    }
 
     if (!str_contains($data, 'function main()')) {
         file_put_contents($file, "<?php\nfunction main() {\n" . substr($data, 5, -2) . "\n}\n");
@@ -4261,7 +4264,12 @@ function compile_php_file(string $file): string
 
     $output = [];
     $exitCode = 0;
-    exec($compiler_path . ' ' . escapeshellarg($file) . ' 2>&1', $output, $exitCode);
+    $cmd = $compiler_path;
+    // On Windows, .php files need to be run through the PHP interpreter
+    if (IS_WINDOWS && str_ends_with($cmd, '.php')) {
+        $cmd = escapeshellarg(PHP_BINARY) . ' ' . $cmd;
+    }
+    exec($cmd . ' ' . escapeshellarg($file) . ' 2>&1', $output, $exitCode);
     clearstatcache(true, $binary_file);
 
     if ($exitCode !== 0 || !file_exists($binary_file)) {
