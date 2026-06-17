@@ -2,12 +2,8 @@
 Test vfprintf() function : error conditions (more than expected arguments)
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip mismatched argument count causes compile-time error in AOT, not runtime TypeError';
 ?>
---CREDITS--
-Felix De Vliegher <felix.devliegher@gmail.com>
---INI--
-precision=14
 --FILE--
 <?php
 // Open handle

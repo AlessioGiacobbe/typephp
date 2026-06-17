@@ -2,7 +2,7 @@
 GH-18823 (setlocale's 2nd and 3rd argument ignores strict_types) - strict mode
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip setlocale() is not available in AOT';
 ?>
 --FILE--
 <?php

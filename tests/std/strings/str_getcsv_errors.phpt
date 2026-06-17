@@ -2,7 +2,7 @@
 str_getcsv(): Invalid arguments
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip str_getcsv() argument validation does not throw ValueError in AOT';
 ?>
 --FILE--
 <?php

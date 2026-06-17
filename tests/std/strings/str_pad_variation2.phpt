@@ -1,13 +1,9 @@
 --TEST--
 str_pad() function: usage variations - Non printable chars
 --SKIPIF--
-<?php
-echo 'skip AOT limitation';
-?>
---INI--
-precision=14
 --FILE--
 <?php
+ini_set('precision', 14);
 // Split from str_pad for NUL Bytes
 // 7-bit ASCII
 $string = chr(0).chr(255).chr(128).chr(234).chr(143);
@@ -36,9 +32,7 @@ foreach ($pad_lengths as $pad_length ) {
     var_dump( bin2hex( str_pad($string, $pad_length, $pad_string, STR_PAD_BOTH) ) );
 }
 
-?>
-
-DONE
+echo "\nDONE\n";
 ?>
 --EXPECT--
 string(10) "00ff80ea8f"

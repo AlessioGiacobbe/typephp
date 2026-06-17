@@ -2,7 +2,7 @@
 Test implode() function: error conditions
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip single-argument implode() is not supported in AOT';
 ?>
 --FILE--
 <?php

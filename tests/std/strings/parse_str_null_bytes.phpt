@@ -2,7 +2,7 @@
 parse_str() rejects null bytes
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip parse_str() null byte ValueError is not implemented in AOT';
 ?>
 --FILE--
 <?php

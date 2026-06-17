@@ -2,7 +2,7 @@
 Test str_split() function : usage variations - different heredoc strings as 'str' argument
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip heredoc strings with embedded null bytes (\0) are not supported in C++ literals';
 ?>
 --FILE--
 <?php

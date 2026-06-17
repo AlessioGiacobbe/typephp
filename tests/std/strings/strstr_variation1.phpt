@@ -2,7 +2,7 @@
 Test strstr() function : usage variations - complex strings containing other than 7-bit chars
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip chr(0) null bytes in compile-time constant strings are not supported in C++';
 ?>
 --FILE--
 <?php

@@ -2,7 +2,7 @@
 strtr() trying to replace an empty string
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip warning message format differs under AOT (PHP Request Startup prefix)';
 ?>
 --FILE--
 <?php

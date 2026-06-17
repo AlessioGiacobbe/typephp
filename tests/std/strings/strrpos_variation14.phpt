@@ -2,7 +2,7 @@
 Test strrpos() function : usage variations - negative offset with empty needle
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip strrpos/strripos with empty needle and negative offset behavior differs under AOT';
 ?>
 --FILE--
 <?php

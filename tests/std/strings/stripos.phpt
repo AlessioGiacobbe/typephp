@@ -2,7 +2,7 @@
 stripos() function test
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip chr(0) null bytes in compile-time constant strings are not supported in C++';
 ?>
 --FILE--
 <?php

@@ -2,7 +2,7 @@
 ord() with values not one byte long
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip deprecation notices are not emitted in AOT';
 ?>
 --FILE--
 <?php

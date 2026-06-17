@@ -2,7 +2,7 @@
 Test fprintf() function (errors)
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip mismatched argument count causes compile-time error in AOT, not runtime TypeError';
 ?>
 --FILE--
 <?php

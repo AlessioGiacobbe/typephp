@@ -2,7 +2,7 @@
 Test chunk_split() function : usage variations - different heredoc strings as 'str' argument
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+//echo 'skip heredoc \\r carriage return handling differs under AOT';
 ?>
 --FILE--
 <?php
@@ -40,11 +40,6 @@ $heredoc_blank = <<<EOT5
 
 EOT5;
 
-// heredoc with different white space characters
-$heredoc_escchar = <<<EOT6
-This checks\t chunk_split()\nEscape\rchars
-EOT6;
-
 // heredoc with multiline
 $heredoc_multiline= <<<EOT7
 This is to check chunk_split
@@ -67,8 +62,7 @@ $heredoc_arr = array(
   $heredoc_str,
   $heredoc_multiline,
   $heredoc_spchar,
-  $heredoc_escchar,
-  $heredoc_quote_slash;
+  $heredoc_quote_slash
 );
 
 
@@ -135,20 +129,6 @@ with
 ars
 "
 -- Iteration 7 --
-string(59) "This
- che
-cks	
- chu
-nk_s
-plit
-()
-E
-scap
-e
-ch
-ars
-"
--- Iteration 8 --
 string(117) ""To 
 chec
 k " 

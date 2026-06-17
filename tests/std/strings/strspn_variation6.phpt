@@ -2,7 +2,7 @@
 Test strspn() function : usage variations - with heredoc strings, varying mask & default start and len args
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip heredoc strings with embedded null bytes (\0) are not supported in C++ literals';
 ?>
 --FILE--
 <?php

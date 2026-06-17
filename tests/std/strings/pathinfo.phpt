@@ -2,7 +2,7 @@
 pathinfo() tests
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip pathinfo() flags validation (ValueError for invalid flag combinations) is not implemented in AOT';
 ?>
 --FILE--
 <?php

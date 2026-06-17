@@ -1,9 +1,6 @@
 --TEST--
 Bug #67252 (convert_uudecode out-of-bounds read)
 --SKIPIF--
-<?php
-//echo 'skip AOT limitation';
-?>
 --FILE--
 <?php
 
