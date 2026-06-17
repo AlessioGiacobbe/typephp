@@ -393,6 +393,17 @@ trait FuncCallOptimizer
                 }
                 continue;
             }
+            // When null is explicitly passed to an optional parameter, skip it
+            // so the C++ default value takes effect (PHP null = "use default").
+            if ($optional && $argCount > $i && isset($expr->args[$i])) {
+                $argVal = $expr->args[$i]->value;
+                if ($argVal instanceof Node\Expr\ConstFetch && strtolower($argVal->name->toString()) === 'null') {
+                    if (isset($defaults[$i])) {
+                        $args[] = $defaults[$i];
+                    }
+                    continue;
+                }
+            }
             $args[] = $this->resolveArg($expr, $i, $type);
         }
 
