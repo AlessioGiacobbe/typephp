@@ -248,7 +248,8 @@ trait FuncCallOptimizer
             }
         }
 
-        $args = $this->buildArgList($expr, $argTypeStr, $defaults);
+        $nullables = $refInfo['nullables'] ?? [];
+        $args = $this->buildArgList($expr, $argTypeStr, $defaults, $nullables);
         return $target . '(' . implode(', ', $args) . ')';
     }
 
@@ -264,10 +265,11 @@ trait FuncCallOptimizer
 
         $ref = Reflection::getFunction($funcName);
         if (!$ref) {
-            return $this->_autoArgTypes[$funcName] = ['args' => '', 'variadic' => false, 'variadicType' => '', 'minArgs' => 0, 'maxArgs' => 0];
+            return $this->_autoArgTypes[$funcName] = ['args' => '', 'variadic' => false, 'variadicType' => '', 'minArgs' => 0, 'maxArgs' => 0, 'nullables' => []];
         }
 
         $types = [];
+        $nullables = [];
         $variadic = false;
         $variadicType = '';
         foreach ($ref->getParameters() as $param) {
@@ -281,6 +283,7 @@ trait FuncCallOptimizer
                 $char = self::ARG_OPTIONAL . $char;
             }
             $types[] = $char;
+            $nullables[] = $param->allowsNull();
         }
 
         return $this->_autoArgTypes[$funcName] = [
@@ -289,6 +292,7 @@ trait FuncCallOptimizer
             'variadicType' => $variadicType,
             'minArgs' => $ref->getNumberOfRequiredParameters(),
             'maxArgs' => $ref->getNumberOfParameters(),
+            'nullables' => $nullables,
         ];
     }
 
@@ -375,7 +379,7 @@ trait FuncCallOptimizer
         return $this->convertArrayExpr($raw);
     }
 
-    protected function buildArgList(Node\Expr\FuncCall $expr, string $argTypeStr, array $defaults = []): array
+    protected function buildArgList(Node\Expr\FuncCall $expr, string $argTypeStr, array $defaults = [], array $nullables = []): array
     {
         if ($argTypeStr === '') {
             return [];
@@ -387,23 +391,22 @@ trait FuncCallOptimizer
 
         foreach ($types as $i => $type) {
             $optional = ($type[0] ?? '') === self::ARG_OPTIONAL;
+            $nullable = $nullables[$i] ?? false;
+
+            // Missing optional arg — use configured default or skip (C++ default handles it)
             if ($optional && $argCount <= $i) {
                 if (isset($defaults[$i])) {
                     $args[] = $defaults[$i];
                 }
                 continue;
             }
-            // When null is explicitly passed to an optional parameter, skip it
-            // so the C++ default value takes effect (PHP null = "use default").
-            if ($optional && $argCount > $i && isset($expr->args[$i])) {
-                $argVal = $expr->args[$i]->value;
-                if ($argVal instanceof Node\Expr\ConstFetch && strtolower($argVal->name->toString()) === 'null') {
-                    if (isset($defaults[$i])) {
-                        $args[] = $defaults[$i];
-                    }
-                    continue;
-                }
+
+            // Nullable param — pass raw Variant; C++ function checks isNull() at runtime
+            if ($nullable) {
+                $args[] = $this->getArg($expr, $i);
+                continue;
             }
+
             $args[] = $this->resolveArg($expr, $i, $type);
         }
 

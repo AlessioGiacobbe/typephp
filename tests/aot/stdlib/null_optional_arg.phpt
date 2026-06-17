@@ -2,6 +2,7 @@
 Passing null to optional parameters should use C++ default values
 --FILE--
 <?php
+error_reporting(E_ALL & ~E_DEPRECATED);
 
 // substr: null length should take rest of string, not return empty
 $s = 'hello world';
@@ -29,7 +30,7 @@ var_dump(strstr($s, 'o', null) === strstr($s, 'o'));
 // str_repeat: ensure non-null still works
 var_dump(str_repeat('ab', 3));
 
-// explode with null limit should default to PHP_INT_MAX (no limit)
+// explode with null limit: null coerces to 0 (limit=0: whole string as single element)
 $arr = explode(' ', 'a b c d', null);
 var_dump(count($arr));
 
@@ -48,4 +49,4 @@ bool(true)
 string(7) "o world"
 bool(true)
 string(6) "ababab"
-int(4)
+int(1)
