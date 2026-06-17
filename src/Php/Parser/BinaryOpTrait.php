@@ -125,6 +125,10 @@ trait BinaryOpTrait
             return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
         }
 
+        if ($op === '/' and $this->isZeroLiteral($right)) {
+            return self::VALUE_NAN;
+        }
+
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
     }
 
@@ -351,6 +355,20 @@ trait BinaryOpTrait
     protected function parseBinaryOpDiv(Expr\BinaryOp\Div $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '/');
+    }
+
+    private function isZeroLiteral(NodeAbstract $expr): bool
+    {
+        if ($expr instanceof Node\Scalar\Int_) {
+            return $expr->value == 0;
+        }
+        if ($expr instanceof Node\Scalar\Float_) {
+            return $expr->value == 0.0;
+        }
+        if ($expr instanceof Node\Scalar\String_) {
+            return $expr->value === '0' || $expr->value === '0.0';
+        }
+        return false;
     }
 
     protected function parseBinaryOpMinus(Expr\BinaryOp\Minus $expr): string

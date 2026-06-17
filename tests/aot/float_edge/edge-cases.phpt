@@ -19,6 +19,7 @@ function main(): void {
     var_dump(INF + INF);
     var_dump(INF / INF);
     var_dump(0.0 / 0.0);
+    var_dump(1.0 / 0.0);
 }
 ?>
 --EXPECT--
@@ -36,5 +37,6 @@ NAN
 INF
 -INF
 float(INF)
+float(NAN)
 float(NAN)
 float(NAN)
