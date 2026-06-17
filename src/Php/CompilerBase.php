@@ -143,6 +143,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string DYNAMIC_CALLED_CLASS = '__dynamic_called_class__';
     public const string STATIC_VAR = '_static_var_';
     public const string GLOBAL_VAR = '_global_var_';
+    public const string CONST_VAR = '_const_var_';
     public const string OBJECT_PROP = '_object_prop_';
     public const string CLASS_MAP = 'class_map';
     public const string FUNC_MAP = 'func_map';
@@ -5021,22 +5022,22 @@ class CompilerBase extends \PhpAot\Core\Translator
         $constInfo->type              = $this->detectStrValueType($value);
         $constInfo->namespace = $this->namespace;
         $constInfo->name = $name;
-        $this->constants[$this->escapeNamespace($name)] = $constInfo;
+        $this->constants[$this->escapeConstVar($name)] = $constInfo;
     }
 
     protected function hasConstant(string $name): bool
     {
-        return isset($this->constants[$this->escapeNamespace($name)]);
+        return isset($this->constants[$this->escapeConstVar($name)]);
     }
 
     protected function getConstant(string $name): string
     {
-        return $this->escapeNamespace($name);
+        return $this->escapeConstVar($name);
     }
 
     protected function getConstantType(string $name): string
     {
-        return $this->constants[$this->escapeNamespace($name)]->type;
+        return $this->constants[$this->escapeConstVar($name)]->type;
     }
 
     protected function detectStrValueType(mixed $constant): string

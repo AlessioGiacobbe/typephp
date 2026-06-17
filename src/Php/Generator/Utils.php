@@ -95,6 +95,11 @@ trait Utils
         return self::GLOBAL_VAR . $name;
     }
 
+    protected function escapeConstVar(string $name): string
+    {
+        return self::CONST_VAR . str_replace('\\', self::NAMESPACE_SEPARATOR, $name);
+    }
+
     protected function escapeNamespace(string $ns): string
     {
         return str_replace('\\', self::NAMESPACE_SEPARATOR, strtolower($ns));
