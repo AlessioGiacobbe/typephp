@@ -2,10 +2,8 @@
 Bug #72663: Create an Unexpected Object and Don't Invoke __wakeup() in Deserialization
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+echo 'skip session functions cannot be used after headers sent in AOT auto-wrap';
 ?>
---EXTENSIONS--
-session
 --FILE--
 <?php
 
@@ -14,8 +12,7 @@ session_start();
 $sess = 'O:9:"Exception":2:{s:7:"'."\0".'*'."\0".'file";s:0:"";}';
 session_decode($sess);
 var_dump($_SESSION);
-?>
-DONE
+echo "DONE\n";
 ?>
 --EXPECTF--
 Warning: session_decode(): Unexpected end of serialized data in %s on line %d

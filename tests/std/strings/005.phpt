@@ -1,17 +1,13 @@
 --TEST--
 highlight_string(), output buffer and error level
 --SKIPIF--
-<?php
-echo 'skip AOT limitation';
-?>
---INI--
-error_reporting=8192
 --FILE--
 <?php
 
 echo "hello\n";
 
 $string = str_repeat("A", 1024);
+ini_set('error_reporting', '8192');
 
 var_dump(error_reporting());
 highlight_string($string, true);

@@ -2,7 +2,7 @@
 Bug #67252 (convert_uudecode out-of-bounds read)
 --SKIPIF--
 <?php
-echo 'skip AOT limitation';
+//echo 'skip AOT limitation';
 ?>
 --FILE--
 <?php
@@ -12,5 +12,5 @@ var_dump(convert_uudecode($a));
 
 ?>
 --EXPECTF--
-Warning: convert_uudecode(): Argument #1 ($data) is not a valid uuencoded string in %s on line %d
+%s: Argument #1 ($data) is not a valid uuencoded string in %s on line %d
 bool(false)

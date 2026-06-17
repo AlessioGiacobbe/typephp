@@ -2,9 +2,6 @@
 Bug #68710 Use after free vulnerability in unserialize() (bypassing the
 CVE-2014-8142 fix)
 --SKIPIF--
-<?php
-echo 'skip AOT limitation';
-?>
 --FILE--
 <?php
 for ($i=4; $i<100; $i++) {
@@ -23,8 +20,7 @@ for ($i=4; $i<100; $i++) {
     $y = unserialize($z);
     $z = serialize($y);
 }
-?>
-===DONE===
+echo "===DONE===\n";
 ?>
 --EXPECT--
 ===DONE===
