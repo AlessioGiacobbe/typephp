@@ -137,6 +137,11 @@ class Translator extends Preprocessor
             exit(0);
         }
 
+        // 提前处理 --no-color，确保后续所有输出均为无颜色模式
+        if ($this->climate->arguments->defined('no-color')) {
+            $this->climate->forceAnsiOff();
+        }
+
 
         // 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
         $this->detectPlatform();
@@ -206,11 +211,18 @@ class Translator extends Preprocessor
         $climate->tab()->out('<file>    Input PHP file/directory/project.yml to compile');
         $climate->br();
 
+        $climate->bold('EXAMPLES:');
+        $climate->tab()->out($cmd . ' hello.php');
+        $climate->tab()->out($cmd . ' bench.php -O2');
+        $climate->tab()->out($cmd . ' project/config.yml -O2');
+        $climate->tab()->out($cmd . ' my-ext/ -O2 -o myapp -m ext');
+        $climate->tab()->out($cmd . ' app.php -r -O2 -- --flag1 value1');
+        $climate->br();
+
         $climate->bold('OPTIONS:');
         $climate->tab()->out('-O <level>           Optimization level (0-3, default: 0)');
         $climate->tab()->out('--profile            Enable performance profiling (adds -lprofiler, forces recompile)');
         $climate->tab()->out('-d, --debug            Enable debug mode (auto-disable optimizations, add debug symbols)');
-        $climate->tab()->out('--cxx-std <version>  C++ standard version (c++17, c++20, etc.)');
         $climate->tab()->out('-o, --output <file>  Output binary name (default: input basename)');
         $climate->tab()->out('-v, --version        Show version');
         $climate->tab()->out('-h, --help           Show this help message');
@@ -218,37 +230,20 @@ class Translator extends Preprocessor
         $climate->tab()->out('-m, --mode <mode>    Compilation mode, -m bin(binary) or -m ext(extension), default: bin');
         $climate->tab()->out('-r, --run           Run the compiled binary after build');
         $climate->tab()->out('-j, --job <num>      Number of parallel compilation jobs (default: 4)');
+        $climate->tab()->out('--cxx-std <ver>      C++ standard version (c++17, c++20, etc., default: c++17)');
+        $climate->tab()->out('--march <arch>       Target CPU instruction set (e.g. native, x86-64-v3, armv8-a)');
+        $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->tab()->out('--no-console         Hide console window (Windows only, GUI application)');
+        $climate->tab()->out('--no-color           Disable ANSI color output');
         $climate->tab()->out('--sanitize <type>    Enable sanitizers (address, undefined, etc.)');
         $climate->tab()->out('--build-dir <dir>   Specify build directory for generated C++ code (default: <root>/build)');
         $climate->tab()->out('--dry                Dry run: only generate C++ code, skip compilation and linking');
         $climate->tab()->out('-I, --include-path <dir> Add an additional C++ include directory (repeatable)');
         $climate->tab()->out('-D, --define <macro>  Define a preprocessor macro (repeatable, e.g. -D FOO=bar)');
-        $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
         $climate->tab()->out('--format             Enable clang-format code formatting (disabled by default)');
-        $climate->tab()->out('--cxx-std <ver>      C++ standard version (c++17, c++20, etc., default: c++17)');
-        $climate->tab()->out('--march <arch>       Target CPU instruction set (e.g. native, x86-64-v3, armv8-a)');
         $climate->tab()->out('-l, --link-lib <lib> Link against a library (repeatable, e.g. -lcurl)');
         $climate->tab()->out('-L, --link-path <dir> Add a library search path (repeatable, e.g. -L/usr/local/lib)');
-        $climate->br();
-
-        $climate->bold('EXAMPLES:');
-        $climate->tab()->out($cmd . ' hello.php');
-        $climate->tab()->out($cmd . ' bench.php -O2');
-        $climate->tab()->out($cmd . ' project/config.yml -O2');
-        $climate->tab()->out($cmd . ' my-ext/ -O2 -o myapp -m ext');
-        $climate->tab()->out($cmd . ' app.php -O3 -o myapp -v');
-        $climate->tab()->out($cmd . ' gui-app.php --no-console  (Windows GUI app, no console)');
-        $climate->tab()->out($cmd . ' app.php --sanitize=address  (Enable AddressSanitizer)');
-        $climate->tab()->out($cmd . ' app.php --cxx-std=c++17  (Use C++17 standard)');
-        $climate->tab()->out($cmd . ' app.php --march=native -O2  (Optimize for host CPU)');
-        $climate->tab()->out($cmd . ' app.php --march=x86-64-v3 -O2  (Target x86-64-v3 instructions)');
-        $climate->tab()->out($cmd . ' app.php --no-literal-strings  (Disable string optimization)');
-        $climate->tab()->out($cmd . ' app.php -r -O2 -- --flag1 value1');
-        $climate->tab()->out($cmd . ' hello.php --dry  (only generate C++ code, skip compilation)');
-        $climate->tab()->out($cmd . ' app.php --build-dir /tmp/mybuild -O2  (specify build directory)');
-        $climate->tab()->out($cmd . ' app.php -I /opt/mylib/include -D MY_DEBUG=1 -O2  (custom includes and defines)');
         $climate->br();
     }
 

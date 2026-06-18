@@ -169,6 +169,12 @@ class Constants
             'required'    => false,
             'defaultValue' => '',
         ],
+        'no-color' => [
+            'longPrefix'  => 'no-color',
+            'description' => 'Disable ANSI color output',
+            'required'    => false,
+            'noValue'     => true,
+        ],
         'build-dir' => [
             'longPrefix'  => 'build-dir',
             'description' => 'Specify the build directory for generated C++ code',
