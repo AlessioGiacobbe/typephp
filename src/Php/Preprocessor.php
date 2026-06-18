@@ -229,6 +229,7 @@ class Preprocessor extends CompilerBase
         }
         $class = '';
         $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
+        $argInfo->undeclared = $param->type === null;
         if ($class and !$this->hasInterface($class) and !$this->isAbstractClass($class)) {
             $argInfo->class = $class;
         }
@@ -357,6 +358,7 @@ class Preprocessor extends CompilerBase
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
         $functionDef->returnClass = $class;
         $functionDef->stub = $this->stubFile;
+        $functionDef->returnTypeUndeclared = $v->returnType === null;
 
         if ($v->returnType instanceof NullableType or $v->returnType instanceof UnionType) {
             $typeInfo = $this->buildTypeCheckFromNode($v->returnType);

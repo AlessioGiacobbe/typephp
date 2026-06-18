@@ -23,6 +23,7 @@ class ArgInfo
     public bool $byRef = false;
     public bool $variadic = false;
     public bool $nullable = false;
+    public bool $undeclared = false;
     public bool $property = false;
 
     /**

@@ -4809,6 +4809,51 @@ class FramelessFunctionInfo {
     }
 }
 
+/**
+ * 获取魔术方法的默认返回值类型。只有用户未显式声明类型时才使用。
+ */
+function getMagicMethodDefaultReturnType(FunctionOrMethodName $name): ?string
+{
+    if (!($name instanceof MethodName)) {
+        return null;
+    }
+    $map = [
+        '__set' => 'void',
+        '__tostring' => 'string',
+        '__serialize' => 'array',
+        '__unserialize' => 'void',
+        '__isset' => 'bool',
+        '__unset' => 'void',
+        '__set_state' => 'object',
+        '__debuginfo' => 'array',
+        '__sleep' => 'array',
+        '__wakeup' => 'void',
+        '__clone' => 'void',
+    ];
+    return $map[strtolower($name->methodName)] ?? null;
+}
+
+/**
+ * 获取魔术方法的默认参数类型。只有用户未显式声明类型时才使用。
+ */
+function getMagicMethodDefaultParamType(FunctionOrMethodName $name, int $index): ?string
+{
+    if (!($name instanceof MethodName)) {
+        return null;
+    }
+    $map = [
+        '__call' => ['string', 'array'],
+        '__callstatic' => ['string', 'array'],
+        '__set' => ['string'],
+        '__unserialize' => ['array'],
+        '__isset' => ['string'],
+        '__unset' => ['string'],
+        '__set_state' => ['array'],
+    ];
+    $methodParams = $map[strtolower($name->methodName)] ?? null;
+    return $methodParams[$index] ?? null;
+}
+
 function parseFunctionLike(
     PrettyPrinterAbstract $prettyPrinter,
     FunctionOrMethodName $name,
@@ -4930,7 +4975,8 @@ function parseFunctionLike(
 
             $type = $param->type ? Type::fromNode($param->type) : null;
             if ($type === null && !isset($docParamTypes[$varName])) {
-                $type = Type::fromString("mixed");
+                $defaultParamType = getMagicMethodDefaultParamType($name, $i);
+                $type = Type::fromString($defaultParamType ?? 'mixed');
             }
 
             if ($param->default instanceof Expr\ConstFetch &&
@@ -4974,7 +5020,7 @@ function parseFunctionLike(
 
         $returnType = $func->getReturnType();
         if ($returnType === null && $docReturnType === null && !$name->isConstructor() && !$name->isDestructor()) {
-            $docReturnType = "mixed";
+            $docReturnType = getMagicMethodDefaultReturnType($name) ?? 'mixed';
         }
 
         $return = new ReturnInfo(
