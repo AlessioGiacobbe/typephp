@@ -121,12 +121,12 @@ trait BinaryOpTrait
             $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_FLOAT);
         }
 
-        if ($op === '%' and !($leftType === self::TYPE_INT and $rightType === self::TYPE_INT)) {
-            return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+        if (($op === '/' or $op === '%') and $this->isZeroLiteral($right)) {
+            $this->fatalError($right, 'Cannot divide or modulo by zero');
         }
 
-        if ($op === '/' and $this->isZeroLiteral($right)) {
-            return self::VALUE_NAN;
+        if ($op === '%' and !($leftType === self::TYPE_INT and $rightType === self::TYPE_INT)) {
+            return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
