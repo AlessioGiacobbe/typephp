@@ -5090,10 +5090,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function setBuildDir(string $string): void
     {
-        $this->buildDir = $string;
-        if (!is_dir($this->buildDir)) {
-            mkdir($this->buildDir, 0777, true);
+        if (!is_dir($string)) {
+            mkdir($string, 0777, true);
         }
+        $resolved = realpath($string);
+        if ($resolved === false) {
+            throw new \RuntimeException('Failed to resolve build path: ' . $string);
+        }
+        $this->buildDir = $resolved;
     }
 
     protected function isStubFile(string $file): bool

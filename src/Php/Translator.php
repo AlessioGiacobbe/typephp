@@ -546,6 +546,13 @@ class Translator extends Preprocessor
         if (empty($sourceFiles)) {
             $this->stop('No valid source file found');
         }
+
+        // 生成头文件：函数声明、全局变量声明
+        $this->genFunctionDeclaration($this->getIncludeDir() . "/php_{$this->targetName}_func_decl.h");
+        $this->genExternGlobalVars($this->getIncludeDir() . "/php_{$this->targetName}_global_var_decl.h");
+        // 生成扩展模块源文件
+        $sourceFiles[] = $this->genExtension();
+
         return $sourceFiles;
     }
 
@@ -1051,13 +1058,6 @@ CODE;
     public function compile(array $sourceFiles): array
     {
         $job = $this->maxJob;
-
-        // 生成所有函数声明、全局变量声明的头文件
-        $this->genFunctionDeclaration($this->getIncludeDir() . "/php_{$this->targetName}_func_decl.h");
-        $this->genExternGlobalVars($this->getIncludeDir() . "/php_{$this->targetName}_global_var_decl.h");
-
-        // 生成扩展模块的源文件
-        $sourceFiles[] = $this->genExtension();
 
         // embed 需要 main 函数，以及 cli 的内置函数定义
         if ($this->isBuildModeBin()) {

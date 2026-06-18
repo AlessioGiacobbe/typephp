@@ -27,7 +27,7 @@ function main(int $argc, array $argv): void
     if ($translator->isDryRun()) {
         $buildDir = $translator->getBuildDir();
         $count = count($sourceFiles);
-        echo "Dry run completed: {$count} C++ source file(s) generated in {$buildDir}\n";
+        $translator->output("Dry run completed: {$count} C++ source file(s) generated in {$buildDir}", 'lightBlue');
         return;
     }
 
