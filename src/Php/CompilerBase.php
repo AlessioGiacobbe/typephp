@@ -4723,7 +4723,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
             $class = $this->parseIdentifier($expr->class);
             $propertyName = $this->parseIdentifier($expr->name);
-            if ($class === 'self' || $class === 'static') {
+            if ($class === 'static') {
+                return null;
+            }
+            if ($class === 'self') {
                 if ($this->classDef->trait) {
                     return Symbol::getStaticProperty() . '(' . Symbol::getCalledCe() . ', ' . $this->getLiteralString($propertyName) . ')';
                 }

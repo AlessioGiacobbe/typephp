@@ -37,6 +37,12 @@ namespace NativePropSource\Target {
             return static::$count;
         }
 
+        public static function writeStatic(int $value): int
+        {
+            static::$count = $value;
+            return static::$count;
+        }
+
         public static function readParent(): int
         {
             return parent::$count;
@@ -64,6 +70,7 @@ namespace {
         var_dump(\NativePropSource\Target\readStaticByUse());
         var_dump(\NativePropSource\Target\Child::readSelf());
         var_dump(\NativePropSource\Target\Child::readStatic());
+        var_dump(\NativePropSource\Target\Child::writeStatic(4));
         var_dump(\NativePropSource\Target\Child::readParent());
     }
 }
