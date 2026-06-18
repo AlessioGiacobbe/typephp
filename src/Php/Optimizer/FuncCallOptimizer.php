@@ -794,14 +794,19 @@ trait FuncCallOptimizer
                 $this->fatalError($expr, 'The argument of compact function can only be literal string');
             }
             $var = $arg->value->value;
-            if (!$this->hasVar($var)) {
-                $this->errorUndefinedVariable($var);
+            if (!$this->hasVar($var) && $var !== 'this') {
+                $this->fatalError($arg->value, "Undefined variable `{$var}` in compact()");
             }
             if ($this->isSuperGlobal($var)) {
                 $this->fatalError($expr, 'Cannot use super global variable `' . $var . '` in compact function');
             }
 
             $key = $this->getLiteralString($var);
+            if ($var === 'this') {
+                if (empty($this->class)) {
+                    $this->fatalError($expr, 'Cannot use compact("this") outside of class method');
+                }
+            }
             $cVar = $this->escapeVarName($var);
             $list[] = '{' . $key . '.str(), php::Var(' . $cVar . ')}';
         }
