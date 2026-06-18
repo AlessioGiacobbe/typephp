@@ -1865,8 +1865,8 @@ CODE;
             $list = $this->getFilesFromDir($projectDir);
         }
 
-        // 读取 cxx-flags（支持中横线和下划线）
-        $cxxFlags = $cfg['cxx-flags'] ?? $cfg['cxxflags'] ?? null;
+        // 读取 cxx-flags
+        $cxxFlags = $cfg['cxx-flags'] ?? null;
         if (!empty($cxxFlags)) {
             if (is_array($cxxFlags)) {
                 $this->cxxFlags = implode(' ', $cxxFlags);
@@ -1875,14 +1875,14 @@ CODE;
             }
         }
 
-        // 读取 C++ 标准版本（支持中横线和下划线）
-        $cxxStd = $cfg['cxx-std'] ?? $cfg['cxx_std'] ?? null;
+        // 读取 cxx-std
+        $cxxStd = $cfg['cxx-std'] ?? null;
         if (!empty($cxxStd)) {
             $this->cxxStd = $cxxStd;
         }
 
-        // 读取 ldflags（支持中横线和下划线）
-        $ldflags = $cfg['ld-flags'] ?? $cfg['ldflags'] ?? null;
+        // 读取 ld-flags
+        $ldflags = $cfg['ld-flags'] ?? null;
         if (!empty($ldflags)) {
             if (is_array($ldflags)) {
                 $this->ldflags = implode(' ', $ldflags);
@@ -1891,16 +1891,16 @@ CODE;
             }
         }
 
-        // 读取 link-libs（支持中横线和下划线）
-        $linkLibs = $cfg['link-libs'] ?? $cfg['link_libs'] ?? null;
+        // 读取 link-libs
+        $linkLibs = $cfg['link-libs'] ?? null;
         if (!empty($linkLibs) && is_array($linkLibs)) {
             foreach ($linkLibs as $lib) {
                 $this->linkLibs[] = (string)$lib;
             }
         }
 
-        // 读取 link-paths（支持中横线和下划线）
-        $linkPaths = $cfg['link-paths'] ?? $cfg['link_paths'] ?? null;
+        // 读取 link-paths
+        $linkPaths = $cfg['link-paths'] ?? null;
         if (!empty($linkPaths) && is_array($linkPaths)) {
             foreach ($linkPaths as $path) {
                 $this->linkPaths[] = (string)$path;
@@ -1912,8 +1912,8 @@ CODE;
             $this->setTargetName($cfg['name']);
         }
 
-        // 读取 cpp-compiler（支持中横线和下划线）
-        $cppCompiler = $cfg['cpp-compiler'] ?? $cfg['cpp_compiler'] ?? null;
+        // 读取 cpp-compiler
+        $cppCompiler = $cfg['cpp-compiler'] ?? null;
         if (!empty($cppCompiler)) {
             $this->setCppCompiler($cppCompiler);
         }
