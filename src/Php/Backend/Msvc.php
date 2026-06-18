@@ -389,16 +389,28 @@ class Msvc extends CompilerBackend
             $cmd .= ' ' . $config['cxxflags'];
         }
         
+        // 用户自定义预处理器宏
+        if (!empty($config['user_defines'])) {
+            foreach ($config['user_defines'] as $define) {
+                $cmd .= ' /D' . $define;
+            }
+        }
+    
+        // LTO（全程序优化 /GL + 链接时代码生成 /LTCG）
+        if (!empty($config['lto'])) {
+            $cmd .= ' /GL';
+        }
+    
         return $cmd;
     }
-
+    
     /**
      * 构建链接选项（实现抽象方法）
      */
     public function buildLinkOptions(array $config = []): string
     {
         $cmd = '';
-
+    
         // 调试
         if (!empty($config['debug'])) {
             $cmd .= ' /DEBUG';
@@ -419,6 +431,11 @@ class Msvc extends CompilerBackend
 
         // nologo
         $cmd .= ' /nologo';
+
+        // LTO（链接时代码生成）
+        if (!empty($config['lto'])) {
+            $cmd .= ' /LTCG';
+        }
 
         return $cmd;
     }

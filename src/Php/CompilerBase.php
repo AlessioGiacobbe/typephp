@@ -242,14 +242,19 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $cxxFlags = '';
     protected string $cxxStd = 'c++17';
     protected string $ldflags = '';
+    protected array $linkLibs = [];    // --link-lib / -l: user-specified libraries to link
+    protected array $linkPaths = [];   // --link-path / -L: user-specified library search paths
     protected int $floatPrecision = 17;
     protected bool $debug = false;
-    protected bool $formatCode = true;
+    protected bool $formatCode = false;   // --format: enable clang-format (disabled by default)
     protected bool $printBacktraceOnError = true;
     protected bool $noLiteralStrings = false;
     protected bool $noConsole = false;  // Windows: hide console window
     protected string $sanitize = '';    // Sanitizer type (address, undefined, etc.)
     protected bool $dryRun = false;     // Dry run: only generate C++ code, skip compile & link
+    protected array $userIncludePaths = [];  // --include-path / -I: user-provided C++ include dirs
+    protected array $userDefines = [];       // --define / -D: user-provided preprocessor macros
+    protected bool $enableLto = false;       // --lto: enable Link Time Optimization (-flto)
     protected string $file;
     protected string $dir;
 
@@ -741,6 +746,31 @@ class CompilerBase extends \PhpAot\Core\Translator
     public function getBuildDir(): string
     {
         return $this->buildDir;
+    }
+
+    public function getUserIncludePaths(): array
+    {
+        return $this->userIncludePaths;
+    }
+
+    public function getUserDefines(): array
+    {
+        return $this->userDefines;
+    }
+
+    public function isLtoEnabled(): bool
+    {
+        return $this->enableLto;
+    }
+
+    public function getLinkLibs(): array
+    {
+        return $this->linkLibs;
+    }
+
+    public function getLinkPaths(): array
+    {
+        return $this->linkPaths;
     }
 
     public function getRelativePath($path, $cwd = ''): string

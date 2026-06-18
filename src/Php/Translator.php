@@ -223,6 +223,12 @@ class Translator extends Preprocessor
         $climate->tab()->out('--sanitize <type>    Enable sanitizers (address, undefined, etc.)');
         $climate->tab()->out('--build-dir <dir>   Specify build directory for generated C++ code (default: <root>/build)');
         $climate->tab()->out('--dry                Dry run: only generate C++ code, skip compilation and linking');
+        $climate->tab()->out('-I, --include-path <dir> Add an additional C++ include directory (repeatable)');
+        $climate->tab()->out('-D, --define <macro>  Define a preprocessor macro (repeatable, e.g. -D FOO=bar)');
+        $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
+        $climate->tab()->out('--format             Enable clang-format code formatting (disabled by default)');
+        $climate->tab()->out('-l, --link-lib <lib> Link against a library (repeatable, e.g. -lcurl)');
+        $climate->tab()->out('-L, --link-path <dir> Add a library search path (repeatable, e.g. -L/usr/local/lib)');
         $climate->br();
 
         $climate->bold('EXAMPLES:');
@@ -238,6 +244,7 @@ class Translator extends Preprocessor
         $climate->tab()->out($cmd . ' app.php -r -O2 -- --flag1 value1');
         $climate->tab()->out($cmd . ' hello.php --dry  (only generate C++ code, skip compilation)');
         $climate->tab()->out($cmd . ' app.php --build-dir /tmp/mybuild -O2  (specify build directory)');
+        $climate->tab()->out($cmd . ' app.php -I /opt/mylib/include -D MY_DEBUG=1 -O2  (custom includes and defines)');
         $climate->br();
     }
 
@@ -312,6 +319,78 @@ class Translator extends Preprocessor
         if ($this->climate->arguments->defined('dry')) {
             $this->dryRun = true;
         }
+
+        // 用户自定义 C++ include 路径（直接从 argv 解析以支持多值）
+        $this->userIncludePaths = $this->parseRepeatableArgv(['-I', '--include-path']);
+        // 用户自定义预处理器宏（直接从 argv 解析以支持多值）
+        $this->userDefines = $this->parseRepeatableArgv(['-D', '--define']);
+
+        // 链接时优化
+        if ($this->climate->arguments->defined('lto')) {
+            $this->enableLto = true;
+        }
+
+        // clang-format 代码格式化（默认关闭，需显式 --format 开启）
+        if ($this->climate->arguments->defined('format')) {
+            $clangFormatVersion = shell_exec('clang-format --version');
+            if (!empty($clangFormatVersion)) {
+                $this->formatCode = true;
+            } else {
+                $this->climate->warning('--format requested but clang-format not found, skipping formatting');
+            }
+        }
+
+        // 用户自定义链接库（直接从 argv 解析以支持多值）
+        $this->linkLibs = $this->parseRepeatableArgv(['-l', '--link-lib']);
+        // 用户自定义库搜索路径（直接从 argv 解析以支持多值）
+        $this->linkPaths = $this->parseRepeatableArgv(['-L', '--link-path']);
+    }
+
+    /**
+     * 从原始 $argv 中解析可重复参数，支持 -X val 和 --long val 两种形式。
+     * CLImate 的 multiple 选项只能保留最后一个值，因此需要手动解析。
+     *
+     * @param string[] $flags 要匹配的标志列表，如 ['-I', '--include-path']
+     * @return string[] 收集到的所有值
+     */
+    protected function parseRepeatableArgv(array $flags): array
+    {
+        global $argv;
+        $values = [];
+        for ($i = 1; $i < count($argv); $i++) {
+            // 精确匹配标志（如 -I, --include-path）
+            if (in_array($argv[$i], $flags, true) && isset($argv[$i + 1]) && $argv[$i + 1] !== '' && $argv[$i + 1][0] !== '-') {
+                $values[] = $argv[$i + 1];
+                $i++; // 跳过值
+            }
+            // 合并形式：-I/path 或 --include-path=/path
+            elseif (!$this->isLongFlagWithEquals($argv[$i], $flags, $values)) {
+                // 检查短标志合并：-I/path
+                foreach ($flags as $flag) {
+                    if (strlen($flag) === 2 && $flag[0] === '-') {
+                        $short = substr($flag, 1);
+                        if (preg_match('/^-' . preg_quote($short, '/') . '(.+)$/', $argv[$i], $m)) {
+                            $values[] = $m[1];
+                        }
+                    }
+                }
+            }
+        }
+        return $values;
+    }
+
+    /**
+     * 处理 --flag=value 格式的长标志
+     */
+    private function isLongFlagWithEquals(string $arg, array $flags, array &$values): bool
+    {
+        foreach ($flags as $flag) {
+            if (str_starts_with($flag, '--') && preg_match('/^' . preg_quote($flag, '/') . '=(.+)$/', $arg, $m)) {
+                $values[] = $m[1];
+                return true;
+            }
+        }
+        return false;
     }
 
     private function showVersion(): void
@@ -487,11 +566,6 @@ class Translator extends Preprocessor
                     $this->climate->info($message['info']);
                 }
             }
-        }
-
-        $clangFormatVersion = shell_exec('clang-format --version');
-        if (empty($clangFormatVersion)) {
-            $this->formatCode = false;
         }
 
         $files = $this->getFiles($path);
@@ -1312,8 +1386,14 @@ CODE;
 
     protected function getCompileCommandOptions(): array
     {
+        // 包含路径：系统路径 + 用户自定义路径
+        $includePaths = $this->getIncludePaths();
+        if (!empty($this->userIncludePaths)) {
+            $includePaths = array_merge($includePaths, $this->userIncludePaths);
+        }
+
         return [
-            'include_paths' => $this->getIncludePaths(),
+            'include_paths' => $includePaths,
             'optimize' => $this->optimizeLevel,
             'debug' => $this->debug,
             'sanitize' => $this->sanitize,
@@ -1324,6 +1404,8 @@ CODE;
             'prof_output' => $this->targetName . '.prof',
             'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
             'cxxflags' => $this->cxxFlags,
+            'user_defines' => $this->userDefines,
+            'lto' => $this->enableLto,
         ];
     }
 
@@ -1365,6 +1447,16 @@ CODE;
             $ldflags .= ' -lprofiler';
         }
 
+        // 用户通过 --link-lib / -l 指定的链接库
+        foreach ($this->linkLibs as $lib) {
+            $ldflags .= ' -l' . $lib;
+        }
+
+        // 用户通过 --link-path / -L 指定的库搜索路径
+        foreach ($this->linkPaths as $path) {
+            $ldflags .= ' -L' . escapeshellarg($path);
+        }
+
         $options = [
             'library_paths' => $this->getLibraryPaths(),
             'libraries' => $this->getLibraries(),
@@ -1373,6 +1465,7 @@ CODE;
             'no_console' => $this->noConsole,
             'build_mode' => $this->buildMode,
             'sanitize' => $this->sanitize,
+            'lto' => $this->enableLto,
         ];
 
         $rpaths = $this->getPlatform()->getDefaultRpaths(
@@ -1795,6 +1888,22 @@ CODE;
                 $this->ldflags = implode(' ', $ldflags);
             } else {
                 $this->ldflags = str_replace("\n", ' ', $ldflags);
+            }
+        }
+
+        // 读取 link-libs（支持中横线和下划线）
+        $linkLibs = $cfg['link-libs'] ?? $cfg['link_libs'] ?? null;
+        if (!empty($linkLibs) && is_array($linkLibs)) {
+            foreach ($linkLibs as $lib) {
+                $this->linkLibs[] = (string)$lib;
+            }
+        }
+
+        // 读取 link-paths（支持中横线和下划线）
+        $linkPaths = $cfg['link-paths'] ?? $cfg['link_paths'] ?? null;
+        if (!empty($linkPaths) && is_array($linkPaths)) {
+            foreach ($linkPaths as $path) {
+                $this->linkPaths[] = (string)$path;
             }
         }
 

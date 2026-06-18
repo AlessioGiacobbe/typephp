@@ -420,6 +420,18 @@ class Clang extends CompilerBackend
             $cmd .= ' ' . $config['cxxflags'];
         }
         
+        // 用户自定义预处理器宏
+        if (!empty($config['user_defines'])) {
+            foreach ($config['user_defines'] as $define) {
+                $cmd .= ' -D' . $define;
+            }
+        }
+
+        // LTO（链接时优化）
+        if (!empty($config['lto'])) {
+            $cmd .= ' -flto';
+        }
+
         return $cmd;
     }
 
@@ -472,7 +484,12 @@ class Clang extends CompilerBackend
         if (!empty($config['sanitize'])) {
             $cmd .= ' -fsanitize=' . $config['sanitize'];
         }
-        
+
+        // LTO（链接时优化）
+        if (!empty($config['lto'])) {
+            $cmd .= ' -flto';
+        }
+
         return $cmd;
     }
 }

@@ -319,6 +319,14 @@ OPTIONS:
     -m, --mode <mode>    Compilation mode, -m bin(binary) or -m ext(extension), default: bin
     -j, --job <num>      Number of parallel compilation jobs (default: 4)
     --no-literal-strings Disable literal strings optimization
+    -I, --include-path   Add an additional C++ include directory (repeatable)
+    -D, --define <macro> Define a preprocessor macro (repeatable, e.g. -D FOO=bar)
+    --dry                Dry run: only generate C++ code, skip compilation and linking
+    --lto                Enable Link Time Optimization (-flto)
+    --format             Enable clang-format code formatting (disabled by default)
+    -l, --link-lib <lib> Link against a library (repeatable, e.g. -lcurl)
+    -L, --link-path <dir> Add a library search path (repeatable, e.g. -L/usr/local/lib)
+    --build-dir <dir>    Specify build directory for generated C++ code
 
 EXAMPLES:
     ./bin/compiler.php examples/hello.php
@@ -366,6 +374,194 @@ EXAMPLES:
 # 使用配置文件，多目录编译
 ./bin/compiler.php project.yml -O2 -j 16 -v
 ```
+
+### 场景六：使用外部 C++ 库
+
+```bash
+# 添加自定义头文件路径和预处理器宏
+./bin/compiler.php app.php -I /opt/mylib/include -I ../shared/include -D MY_DEBUG=1 -O2
+```
+
+---
+
+### 12. `-I <dir>` / `--include-path <dir>` - 添加头文件搜索路径
+
+**别名**: `--include-path`  
+**类型**: 可重复参数
+
+添加额外的 C++ 头文件（`.h` / `.hpp`）搜索目录。编译器的 include 路径由两部分组成：
+1. 系统默认路径（PHP 头文件、PHPX 头文件等）
+2. 用户通过 `-I` 指定的自定义路径
+
+**适用场景**:
+- ✅ 引用外部 C/C++ 库的头文件
+- ✅ 项目有自定义的 C++ 扩展代码
+- ✅ 多个项目共享的头文件目录
+
+**可重复使用**: 可以多次指定 `-I` 添加多个目录：
+```bash
+./bin/compiler.php app.php \
+    -I /opt/openssl/include \
+    -I /opt/mylib/include \
+    -I ../shared/headers
+```
+
+**与 C++ 编译器等价**: `-I <dir>` 直接传递给 GCC/Clang/MSVC 的 `-I` 选项。
+
+---
+
+### 13. `-D <macro>` / `--define <macro>` - 定义预处理器宏
+
+**别名**: `--define`  
+**类型**: 可重复参数
+
+定义 C++ 预处理器宏，等价于在 C++ 代码中使用 `#define`。使用 `name=value` 格式。
+
+**适用场景**:
+- ✅ 条件编译（`#ifdef MY_FEATURE` / `#ifndef MY_FEATURE`）
+- ✅ 功能开关（`-D ENABLE_LOGGING=1`）
+- ✅ 调试标志（`-D DEBUG_LEVEL=3`）
+- ✅ 版本号定义（`-D APP_VERSION=\"2.0\"`）
+
+**格式说明**:
+| 格式 | 等价 C++ 代码 | 说明 |
+|------|--------------|------|
+| `-D FOO` | `#define FOO` | 无值宏（值为空） |
+| `-D FOO=1` | `#define FOO 1` | 整数值宏 |
+| `-D FOO=bar` | `#define FOO bar` | 字符串值宏 |
+| `-D FOO=\"bar\"` | `#define FOO "bar"` | 引号字符串宏 |
+
+**可重复使用**: 可以多次指定 `-D` 定义多个宏：
+```bash
+./bin/compiler.php app.php \
+    -D MY_DEBUG=1 \
+    -D LOG_LEVEL=3 \
+    -D APP_NAME=\\"MyApp\"
+```
+
+**与 C++ 编译器等价**:
+| 编译器 | 产生的编译标志 |
+|--------|-------------|
+| GCC / Clang | `-D<macro>` |
+| MSVC | `/D<macro>` |
+
+**示例: 条件编译控制功能开关**:
+```bash
+# 启用调试日志
+./bin/compiler.php app.php -D ENABLE_LOGGING=1 -O2
+
+# 生产环境（关闭调试）
+./bin/compiler.php app.php -O2
+```
+
+---
+
+### 14. `--lto` - 链接时优化
+
+**类型**: 开关（无参数）
+
+启用链接时优化（Link Time Optimization, LTO），允许编译器在链接阶段跨编译单元进行优化，可显著提升运行时性能和减小二进制体积。
+
+**编译器适配**:
+| 编译器 | 编译阶段标志 | 链接阶段标志 |
+|--------|-----------|-----------|
+| GCC | `-flto` | `-flto` |
+| Clang | `-flto` | `-flto` |
+| MSVC | `/GL` | `/LTCG` |
+
+**适用场景**:
+- ✅ 生产环境部署（配合 `-O2` 或 `-O3`）
+- ✅ 对性能有极致要求的应用
+- ✅ 需要减小二进制体积的场景
+- ⚠️ 会增加链接时间
+
+**示例**:
+```bash
+# 启用 LTO 的生产环境编译
+./bin/compiler.php app.php -O2 --lto
+
+# 与自定义 include 和 define 组合使用
+./bin/compiler.php app.php -O3 --lto -I /opt/lib/include -D NDEBUG=1
+```
+
+---
+
+### 15. `--format` - 代码格式化
+
+**类型**: 开关（无参数）  
+**默认**: 关闭
+
+启用 `clang-format` 对生成的 C++ 代码进行自动格式化。由于格式化会增加编译时间，默认关闭。需要系统中安装了 `clang-format` 才能生效。
+
+**适用场景**:
+- ✅ 需要审查生成的 C++ 代码
+- ✅ 团队开发需要统一的代码风格
+- ⚠️ 会增加编译时间
+
+**示例**:
+```bash
+# 编译时启用代码格式化
+./bin/compiler.php app.php --format
+
+# 结合优化使用
+./bin/compiler.php app.php -O2 --format
+```
+
+如果系统未安装 `clang-format`，使用 `--format` 时会显示警告并跳过格式化。
+
+---
+
+### 16. `-l <lib>` / `--link-lib <lib>` - 链接库
+
+**别名**: `--link-lib`  
+**类型**: 可重复参数
+
+指定要链接的库，等价于 GCC/Clang 的 `-l<lib>` 选项。实际产生的标志为 `-l<lib>`。
+
+**适用场景**:
+- ✅ 链接第三方 C/C++ 库（如 `-lcurl`、`-lssl`）
+- ✅ 链接自定义编译的静态库/动态库
+- ✅ 多库依赖的项目
+
+**可重复使用**: 可以多次指定 `-l` 链接多个库：
+```bash
+./bin/compiler.php app.php \
+    -lcurl \
+    -lssl \
+    -lcrypto
+
+# 等价的长格式
+./bin/compiler.php app.php --link-lib curl --link-lib ssl --link-lib crypto
+```
+
+**与 GCC/Clang 等价**: `-l<lib>` 直接传递给链接器的 `-l` 选项，链接 `lib<lib>.so` 或 `lib<lib>.a`。
+
+---
+
+### 17. `-L <dir>` / `--link-path <dir>` - 库搜索路径
+
+**别名**: `--link-path`  
+**类型**: 可重复参数
+
+添加库文件搜索路径，等价于 GCC/Clang 的 `-L<dir>` 选项。实际产生的标志为 `-L<dir>`。
+
+**适用场景**:
+- ✅ 链接非标准路径下的库文件
+- ✅ 使用自定义编译的本地库
+- ✅ 链接项目内部的私有库
+
+**可重复使用**: 可以多次指定 `-L` 添加多个搜索路径：
+```bash
+./bin/compiler.php app.php \
+    -L/usr/local/lib \
+    -L/opt/custom/lib \
+    -lmycustom
+
+# 等价的长格式
+./bin/compiler.php app.php --link-path /usr/local/lib --link-path /opt/custom/lib --link-lib mycustom
+```
+
+**与 GCC/Clang 等价**: `-L<dir>` 直接传递给链接器的 `-L` 选项。
 
 ---
 
@@ -509,13 +705,14 @@ convert: /path/to/file.php
 - ✅ 生成对应的 `.cpp` 文件
 - ✅ 处理类型映射
 
-### 阶段四：格式化 (Format)
+### 阶段四：格式化 (Format)（需 `--format` 开启）
 
 ```
 format: /path/to/build/file.cpp
 cd /path && clang-format -i /path/to/build/file.cpp
 ```
 
+- 🔘 需 `--format` 参数显式开启
 - ✅ 使用 clang-format 格式化 C++ 代码
 - ✅ 确保代码风格一致
 
@@ -649,6 +846,9 @@ skip: /path/to/file.php
 
 # 高性能构建
 ./bin/compiler.php app.php -O3 -j 16 -p
+
+# 外部库集成构建
+./bin/compiler.php app.php -I /opt/mylib/include -D ENABLE_FEATURE=1 -O2
 
 # 调试构建
 ./bin/compiler.php app.php -O0 -v --debug

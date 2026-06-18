@@ -175,6 +175,46 @@ class Constants
             'required'    => false,
             'noValue'     => true,
         ],
+        'include-path' => [
+            'prefix'      => 'I',
+            'longPrefix'  => 'include-path',
+            'description' => 'Add an additional C++ include directory (repeatable)',
+            'required'    => false,
+            'multiple'    => true,
+        ],
+        'define' => [
+            'prefix'      => 'D',
+            'longPrefix'  => 'define',
+            'description' => 'Define a preprocessor macro (repeatable, e.g. -D FOO=bar)',
+            'required'    => false,
+            'multiple'    => true,
+        ],
+        'lto' => [
+            'longPrefix'  => 'lto',
+            'description' => 'Enable Link Time Optimization (-flto)',
+            'required'    => false,
+            'noValue'     => true,
+        ],
+        'format' => [
+            'longPrefix'  => 'format',
+            'description' => 'Enable clang-format code formatting (disabled by default)',
+            'required'    => false,
+            'noValue'     => true,
+        ],
+        'link-lib' => [
+            'prefix'      => 'l',
+            'longPrefix'  => 'link-lib',
+            'description' => 'Link against a library (repeatable, e.g. -lcurl)',
+            'required'    => false,
+            'multiple'    => true,
+        ],
+        'link-path' => [
+            'prefix'      => 'L',
+            'longPrefix'  => 'link-path',
+            'description' => 'Add a library search path (repeatable, e.g. -L/usr/local/lib)',
+            'required'    => false,
+            'multiple'    => true,
+        ],
     ];
 
     /**
