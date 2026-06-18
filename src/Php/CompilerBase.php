@@ -1419,6 +1419,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 case 'Stmt_Class':
                     $this->fatalError($v, 'Cannot declare class in function');
                     break;
+                case 'Stmt_Function':
+                    $this->fatalError($v, 'Cannot declare function in function');
+                    break;
                 default:
                     abort($v);
                     break;
@@ -3550,13 +3553,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $this->getConstant($importedName);
             }
         }
-        if ($name === 'null') {
+        if (strcasecmp($name, 'null') === 0) {
             return self::VALUE_NULL;
         }
-        if ($name === 'true') {
+        if (strcasecmp($name, 'true') === 0) {
             return 'true';
         }
-        if ($name === 'false') {
+        if (strcasecmp($name, 'false') === 0) {
             return 'false';
         }
         if ($name === 'PHP_EOL') {
@@ -4151,10 +4154,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isInternalConstant($name)) {
             return $this->getTypeFromZendType(gettype($this->internalConstants[$name]));
         }
-        if ($name === 'true') {
+        if (strcasecmp($name, 'true') === 0) {
             return self::TYPE_BOOL;
         }
-        if ($name === 'false') {
+        if (strcasecmp($name, 'false') === 0) {
             return self::TYPE_BOOL;
         }
         if ($name === 'NAN' or $name === 'INF') {

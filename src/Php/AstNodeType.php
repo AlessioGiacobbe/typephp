@@ -102,12 +102,12 @@ trait AstNodeType
 
     protected function isScalarBool(NodeAbstract $expr): bool
     {
-        return $expr instanceof Expr\ConstFetch and in_array($expr->name->toString(), ['true', 'false']);
+        return $expr instanceof Expr\ConstFetch and in_array(strtolower($expr->name->toString()), ['true', 'false']);
     }
 
     protected function getBoolValue(Expr\ConstFetch $expr): string
     {
-        return $expr->name->toString() === 'true' ? self::VALUE_TRUE : self::VALUE_FALSE;
+        return strcasecmp($expr->name->toString(), 'true') === 0 ? self::VALUE_TRUE : self::VALUE_FALSE;
     }
 
     protected function isMatchExpr(NodeAbstract $expr): bool
@@ -175,6 +175,6 @@ trait AstNodeType
 
     protected function isNull(NodeAbstract $expr): bool
     {
-        return $expr instanceof Expr\ConstFetch && $expr->name->toString() === 'null';
+        return $expr instanceof Expr\ConstFetch && strcasecmp($expr->name->toString(), 'null') === 0;
     }
 }
