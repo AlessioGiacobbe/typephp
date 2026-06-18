@@ -225,6 +225,13 @@ trait FuncCallOptimizer
 
     protected function dispatchFuncCall(string $name, Node\Expr\FuncCall $expr, array $config): string|false
     {
+        // 命名参数 / unpack（...）展开需要运行时处理，回退到动态调用路径
+        foreach ($expr->args as $arg) {
+            if ($arg->name !== null || $arg->unpack) {
+                return false;
+            }
+        }
+
         $target = $config['target'] ?? null;
         if ($target === null) {
             $target = 'php::fn::' . $name;
