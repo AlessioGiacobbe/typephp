@@ -242,6 +242,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $cxxFlags = '';
     protected string $cxxStd = 'c++17';
     protected string $march = '';            // --march: target CPU instruction set (e.g. native, x86-64-v3)
+    protected string $targetPlatform = '';   // --target-platform: cross-compilation target triple (e.g. aarch64-linux-gnu)
     protected string $ldflags = '';
     protected array $linkLibs = [];    // --link-lib / -l: user-specified libraries to link
     protected array $linkPaths = [];   // --link-path / -L: user-specified library search paths
@@ -1207,12 +1208,40 @@ class CompilerBase extends \PhpAot\Core\Translator
         $key = $this->parseIdentifier($expr);
         if (str_starts_with($key, self::LITERAL_STRINGS)) {
             $key = "{$key}.str()";
-        } elseif ($key === '0L' || $key === '0LL') {
-            // 0 在 C++ 中是一个特殊的值，存在二义性，既是空指针，也是整数，这会导致产生 ambiguous 错误
-            // 必须转为 php::zero 常量，保证作为 key 时正确匹配到 IntKeyMap
+        } elseif ($this->isZeroLiteral($expr)) {
             $key = self::VALUE_ZERO;
         }
         return $key;
+    }
+
+    /**
+     * Check if a node is a literal zero value.
+     *
+     * Detects compile-time zero for two purposes:
+     *  - Division-by-zero guard (any zero form: int, float, negated, numeric string)
+     *  - C++ null pointer ambiguity guard: Scalar_Int(0) → 0L → nullptr → segfault
+     *    when passed to functions with zend_string* overloads (setProperty, getProperty, etc.)
+     */
+    protected function isZeroLiteral(NodeAbstract $expr): bool
+    {
+        if ($expr instanceof Node\Scalar\Int_) {
+            $result = $expr->value === 0;
+            return $result;
+        }
+        if ($expr instanceof Node\Scalar\Float_) {
+            $result = $expr->value == 0.0;
+            return $result;
+        }
+        if ($expr instanceof Expr\UnaryMinus || $expr instanceof Expr\UnaryPlus) {
+            $result = $this->isZeroLiteral($expr->expr);
+            return $result;
+        }
+        if ($expr instanceof Node\Scalar\String_) {
+            $value = trim($expr->value);
+            $result = $value !== '' && is_numeric($value) && (float) $value == 0.0;
+            return $result;
+        }
+        return false;
     }
 
     protected function parseIdentifier(NodeAbstract $expr): string
@@ -4654,6 +4683,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if ($this->isNameExpr($node) or $this->isIdExpr($node)) {
             return $literal ? $this->getLiteralString($id) : $this->genCharPtr($id, true);
+        }
+        if ($this->isZeroLiteral($node)) {
+            return self::VALUE_ZERO;
         }
         return $id;
     }

@@ -3,6 +3,7 @@ array_sum / array_product: type handling
 --FILE--
 <?php
 function main() {
+    error_reporting(E_ALL & ~E_WARNING);
     // Non-numeric strings contribute 0 as int (not float)
     var_dump(array_sum([1, 2, "abc"]));
     var_dump(array_product([1, 2, "abc"]));

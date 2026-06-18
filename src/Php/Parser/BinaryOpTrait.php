@@ -362,24 +362,6 @@ trait BinaryOpTrait
         }
     }
 
-    protected function isZeroLiteral(NodeAbstract $expr): bool
-    {
-        if ($expr instanceof Node\Scalar\Int_) {
-            return $expr->value === 0;
-        }
-        if ($expr instanceof Node\Scalar\Float_) {
-            return $expr->value == 0.0;
-        }
-        if ($expr instanceof Expr\UnaryMinus || $expr instanceof Expr\UnaryPlus) {
-            return $this->isZeroLiteral($expr->expr);
-        }
-        if ($expr instanceof Node\Scalar\String_) {
-            $value = trim($expr->value);
-            return $value !== '' && is_numeric($value) && (float) $value == 0.0;
-        }
-        return false;
-    }
-
     protected function parseBinaryOpMinus(Expr\BinaryOp\Minus $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '-');
