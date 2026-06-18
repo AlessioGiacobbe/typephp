@@ -221,6 +221,8 @@ class Translator extends Preprocessor
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->tab()->out('--no-console         Hide console window (Windows only, GUI application)');
         $climate->tab()->out('--sanitize <type>    Enable sanitizers (address, undefined, etc.)');
+        $climate->tab()->out('--build-dir <dir>   Specify build directory for generated C++ code (default: <root>/build)');
+        $climate->tab()->out('--dry                Dry run: only generate C++ code, skip compilation and linking');
         $climate->br();
 
         $climate->bold('EXAMPLES:');
@@ -234,6 +236,8 @@ class Translator extends Preprocessor
         $climate->tab()->out($cmd . ' app.php --cxx-std=c++17  (Use C++17 standard)');
         $climate->tab()->out($cmd . ' app.php --no-literal-strings  (Disable string optimization)');
         $climate->tab()->out($cmd . ' app.php -r -O2 -- --flag1 value1');
+        $climate->tab()->out($cmd . ' hello.php --dry  (only generate C++ code, skip compilation)');
+        $climate->tab()->out($cmd . ' app.php --build-dir /tmp/mybuild -O2  (specify build directory)');
         $climate->br();
     }
 
@@ -294,6 +298,19 @@ class Translator extends Preprocessor
         // C++ 标准版本
         if ($this->climate->arguments->defined('cxx-std')) {
             $this->cxxStd = $this->climate->arguments->get('cxx-std');
+        }
+
+        // 构建目录
+        if ($this->climate->arguments->defined('build-dir')) {
+            $buildDir = $this->climate->arguments->get('build-dir');
+            if (!empty($buildDir)) {
+                $this->setBuildDir($buildDir);
+            }
+        }
+
+        // 干运行模式
+        if ($this->climate->arguments->defined('dry')) {
+            $this->dryRun = true;
         }
     }
 
@@ -1416,6 +1433,11 @@ CODE;
     public function isRunRequested(): bool
     {
         return $this->climate->arguments->defined('run');
+    }
+
+    public function isDryRun(): bool
+    {
+        return $this->dryRun;
     }
 
     public function run(string $targetFile): never

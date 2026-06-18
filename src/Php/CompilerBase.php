@@ -249,6 +249,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $noLiteralStrings = false;
     protected bool $noConsole = false;  // Windows: hide console window
     protected string $sanitize = '';    // Sanitizer type (address, undefined, etc.)
+    protected bool $dryRun = false;     // Dry run: only generate C++ code, skip compile & link
     protected string $file;
     protected string $dir;
 

@@ -158,10 +158,22 @@ class Constants
             'defaultValue' => '',
         ],
         'cxx-std' => [
-            'longPrefix' => 'cxx-std',
+            'longPrefix'  => 'cxx-std',
             'description' => 'C++ standard version (c++17, c++20, etc.)',
-            'required' => false,
+            'required'    => false,
             'defaultValue' => 'c++17',
+        ],
+        'build-dir' => [
+            'longPrefix'  => 'build-dir',
+            'description' => 'Specify the build directory for generated C++ code',
+            'required'    => false,
+            'defaultValue' => '',
+        ],
+        'dry' => [
+            'longPrefix'  => 'dry',
+            'description' => 'Dry run: only generate C++ code, do not compile or link',
+            'required'    => false,
+            'noValue'     => true,
         ],
     ];
 

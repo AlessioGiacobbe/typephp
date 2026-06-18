@@ -22,6 +22,15 @@ function main(int $argc, array $argv): void
     $files = $translator->prepare($translator->parseArgv($argv));
     // 生成 C++ 文件
     $sourceFiles = $translator->convert($files);
+
+    // --dry 模式：仅生成 C++ 代码，不执行编译
+    if ($translator->isDryRun()) {
+        $buildDir = $translator->getBuildDir();
+        $count = count($sourceFiles);
+        echo "Dry run completed: {$count} C++ source file(s) generated in {$buildDir}\n";
+        return;
+    }
+
     // 编译所有 C++ 文件
     $objectFiles = $translator->compile($sourceFiles);
     // 连接所有目标文件，生成可执行文件
