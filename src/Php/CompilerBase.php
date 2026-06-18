@@ -3866,7 +3866,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->classDef->trait) {
                     goto _dynamic_attr;
                 }
-                $nativeProperty = $this->findNativeProperty($expr, $propertyName, $this->class, $this->namespace);
+                $nativeProperty = $this->findNativeProperty($expr, $propertyName, $this->getFullClassName());
             } elseif ($this->isTypedObject($objectName)) {
                 $className = $this->getObjectType($objectName);
                 $nativeProperty = $this->findNativeProperty($expr, $propertyName, $className);
@@ -4723,7 +4723,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
             $class = $this->parseIdentifier($expr->class);
             $propertyName = $this->parseIdentifier($expr->name);
-            if ($class === 'self') {
+            if ($class === 'self' || $class === 'static') {
                 if ($this->classDef->trait) {
                     return Symbol::getStaticProperty() . '(' . Symbol::getCalledCe() . ', ' . $this->getLiteralString($propertyName) . ')';
                 }
@@ -4745,13 +4745,42 @@ class CompilerBase extends \PhpAot\Core\Translator
         return null;
     }
 
+    protected function isSameClassName(string $classA, string $classB): bool
+    {
+        return strcasecmp(ltrim($classA, '\\'), ltrim($classB, '\\')) === 0;
+    }
+
+    protected function isSameOrSubclassOf(string $class, string $parent): bool
+    {
+        $class = strtolower(ltrim($class, '\\'));
+        $parent = strtolower(ltrim($parent, '\\'));
+        while ($class !== '') {
+            if ($class === $parent) {
+                return true;
+            }
+            $class = $this->classExtends[$class] ?? '';
+        }
+        return false;
+    }
+
+    protected function canAccessProtectedProperty(string $scope, string $declaringClass): bool
+    {
+        if ($scope === '') {
+            return false;
+        }
+        return $this->isSameOrSubclassOf($scope, $declaringClass)
+            || $this->isSameOrSubclassOf($declaringClass, $scope);
+    }
+
     /**
      * @param NodeAbstract $expr 仅用于输出错误日志
+     * @param string $class 必须传入带有完整命名空间的类名
      */
     protected function findNativeProperty(NodeAbstract $expr, string $property, string $class, bool $static = false): ?string
     {
+        $class = ltrim($class, '\\');
         $findClass = $class;
-        $scope = $this->class ? $class : '';
+        $scope = $this->class ? $this->getFullClassName() : '';
         $propertyDef = null;
         $classDef = null;
         while (true) {
@@ -4769,13 +4798,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                         break;
                     }
                     if ($propertyDef->isProtected()) {
-                        if ($scope) {
+                        if ($this->canAccessProtectedProperty($scope, $findClass)) {
                             break;
                         }
                         $displayClass = ltrim($class, '\\');
                         $this->fatalError($expr, "Cannot access protected property `{$property}` of class `{$displayClass}`");
                     } else {
-                        if ($scope === $findClass) {
+                        if ($this->isSameClassName($scope, $findClass)) {
                             break;
                         }
                         $displayClass = ltrim($class, '\\');

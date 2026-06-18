@@ -323,6 +323,7 @@ trait AssignOpTrait
         $var          = $this->parseIdentifier($node->var);
         $this->context->inAssignExpr = $oriInAssignExpr;
         $expr         = $this->parseIdentifier($node->expr);
+        $this->guardLiteralDivisionByZero($node->expr, $op);
 
         if ($this->isVarExpr($node->var)) {
             if (!$this->hasVar($var)) {
