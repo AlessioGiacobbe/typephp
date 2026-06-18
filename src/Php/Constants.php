@@ -169,6 +169,12 @@ class Constants
             'required'    => false,
             'defaultValue' => '',
         ],
+        'target-platform' => [
+            'longPrefix'  => 'target-platform',
+            'description' => 'Cross-compilation target triple (e.g. aarch64-linux-gnu, x86_64-w64-mingw32)',
+            'required'    => false,
+            'defaultValue' => '',
+        ],
         'no-color' => [
             'longPrefix'  => 'no-color',
             'description' => 'Disable ANSI color output',

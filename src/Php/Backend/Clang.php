@@ -408,6 +408,11 @@ class Clang extends CompilerBackend
             $cmd .= ' -march=' . $config['march'];
         }
         
+        // 交叉编译目标平台 (--target=<triple>)
+        if (!empty($config['target_platform'])) {
+            $cmd .= ' --target=' . $config['target_platform'];
+        }
+        
         // PIC (Position Independent Code)
         if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['pic'])) {
             if ($this->platform instanceof \PhpAot\Php\Platform\Windows) {
@@ -493,6 +498,11 @@ class Clang extends CompilerBackend
         // Sanitizer
         if (!empty($config['sanitize'])) {
             $cmd .= ' -fsanitize=' . $config['sanitize'];
+        }
+
+        // 交叉编译目标平台 (--target=<triple>)
+        if (!empty($config['target_platform'])) {
+            $cmd .= ' --target=' . $config['target_platform'];
         }
 
         // LTO（链接时优化）

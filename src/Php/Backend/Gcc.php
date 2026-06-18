@@ -294,6 +294,11 @@ class Gcc extends CompilerBackend
             $cmd .= ' -march=' . $config['march'];
         }
         
+        // 交叉编译目标平台 (--target=<triple>)
+        if (!empty($config['target_platform'])) {
+            $cmd .= ' --target=' . $config['target_platform'];
+        }
+        
         // PIC (Position Independent Code)
         if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['pic'])) {
             $cmd .= ' -fPIC';
@@ -357,6 +362,11 @@ class Gcc extends CompilerBackend
             } elseif ($config['sanitize'] === 'undefined' || $config['sanitize'] === 'undef') {
                 $cmd .= ' -fsanitize=undefined';
             }
+        }
+
+        // 交叉编译目标平台 (--target=<triple>)
+        if (!empty($config['target_platform'])) {
+            $cmd .= ' --target=' . $config['target_platform'];
         }
 
         // LTO（链接时优化）

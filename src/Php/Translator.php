@@ -232,6 +232,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-j, --job <num>      Number of parallel compilation jobs (default: 4)');
         $climate->tab()->out('--cxx-std <ver>      C++ standard version (c++17, c++20, etc., default: c++17)');
         $climate->tab()->out('--march <arch>       Target CPU instruction set (e.g. native, x86-64-v3, armv8-a)');
+        $climate->tab()->out('--target-platform <triple> Cross-compilation target triple (e.g. aarch64-linux-gnu)');
         $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->tab()->out('--no-console         Hide console window (Windows only, GUI application)');
@@ -309,6 +310,11 @@ class Translator extends Preprocessor
         // 目标 CPU 指令集
         if ($this->climate->arguments->defined('march')) {
             $this->march = $this->climate->arguments->get('march');
+        }
+
+        // 交叉编译目标平台
+        if ($this->climate->arguments->defined('target-platform')) {
+            $this->targetPlatform = $this->climate->arguments->get('target-platform');
         }
 
         // 构建目录
@@ -1403,6 +1409,7 @@ CODE;
             'sanitize' => $this->sanitize,
             'cpp_std' => $this->cxxStd,
             'march' => $this->march,
+            'target_platform' => $this->targetPlatform,
             'is_zts' => $this->isPhpZts,
             'build_mode' => $this->buildMode,
             'enable_profiler' => $this->enableProfiler,
@@ -1442,6 +1449,7 @@ CODE;
             'enable_profiler' => $this->enableProfiler,
             'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
             'march' => $this->march,
+            'target_platform' => $this->targetPlatform,
         ];
     }
 
@@ -1472,6 +1480,7 @@ CODE;
             'build_mode' => $this->buildMode,
             'sanitize' => $this->sanitize,
             'lto' => $this->enableLto,
+            'target_platform' => $this->targetPlatform,
         ];
 
         $rpaths = $this->getPlatform()->getDefaultRpaths(
