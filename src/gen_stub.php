@@ -230,9 +230,9 @@ class SimpleType {
 
             $name = $node->toLowerString();
 
-            // stream/box are compiler pseudo-types, treated like resource (mixed in arginfo)
-            if ($name === 'stream' || $name === 'box') {
-                return new SimpleType($name, true);
+            // stream/box/any are compiler pseudo-types, treated like resource (mixed in arginfo)
+            if ($name === 'stream' || $name === 'box' || $name === 'any') {
+                return new SimpleType('mixed', true);
             }
 
             $class = $node->isFullyQualified() ? $node->toString() : getTranslator()->getNamespacedClassName($node->toString());
@@ -274,7 +274,7 @@ class SimpleType {
             case "ref":
                 return new SimpleType(strtolower($typeString), true);
             case "any":
-                return new SimpleType('any', true);
+                return new SimpleType('mixed', true);
             case "box":
             case "stream":
                 return new SimpleType($typeString, true);
@@ -1172,15 +1172,16 @@ class ReturnInfo {
      * based on the PHP version. Separate to allow using early returns
      */
     private function beginArgInfoCompatible(string $funcInfoName, int $minArgs): string {
-        if ($this->type !== null) {
-            if (null !== $simpleReturnType = $this->type->tryToSimpleType()) {
+        $effectiveType = $this->type ?? $this->phpDocType;
+        if ($effectiveType !== null) {
+            if (null !== $simpleReturnType = $effectiveType->tryToSimpleType()) {
                 if ($simpleReturnType->isBuiltin) {
                     return sprintf(
                         "%s(%s, %d, %d, %s, %d)\n",
                         $this->tentativeReturnType ? "ZEND_BEGIN_ARG_WITH_TENTATIVE_RETURN_TYPE_INFO_EX" : "ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX",
                         $funcInfoName, $this->byRef,
                         $minArgs,
-                        $simpleReturnType->toTypeCode(), $this->type->isNullable()
+                        $simpleReturnType->toTypeCode(), $effectiveType->isNullable()
                     );
                 }
                 return sprintf(
@@ -1188,10 +1189,10 @@ class ReturnInfo {
                     $this->tentativeReturnType ? "ZEND_BEGIN_ARG_WITH_TENTATIVE_RETURN_OBJ_INFO_EX" : "ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX",
                     $funcInfoName, $this->byRef,
                     $minArgs,
-                    $simpleReturnType->toEscapedName(), $this->type->isNullable()
+                    $simpleReturnType->toEscapedName(), $effectiveType->isNullable()
                 );
             }
-            $arginfoType = $this->type->toArginfoType();
+            $arginfoType = $effectiveType->toArginfoType();
             if ($arginfoType->hasClassType()) {
                 return sprintf(
                     "%s(%s, %d, %d, %s, %s)\n",
@@ -2249,6 +2250,18 @@ OUPUT_EXAMPLE
 
         foreach ($this->args as $argInfo) {
             $code .= $argInfo->toZendInfo();
+        }
+
+        // Add trailing variadic to accept extra callback arguments (e.g. array_all passes value + key)
+        $hasVariadic = false;
+        foreach ($this->args as $argInfo) {
+            if ($argInfo->isVariadic) {
+                $hasVariadic = true;
+                break;
+            }
+        }
+        if (!$hasVariadic) {
+            $code .= "\tZEND_ARG_VARIADIC_INFO(0, _extra_args)\n";
         }
 
         $code .= "ZEND_END_ARG_INFO()";
