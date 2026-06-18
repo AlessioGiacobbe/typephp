@@ -307,6 +307,11 @@ class Clang extends CompilerBackend
             $cmd .= ' -std=' . $options['cpp_std'];
         }
         
+        // 目标 CPU 指令集
+        if (!empty($options['march'])) {
+            $cmd .= ' -march=' . $options['march'];
+        }
+        
         // Sanitizer
         if (!empty($options['sanitize'])) {
             $cmd .= ' -fsanitize=' . $options['sanitize'];
@@ -396,6 +401,11 @@ class Clang extends CompilerBackend
         // C++ 标准
         if (!empty($config['cpp_std'])) {
             $cmd .= ' -std=' . $config['cpp_std'];
+        }
+        
+        // 目标 CPU 指令集
+        if (!empty($config['march'])) {
+            $cmd .= ' -march=' . $config['march'];
         }
         
         // PIC (Position Independent Code)

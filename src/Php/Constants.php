@@ -163,6 +163,12 @@ class Constants
             'required'    => false,
             'defaultValue' => 'c++17',
         ],
+        'march' => [
+            'longPrefix'  => 'march',
+            'description' => 'Target CPU instruction set for code generation (e.g. native, x86-64-v3, armv8-a)',
+            'required'    => false,
+            'defaultValue' => '',
+        ],
         'build-dir' => [
             'longPrefix'  => 'build-dir',
             'description' => 'Specify the build directory for generated C++ code',

@@ -241,6 +241,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected string $buildMode = self::BUILD_MODE_BIN;
     protected string $cxxFlags = '';
     protected string $cxxStd = 'c++17';
+    protected string $march = '';            // --march: target CPU instruction set (e.g. native, x86-64-v3)
     protected string $ldflags = '';
     protected array $linkLibs = [];    // --link-lib / -l: user-specified libraries to link
     protected array $linkPaths = [];   // --link-path / -L: user-specified library search paths
@@ -771,6 +772,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     public function getLinkPaths(): array
     {
         return $this->linkPaths;
+    }
+
+    public function getMarch(): string
+    {
+        return $this->march;
     }
 
     public function getRelativePath($path, $cwd = ''): string

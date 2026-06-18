@@ -227,6 +227,8 @@ class Translator extends Preprocessor
         $climate->tab()->out('-D, --define <macro>  Define a preprocessor macro (repeatable, e.g. -D FOO=bar)');
         $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
         $climate->tab()->out('--format             Enable clang-format code formatting (disabled by default)');
+        $climate->tab()->out('--cxx-std <ver>      C++ standard version (c++17, c++20, etc., default: c++17)');
+        $climate->tab()->out('--march <arch>       Target CPU instruction set (e.g. native, x86-64-v3, armv8-a)');
         $climate->tab()->out('-l, --link-lib <lib> Link against a library (repeatable, e.g. -lcurl)');
         $climate->tab()->out('-L, --link-path <dir> Add a library search path (repeatable, e.g. -L/usr/local/lib)');
         $climate->br();
@@ -240,6 +242,8 @@ class Translator extends Preprocessor
         $climate->tab()->out($cmd . ' gui-app.php --no-console  (Windows GUI app, no console)');
         $climate->tab()->out($cmd . ' app.php --sanitize=address  (Enable AddressSanitizer)');
         $climate->tab()->out($cmd . ' app.php --cxx-std=c++17  (Use C++17 standard)');
+        $climate->tab()->out($cmd . ' app.php --march=native -O2  (Optimize for host CPU)');
+        $climate->tab()->out($cmd . ' app.php --march=x86-64-v3 -O2  (Target x86-64-v3 instructions)');
         $climate->tab()->out($cmd . ' app.php --no-literal-strings  (Disable string optimization)');
         $climate->tab()->out($cmd . ' app.php -r -O2 -- --flag1 value1');
         $climate->tab()->out($cmd . ' hello.php --dry  (only generate C++ code, skip compilation)');
@@ -305,6 +309,11 @@ class Translator extends Preprocessor
         // C++ 标准版本
         if ($this->climate->arguments->defined('cxx-std')) {
             $this->cxxStd = $this->climate->arguments->get('cxx-std');
+        }
+
+        // 目标 CPU 指令集
+        if ($this->climate->arguments->defined('march')) {
+            $this->march = $this->climate->arguments->get('march');
         }
 
         // 构建目录
@@ -1398,6 +1407,7 @@ CODE;
             'debug' => $this->debug,
             'sanitize' => $this->sanitize,
             'cpp_std' => $this->cxxStd,
+            'march' => $this->march,
             'is_zts' => $this->isPhpZts,
             'build_mode' => $this->buildMode,
             'enable_profiler' => $this->enableProfiler,
@@ -1436,6 +1446,7 @@ CODE;
             'build_mode' => $this->buildMode,
             'enable_profiler' => $this->enableProfiler,
             'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
+            'march' => $this->march,
         ];
     }
 
@@ -1879,6 +1890,12 @@ CODE;
         $cxxStd = $cfg['cxx-std'] ?? null;
         if (!empty($cxxStd)) {
             $this->cxxStd = $cxxStd;
+        }
+
+        // 读取 march（目标 CPU 指令集）
+        $march = $cfg['march'] ?? null;
+        if (!empty($march)) {
+            $this->march = $march;
         }
 
         // 读取 ld-flags

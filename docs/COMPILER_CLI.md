@@ -324,6 +324,8 @@ OPTIONS:
     --dry                Dry run: only generate C++ code, skip compilation and linking
     --lto                Enable Link Time Optimization (-flto)
     --format             Enable clang-format code formatting (disabled by default)
+    --cxx-std <ver>      C++ standard version (c++17, c++20, etc., default: c++17)
+    --march <arch>       Target CPU instruction set (e.g. native, x86-64-v3, armv8-a)
     -l, --link-lib <lib> Link against a library (repeatable, e.g. -lcurl)
     -L, --link-path <dir> Add a library search path (repeatable, e.g. -L/usr/local/lib)
     --build-dir <dir>    Specify build directory for generated C++ code
@@ -562,6 +564,41 @@ EXAMPLES:
 ```
 
 **与 GCC/Clang 等价**: `-L<dir>` 直接传递给链接器的 `-L` 选项。
+
+---
+
+### 18. `--march <arch>` - 目标 CPU 指令集
+
+**类型**: 单值参数
+
+指定编译器生成针对特定 CPU 架构优化的代码。等价于 GCC/Clang 的 `-march=<arch>` 选项。
+
+**常用值**:
+| 值 | 说明 |
+|---|---|
+| `native` | 自动检测并优化当前 CPU 支持的指令集 |
+| `x86-64-v3` | x86-64 微架构级别 3 (AVX, AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, XSAVE) |
+| `x86-64-v4` | x86-64 微架构级别 4 (AVX512F, AVX512BW, AVX512CD, AVX512DQ, AVX512VL) |
+| `armv8-a` | ARMv8-A 基础架构 |
+| `armv8.1-a` | ARMv8.1-A |
+| `armv8.2-a` | ARMv8.2-A |
+| `armv9-a` | ARMv9-A |
+
+> **⚠️ 注意**: `--march` 仅适用于 GCC/Clang 编译器。MSVC 不支持此选项，请使用 `--cxx-flags /arch:AVX2` 等方式。
+
+**示例**:
+```bash
+# 优化当前机器运行的 CPU
+./bin/compiler.php app.php --march=native -O2
+
+# 特定目标架构
+./bin/compiler.php app.php --march=x86-64-v3 -O2
+
+# ARM 平台
+./bin/compiler.php app.php --march=armv8-a -O2
+```
+
+**与 GCC/Clang 等价**: `--march=<arch>` 直接传递给编译器的 `-march=<arch>` 选项。
 
 ---
 
