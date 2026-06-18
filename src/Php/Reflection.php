@@ -183,4 +183,36 @@ class Reflection
         }
         return $class->isAbstract();
     }
+
+    /**
+     * 当参数索引超出声明范围时，尝试将最后一个参数作为变长参数（...$rest）获取。
+     * 返回变长参数对象或 null。
+     */
+    public static function getVariadicParameter(string $funcName, string $className = ''): ?\ReflectionParameter
+    {
+        if ($className) {
+            $classRef = self::getClass($className);
+            if (!$classRef) {
+                return null;
+            }
+            try {
+                $params = $classRef->getMethod($funcName)->getParameters();
+            } catch (\ReflectionException) {
+                return null;
+            }
+        } else {
+            $funcRef = self::getFunction($funcName);
+            if (!$funcRef) {
+                return null;
+            }
+            $params = $funcRef->getParameters();
+        }
+
+        if (empty($params)) {
+            return null;
+        }
+
+        $lastParam = end($params);
+        return $lastParam->isVariadic() ? $lastParam : null;
+    }
 }

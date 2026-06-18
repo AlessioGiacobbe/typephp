@@ -2941,7 +2941,14 @@ class CompilerBase extends \PhpAot\Core\Translator
         } else {
             $param = Reflection::getFunctionParameter($funcName, $argIndex);
         }
-        return $param && $param->isPassedByReference();
+
+        if ($param) {
+            return $param->isPassedByReference();
+        }
+
+        // 参数索引超出声明范围，检查最后一个参数是否为变长引用参数（如 &...$rest）
+        $variadicParam = Reflection::getVariadicParameter($funcName, $className);
+        return $variadicParam !== null && $variadicParam->isPassedByReference();
     }
 
     protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
@@ -4478,6 +4485,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             $node->setAttribute('chainOpResult', $result);
             return $fn . '(' . $var . ', {' . implode(', ', $list) . '}, ' . $result . ')';
         } else {
+            // toReference(var, {}) 返回空引用，空链时改用成员函数形式
+            if ($op === self::OP_REFVAL && empty($list)) {
+                return $var . '.toReference()';
+            }
             return $fn . '(' . $var . ', {' . implode(', ', $list) . '})';
         }
     }
