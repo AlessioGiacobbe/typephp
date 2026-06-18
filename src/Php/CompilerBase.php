@@ -334,6 +334,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected bool $bigintTypes = false;
     protected string $rootPath;
     protected string $buildDir;
+    protected string $outputDir = '';    // -o 参数指定的输出目录
     protected int $debugLine = 0;
     protected CLImate $climate;
     protected bool $stubFile = false;
@@ -2389,6 +2390,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         if ($extension !== '' && !str_ends_with($targetFile, $extension)) {
             $targetFile .= $extension;
+        }
+
+        if ($this->outputDir !== '') {
+            $targetFile = rtrim($this->outputDir, '/\\') . '/' . $targetFile;
         }
 
         return $targetFile;

@@ -412,6 +412,11 @@ class Translator extends Preprocessor
         if ($this->climate->arguments->defined('output')) {
             $name = $this->climate->arguments->get('output');
         }
+        // 如果指定了路径（包含目录分隔符），提取目录和文件名
+        if (str_contains($name, '/') || str_contains($name, '\\')) {
+            $this->outputDir = dirname($name);
+            $name = basename($name);
+        }
         $name = str_replace(['-', '*'], '_', $name);
         if (!preg_match('/^[a-zA-Z0-9_]+$/', $name)) {
             $this->climate->red('The target name `' . $name . '` must be a valid identifier');
