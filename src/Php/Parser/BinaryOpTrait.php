@@ -121,6 +121,8 @@ trait BinaryOpTrait
             $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_FLOAT);
         }
 
+        $this->guardLiteralDivisionByZero($right, $op);
+
         if ($op === '%' and !($leftType === self::TYPE_INT and $rightType === self::TYPE_INT)) {
             return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
         }
@@ -351,6 +353,31 @@ trait BinaryOpTrait
     protected function parseBinaryOpDiv(Expr\BinaryOp\Div $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '/');
+    }
+
+    protected function guardLiteralDivisionByZero(NodeAbstract $right, string $op): void
+    {
+        if (($op === '/' or $op === '%' or $op === '/=' or $op === '%=') and $this->isZeroLiteral($right)) {
+            $this->fatalError($right, 'Cannot divide or modulo by zero');
+        }
+    }
+
+    protected function isZeroLiteral(NodeAbstract $expr): bool
+    {
+        if ($expr instanceof Node\Scalar\Int_) {
+            return $expr->value === 0;
+        }
+        if ($expr instanceof Node\Scalar\Float_) {
+            return $expr->value == 0.0;
+        }
+        if ($expr instanceof Expr\UnaryMinus || $expr instanceof Expr\UnaryPlus) {
+            return $this->isZeroLiteral($expr->expr);
+        }
+        if ($expr instanceof Node\Scalar\String_) {
+            $value = trim($expr->value);
+            return $value !== '' && is_numeric($value) && (float) $value == 0.0;
+        }
+        return false;
     }
 
     protected function parseBinaryOpMinus(Expr\BinaryOp\Minus $expr): string

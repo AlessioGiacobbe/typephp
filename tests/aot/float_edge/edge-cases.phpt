@@ -18,7 +18,6 @@ function main(): void {
     echo -INF . "\n";
     var_dump(INF + INF);
     var_dump(INF / INF);
-    var_dump(0.0 / 0.0);
 }
 ?>
 --EXPECT--
@@ -36,5 +35,4 @@ NAN
 INF
 -INF
 float(INF)
-float(NAN)
 float(NAN)
