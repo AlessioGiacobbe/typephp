@@ -5728,25 +5728,37 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if ($stmt instanceof Node\Stmt\Class_) {
             $stmt = clone $stmt;
+            $shouldAddMixedReturn = fn (Node\Stmt\Class_ $class, Node\Stmt\ClassMethod $method): bool =>
+                $this->shouldAddMixedReturnToEmbeddedClassMethod($class, $method);
             $traverser = new \PhpParser\NodeTraverser();
-            $traverser->addVisitor(new class extends \PhpParser\NodeVisitorAbstract {
+            $traverser->addVisitor(new class($shouldAddMixedReturn) extends \PhpParser\NodeVisitorAbstract {
+                /** @var list<Node\Stmt\Class_> */
+                private array $classStack = [];
+
+                public function __construct(private \Closure $shouldAddMixedReturn)
+                {
+                }
+
                 public function enterNode(Node $node)
                 {
-                    if (!$node instanceof Node\Stmt\ClassMethod || $node->returnType !== null) {
+                    if ($node instanceof Node\Stmt\Class_) {
+                        $this->classStack[] = $node;
                         return null;
                     }
 
-                    $returnType = match (strtolower($node->name->toString())) {
-                        '__construct', '__destruct' => null,
-                        '__set', '__unserialize', '__unset', '__wakeup', '__clone' => 'void',
-                        '__tostring' => 'string',
-                        '__serialize', '__debuginfo', '__sleep' => 'array',
-                        '__isset' => 'bool',
-                        '__set_state' => 'object',
-                        default => 'mixed',
-                    };
-                    if ($returnType !== null) {
-                        $node->returnType = new Node\Identifier($returnType);
+                    if ($node instanceof Node\Stmt\ClassMethod && $node->returnType === null) {
+                        $class = $this->classStack[count($this->classStack) - 1] ?? null;
+                        if ($class !== null && ($this->shouldAddMixedReturn)($class, $node)) {
+                            $node->returnType = new Node\Identifier('mixed');
+                        }
+                    }
+                    return null;
+                }
+
+                public function leaveNode(Node $node)
+                {
+                    if ($node instanceof Node\Stmt\Class_) {
+                        array_pop($this->classStack);
                     }
                     return null;
                 }
@@ -5754,6 +5766,70 @@ class CompilerBase extends \PhpAot\Core\Translator
             $stmt = $traverser->traverse([$stmt])[0];
         }
         return $this->printer->prettyPrint([$stmt]);
+    }
+
+    protected function shouldAddMixedReturnToEmbeddedClassMethod(Node\Stmt\Class_ $class, Node\Stmt\ClassMethod $method): bool
+    {
+        $methodName = strtolower($method->name->toString());
+        if ($this->isEmbeddedMagicMethodReturnSensitive($methodName)) {
+            return false;
+        }
+
+        if (!empty($class->implements)) {
+            return true;
+        }
+
+        return $class->extends !== null
+            && $this->ancestorMethodMayRequireMixedReturn($class->extends, $methodName);
+    }
+
+    protected function isEmbeddedMagicMethodReturnSensitive(string $methodName): bool
+    {
+        return in_array($methodName, [
+            '__construct',
+            '__destruct',
+            '__clone',
+            '__debuginfo',
+            '__isset',
+            '__serialize',
+            '__set',
+            '__set_state',
+            '__sleep',
+            '__tostring',
+            '__unserialize',
+            '__unset',
+            '__wakeup',
+        ], true);
+    }
+
+    protected function ancestorMethodMayRequireMixedReturn(Node\Name $extends, string $methodName): bool
+    {
+        $className = ltrim($extends->toString(), '\\');
+
+        while ($className !== '') {
+            if ($this->hasClass($className)) {
+                $classDef = $this->getClass($className);
+                if ($classDef->hasMethod($methodName)) {
+                    $functionDef = $classDef->getMethod($methodName)->functionDef;
+                    return $functionDef !== null
+                        && ($functionDef->returnTypeUndeclared || $functionDef->returnType === self::TYPE_VAR);
+                }
+                $className = $classDef->extends;
+                continue;
+            }
+
+            if ($this->isInternalClass($className) || $this->isInternalInterface($className)) {
+                if (!Reflection::hasMethod($className, $methodName)) {
+                    return false;
+                }
+                $returnType = Reflection::getMethodReturnType($className, $methodName);
+                return $returnType === null || strtolower($returnType) === 'mixed';
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     protected function parseArrowFunction(Expr\ArrowFunction $expr): string

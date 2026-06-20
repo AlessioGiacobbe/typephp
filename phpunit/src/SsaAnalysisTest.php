@@ -816,7 +816,20 @@ class SsaAnalysisTest extends TestCase
         ));
 
         $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
-        $this->assertSame([], $result, 'Passing the object to a dynamic call cannot unset the property, so it is not dangerous');
+        $this->assertSame(['a' => true], $result, 'Passing the object to dynamic code may turn a property slot into a reference');
+    }
+
+    public function testCollectDangerousPropOpsObjectMethodReceiverWildcard(): void
+    {
+        $methodCall = new Expr\MethodCall(new Expr\Variable('obj'), 'mutate');
+        $stmt = new Stmt\Expression($methodCall);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertSame(['a' => true], $result);
     }
 
     public function testCollectDangerousPropOpsInternalFunctionObjectArgumentIsSafe(): void
