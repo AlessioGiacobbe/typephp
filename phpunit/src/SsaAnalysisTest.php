@@ -647,7 +647,7 @@ class SsaAnalysisTest extends TestCase
         ));
 
         $result = $this->invoke('hasDangerousPropOps', 'obj', [$unset, $read]);
-        $this->assertTrue($result, 'unset($obj->prop) before a later access should be detected');
+        $this->assertFalse($result, 'unset($obj->prop) is blocked by the object handlers and cannot invalidate a hoisted reference');
     }
 
     public function testHasDangerousPropOpsUnsetDifferentObj(): void
@@ -735,9 +735,9 @@ class SsaAnalysisTest extends TestCase
     {
         $objVar = new Expr\Variable('obj');
         $propFetch = new Expr\PropertyFetch($objVar, 'prop');
-        $unset = new Stmt\Unset_([$propFetch]);
+        $assignRef = new Expr\AssignRef(new Expr\Variable('ref'), $propFetch);
         $ifStmt = new Stmt\If_(new Expr\ConstFetch(new Node\Name('true')), [
-            'stmts' => [$unset],
+            'stmts' => [new Stmt\Expression($assignRef)],
             'elseifs' => [],
             'else' => null,
         ]);
@@ -747,7 +747,7 @@ class SsaAnalysisTest extends TestCase
         ));
 
         $result = $this->invoke('hasDangerousPropOps', 'obj', [$ifStmt, $read]);
-        $this->assertTrue($result, 'unset inside if before a later access should be detected');
+        $this->assertTrue($result, '&$obj->prop inside if before a later access should be detected');
     }
 
     public function testHasDangerousPropOpsNestedRefvalInAssignment(): void
@@ -796,13 +796,13 @@ class SsaAnalysisTest extends TestCase
     public function testCollectDangerousPropOpsDynamicPropertyWildcard(): void
     {
         $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), new Expr\Variable('prop'));
-        $unset = new Stmt\Unset_([$propFetch]);
+        $write = new Stmt\Expression(new Expr\Assign($propFetch, new Scalar\LNumber(5)));
         $read = new Stmt\Expression(new Expr\Assign(
             new Expr\Variable('value'),
             new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
         ));
 
-        $result = $this->invoke('collectDangerousPropOps', 'obj', [$unset, $read]);
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$write, $read]);
         $this->assertSame(['a' => true], $result);
     }
 
@@ -816,7 +816,7 @@ class SsaAnalysisTest extends TestCase
         ));
 
         $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
-        $this->assertSame(['a' => true], $result);
+        $this->assertSame([], $result, 'Passing the object to a dynamic call cannot unset the property, so it is not dangerous');
     }
 
     public function testCollectDangerousPropOpsInternalFunctionObjectArgumentIsSafe(): void

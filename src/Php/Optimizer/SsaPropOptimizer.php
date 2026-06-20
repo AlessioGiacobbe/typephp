@@ -13,17 +13,19 @@
  *  2. No REFERENCE / ESCAPED / KILLED flags on the object's SSA vars
  *  3. Class has no __get / __set magic methods
  *  4. Property has a declared native type (int or float)
- *  5. No unset($o->prop) on the property
- *  6. No &$o->prop (reference capture of the property)
- *  7. No func(&$o->prop) (property passed by reference)
- *  8. First access is not inside a loop or nested block scope
+ *  5. No &$o->prop (reference capture of the property)
+ *  6. No func(&$o->prop) (property passed by reference)
+ *  7. First access is not inside a loop or nested block scope
+ *
+ * unset($o->prop) and exposing the object to dynamic calls are NOT dangerous:
+ * the object handlers reject property unset, so a hoisted reference cannot be
+ * invalidated by either path.
  */
 
 namespace PhpAot\Php\Optimizer;
 
 use PhpAot\Php\Analysis\SsaBuilder;
 use PhpAot\Php\Analysis\SsaFlags;
-use PhpAot\Php\Reflection;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 
@@ -263,9 +265,11 @@ trait SsaPropOptimizer
      * Scan function body for dangerous operations on object properties.
      *
      * Detects:
-     *  - unset($o->prop) — destroys property slot
      *  - $ref = &$o->prop — property becomes reference, zval type changes
      *  - func(&$o->prop) or $obj->method(&$o->prop) — property passed by ref
+     *
+     * unset($o->prop) and passing the object to dynamic calls are intentionally
+     * not treated as dangerous: the object handlers reject property unset.
      */
     protected function hasDangerousPropOps(string $objName, array $stmts): bool
     {
@@ -302,9 +306,10 @@ trait SsaPropOptimizer
 
         if ($node instanceof Node\Stmt\Unset_) {
             foreach ($node->vars as $var) {
+                // unset($o->prop) cannot destroy the slot: the object handlers
+                // reject property unset, so a hoisted reference stays valid.
                 $propName = $this->getPropNameOfObj($var, $objName);
                 if ($propName !== null) {
-                    $events[] = ['kind' => 'danger', 'prop' => $propName];
                     $this->collectPropEventsInDynamicParts($var, $objName, $events);
                 } else {
                     $this->collectPropEvents($var, $objName, $events);
@@ -372,17 +377,12 @@ trait SsaPropOptimizer
                     $this->collectPropEvents($arg->value, $objName, $events);
                 }
             }
-            if (!$this->isSafeObjectExposureCall($node)) {
-                if (($node instanceof Expr\MethodCall || $node instanceof Expr\NullsafeMethodCall)
-                    && $this->isVarNamed($node->var, $objName)) {
-                    $events[] = ['kind' => 'danger', 'prop' => '*'];
-                }
-                foreach ($node->args as $arg) {
-                    if ($this->exprMayExposeObject($arg->value, $objName)) {
-                        $events[] = ['kind' => 'danger', 'prop' => '*'];
-                    }
-                }
-            }
+            // Exposing the object to a dynamic call (passing it as an argument or
+            // invoking a non-internal method on it) can no longer invalidate a
+            // hoisted property: the callee cannot unset the property, since the
+            // object handlers reject property unset. Only explicit by-reference
+            // captures (handled above) and direct &/refval on the property remain
+            // dangerous, so the receiver/argument exposure check is unnecessary.
             return;
         }
 
@@ -436,60 +436,6 @@ trait SsaPropOptimizer
                 }
             }
         }
-    }
-
-    protected function isSafeObjectExposureCall(Expr\FuncCall|Expr\MethodCall|Expr\StaticCall|Expr\NullsafeMethodCall $node): bool
-    {
-        if ($node instanceof Expr\FuncCall) {
-            return $node->name instanceof Node\Name
-                && $this->isInternalFunctionName($node->name);
-        }
-
-        if ($node instanceof Expr\StaticCall) {
-            return $node->class instanceof Node\Name
-                && $node->name instanceof Node\Identifier
-                && $this->isInternalClassCall($this->resolveStaticCallClassForSafety($node->class), $node->name->toString());
-        }
-
-        if (!$node->name instanceof Node\Identifier) {
-            return false;
-        }
-
-        $className = $this->detectClassOfExpr($node->var);
-        return $this->isInternalClassCall($className, $node->name->toString());
-    }
-
-    protected function isInternalFunctionName(Node\Name $name): bool
-    {
-        $functionName = ltrim($name->toString(), '\\');
-
-        if (str_contains($functionName, '\\')) {
-            return false;
-        }
-
-        return $this->isInternalFunction($functionName) || $this->isInternalFunction(strtolower($functionName));
-    }
-
-    protected function resolveStaticCallClassForSafety(Node\Name $classNode): string
-    {
-        $className = $classNode->toString();
-        if ($className === 'self') {
-            return $this->classDef ? $this->getFullClassName() : '';
-        }
-        if ($className === 'parent') {
-            return $this->classDef ? $this->classDef->extends : '';
-        }
-        if ($className === 'static') {
-            return '';
-        }
-        return $this->getNamespacedClassName($className);
-    }
-
-    protected function isInternalClassCall(string $className, string $methodName): bool
-    {
-        return $className !== ''
-            && ($this->isInternalClass($className) || $this->isInternalInterface($className))
-            && Reflection::hasMethod($className, $methodName);
     }
 
     /**

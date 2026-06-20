@@ -3,7 +3,7 @@ Type Declarations
 --FILE--
 <?php
 class SmallerTenClass {
-    public static function smallerTen($input) {
+    public static function smallerTen($input, $key) {
         return $input < 10;
     }
 }

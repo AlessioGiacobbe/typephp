@@ -1181,7 +1181,7 @@ class ReturnInfo {
      * based on the PHP version. Separate to allow using early returns
      */
     private function beginArgInfoCompatible(string $funcInfoName, int $minArgs): string {
-        $effectiveType = $this->type ?? ($this->isInferredPhpDocType ? null : $this->phpDocType);
+        $effectiveType = $this->type ?? $this->phpDocType;
         if ($effectiveType !== null) {
             if (null !== $simpleReturnType = $effectiveType->tryToSimpleType()) {
                 if ($simpleReturnType->isBuiltin) {
@@ -3781,7 +3781,11 @@ class ClassInfo {
             $code .= $php80CondEnd;
         }
 
-        $code .= "\n\tclass_entry->default_object_handlers = &php_aot_object_handlers;\n";
+        $code .= "\n\tstatic zend_object_handlers class_object_handlers;";
+        $code .= "\n\tmemcpy(&class_object_handlers, class_entry->default_object_handlers, sizeof(zend_object_handlers));";
+        $code .= "\n\tclass_object_handlers.unset_property = php_aot_unset_typed_property;";
+        $code .= "\n\tclass_entry->default_object_handlers = &class_object_handlers;";
+        $code .= "\n";
 
         $code .= "\n\treturn class_entry;\n";
 

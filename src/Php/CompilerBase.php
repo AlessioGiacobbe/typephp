@@ -5726,6 +5726,33 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function genEmbeddedCode(NodeAbstract $stmt): string
     {
+        if ($stmt instanceof Node\Stmt\Class_) {
+            $stmt = clone $stmt;
+            $traverser = new \PhpParser\NodeTraverser();
+            $traverser->addVisitor(new class extends \PhpParser\NodeVisitorAbstract {
+                public function enterNode(Node $node)
+                {
+                    if (!$node instanceof Node\Stmt\ClassMethod || $node->returnType !== null) {
+                        return null;
+                    }
+
+                    $returnType = match (strtolower($node->name->toString())) {
+                        '__construct', '__destruct' => null,
+                        '__set', '__unserialize', '__unset', '__wakeup', '__clone' => 'void',
+                        '__tostring' => 'string',
+                        '__serialize', '__debuginfo', '__sleep' => 'array',
+                        '__isset' => 'bool',
+                        '__set_state' => 'object',
+                        default => 'mixed',
+                    };
+                    if ($returnType !== null) {
+                        $node->returnType = new Node\Identifier($returnType);
+                    }
+                    return null;
+                }
+            });
+            $stmt = $traverser->traverse([$stmt])[0];
+        }
         return $this->printer->prettyPrint([$stmt]);
     }
 
