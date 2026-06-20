@@ -1232,21 +1232,20 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function isZeroLiteral(NodeAbstract $expr): bool
     {
         if ($expr instanceof Node\Scalar\Int_) {
-            $result = $expr->value === 0;
-            return $result;
+            return $expr->value === 0;
         }
         if ($expr instanceof Node\Scalar\Float_) {
-            $result = $expr->value == 0.0;
-            return $result;
+            return $expr->value == 0.0;
         }
         if ($expr instanceof Expr\UnaryMinus || $expr instanceof Expr\UnaryPlus) {
-            $result = $this->isZeroLiteral($expr->expr);
-            return $result;
+            return $this->isZeroLiteral($expr->expr);
         }
         if ($expr instanceof Node\Scalar\String_) {
             $value = trim($expr->value);
-            $result = $value !== '' && is_numeric($value) && (float) $value == 0.0;
-            return $result;
+            return $value !== '' && is_numeric($value) && (float)$value == 0.0;
+        }
+        if ($expr instanceof Node\Expr\ConstFetch or $expr instanceof Node\Expr\ClassConstFetch) {
+            return in_array($this->parseExpr($expr), ['0L', '0LL']);
         }
         return false;
     }
