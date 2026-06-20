@@ -669,6 +669,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->isStdContainer($varName)) {
                     return $varName . '_ref';
                 }
+                // $GLOBALS is an INDIRECT to &EG(symbol_table),
+                // whose refcount MUST NOT be directly manipulated.
+                // Use php_globals_array() to create a separated copy.
+                if ($varName === 'GLOBALS') {
+                    return 'php_globals_array()';
+                }
                 return $varName;
             case 'Scalar_MagicConst_File':
             case 'Scalar_MagicConst_Dir':
@@ -3155,6 +3161,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
         $expr = $this->parseIdentifier($arg->value);
+        if ($this->isVarExpr($arg->value) and $arg->value->name === 'GLOBALS') {
+            return 'php_globals_array()';
+        }
         if ($this->isVarExpr($arg->value) and $this->isStdContainer($arg->value->name)) {
             return $this->convertArrayExpr($expr . '_ref');
         }
@@ -5664,6 +5673,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         $code .= $this->genLocalVarDecl($this->context->localVars);
         foreach ($this->context->globalVars as $name => $type) {
+            // $GLOBALS is handled via php_globals_array() at each read site
+            if ($name === 'GLOBALS') {
+                continue;
+            }
             $code .= $this->getIndent() . self::TYPE_VAR . ' &' . $name . ' = ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
         }
         foreach ($this->context->objectProps as $name => $info) {

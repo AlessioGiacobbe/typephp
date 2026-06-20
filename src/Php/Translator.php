@@ -864,12 +864,9 @@ CODE;
         $code .= '// global vars ' . PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
             if ($name == 'GLOBALS') {
-                $var = $this->escapeGlobalVar($name);
-                $code .= 'ZVAL_ARR(&globals_array, &EG(symbol_table));' . PHP_EOL;
-                $code .= 'ZVAL_INDIRECT(' . $var. '.ptr(), &globals_array);' . PHP_EOL;
-            } else {
-                $code .= 'php::initGlobal(' . $this->genCharPtr($name) . ', ' . $this->escapeGlobalVar($name) . ');' . PHP_EOL;
+                continue;
             }
+            $code .= 'php::initGlobal(' . $this->genCharPtr($name) . ', ' . $this->escapeGlobalVar($name) . ');' . PHP_EOL;
         }
 
         $code .= '// static property ' . PHP_EOL;

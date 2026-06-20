@@ -336,7 +336,11 @@ trait FuncCallOptimizer
 
     protected function getArg(Node\Expr\FuncCall $expr, int $i): string
     {
-        return $this->parseIdentifier($expr->args[$i]->value);
+        $arg = $expr->args[$i]->value;
+        if ($this->isVarExpr($arg) and $arg->name === 'GLOBALS') {
+            return 'php_globals_array()';
+        }
+        return $this->parseIdentifier($arg);
     }
 
     protected function getRefArg(Node\Expr\FuncCall $expr, int $i): string
