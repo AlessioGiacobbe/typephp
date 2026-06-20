@@ -3262,20 +3262,35 @@ class PropertyInfo extends VariableLike
         $code = "\n";
 
         $propertyName = $this->name->getDeclarationName();
+        $simpleType = $this->type !== null ? $this->type->tryToSimpleType() : null;
+        $hasNullDefault = $this->defaultValue instanceof Expr\ConstFetch
+            && $this->defaultValue->name->toLowerString() === 'null';
+        $useEmptyArrayDefault = $this->defaultValue !== null
+            && !$this->defaultValue instanceof Expr\New_
+            && !$hasNullDefault
+            && (
+                $this->defaultValue instanceof Expr\Array_
+                || ($simpleType !== null && $simpleType->isArray())
+            );
 
-        // New 操作作为属性的默认值，需编译器处理 gen_stub 作为 null 值
-        if ($this->defaultValue === null || $this->defaultValue instanceof Expr\New_) {
-            $defaultValue = EvaluatedValue::null();
-        } else {
-            $defaultValue = EvaluatedValue::createFromExpression($this->defaultValue, null, null, $allConstInfos);
-            if ($defaultValue->isUnknownConstValue || ($defaultValue->originatingConsts && $defaultValue->getCExpr() === null)) {
-                echo "Skipping code generation for property $this->name, because it has an unknown constant default value\n";
-                return "";
+        if (!$useEmptyArrayDefault) {
+            // New 操作作为属性的默认值，需编译器处理 gen_stub 作为 null 值
+            if ($this->defaultValue === null || $this->defaultValue instanceof Expr\New_) {
+                $defaultValue = EvaluatedValue::null();
+            } else {
+                $defaultValue = EvaluatedValue::createFromExpression($this->defaultValue, null, null, $allConstInfos);
+                if ($defaultValue->isUnknownConstValue || ($defaultValue->originatingConsts && $defaultValue->getCExpr() === null)) {
+                    echo "Skipping code generation for property $this->name, because it has an unknown constant default value\n";
+                    return "";
+                }
             }
         }
 
         $zvalName = "property_{$propertyName}_default_value";
-        if ($this->defaultValue === null && $this->type !== null) {
+        if ($useEmptyArrayDefault) {
+            $code .= "\tzval $zvalName;\n";
+            $code .= "\tZVAL_EMPTY_ARRAY(&$zvalName);\n";
+        } elseif ($this->defaultValue === null && $this->type !== null) {
             $code .= "\tzval $zvalName;\n";
             if ($this->flags & Modifiers::READONLY || $this->classFlags & Modifiers::READONLY) {
                 $code .= "\tZVAL_UNDEF(&$zvalName);\n";
