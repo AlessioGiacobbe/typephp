@@ -281,7 +281,7 @@ class Preprocessor extends CompilerBase
             $argInfo->byRef = $param->byRef;
             $argInfo->variadic = $param->variadic;
             $argInfo->property = $param->isPromoted();
-            if ($param->type and $param->type instanceof NullableType) {
+            if ($param->type === null || $param->type instanceof NullableType) {
                 $argInfo->nullable = true;
             }
             if ($param->type instanceof NullableType or $param->type instanceof UnionType) {

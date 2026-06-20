@@ -1110,12 +1110,21 @@ class ReturnInfo {
     public /* readonly */ ?Type $phpDocType;
     public /* readonly */ bool $tentativeReturnType;
     public /* readonly */ string $refcount;
+    private bool $isInferredPhpDocType;
 
-    public function __construct(bool $byRef, ?Type $type, ?Type $phpDocType, bool $tentativeReturnType, ?string $refcount) {
+    public function __construct(
+        bool $byRef,
+        ?Type $type,
+        ?Type $phpDocType,
+        bool $tentativeReturnType,
+        ?string $refcount,
+        bool $isInferredPhpDocType = false
+    ) {
         $this->byRef = $byRef;
         $this->type = $type;
         $this->phpDocType = $phpDocType;
         $this->tentativeReturnType = $tentativeReturnType;
+        $this->isInferredPhpDocType = $isInferredPhpDocType;
         $this->setRefcount($refcount);
     }
 
@@ -1172,7 +1181,7 @@ class ReturnInfo {
      * based on the PHP version. Separate to allow using early returns
      */
     private function beginArgInfoCompatible(string $funcInfoName, int $minArgs): string {
-        $effectiveType = $this->type ?? $this->phpDocType;
+        $effectiveType = $this->type ?? ($this->isInferredPhpDocType ? null : $this->phpDocType);
         if ($effectiveType !== null) {
             if (null !== $simpleReturnType = $effectiveType->tryToSimpleType()) {
                 if ($simpleReturnType->isBuiltin) {
@@ -2250,18 +2259,6 @@ OUPUT_EXAMPLE
 
         foreach ($this->args as $argInfo) {
             $code .= $argInfo->toZendInfo();
-        }
-
-        // Add trailing variadic to accept extra callback arguments (e.g. array_all passes value + key)
-        $hasVariadic = false;
-        foreach ($this->args as $argInfo) {
-            if ($argInfo->isVariadic) {
-                $hasVariadic = true;
-                break;
-            }
-        }
-        if (!$hasVariadic) {
-            $code .= "\tZEND_ARG_VARIADIC_INFO(0, _extra_args)\n";
         }
 
         $code .= "ZEND_END_ARG_INFO()";
@@ -4991,7 +4988,11 @@ function parseFunctionLike(
             $type = $param->type ? Type::fromNode($param->type) : null;
             if ($type === null && !isset($docParamTypes[$varName])) {
                 $defaultParamType = getMagicMethodDefaultParamType($name, $i);
-                $type = Type::fromString($defaultParamType ?? 'mixed');
+                if ($defaultParamType !== null) {
+                    $type = Type::fromString($defaultParamType);
+                } else {
+                    $docParamTypes[$varName] = 'mixed';
+                }
             }
 
             if ($param->default instanceof Expr\ConstFetch &&
@@ -5034,8 +5035,15 @@ function parseFunctionLike(
         }
 
         $returnType = $func->getReturnType();
+        $isInferredReturnType = false;
         if ($returnType === null && $docReturnType === null && !$name->isConstructor() && !$name->isDestructor()) {
-            $docReturnType = getMagicMethodDefaultReturnType($name) ?? 'mixed';
+            $defaultReturnType = getMagicMethodDefaultReturnType($name);
+            if ($defaultReturnType !== null) {
+                $docReturnType = $defaultReturnType;
+            } else {
+                $docReturnType = 'mixed';
+                $isInferredReturnType = true;
+            }
         }
 
         $return = new ReturnInfo(
@@ -5043,7 +5051,8 @@ function parseFunctionLike(
             $returnType ? Type::fromNode($returnType) : null,
             $docReturnType ? Type::fromString($docReturnType) : null,
             $tentativeReturnType,
-            $refcount
+            $refcount,
+            $isInferredReturnType
         );
 
         return new FuncInfo(
