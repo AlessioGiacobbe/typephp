@@ -17,4 +17,14 @@ class UndefineTest extends \BaseTest
     {
         $this->exec('Attempt to unset static property', 'unset-static-prop.php');
     }
+
+    public function testPropertyAccessOnUndefinedVar(): void
+    {
+        $this->exec('The variable `$obj` is undefined', 'undefined-prop-access.php');
+    }
+
+    public function testMethodCallOnUndefinedVar(): void
+    {
+        $this->exec('The variable `$obj` is undefined', 'undefined-method-call.php');
+    }
 }

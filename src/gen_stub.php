@@ -3781,6 +3781,11 @@ class ClassInfo {
             $code .= $php80CondEnd;
         }
 
+        $code .= "\n\tstatic zend_object_handlers class_object_handlers;";
+        $code .= "\n\tphp_aot_init_object_handlers(&class_object_handlers);";
+        $code .= "\n\tclass_entry->default_object_handlers = &class_object_handlers;";
+        $code .= "\n";
+
         $code .= "\n\treturn class_entry;\n";
 
         $code .= "}\n";

@@ -3975,7 +3975,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $object = $expr->var;
         $property = $expr->name;
         $id = $this->getPropertyIdentifier($expr, $object, $property);
-        $objectVar = $this->parseIdentifier($object);
+        $objectName = $this->parseIdentifier($object);
+        if ($this->isVarExpr($object) and !$this->hasVar($objectName)) {
+            $this->errorUndefinedVariable($object);
+        }
+        $objectVar = $objectName;
         $getProperty = $objectVar . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
         if ($expr->hasAttribute('nativePropertyDef') and $this->nativeTypes) {
             /**
