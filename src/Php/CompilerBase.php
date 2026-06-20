@@ -248,7 +248,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $linkPaths = [];   // --link-path / -L: user-specified library search paths
     protected int $floatPrecision = 17;
     protected bool $debug = false;
-    protected bool $formatCode = false;   // --format: enable clang-format (disabled by default)
+    protected bool $formatCode = true;   // --format: enable clang-format (disabled by default)
     protected bool $printBacktraceOnError = true;
     protected bool $noLiteralStrings = false;
     protected bool $noConsole = false;  // Windows: hide console window
@@ -334,6 +334,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         '_SESSION' => self::TYPE_ARRAY,
         '_REQUEST' => self::TYPE_ARRAY,
         '_ENV'     => self::TYPE_ARRAY,
+        'GLOBALS'  => self::TYPE_ARRAY,
     ];
     protected array $globalVars = [];
     protected bool $nativeTypes = false;

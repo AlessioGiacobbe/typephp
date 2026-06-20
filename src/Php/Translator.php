@@ -674,7 +674,7 @@ class Translator extends Preprocessor
         $lines[] = '#include <phpx.h>';
         $lines[] = PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
-            $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $this->escapeGlobalVar($name) . ';';
+            $lines[] = 'extern THREAD_LOCAL ' . self::TYPE_VAR . ' ' . $this->escapeGlobalVar($name) . ';';
         }
 
         if ($this->literalStrings) {
@@ -732,7 +732,7 @@ class Translator extends Preprocessor
 
         $code .= "// global vars \n";
         foreach ($this->globalVars as $name => $type) {
-            $code .= self::TYPE_VAR . ' ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
+            $code .= 'THREAD_LOCAL ' . self::TYPE_VAR . ' ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
         }
 
         $code .= "// class register functions \n";
@@ -852,6 +852,8 @@ CODE;
         $code .= '}' . PHP_EOL . PHP_EOL;
         // minit end
 
+        $code .= 'THREAD_LOCAL zval globals_array;' . PHP_EOL;
+
         // php_app_init begin
         $code .= 'void php_app_init() {' . PHP_EOL;
         $code .= '// register constants' . PHP_EOL;
@@ -861,7 +863,13 @@ CODE;
         }
         $code .= '// global vars ' . PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
-            $code .= 'php::initGlobal(' . $this->genCharPtr($name) . ', ' . $this->escapeGlobalVar($name) . ');' . PHP_EOL;
+            if ($name == 'GLOBALS') {
+                $var = $this->escapeGlobalVar($name);
+                $code .= 'ZVAL_ARR(&globals_array, &EG(symbol_table));' . PHP_EOL;
+                $code .= 'ZVAL_INDIRECT(' . $var. '.ptr(), &globals_array);' . PHP_EOL;
+            } else {
+                $code .= 'php::initGlobal(' . $this->genCharPtr($name) . ', ' . $this->escapeGlobalVar($name) . ');' . PHP_EOL;
+            }
         }
 
         $code .= '// static property ' . PHP_EOL;
@@ -886,8 +894,10 @@ CODE;
         // php_app_clean begin
         $code .= 'void php_app_clean() {' . PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
-            $code .= $this->escapeGlobalVar($name) . '.unset();' . PHP_EOL;
-            $code .= 'php::unsetGlobal("' . $name . '");' . PHP_EOL;
+            if ($name != 'GLOBALS') {
+                $code .= $this->escapeGlobalVar($name) . '.unset();' . PHP_EOL;
+                $code .= 'php::unsetGlobal("' . $name . '");' . PHP_EOL;
+            }
         }
         foreach ($this->constants as $name => $const) {
             if ($const->type !== self::TYPE_VAR) {
