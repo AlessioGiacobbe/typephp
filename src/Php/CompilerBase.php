@@ -4937,10 +4937,25 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->nativeTypes && $expr->hasAttribute('nativePropertyDef')) {
                 /** @var PropertyDef $def */
                 $def = $expr->getAttribute('nativePropertyDef');
+                $info = $this->getHoistedObjectPropInfo($def->type);
                 $propName = $this->parseIdentifier($expr->name);
                 $refVar = '_static_' . str_replace('\\', '_', $class) . '_' . $propName;
+
+                if ($info['kind'] === 'zval') {
+                    if (!isset($this->context->staticPropRefs[$refVar])) {
+                        $classPtr = $this->getClassEntryPtr($class);
+                        $this->context->staticPropRefs[$refVar] = [
+                            'type' => $info['type'],
+                            'classPtr' => $classPtr,
+                            'offsetExpr' => $nativeProp,
+                            'kind' => $info['kind'],
+                        ];
+                    }
+                    $helper = $def->type === self::TYPE_FLOAT ? 'php_aot_static_float_ref' : 'php_aot_static_int_ref';
+                    return $helper . '(' . $refVar . ')';
+                }
+
                 if (!isset($this->context->staticPropRefs[$refVar])) {
-                    $info = $this->getHoistedObjectPropInfo($def->type);
                     $classPtr = $this->getClassEntryPtr($class);
                     $this->context->staticPropRefs[$refVar] = [
                         'type' => $info['type'],
@@ -5695,8 +5710,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (($info['kind'] ?? 'zval') === 'var') {
                 $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $name . ' = ' . $getter . ';' . PHP_EOL;
             } else {
-                $zvalMacro = ($info['type'] === self::TYPE_FLOAT) ? 'Z_DVAL_P' : 'Z_LVAL_P';
-                $code .= $this->getIndent() . $info['type'] . ' &' . $name . ' = ' . $zvalMacro . '(' . $getter . '.unwrap_ptr());' . PHP_EOL;
+                $code .= $this->getIndent() . 'zval *' . $name . ' = ' . $getter . '.unwrap_ptr();' . PHP_EOL;
             }
         }
         return $code;

@@ -1663,7 +1663,7 @@ CODE;
             $lines[] = '#include <' . $header . '>';
         }
 
-        return implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
+        return implode(PHP_EOL, $lines) . PHP_EOL;
     }
 
     public function genClassPropertyInit(): string

@@ -832,6 +832,20 @@ class SsaAnalysisTest extends TestCase
         $this->assertSame(['a' => true], $result);
     }
 
+    public function testCollectDangerousPropOpsPropertyArgumentDoesNotExposeObject(): void
+    {
+        $propFetch = new Expr\PropertyFetch(new Expr\Variable('obj'), 'a');
+        $funcCall = new Expr\FuncCall(new Node\Name('mutate'), [new Arg($propFetch)]);
+        $stmt = new Stmt\Expression($funcCall);
+        $read = new Stmt\Expression(new Expr\Assign(
+            new Expr\Variable('value'),
+            new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')
+        ));
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$stmt, $read]);
+        $this->assertSame([], $result, 'Passing a property value by value does not expose the owning object');
+    }
+
     public function testCollectDangerousPropOpsInternalFunctionObjectArgumentIsSafe(): void
     {
         $funcCall = new Expr\FuncCall(new Node\Name('gettype'), [new Arg(new Expr\Variable('obj'))]);

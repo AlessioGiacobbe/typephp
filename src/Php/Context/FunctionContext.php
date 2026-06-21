@@ -64,7 +64,7 @@ class FunctionContext
     public array $beforeStmtLines = [];
     public array $afterStmtLines = [];
     public array $objectProps;
-    /** Map of static property local slots. int/float use zval refs; other types use Var slots. */
+    /** Map of static property local slots. int/float keep stable zval* slots; other types use Var slots. */
     public array $staticPropRefs = [];
     public int $scopeLevel = 0;
     /**
