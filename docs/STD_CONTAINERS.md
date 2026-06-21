@@ -90,8 +90,8 @@ Swoole AOT 提供 `std` 容器，用来表达“这个容器的结构和元素�
 
 - `std::array`
 - `std::vector`
+- `std::ordered_map`
 - `std::map`
-- `std::unordered_map`
 
 它们的目标不是完全替代 PHP Array，而是用于性能敏感、结构稳定、类型明确的代码路径。
 
@@ -196,14 +196,14 @@ $b[] = 20;
 $a = $b; // 允许，类型完全一致，执行容器 copy
 ```
 
-## std::map
+## std::ordered_map
 
-`std::map` 是有序 key-value 容器。
+`std::ordered_map` 是有序 key-value 容器。
 
 ```php
 function main(): void
 {
-    $map = std::map(
+    $map = std::ordered_map(
         complex_types::type_str,
         native_types::type_int
     );
@@ -225,30 +225,30 @@ function main(): void
 示例：
 
 ```php
-$map = std::map(native_types::type_int, native_types::type_float);
+$map = std::ordered_map(native_types::type_int, native_types::type_float);
 
 $map[10] = 1.25;
 $map[20] = 3.5;
 ```
 
-同类型 map 可以 copy：
+同类型 ordered_map 可以 copy：
 
 ```php
-$a = std::map(native_types::type_int, native_types::type_int);
-$b = std::map(native_types::type_int, native_types::type_int);
+$a = std::ordered_map(native_types::type_int, native_types::type_int);
+$b = std::ordered_map(native_types::type_int, native_types::type_int);
 
 $b[10] = 100;
 $a = $b;
 ```
 
-## std::unordered_map
+## std::map
 
-`std::unordered_map` 是哈希表 key-value 容器。
+`std::map` 是哈希表 key-value 容器。
 
 ```php
 function main(): void
 {
-    $map = std::unordered_map(
+    $map = std::map(
         native_types::type_int,
         native_types::type_int
     );
@@ -267,11 +267,11 @@ function main(): void
 - 适合大量 key-value 查找
 - 通常用于不要求顺序的映射场景
 
-同类型 unordered_map 可以 copy：
+同类型 map 可以 copy：
 
 ```php
-$a = std::unordered_map(native_types::type_int, native_types::type_int);
-$b = std::unordered_map(native_types::type_int, native_types::type_int);
+$a = std::map(native_types::type_int, native_types::type_int);
+$b = std::map(native_types::type_int, native_types::type_int);
 
 $b[1] = 42;
 $a = $b;
@@ -307,7 +307,7 @@ class User
 
 $vector = std::vector(User::class);
 $array = std::array(User::class, 10);
-$map = std::map(complex_types::type_str, User::class);
+$map = std::ordered_map(complex_types::type_str, User::class);
 ```
 
 类类型容器会在写入时检查对象类型，避免错误对象混入。
@@ -587,7 +587,7 @@ Swoole AOT 的 std 容器提供了一条更适合编译优化的路径：
 
 - 用 `std::array` 表达固定长度强类型数组
 - 用 `std::vector` 表达动态连续强类型数组
-- 用 `std::map` / `std::unordered_map` 表达强类型映射
+- 用 `std::ordered_map` / `std::map` 表达强类型映射
 - 普通变量接收 std 容器时自动转 PHP Array
 - 同类型 std 容器之间支持原生 copy
 - UnsafePtr 支持 native 函数间安全地传递容器引用

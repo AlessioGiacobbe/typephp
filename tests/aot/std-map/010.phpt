@@ -19,14 +19,14 @@ function main() {
 }
 ?>
 --EXPECT--
-string(5) "alpha"
-int(10)
+string(5) "gamma"
+int(30)
 string(4) "beta"
 int(20)
-string(5) "gamma"
-int(30)
-unset-------------
 string(5) "alpha"
 int(10)
+unset-------------
 string(5) "gamma"
 int(30)
+string(5) "alpha"
+int(10)

@@ -4,11 +4,11 @@ std map: unsafe_cast type mismatch
 <?php
 function std_map_unsafe_ptr_type_mismatch($source): void
 {
-    $map = $source->toStdMap(complex_types::type_str, native_types::type_float);
+    $map = $source->toStdMap(native_types::type_int, native_types::type_float);
 }
 
 function main() {
-    $map = std::map(complex_types::type_str, native_types::type_int);
+    $map = std::map(native_types::type_int, native_types::type_int);
     try {
         std_map_unsafe_ptr_type_mismatch($map);
     } catch (TypeError $e) {

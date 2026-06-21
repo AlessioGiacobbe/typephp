@@ -50,12 +50,12 @@ class std
         return [];
     }
 
-    public static function map(mixed $key_type, mixed $value_type): array
+    public static function ordered_map(mixed $key_type, mixed $value_type): array
     {
         return [];
     }
 
-    public static function unordered_map(mixed $key_type, mixed $value_type): array
+    public static function map(mixed $key_type, mixed $value_type): array
     {
         return [];
     }

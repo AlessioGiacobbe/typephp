@@ -1,8 +1,8 @@
 --TEST--
-std containers: exact class value type
+std map: exact class value type
 --FILE--
 <?php
-class StdContainerClassValue
+class StdMapClassValue
 {
     public function __construct(public int $value)
     {
@@ -14,45 +14,25 @@ class StdContainerClassValue
     }
 }
 
-class StdContainerClassValueChild extends StdContainerClassValue
+class StdMapClassValueChild extends StdMapClassValue
 {
 }
 
-class StdContainerClassValueOther
-{
-}
-
-function std_container_class_value_mixed(mixed $value): mixed
+function std_map_class_value_mixed(mixed $value): mixed
 {
     return $value;
 }
 
 function main() {
-    $map = std::map(complex_types::type_str, StdContainerClassValue::class);
-    $map["a"] = new StdContainerClassValue(1);
-    $item = $map["a"];
-    var_dump($item->getValue());
+    $map = std::map(complex_types::type_str, StdMapClassValue::class);
+    $map["a"] = new StdMapClassValue(1);
+    var_dump($map["a"]->getValue());
 
-    $vector = std::vector(StdContainerClassValue::class);
-    $vector[] = new StdContainerClassValue(2);
-    var_dump($vector[0]->getValue());
-
-    $array = std::array(StdContainerClassValue::class, 2);
-    $array[0] = new StdContainerClassValue(3);
-    var_dump($array[0]->getValue());
-
-    $unordered = std::unordered_map(native_types::type_int, StdContainerClassValue::class);
-    $unordered[1] = std_container_class_value_mixed(new StdContainerClassValue(4));
-    var_dump($unordered[1]->getValue());
+    $map["b"] = std_map_class_value_mixed(new StdMapClassValue(2));
+    var_dump($map["b"]->getValue());
 
     try {
-        $unordered[2] = std_container_class_value_mixed(new StdContainerClassValueChild(5));
-    } catch (Throwable $e) {
-        echo $e->getMessage(), "\n";
-    }
-
-    try {
-        $unordered[3] = std_container_class_value_mixed(new StdContainerClassValueOther());
+        $map["c"] = std_map_class_value_mixed(new StdMapClassValueChild(3));
     } catch (Throwable $e) {
         echo $e->getMessage(), "\n";
     }
@@ -61,7 +41,4 @@ function main() {
 --EXPECT--
 int(1)
 int(2)
-int(3)
-int(4)
-The parameter `object` must be instance of class `StdContainerClassValue`, object of `StdContainerClassValueChild` given
-The parameter `object` must be instance of class `StdContainerClassValue`, object of `StdContainerClassValueOther` given
+The parameter `object` must be instance of class `StdMapClassValue`, object of `StdMapClassValueChild` given

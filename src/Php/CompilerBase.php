@@ -121,7 +121,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string TYPE_STD_ARRAY = 'php::StdArray';
     public const string TYPE_STD_VECTOR = 'php::StdVector';
     public const string TYPE_STD_MAP = 'php::StdMap';
-    public const string TYPE_STD_UNORDERED_MAP = 'php::StdUnorderedMap';
+    public const string TYPE_STD_ORDERED_MAP = 'php::StdOrderedMap';
     public const string TYPE_ARGS = 'php::Args';
     public const string TYPE_STR = 'php::Str';
     public const string TYPE_REF = 'php::Ref';
@@ -3888,7 +3888,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($var, 'Cannot use [] for array unset');
                 }
                 $array = $this->parseIdentifier($var->var);
-                if (($this->isStdMap($array) or $this->isStdUnorderedMap($array))
+                if (($this->isStdMap($array) or $this->isStdOrderedMap($array))
                     and !empty($this->context->stdContainers[$array]['locking'])) {
                     $this->fatalError($var, 'Cannot delete element in std container in foreach loop');
                 }
@@ -5657,7 +5657,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $code .= 'php::Var ' . $name . ' = php::Var(' . $boxCtor . ');' . PHP_EOL;
                     $code .= $this->getIndent() . 'auto &' . $name . '_ref = ' . $name . '.toBox<' . $containerType . '>()->container;';
                 }
-            } elseif ($type === self::TYPE_STD_MAP || $type === self::TYPE_STD_UNORDERED_MAP) {
+            } elseif ($type === self::TYPE_STD_MAP || $type === self::TYPE_STD_ORDERED_MAP) {
                 $info = $this->context->stdContainers[$name];
                 if (isset($info['boxExpr'])) {
                     $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';

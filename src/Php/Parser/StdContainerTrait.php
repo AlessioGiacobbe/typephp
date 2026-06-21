@@ -29,7 +29,7 @@ trait StdContainerTrait
             self::TYPE_STD_ARRAY,
             self::TYPE_STD_VECTOR,
             self::TYPE_STD_MAP,
-            self::TYPE_STD_UNORDERED_MAP,
+            self::TYPE_STD_ORDERED_MAP,
         ], true);
     }
 
@@ -48,9 +48,9 @@ trait StdContainerTrait
         return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_MAP;
     }
 
-    protected function isStdUnorderedMap(string $var): bool
+    protected function isStdOrderedMap(string $var): bool
     {
-        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_UNORDERED_MAP;
+        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_ORDERED_MAP;
     }
 
     protected function getStdTypeKey(array $info): string
@@ -224,7 +224,7 @@ trait StdContainerTrait
                 $tmp = $tmp->var;
             } elseif ($this->isVarExpr($tmp)) {
                 $var = $this->parseVariable($tmp);
-                if ($this->isStdVector($var) || $this->isStdMap($var) || $this->isStdUnorderedMap($var)) {
+                if ($this->isStdVector($var) || $this->isStdMap($var) || $this->isStdOrderedMap($var)) {
                     return $this->context->stdContainers[$var];
                 }
                 return null;
@@ -350,7 +350,7 @@ trait StdContainerTrait
     protected function parseForeachStdContainer(Foreach_ $node): string
     {
         $container = $this->parseIdentifier($node->expr);
-        if ($this->isStdMap($container) or $this->isStdUnorderedMap($container)) {
+        if ($this->isStdMap($container) or $this->isStdOrderedMap($container)) {
             $this->context->stdContainers[$container]['locking'] = true;
         }
         $iterator = $this->genTmpVarName();
@@ -392,7 +392,7 @@ trait StdContainerTrait
 
         $code .= $this->getIndent() . '}';
         unset($this->context->objects[$valueVar]);
-        if ($this->isStdMap($container) or $this->isStdUnorderedMap($container)) {
+        if ($this->isStdMap($container) or $this->isStdOrderedMap($container)) {
             $this->context->stdContainers[$container]['locking'] = false;
         }
         return $code;
@@ -419,7 +419,7 @@ trait StdContainerTrait
             $this->fatalError($expr, 'std container expects a variable');
         }
         if (count($dims) !== 1) {
-            $this->fatalError($expr, 'Nested std::vector/std::map/std::unordered_map access is not supported');
+            $this->fatalError($expr, 'Nested std::vector/std::map/std::ordered_map access is not supported');
         }
         $dim = $dims[0];
         if ($dim === null) {
@@ -600,7 +600,7 @@ trait StdContainerTrait
             'toStdArray'        => 'array',
             'toStdVector'       => 'vector',
             'toStdMap'          => 'map',
-            'toStdUnorderedMap' => 'unordered_map',
+            'toStdOrderedMap'   => 'ordered_map',
         };
 
         if (!$this->isVarExpr($expr->var)) {
@@ -629,8 +629,8 @@ trait StdContainerTrait
             $this->addLocalVar($var, self::TYPE_STD_MAP);
             $this->parseStdMap($var, $fakeCall);
         } else {
-            $this->addLocalVar($var, self::TYPE_STD_UNORDERED_MAP);
-            $this->parseStdUnorderedMap($var, $fakeCall);
+            $this->addLocalVar($var, self::TYPE_STD_ORDERED_MAP);
+            $this->parseStdOrderedMap($var, $fakeCall);
         }
         $this->context->stdContainers[$var]['boxExpr'] = $sourceVar;
         return '// StdContainer<' . $this->context->stdContainers[$var]['decl'] . '>(' . $sourceVar . ')';
@@ -733,9 +733,9 @@ trait StdContainerTrait
         return $this->parseStdMapBase($var, $expr, 'std::map', self::TYPE_STD_MAP, 'map');
     }
 
-    protected function parseStdUnorderedMap(string $var, Expr\StaticCall $expr): string
+    protected function parseStdOrderedMap(string $var, Expr\StaticCall $expr): string
     {
-        return $this->parseStdMapBase($var, $expr, 'std::unordered_map', self::TYPE_STD_UNORDERED_MAP, 'unordered_map');
+        return $this->parseStdMapBase($var, $expr, 'std::ordered_map', self::TYPE_STD_ORDERED_MAP, 'ordered_map');
     }
 
     private function parseStdMapBase(string $var, Expr\StaticCall $expr, string $funcName, string $containerType, string $kind): string
@@ -812,7 +812,7 @@ trait StdContainerTrait
                     }
                     return $var . '_ref.size()';
                 }
-                if ($this->isStdMap($var) || $this->isStdUnorderedMap($var)) {
+                if ($this->isStdMap($var) || $this->isStdOrderedMap($var)) {
                     return $var . '_ref.size()';
                 }
             }

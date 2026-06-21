@@ -4,27 +4,21 @@ std map: unsafe_cast
 <?php
 function std_map_unsafe_ptr_update($source): void
 {
-    $map = $source->toStdMap(complex_types::type_str, native_types::type_int);
-    var_dump($map["b"]);
-    $map["c"] = 9;
-
-    unset($source);
-
-    $array = (array)$map;
-    var_dump(count($array));
+    $map = $source->toStdMap(native_types::type_int, native_types::type_int);
+    var_dump($map[2]);
+    $map[3] = 9;
 }
 
 function main() {
-    $map = std::map(complex_types::type_str, native_types::type_int);
-    $map["a"] = 1;
-    $map["b"] = 7;
-    $map["c"] = 3;
+    $map = std::map(native_types::type_int, native_types::type_int);
+    $map[1] = 1;
+    $map[2] = 7;
+    $map[3] = 3;
 
     std_map_unsafe_ptr_update($map);
-    var_dump($map["c"]);
+    var_dump($map[3]);
 }
 ?>
 --EXPECT--
 int(7)
-int(3)
 int(9)

@@ -182,7 +182,7 @@ trait AssignOpTrait
             } else {
                 if ($this->isMethodCall($right) and $this->isNamedMethod($right->name)) {
                     $methodName = $right->name->toString();
-                    if (in_array($methodName, ['toStdArray', 'toStdVector', 'toStdMap', 'toStdUnorderedMap'], true)) {
+                    if (in_array($methodName, ['toStdArray', 'toStdVector', 'toStdMap', 'toStdOrderedMap'], true)) {
                         if ($this->hasVar($var)) {
                             $this->fatalError($left, "Cannot re-assign `\${$var}` to {$methodName}()");
                         }
@@ -207,7 +207,7 @@ trait AssignOpTrait
                 } elseif ($this->isStaticCall($right) and $this->isNameExpr($right->class) and $this->isIdExpr($right->name)) {
                     $class = $this->parseIdentifier($right->class);
                     if ($class === 'std') {
-                        if (in_array($right->name->toString(), ['array', 'vector', 'map', 'unordered_map'], true)) {
+                        if (in_array($right->name->toString(), ['array', 'vector', 'map', 'ordered_map'], true)) {
                             if ($this->hasVar($var)) {
                                 $this->fatalError($left, "Cannot re-assign `\${$var}` to std::{$right->name->toString()}");
                             }
@@ -226,8 +226,8 @@ trait AssignOpTrait
                                 $this->addLocalVar($var, self::TYPE_STD_MAP);
                                 return $this->parseStdMap($var, $right);
                             }
-                            $this->addLocalVar($var, self::TYPE_STD_UNORDERED_MAP);
-                            return $this->parseStdUnorderedMap($var, $right);
+                            $this->addLocalVar($var, self::TYPE_STD_ORDERED_MAP);
+                            return $this->parseStdOrderedMap($var, $right);
                         } else {
                             $valueExpr = $this->parseStdCall($right);
                             if (!$this->hasVar($var)) {

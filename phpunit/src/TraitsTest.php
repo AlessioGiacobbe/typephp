@@ -126,7 +126,7 @@ class TraitsTest extends TestCase
         $this->assertTrue($this->invoke('isStdContainerType', CompilerBase::TYPE_STD_ARRAY));
         $this->assertTrue($this->invoke('isStdContainerType', CompilerBase::TYPE_STD_VECTOR));
         $this->assertTrue($this->invoke('isStdContainerType', CompilerBase::TYPE_STD_MAP));
-        $this->assertTrue($this->invoke('isStdContainerType', CompilerBase::TYPE_STD_UNORDERED_MAP));
+        $this->assertTrue($this->invoke('isStdContainerType', CompilerBase::TYPE_STD_ORDERED_MAP));
     }
 
     public function testIsStdContainerTypeFalse(): void
@@ -193,17 +193,17 @@ class TraitsTest extends TestCase
         $this->assertStringNotContainsString('keyType', $key);
     }
 
-    public function testGetStdTypeKeyUnorderedMap(): void
+    public function testGetStdTypeKeyOrderedMap(): void
     {
         $info = [
-            'kind' => 'unordered_map',
-            'decl' => 'php::StdUnorderedMap<php::Str, php::Int>',
+            'kind' => 'ordered_map',
+            'decl' => 'php::StdOrderedMap<php::Str, php::Int>',
             'type' => 'php::Int',
             'class' => '',
             'keyType' => 'php::Str',
         ];
         $key = $this->invoke('getStdTypeKey', $info);
-        $this->assertStringContainsString('kind=unordered_map', $key);
+        $this->assertStringContainsString('kind=ordered_map', $key);
     }
 
     // ========================================================================
@@ -288,14 +288,14 @@ class TraitsTest extends TestCase
 
     public function testGetStdMapDecl(): void
     {
-        $result = $this->invoke('getStdMapDecl', 'std::map', 'php::Str', 'php::Int');
-        $this->assertEquals('std::map<php::Str, php::Int>', $result);
+        $result = $this->invoke('getStdMapDecl', 'php::StdMap', 'php::Str', 'php::Int');
+        $this->assertEquals('php::StdMap<php::Str, php::Int>', $result);
     }
 
-    public function testGetStdMapDeclUnordered(): void
+    public function testGetStdMapDeclOrdered(): void
     {
-        $result = $this->invoke('getStdMapDecl', 'std::unordered_map', 'php::Int', 'php::Str');
-        $this->assertEquals('std::unordered_map<php::Int, php::Str>', $result);
+        $result = $this->invoke('getStdMapDecl', 'php::StdOrderedMap', 'php::Int', 'php::Str');
+        $this->assertEquals('php::StdOrderedMap<php::Int, php::Str>', $result);
     }
 
     // ========================================================================

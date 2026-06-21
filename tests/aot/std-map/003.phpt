@@ -15,34 +15,34 @@ class StdMapComplexValue
 }
 
 function main() {
-    $strings = std::map(native_types::type_int, complex_types::type_str);
-    $strings[1] = 456;
+    $strings = std::map(native_types::type_int, complex_types::type_string);
+    $strings[1] = 789;
     var_dump($strings[1]);
 
-    $arrays = std::map(native_types::type_int, complex_types::type_array);
-    $arrays[2] = ["name" => "map", "value" => 84];
-    $array = $arrays[2];
+    $arrays = std::map(complex_types::type_string, complex_types::type_array);
+    $arrays["item"] = ["name" => "unordered", "value" => 168];
+    $array = $arrays["item"];
     var_dump($array["name"]);
     var_dump($array["value"]);
 
-    $objects = std::map(complex_types::type_string, complex_types::type_object);
-    $objects["item"] = new StdMapComplexValue(14);
-    var_dump($objects["item"] instanceof StdMapComplexValue);
-    $object = $objects["item"]->toObject(StdMapComplexValue::class);
+    $objects = std::map(native_types::type_int, complex_types::type_object);
+    $objects[2] = new StdMapComplexValue(21);
+    var_dump($objects[2] instanceof StdMapComplexValue);
+    $object = $objects[2]->toObject(StdMapComplexValue::class);
     var_dump($object->getValue());
 
-    $variants = std::map(native_types::type_int, complex_types::type_any);
-    $variants[3] = 12.5;
-    $variants[4] = "any";
+    $variants = std::map(native_types::type_int, complex_types::type_var);
+    $variants[3] = false;
+    $variants[4] = "variant";
     var_dump($variants[3]);
     var_dump($variants[4]);
 }
 ?>
 --EXPECT--
-string(3) "456"
-string(3) "map"
-int(84)
+string(3) "789"
+string(9) "unordered"
+int(168)
 bool(true)
-int(14)
-float(12.5)
-string(3) "any"
+int(21)
+bool(false)
+string(7) "variant"

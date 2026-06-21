@@ -105,8 +105,8 @@ Swoole-Compiler 是一种 PHP AOT 编译器。它将 PHP 源文件解析为抽�
 ```php
 $a = std::array(native_types::type_int, 100);
 $v = std::vector(native_types::type_float);
-$m = std::map(complex_types::type_str, native_types::type_int);
-$h = std::unordered_map(native_types::type_int, User::class);
+$m = std::ordered_map(complex_types::type_str, native_types::type_int);
+$h = std::map(native_types::type_int, User::class);
 ```
 
 编译器在 AOT 阶段识别这些构造表达式，生成容器元信息，并将其转换为 C++ 模版实例：
@@ -114,8 +114,8 @@ $h = std::unordered_map(native_types::type_int, User::class);
 ```cpp
 php::StdArray<php::Int, 100> a{};
 php::StdVector<php::Float> v{};
-php::StdMap<php::Str, php::Int> m{};
-php::StdUnorderedMap<php::Int, php::Object> h{};
+php::StdOrderedMap<php::Str, php::Int> m{};
+php::StdMap<php::Int, php::Object> h{};
 ```
 
 编译器后续在下标访问、赋值、遍历、函数传参和类型转换时均使用该元信息进行静态检查和代码生成。
@@ -191,11 +191,11 @@ PHP 扩展或二进制程序
 容器元信息至少包括以下字段：
 
 ```text
-kind：容器种类，例如 array、vector、map、unordered_map；
+kind：容器种类，例如 array、vector、map、ordered_map；
 decl：目标 C++ 模版声明；
 type：value 的 C++ 类型；
 class：value 为对象时的类名；
-keyType：map 或 unordered_map 的 key 类型；
+keyType：map 或 ordered_map 的 key 类型；
 sizes：std::array 的维度数组；
 bytes：std::array 的预计内存大小；
 typeId：根据上述字段生成的类型标识。
@@ -399,7 +399,7 @@ uint32_t type_id;
 
 本发明不限于 PHP 语言，也可用于 Python、JavaScript、Ruby 等动态语言的 AOT 编译器。只要动态语言编译器能够识别强类型容器声明，并生成 C++、Rust、Go 或其他静态语言目标代码，均可采用类似技术方案。
 
-本发明中的 C++ 模版容器也不限于 `StdArray`、`StdVector`、`StdMap`、`StdUnorderedMap`，可扩展为队列、集合、环形缓冲区、矩阵、张量等强类型容器。
+本发明中的 C++ 模版容器也不限于 `StdArray`、`StdVector`、`StdOrderedMap`、`StdMap`，可扩展为队列、集合、环形缓冲区、矩阵、张量等强类型容器。
 
 ## 9. 保密说明
 

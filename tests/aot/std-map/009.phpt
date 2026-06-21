@@ -13,10 +13,10 @@ function main() {
 ?>
 --EXPECT--
 array(2) {
-  ["alpha"]=>
-  int(10)
   ["beta"]=>
   int(20)
+  ["alpha"]=>
+  int(10)
 }
 array(1) {
   ["beta"]=>
