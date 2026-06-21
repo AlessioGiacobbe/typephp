@@ -41,7 +41,7 @@ function main() {
     $array[0] = new StdContainerClassValue(3);
     var_dump($array[0]->getValue());
 
-    $ordered = std::map(native_types::type_int, StdContainerClassValue::class);
+    $unordered = std::map(native_types::type_int, StdContainerClassValue::class);
     $unordered[1] = std_container_class_value_mixed(new StdContainerClassValue(4));
     var_dump($unordered[1]->getValue());
 
