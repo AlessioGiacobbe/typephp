@@ -2856,11 +2856,12 @@ CODE;
     }
 
     /**
-     * 检查父类方法是否可以被重写，私有方法不能被重写
+     * 检查父类方法是否可以被重写，私有方法不能被重写，方法签名必须兼容
      */
     protected function checkParentMethodCanBeOverridden(Node\Stmt\ClassMethod $v, string $name): void
     {
         $classDef = $this->classDef;
+        $childFuncDef = $this->methodDef->functionDef;
         while (true) {
             $extends = $classDef->extends;
             if (!$extends) {
@@ -2874,14 +2875,59 @@ CODE;
                 break;
             }
             $classDef = $this->getClass($extends);
-            if ($classDef->hasMethod($this->method)) {
-                $methodDef = $classDef->getMethod($this->method);
+            if ($classDef->hasMethod($name)) {
+                $methodDef = $classDef->getMethod($name);
                 if ($methodDef->flags & Modifiers::PRIVATE) {
                     _error:
                     $this->fatalError($v,
                         'Cannot override private method `' .
-                        $extends . '::' . $this->method . '()`');
+                        $extends . '::' . $name . '()`');
                 }
+                $parentFuncDef = $methodDef->functionDef;
+                if ($parentFuncDef) {
+                    $this->validateMethodOverrideSignature($v, $name, $childFuncDef, $parentFuncDef, $extends);
+                }
+                break;
+            }
+        }
+    }
+
+    private function validateMethodOverrideSignature(
+        Node\Stmt\ClassMethod $v,
+        string $methodName,
+        FunctionDef $childFuncDef,
+        FunctionDef $parentFuncDef,
+        string $parentClass
+    ): void {
+        $className = $this->getFullClassName();
+        $error = function (string $detail) use ($v, $className, $methodName, $parentClass) {
+            $this->fatalError($v,
+                "Declaration of `{$className}::{$methodName}()` must be compatible " .
+                "with `{$parentClass}::{$methodName}()`");
+        };
+
+        // Compare parameter count
+        if (count($childFuncDef->argInfoList) !== count($parentFuncDef->argInfoList)) {
+            $error('parameter count mismatch');
+        }
+
+        // Compare return type
+        if ($childFuncDef->returnType !== $parentFuncDef->returnType ||
+            $childFuncDef->returnClass !== $parentFuncDef->returnClass) {
+            $error('return type mismatch');
+        }
+
+        // Compare each parameter
+        foreach ($parentFuncDef->argInfoList as $i => $parentArg) {
+            $childArg = $childFuncDef->argInfoList[$i];
+            if ($childArg->type !== $parentArg->type || $childArg->class !== $parentArg->class) {
+                $error("parameter #{$i} type mismatch");
+            }
+            if ($childArg->byRef !== $parentArg->byRef) {
+                $error("parameter #{$i} by-reference mismatch");
+            }
+            if ($childArg->variadic !== $parentArg->variadic) {
+                $error("parameter #{$i} variadic mismatch");
             }
         }
     }
