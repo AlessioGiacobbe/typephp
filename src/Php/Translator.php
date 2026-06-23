@@ -2521,6 +2521,9 @@ CODE;
             }
         }
 
+        $this->checkPropertyOverride($class);
+        $this->checkConstantOverride($class);
+
         $className = $this->classDef->getNamespacedName();
         $this->classesDefineInFile[$className] = $this->classDef;
 
@@ -2884,9 +2887,7 @@ CODE;
                         $extends . '::' . $name . '()`');
                 }
                 $parentFuncDef = $methodDef->functionDef;
-                if ($parentFuncDef) {
-                    $this->validateMethodOverrideSignature($v, $name, $childFuncDef, $parentFuncDef, $extends);
-                }
+                $this->validateMethodOverrideSignature($v, $name, $childFuncDef, $methodDef, $extends);
                 break;
             }
         }
@@ -2896,7 +2897,7 @@ CODE;
         Node\Stmt\ClassMethod $v,
         string $methodName,
         FunctionDef $childFuncDef,
-        FunctionDef $parentFuncDef,
+        MethodDef $parentMethodDef,
         string $parentClass
     ): void {
         $className = $this->getFullClassName();
@@ -2905,6 +2906,16 @@ CODE;
                 "Declaration of `{$className}::{$methodName}()` must be compatible " .
                 "with `{$parentClass}::{$methodName}()`");
         };
+
+        // Compare visibility (public/protected/private)
+        if (($this->methodDef->flags & Modifiers::VISIBILITY_MASK) !== ($parentMethodDef->flags & Modifiers::VISIBILITY_MASK)) {
+            $error('visibility mismatch');
+        }
+
+        $parentFuncDef = $parentMethodDef->functionDef;
+        if (!$parentFuncDef) {
+            return;
+        }
 
         // Compare parameter count
         if (count($childFuncDef->argInfoList) !== count($parentFuncDef->argInfoList)) {
@@ -2928,6 +2939,69 @@ CODE;
             }
             if ($childArg->variadic !== $parentArg->variadic) {
                 $error("parameter #{$i} variadic mismatch");
+            }
+        }
+    }
+
+    private function checkPropertyOverride(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $classStmt): void
+    {
+        $classDef = $this->classDef;
+        $className = $this->getFullClassName();
+        $chainNode = $classDef;
+        while ($chainNode->extends && !$chainNode->inheritedFromInternalClass) {
+            $parentClass = $chainNode->extends;
+            $chainNode = $this->getClass($parentClass);
+            if (!$chainNode) {
+                break;
+            }
+            foreach ($this->classDef->properties as $name => $childProp) {
+                if ($chainNode->hasProperty($name)) {
+                    $parentProp = $chainNode->getProperty($name);
+                    if ($childProp->type !== $parentProp->type || $childProp->class !== $parentProp->class) {
+                        $this->fatalError($classStmt,
+                            "Declaration of `{$className}::\${$name}` must be compatible " .
+                            "with `{$parentClass}::\${$name}`");
+                    }
+                    if (($childProp->flags & Modifiers::VISIBILITY_MASK) !== ($parentProp->flags & Modifiers::VISIBILITY_MASK)) {
+                        $this->fatalError($classStmt,
+                            "Declaration of `{$className}::\${$name}` must be compatible " .
+                            "with `{$parentClass}::\${$name}`");
+                    }
+                    if (($childProp->flags & Modifiers::READONLY) !== ($parentProp->flags & Modifiers::READONLY)) {
+                        $this->fatalError($classStmt,
+                            "Declaration of `{$className}::\${$name}` must be compatible " .
+                            "with `{$parentClass}::\${$name}`");
+                    }
+                }
+            }
+        }
+    }
+
+    private function checkConstantOverride(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $classStmt): void
+    {
+        $classDef = $this->classDef;
+        $className = $this->getFullClassName();
+        $chainNode = $classDef;
+        while ($chainNode->extends && !$chainNode->inheritedFromInternalClass) {
+            $parentClass = $chainNode->extends;
+            $chainNode = $this->getClass($parentClass);
+            if (!$chainNode) {
+                break;
+            }
+            foreach ($this->classDef->constants as $name => $childConst) {
+                if ($chainNode->hasConstant($name)) {
+                    $parentConst = $chainNode->getConstant($name);
+                    if ($childConst->type !== $parentConst->type || $childConst->class !== $parentConst->class) {
+                        $this->fatalError($classStmt,
+                            "Declaration of `{$className}::{$name}` must be compatible " .
+                            "with `{$parentClass}::{$name}`");
+                    }
+                    if (($childConst->flags & Modifiers::VISIBILITY_MASK) !== ($parentConst->flags & Modifiers::VISIBILITY_MASK)) {
+                        $this->fatalError($classStmt,
+                            "Declaration of `{$className}::{$name}` must be compatible " .
+                            "with `{$parentClass}::{$name}`");
+                    }
+                }
             }
         }
     }
