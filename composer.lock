@@ -4,8 +4,51 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b85ec97da999339a1cebcf7664e5465b",
+    "content-hash": "41bca06c5ece84cfb4ed396385b10988",
     "packages": [
+        {
+            "name": "ajaxray/ansikit",
+            "version": "v0.3.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/ajaxray/AnsiKit.git",
+                "reference": "b318313e879a248bf0fe77c792a3a03f232484f0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/ajaxray/AnsiKit/zipball/b318313e879a248bf0fe77c792a3a03f232484f0",
+                "reference": "b318313e879a248bf0fe77c792a3a03f232484f0",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.2"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^11.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Ajaxray\\AnsiKit\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Anis Uddin Ahmad",
+                    "email": "anis.programmer@gmail.com"
+                }
+            ],
+            "description": "Tiny ANSI escape helper for terminal UIs (text styles, foreground & background colors, cursor positions, clearing) with table, progressbar, and more helpers.",
+            "support": {
+                "issues": "https://github.com/ajaxray/AnsiKit/issues",
+                "source": "https://github.com/ajaxray/AnsiKit/tree/v0.3.1"
+            },
+            "time": "2025-09-22T13:57:26+00:00"
+        },
         {
             "name": "league/climate",
             "version": "3.10.1",
@@ -299,20 +342,21 @@
         },
         {
             "name": "swoole/phpx",
-            "version": "v2.1.4",
+            "version": "v2.3.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/swoole/phpx.git",
-                "reference": "2f6d8de5333085c0d8f7975ca9b6b6cdb74057b6"
+                "reference": "98f96dead31b36510a4d3323a2d1a1bcfcd07a5e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/swoole/phpx/zipball/2f6d8de5333085c0d8f7975ca9b6b6cdb74057b6",
-                "reference": "2f6d8de5333085c0d8f7975ca9b6b6cdb74057b6",
+                "url": "https://api.github.com/repos/swoole/phpx/zipball/98f96dead31b36510a4d3323a2d1a1bcfcd07a5e",
+                "reference": "98f96dead31b36510a4d3323a2d1a1bcfcd07a5e",
                 "shasum": ""
             },
             "require": {
-                "league/climate": "^3.10"
+                "league/climate": "^3.10",
+                "marcj/topsort": "^2.0"
             },
             "require-dev": {
                 "friendsofphp/php-cs-fixer": "^3.75",
@@ -337,9 +381,9 @@
             ],
             "support": {
                 "issues": "https://github.com/swoole/phpx/issues",
-                "source": "https://github.com/swoole/phpx/tree/v2.1.4"
+                "source": "https://github.com/swoole/phpx/tree/v2.3.9"
             },
-            "time": "2026-04-23T06:18:21+00:00"
+            "time": "2026-06-23T05:59:31+00:00"
         },
         {
             "name": "symfony/polyfill-ctype",
@@ -4733,7 +4777,9 @@
     "stability-flags": {},
     "prefer-stable": false,
     "prefer-lowest": false,
-    "platform": {},
+    "platform": {
+        "php": ">=8.2 <8.6"
+    },
     "platform-dev": {},
     "plugin-api-version": "2.9.0"
 }

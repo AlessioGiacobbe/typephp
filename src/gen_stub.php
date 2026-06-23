@@ -1110,21 +1110,18 @@ class ReturnInfo {
     public /* readonly */ ?Type $phpDocType;
     public /* readonly */ bool $tentativeReturnType;
     public /* readonly */ string $refcount;
-    private bool $isInferredPhpDocType;
 
     public function __construct(
         bool $byRef,
         ?Type $type,
         ?Type $phpDocType,
         bool $tentativeReturnType,
-        ?string $refcount,
-        bool $isInferredPhpDocType = false
+        ?string $refcount
     ) {
         $this->byRef = $byRef;
         $this->type = $type;
         $this->phpDocType = $phpDocType;
         $this->tentativeReturnType = $tentativeReturnType;
-        $this->isInferredPhpDocType = $isInferredPhpDocType;
         $this->setRefcount($refcount);
     }
 
@@ -5041,15 +5038,8 @@ function parseFunctionLike(
         }
 
         $returnType = $func->getReturnType();
-        $isInferredReturnType = false;
         if ($returnType === null && $docReturnType === null && !$name->isConstructor() && !$name->isDestructor()) {
-            $defaultReturnType = getMagicMethodDefaultReturnType($name);
-            if ($defaultReturnType !== null) {
-                $docReturnType = $defaultReturnType;
-            } else {
-                $docReturnType = 'mixed';
-                $isInferredReturnType = true;
-            }
+            $docReturnType = getMagicMethodDefaultReturnType($name);
         }
 
         $return = new ReturnInfo(
@@ -5057,8 +5047,7 @@ function parseFunctionLike(
             $returnType ? Type::fromNode($returnType) : null,
             $docReturnType ? Type::fromString($docReturnType) : null,
             $tentativeReturnType,
-            $refcount,
-            $isInferredReturnType
+            $refcount
         );
 
         return new FuncInfo(

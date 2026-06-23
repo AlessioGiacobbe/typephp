@@ -33,6 +33,8 @@ use PhpParser\Node\Expr\List_;
 use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
+use Ajaxray\AnsiKit\AnsiTerminal;
+use Ajaxray\AnsiKit\Components\Progressbar;
 use Symfony\Component\Yaml\Yaml;
 
 class Translator extends Preprocessor
@@ -1227,6 +1229,12 @@ CODE;
 
         $this->climate->lightBlue("Starting parallel compilation with {$job} jobs for {$totalFiles} files");
 
+        $progress = new Progressbar();
+        $progress->barStyle([AnsiTerminal::FG_GREEN])
+            ->percentageStyle([AnsiTerminal::TEXT_BOLD])
+            ->labelStyle([AnsiTerminal::FG_CYAN]);
+        $progress->renderInPlace(0, $totalFiles, 'Compiling');
+
         while ($compiledCount < $totalFiles) {
             // 启动新进程，直到达到最大并发数
             while ($runningProcesses < $job && !empty($fileQueue)) {
@@ -1268,14 +1276,17 @@ CODE;
                     $exitCode = pcntl_wexitstatus($status);
                     if ($exitCode !== 0) {
                         $failedFile = $processInfo['file'] ?? 'unknown';
-                        $this->climate->red("Compilation failed: {$failedFile}");
                         $failedFiles[] = $failedFile;
+                        echo PHP_EOL;
+                        $this->climate->red("Compilation failed: {$failedFile}");
+                        echo PHP_EOL;
                     } else {
                         if ($processInfo) {
                             $objectFiles[] = $processInfo['object'];
                         }
                     }
                     $compiledCount++;
+                    $progress->renderInPlace($compiledCount, $totalFiles, 'Compiling');
                 }
             }
         }
@@ -1290,6 +1301,8 @@ CODE;
                 $compiledCount++;
             }
         }
+
+        echo PHP_EOL;
 
         if (!empty($failedFiles)) {
             throw new \Exception('Compilation failed for: ' . implode(', ', $failedFiles));
