@@ -142,15 +142,29 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpConcat(Expr\BinaryOp\Concat $expr): string
     {
-        $left = $this->parseExpr($expr->left);
-        $right = $this->parseExpr($expr->right);
+        $items = [];
+        $this->flattenConcatExpr($expr, $items);
 
-        $leftType = $this->detectTypeOfExpr($expr->left);
-        $rightType = $this->detectTypeOfExpr($expr->right);
-        if ($leftType === self::TYPE_VOID or $rightType === self::TYPE_VOID) {
-            $this->fatalError($expr, 'Cannot concat void');
+        $argList = [];
+        foreach ($items as $item) {
+            $type = $this->detectTypeOfExpr($item);
+            if ($type === self::TYPE_VOID) {
+                $this->fatalError($expr, 'Cannot concat void');
+            }
+            $argList[] = $this->convertExprToStringByType($this->parseExpr($item), $type);
         }
-        return Symbol::concat() . '(' . $this->convertExprToStringByType($left, $leftType) . ', ' . $this->convertExprToStringByType($right, $rightType) . ')';
+
+        return Symbol::concat() . '(' . Symbol::argList() . '{' . implode(', ', $argList) . '})';
+    }
+
+    private function flattenConcatExpr(NodeAbstract $expr, array &$items): void
+    {
+        if ($expr instanceof Expr\BinaryOp\Concat) {
+            $this->flattenConcatExpr($expr->left, $items);
+            $this->flattenConcatExpr($expr->right, $items);
+        } else {
+            $items[] = $expr;
+        }
     }
 
     protected function parseBinaryOpSmaller(Expr\BinaryOp\Smaller $expr): string
