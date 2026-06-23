@@ -10,6 +10,7 @@
 
 namespace PhpAot\Php\Optimizer;
 
+use PhpAot\Php\Analysis\SsaBuilder;
 use PhpAot\Php\Analysis\SsaFlags;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -27,13 +28,8 @@ trait LoopVarOptimizer
         'mb_substr_count' => true,
     ];
 
-    protected function optimizeLoopVars(): void
+    protected function optimizeLoopVars(SsaBuilder $ssa): void
     {
-        $ssa = $this->context->ssaBuilder;
-        if (!$ssa) {
-            return;
-        }
-
         $stmts = $ssa->getStmts();
         if (!$stmts) {
             return;
@@ -49,7 +45,7 @@ trait LoopVarOptimizer
                 || $this->isSuperGlobal($escapedName)) {
                 continue;
             }
-            if (!$this->isLoopSsaVarStable($varName)) {
+            if (!$this->isLoopSsaVarStable($ssa, $varName)) {
                 continue;
             }
             if ($this->loopVarHasUnsafeUsage($varName, $stmts, $candidate['allowed'] ?? [])) {
@@ -57,7 +53,7 @@ trait LoopVarOptimizer
             }
             $depFailed = false;
             foreach ($candidate['deps'] ?? [] as $depName => $_) {
-                if (!$this->isLoopSsaVarStable($depName)
+                if (!$this->isLoopSsaVarStable($ssa, $depName)
                     || $this->loopVarHasUnsafeUsage($depName, $stmts, $candidates[$depName]['allowed'] ?? [])) {
                     $depFailed = true;
                     break;
@@ -578,13 +574,8 @@ trait LoopVarOptimizer
         return false;
     }
 
-    protected function isLoopSsaVarStable(string $varName): bool
+    protected function isLoopSsaVarStable(SsaBuilder $ssa, string $varName): bool
     {
-        $ssa = $this->context->ssaBuilder;
-        if (!$ssa) {
-            return false;
-        }
-
         foreach ($ssa->ssaVars as $ssaVar) {
             if ($ssaVar->origName !== $varName) {
                 continue;

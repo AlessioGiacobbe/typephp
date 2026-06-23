@@ -41,10 +41,9 @@ trait SsaPropOptimizer
      * This must be done during analysis because $this->context->objects is only
      * populated during code generation (after analysis).
      */
-    protected function optimizeObjectProps(): void
+    protected function optimizeObjectProps(SsaBuilder $ssa): void
     {
-        $ssa = $this->context->ssaBuilder;
-        if (!$ssa || !$this->nativeTypes) {
+        if (!$this->nativeTypes) {
             return;
         }
 
@@ -63,15 +62,17 @@ trait SsaPropOptimizer
             return;
         }
 
-        $objectAssigns = $this->collectObjectAssignments($ssa->getStmts());
-
-        // Also check function parameters that are typed objects
+        // Seed with function parameters that are typed objects, then propagate
+        // simple object aliases such as `$next = $right`.
+        $objectAssigns = [];
         foreach ($this->context->objects as $objName => $className) {
             if ($objName === 'this_') {
                 continue;
             }
             $objectAssigns[$objName] = $className;
         }
+        $objectAliases = [];
+        $objectAssigns = $this->collectObjectAssignments($ssa->getStmts(), $objectAssigns, $objectAliases);
 
         foreach ($objectAssigns as $objName => $className) {
             if ($objName === 'this_') {
@@ -82,7 +83,7 @@ trait SsaPropOptimizer
                 continue;
             }
 
-            if (!$this->isObjectSsaStable($ssa, $objName)) {
+            if (!$this->isObjectSsaStable($ssa, $objName, $objectAssigns)) {
                 continue;
             }
 
@@ -90,7 +91,10 @@ trait SsaPropOptimizer
                 continue;
             }
 
-            $unsafeProps = $this->collectDangerousPropOps($objName, $ssa->getStmts());
+            $unsafeProps = $this->collectDangerousPropOpsForObjects(
+                $this->getObjectAliasNames($objName, $objectAliases),
+                $ssa->getStmts()
+            );
             if ($unsafeProps) {
                 $this->context->unsafeObjectProps[$objName] = $unsafeProps;
             }
@@ -103,55 +107,100 @@ trait SsaPropOptimizer
      * Walk the function body AST to find variable assignments that produce
      * typed objects. Returns map of varName => className.
      */
-    protected function collectObjectAssignments(array $stmts): array
+    protected function collectObjectAssignments(array $stmts, array $knownObjects = [], array &$aliases = []): array
     {
-        $result = [];
-        foreach ($stmts as $stmt) {
-            $this->scanStmtForObjectAssign($stmt, $result);
-        }
+        $result = $knownObjects;
+        do {
+            $count = count($result);
+            foreach ($stmts as $stmt) {
+                $this->scanStmtForObjectAssign($stmt, $result, $aliases);
+            }
+        } while (count($result) !== $count);
+
         return $result;
     }
 
-    protected function scanStmtForObjectAssign($stmt, array &$result): void
+    protected function scanStmtForObjectAssign($stmt, array &$result, array &$aliases): void
     {
         if (!$stmt instanceof Node) {
             return;
         }
 
-        if ($stmt instanceof Node\Stmt\Expression && $stmt->expr instanceof Expr\Assign) {
-            $assign = $stmt->expr;
-            $var = $assign->var;
-            if ($var instanceof Expr\Variable && is_string($var->name)) {
-                $className = $this->resolveNewExprClass($assign->expr);
-                if ($className) {
-                    $result[$var->name] = $className;
-                }
-            }
+        if ($stmt instanceof Node\Stmt\Expression) {
+            $this->scanExprForObjectAssign($stmt->expr, $result, $aliases);
             return;
         }
 
         // Recurse
         if ($stmt instanceof Node\Stmt\If_) {
-            foreach ($stmt->stmts as $s) $this->scanStmtForObjectAssign($s, $result);
+            foreach ($stmt->stmts as $s) $this->scanStmtForObjectAssign($s, $result, $aliases);
             foreach ($stmt->elseifs as $elseif) {
-                foreach ($elseif->stmts as $s) $this->scanStmtForObjectAssign($s, $result);
+                foreach ($elseif->stmts as $s) $this->scanStmtForObjectAssign($s, $result, $aliases);
             }
             if ($stmt->else) {
-                foreach ($stmt->else->stmts as $s) $this->scanStmtForObjectAssign($s, $result);
+                foreach ($stmt->else->stmts as $s) $this->scanStmtForObjectAssign($s, $result, $aliases);
             }
         } elseif ($stmt instanceof Node\Stmt\While_ || $stmt instanceof Node\Stmt\Do_) {
-            foreach ($stmt->stmts as $s) $this->scanStmtForObjectAssign($s, $result);
+            foreach ($stmt->stmts as $s) $this->scanStmtForObjectAssign($s, $result, $aliases);
         } elseif ($stmt instanceof Node\Stmt\For_ || $stmt instanceof Node\Stmt\Foreach_) {
-            foreach ($stmt->stmts as $s) $this->scanStmtForObjectAssign($s, $result);
+            foreach ($stmt->stmts as $s) $this->scanStmtForObjectAssign($s, $result, $aliases);
         } elseif ($stmt instanceof Node\Stmt\TryCatch) {
-            foreach ($stmt->stmts as $s) $this->scanStmtForObjectAssign($s, $result);
+            foreach ($stmt->stmts as $s) $this->scanStmtForObjectAssign($s, $result, $aliases);
             foreach ($stmt->catches as $catch) {
-                foreach ($catch->stmts as $s) $this->scanStmtForObjectAssign($s, $result);
+                foreach ($catch->stmts as $s) $this->scanStmtForObjectAssign($s, $result, $aliases);
             }
             if ($stmt->finally) {
-                foreach ($stmt->finally->stmts as $s) $this->scanStmtForObjectAssign($s, $result);
+                foreach ($stmt->finally->stmts as $s) $this->scanStmtForObjectAssign($s, $result, $aliases);
             }
         }
+    }
+
+    protected function scanExprForObjectAssign($expr, array &$result, array &$aliases): void
+    {
+        if (!$expr instanceof Node) {
+            return;
+        }
+
+        if ($expr instanceof Expr\Assign) {
+            if ($expr->expr instanceof Node) {
+                $this->scanExprForObjectAssign($expr->expr, $result, $aliases);
+            }
+
+            $assign = $expr;
+            $var = $assign->var;
+            if ($var instanceof Expr\Variable && is_string($var->name)) {
+                $className = $this->resolveAssignedObjectClass($assign->expr, $result);
+                if ($className) {
+                    $result[$var->name] = $className;
+                    if ($assign->expr instanceof Expr\Variable && is_string($assign->expr->name)) {
+                        $aliases[$var->name] = $assign->expr->name;
+                    }
+                }
+            }
+            return;
+        }
+
+        foreach ($expr->getSubNodeNames() as $subNodeName) {
+            $subNode = $expr->$subNodeName;
+            if ($subNode instanceof Node) {
+                $this->scanExprForObjectAssign($subNode, $result, $aliases);
+            } elseif (is_array($subNode)) {
+                foreach ($subNode as $item) {
+                    if ($item instanceof Node) {
+                        $this->scanExprForObjectAssign($item, $result, $aliases);
+                    }
+                }
+            }
+        }
+    }
+
+    protected function resolveAssignedObjectClass(Expr $expr, array $knownObjects): ?string
+    {
+        if ($expr instanceof Expr\Variable && is_string($expr->name)) {
+            return $knownObjects[$expr->name] ?? null;
+        }
+
+        return $this->resolveNewExprClass($expr);
     }
 
     /**
@@ -188,7 +237,7 @@ trait SsaPropOptimizer
     /**
      * Check if an object variable has a single stable SSA definition.
      */
-    protected function isObjectSsaStable(SsaBuilder $ssa, string $objName): bool
+    protected function isObjectSsaStable(SsaBuilder $ssa, string $objName, array $knownObjects = []): bool
     {
         $foundDef = false;
 
@@ -209,7 +258,7 @@ trait SsaPropOptimizer
                 return false; // Multiple definitions
             }
 
-            if (!$this->isObjectDefinition($ssaVar)) {
+            if (!$this->isObjectDefinition($ssaVar, $knownObjects)) {
                 return false;
             }
 
@@ -223,7 +272,7 @@ trait SsaPropOptimizer
      * Check if an SSA definition sets the variable to an object value.
      * Accepts both `new ClassName()` and calls that return a typed object.
      */
-    protected function isObjectDefinition($ssaVar): bool
+    protected function isObjectDefinition($ssaVar, array $knownObjects = []): bool
     {
         $def = $ssaVar->definition;
         if (!$def) {
@@ -232,6 +281,9 @@ trait SsaPropOptimizer
 
         if ($def instanceof Node\Stmt\Expression && $def->expr instanceof Expr\Assign) {
             $rhs = $def->expr->expr;
+            if ($rhs instanceof Expr\Variable && is_string($rhs->name)) {
+                return isset($knownObjects[$rhs->name]);
+            }
             if ($rhs instanceof Expr\New_) {
                 return true;
             }
@@ -243,6 +295,26 @@ trait SsaPropOptimizer
         }
 
         return false;
+    }
+
+    protected function getObjectAliasNames(string $objName, array $aliases): array
+    {
+        $names = [$objName => true];
+        $changed = true;
+        while ($changed) {
+            $changed = false;
+            foreach ($aliases as $alias => $source) {
+                if (isset($names[$alias]) && !isset($names[$source])) {
+                    $names[$source] = true;
+                    $changed = true;
+                }
+                if (isset($names[$source]) && !isset($names[$alias])) {
+                    $names[$alias] = true;
+                    $changed = true;
+                }
+            }
+        }
+        return array_keys($names);
     }
 
     /**
@@ -284,9 +356,18 @@ trait SsaPropOptimizer
      */
     protected function collectDangerousPropOps(string $objName, array $stmts): array
     {
+        return $this->collectDangerousPropOpsForObjects([$objName], $stmts);
+    }
+
+    /**
+     * @param string[] $objNames aliases that may point at the same object
+     * @return array<string, bool> property name map; '*' means any property may be invalidated.
+     */
+    protected function collectDangerousPropOpsForObjects(array $objNames, array $stmts): array
+    {
         $events = [];
         foreach ($stmts as $stmt) {
-            $this->collectPropEvents($stmt, $objName, $events);
+            $this->collectPropEvents($stmt, $objNames, $events);
         }
         return $this->unsafePropsFromEvents($events);
     }
@@ -301,7 +382,7 @@ trait SsaPropOptimizer
     /**
      * @param array<int, array{kind: string, prop: string}> $events
      */
-    protected function collectPropEvents($node, string $objName, array &$events): void
+    protected function collectPropEvents($node, string|array $objName, array &$events): void
     {
         if (!$node instanceof Node) {
             return;
@@ -382,7 +463,7 @@ trait SsaPropOptimizer
             }
             if (!$this->isSafeObjectExposureCall($node)) {
                 if (($node instanceof Expr\MethodCall || $node instanceof Expr\NullsafeMethodCall)
-                    && $this->isVarNamed($node->var, $objName)) {
+                    && $this->isVarNamedAny($node->var, $objName)) {
                     $events[] = ['kind' => 'danger', 'prop' => '*'];
                 }
                 foreach ($node->args as $arg) {
@@ -421,7 +502,7 @@ trait SsaPropOptimizer
 
         if ($node instanceof Expr\Closure) {
             foreach ($node->uses as $use) {
-                if ($this->isVarNamed($use->var, $objName)) {
+                if ($this->isVarNamedAny($use->var, $objName)) {
                     $events[] = ['kind' => 'danger', 'prop' => '*'];
                 }
             }
@@ -506,7 +587,7 @@ trait SsaPropOptimizer
      *
      * @param array<int, array{kind: string, prop: string}> $events
      */
-    protected function collectPropEventsInDynamicParts($node, string $objName, array &$events): void
+    protected function collectPropEventsInDynamicParts($node, string|array $objName, array &$events): void
     {
         if (!$node instanceof Expr\PropertyFetch) {
             return;
@@ -561,17 +642,17 @@ trait SsaPropOptimizer
     /**
      * Check if an expression is a property fetch on a specific object.
      */
-    protected function isPropOfObj($node, string $objName): bool
+    protected function isPropOfObj($node, string|array $objName): bool
     {
         return $this->getPropNameOfObj($node, $objName) !== null;
     }
 
-    protected function getPropNameOfObj($node, string $objName): ?string
+    protected function getPropNameOfObj($node, string|array $objName): ?string
     {
         if (!$node instanceof Expr\PropertyFetch
             || !$node->var instanceof Expr\Variable
             || !is_string($node->var->name)
-            || !$this->isVarNamed($node->var, $objName)) {
+            || !$this->isVarNamedAny($node->var, $objName)) {
             return null;
         }
 
@@ -582,20 +663,30 @@ trait SsaPropOptimizer
         return '*';
     }
 
-    protected function exprMayExposeObject($node, string $objName): bool
+    protected function isVarNamedAny($node, string|array $varNames): bool
+    {
+        foreach ((array)$varNames as $varName) {
+            if ($this->isVarNamed($node, $varName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function exprMayExposeObject($node, string|array $objName): bool
     {
         if (!$node instanceof Node) {
             return false;
         }
 
-        if ($this->isVarNamed($node, $objName)) {
+        if ($this->isVarNamedAny($node, $objName)) {
             return true;
         }
 
         if ($node instanceof Expr\PropertyFetch
             && $node->var instanceof Expr\Variable
             && is_string($node->var->name)
-            && $this->isVarNamed($node->var, $objName)) {
+            && $this->isVarNamedAny($node->var, $objName)) {
             return false;
         }
 
@@ -622,12 +713,12 @@ trait SsaPropOptimizer
         return false;
     }
 
-    protected function isDynamicPropWriteOfObj($node, string $objName): bool
+    protected function isDynamicPropWriteOfObj($node, string|array $objName): bool
     {
         if ($node instanceof Expr\PropertyFetch
             && $node->var instanceof Expr\Variable
             && is_string($node->var->name)
-            && $this->isVarNamed($node->var, $objName)) {
+            && $this->isVarNamedAny($node->var, $objName)) {
             return $this->getPropNameOfObj($node, $objName) === '*';
         }
 

@@ -1930,8 +1930,8 @@ CODE;
         // 读取 link-paths
         $linkPaths = $cfg['link-paths'] ?? null;
         if (!empty($linkPaths) && is_array($linkPaths)) {
-            foreach ($linkPaths as $path) {
-                $this->linkPaths[] = (string)$path;
+            foreach ($linkPaths as $linkPath) {
+                $this->linkPaths[] = (string)$linkPath;
             }
         }
 
@@ -2781,14 +2781,18 @@ CODE;
 
         // Build SSA/e-SSA analysis for this function
         if ($v->stmts) {
-            $this->context->ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
-            $this->context->ssaBuilder->build();
+            $oriLocalVars = $this->context->localVars;
+            $oriTmpVarIndex = $this->context->tmpVarIndex;
+            /** SSA/e-SSA analysis for the current function. Built once per function, discarded with the context. */
+            $ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
+            $ssaBuilder->build();
             // Narrow local variable types based on SSA analysis
-            $this->optimizeVarTypes();
+            $this->optimizeVarTypes($ssaBuilder);
             // Narrow range-proven loop counters independent of native_types
-            $this->optimizeLoopVars();
+            $this->optimizeLoopVars($ssaBuilder);
             // Analyze object stability for property reference hoisting
-            $this->optimizeObjectProps();
+            $this->optimizeObjectProps($ssaBuilder);
+            $this->context->resetAnalysisTemporaries($oriLocalVars, $oriTmpVarIndex);
         }
 
         $stmts = '';
@@ -2863,6 +2867,10 @@ CODE;
      */
     protected function checkParentMethodCanBeOverridden(Node\Stmt\ClassMethod $v, string $name): void
     {
+        if ($name === '__construct') {
+            return;
+        }
+
         $classDef = $this->classDef;
         $childFuncDef = $this->methodDef->functionDef;
         while (true) {

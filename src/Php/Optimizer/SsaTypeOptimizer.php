@@ -71,10 +71,9 @@ trait SsaTypeOptimizer
      * killed, or defined by a φ function with mixed sources, pre-set the
      * type in localVars so genScopeVarDecl emits the narrow C++ type.
      */
-    protected function optimizeVarTypes(): void
+    protected function optimizeVarTypes(SsaBuilder $ssa): void
     {
-        $ssa = $this->context->ssaBuilder;
-        if (!$ssa || empty($ssa->ssaVars)) {
+        if (empty($ssa->ssaVars)) {
             return;
         }
 
@@ -91,6 +90,18 @@ trait SsaTypeOptimizer
                 $groups[$name] = [];
             }
             $groups[$name][] = $ssaVar;
+        }
+
+        // Type detection may inspect RHS expressions that read variables
+        // defined by earlier assignments. Code generation normally registers
+        // those locals while parsing assignments, but SSA optimization runs
+        // before that parse pass, so seed the optimization context with the
+        // SSA-defined local names as generic Vars.
+        foreach (array_keys($groups) as $name) {
+            $varName = $this->escapeVarName($name);
+            if (!isset($this->context->arguments[$varName]) && !$this->hasVar($varName)) {
+                $this->context->localVars[$varName] = self::TYPE_VAR;
+            }
         }
 
         foreach ($groups as $varName => $varList) {
@@ -166,7 +177,7 @@ trait SsaTypeOptimizer
             }
 
             // Scan for operations that SSA definition types alone can't detect
-            $functionStmts = $this->context->ssaBuilder->getStmts();
+            $functionStmts = $ssa->getStmts();
             if ($functionStmts) {
                 if ($narrowedType === self::TYPE_INT && $this->hasDangerousIntOps($varName, $functionStmts)) {
                     continue;

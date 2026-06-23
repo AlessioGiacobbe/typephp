@@ -17,7 +17,7 @@ trait TypeDetectionTrait
 {
     public function isTypedObject(string $object): bool
     {
-        return isset($this->context->objects[$object]);
+        return isset($this->context->objects[$object]) || isset($this->context->stableObjects[$object]);
     }
 
     protected function isSuperGlobal(string $var): bool

@@ -501,6 +501,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     public function getObjectType(string $object): string
     {
+        if (isset($this->context->stableObjects[$object])) {
+            return $this->context->stableObjects[$object];
+        }
         return $this->context->objects[$object] ?? 'stdClass';
     }
 

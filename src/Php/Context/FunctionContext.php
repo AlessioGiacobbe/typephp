@@ -8,13 +8,8 @@
 
 namespace PhpAot\Php\Context;
 
-use PhpAot\Php\Analysis\SsaBuilder;
-
 class FunctionContext
 {
-    /** SSA/e-SSA analysis for the current function. Built once per function, discarded with the context. */
-    public ?SsaBuilder $ssaBuilder = null;
-
     /** Map of SSA-stable object variable name => class name (SsaPropOptimizer). */
     public array $stableObjects = [];
 
@@ -104,5 +99,20 @@ class FunctionContext
     {
         $this->scopeLevel--;
         unset($this->scopeLayouts[$this->scopeLevel]);
+    }
+
+    public function resetAnalysisTemporaries(array $localVars, int $tmpVarIndex): void
+    {
+        $this->localVars = $localVars;
+        $this->tmpVarIndex = $tmpVarIndex;
+        $this->beforeStmtLines = [];
+        $this->afterStmtLines = [];
+        $this->objectProps = [];
+        $this->hoistedProps = [];
+        $this->staticPropRefs = [];
+        $this->scopeLayouts = [];
+        $this->scopeLevel = 0;
+        $this->inLoop = false;
+        $this->inAssignExpr = false;
     }
 }
