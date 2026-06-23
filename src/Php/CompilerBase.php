@@ -23,6 +23,7 @@ use PhpAot\Php\Exception\PlaceHolder;
 use PhpAot\Php\Exception\Redo;
 use PhpAot\Php\Exception\Skip;
 use PhpAot\Php\Exception\TestError;
+use PhpAot\Php\Generator\AnonClassGenerator;
 use PhpAot\Php\Generator\ClosureGenerator;
 use PhpAot\Php\Generator\PlaceHolderGenerator;
 use PhpAot\Php\Generator\PropertyPromotion;
@@ -64,6 +65,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 {
     use AstNodeType;
     use FuncCallOptimizer;
+    use AnonClassGenerator;
     use ClosureGenerator;
     use PlaceHolderGenerator;
     use PropertyPromotion;
@@ -734,11 +736,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         return 'tmp_var_' . $this->context->tmpVarIndex++;
     }
 
-    public function genAnonClassName(): string
-    {
-        return self::ANON_CLASS . $this->anonClassIndex++;
-    }
-
     public function writeFile(string $file, string $content): void
     {
         $dir = dirname($file);
@@ -913,6 +910,17 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (strcasecmp($ns1[array_key_last($ns1)], $ns2[0]) === 0) {
                 $ns = '\\' . implode('\\', $ns1);
                 goto _return;
+            }
+        }
+
+        // Handle qualified names that exactly match a use import (e.g. the extends
+        // of an anonymous class may already be a qualified name like "A\B\C" when the
+        // use import is also "A\B\C").
+        if (count($ns2) > 1) {
+            foreach ($this->useNamespaces as $useNamespace) {
+                if (strcasecmp(trim($useNamespace, '\\'), $class) === 0) {
+                    return $class;
+                }
             }
         }
 
@@ -3447,7 +3455,6 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $className = $this->genAnonClassName();
                 $classDef->name = new Node\Identifier($className);
                 // 继承父类和接口可能是 use 的名称，需要转换成全限定名称
-                // TODO 匿名类的属性、常量、方法参数中都可能会用相对类名，都需要转为全限定名称
                 if ($classDef->extends !== null) {
                     $parentClass = $this->getNamespacedClassName($classDef->extends->toString());
                     $classDef->extends = new Node\Name\FullyQualified($parentClass);
@@ -3458,6 +3465,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $classDef->implements[$i] = new Node\Name\FullyQualified($ifaceName);
                     }
                 }
+                // 将匿名类内部的类型引用（方法参数、返回值、属性等）转为全限定名称
+                $this->resolveAnonClassTypeNames($classDef);
                 $this->context->beforeStmtLines[] = 'static THREAD_LOCAL bool ' . $className . '_defined = false;';
                 $classCode = $this->genEmbeddedCode($classDef);
                 $this->addConstData($className . '_code', $classCode);
@@ -5739,114 +5748,6 @@ class CompilerBase extends \PhpAot\Core\Translator
         } else {
             return $this->getIndent() . 'return ' . self::VALUE_NULL . ';';
         }
-    }
-
-    protected function genEmbeddedCode(NodeAbstract $stmt): string
-    {
-        if ($stmt instanceof Node\Stmt\Class_) {
-            $stmt = clone $stmt;
-            $shouldAddMixedReturn = fn (Node\Stmt\Class_ $class, Node\Stmt\ClassMethod $method): bool =>
-                $this->shouldAddMixedReturnToEmbeddedClassMethod($class, $method);
-            $traverser = new \PhpParser\NodeTraverser();
-            $traverser->addVisitor(new class($shouldAddMixedReturn) extends \PhpParser\NodeVisitorAbstract {
-                /** @var list<Node\Stmt\Class_> */
-                private array $classStack = [];
-
-                public function __construct(private \Closure $shouldAddMixedReturn)
-                {
-                }
-
-                public function enterNode(Node $node)
-                {
-                    if ($node instanceof Node\Stmt\Class_) {
-                        $this->classStack[] = $node;
-                        return null;
-                    }
-
-                    if ($node instanceof Node\Stmt\ClassMethod && $node->returnType === null) {
-                        $class = $this->classStack[count($this->classStack) - 1] ?? null;
-                        if ($class !== null && ($this->shouldAddMixedReturn)($class, $node)) {
-                            $node->returnType = new Node\Identifier('mixed');
-                        }
-                    }
-                    return null;
-                }
-
-                public function leaveNode(Node $node)
-                {
-                    if ($node instanceof Node\Stmt\Class_) {
-                        array_pop($this->classStack);
-                    }
-                    return null;
-                }
-            });
-            $stmt = $traverser->traverse([$stmt])[0];
-        }
-        return $this->printer->prettyPrint([$stmt]);
-    }
-
-    protected function shouldAddMixedReturnToEmbeddedClassMethod(Node\Stmt\Class_ $class, Node\Stmt\ClassMethod $method): bool
-    {
-        $methodName = strtolower($method->name->toString());
-        if ($this->isEmbeddedMagicMethodReturnSensitive($methodName)) {
-            return false;
-        }
-
-        if (!empty($class->implements)) {
-            return true;
-        }
-
-        return $class->extends !== null
-            && $this->ancestorMethodMayRequireMixedReturn($class->extends, $methodName);
-    }
-
-    protected function isEmbeddedMagicMethodReturnSensitive(string $methodName): bool
-    {
-        return in_array($methodName, [
-            '__construct',
-            '__destruct',
-            '__clone',
-            '__debuginfo',
-            '__isset',
-            '__serialize',
-            '__set',
-            '__set_state',
-            '__sleep',
-            '__tostring',
-            '__unserialize',
-            '__unset',
-            '__wakeup',
-        ], true);
-    }
-
-    protected function ancestorMethodMayRequireMixedReturn(Node\Name $extends, string $methodName): bool
-    {
-        $className = ltrim($extends->toString(), '\\');
-
-        while ($className !== '') {
-            if ($this->hasClass($className)) {
-                $classDef = $this->getClass($className);
-                if ($classDef->hasMethod($methodName)) {
-                    $functionDef = $classDef->getMethod($methodName)->functionDef;
-                    return $functionDef !== null
-                        && ($functionDef->returnTypeUndeclared || $functionDef->returnType === self::TYPE_VAR);
-                }
-                $className = $classDef->extends;
-                continue;
-            }
-
-            if ($this->isInternalClass($className) || $this->isInternalInterface($className)) {
-                if (!Reflection::hasMethod($className, $methodName)) {
-                    return false;
-                }
-                $returnType = Reflection::getMethodReturnType($className, $methodName);
-                return $returnType === null || strtolower($returnType) === 'mixed';
-            }
-
-            return true;
-        }
-
-        return false;
     }
 
     protected function parseArrowFunction(Expr\ArrowFunction $expr): string
