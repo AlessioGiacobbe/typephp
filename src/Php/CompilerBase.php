@@ -1655,7 +1655,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
             }
             // 把子类当做父类返回时，父类必须是抽象类或者接口
-            if ($objectClass and $objectClass !== $returnClass and !$this->isAbstractClass($returnClass) and !$this->hasInterface($returnClass) and !$this->isInternalInterface($returnClass)) {
+            // 仅原生类进行静态检查，若类不存在，说明该类是动态类，无法进行编译期验证
+            if ($objectClass and $objectClass !== $returnClass
+                and $this->hasClass($returnClass)
+                and !$this->isAbstractClass($returnClass)
+                and !$this->hasInterface($returnClass)
+                and !$this->isInternalInterface($returnClass)) {
                 $this->fatalError($v, "When returning a subclass `$objectClass` instance as parent type, the parent class `$returnClass` must be abstract/interface");
             }
         }

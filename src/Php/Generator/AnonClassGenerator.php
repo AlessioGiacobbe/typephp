@@ -61,7 +61,7 @@ trait AnonClassGenerator
     /**
      * Resolve a single type node, converting relative Name to FullyQualified.
      */
-    protected function resolveTypeNode(Node $type): Node
+    protected function resolveTypeNode(Node $type): NodeAbstract
     {
         if ($type instanceof Name) {
             if ($type->isFullyQualified()) {
