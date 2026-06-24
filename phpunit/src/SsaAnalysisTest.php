@@ -108,7 +108,7 @@ class SsaAnalysisTest extends TestCase
         $builder->build();
         $this->setContextProperty('ssaBuilder', $builder);
 
-        $this->invoke('optimizeLoopVars');
+        $this->invoke('optimizeLoopVars', $builder);
 
         return $this->getContextProperty('localVars');
     }

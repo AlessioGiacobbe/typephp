@@ -2799,6 +2799,7 @@ CODE;
             /** SSA/e-SSA analysis for the current function. Built once per function, discarded with the context. */
             $ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
             $ssaBuilder->build();
+            $this->context->ssaBuilder = $ssaBuilder;
             // Narrow local variable types based on SSA analysis
             $this->optimizeVarTypes($ssaBuilder);
             // Narrow range-proven loop counters independent of native_types
