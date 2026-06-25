@@ -57,16 +57,17 @@ class BackendTest extends TestCase
     {
         $platform = new Windows();
         $compiler = new Msvc($platform);
-        
+
         $cmd = $compiler->linkObjects(
             ['test.obj'],
             'output.exe',
             ['C:\PHP\lib'],
             ['php8.lib']
         );
-        
+
         $this->assertStringContainsString('link', $cmd);
-        $this->assertStringContainsString('test.obj', $cmd);
+        $this->assertStringContainsString('@', $cmd);
+        $this->assertStringContainsString('.rsp', $cmd);
         $this->assertStringContainsString('/OUT:', $cmd);
         $this->assertStringContainsString('output.exe', $cmd);
         $this->assertStringContainsString('/LIBPATH:', $cmd);

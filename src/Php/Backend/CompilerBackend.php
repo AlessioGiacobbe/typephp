@@ -152,4 +152,26 @@ abstract class CompilerBackend
     {
         return $this->platform->getLibraryFlags($libraries);
     }
+
+    /**
+     * 将目标文件列表写入 Response File，避免命令行参数过长超出 OS 限制（Windows 8191 字符）
+     *
+     * @param array  $objectFiles 目标文件路径列表
+     * @param string $targetFile  最终输出文件路径（Response File 写入同目录）
+     * @return string 链接器参数，如 @build/project.rsp
+     */
+    protected function createResponseFile(array $objectFiles, string $targetFile): string
+    {
+        $rspFile = dirname($targetFile) . DIRECTORY_SEPARATOR . basename($targetFile) . '.rsp';
+        $lines = [];
+        foreach ($objectFiles as $file) {
+            // 路径含空格时用双引号包裹，MSVC link.exe 和 GCC/Clang 均支持
+            if (str_contains($file, ' ')) {
+                $file = '"' . $file . '"';
+            }
+            $lines[] = $file;
+        }
+        file_put_contents($rspFile, implode("\n", $lines));
+        return '@' . $rspFile;
+    }
 }

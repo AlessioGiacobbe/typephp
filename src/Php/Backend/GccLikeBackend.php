@@ -125,7 +125,7 @@ abstract class GccLikeBackend extends CompilerBackend
         array $flags = []
     ): string {
         $cmd = $this->getLinkerCommand();
-        $cmd .= ' ' . implode(' ', array_map('escapeshellarg', $objectFiles));
+        $cmd .= ' ' . $this->createResponseFile($objectFiles, $outputFile);
         $cmd .= ' ' . $this->getLinkerOutputFlag() . ' ' . escapeshellarg($outputFile);
 
         if (!empty($libraryPaths)) {
@@ -208,7 +208,7 @@ abstract class GccLikeBackend extends CompilerBackend
     public function buildLinkCommand(array $objectFiles, string $outputFile, array $options = []): string
     {
         $cmd = $this->getLinkerCommand();
-        $cmd .= ' ' . implode(' ', array_map('escapeshellarg', $objectFiles));
+        $cmd .= ' ' . $this->createResponseFile($objectFiles, $outputFile);
         $cmd .= ' ' . $this->getLinkerOutputFlag() . ' ' . escapeshellarg($outputFile);
 
         if (!empty($options['library_paths'])) {

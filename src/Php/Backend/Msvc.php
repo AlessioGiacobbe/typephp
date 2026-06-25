@@ -72,9 +72,9 @@ class Msvc extends CompilerBackend
     ): string {
         $cmd = $this->getLinkerCommand();
         
-        // 添加目标文件
-        $cmd .= ' ' . implode(' ', array_map('escapeshellarg', $objectFiles));
-        
+        // 添加目标文件（通过 Response File 避免命令行过长）
+        $cmd .= ' ' . $this->createResponseFile($objectFiles, $outputFile);
+
         // 输出文件
         $cmd .= ' /OUT:' . escapeshellarg($outputFile);
         
@@ -179,7 +179,7 @@ class Msvc extends CompilerBackend
     public function buildLinkCommand(array $objectFiles, string $outputFile, array $options = []): string
     {
         $cmd = $this->getLinkerCommand();
-        $cmd .= ' ' . implode(' ', array_map('escapeshellarg', $objectFiles));
+        $cmd .= ' ' . $this->createResponseFile($objectFiles, $outputFile);
         $cmd .= ' /OUT:' . escapeshellarg($outputFile);
 
         if (!empty($options['library_paths'])) {
