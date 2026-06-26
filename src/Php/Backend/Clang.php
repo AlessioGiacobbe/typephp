@@ -85,49 +85,52 @@ class Clang extends GccLikeBackend
         return '-fsanitize=' . $sanitizer;
     }
 
-    protected function addPICFlag(array $config, string &$cmd): void
+    protected function getPICFlag(array $config): string
     {
         if ($this->platform instanceof Windows) {
-            return;
+            return '';
         }
         if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['pic'])) {
-            $cmd .= ' -fPIC';
+            return ' -fPIC';
         }
+        return '';
     }
 
-    protected function addPlatformLinkFlags(array $config, string &$cmd): void
+    protected function getPlatformLinkFlags(array $config): string
     {
         if ($this->platform instanceof Windows) {
+            $flags = '';
             if (!empty($config['debug'])) {
-                $cmd .= ' /DEBUG';
+                $flags .= ' /DEBUG';
             }
             if (!empty($config['no_console'])) {
-                $cmd .= ' ' . $this->platform->getSubsystemOptions(true);
+                $flags .= ' ' . $this->platform->getSubsystemOptions(true);
             }
-            $cmd .= ' ' . $this->platform->getCrtConfig();
+            $flags .= ' ' . $this->platform->getCrtConfig();
 
             if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
-                $cmd .= ' /DLL';
+                $flags .= ' /DLL';
             }
-            return;
+            return $flags;
         }
 
-        parent::addPlatformLinkFlags($config, $cmd);
+        return parent::getPlatformLinkFlags($config);
     }
 
-    protected function addPlatformFullLinkFlags(array $options, string &$cmd): void
+    protected function getPlatformFullLinkFlags(array $options): string
     {
         if ($this->platform instanceof Windows) {
+            $flags = '';
             if (!empty($options['debug'])) {
-                $cmd .= ' /DEBUG';
+                $flags .= ' /DEBUG';
             }
             if (!empty($options['no_console'])) {
-                $cmd .= ' ' . $this->platform->getSubsystemOptions(true);
+                $flags .= ' ' . $this->platform->getSubsystemOptions(true);
             }
-            $cmd .= ' ' . $this->platform->getCrtConfig();
-            return;
+            $flags .= ' ' . $this->platform->getCrtConfig();
+            return $flags;
         }
 
-        parent::addPlatformFullLinkFlags($options, $cmd);
+        return parent::getPlatformFullLinkFlags($options);
     }
 }

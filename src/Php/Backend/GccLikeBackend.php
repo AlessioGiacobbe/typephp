@@ -50,42 +50,51 @@ abstract class GccLikeBackend extends CompilerBackend
         };
     }
 
-    /** 添加 PIC 标志 */
-    protected function addPICFlag(array $config, string &$cmd): void
+    /** 获取 PIC 标志 */
+    protected function getPICFlag(array $config): string
     {
         if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['pic'])) {
-            $cmd .= ' -fPIC';
+            return ' -fPIC';
         }
+        return '';
     }
 
-    /** 添加平台特定的链接选项 */
-    protected function addPlatformLinkFlags(array $config, string &$cmd): void
+    /** 获取平台特定的链接选项 */
+    protected function getPlatformLinkFlags(array $config): string
     {
+        $flags = '';
+
         if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['shared'])) {
-            $cmd .= ' ' . $this->platform->getSharedLinkFlag();
+            $flags .= ' ' . $this->platform->getSharedLinkFlag();
 
             if ($this->platform instanceof \PhpAot\Php\Platform\Macos && !empty($config['install_name'])) {
-                $cmd .= ' ' . $this->platform->getCurrentInstallNameOption($config['install_name']);
+                $flags .= ' ' . $this->platform->getCurrentInstallNameOption($config['install_name']);
             }
         }
 
         if (!empty($config['rpath'])) {
             foreach ($config['rpath'] as $path) {
-                $cmd .= ' -Wl,-rpath,' . escapeshellarg($path);
+                $flags .= ' -Wl,-rpath,' . escapeshellarg($path);
             }
         }
+
+        return $flags;
     }
 
-    /** 添加平台特定的完整链接选项 */
-    protected function addPlatformFullLinkFlags(array $options, string &$cmd): void
+    /** 获取平台特定的完整链接选项 */
+    protected function getPlatformFullLinkFlags(array $options): string
     {
+        $flags = '';
+
         if (!empty($options['shared'])) {
-            $cmd .= ' ' . $this->platform->getSharedLinkFlag();
+            $flags .= ' ' . $this->platform->getSharedLinkFlag();
         }
 
         if (!empty($options['rpath'])) {
-            $cmd .= ' ' . $this->platform->getRpathOptions($options['rpath']);
+            $flags .= ' ' . $this->platform->getRpathOptions($options['rpath']);
         }
+
+        return $flags;
     }
 
     // ──── 抽象方法实现 ────
@@ -259,7 +268,7 @@ abstract class GccLikeBackend extends CompilerBackend
             $cmd .= ' --target=' . $config['target_platform'];
         }
 
-        $this->addPICFlag($config, $cmd);
+        $cmd .= $this->getPICFlag($config);
 
         if (!empty($config['enable_profiler'])) {
             $cmd .= ' -DPPROF_ON=1';
@@ -289,7 +298,7 @@ abstract class GccLikeBackend extends CompilerBackend
     {
         $cmd = '';
 
-        $this->addPlatformLinkFlags($config, $cmd);
+        $cmd .= $this->getPlatformLinkFlags($config);
 
         if (!empty($config['sanitize'])) {
             $cmd .= ' ' . $this->formatSanitizerFlag($config['sanitize']);
@@ -344,7 +353,7 @@ abstract class GccLikeBackend extends CompilerBackend
     {
         $cmd = '';
 
-        $this->addPlatformFullLinkFlags($options, $cmd);
+        $cmd .= $this->getPlatformFullLinkFlags($options);
 
         if (!empty($options['sanitize'])) {
             $cmd .= ' -fsanitize=' . $options['sanitize'];
