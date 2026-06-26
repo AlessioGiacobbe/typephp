@@ -3,6 +3,8 @@
 function main()
 {
     require __DIR__ . '/fn.php';
-    var_dump(fn_test_yeild());
+    foreach (fn_test_yeild() as $value) {
+        echo $value . "\n";
+    }
 }
 
