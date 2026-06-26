@@ -3055,7 +3055,10 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($this->isScalar($arg->value)) {
                         $this->fatalError($arg, 'The constants cannot be used as an argument for a reference-type parameter');
                     }
-                    $list_args[] = $this->parseChainedExpr($arg->value, self::OP_REFVAL);
+                    $tmpRef = $this->genTmpVarName();
+                    $this->addLocalVar($tmpRef, self::TYPE_REF);
+                    $this->context->beforeStmtLines[] = $tmpRef . ' = ' . $this->parseChainedExpr($arg->value, self::OP_REFVAL) . ';';
+                    $list_args[] = '&' . $tmpRef;
                     continue;
                 }
             }
@@ -4478,12 +4481,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isPropertyFetch($expr) and $this->isVarExpr($expr->var) and $this->isIdExpr($expr->name)) {
             $prop = $this->parsePropertyFetch($expr);
             if ($expr->hasAttribute('nativeProperty')) {
+                if ($op === self::OP_REFVAL) {
+                    return $prop . '.toReference()';
+                }
                 return $fn . '(' . $prop . ')';
             }
         }
         if ($this->isStaticPropertyFetch($expr) and $this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
             $prop = $this->parseStaticPropertyFetch($expr);
             if ($expr->hasAttribute('nativeProperty')) {
+                if ($op === self::OP_REFVAL) {
+                    return $prop . '.toReference()';
+                }
                 return $fn . '(' . $prop . ')';
             }
         }
