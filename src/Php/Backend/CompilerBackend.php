@@ -15,6 +15,11 @@ abstract class CompilerBackend
      */
     protected PlatformBase $platform;
 
+    /**
+     * 最近创建的 Response File 路径，用于构建完成后清理
+     */
+    protected string $lastResponseFile = '';
+
     public function __construct(PlatformBase $platform)
     {
         $this->platform = $platform;
@@ -163,6 +168,7 @@ abstract class CompilerBackend
     protected function createResponseFile(array $objectFiles, string $targetFile): string
     {
         $rspFile = dirname($targetFile) . DIRECTORY_SEPARATOR . basename($targetFile) . '.rsp';
+        $this->lastResponseFile = $rspFile;
         $lines = [];
         foreach ($objectFiles as $file) {
             // 路径含空格时用双引号包裹，MSVC link.exe 和 GCC/Clang 均支持
@@ -173,5 +179,15 @@ abstract class CompilerBackend
         }
         file_put_contents($rspFile, implode("\n", $lines));
         return '@' . $rspFile;
+    }
+
+    /**
+     * 删除最近创建的 Response File 临时文件
+     */
+    public function cleanupResponseFile(): void
+    {
+        if ($this->lastResponseFile !== '' && file_exists($this->lastResponseFile)) {
+            unlink($this->lastResponseFile);
+        }
     }
 }

@@ -1558,6 +1558,9 @@ CODE;
             $this->error('target file not generated: ' . $targetFile);
         }
 
+        // 删除 Response File 临时文件
+        $this->getCompilerBackend()->cleanupResponseFile();
+
         $this->climate->green('Build successful: ' . $targetFile);
 
         return $targetFile;
