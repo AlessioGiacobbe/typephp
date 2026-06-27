@@ -207,6 +207,12 @@ class Constants
             'required'    => false,
             'multiple'    => true,
         ],
+        'no-progress' => [
+            'longPrefix'  => 'no-progress',
+            'description' => 'Disable progress bar, output per-file compilation progress line by line',
+            'required'    => false,
+            'noValue'     => true,
+        ],
         'lto' => [
             'longPrefix'  => 'lto',
             'description' => 'Enable Link Time Optimization (-flto)',

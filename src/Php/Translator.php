@@ -237,6 +237,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('--target-platform <triple> Cross-compilation target triple (e.g. aarch64-linux-gnu)');
         $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
+        $climate->tab()->out('--no-progress        Disable progress bar, output per-file compilation progress line by line');
         $climate->tab()->out('--no-console         Hide console window (Windows only, GUI application)');
         $climate->tab()->out('--no-color           Disable ANSI color output');
         $climate->tab()->out('--sanitize <type>    Enable sanitizers (address, undefined, etc.)');
@@ -292,6 +293,11 @@ class Translator extends Preprocessor
                 exit(1);
             }
             $this->enableProfiler = true;
+        }
+
+        // 禁用进度条
+        if ($this->climate->arguments->defined('no-progress')) {
+            $this->noProgress = true;
         }
 
         // 隐藏控制台窗口
@@ -1183,6 +1189,7 @@ CODE;
 
         $this->climate->lightBlue("Starting compilation for {$totalFiles} files");
 
+        $index = 0;
         foreach ($sourceFiles as $cppFile) {
             $objectFile = $this->getObjectFile($cppFile);
 
@@ -1193,10 +1200,21 @@ CODE;
                 } else {
                     $failedFiles[] = $cppFile;
                     $this->climate->red("Compilation failed: {$cppFile}");
+                    $index++;
+                    continue;
                 }
             } catch (\Throwable $e) {
                 $failedFiles[] = $cppFile;
                 $this->climate->red("Compilation error: {$cppFile} - " . $e->getMessage());
+                $index++;
+                continue;
+            }
+
+            $index++;
+            if ($this->noProgress) {
+                $percent = intval($index / $totalFiles * 100);
+                $cppFileShorted = $this->removeCommonPrefix($this->buildDir, $cppFile);
+                $this->climate->white("[{$index}/{$totalFiles}] {$percent}% {$cppFileShorted}");
             }
         }
 
@@ -1229,11 +1247,13 @@ CODE;
 
         $this->climate->lightBlue("Starting parallel compilation with {$job} jobs for {$totalFiles} files");
 
-        $progress = new Progressbar();
-        $progress->barStyle([AnsiTerminal::FG_GREEN])
-            ->percentageStyle([AnsiTerminal::TEXT_BOLD])
-            ->labelStyle([AnsiTerminal::FG_CYAN]);
-        $progress->renderInPlace(0, $totalFiles, 'Compiling');
+        if (!$this->noProgress) {
+            $progress = new Progressbar();
+            $progress->barStyle([AnsiTerminal::FG_GREEN])
+                ->percentageStyle([AnsiTerminal::TEXT_BOLD])
+                ->labelStyle([AnsiTerminal::FG_CYAN]);
+            $progress->renderInPlace(0, $totalFiles, 'Compiling');
+        }
 
         while ($compiledCount < $totalFiles) {
             // 启动新进程，直到达到最大并发数
@@ -1286,7 +1306,14 @@ CODE;
                         }
                     }
                     $compiledCount++;
-                    $progress->renderInPlace($compiledCount, $totalFiles, 'Compiling');
+                    if ($this->noProgress) {
+                        $percent = intval($compiledCount / $totalFiles * 100);
+                        $file = $processInfo['file'] ?? 'unknown';
+                        $fileShorted = $this->removeCommonPrefix($this->buildDir, $file);
+                        $this->climate->white("[{$compiledCount}/{$totalFiles}] {$percent}% {$fileShorted}");
+                    } else {
+                        $progress->renderInPlace($compiledCount, $totalFiles, 'Compiling');
+                    }
                 }
             }
         }
@@ -1296,9 +1323,14 @@ CODE;
             $status = null;
             $pid = pcntl_wait($status);
             if ($pid > 0) {
+                $processInfo = $processPipes[$pid] ?? null;
                 unset($processPipes[$pid]);
                 $runningProcesses--;
                 $compiledCount++;
+                if ($this->noProgress && $processInfo) {
+                    $percent = intval($compiledCount / $totalFiles * 100);
+                    $this->climate->darkGray("[{$compiledCount}/{$totalFiles}] {$percent}% {$processInfo['file']}");
+                }
             }
         }
 
