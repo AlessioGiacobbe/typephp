@@ -349,6 +349,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected CLImate $climate;
     protected bool $stubFile = false;
     protected bool $enableProfiler = false;
+    protected bool $noProgress = false;
     protected bool $forTest = false;
     protected Parser $parser;
     protected PrettyPrinter $printer;
@@ -4699,7 +4700,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             $funcName = '';
         }
 
-        if ($class and $funcName and !$magicMethod) {
+        $methodIsAbstract = $class && $funcName && $this->hasClass($class)
+            && ($this->getMethodFlags($class, $funcName) & Modifiers::ABSTRACT);
+        if ($class and $funcName and !$magicMethod and !$methodIsAbstract) {
             $methodPtr = $this->getMethodPtr($class, $funcName);
         } else {
             $methodPtr = $method;
@@ -5530,6 +5533,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
         if ($nativeFunc) {
+            if ($this->hasClass($class) && $this->getMethodFlags($class, $method) & Modifiers::ABSTRACT) {
+                return false;
+            }
+            if ($object !== 'this_' && !isset($this->context->stableObjects[$object])
+                && ($this->isAbstractClass($class) || $this->isInterface($class))) {
+                return false;
+            }
             $this->checkFunction($nativeFunc);
             if ($this->hasFunction($nativeFunc)) {
                 return $nativeFunc;
