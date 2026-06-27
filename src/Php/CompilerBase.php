@@ -4702,7 +4702,10 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $methodIsAbstract = $class && $funcName && $this->hasClass($class)
             && ($this->getMethodFlags($class, $funcName) & Modifiers::ABSTRACT);
-        if ($class and $funcName and !$magicMethod and !$methodIsAbstract) {
+        $methodIsOverridden = $class && $funcName && $this->isOverrideMethod(
+            $this->getOverrideMethodName($class, $funcName)
+        );
+        if ($class and $funcName and !$magicMethod and !$methodIsAbstract and !$methodIsOverridden) {
             $methodPtr = $this->getMethodPtr($class, $funcName);
         } else {
             $methodPtr = $method;
@@ -5418,6 +5421,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         return isset($this->classMethodOverride[$fullMethodNameLower]) and $this->classMethodOverride[$fullMethodNameLower];
     }
 
+    protected function getOverrideMethodName(string $class, string $method): string
+    {
+        if (!$this->hasClass($class) && !$this->hasInterface($class)
+            && !$this->isInternalClass($class) && !$this->isInternalInterface($class)) {
+            $class = $this->getNamespacedClassName($class);
+        }
+        return $class . '::' . $method;
+    }
+
     protected function hasSubClasses(string $classNameLower): bool
     {
         return !empty($this->classSubClasses[$classNameLower]);
@@ -5426,6 +5438,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function isCurrentClassFinal(): bool
     {
         return $this->classDef && ($this->classDef->flags & Modifiers::FINAL) !== 0;
+    }
+
+    protected function isFinalClass(string $class): bool
+    {
+        return $this->hasClass($class) && ($this->getClass($class)->flags & Modifiers::FINAL) !== 0;
     }
 
     protected function getMethodFlags(string $class, string $method): int
@@ -5462,7 +5479,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      *  2. $this->m() where m is final (can't be overridden)
      *  3. $this->m() where m is private (not virtual)
      *  4. $obj->m() where obj's class has no known subclasses
-     *  5. $obj->m() where obj is SSA-stable (single def, no escape)
+     *  5. $obj->m() where obj is SSA-stable and its class is final
      */
     protected function canDevirtualize(string $object, string $class, string $method): bool
     {
@@ -5480,15 +5497,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         // Case 4: Typed object whose class has no known subclasses
         if ($object !== 'this_' && $this->hasClass($class)) {
             $classLower = strtolower($class);
-            if (!$this->hasSubClasses($classLower) && !$this->isInterface($class)) {
+            if (!$this->hasSubClasses($classLower) && !$this->isInterface($class) && !$this->isAbstractClass($class)) {
                 return true;
             }
         }
 
-        // Case 5: SSA-stable object — compile-time proven exact type
+        // Case 5: SSA stability proves the variable identity, not necessarily
+        // the runtime class. Only final classes are exact enough here.
         if ($object !== 'this_' && isset($this->context->stableObjects[$object])) {
             $stableClass = $this->context->stableObjects[$object];
-            if ($this->hasClass($stableClass) && !$this->isAbstractClass($stableClass)) {
+            if ($this->isFinalClass($stableClass)) {
                 return true;
             }
         }
@@ -5520,11 +5538,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
         }
 
-        if ($classDef) {
-            $fullMethodName = $classDef->getNamespacedName(false) . '::' . $method;
-        } else {
-            $fullMethodName = $object . '::' . $method;
-        }
+        $fullMethodName = $this->getOverrideMethodName($class, $method);
 
         // 存在子类同名方法，尝试去虚化
         if ($this->isOverrideMethod($fullMethodName)) {

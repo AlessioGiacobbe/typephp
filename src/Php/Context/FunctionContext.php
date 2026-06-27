@@ -8,10 +8,12 @@
 
 namespace PhpAot\Php\Context;
 
+use PhpAot\Php\Analysis\SsaBuilder;
+
 class FunctionContext
 {
     /** SSA builder for the current function. Built once per function, discarded with the context. */
-    public ?\PhpAot\Php\Analysis\SsaBuilder $ssaBuilder = null;
+    public ?SsaBuilder $ssaBuilder = null;
 
     /** Map of SSA-stable object variable name => class name (SsaPropOptimizer). */
     public array $stableObjects = [];
