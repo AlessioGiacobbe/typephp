@@ -4700,12 +4700,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $funcName = '';
         }
 
-        $methodIsAbstract = $class && $funcName && $this->hasClass($class)
-            && ($this->getMethodFlags($class, $funcName) & Modifiers::ABSTRACT);
-        $methodIsOverridden = $class && $funcName && $this->isOverrideMethod(
-            $this->getOverrideMethodName($class, $funcName)
-        );
-        if ($class and $funcName and !$magicMethod and !$methodIsAbstract and !$methodIsOverridden) {
+        if ($class && $funcName && !$magicMethod && $this->isInternalClass($class)) {
             $methodPtr = $this->getMethodPtr($class, $funcName);
         } else {
             $methodPtr = $method;
