@@ -2,8 +2,6 @@
 call abstract base method through concrete object
 --FILE--
 <?php
-use native_types;
-
 abstract class Base
 {
     abstract public function run(): string;

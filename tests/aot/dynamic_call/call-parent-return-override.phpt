@@ -2,8 +2,6 @@
 call overridden method through parent parameter type
 --FILE--
 <?php
-use native_types;
-
 class Base
 {
     public function run(): string

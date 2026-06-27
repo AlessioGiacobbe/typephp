@@ -3,8 +3,6 @@ call overridden method through namespaced parent type
 --FILE--
 <?php
 namespace Demo {
-    use native_types;
-
     class Base
     {
         public function run(): string
