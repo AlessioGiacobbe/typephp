@@ -1,6 +1,6 @@
 <?php
 /**
- * SSA-based object property reference hoisting optimizer.
+ * SSA-based object stability and property reference hoisting optimizer.
  *
  * Extends the existing $this->intProp optimization to any SSA-proven stable
  * object. When an object variable has a single definition, no escape/reference/
@@ -33,7 +33,8 @@ use PhpParser\Node\Expr;
 trait SsaPropOptimizer
 {
     /**
-     * Analyze object stability and identify safe property accesses.
+     * Analyze object stability for method dispatch and other non-native
+     * optimizations.
      * Called after SSA build and var type optimization in parseFunction().
      *
      * Scans the function body AST to find object assignments (e.g. $o = new Foo()),
@@ -41,12 +42,28 @@ trait SsaPropOptimizer
      * This must be done during analysis because $this->context->objects is only
      * populated during code generation (after analysis).
      */
+    protected function analyzeStableObjects(SsaBuilder $ssa): void
+    {
+        [$objectAssigns] = $this->collectStableObjectCandidates($ssa);
+
+        foreach ($objectAssigns as $objName => $className) {
+            if (!$className || $className === 'stdClass' || !$this->hasClass($className)) {
+                continue;
+            }
+
+            if (!$this->isObjectSsaStable($ssa, $objName, $objectAssigns)) {
+                continue;
+            }
+
+            $this->context->stableObjects[$objName] = $className;
+        }
+    }
+
+    /**
+     * Identify safe property accesses for native typed property hoisting.
+     */
     protected function optimizeObjectProps(SsaBuilder $ssa): void
     {
-        if (!$this->nativeTypes) {
-            return;
-        }
-
         if ($this->classDef && !$this->classDef->trait) {
             if ($this->isClassSafeForPropHoisting($this->getFullClassName())) {
                 $unsafeProps = $this->collectDangerousPropOps('this_', $ssa->getStmts());
@@ -58,36 +75,11 @@ trait SsaPropOptimizer
             }
         }
 
-        if (empty($ssa->ssaVars)) {
-            return;
-        }
+        [, $objectAliases] = $this->collectStableObjectCandidates($ssa);
 
-        // Seed with function parameters that are typed objects, then propagate
-        // simple object aliases such as `$next = $right`.
-        $objectAssigns = [];
-        foreach ($this->context->objects as $objName => $className) {
-            if ($objName === 'this_') {
-                continue;
-            }
-            $objectAssigns[$objName] = $className;
-        }
-        $objectAliases = [];
-        $objectAssigns = $this->collectObjectAssignments($ssa->getStmts(), $objectAssigns, $objectAliases);
-
-        foreach ($objectAssigns as $objName => $className) {
-            if ($objName === 'this_') {
-                continue;
-            }
-
-            if (!$className || $className === 'stdClass' || !$this->hasClass($className)) {
-                continue;
-            }
-
-            if (!$this->isObjectSsaStable($ssa, $objName, $objectAssigns)) {
-                continue;
-            }
-
+        foreach ($this->context->stableObjects as $objName => $className) {
             if (!$this->isClassSafeForPropHoisting($className)) {
+                $this->context->unsafeObjectProps[$objName] = ['*' => true];
                 continue;
             }
 
@@ -98,9 +90,31 @@ trait SsaPropOptimizer
             if ($unsafeProps) {
                 $this->context->unsafeObjectProps[$objName] = $unsafeProps;
             }
-
-            $this->context->stableObjects[$objName] = $className;
         }
+    }
+
+    /**
+     * @return array{0: array<string, string>, 1: array<string, string>}
+     */
+    protected function collectStableObjectCandidates(SsaBuilder $ssa): array
+    {
+        if (empty($ssa->ssaVars)) {
+            return [[], []];
+        }
+
+        $objectAssigns = [];
+        foreach ($this->context->objects as $objName => $className) {
+            if ($objName === 'this_') {
+                continue;
+            }
+            $objectAssigns[$objName] = $className;
+        }
+        $objectAliases = [];
+
+        return [
+            $this->collectObjectAssignments($ssa->getStmts(), $objectAssigns, $objectAliases),
+            $objectAliases,
+        ];
     }
 
     /**

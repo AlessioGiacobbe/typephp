@@ -2835,12 +2835,14 @@ CODE;
             $ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
             $ssaBuilder->build();
             $this->context->ssaBuilder = $ssaBuilder;
-            // Narrow local variable types based on SSA analysis
-            $this->optimizeVarTypes($ssaBuilder);
-            // Narrow range-proven loop counters independent of native_types
-            $this->optimizeLoopVars($ssaBuilder);
-            // Analyze object stability for property reference hoisting
-            $this->optimizeObjectProps($ssaBuilder);
+            $this->analyzeStableObjects($ssaBuilder);
+            if ($this->nativeTypes) {
+                // Narrow local variable types based on SSA analysis.
+                $this->optimizeVarTypes($ssaBuilder);
+                // Narrow range-proven loop counters and native property accesses.
+                $this->optimizeLoopVars($ssaBuilder);
+                $this->optimizeObjectProps($ssaBuilder);
+            }
             $this->context->resetAnalysisTemporaries($oriLocalVars, $oriTmpVarIndex);
         }
 
