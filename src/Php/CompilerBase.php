@@ -3346,6 +3346,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseIf(Node\Stmt\If_ $v): string
     {
         $cond = $this->parseExpr($v->cond);
+        $cond = $this->parseConditionAssign($v->cond, $cond);
 
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'if (' . $cond . ') {' . PHP_EOL;
@@ -3381,6 +3382,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseWhile(Node\Stmt\While_ $v): string
     {
         $cond  = $this->parseExpr($v->cond);
+        $cond  = $this->parseConditionAssign($v->cond, $cond);
         $stmts = $v->stmts;
 
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
@@ -3401,6 +3403,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $stmts = $v->stmts;
         $cond  = $this->parseExpr($v->cond);
+        $cond  = $this->parseConditionAssign($v->cond, $cond);
         $code  = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'do {' . PHP_EOL;
         $code .= $this->parseBlockStmts($stmts);
@@ -3435,6 +3438,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         $expr->setAttribute('replace', $tmpVar);
 
         return $tmpVar;
+    }
+
+    /**
+     * while, do while 判断中赋值，在C++编译中会提示
+     * suggest parentheses around assignment used as truth value
+     */
+    protected function parseConditionAssign(NodeAbstract $cond, string $code): string
+    {
+        return $cond instanceof Expr\Assign ? '(' . $code . ')' : $code;
     }
 
     protected function packData(string $bytes): string
