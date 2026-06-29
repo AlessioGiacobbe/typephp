@@ -3647,7 +3647,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '-' . $code;
     }
 
-    protected function parseUnaryPlus(Expr\UnaryPlus $expr)
+    protected function parseUnaryPlus(Expr\UnaryPlus $expr): string
     {
         return $this->parseExpr($expr->expr);
     }

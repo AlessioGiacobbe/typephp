@@ -339,9 +339,13 @@ class Translator extends Preprocessor
         }
 
         // 用户自定义 C++ include 路径（直接从 argv 解析以支持多值）
-        $this->userIncludePaths = $this->parseRepeatableArgv(['-I', '--include-path']);
+        if ($this->hasRepeatableArgvFlag(['-I', '--include-path'])) {
+            $this->userIncludePaths = $this->parseRepeatableArgv(['-I', '--include-path']);
+        }
         // 用户自定义预处理器宏（直接从 argv 解析以支持多值）
-        $this->userDefines = $this->parseRepeatableArgv(['-D', '--define']);
+        if ($this->hasRepeatableArgvFlag(['-D', '--define'])) {
+            $this->userDefines = $this->parseRepeatableArgv(['-D', '--define']);
+        }
 
         // 链接时优化
         if ($this->climate->arguments->defined('lto')) {
@@ -359,9 +363,13 @@ class Translator extends Preprocessor
         }
 
         // 用户自定义链接库（直接从 argv 解析以支持多值）
-        $this->linkLibs = $this->parseRepeatableArgv(['-l', '--link-lib']);
+        if ($this->hasRepeatableArgvFlag(['-l', '--link-lib'])) {
+            $this->linkLibs = $this->parseRepeatableArgv(['-l', '--link-lib']);
+        }
         // 用户自定义库搜索路径（直接从 argv 解析以支持多值）
-        $this->linkPaths = $this->parseRepeatableArgv(['-L', '--link-path']);
+        if ($this->hasRepeatableArgvFlag(['-L', '--link-path'])) {
+            $this->linkPaths = $this->parseRepeatableArgv(['-L', '--link-path']);
+        }
     }
 
     /**
@@ -395,6 +403,32 @@ class Translator extends Preprocessor
             }
         }
         return $values;
+    }
+
+    protected function hasRepeatableArgvFlag(array $flags): bool
+    {
+        global $argv;
+
+        for ($i = 1; $i < count($argv); $i++) {
+            $arg = $argv[$i];
+            if (in_array($arg, $flags, true)) {
+                return true;
+            }
+
+            foreach ($flags as $flag) {
+                if (str_starts_with($arg, $flag . '=')) {
+                    return true;
+                }
+                if (strlen($flag) === 2 && $flag[0] === '-') {
+                    $short = substr($flag, 1);
+                    if (preg_match('/^-' . preg_quote($short, '/') . '(.+)$/', $arg)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1965,6 +1999,27 @@ CODE;
             } else {
                 $this->ldflags = str_replace("\n", ' ', $ldflags);
             }
+        }
+
+        // 读取 include-paths
+        $includePaths = $cfg['include-paths'] ?? null;
+        if (!empty($includePaths) && is_array($includePaths)) {
+            foreach ($includePaths as $includePath) {
+                $this->userIncludePaths[] = (string) $includePath;
+            }
+        }
+
+        // 读取 defines
+        $defines = $cfg['defines'] ?? null;
+        if (!empty($defines) && is_array($defines)) {
+            foreach ($defines as $define) {
+                $this->userDefines[] = (string) $define;
+            }
+        }
+
+        // 读取 lto
+        if (!empty($cfg['lto'])) {
+            $this->enableLto = true;
         }
 
         // 读取 link-libs

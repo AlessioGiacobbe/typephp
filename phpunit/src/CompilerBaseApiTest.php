@@ -11,10 +11,13 @@ class CompilerBaseApiTest extends TestCase
     private string $testDir;
     private CompilerTest $compiler;
     private \ReflectionClass $ref;
+    private array $originalArgv;
 
     protected function setUp(): void
     {
         parent::setUp();
+        global $argv;
+        $this->originalArgv = $argv ?? [];
         $this->testDir = sys_get_temp_dir() . '/compiler_api_test_' . uniqid();
         mkdir($this->testDir, 0777, true);
         $this->compiler = CompilerTest::create($this->testDir);
@@ -24,6 +27,8 @@ class CompilerBaseApiTest extends TestCase
     protected function tearDown(): void
     {
         parent::tearDown();
+        global $argv;
+        $argv = $this->originalArgv;
         // Recursively remove the test directory (compiler creates build/ subdir)
         $this->removeDirectory($this->testDir);
     }
@@ -60,6 +65,17 @@ class CompilerBaseApiTest extends TestCase
         $m = $this->ref->getMethod($method);
         $m->setAccessible(true);
         return $m->invoke($this->compiler, ...$args);
+    }
+
+    private function createProjectFile(string $yaml): string
+    {
+        $sourceFile = $this->testDir . '/main.php';
+        file_put_contents($sourceFile, "<?php\nfunction main() {}\n");
+
+        $projectFile = $this->testDir . '/project.yml';
+        file_put_contents($projectFile, $yaml);
+
+        return $projectFile;
     }
 
     // ========================================================================
@@ -143,6 +159,61 @@ class CompilerBaseApiTest extends TestCase
         $includeDir = $this->compiler->getIncludeDir();
         $buildDir = $this->compiler->getBuildDir();
         $this->assertEquals($buildDir . '/include', $includeDir);
+    }
+
+    public function testParseProjectYamlLoadsDocumentedCompilerOptions(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+include-paths:
+  - /opt/mylib/include
+  - ../shared/headers
+defines:
+  - ENABLE_LOGGING=1
+  - DEBUG_LEVEL=3
+lto: true
+link-libs:
+  - curl
+  - ssl
+link-paths:
+  - /usr/local/lib
+  - /opt/custom/lib
+YAML);
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame(['/opt/mylib/include', '../shared/headers'], $this->compiler->getUserIncludePaths());
+        $this->assertSame(['ENABLE_LOGGING=1', 'DEBUG_LEVEL=3'], $this->compiler->getUserDefines());
+        $this->assertTrue($this->compiler->isLtoEnabled());
+        $this->assertSame(['curl', 'ssl'], $this->compiler->getLinkLibs());
+        $this->assertSame(['/usr/local/lib', '/opt/custom/lib'], $this->compiler->getLinkPaths());
+    }
+
+    public function testApplyCommandLineArgumentsDoesNotClearYamlRepeatableOptionsWhenCliAbsent(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+include-paths:
+  - /yaml/include
+defines:
+  - YAML_DEFINE=1
+lto: true
+link-libs:
+  - yamlssl
+link-paths:
+  - /yaml/lib
+YAML);
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+        $this->invokeMethod('applyCommandLineArguments');
+
+        $this->assertSame(['/yaml/include'], $this->compiler->getUserIncludePaths());
+        $this->assertSame(['YAML_DEFINE=1'], $this->compiler->getUserDefines());
+        $this->assertTrue($this->compiler->isLtoEnabled());
+        $this->assertSame(['yamlssl'], $this->compiler->getLinkLibs());
+        $this->assertSame(['/yaml/lib'], $this->compiler->getLinkPaths());
     }
 
     // ========================================================================
