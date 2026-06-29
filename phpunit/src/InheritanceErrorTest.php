@@ -21,6 +21,18 @@ class InheritanceErrorTest extends TestCase
         $this->fail('Expected TestError exception was not thrown');
     }
 
+    private function assertCompiles(string $file): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/' . $file;
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $compiler->convertFile($testFile);
+        $this->addToAssertionCount(1);
+    }
+
     public function testParameterCountMismatch()
     {
         $this->exec('must be compatible', 'inheritance_error.php');
@@ -48,7 +60,17 @@ class InheritanceErrorTest extends TestCase
 
     public function testMethodVisibilityMismatch()
     {
-        $this->exec('must be compatible', 'inheritance_error_visibility.php');
+        $this->exec('must be compatible', 'inheritance_error_visibility_narrow.php');
+    }
+
+    public function testMethodVisibilityWideningIsAllowed()
+    {
+        $this->assertCompiles('inheritance_error_visibility.php');
+    }
+
+    public function testChildMayAddOptionalTrailingParameter()
+    {
+        $this->assertCompiles('inheritance_optional_param_allowed.php');
     }
 
     public function testPropertyTypeMismatch()

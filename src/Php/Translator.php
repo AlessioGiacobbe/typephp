@@ -2966,8 +2966,9 @@ CODE;
                 "with `{$parentClass}::{$methodName}()`");
         };
 
-        // Compare visibility (public/protected/private)
-        if (($this->methodDef->flags & Modifiers::VISIBILITY_MASK) !== ($parentMethodDef->flags & Modifiers::VISIBILITY_MASK)) {
+        // PHP allows widening visibility in overrides (e.g. protected -> public),
+        // but forbids narrowing it.
+        if ($this->getVisibilityRank($this->methodDef->flags) < $this->getVisibilityRank($parentMethodDef->flags)) {
             $error('visibility mismatch');
         }
 
@@ -2976,19 +2977,23 @@ CODE;
             return;
         }
 
-        // Compare parameter count
-        if (count($childFuncDef->argInfoList) !== count($parentFuncDef->argInfoList)) {
-            $error('parameter count mismatch');
-        }
-
         // Compare return type
         if ($childFuncDef->returnType !== $parentFuncDef->returnType ||
             $childFuncDef->returnClass !== $parentFuncDef->returnClass) {
             $error('return type mismatch');
         }
 
-        // Compare each parameter
+        // Child methods may add optional trailing parameters, but they cannot
+        // require more arguments than the parent contract.
+        if ($childFuncDef->argCountRequired > $parentFuncDef->argCountRequired) {
+            $error('required parameter count mismatch');
+        }
+
+        // Compare each parent-declared parameter position.
         foreach ($parentFuncDef->argInfoList as $i => $parentArg) {
+            if (!isset($childFuncDef->argInfoList[$i])) {
+                $error("missing parameter #{$i}");
+            }
             $childArg = $childFuncDef->argInfoList[$i];
             if ($childArg->type !== $parentArg->type || $childArg->class !== $parentArg->class) {
                 $error("parameter #{$i} type mismatch");
@@ -3000,6 +3005,28 @@ CODE;
                 $error("parameter #{$i} variadic mismatch");
             }
         }
+
+        // Any extra child parameters must be optional or variadic.
+        for ($i = count($parentFuncDef->argInfoList); $i < count($childFuncDef->argInfoList); $i++) {
+            $childArg = $childFuncDef->argInfoList[$i];
+            if (!$childArg->variadic && $childArg->defaultValue === null) {
+                $error("extra required parameter #{$i}");
+            }
+        }
+    }
+
+    private function getVisibilityRank(int $flags): int
+    {
+        if ($flags & Modifiers::PUBLIC) {
+            return 3;
+        }
+        if ($flags & Modifiers::PROTECTED) {
+            return 2;
+        }
+        if ($flags & Modifiers::PRIVATE) {
+            return 1;
+        }
+        return 3;
     }
 
     private function checkPropertyOverride(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $classStmt): void
