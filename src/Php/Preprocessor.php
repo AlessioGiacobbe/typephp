@@ -19,6 +19,7 @@ use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\SyntaxError;
 use PhpParser\Modifiers;
 use PhpParser\Node;
+use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
@@ -284,7 +285,7 @@ class Preprocessor extends CompilerBase
             if ($param->type === null || $param->type instanceof NullableType) {
                 $argInfo->nullable = true;
             }
-            if ($param->type instanceof NullableType or $param->type instanceof UnionType) {
+            if ($param->type instanceof NullableType || $param->type instanceof UnionType || $param->type instanceof IntersectionType) {
                 $typeInfo = $this->buildTypeCheckFromNode($param->type);
                 if (!empty($typeInfo['check'])) {
                     $argInfo->typeCheck = $typeInfo['check'];
@@ -360,7 +361,7 @@ class Preprocessor extends CompilerBase
         $functionDef->stub = $this->stubFile;
         $functionDef->returnTypeUndeclared = $v->returnType === null;
 
-        if ($v->returnType instanceof NullableType or $v->returnType instanceof UnionType) {
+        if ($v->returnType instanceof NullableType || $v->returnType instanceof UnionType || $v->returnType instanceof IntersectionType) {
             $typeInfo = $this->buildTypeCheckFromNode($v->returnType);
             if (!empty($typeInfo['check'])) {
                 $functionDef->returnTypeCheck = $typeInfo['check'];

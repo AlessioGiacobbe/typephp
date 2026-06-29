@@ -10,6 +10,7 @@ namespace PhpAot\Php\Generator;
 
 use PhpAot\Php\ArgInfo;
 use PhpParser\Node;
+use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
@@ -19,74 +20,29 @@ trait TypeCheckGenerator
     protected function buildTypeCheckFromNode(NodeAbstract $typeNode): array
     {
         $check = [];
-        $names = [];
+        $typeStr = $this->typeCheckNodeToString($typeNode);
 
         if ($typeNode instanceof NullableType) {
-            $subTypes = [$typeNode->type];
-            $isNullable = true;
+            $check[] = ['kind' => 'isNull'];
+            $innerClause = $this->buildTypeCheckClause($typeNode->type);
+            if (!empty($innerClause)) {
+                $check[] = count($innerClause) === 1 ? $innerClause[0] : ['kind' => 'allOf', 'types' => $innerClause];
+            }
         } elseif ($typeNode instanceof UnionType) {
-            $subTypes = $typeNode->types;
-            $isNullable = false;
+            foreach ($typeNode->types as $subType) {
+                $clause = $this->buildTypeCheckClause($subType);
+                if (empty($clause)) {
+                    continue;
+                }
+                $check[] = count($clause) === 1 ? $clause[0] : ['kind' => 'allOf', 'types' => $clause];
+            }
+        } elseif ($typeNode instanceof IntersectionType) {
+            $clause = $this->buildTypeCheckClause($typeNode);
+            if (!empty($clause)) {
+                $check[] = count($clause) === 1 ? $clause[0] : ['kind' => 'allOf', 'types' => $clause];
+            }
         } else {
             return ['check' => [], 'typeStr' => ''];
-        }
-
-        foreach ($subTypes as $subType) {
-            $name = $this->parseIdentifier($subType);
-            $nameLower = strtolower($name);
-
-            if ($nameLower === 'void' or $nameLower === 'never') {
-                $this->fatalError($subType, "Type '{$nameLower}' cannot be part of a union type");
-            }
-
-            if ($nameLower === 'mixed') {
-                // mixed accepts everything — don't add any check
-                $names[] = $name;
-                continue;
-            }
-
-            $entry = match ($nameLower) {
-                'int' => ['kind' => 'isInt'],
-                'float', 'double' => ['kind' => 'isFloat'],
-                'bool' => ['kind' => 'isBool'],
-                'string' => ['kind' => 'isString'],
-                'array' => ['kind' => 'isArray'],
-                'object' => ['kind' => 'isObject'],
-                'null' => ['kind' => 'isNull'],
-                'true' => ['kind' => 'isTrue'],
-                'false' => ['kind' => 'isFalse'],
-                'resource' => ['kind' => 'isResource'],
-                'callable' => ['kind' => 'callable'],
-                'iterable' => ['kind' => 'iterable'],
-                default => null,
-            };
-
-            if ($entry !== null) {
-                $check[] = $entry;
-            } else {
-                // Class/interface type
-                if ($name === 'self') {
-                    $class = $this->getFullClassName();
-                } elseif ($name === 'parent') {
-                    $class = $this->classDef->extends ?? '';
-                } elseif ($name === 'static') {
-                    $class = 'static';
-                } else {
-                    $class = $this->getNamespacedClassName($name);
-                }
-                if ($class) {
-                    $check[] = ['kind' => 'instanceof', 'class' => $class];
-                }
-            }
-            $names[] = $name;
-        }
-
-        if ($isNullable) {
-            // NullableType: prepend null to both check array and typeStr
-            array_unshift($check, ['kind' => 'isNull']);
-            $typeStr = '?' . implode('|', $names);
-        } else {
-            $typeStr = implode('|', $names);
         }
 
         if (empty($check)) {
@@ -94,6 +50,93 @@ trait TypeCheckGenerator
         }
 
         return ['check' => $check, 'typeStr' => $typeStr];
+    }
+
+    private function buildTypeCheckClause(NodeAbstract $typeNode): array
+    {
+        if ($typeNode instanceof IntersectionType) {
+            $clause = [];
+            foreach ($typeNode->types as $subType) {
+                foreach ($this->buildTypeCheckClause($subType) as $entry) {
+                    $clause[] = $entry;
+                }
+            }
+            return $clause;
+        }
+
+        $name = $this->parseIdentifier($typeNode);
+        $nameLower = strtolower($name);
+
+        if ($nameLower === 'void' || $nameLower === 'never') {
+            $this->fatalError($typeNode, "Type '{$nameLower}' cannot be part of a composite type");
+        }
+
+        if ($nameLower === 'mixed') {
+            return [];
+        }
+
+        $entry = match ($nameLower) {
+            'int' => ['kind' => 'isInt'],
+            'float', 'double' => ['kind' => 'isFloat'],
+            'bool' => ['kind' => 'isBool'],
+            'string' => ['kind' => 'isString'],
+            'array' => ['kind' => 'isArray'],
+            'object' => ['kind' => 'isObject'],
+            'null' => ['kind' => 'isNull'],
+            'true' => ['kind' => 'isTrue'],
+            'false' => ['kind' => 'isFalse'],
+            'resource' => ['kind' => 'isResource'],
+            'callable' => ['kind' => 'callable'],
+            'iterable' => ['kind' => 'iterable'],
+            default => null,
+        };
+
+        if ($entry !== null) {
+            return [$entry];
+        }
+
+        if ($name === 'self') {
+            $class = $this->getFullClassName();
+        } elseif ($name === 'parent') {
+            $class = $this->classDef->extends ?? '';
+        } elseif ($name === 'static') {
+            $class = 'static';
+        } else {
+            $class = $this->getNamespacedClassName($name);
+        }
+
+        return $class ? [['kind' => 'instanceof', 'class' => $class]] : [];
+    }
+
+    private function typeCheckNodeToString(NodeAbstract $typeNode): string
+    {
+        if ($typeNode instanceof Node\Identifier) {
+            return $typeNode->name;
+        }
+        if ($typeNode instanceof Node\Name) {
+            return $typeNode->toString();
+        }
+        if ($typeNode instanceof NullableType) {
+            return '?' . $this->typeCheckNodeToString($typeNode->type);
+        }
+        if ($typeNode instanceof UnionType) {
+            $parts = [];
+            foreach ($typeNode->types as $type) {
+                $parts[] = $this->typeCheckNodeToString($type);
+            }
+            sort($parts);
+            return implode('|', $parts);
+        }
+        if ($typeNode instanceof IntersectionType) {
+            $parts = [];
+            foreach ($typeNode->types as $type) {
+                $parts[] = $this->typeCheckNodeToString($type);
+            }
+            sort($parts);
+            return implode('&', $parts);
+        }
+
+        return $this->printer->prettyPrint([$typeNode]);
     }
 
     protected function genSingleTypeCondition(string $varName, array $entry): string
@@ -112,11 +155,29 @@ trait TypeCheckGenerator
             'isResource' => $v . '.isResource()',
             'callable' => $v . '.isCallable()',
             'iterable' => '(' . $v . '.isArray() || (' . $v . '.isObject() && php::instanceOf(' . $v . ', zend_ce_traversable)))',
+            'allOf' => $this->genAllOfTypeCondition($varName, $entry['types']),
             'instanceof' => $entry['class'] === 'static'
                 ? '(' . $v . '.isObject() && php::instanceOf(' . $v . ', php_get_called_ce(this_)))'
                 : '(' . $v . '.isObject() && php::instanceOf(' . $v . ', ' . $this->getClassEntryPtr($entry['class']) . '))',
             default => '',
         };
+    }
+
+    private function genAllOfTypeCondition(string $varName, array $types): string
+    {
+        $conditions = [];
+        foreach ($types as $type) {
+            $cond = $this->genSingleTypeCondition($varName, $type);
+            if ($cond !== '') {
+                $conditions[] = $cond;
+            }
+        }
+
+        if (empty($conditions)) {
+            return '';
+        }
+
+        return '(' . implode(' && ', $conditions) . ')';
     }
 
     protected function genUnionParamCheck(ArgInfo $argInfo, int $argIndex): string

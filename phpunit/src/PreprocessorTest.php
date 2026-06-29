@@ -6,6 +6,8 @@ use PHPUnit\Framework\TestCase;
 use PhpAot\Php\CompilerTest;
 use PhpAot\Php\ArgInfo;
 use PhpParser\Node;
+use PhpParser\Node\Stmt\Function_;
+use PhpParser\ParserFactory;
 
 class PreprocessorTest extends TestCase
 {
@@ -55,6 +57,19 @@ class PreprocessorTest extends TestCase
         $prop = $this->ref->getProperty($name);
         $prop->setAccessible(true);
         $prop->setValue($this->compiler, $value);
+    }
+
+    private function parseFunctionNode(string $code): Function_
+    {
+        $parser = (new ParserFactory())->createForHostVersion();
+        $stmts = $parser->parse($code);
+        $this->assertNotNull($stmts);
+        foreach ($stmts as $stmt) {
+            if ($stmt instanceof Function_) {
+                return $stmt;
+            }
+        }
+        $this->fail('No function node found');
     }
 
     // ========================================================================
@@ -209,5 +224,35 @@ class PreprocessorTest extends TestCase
         $this->compiler->sortFiles($files);
         // Empty array stays empty or nearly empty
         $this->assertIsArray($files);
+    }
+
+    public function testIntersectionParamDeclFallsBackToVarWithRuntimeCheck(): void
+    {
+        $fn = $this->parseFunctionNode('<?php interface A {} interface B {} function demo(A&B $value): void {}');
+        $functionDef = $this->invokeMethod('parseFunctionDecl', $fn);
+
+        $this->assertSame('php::Var', $functionDef->argInfoList[0]->type);
+        $this->assertNotEmpty($functionDef->argInfoList[0]->typeCheck);
+        $this->assertSame('A&B', $functionDef->argInfoList[0]->typeStr);
+    }
+
+    public function testIntersectionReturnDeclFallsBackToVarWithRuntimeCheck(): void
+    {
+        $fn = $this->parseFunctionNode('<?php interface A {} interface B {} function demo(): A&B { throw new \Exception(); }');
+        $functionDef = $this->invokeMethod('parseFunctionDecl', $fn);
+
+        $this->assertSame('php::Var', $functionDef->returnType);
+        $this->assertNotEmpty($functionDef->returnTypeCheck);
+        $this->assertSame('A&B', $functionDef->returnTypeStr);
+    }
+
+    public function testNullableReturnDeclFallsBackToVarWithRuntimeCheck(): void
+    {
+        $fn = $this->parseFunctionNode('<?php function demo(): ?int { return null; }');
+        $functionDef = $this->invokeMethod('parseFunctionDecl', $fn);
+
+        $this->assertSame('php::Var', $functionDef->returnType);
+        $this->assertNotEmpty($functionDef->returnTypeCheck);
+        $this->assertSame('?int', $functionDef->returnTypeStr);
     }
 }

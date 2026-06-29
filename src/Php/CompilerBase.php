@@ -50,6 +50,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\CallLike;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\FunctionLike;
+use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\Scalar\MagicConst;
 use PhpParser\Node\Stmt\Foreach_;
@@ -957,6 +958,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             }
             return $type;
         }
+        if ($type instanceof Node\IntersectionType) {
+            foreach ($type->types as $i => $subType) {
+                $type->types[$i] = $this->upgradeToFullyQualifiedName($subType);
+            }
+            return $type;
+        }
         if ($type instanceof Node\Name\FullyQualified) {
             return $type;
         }
@@ -1095,8 +1102,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($type === null) {
             return self::TYPE_VAR;
         }
-        if ($type instanceof UnionType or $type instanceof NullableType) {
-            // 联合类型暂时不支持，使用 var 类型代替
+        if ($type instanceof UnionType || $type instanceof NullableType || $type instanceof IntersectionType) {
+            // 复杂类型静态阶段统一按 mixed/var 处理，运行时再由 typeCheck 兜底。
             return self::TYPE_VAR;
         } else {
             $typeName = $this->parseIdentifier($type);
