@@ -12,12 +12,14 @@ class CompilerBaseApiTest extends TestCase
     private CompilerTest $compiler;
     private \ReflectionClass $ref;
     private array $originalArgv;
+    private string|false $originalPath;
 
     protected function setUp(): void
     {
         parent::setUp();
         global $argv;
         $this->originalArgv = $argv ?? [];
+        $this->originalPath = getenv('PATH');
         $this->testDir = sys_get_temp_dir() . '/compiler_api_test_' . uniqid();
         mkdir($this->testDir, 0777, true);
         $this->compiler = CompilerTest::create($this->testDir);
@@ -29,6 +31,11 @@ class CompilerBaseApiTest extends TestCase
         parent::tearDown();
         global $argv;
         $argv = $this->originalArgv;
+        if ($this->originalPath === false) {
+            putenv('PATH');
+        } else {
+            putenv('PATH=' . $this->originalPath);
+        }
         // Recursively remove the test directory (compiler creates build/ subdir)
         $this->removeDirectory($this->testDir);
     }
@@ -67,15 +74,27 @@ class CompilerBaseApiTest extends TestCase
         return $m->invoke($this->compiler, ...$args);
     }
 
-    private function createProjectFile(string $yaml): string
+    private function createProjectFile(string $yaml, string $filename = 'project.yml', string $baseDir = ''): string
     {
-        $sourceFile = $this->testDir . '/main.php';
+        $projectDir = $baseDir === '' ? $this->testDir : $this->testDir . '/' . trim($baseDir, '/');
+        if (!is_dir($projectDir)) {
+            mkdir($projectDir, 0777, true);
+        }
+
+        $sourceFile = $projectDir . '/main.php';
         file_put_contents($sourceFile, "<?php\nfunction main() {}\n");
 
-        $projectFile = $this->testDir . '/project.yml';
+        $projectFile = $projectDir . '/' . $filename;
         file_put_contents($projectFile, $yaml);
 
         return $projectFile;
+    }
+
+    private function createFakeClangFormat(string $binDir, string $logFile): void
+    {
+        mkdir($binDir, 0777, true);
+        file_put_contents($binDir . '/clang-format', "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo 'clang-format version test'\n  exit 0\nfi\npwd > " . escapeshellarg($logFile) . "\nprintf '%s\\n' \"$@\" >> " . escapeshellarg($logFile) . "\n");
+        chmod($binDir . '/clang-format', 0755);
     }
 
     // ========================================================================
@@ -154,6 +173,11 @@ class CompilerBaseApiTest extends TestCase
         $this->assertStringStartsWith($this->testDir, $buildDir);
     }
 
+    public function testFormatCodeDisabledByDefault(): void
+    {
+        $this->assertFalse($this->getPropertyValue('formatCode'));
+    }
+
     public function testGetIncludeDir(): void
     {
         $includeDir = $this->compiler->getIncludeDir();
@@ -163,9 +187,24 @@ class CompilerBaseApiTest extends TestCase
 
     public function testParseProjectYamlLoadsDocumentedCompilerOptions(): void
     {
+        $binDir = $this->testDir . '/bin';
+        $formatLog = $this->testDir . '/format.log';
+        $this->createFakeClangFormat($binDir, $formatLog);
+        putenv('PATH=' . $binDir . ':' . ($this->originalPath ?: ''));
+
         $projectFile = $this->createProjectFile(<<<'YAML'
 sources:
   - main.php
+optimize: 2
+job: 8
+debug: true
+profile: true
+no-progress: true
+no-console: true
+no-literal-strings: true
+sanitize: address
+target-platform: aarch64-linux-gnu
+build-dir: /tmp/project-build
 include-paths:
   - /opt/mylib/include
   - ../shared/headers
@@ -173,6 +212,7 @@ defines:
   - ENABLE_LOGGING=1
   - DEBUG_LEVEL=3
 lto: true
+format: true
 link-libs:
   - curl
   - ssl
@@ -183,11 +223,56 @@ YAML);
 
         $this->invokeMethod('parseProjectYaml', $projectFile);
 
+        $this->assertSame(2, $this->getPropertyValue('optimizeLevel'));
+        $this->assertSame(8, $this->getPropertyValue('maxJob'));
+        $this->assertTrue($this->getPropertyValue('debug'));
+        $this->assertTrue($this->getPropertyValue('enableProfiler'));
+        $this->assertTrue($this->getPropertyValue('noProgress'));
+        $this->assertTrue($this->getPropertyValue('noConsole'));
+        $this->assertTrue($this->getPropertyValue('noLiteralStrings'));
+        $this->assertSame('address', $this->getPropertyValue('sanitize'));
+        $this->assertSame('aarch64-linux-gnu', $this->getPropertyValue('targetPlatform'));
         $this->assertSame(['/opt/mylib/include', '../shared/headers'], $this->compiler->getUserIncludePaths());
         $this->assertSame(['ENABLE_LOGGING=1', 'DEBUG_LEVEL=3'], $this->compiler->getUserDefines());
         $this->assertTrue($this->compiler->isLtoEnabled());
         $this->assertSame(['curl', 'ssl'], $this->compiler->getLinkLibs());
         $this->assertSame(['/usr/local/lib', '/opt/custom/lib'], $this->compiler->getLinkPaths());
+        $this->assertSame('/tmp/project-build', $this->compiler->getBuildDir());
+        $this->assertTrue($this->getPropertyValue('formatCode'));
+    }
+
+    public function testParseProjectYamlSupportsCustomFilenameAndRelativeBuildDir(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+build-dir: build/output
+YAML, 'myproject.yml', 'nested/config');
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame(
+            realpath($this->testDir . '/nested/config/build/output'),
+            $this->compiler->getBuildDir()
+        );
+    }
+
+    public function testParseProjectYamlSupportsCliStyleModeAndOutputAliases(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+mode: ext
+output: out/custom-ext
+dry: true
+YAML, 'custom-name.yml', 'yaml-alias');
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame(CompilerBase::BUILD_MODE_EXT, $this->getPropertyValue('buildMode'));
+        $this->assertTrue($this->getPropertyValue('dryRun'));
+        $this->assertSame('custom_ext', $this->getPropertyValue('targetName'));
+        $this->assertSame('out', $this->getPropertyValue('outputDir'));
     }
 
     public function testApplyCommandLineArgumentsDoesNotClearYamlRepeatableOptionsWhenCliAbsent(): void
@@ -214,6 +299,37 @@ YAML);
         $this->assertTrue($this->compiler->isLtoEnabled());
         $this->assertSame(['yamlssl'], $this->compiler->getLinkLibs());
         $this->assertSame(['/yaml/lib'], $this->compiler->getLinkPaths());
+    }
+
+    public function testFormatCppCodeEscapesPathsWithSpaces(): void
+    {
+        $spaceDir = sys_get_temp_dir() . '/compiler api format ' . uniqid();
+        mkdir($spaceDir, 0777, true);
+        $binDir = $spaceDir . '/bin';
+        $logFile = $spaceDir . '/format.log';
+        $sourceFile = $spaceDir . '/hello world.cc';
+
+        file_put_contents($sourceFile, "int main() { return 0; }\n");
+        $this->createFakeClangFormat($binDir, $logFile);
+        putenv('PATH=' . $binDir . ':' . ($this->originalPath ?: ''));
+
+        $compiler = CompilerTest::create($spaceDir);
+        $ref = new \ReflectionClass($compiler);
+        $formatProp = $ref->getProperty('formatCode');
+        $formatProp->setAccessible(true);
+        $formatProp->setValue($compiler, true);
+
+        $method = $ref->getMethod('formatCppCode');
+        $method->setAccessible(true);
+        $method->invoke($compiler, $sourceFile);
+
+        $this->assertFileExists($logFile);
+        $lines = file($logFile, FILE_IGNORE_NEW_LINES);
+        $this->assertSame($spaceDir, $lines[0]);
+        $this->assertSame('-i', $lines[1]);
+        $this->assertSame($sourceFile, $lines[2]);
+
+        $this->removeDirectory($spaceDir);
     }
 
     // ========================================================================

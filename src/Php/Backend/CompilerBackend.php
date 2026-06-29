@@ -158,6 +158,15 @@ abstract class CompilerBackend
         return $this->platform->getLibraryFlags($libraries);
     }
 
+    protected function formatDefineFlag(string $define, string $prefix): string
+    {
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*(=(?:[A-Za-z0-9_.,:+\/@%-]+))?$/', $define) === 1) {
+            return $prefix . $define;
+        }
+
+        return $prefix . escapeshellarg($define);
+    }
+
     /**
      * 将目标文件列表写入 Response File，避免命令行参数过长超出 OS 限制（Windows 8191 字符）
      *
@@ -178,7 +187,7 @@ abstract class CompilerBackend
             $lines[] = $file;
         }
         file_put_contents($rspFile, implode("\n", $lines));
-        return '@' . $rspFile;
+        return escapeshellarg('@' . $rspFile);
     }
 
     /**

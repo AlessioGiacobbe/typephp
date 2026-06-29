@@ -206,11 +206,11 @@ class Translator extends Preprocessor
         $cmd = $argv[0];
 
         $climate->bold('USAGE:');
-        $climate->tab()->out($cmd . ' <file/dir/project.yml> [options]');
+        $climate->tab()->out($cmd . ' <file/dir/config.yml> [options]');
         $climate->br();
 
         $climate->bold('ARGUMENTS:');
-        $climate->tab()->out('<file>    Input PHP file/directory/project.yml to compile');
+        $climate->tab()->out('<file>    Input PHP file/directory/YAML config to compile');
         $climate->br();
 
         $climate->bold('EXAMPLES:');
@@ -354,12 +354,7 @@ class Translator extends Preprocessor
 
         // clang-format 代码格式化（默认关闭，需显式 --format 开启）
         if ($this->climate->arguments->defined('format')) {
-            $clangFormatVersion = shell_exec('clang-format --version');
-            if (!empty($clangFormatVersion)) {
-                $this->formatCode = true;
-            } else {
-                $this->climate->warning('--format requested but clang-format not found, skipping formatting');
-            }
+            $this->enableCodeFormattingIfAvailable('--format');
         }
 
         // 用户自定义链接库（直接从 argv 解析以支持多值）
@@ -450,13 +445,24 @@ class Translator extends Preprocessor
         $this->climate->bold()->out(self::APP_NAME . ' v' . self::VERSION);
     }
 
+    private function enableCodeFormattingIfAvailable(string $source): void
+    {
+        $clangFormatVersion = shell_exec('clang-format --version');
+        if (!empty($clangFormatVersion)) {
+            $this->formatCode = true;
+            return;
+        }
+
+        $this->climate->warning($source . ' requested but clang-format not found, skipping formatting');
+    }
+
     protected function formatCppCode(string $file): void
     {
         if (!$this->formatCode) {
             return;
         }
 
-        $cmd = 'cd ' . $this->rootPath . ' && clang-format -i ' . $file;
+        $cmd = 'cd ' . escapeshellarg($this->rootPath) . ' && clang-format -i ' . escapeshellarg($file);
         $this->climate->info('format: ' . $this->getRelativePath($file));
         $this->climate->comment($cmd);
         shell_exec($cmd);
@@ -1513,7 +1519,14 @@ CODE;
             'include_paths' => $this->getIncludePaths(),
             'optimize' => 0,
             'debug' => $this->debug,
+            'sanitize' => $this->sanitize,
             'is_zts' => $this->isPhpZts,
+            'enable_profiler' => $this->enableProfiler,
+            'prof_output' => $this->targetName . '.prof',
+            'user_defines' => $this->userDefines,
+            'lto' => $this->enableLto,
+            'march' => $this->march,
+            'target_platform' => $this->targetPlatform,
             'suppressed_warnings' => ['4244', '4146'],
         ];
     }
@@ -1928,16 +1941,32 @@ CODE;
 
     protected function getAbsolutePath(string $path, string $projectDir): string
     {
+        $absPath = $this->resolvePath($path, $projectDir, 'Source path');
+        return realpath($absPath);
+    }
+
+    protected function resolvePath(string $path, string $baseDir, string $label = 'Path'): string
+    {
         $path = trim($path);
         if ($path === '') {
-            $this->error('Source path must not be empty');
+            $this->error($label . ' must not be empty');
         }
-        if ($path[0] !== '/') {
-            $absPath = $projectDir . '/' . $path;
-        } else {
-            $absPath = $path;
+
+        if ($this->isAbsolutePath($path)) {
+            return $path;
         }
-        return realpath($absPath);
+
+        return $baseDir . '/' . $path;
+    }
+
+    protected function isAbsolutePath(string $path): bool
+    {
+        return $path !== ''
+            && (
+                $path[0] === '/'
+                || $path[0] === '\\'
+                || preg_match('/^[A-Za-z]:[\\\\\\/]/', $path) === 1
+            );
     }
 
     protected function parseProjectYaml(string $path): array
@@ -1969,6 +1998,43 @@ CODE;
             $list = $this->getFilesFromDir($projectDir);
         }
 
+        if (array_key_exists('optimize', $cfg)) {
+            $this->optimizeLevel = (int) $cfg['optimize'];
+        }
+
+        if (array_key_exists('job', $cfg)) {
+            $this->maxJob = (int) $cfg['job'];
+        }
+
+        if (!empty($cfg['debug'])) {
+            $this->debug = true;
+        }
+
+        if (!empty($cfg['no-literal-strings'])) {
+            $this->noLiteralStrings = true;
+        }
+
+        if (!empty($cfg['profile'])) {
+            if (!$this->isLinux()) {
+                $this->climate->error('`profile` in YAML is only supported on Linux (requires gperftools)');
+                exit(1);
+            }
+            $this->enableProfiler = true;
+        }
+
+        if (!empty($cfg['no-progress'])) {
+            $this->noProgress = true;
+        }
+
+        if (!empty($cfg['no-console'])) {
+            $this->noConsole = true;
+        }
+
+        $sanitize = $cfg['sanitize'] ?? null;
+        if (!empty($sanitize)) {
+            $this->sanitize = (string) $sanitize;
+        }
+
         // 读取 cxx-flags
         $cxxFlags = $cfg['cxx-flags'] ?? null;
         if (!empty($cxxFlags)) {
@@ -1989,6 +2055,22 @@ CODE;
         $march = $cfg['march'] ?? null;
         if (!empty($march)) {
             $this->march = $march;
+        }
+
+        // 读取 target-platform
+        $targetPlatform = $cfg['target-platform'] ?? null;
+        if (!empty($targetPlatform)) {
+            $this->targetPlatform = (string) $targetPlatform;
+        }
+
+        // 读取 build-dir
+        $buildDir = $cfg['build-dir'] ?? null;
+        if (!empty($buildDir)) {
+            $this->setBuildDir($this->resolvePath((string) $buildDir, $projectDir, 'Build path'));
+        }
+
+        if (!empty($cfg['dry'])) {
+            $this->dryRun = true;
         }
 
         // 读取 ld-flags
@@ -2022,6 +2104,11 @@ CODE;
             $this->enableLto = true;
         }
 
+        // 读取 format
+        if (!empty($cfg['format'])) {
+            $this->enableCodeFormattingIfAvailable('YAML format');
+        }
+
         // 读取 link-libs
         $linkLibs = $cfg['link-libs'] ?? null;
         if (!empty($linkLibs) && is_array($linkLibs)) {
@@ -2038,9 +2125,10 @@ CODE;
             }
         }
 
-        // 读取 name
-        if (!empty($cfg['name'])) {
-            $this->setTargetName($cfg['name']);
+        // 读取 output/name
+        $output = $cfg['output'] ?? $cfg['name'] ?? null;
+        if (!empty($output)) {
+            $this->setTargetName((string) $output);
         }
 
         // 读取 cpp-compiler
@@ -2049,8 +2137,8 @@ CODE;
             $this->setCppCompiler($cppCompiler);
         }
 
-        // 读取 type/build-mode（支持中横线和下划线）
-        $buildMode = $cfg['build-mode'] ?? $cfg['type'] ?? null;
+        // 读取 mode/type/build-mode（支持 CLI/YAML 两套命名）
+        $buildMode = $cfg['mode'] ?? $cfg['build-mode'] ?? $cfg['type'] ?? null;
         if (!empty($buildMode)) {
             // 映射常见的类型名称到内部 buildMode
             $modeMap = [

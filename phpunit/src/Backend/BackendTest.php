@@ -13,6 +13,39 @@ use PhpAot\Php\Backend\CompilerFactory;
 
 class BackendTest extends TestCase
 {
+    private array $temporaryDirectories = [];
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        foreach ($this->temporaryDirectories as $dir) {
+            $this->removeDirectory($dir);
+        }
+        $this->temporaryDirectories = [];
+    }
+
+    private function createTemporaryDirectory(string $prefix): string
+    {
+        $dir = sys_get_temp_dir() . '/' . $prefix . '_' . uniqid();
+        mkdir($dir, 0777, true);
+        $this->temporaryDirectories[] = $dir;
+        return $dir;
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . DIRECTORY_SEPARATOR . $file;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+        rmdir($dir);
+    }
+
     /**
      * 测试 MSVC 编译器基本信息
      */
@@ -101,6 +134,31 @@ class BackendTest extends TestCase
         $this->assertStringContainsString('/EHsc', $cmd);
         $this->assertStringContainsString('/MD', $cmd);
         $this->assertStringContainsString('/nologo', $cmd);
+    }
+
+    public function testMsvcBuildCCompileCommandKeepsSharedCompilerOptions(): void
+    {
+        $platform = new Windows([], true);
+        $compiler = new Msvc($platform);
+
+        $cmd = $compiler->buildCCompileCommand('misc.c', 'misc.obj', [
+            'sanitize' => 'address',
+            'enable_profiler' => true,
+            'prof_output' => 'app.prof',
+            'user_defines' => ['FEATURE_X=1'],
+            'lto' => true,
+            'is_zts' => true,
+        ]);
+
+        $this->assertStringContainsString('/TC', $cmd);
+        $this->assertStringContainsString('/fsanitize=address', $cmd);
+        $this->assertStringContainsString('/DPPROF_ON=1', $cmd);
+        $this->assertStringContainsString('/DPROF_OUTPUT_FILE=', $cmd);
+        $this->assertStringContainsString('/DFEATURE_X=1', $cmd);
+        $this->assertStringContainsString('/GL', $cmd);
+        $this->assertStringContainsString('/DZTS', $cmd);
+        $this->assertStringNotContainsString('/EHsc', $cmd);
+        $this->assertStringNotContainsString('/std:', $cmd);
     }
 
     /**
@@ -250,6 +308,32 @@ class BackendTest extends TestCase
         $this->assertStringContainsString('-fno-rtti', $cmd);
     }
 
+    public function testGccBuildCCompileCommandKeepsSharedCompilerOptions(): void
+    {
+        $platform = new Linux();
+        $compiler = new Gcc($platform);
+
+        $cmd = $compiler->buildCCompileCommand('misc.c', 'misc.o', [
+            'sanitize' => 'address',
+            'enable_profiler' => true,
+            'prof_output' => 'app.prof',
+            'user_defines' => ['FEATURE_X=1'],
+            'lto' => true,
+            'march' => 'native',
+            'target_platform' => 'aarch64-linux-gnu',
+            'build_mode' => 'ext',
+        ]);
+
+        $this->assertStringContainsString('-fsanitize=address', $cmd);
+        $this->assertStringContainsString('-DPPROF_ON=1', $cmd);
+        $this->assertStringContainsString('-DPROF_OUTPUT_FILE=', $cmd);
+        $this->assertStringContainsString('-DFEATURE_X=1', $cmd);
+        $this->assertStringContainsString('-flto', $cmd);
+        $this->assertStringContainsString('-march=native', $cmd);
+        $this->assertStringContainsString('--target=aarch64-linux-gnu', $cmd);
+        $this->assertStringContainsString('-fPIC', $cmd);
+    }
+
     public function testGccBuildLinkCommandIncludesPlatformPathsOptionsAndLibraries(): void
     {
         $platform = new Linux();
@@ -268,6 +352,27 @@ class BackendTest extends TestCase
         $this->assertStringContainsString('-shared', $cmd);
         $this->assertStringContainsString('-lphpx', $cmd);
         $this->assertStringContainsString('-lphp', $cmd);
+    }
+
+    public function testResponseFileArgumentIsEscapedForPathsWithSpaces(): void
+    {
+        $platform = new Linux();
+        $compiler = new Gcc($platform, 'g++');
+        $dir = $this->createTemporaryDirectory('backend link path');
+        $target = $dir . '/my app';
+        $rspFile = $target . '.rsp';
+        $objectWithSpace = $dir . '/object one.o';
+        $objectWithoutSpace = $dir . '/object_two.o';
+
+        $cmd = $compiler->buildLinkCommand([$objectWithSpace, $objectWithoutSpace], $target);
+
+        $this->assertStringContainsString(escapeshellarg('@' . $rspFile), $cmd);
+        $this->assertStringContainsString('-o ' . escapeshellarg($target), $cmd);
+        $this->assertFileExists($rspFile);
+
+        $lines = file($rspFile, FILE_IGNORE_NEW_LINES);
+        $this->assertSame('"' . $objectWithSpace . '"', $lines[0]);
+        $this->assertSame('"' . $objectWithoutSpace . '"', $lines[1]);
     }
 
     /**

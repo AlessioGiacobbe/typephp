@@ -59,6 +59,63 @@ abstract class GccLikeBackend extends CompilerBackend
         return '';
     }
 
+    /** 构建 GCC/Clang 共享编译选项，C 和 C++ 编译路径都复用这里 */
+    protected function buildSharedCompileFlags(array $config, bool $includeCppStd = false): string
+    {
+        $cmd = '';
+
+        if (!empty($config['sanitize'])) {
+            $cmd .= ' ' . $this->formatSanitizerFlag($config['sanitize']);
+        }
+
+        if (!empty($config['debug'])) {
+            $cmd .= ' -O0 -g';
+        } else {
+            $optimizeLevel = $config['optimize'] ?? 2;
+            $cmd .= ' -O' . $optimizeLevel;
+        }
+
+        $cmd .= ' -Wall';
+
+        if ($includeCppStd && !empty($config['cpp_std'])) {
+            $cmd .= ' -std=' . $config['cpp_std'];
+        }
+
+        if (!empty($config['march'])) {
+            $cmd .= ' -march=' . $config['march'];
+        }
+
+        if (!empty($config['target_platform'])) {
+            $cmd .= ' --target=' . $config['target_platform'];
+        }
+
+        $cmd .= $this->getPICFlag($config);
+
+        if (!empty($config['enable_profiler'])) {
+            $cmd .= ' ' . $this->formatDefineFlag('PPROF_ON=1', '-D');
+            if (!empty($config['prof_output'])) {
+                $profOutput = addcslashes($config['prof_output'], "\\\"");
+                $cmd .= ' ' . $this->formatDefineFlag('PROF_OUTPUT_FILE="' . $profOutput . '"', '-D');
+            }
+        }
+
+        if ($includeCppStd && !empty($config['cxxflags'])) {
+            $cmd .= ' ' . $config['cxxflags'];
+        }
+
+        if (!empty($config['user_defines'])) {
+            foreach ($config['user_defines'] as $define) {
+                $cmd .= ' ' . $this->formatDefineFlag($define, '-D');
+            }
+        }
+
+        if (!empty($config['lto'])) {
+            $cmd .= ' -flto';
+        }
+
+        return $cmd;
+    }
+
     /** 获取平台特定的链接选项 */
     protected function getPlatformLinkFlags(array $config): string
     {
@@ -116,7 +173,7 @@ abstract class GccLikeBackend extends CompilerBackend
         }
 
         foreach ($defines as $define) {
-            $cmd .= ' -D' . $define;
+            $cmd .= ' ' . $this->formatDefineFlag($define, '-D');
         }
 
         if (!empty($flags)) {
@@ -181,15 +238,7 @@ abstract class GccLikeBackend extends CompilerBackend
         if (!empty($options['include_paths'])) {
             $cmd .= ' ' . $this->formatIncludePaths($options['include_paths']);
         }
-
-        $optimizeLevel = $options['optimize'] ?? 0;
-        if (!empty($options['debug'])) {
-            $cmd .= ' -O0 -g';
-        } else {
-            $cmd .= ' -O' . $optimizeLevel;
-        }
-
-        $cmd .= ' -Wall';
+        $cmd .= $this->buildSharedCompileFlags($options, false);
 
         return $cmd;
     }
@@ -239,58 +288,8 @@ abstract class GccLikeBackend extends CompilerBackend
 
     public function buildCompileOptions(array $config = []): string
     {
-        $cmd = '';
-
-        $cmd .= $this->getCompilerPrefixFlags();
-
-        if (!empty($config['sanitize'])) {
-            $cmd .= ' ' . $this->formatSanitizerFlag($config['sanitize']);
-        }
-
-        if (!empty($config['debug'])) {
-            $cmd .= ' -O0 -g';
-        } else {
-            $optimizeLevel = $config['optimize'] ?? 2;
-            $cmd .= ' -O' . $optimizeLevel;
-        }
-
-        $cmd .= ' -Wall';
-
-        if (!empty($config['cpp_std'])) {
-            $cmd .= ' -std=' . $config['cpp_std'];
-        }
-
-        if (!empty($config['march'])) {
-            $cmd .= ' -march=' . $config['march'];
-        }
-
-        if (!empty($config['target_platform'])) {
-            $cmd .= ' --target=' . $config['target_platform'];
-        }
-
-        $cmd .= $this->getPICFlag($config);
-
-        if (!empty($config['enable_profiler'])) {
-            $cmd .= ' -DPPROF_ON=1';
-            if (!empty($config['prof_output'])) {
-                $cmd .= ' -DPROF_OUTPUT_FILE=\'"' . $config['prof_output'] . '"\'';
-            }
-        }
-
-        if (!empty($config['cxxflags'])) {
-            $cmd .= ' ' . $config['cxxflags'];
-        }
-
-        if (!empty($config['user_defines'])) {
-            foreach ($config['user_defines'] as $define) {
-                $cmd .= ' -D' . $define;
-            }
-        }
-
-        if (!empty($config['lto'])) {
-            $cmd .= ' -flto';
-        }
-
+        $cmd = $this->getCompilerPrefixFlags();
+        $cmd .= $this->buildSharedCompileFlags($config, true);
         return $cmd;
     }
 
@@ -317,35 +316,8 @@ abstract class GccLikeBackend extends CompilerBackend
 
     public function buildFullCompileOptions(array $options = []): string
     {
-        $cmd = '';
-
-        $cmd .= $this->getCompilerPrefixFlags();
-
-        if (!empty($options['debug'])) {
-            $cmd .= ' -O0 -g';
-        } else {
-            $optimizeLevel = $options['optimize'] ?? 2;
-            $cmd .= ' -O' . $optimizeLevel;
-        }
-
-        $cmd .= ' -Wall';
-
-        if (!empty($options['cpp_std'])) {
-            $cmd .= ' -std=' . $options['cpp_std'];
-        }
-
-        if (!empty($options['march'])) {
-            $cmd .= ' -march=' . $options['march'];
-        }
-
-        if (!empty($options['sanitize'])) {
-            $cmd .= ' ' . $this->formatSanitizerFlag($options['sanitize']);
-        }
-
-        if (!empty($options['pic'])) {
-            $cmd .= ' -fPIC';
-        }
-
+        $cmd = $this->getCompilerPrefixFlags();
+        $cmd .= $this->buildSharedCompileFlags($options, true);
         return $cmd;
     }
 

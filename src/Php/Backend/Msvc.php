@@ -34,6 +34,75 @@ class Msvc extends CompilerBackend
         return $this->linkerCommand;
     }
 
+    private function buildCommonCompileFlags(array $config, bool $includeCppOptions = true): string
+    {
+        $cmd = '';
+
+        $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
+
+        if (!empty($config['is_zts'])) {
+            $cmd .= ' /DZTS';
+        }
+
+        if (!empty($config['sanitize'])) {
+            if ($config['sanitize'] === 'address' || $config['sanitize'] === 'addr') {
+                $cmd .= ' /fsanitize=address';
+            }
+        }
+
+        if (!empty($config['debug'])) {
+            $cmd .= ' /Od /Zi';
+        } else {
+            $optimizeLevel = $config['optimize'] ?? 2;
+            $optMap = [0 => '/Od', 1 => '/O1', 2 => '/O2', 3 => '/Ox'];
+            $cmd .= ' ' . ($optMap[$optimizeLevel] ?? '/O2');
+        }
+
+        $cmd .= ' /W3';
+
+        if (!empty($config['suppressed_warnings'])) {
+            foreach ($config['suppressed_warnings'] as $code => $description) {
+                $code = is_int($code) && $code < 100 ? $description : $code;
+                $cmd .= " /wd{$code}";
+            }
+        }
+
+        if (!empty($config['enable_profiler'])) {
+            $cmd .= ' ' . $this->formatDefineFlag('PPROF_ON=1', '/D');
+            if (!empty($config['prof_output'])) {
+                $profOutput = addcslashes($config['prof_output'], "\\\"");
+                $cmd .= ' ' . $this->formatDefineFlag('PROF_OUTPUT_FILE="' . $profOutput . '"', '/D');
+            }
+        }
+
+        if (!empty($config['user_defines'])) {
+            foreach ($config['user_defines'] as $define) {
+                $cmd .= ' ' . $this->formatDefineFlag($define, '/D');
+            }
+        }
+
+        if (!empty($config['lto'])) {
+            $cmd .= ' /GL';
+        }
+
+        if ($includeCppOptions) {
+            $cmd .= ' /EHsc';
+            if (!empty($config['cpp_std'])) {
+                $cmd .= ' /std:' . $config['cpp_std'];
+            }
+
+            $cmd .= ' /MD';
+
+            if (!empty($config['cxxflags'])) {
+                $cmd .= ' ' . $config['cxxflags'];
+            }
+        }
+
+        $cmd .= ' /nologo';
+
+        return $cmd;
+    }
+
     public function compileFile(
         string $sourceFile,
         string $outputFile,
@@ -52,7 +121,7 @@ class Msvc extends CompilerBackend
         
         // 添加宏定义
         foreach ($defines as $define) {
-            $cmd .= ' /D' . $define;
+            $cmd .= ' ' . $this->formatDefineFlag($define, '/D');
         }
         
         // 添加额外标志
@@ -129,29 +198,7 @@ class Msvc extends CompilerBackend
         }
 
         // 平台宏定义
-        $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
-
-        // ZTS 支持
-        if ($this->platform instanceof Windows && $this->platform->isZts()) {
-            $cmd .= ' /DZTS';
-        }
-
-        // 优化级别（C 文件通常使用较低的优化）
-        $optimizeLevel = $options['optimize'] ?? 0;
-        $optMap = [0 => '/Od', 1 => '/O1', 2 => '/O2', 3 => '/Ox'];
-        $cmd .= ' ' . ($optMap[$optimizeLevel] ?? '/O2');
-
-        // 警告级别
-        $cmd .= ' /W3';
-
-        // 禁用常见警告
-        $suppressedWarnings = $options['suppressed_warnings'] ?? ['4244', '4146'];
-        foreach ($suppressedWarnings as $code) {
-            $cmd .= " /wd{$code}";
-        }
-
-        // nologo
-        $cmd .= ' /nologo';
+        $cmd .= $this->buildCommonCompileFlags($options, false);
 
         // 注意：C 文件不使用 /EHsc, /std:c++17, /MD 等 C++ 特定选项
 
@@ -220,7 +267,7 @@ class Msvc extends CompilerBackend
         
         // 宏定义
         foreach ($defines as $define) {
-            $cmd .= ' /D' . $define;
+            $cmd .= ' ' . $this->formatDefineFlag($define, '/D');
         }
         
         // 编译选项
@@ -322,86 +369,7 @@ class Msvc extends CompilerBackend
      */
     public function buildCompileOptions(array $config = []): string
     {
-        $cmd = '';
-        
-        // 平台宏定义
-        $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
-        
-        // ZTS
-        if (!empty($config['is_zts'])) {
-            $cmd .= ' /DZTS';
-        }
-        
-        // Sanitizer
-        if (!empty($config['sanitize'])) {
-            if ($config['sanitize'] === 'address' || $config['sanitize'] === 'addr') {
-                $cmd .= ' /fsanitize=address';
-            }
-        }
-        
-        // 优化和调试
-        if (!empty($config['debug'])) {
-            $cmd .= ' /Od /Zi';
-        } else {
-            $optimizeLevel = $config['optimize'] ?? 2;
-            $optMap = [0 => '/Od', 1 => '/O1', 2 => '/O2', 3 => '/Ox'];
-            $cmd .= ' ' . ($optMap[$optimizeLevel] ?? '/O2');
-        }
-        
-        // 警告
-        $cmd .= ' /W3';
-        
-        // 禁用常见警告（只使用键，即警告代码）
-        if (!empty($config['suppressed_warnings'])) {
-            foreach ($config['suppressed_warnings'] as $code => $description) {
-                $code = is_int($code) && $code < 100 ? $description : $code;
-                $cmd .= " /wd{$code}";
-            }
-        }
-        
-        // C++ 选项
-        $cmd .= ' /EHsc';
-        if (!empty($config['cpp_std'])) {
-            $cmd .= ' /std:' . $config['cpp_std'];
-        }
-        
-        // 扩展模块选项
-        if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
-            // MSVC 不需要 -fPIC，默认就是位置无关代码
-        }
-        
-        // CRT
-        $cmd .= ' /MD';
-        
-        // nologo
-        $cmd .= ' /nologo';
-        
-        // 性能分析宏
-        if (!empty($config['enable_profiler'])) {
-            $cmd .= ' /DPPROF_ON=1';
-            if (!empty($config['prof_output'])) {
-                $cmd .= ' /DPROF_OUTPUT_FILE=\'"' . $config['prof_output'] . '"\'';
-            }
-        }
-        
-        // 用户自定义编译标志
-        if (!empty($config['cxxflags'])) {
-            $cmd .= ' ' . $config['cxxflags'];
-        }
-        
-        // 用户自定义预处理器宏
-        if (!empty($config['user_defines'])) {
-            foreach ($config['user_defines'] as $define) {
-                $cmd .= ' /D' . $define;
-            }
-        }
-    
-        // LTO（全程序优化 /GL + 链接时代码生成 /LTCG）
-        if (!empty($config['lto'])) {
-            $cmd .= ' /GL';
-        }
-    
-        return $cmd;
+        return $this->buildCommonCompileFlags($config, true);
     }
     
     /**
