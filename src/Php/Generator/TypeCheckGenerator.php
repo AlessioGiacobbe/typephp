@@ -37,6 +37,12 @@ trait TypeCheckGenerator
                 $check[] = count($clause) === 1 ? $clause[0] : ['kind' => 'allOf', 'types' => $clause];
             }
         } elseif ($typeNode instanceof IntersectionType) {
+            foreach ($typeNode->types as $subType) {
+                $nameLower = strtolower($this->parseIdentifier($subType));
+                if ($nameLower === 'self' || $nameLower === 'parent' || $nameLower === 'static') {
+                    $this->fatalError($subType, "Type '{$nameLower}' cannot be part of an intersection type");
+                }
+            }
             $clause = $this->buildTypeCheckClause($typeNode);
             if (!empty($clause)) {
                 $check[] = count($clause) === 1 ? $clause[0] : ['kind' => 'allOf', 'types' => $clause];
@@ -180,6 +186,15 @@ trait TypeCheckGenerator
         return '(' . implode(' && ', $conditions) . ')';
     }
 
+    protected function getTypeCheckCallableName(): string
+    {
+        if ($this->classDef) {
+            return $this->classDef->getNamespacedName(false) . '::' . $this->functionDef->name;
+        }
+
+        return $this->functionDef->getNamespacedName();
+    }
+
     protected function genUnionParamCheck(ArgInfo $argInfo, int $argIndex): string
     {
         if (empty($argInfo->typeCheck)) {
@@ -251,7 +266,7 @@ trait TypeCheckGenerator
 
     protected function genUnionParamTypeErrorExpr(ArgInfo $argInfo, string $valueExpr, string $argNoExpr): string
     {
-        $fnName = $this->functionDef->getNamespacedName();
+        $fnName = $this->getTypeCheckCallableName();
         return 'php::concat({'
             . 'php::Str(' . $this->genCharPtr($fnName . '(): Argument #', true) . '), '
             . 'php::toString(' . $argNoExpr . '), '
@@ -282,7 +297,7 @@ trait TypeCheckGenerator
         }
 
         $orExpr = implode(' || ', $conditions);
-        $fnName = $this->functionDef->getNamespacedName();
+        $fnName = $this->getTypeCheckCallableName();
         $typeStr = $this->functionDef->returnTypeStr;
 
         $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($fnName, true) . ' "(): Return value must be of type " '
