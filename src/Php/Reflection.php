@@ -93,15 +93,7 @@ class Reflection
         if (!$func) {
             return null;
         }
-        $returnType = $func->getReturnType();
-        if (!$returnType) {
-            return null;
-        }
-        if ($returnType instanceof \ReflectionUnionType) {
-            return null;
-        }
-
-        return $returnType->getName();
+        return self::extractNamedReturnType($func->getReturnType());
     }
 
     public static function getFunctionParameter(string $fn, int $index): ?\ReflectionParameter
@@ -172,7 +164,7 @@ class Reflection
             return null;
         }
         $methodDef = $classRef->getMethod($method);
-        return $methodDef->getReturnType() ? $methodDef->getReturnType()->getName() : null;
+        return self::extractNamedReturnType($methodDef->getReturnType());
     }
 
     public static function isAbstractClass(string $name): bool
@@ -214,5 +206,14 @@ class Reflection
 
         $lastParam = end($params);
         return $lastParam->isVariadic() ? $lastParam : null;
+    }
+
+    private static function extractNamedReturnType(?\ReflectionType $returnType): ?string
+    {
+        if (!$returnType instanceof \ReflectionNamedType) {
+            return null;
+        }
+
+        return $returnType->getName();
     }
 }
