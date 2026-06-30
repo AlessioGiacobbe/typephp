@@ -1894,6 +1894,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->validateNativeNamedCallArgs($funcDef, $args);
 
+        if ($this->hasUnpackCallArg($args)) {
+            return;
+        }
+
         $argc = count($args);
         $type = str_contains($name, '::') ? 'Method' : 'Function';
         if ($argc < $funcDef->argCountRequired) {
@@ -1924,6 +1928,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function validateNativeNamedCallArgs(FunctionDef $functionDef, array $callArgs): void
     {
         $hasNamedArg = false;
+        $hasUnpack = false;
         $seenNamedArgs = [];
         $providedArgIndexes = [];
         $argNameIndex = $this->getFunctionArgNameIndex($functionDef);
@@ -1937,10 +1942,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($hasNamedArg) {
                     $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
                 }
+                $hasUnpack = true;
                 $providedArgIndexes[$i] = true;
                 continue;
             }
             if ($arg->name === null) {
+                if ($hasUnpack) {
+                    $this->fatalError($arg, 'Cannot use positional argument after argument unpacking');
+                }
                 if ($hasNamedArg) {
                     $this->fatalError($arg, 'Cannot use positional argument after named argument');
                 }
@@ -2924,6 +2933,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             return;
         }
         $this->validateInternalNamedCallArgs($ref, $expr->args);
+        if ($this->hasUnpackCallArg($expr->args)) {
+            return;
+        }
         $minArgs = $ref->getNumberOfRequiredParameters();
         $maxArgs = $ref->getNumberOfParameters();
         $actualArgCount = count($expr->args);
@@ -2961,6 +2973,37 @@ class CompilerBase extends \PhpAot\Core\Translator
         return false;
     }
 
+    protected function hasUnpackCallArg(array $args): bool
+    {
+        foreach ($args as $arg) {
+            if ($arg instanceof Node\Arg && $arg->unpack) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function shouldUseDynamicCallForNativeArgs(string $nativeFunc, array $args): bool
+    {
+        if (!$this->hasUnpackCallArg($args)) {
+            return false;
+        }
+        if ($this->hasUnpackBeforeNamedArg($args)) {
+            return true;
+        }
+
+        $variadicArgIndex = $this->getVariadicArgIndex($this->getFunction($nativeFunc));
+        foreach ($args as $i => $arg) {
+            if (!$arg instanceof Node\Arg || !$arg->unpack) {
+                continue;
+            }
+            if ($variadicArgIndex === null || $i < $variadicArgIndex) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     protected function genCallUserFuncArray(string $callback, array $args, string $funcName = '', string $className = ''): string
     {
         return 'php::call(' . $this->getFuncPtr('call_user_func_array') . ', '
@@ -2976,6 +3019,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function validateInternalNamedCallArgs(\ReflectionFunctionAbstract $ref, array $callArgs): void
     {
         $hasNamedArg = false;
+        $hasUnpack = false;
         $seenNamedArgs = [];
         $providedArgIndexes = [];
         $argNameIndex = [];
@@ -3000,10 +3044,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($hasNamedArg) {
                     $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
                 }
+                $hasUnpack = true;
                 $providedArgIndexes[$i] = true;
                 continue;
             }
             if ($arg->name === null) {
+                if ($hasUnpack) {
+                    $this->fatalError($arg, 'Cannot use positional argument after argument unpacking');
+                }
                 if ($hasNamedArg) {
                     $this->fatalError($arg, 'Cannot use positional argument after named argument');
                 }
@@ -3042,7 +3090,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             $hasNamedArg = true;
         }
 
-        if ($hasNamedArg) {
+        if ($hasNamedArg && !$hasUnpack) {
             foreach ($requiredArgIndexes as $index => $name) {
                 if (!isset($providedArgIndexes[$index])) {
                     $this->fatalError($callArgs[array_key_last($callArgs)] ?? null, "Named argument `{$name}` is missing default value");
@@ -3073,7 +3121,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return $this->genPlaceHolder($this->identifierToStr($expr->name));
                 }
                 $this->checkNativeCallArgs($expr, $this->getFunction($nativeFn), $expr->args, $name);
-                if ($this->hasUnpackBeforeNamedArg($expr->args)) {
+                if ($this->shouldUseDynamicCallForNativeArgs($nativeFn, $expr->args)) {
                     return $this->genCallUserFuncArray($this->getFunctionCallbackExpr($nativeFn), $expr->args, $name);
                 }
                 try {
@@ -3282,6 +3330,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $namedArgsVar = null;
         $namedArgs = [];
         $hasNamedArg = false;
+        $hasUnpack = false;
 
         $ensureArrayArgs = function () use (&$arrayArgsVar, &$list_args): string {
             if ($arrayArgsVar === null) {
@@ -3321,6 +3370,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($hasNamedArg) {
                     $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
                 }
+                $hasUnpack = true;
                 $arrayArgs = $ensureArrayArgs();
                 $this->context->beforeStmtLines[] = $arrayArgs . '.merge(' . $this->parseArrayArg($arg) . ');';
                 continue;
@@ -3346,6 +3396,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($hasNamedArg) {
                 $this->fatalError($arg, 'Cannot use positional argument after named argument');
             }
+            if ($hasUnpack) {
+                $this->fatalError($arg, 'Cannot use positional argument after argument unpacking');
+            }
             $byRef = $funcName && $this->isReferenceArgument($funcName, $className, $i);
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
@@ -3362,7 +3415,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
                 }
                 if ($byRef) {
-                    $list_args[] = $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
+                    $addPositionalArg($obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')');
                     continue;
                 }
             } elseif ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
@@ -5277,8 +5330,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($nativeFunc) {
                     $expr->setAttribute('nativeCall', $nativeFunc);
                     try {
-                        if ($this->hasUnpackBeforeNamedArg($expr->args)) {
-                            return $this->genCallUserFuncArray($this->genArray([$object, $method]), $expr->args, $funcName, $class);
+                        if ($this->shouldUseDynamicCallForNativeArgs($nativeFunc, $expr->args)) {
+                            return $this->genCallUserFuncArray($this->genArray([$object, $method]), $expr->args, $methodName, $class);
                         }
                         return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
                     } catch (PlaceHolder) {
@@ -5426,7 +5479,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
                 if ($nativeFunc) {
                     try {
-                        if ($this->hasUnpackBeforeNamedArg($expr->args)) {
+                        if ($this->shouldUseDynamicCallForNativeArgs($nativeFunc, $expr->args)) {
                             return $this->genCallUserFuncArray($this->genArray($callScope), $expr->args, $method, $class);
                         }
                         $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);

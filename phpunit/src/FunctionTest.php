@@ -42,4 +42,19 @@ class FunctionTest extends \BaseTest
         $this->exec('Cannot use argument unpacking after named arguments', 'unpack-after-named-arg.php');
     }
 
+    public function testNativeCallPositionalAfterUnpack()
+    {
+        $this->exec('Cannot use positional argument after argument unpacking', 'native-call-positional-after-unpack.php');
+    }
+
+    public function testDynamicCallPositionalAfterUnpack()
+    {
+        $this->exec('Cannot use positional argument after argument unpacking', 'dynamic-call-positional-after-unpack.php');
+    }
+
+    public function testNewPositionalAfterUnpack()
+    {
+        $this->exec('Cannot use positional argument after argument unpacking', 'new-positional-after-unpack.php');
+    }
+
 }
