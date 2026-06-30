@@ -245,8 +245,17 @@ class Preprocessor extends CompilerBase
     {
         $list                          = [];
         $functionDef->argCountRequired = count($params);
-        $defaultValueCount = 0;
+        $lastRequiredIndex = -1;
+        $lastRequiredName = '';
         $last = array_key_last($params);
+        foreach ($params as $i => $param) {
+            if (!$param->default && !$param->variadic) {
+                $lastRequiredIndex = $i;
+                if (is_string($param->var->name)) {
+                    $lastRequiredName = $param->var->name;
+                }
+            }
+        }
 
         foreach ($params as $i => $param) {
             if (!is_string($param->var->name)) {
@@ -275,6 +284,14 @@ class Preprocessor extends CompilerBase
                 } elseif ($param->byRef) {
                     $this->fatalError($param, 'Variadic parameters cannot be passed by reference');
                 }
+            }
+            if ($param->default && $i < $lastRequiredIndex) {
+                $this->fatalError(
+                    $param,
+                    $this->getFunctionDisplayName($functionDef)
+                    . '(): optional parameter `$' . $phpName . '` cannot be declared before required parameter `$'
+                    . $lastRequiredName . '`'
+                );
             }
             if ($this->method and $name === 'this_') {
                 $this->fatalError($param, 'Cannot use `$this` as parameter of class method');
@@ -325,17 +342,23 @@ class Preprocessor extends CompilerBase
                     $argInfo->arrayInitPlan = $arrayInitPlan;
                     $argInfo->defaultValue = $param->default;
                 }
-                $defaultValueCount++;
             } elseif ($param->variadic) {
                 // 变长参数可以视为空数组默认值
-                $defaultValueCount++;
                 $argInfo->default = '{}';
                 $argInfo->defaultValue = new Node\Expr\Array_();
             }
             $functionDef->argInfoList[] = $argInfo;
         }
         $functionDef->params = implode(', ', $list);
-        $functionDef->argCountRequired -= $defaultValueCount;
+        $functionDef->argCountRequired = $lastRequiredIndex + 1;
+    }
+
+    protected function getFunctionDisplayName(FunctionDef $functionDef): string
+    {
+        if ($this->class) {
+            return $this->class . '::' . $functionDef->name;
+        }
+        return $functionDef->getNamespacedName();
     }
 
     protected function parseFunctionDecl(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
@@ -351,6 +374,16 @@ class Preprocessor extends CompilerBase
         // 返回值不能是引用类型
         if ($v->byRef) {
             $this->fatalError($v, 'The return type of the function `' . $v->name . '` cannot be a reference type');
+        }
+        if ($this->method and $v->returnType !== null) {
+            $methodName = $this->class . '::' . $this->method;
+            if (in_array($this->method, ['__construct', '__destruct'], true)) {
+                $this->fatalError($v, 'Method `' . $methodName . '()` cannot declare a return type');
+            }
+            if ($this->method === '__clone'
+                and (!$v->returnType instanceof Node\Identifier or strtolower($v->returnType->name) !== 'void')) {
+                $this->fatalError($v, 'Method `' . $methodName . '()` return type must be void when declared');
+            }
         }
 
         $fnName = $this->parseIdentifier($v->name);
@@ -435,6 +468,9 @@ class Preprocessor extends CompilerBase
         } else {
             $flags = Modifiers::PUBLIC;
         }
+        if (isset($this->symbolDeclInFile[$fullClassNameLower])) {
+            $this->fatalError($class, "Duplicate class `{$fullClassName}`");
+        }
 
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
         $this->addClass($fullClassName, $this->classDef);
@@ -466,10 +502,6 @@ class Preprocessor extends CompilerBase
         } else {
             $this->classDef->trait = $class;
         }
-        if (isset($this->symbolDeclInFile[$fullClassNameLower])) {
-            $this->fatalError($class, "Duplicate class `{$fullClassName}`");
-        }
-
         $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
         $code = '';

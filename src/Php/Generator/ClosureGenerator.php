@@ -58,10 +58,11 @@ trait ClosureGenerator
             $requiredArgCount++;
         }
         if ($requiredArgCount > 0) {
+            $expected = $requiredArgCount === count($params) ? 'exactly' : 'at least';
             $message = 'php::concat({'
                 . 'php::Str(' . $this->genCharPtr('Too few arguments to function {closure}(), ', true) . '), '
                 . 'php::toString(php::getCallArgNum()), '
-                . 'php::Str(' . $this->genCharPtr(' passed and exactly ' . $requiredArgCount . ' expected', true) . ')'
+                . 'php::Str(' . $this->genCharPtr(' passed and ' . $expected . ' ' . $requiredArgCount . ' expected', true) . ')'
                 . '})';
             $code .= $this->getIndent() . 'if (UNEXPECTED(php::getCallArgNum() < ' . $requiredArgCount . ')) {' . PHP_EOL;
             $this->indentLevel++;

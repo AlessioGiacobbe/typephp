@@ -2906,10 +2906,11 @@ CODE;
     private function genWrapperRequiredArgCountCheck(FunctionDef $functionDef, string $displayName): string
     {
         $required = $functionDef->argCountRequired;
+        $expected = $required === count($functionDef->argInfoList) ? 'exactly' : 'at least';
         $message = 'php::concat({'
             . 'php::Str(' . $this->genCharPtr('Too few arguments to function ' . $displayName . '(), ', true) . '), '
             . 'php::toString(php::getCallArgNum()), '
-            . 'php::Str(' . $this->genCharPtr(' passed and exactly ' . $required . ' expected', true) . ')'
+            . 'php::Str(' . $this->genCharPtr(' passed and ' . $expected . ' ' . $required . ' expected', true) . ')'
             . '})';
 
         $code = $this->getIndent() . 'if (UNEXPECTED(php::getCallArgNum() < ' . $required . ')) {' . PHP_EOL;

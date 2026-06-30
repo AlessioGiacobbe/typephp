@@ -57,4 +57,24 @@ class FunctionTest extends \BaseTest
         $this->exec('Cannot use positional argument after argument unpacking', 'new-positional-after-unpack.php');
     }
 
+    public function testClosureReferenceParameter()
+    {
+        $this->exec('Closure cannot use reference parameter', 'closure-ref-param.php');
+    }
+
+    public function testVariadicReferenceParameter()
+    {
+        $this->exec('Variadic parameters cannot be passed by reference', 'variadic-ref-param.php');
+    }
+
+    public function testOptionalParameterBeforeRequiredParameter()
+    {
+        $this->exec('test(): optional parameter `$a` cannot be declared before required parameter `$c`', 'optional-before-required-param.php');
+    }
+
+    public function testMethodOptionalParameterBeforeRequiredParameter()
+    {
+        $this->exec('OptionalBeforeRequired::method(): optional parameter `$first` cannot be declared before required parameter `$second`', 'method-optional-before-required-param.php');
+    }
+
 }

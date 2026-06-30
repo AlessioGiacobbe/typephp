@@ -25,6 +25,16 @@ function main(): void
         var_dump(get_class($e));
         var_dump($e->getMessage());
     }
+
+    $requiredWithDefault = function ($value, $default = 42) {
+        var_dump($value, $default);
+    };
+    try {
+        $requiredWithDefault();
+    } catch (\Throwable $e) {
+        var_dump(get_class($e));
+        var_dump($e->getMessage());
+    }
 }
 ?>
 --EXPECT--
@@ -39,3 +49,5 @@ array(3) {
 }
 string(18) "ArgumentCountError"
 string(74) "Too few arguments to function {closure}(), 0 passed and exactly 1 expected"
+string(18) "ArgumentCountError"
+string(75) "Too few arguments to function {closure}(), 0 passed and at least 1 expected"

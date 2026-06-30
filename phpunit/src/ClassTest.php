@@ -65,4 +65,54 @@ class ClassTest extends \BaseTest
     {
         $this->exec("Type 'static' cannot be part of an intersection type", 'intersection_type_static_not_allowed.php');
     }
+
+    public function testConstructorCannotDeclareReturnType()
+    {
+        $this->exec('Method `ConstructorReturnType::__construct()` cannot declare a return type', 'constructor-return-type.php');
+    }
+
+    public function testDestructorCannotDeclareReturnType()
+    {
+        $this->exec('Method `DestructorReturnType::__destruct()` cannot declare a return type', 'destructor-return-type.php');
+    }
+
+    public function testCloneReturnTypeMustBeVoid()
+    {
+        $this->exec('Method `CloneInvalidReturnType::__clone()` return type must be void when declared', 'clone-invalid-return-type.php');
+    }
+
+    public function testCallMagicMethodCannotBeStatic()
+    {
+        $this->exec('Method MagicCallStaticInvalid::__call() cannot be static', 'magic-call-static.php');
+    }
+
+    public function testCallStaticMagicMethodMustBeStatic()
+    {
+        $this->exec('Method MagicCallStaticNonStaticInvalid::__callStatic() must be static', 'magic-callstatic-nonstatic.php');
+    }
+
+    public function testToStringMagicMethodCannotTakeArguments()
+    {
+        $this->exec('Method MagicToStringArgsInvalid::__toString() must take exactly 0 arguments', 'magic-tostring-args.php');
+    }
+
+    public function testSetStateMagicMethodMustBeStatic()
+    {
+        $this->exec('Method MagicSetStateNonStaticInvalid::__set_state() must be static', 'magic-set-state-nonstatic.php');
+    }
+
+    public function testDestructMagicMethodCannotTakeArguments()
+    {
+        $this->exec('Method MagicDestructArgsInvalid::__destruct() must take exactly 0 arguments', 'magic-destruct-args.php');
+    }
+
+    public function testGetMagicMethodParameterMustBeString()
+    {
+        $this->exec('Method MagicGetParamTypeInvalid::__get() must take string as argument', 'magic-get-param-type.php');
+    }
+
+    public function testMagicMethodMustBePublic()
+    {
+        $this->exec('Method MagicGetProtectedInvalid::__get() must have public visibility', 'magic-get-protected.php');
+    }
 }
