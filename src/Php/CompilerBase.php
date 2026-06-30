@@ -5697,19 +5697,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->method === '__destruct') {
             $this->warning($expr, "Throwing exception in {$this->getFullClassName()}::__destruct() may cause memory leak");
         }
+        $type = $this->detectTypeOfExpr($expr->expr);
         if ($this->isNewExpr($expr->expr)) {
             $ex = $this->parseExpr($expr->expr);
+            return 'php::throwException(' . $ex . ')';
         } elseif ($this->isVarExpr($expr->expr)) {
             $ex = $this->parseIdentifier($expr->expr);
-            if ($this->getVarType($ex) != self::TYPE_OBJECT) {
-                goto _to_object;
+            if ($type == self::TYPE_OBJECT) {
+                return 'php::throwException(' . $ex . ')';
             }
         } else {
-            $ex = $this->parseIdentifier($expr->expr);
-            _to_object:
-            $ex = $this->convertObjectExpr($ex);
+            $ex = $this->parseExpr($expr->expr);
         }
-        return 'php::throwException(' . $ex . ')';
+        if ($type != self::TYPE_VAR) {
+            $this->fatalError($expr, 'Can only throw objects');
+        }
+        $tmp = $this->genTmpVarName();
+        $this->addLocalVar($tmp, self::TYPE_VAR);
+        return '([&]() -> php::Var { ' . $tmp . ' = ' . $ex . '; if (!' . $tmp . '.isObject()) { php::throwError("Can only throw objects"); } return php::throwException(php::Object(' . $tmp . ')); })()';
     }
 
     protected function parseTryCatch(mixed $v): string
@@ -5760,16 +5765,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
 
         $code .= $this->getIndent() . 'if (' . $var . ' && ';
+        $conditions = [];
         foreach ($types as $type) {
             if ($this->isNameExpr($type) or $this->isFullNameExpr($type)) {
                 $class = $this->getNamespacedClassName($this->parseIdentifier($type));
                 $ce = $this->getClassEntryPtr($class);
-                $code .= Symbol::instanceOf() . '(' . $var . ', ' . $ce . ')';
+                $conditions[] = Symbol::instanceOf() . '(' . $var . ', ' . $ce . ')';
             } else {
                 $this->fatalError($type, 'Unsupported catch type');
             }
         }
 
+        $code .= implode(' || ', $conditions);
         $code .= ') {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->parseStmts($catch->stmts);
