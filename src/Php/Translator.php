@@ -3159,8 +3159,12 @@ CODE;
             }
             // 父类是内置类
             if ($classDef->inheritedFromInternalClass) {
-                if (Reflection::getClassMethodModifiers($extends, $name) & \ReflectionMethod::IS_PRIVATE) {
+                $modifiers = Reflection::getClassMethodModifiers($extends, $name);
+                if ($modifiers & \ReflectionMethod::IS_PRIVATE) {
                     goto _error;
+                }
+                if ($modifiers & \ReflectionMethod::IS_FINAL) {
+                    goto _final_error;
                 }
                 break;
             }
@@ -3171,6 +3175,12 @@ CODE;
                     _error:
                     $this->fatalError($v,
                         'Cannot override private method `' .
+                        $extends . '::' . $name . '()`');
+                }
+                if ($methodDef->flags & Modifiers::FINAL) {
+                    _final_error:
+                    $this->fatalError($v,
+                        'Cannot override final method `' .
                         $extends . '::' . $name . '()`');
                 }
                 $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
@@ -3213,9 +3223,7 @@ CODE;
             return;
         }
 
-        // Compare return type
-        if ($childFuncDef->returnType !== $parentFuncDef->returnType ||
-            $childFuncDef->returnClass !== $parentFuncDef->returnClass) {
+        if (!$this->isReturnTypeOverrideCompatible($childFuncDef, $parentFuncDef)) {
             $error('return type mismatch');
         }
 
@@ -3231,7 +3239,7 @@ CODE;
                 $error("missing parameter #{$i}");
             }
             $childArg = $childFuncDef->argInfoList[$i];
-            if ($childArg->type !== $parentArg->type || $childArg->class !== $parentArg->class) {
+            if (!$this->isParameterTypeOverrideCompatible($childArg, $parentArg)) {
                 $error("parameter #{$i} type mismatch");
             }
             if ($childArg->byRef !== $parentArg->byRef) {
@@ -3249,6 +3257,61 @@ CODE;
                 $error("extra required parameter #{$i}");
             }
         }
+    }
+
+    private function isReturnTypeOverrideCompatible(FunctionDef $childFuncDef, FunctionDef $parentFuncDef): bool
+    {
+        if ($parentFuncDef->returnTypeUndeclared) {
+            return true;
+        }
+        if ($childFuncDef->returnTypeUndeclared) {
+            return false;
+        }
+        if ($parentFuncDef->returnTypeCheck || $childFuncDef->returnTypeCheck) {
+            return $parentFuncDef->returnTypeStr === $childFuncDef->returnTypeStr;
+        }
+        if ($parentFuncDef->returnType === self::TYPE_VAR) {
+            return true;
+        }
+        if ($childFuncDef->returnType !== $parentFuncDef->returnType) {
+            return false;
+        }
+        if ($parentFuncDef->returnType !== self::TYPE_OBJECT) {
+            return true;
+        }
+        if ($childFuncDef->returnClass === $parentFuncDef->returnClass) {
+            return true;
+        }
+        if (!$childFuncDef->returnClass || !$parentFuncDef->returnClass) {
+            return false;
+        }
+        return $this->isInheritedFrom($childFuncDef->returnClass, $parentFuncDef->returnClass);
+    }
+
+    private function isParameterTypeOverrideCompatible(ArgInfo $childArg, ArgInfo $parentArg): bool
+    {
+        if ($parentArg->typeCheck || $childArg->typeCheck) {
+            return $parentArg->typeStr === $childArg->typeStr;
+        }
+        if ($childArg->undeclared || $childArg->type === self::TYPE_VAR) {
+            return true;
+        }
+        if ($parentArg->undeclared || $parentArg->type === self::TYPE_VAR) {
+            return false;
+        }
+        if ($childArg->type !== $parentArg->type) {
+            return false;
+        }
+        if ($parentArg->type !== self::TYPE_OBJECT) {
+            return true;
+        }
+        if ($childArg->class === $parentArg->class) {
+            return true;
+        }
+        if (!$childArg->class || !$parentArg->class) {
+            return false;
+        }
+        return $this->isInheritedFrom($parentArg->class, $childArg->class);
     }
 
     private function checkInterfaceImplementations(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void

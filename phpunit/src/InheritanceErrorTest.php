@@ -48,6 +48,16 @@ class InheritanceErrorTest extends TestCase
         $this->exec('must be compatible', 'inheritance_error_return.php');
     }
 
+    public function testReturnTypeCannotBeContravariant()
+    {
+        $this->exec('must be compatible', 'inheritance_error_return_contravariant_class.php');
+    }
+
+    public function testParameterTypeCannotBeCovariant()
+    {
+        $this->exec('must be compatible', 'inheritance_error_param_covariant_class.php');
+    }
+
     public function testByRefMismatch()
     {
         $this->exec('must be compatible', 'inheritance_error_byref.php');
@@ -73,6 +83,11 @@ class InheritanceErrorTest extends TestCase
         $this->exec('must be compatible', 'inheritance_error_static.php');
     }
 
+    public function testCannotOverrideFinalMethod()
+    {
+        $this->exec('Cannot override final method', 'inheritance_error_final_method.php');
+    }
+
     public function testInterfaceMethodStaticMismatch()
     {
         $this->exec('must be compatible', 'interface_method_static_mismatch.php');
@@ -81,6 +96,21 @@ class InheritanceErrorTest extends TestCase
     public function testChildMayAddOptionalTrailingParameter()
     {
         $this->assertCompiles('inheritance_optional_param_allowed.php');
+    }
+
+    public function testChildMayDeclareReturnTypeWhenParentHasNone()
+    {
+        $this->assertCompiles('inheritance_return_type_covariant_from_none.php');
+    }
+
+    public function testChildReturnTypeMayBeCovariant()
+    {
+        $this->assertCompiles('inheritance_return_type_covariant_class.php');
+    }
+
+    public function testChildParameterTypeMayBeContravariant()
+    {
+        $this->assertCompiles('inheritance_parameter_type_contravariant_class.php');
     }
 
     public function testPropertyTypeMismatch()
