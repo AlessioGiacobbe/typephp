@@ -301,6 +301,75 @@ YAML);
         $this->assertSame(['/yaml/lib'], $this->compiler->getLinkPaths());
     }
 
+    public function testCCompileCommandOptionsKeepCommonUserConfiguration(): void
+    {
+        $this->setPropertyValue('userIncludePaths', ['/user/include']);
+        $this->setPropertyValue('userDefines', ['FEATURE_X=1']);
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_EXT);
+        $this->setPropertyValue('enableProfiler', true);
+        $this->setPropertyValue('enableLto', true);
+        $this->setPropertyValue('sanitize', 'address');
+        $this->setPropertyValue('targetPlatform', 'aarch64-linux-gnu');
+        $this->setPropertyValue('march', 'native');
+
+        $options = $this->invokeMethod('getCCompileCommandOptions');
+
+        $this->assertContains('/user/include', $options['include_paths']);
+        $this->assertSame(['FEATURE_X=1'], $options['user_defines']);
+        $this->assertSame(CompilerBase::BUILD_MODE_EXT, $options['build_mode']);
+        $this->assertTrue($options['enable_profiler']);
+        $this->assertTrue($options['lto']);
+        $this->assertSame('address', $options['sanitize']);
+        $this->assertSame('aarch64-linux-gnu', $options['target_platform']);
+        $this->assertSame('native', $options['march']);
+    }
+
+    public function testNativeCompileCommandOptionsKeepCommonUserConfiguration(): void
+    {
+        $this->setPropertyValue('userIncludePaths', ['/native/include']);
+        $this->setPropertyValue('userDefines', ['NATIVE_FEATURE=1']);
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_EXT);
+        $this->setPropertyValue('enableProfiler', true);
+        $this->setPropertyValue('enableLto', true);
+
+        $options = $this->invokeMethod('getNativeCompileCommandOptions', 'objective-c');
+
+        $this->assertContains('/native/include', $options['include_paths']);
+        $this->assertSame(['NATIVE_FEATURE=1'], $options['user_defines']);
+        $this->assertSame(CompilerBase::BUILD_MODE_EXT, $options['build_mode']);
+        $this->assertTrue($options['enable_profiler']);
+        $this->assertTrue($options['lto']);
+        $this->assertArrayNotHasKey('cpp_std', $options);
+        $this->assertArrayNotHasKey('cxxflags', $options);
+    }
+
+    public function testObjectiveCppCompileCommandOptionsKeepCppOptions(): void
+    {
+        $this->setPropertyValue('cxxStd', 'c++20');
+        $this->setPropertyValue('cxxFlags', '-fobjc-arc');
+
+        $options = $this->invokeMethod('getNativeCompileCommandOptions', 'objective-c++');
+
+        $this->assertSame('c++20', $options['cpp_std']);
+        $this->assertSame('-fobjc-arc', $options['cxxflags']);
+    }
+
+    public function testLinkCommandOptionsPassUserLibrariesThroughBackendFields(): void
+    {
+        $this->setPropertyValue('linkLibs', ['curl', 'ssl']);
+        $this->setPropertyValue('linkPaths', ['/user/lib']);
+        $this->setPropertyValue('enableProfiler', true);
+        $this->setPropertyValue('ldflags', '-Wl,--as-needed');
+
+        $options = $this->invokeMethod('getLinkCommandOptions');
+
+        $this->assertContains('/user/lib', $options['library_paths']);
+        $this->assertContains('profiler', $options['libraries']);
+        $this->assertContains('curl', $options['libraries']);
+        $this->assertContains('ssl', $options['libraries']);
+        $this->assertSame('-Wl,--as-needed', $options['ldflags']);
+    }
+
     public function testFormatCppCodeEscapesPathsWithSpaces(): void
     {
         $spaceDir = sys_get_temp_dir() . '/compiler api format ' . uniqid();

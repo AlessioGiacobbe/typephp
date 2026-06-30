@@ -1486,7 +1486,7 @@ CODE;
         }
     }
 
-    protected function getCompileCommandOptions(): array
+    protected function getCommonCompileCommandOptions(): array
     {
         // 包含路径：系统路径 + 用户自定义路径
         $includePaths = $this->getIncludePaths();
@@ -1499,36 +1499,31 @@ CODE;
             'optimize' => $this->optimizeLevel,
             'debug' => $this->debug,
             'sanitize' => $this->sanitize,
-            'cpp_std' => $this->cxxStd,
             'march' => $this->march,
             'target_platform' => $this->targetPlatform,
             'is_zts' => $this->isPhpZts,
             'build_mode' => $this->buildMode,
             'enable_profiler' => $this->enableProfiler,
             'prof_output' => $this->targetName . '.prof',
-            'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
-            'cxxflags' => $this->cxxFlags,
             'user_defines' => $this->userDefines,
             'lto' => $this->enableLto,
         ];
     }
 
+    protected function getCompileCommandOptions(): array
+    {
+        $options = $this->getCommonCompileCommandOptions();
+        $options['cpp_std'] = $this->cxxStd;
+        $options['cxxflags'] = $this->cxxFlags;
+        $options['suppressed_warnings'] = Constants::MSVC_SUPPRESSED_WARNINGS ?? [];
+        return $options;
+    }
+
     protected function getCCompileCommandOptions(): array
     {
-        return [
-            'include_paths' => $this->getIncludePaths(),
-            'optimize' => 0,
-            'debug' => $this->debug,
-            'sanitize' => $this->sanitize,
-            'is_zts' => $this->isPhpZts,
-            'enable_profiler' => $this->enableProfiler,
-            'prof_output' => $this->targetName . '.prof',
-            'user_defines' => $this->userDefines,
-            'lto' => $this->enableLto,
-            'march' => $this->march,
-            'target_platform' => $this->targetPlatform,
-            'suppressed_warnings' => ['4244', '4146'],
-        ];
+        $options = $this->getCommonCompileCommandOptions();
+        $options['suppressed_warnings'] = ['4244', '4146'];
+        return $options;
     }
 
     /**
@@ -1538,41 +1533,30 @@ CODE;
      */
     protected function getNativeCompileCommandOptions(string $language = ''): array
     {
-        return [
-            'include_paths' => $this->getIncludePaths(),
-            'optimize' => $this->optimizeLevel,
-            'debug' => $this->debug,
-            'sanitize' => $this->sanitize,
-            'is_zts' => $this->isPhpZts,
-            'build_mode' => $this->buildMode,
-            'enable_profiler' => $this->enableProfiler,
-            'suppressed_warnings' => Constants::MSVC_SUPPRESSED_WARNINGS ?? [],
-            'march' => $this->march,
-            'target_platform' => $this->targetPlatform,
-        ];
+        $options = $this->getCommonCompileCommandOptions();
+        $options['suppressed_warnings'] = Constants::MSVC_SUPPRESSED_WARNINGS ?? [];
+
+        if ($language === 'objective-c++') {
+            $options['cpp_std'] = $this->cxxStd;
+            $options['cxxflags'] = $this->cxxFlags;
+        }
+
+        return $options;
     }
 
     protected function getLinkCommandOptions(): array
     {
         $ldflags = $this->ldflags;
-
+        $libraryPaths = array_merge($this->getLibraryPaths(), $this->linkPaths);
+        $libraries = $this->getLibraries();
         if ($this->enableProfiler) {
-            $ldflags .= ' -lprofiler';
+            $libraries[] = 'profiler';
         }
-
-        // 用户通过 --link-lib / -l 指定的链接库
-        foreach ($this->linkLibs as $lib) {
-            $ldflags .= ' -l' . $lib;
-        }
-
-        // 用户通过 --link-path / -L 指定的库搜索路径
-        foreach ($this->linkPaths as $path) {
-            $ldflags .= ' -L' . escapeshellarg($path);
-        }
+        $libraries = array_merge($libraries, $this->linkLibs);
 
         $options = [
-            'library_paths' => $this->getLibraryPaths(),
-            'libraries' => $this->getLibraries(),
+            'library_paths' => $libraryPaths,
+            'libraries' => $libraries,
             'ldflags' => $ldflags,
             'debug' => $this->debug,
             'no_console' => $this->noConsole,

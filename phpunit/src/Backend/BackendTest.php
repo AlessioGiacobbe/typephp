@@ -153,7 +153,7 @@ class BackendTest extends TestCase
         $this->assertStringContainsString('/TC', $cmd);
         $this->assertStringContainsString('/fsanitize=address', $cmd);
         $this->assertStringContainsString('/DPPROF_ON=1', $cmd);
-        $this->assertStringContainsString('/DPROF_OUTPUT_FILE=', $cmd);
+        $this->assertStringContainsString('/D' . escapeshellarg('PROF_OUTPUT_FILE="app.prof"'), $cmd);
         $this->assertStringContainsString('/DFEATURE_X=1', $cmd);
         $this->assertStringContainsString('/GL', $cmd);
         $this->assertStringContainsString('/DZTS', $cmd);
@@ -326,7 +326,7 @@ class BackendTest extends TestCase
 
         $this->assertStringContainsString('-fsanitize=address', $cmd);
         $this->assertStringContainsString('-DPPROF_ON=1', $cmd);
-        $this->assertStringContainsString('-DPROF_OUTPUT_FILE=', $cmd);
+        $this->assertStringContainsString('-D' . escapeshellarg('PROF_OUTPUT_FILE="app.prof"'), $cmd);
         $this->assertStringContainsString('-DFEATURE_X=1', $cmd);
         $this->assertStringContainsString('-flto', $cmd);
         $this->assertStringContainsString('-march=native', $cmd);
