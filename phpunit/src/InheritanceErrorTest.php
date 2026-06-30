@@ -78,6 +78,16 @@ class InheritanceErrorTest extends TestCase
         $this->assertCompiles('inheritance_error_visibility.php');
     }
 
+    public function testParentScopeMayAccessChildProtectedMethod()
+    {
+        $this->assertCompiles('inheritance_protected_child_method_access.php');
+    }
+
+    public function testParentScopeMayAccessChildProtectedConstant()
+    {
+        $this->assertCompiles('inheritance_protected_child_const_access.php');
+    }
+
     public function testMethodStaticMismatch()
     {
         $this->exec('must be compatible', 'inheritance_error_static.php');
@@ -123,6 +133,16 @@ class InheritanceErrorTest extends TestCase
         $this->exec('must be compatible', 'inheritance_error_prop_visibility.php');
     }
 
+    public function testPropertyVisibilityMayBeWidened()
+    {
+        $this->assertCompiles('inheritance_prop_visibility_widen.php');
+    }
+
+    public function testPrivateParentPropertyMayBeRedeclared()
+    {
+        $this->assertCompiles('inheritance_private_prop_redeclare.php');
+    }
+
     public function testConstantTypeMismatch()
     {
         $this->exec('must be compatible', 'inheritance_error_const_type.php');
@@ -131,6 +151,16 @@ class InheritanceErrorTest extends TestCase
     public function testConstantVisibilityMismatch()
     {
         $this->exec('must be compatible', 'inheritance_error_const_visibility.php');
+    }
+
+    public function testConstantVisibilityMayBeWidened()
+    {
+        $this->assertCompiles('inheritance_const_visibility_widen.php');
+    }
+
+    public function testPrivateParentConstantMayBeRedeclared()
+    {
+        $this->assertCompiles('inheritance_private_const_redeclare.php');
     }
 
     public function testPropertyReadonlyMismatch()

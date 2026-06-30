@@ -422,6 +422,32 @@ YAML);
         $this->assertArrayNotHasKey('cxxflags', $options);
     }
 
+    public function testExtensionCleanClearsRuntimeMapsWithValidCpp(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $ref = new \ReflectionClass($compiler);
+        $buildMode = $ref->getProperty('buildMode');
+        $buildMode->setAccessible(true);
+        $buildMode->setValue($compiler, CompilerBase::BUILD_MODE_EXT);
+
+        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/extension_clean_maps.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $compiler->convertFile($testFile);
+        $extensionFile = $compiler->genExtension();
+        $code = file_get_contents($extensionFile);
+
+        $this->assertStringContainsString('#include <cstring>', $code);
+        $this->assertStringContainsString('std::memset(php_func_map, 0, sizeof(php_func_map));', $code);
+        $this->assertStringContainsString('std::memset(php_class_map, 0, sizeof(php_class_map));', $code);
+        $this->assertStringContainsString('std::memset(php_property_map, 0, sizeof(php_property_map));', $code);
+        $this->assertStringNotContainsString('func_map = {}', $code);
+        $this->assertStringNotContainsString('class_map = {}', $code);
+        $this->assertStringNotContainsString('property_map = {}', $code);
+    }
+
     public function testObjectiveCppCompileCommandOptionsKeepCppOptions(): void
     {
         $this->setPropertyValue('cxxStd', 'c++20');

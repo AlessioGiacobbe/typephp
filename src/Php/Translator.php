@@ -778,7 +778,8 @@ class Translator extends Preprocessor
         $this->genClassCeList();
         $this->indentLevel++;
 
-        $code = $this->genIncludeHeaderFiles();
+        $code = '#include <cstring>' . PHP_EOL;
+        $code .= $this->genIncludeHeaderFiles();
 
         if ($this->isBuildModeBin()) {
             $cliHeaders = [
@@ -1018,9 +1019,9 @@ CODE;
 
         // 扩展模式，需要在 RSHUTDOWN 阶段中清理函数、类、属性表
         if ($this->isBuildModeExt()) {
-            $code .= self::FUNC_MAP." = {}\n";
-            $code .= self::CLASS_MAP." = {}\n";
-            $code .= self::PROP_MAP." = {}\n";
+            $code .= 'std::memset(' . self::PREFIX . self::FUNC_MAP . ', 0, sizeof(' . self::PREFIX . self::FUNC_MAP . '));' . PHP_EOL;
+            $code .= 'std::memset(' . self::PREFIX . self::CLASS_MAP . ', 0, sizeof(' . self::PREFIX . self::CLASS_MAP . '));' . PHP_EOL;
+            $code .= 'std::memset(' . self::PREFIX . self::PROP_MAP . ', 0, sizeof(' . self::PREFIX . self::PROP_MAP . '));' . PHP_EOL;
         }
 
         $code .= '}' . PHP_EOL . PHP_EOL;
@@ -3421,12 +3422,15 @@ CODE;
             foreach ($this->classDef->properties as $name => $childProp) {
                 if ($chainNode->hasProperty($name)) {
                     $parentProp = $chainNode->getProperty($name);
+                    if ($parentProp->flags & Modifiers::PRIVATE) {
+                        continue;
+                    }
                     if ($childProp->type !== $parentProp->type || $childProp->class !== $parentProp->class) {
                         $this->fatalError($classStmt,
                             "Declaration of `{$className}::\${$name}` must be compatible " .
                             "with `{$parentClass}::\${$name}`");
                     }
-                    if (($childProp->flags & Modifiers::VISIBILITY_MASK) !== ($parentProp->flags & Modifiers::VISIBILITY_MASK)) {
+                    if ($this->getVisibilityRank($childProp->flags) < $this->getVisibilityRank($parentProp->flags)) {
                         $this->fatalError($classStmt,
                             "Declaration of `{$className}::\${$name}` must be compatible " .
                             "with `{$parentClass}::\${$name}`");
@@ -3455,12 +3459,15 @@ CODE;
             foreach ($this->classDef->constants as $name => $childConst) {
                 if ($chainNode->hasConstant($name)) {
                     $parentConst = $chainNode->getConstant($name);
+                    if ($parentConst->flags & Modifiers::PRIVATE) {
+                        continue;
+                    }
                     if ($childConst->type !== $parentConst->type || $childConst->class !== $parentConst->class) {
                         $this->fatalError($classStmt,
                             "Declaration of `{$className}::{$name}` must be compatible " .
                             "with `{$parentClass}::{$name}`");
                     }
-                    if (($childConst->flags & Modifiers::VISIBILITY_MASK) !== ($parentConst->flags & Modifiers::VISIBILITY_MASK)) {
+                    if ($this->getVisibilityRank($childConst->flags) < $this->getVisibilityRank($parentConst->flags)) {
                         $this->fatalError($classStmt,
                             "Declaration of `{$className}::{$name}` must be compatible " .
                             "with `{$parentClass}::{$name}`");
