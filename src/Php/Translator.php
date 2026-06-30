@@ -561,10 +561,6 @@ class Translator extends Preprocessor
             $this->climate->red('The target name `' . $name . '` must be a valid identifier');
             exit(1);
         }
-        if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
-            $this->climate->red('The target name `' . $name . '` must not be a reserved keyword');
-            exit(1);
-        }
         $realTargetPath = $this->rootPath . '/' . $name;
         if (is_dir($realTargetPath)) {
             $this->climate->red('The target name `' . $name . '` must not be a directory');

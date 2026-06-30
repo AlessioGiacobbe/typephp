@@ -629,6 +629,11 @@ class Preprocessor extends CompilerBase
         $propDef = new PropertyDef($name, $flags, $type, $default, $nullable);
         $propDef->class = $class;
         $propDef->arrayInitPlan = $arrayInitPlan;
+        if ($typeNode instanceof NullableType || $typeNode instanceof UnionType || $typeNode instanceof IntersectionType) {
+            $typeInfo = $this->buildTypeCheckFromNode($typeNode);
+            $propDef->typeCheck = $typeInfo['check'];
+            $propDef->typeStr = $typeInfo['typeStr'];
+        }
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
     }

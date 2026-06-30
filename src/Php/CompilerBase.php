@@ -3536,6 +3536,20 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $expr;
     }
 
+    protected function parseOrderedArg(Node\Arg $arg): string
+    {
+        if ($this->isArrayDimFetch($arg->value) and $this->isStdContainerExpr($arg->value)) {
+            return $this->parseArg($arg);
+        }
+        if ($this->isVarExpr($arg->value) and $arg->value->name === 'GLOBALS') {
+            return 'php_globals_array()';
+        }
+        if ($this->isVarExpr($arg->value) and $this->isStdContainer($arg->value->name)) {
+            return $this->convertArrayExpr($this->parseIdentifier($arg->value) . '_ref');
+        }
+        return $this->parseOrderedOperand($arg->value, false);
+    }
+
     protected function parseArrayArg(Node\Arg $expr): string
     {
         $value = $expr->value;
@@ -4252,7 +4266,6 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getTypeConvertedArg(Node\Arg $arg, ArgInfo $argInfo): string
     {
-        $expr = $this->parseArg($arg);
         $type = $this->detectTypeOfExpr($arg->value);
 
         if ($argInfo->byRef) {
@@ -4282,6 +4295,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->convertToRef($arg->value);
         }
 
+        $expr = $this->parseOrderedArg($arg);
         $expr = $this->materializeCallArgValue($arg->value, $expr);
 
         $this->checkVarAssignExpr($arg, $argInfo->type, $type);
@@ -4398,6 +4412,93 @@ class CompilerBase extends \PhpAot\Core\Translator
                 "Cannot assign object of class `{$rightClass}` to {$label} `{$propName}` of class `{$def->class}`"
             );
         }
+    }
+
+    protected function wrapObjectPropertyAssignTypeCheck(NodeAbstract $left, Expr $right, string $rightExpr): string
+    {
+        if (!$left->hasAttribute('nativePropertyDef')) {
+            return $rightExpr;
+        }
+
+        /** @var PropertyDef $def */
+        $def = $left->getAttribute('nativePropertyDef');
+        $typeCheck = $this->getObjectPropertyAssignTypeCheck($def);
+        if (empty($typeCheck)) {
+            return $rightExpr;
+        }
+
+        $rightClass = $this->detectClassOfExpr($right);
+        if ($rightClass !== '') {
+            return $rightExpr;
+        }
+
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $conditions = [];
+        foreach ($typeCheck as $entry) {
+            $cond = $this->genSingleTypeCondition($tmpVar, $entry);
+            if ($cond !== '') {
+                $conditions[] = $cond;
+            }
+        }
+        if (empty($conditions)) {
+            return $rightExpr;
+        }
+
+        $propDisplay = $this->getObjectPropertyTypeCheckDisplayName($left);
+        $typeStr = $this->getObjectPropertyTypeCheckTypeString($def);
+        $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($propDisplay, true) . ' " must be of type " '
+            . $this->genCharPtr($typeStr, true) . ' ", "), ' . $tmpVar . '.typeStr()), php::Str(" given"))';
+
+        return '([&]() -> ' . self::TYPE_VAR . ' { '
+            . $tmpVar . ' = ' . $rightExpr . '; '
+            . 'if (UNEXPECTED(!(' . implode(' || ', $conditions) . '))) { '
+            . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString()); '
+            . '} '
+            . 'return ' . $tmpVar . '; '
+            . '}())';
+    }
+
+    private function getObjectPropertyAssignTypeCheck(PropertyDef $def): array
+    {
+        if (!empty($def->typeCheck)) {
+            return $def->typeCheck;
+        }
+        if ($def->type !== self::TYPE_OBJECT || $def->class === '') {
+            return [];
+        }
+
+        $check = [];
+        if ($def->nullable) {
+            $check[] = ['kind' => 'isNull'];
+        }
+        $check[] = ['kind' => 'instanceof', 'class' => $def->class];
+        return $check;
+    }
+
+    private function getObjectPropertyTypeCheckDisplayName(NodeAbstract $left): string
+    {
+        $propName = $this->parseIdentifier($left->name);
+        if ($left->hasAttribute('nativeClassDef')) {
+            $class = $left->getAttribute('nativeClassDef')->getNamespacedName(false);
+            return $class . '::$' . $propName;
+        }
+
+        if ($left instanceof Expr\StaticPropertyFetch) {
+            return $this->identifierToStr($left->class, literal: true) . '::$' . $propName;
+        }
+
+        return '$' . $propName;
+    }
+
+    private function getObjectPropertyTypeCheckTypeString(PropertyDef $def): string
+    {
+        if ($def->typeStr !== '') {
+            return $def->typeStr;
+        }
+        if ($def->class !== '') {
+            return ($def->nullable ? '?' : '') . $def->class;
+        }
+        return $def->type;
     }
 
     protected function parseUnset(Node\Stmt\Unset_ $node): string

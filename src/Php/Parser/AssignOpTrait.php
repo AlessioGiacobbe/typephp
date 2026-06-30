@@ -275,6 +275,9 @@ trait AssignOpTrait
         }
 
         $rightExpr = $this->parseAssignRightExpr($right);
+        if ($this->isPropertyFetch($left) || $this->isStaticPropertyFetch($left)) {
+            $rightExpr = $this->wrapObjectPropertyAssignTypeCheck($left, $right, $rightExpr);
+        }
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
         if ($finalVarType === self::TYPE_VAR) {

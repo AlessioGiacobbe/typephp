@@ -674,7 +674,7 @@ trait UniversalMethodCall
         }
         $argExprs = [];
         foreach ($args as $i => $arg) {
-            $expr = $this->parseExpr($arg->value);
+            $expr = $this->parseOrderedOperand($arg->value, false);
             if (in_array($i, $intCastArgs, true)) {
                 $expr = 'php::toInt(' . $expr . ')';
             }
@@ -804,7 +804,7 @@ trait UniversalMethodCall
     {
         $userArgs = [];
         foreach ($args as $arg) {
-            $userArgs[] = $this->parseExpr($arg->value);
+            $userArgs[] = $this->parseOrderedOperand($arg->value, false);
         }
 
         if ($receiverPos === 0) {

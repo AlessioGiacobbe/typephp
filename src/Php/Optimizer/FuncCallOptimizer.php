@@ -346,7 +346,7 @@ trait FuncCallOptimizer
         if ($this->isVarExpr($arg) and $arg->name === 'GLOBALS') {
             return 'php_globals_array()';
         }
-        return $this->parseIdentifier($arg);
+        return $this->parseOrderedOperand($arg, false);
     }
 
     protected function getRefArg(Node\Expr\FuncCall $expr, int $i): string
@@ -447,7 +447,7 @@ trait FuncCallOptimizer
         $base = ($variadicType !== '' && ($variadicType[0] ?? '') === self::ARG_OPTIONAL) ? substr($variadicType, 1) : $variadicType;
         $args = [];
         foreach ($expr->args as $index => $arg) {
-            $raw = $this->parseExpr($arg->value);
+            $raw = $this->parseOrderedOperand($arg->value, false);
             $args[] = match ($base) {
                 self::ARG_TYPE_STR => $this->convertStringExpr($raw),
                 self::ARG_TYPE_INT => $this->convertIntExpr($raw),
@@ -491,9 +491,9 @@ trait FuncCallOptimizer
             return false;
         }
 
-        $args = [$this->parseExpr($expr->args[0]->value)];
+        $args = [$this->parseOrderedOperand($expr->args[0]->value, false)];
         if (count($expr->args) >= 2) {
-            $args[] = $this->parseExpr($expr->args[1]->value);
+            $args[] = $this->parseOrderedOperand($expr->args[1]->value, false);
         }
 
         return $target . '(' . implode(', ', $args) . ')';

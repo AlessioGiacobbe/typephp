@@ -19,8 +19,8 @@ trait BinaryOpTrait
     protected function parseBinaryOp(NodeAbstract $left, NodeAbstract $right, string $op): string
     {
         // 运算逻辑，优先转为数字
-        $leftExpr  = $this->parseNumericIdentifier($left);
-        $rightExpr = $this->parseNumericIdentifier($right);
+        $leftExpr  = $this->parseOrderedBinaryOperand($left);
+        $rightExpr = $this->parseOrderedBinaryOperand($right);
 
         $this->checkVarMustExist($left, $leftExpr);
         $this->checkVarMustExist($right, $rightExpr);
@@ -130,6 +130,110 @@ trait BinaryOpTrait
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
     }
 
+    protected function shouldMaterializeOrderedOperand(NodeAbstract $expr): bool
+    {
+        if ($expr instanceof Expr\BinaryOp) {
+            return $this->shouldMaterializeOrderedOperand($expr->left)
+                || $this->shouldMaterializeOrderedOperand($expr->right);
+        }
+
+        return $expr instanceof Expr\FuncCall
+            || $expr instanceof Expr\MethodCall
+            || $expr instanceof Expr\StaticCall
+            || $expr instanceof Expr\New_
+            || $expr instanceof Expr\Assign
+            || $expr instanceof Expr\AssignRef
+            || $expr instanceof Expr\AssignOp
+            || $expr instanceof Expr\PostInc
+            || $expr instanceof Expr\PostDec
+            || $expr instanceof Expr\PreInc
+            || $expr instanceof Expr\PreDec
+            || $expr instanceof Expr\Print_
+            || $expr instanceof Expr\Array_
+            || $expr instanceof Expr\ArrayDimFetch
+            || $expr instanceof Expr\PropertyFetch
+            || $expr instanceof Expr\StaticPropertyFetch
+            || $expr instanceof Expr\Ternary
+            || $expr instanceof Expr\Match_
+            || $expr instanceof Expr\NullsafeMethodCall
+            || $expr instanceof Expr\NullsafePropertyFetch
+            || $expr instanceof Expr\Clone_
+            || $expr instanceof Expr\Include_
+            || $expr instanceof Expr\Eval_;
+    }
+
+    protected function parseOrderedBinaryOperand(NodeAbstract $expr): float|int|string
+    {
+        return $this->parseOrderedOperand($expr, true);
+    }
+
+    protected function parseOrderedOperand(NodeAbstract $expr, bool $numeric): float|int|string
+    {
+        if (!$this->shouldMaterializeOrderedOperand($expr)) {
+            return $numeric ? $this->parseNumericIdentifier($expr) : $this->parseIdentifier($expr);
+        }
+
+        [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+        $this->appendCapturedStmtLinesToContext($beforeStmts);
+
+        $type = $this->getOrderedOperandTmpType($expr, (string) $value);
+        $tmpVar = $this->addTmpVar($type);
+        $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
+        $this->appendCapturedStmtLinesToContext($afterStmts);
+        return $tmpVar;
+    }
+
+    protected function getOrderedOperandTmpType(NodeAbstract $expr, string $value): string
+    {
+        if ($expr instanceof Expr\BinaryOp) {
+            $type = $this->detectTypeOfExpr($expr);
+            return in_array($type, [self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT], true) ? $type : self::TYPE_VAR;
+        }
+
+        if (
+            $expr instanceof Expr\FuncCall
+            || $expr instanceof Expr\MethodCall
+            || $expr instanceof Expr\StaticCall
+        ) {
+            $type = $this->detectTypeOfExpr($expr);
+            return in_array($type, [self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT], true) ? $type : self::TYPE_VAR;
+        }
+
+        if ($expr instanceof Expr\PropertyFetch) {
+            $nativePropertyVar = $expr->getAttribute('nativePropertyVar');
+            if (is_string($nativePropertyVar) && $nativePropertyVar === $value) {
+                if (isset($this->context->objectProps[$nativePropertyVar])) {
+                    return $this->context->objectProps[$nativePropertyVar]['type'];
+                }
+                if (!str_contains($nativePropertyVar, '.attr(') && $expr->hasAttribute('nativePropertyDef')) {
+                    return $expr->getAttribute('nativePropertyDef')->type;
+                }
+            }
+            return self::TYPE_VAR;
+        }
+
+        if ($expr instanceof Expr\StaticPropertyFetch) {
+            if ($expr->hasAttribute('nativePropertyDef') && !str_contains($value, 'getStaticProperty')) {
+                return $expr->getAttribute('nativePropertyDef')->type;
+            }
+            return self::TYPE_VAR;
+        }
+
+        if ($expr instanceof Expr\ArrayDimFetch) {
+            return self::TYPE_VAR;
+        }
+
+        $type = $this->detectTypeOfExpr($expr);
+        return $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
+    }
+
+    protected function appendCapturedStmtLinesToContext(array $stmts): void
+    {
+        foreach ($stmts as $stmt) {
+            $this->context->beforeStmtLines[] = $stmt;
+        }
+    }
+
     protected function parseBinaryOpPlus(Expr\BinaryOp\Plus $expr): string
     {
         return $this->parseBinaryOp($expr->left, $expr->right, '+');
@@ -196,16 +300,16 @@ trait BinaryOpTrait
     {
         $leftType = $this->detectTypeOfExpr($expr->left);
         if ($leftType === self::TYPE_BIGINT) {
-                        $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
+            $leftExpr = $this->parseOrderedOperand($expr->left, false);
+            $rightExpr = $this->parseOrderedOperand($expr->right, false);
             $rightType = $this->detectTypeOfExpr($expr->right);
             if ($rightType !== self::TYPE_BIGINT) {
                 $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
             }
             return 'php::BigInt::pow(' . $leftExpr . ', ' . $rightExpr . ')';
         }
-        $left  = $this->parseIdentifier($expr->left);
-        $right = $this->parseIdentifier($expr->right);
+        $left  = $this->parseOrderedOperand($expr->left, false);
+        $right = $this->parseOrderedOperand($expr->right, false);
         return 'php::fn::pow(' . $left . ', ' . $right . ')';
     }
 
@@ -230,7 +334,7 @@ trait BinaryOpTrait
         if ($this->isScalarBool($expr)) {
             return $this->getBoolValue($expr);
         }
-        return $this->parseIdentifier($expr);
+        return $this->parseOrderedOperand($expr, false);
     }
 
     protected function parseBinaryOpEqual(Expr\BinaryOp\Equal $expr): string
@@ -353,7 +457,7 @@ trait BinaryOpTrait
     protected function parseBinaryOpSpaceship(Expr\BinaryOp\Spaceship $expr): string
     {
         return $this->genBigNumericCmp($expr)
-            ?? 'php::compare(' . $this->parseIdentifier($expr->left) . ', ' . $this->parseIdentifier($expr->right) . ')';
+            ?? 'php::compare(' . $this->parseOrderedOperand($expr->left, false) . ', ' . $this->parseOrderedOperand($expr->right, false) . ')';
     }
 
     protected function genBigNumericCmp(Expr\BinaryOp $expr, string $suffix = ''): ?string
@@ -362,8 +466,8 @@ trait BinaryOpTrait
         $rightType = $this->detectTypeOfExpr($expr->right);
 
         if ($leftType === self::TYPE_BIGFLOAT || $rightType === self::TYPE_BIGFLOAT) {
-            $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
+            $leftExpr = $this->parseOrderedOperand($expr->left, false);
+            $rightExpr = $this->parseOrderedOperand($expr->right, false);
             if ($leftType !== self::TYPE_BIGFLOAT) {
                 $leftExpr = $this->convertBigFloatExpr($leftExpr, $leftType);
             }
@@ -373,8 +477,8 @@ trait BinaryOpTrait
             return 'php::BigFloat::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
         }
         if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
-            $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
+            $leftExpr = $this->parseOrderedOperand($expr->left, false);
+            $rightExpr = $this->parseOrderedOperand($expr->right, false);
             if ($leftType !== self::TYPE_BIGINT) {
                 $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
             }
@@ -384,8 +488,8 @@ trait BinaryOpTrait
             return 'php::BigInt::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
         }
         if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
-            $leftExpr = $this->parseExpr($expr->left);
-            $rightExpr = $this->parseExpr($expr->right);
+            $leftExpr = $this->parseOrderedOperand($expr->left, false);
+            $rightExpr = $this->parseOrderedOperand($expr->right, false);
             if ($leftType !== self::TYPE_DECIMAL) {
                 $leftExpr = $this->convertDecimalExpr($leftExpr, $leftType, $expr->left);
             }
