@@ -249,21 +249,25 @@ class Preprocessor extends CompilerBase
         $last = array_key_last($params);
 
         foreach ($params as $i => $param) {
+            if (!is_string($param->var->name)) {
+                $this->fatalError($param, 'Parameter name must be a string');
+            }
+            $phpName = $param->var->name;
+            $name = $this->escapeVarName($phpName);
             // .stub 存根定义 C++ Native 函数，必须设置函数的参数类型
             if ($this->stubFile and !$param->type) {
-                throw new \RuntimeException('No type for ' . $this->parseIdentifier($param->var));
+                throw new \RuntimeException('No type for ' . $phpName);
             }
             // 构造方法属性定义语法（Constructor Property Promotion）
             if ($param->isPromoted()) {
                 if (!$this->classDef or !$this->methodDef or $this->methodDef->name !== '__construct') {
                     $this->fatalError($param, 'Promoted properties are not supported');
                 }
-                $name = $this->parseIdentifier($param->var);
                 $nullable = $param->type instanceof NullableType;
                 // Promoted property defaults belong to the constructor parameter,
                 // not to the property default table. The property itself must stay
                 // uninitialized until __construct assigns it.
-                $this->addClassProperty($name, $param->flags, $param->type, null, $nullable, $param);
+                $this->addClassProperty($phpName, $param->flags, $param->type, null, $nullable, $param);
             }
             if ($param->variadic) {
                 if ($i !== $last) {
@@ -272,13 +276,13 @@ class Preprocessor extends CompilerBase
                     $this->fatalError($param, 'Variadic parameters cannot be passed by reference');
                 }
             }
-            $name = $this->parseIdentifier($param->var);
             if ($this->method and $name === 'this_') {
                 $this->fatalError($param, 'Cannot use `$this` as parameter of class method');
             }
             $argInfo = new ArgInfo();
             $type = $this->parseParameterType($param, $argInfo, $name);
             $argInfo->name = $name;
+            $argInfo->phpName = $phpName;
             $argInfo->type = $type;
             $argInfo->byRef = $param->byRef;
             $argInfo->variadic = $param->variadic;

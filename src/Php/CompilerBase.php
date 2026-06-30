@@ -1873,7 +1873,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $argNameIndex = [];
         foreach ($functionDef->argInfoList as $k => $argInfo) {
-            $argNameIndex[$argInfo->name] = $k;
+            $argNameIndex[$argInfo->phpName ?: $this->unescapeVarName($argInfo->name)] = $k;
         }
         return $argNameIndex;
     }
@@ -2841,6 +2841,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$ref) {
             return;
         }
+        $this->validateInternalNamedCallArgs($ref, $expr->args);
         $minArgs = $ref->getNumberOfRequiredParameters();
         $maxArgs = $ref->getNumberOfParameters();
         $actualArgCount = count($expr->args);
@@ -2849,6 +2850,77 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if (!$ref->isVariadic() && $maxArgs > 0 && $actualArgCount > $maxArgs) {
             $this->fatalError($expr, "{$funcName}() expects at most {$maxArgs} argument(s), {$actualArgCount} given");
+        }
+    }
+
+    protected function validateInternalNamedCallArgs(\ReflectionFunctionAbstract $ref, array $callArgs): void
+    {
+        $hasNamedArg = false;
+        $seenNamedArgs = [];
+        $providedArgIndexes = [];
+        $argNameIndex = [];
+        $requiredArgIndexes = [];
+        $variadicArgIndex = null;
+
+        foreach ($ref->getParameters() as $i => $param) {
+            $argNameIndex[$param->getName()] = $i;
+            if (!$param->isOptional() && !$param->isVariadic()) {
+                $requiredArgIndexes[$i] = $param->getName();
+            }
+            if ($param->isVariadic()) {
+                $variadicArgIndex = $i;
+            }
+        }
+
+        foreach ($callArgs as $i => $arg) {
+            if ($this->isPlaceholderExpr($arg)) {
+                continue;
+            }
+            if ($arg->name === null) {
+                if ($hasNamedArg) {
+                    $this->fatalError($arg, 'Cannot use positional argument after named argument');
+                }
+                $providedArgIndexes[$i] = true;
+                continue;
+            }
+            if (!$this->isIdExpr($arg->name)) {
+                $this->fatalError($arg, 'Named argument must be a string');
+            }
+
+            $argName = $arg->name->name;
+            if (isset($seenNamedArgs[$argName])) {
+                $this->fatalError($arg, "Duplicate named argument `{$argName}`");
+            }
+            if (!array_key_exists($argName, $argNameIndex)) {
+                if ($variadicArgIndex === null) {
+                    $this->fatalError($arg, "Unknown named argument `{$argName}`");
+                }
+                $seenNamedArgs[$argName] = true;
+                $hasNamedArg = true;
+                continue;
+            }
+
+            $argIndex = $argNameIndex[$argName];
+            if ($variadicArgIndex !== null && $argIndex === $variadicArgIndex) {
+                $seenNamedArgs[$argName] = true;
+                $hasNamedArg = true;
+                continue;
+            }
+            if (isset($providedArgIndexes[$argIndex])) {
+                $this->fatalError($arg, "Named argument `{$argName}` overwrites previous argument");
+            }
+
+            $seenNamedArgs[$argName] = true;
+            $providedArgIndexes[$argIndex] = true;
+            $hasNamedArg = true;
+        }
+
+        if ($hasNamedArg) {
+            foreach ($requiredArgIndexes as $index => $name) {
+                if (!isset($providedArgIndexes[$index])) {
+                    $this->fatalError($callArgs[array_key_last($callArgs)] ?? null, "Named argument `{$name}` is missing default value");
+                }
+            }
         }
     }
 
@@ -2954,7 +3026,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                                 break;
                             }
                         }
-                        $this->fatalError($errorNode ?? reset($callArgs), 'Named argument `' . $argInfo->name . '` is missing default value');
+                        $argName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
+                        $this->fatalError($errorNode ?? reset($callArgs), 'Named argument `' . $argName . '` is missing default value');
                     }
                     $args[$k] = new Node\Arg($argInfo->defaultValue);
                 }
@@ -3891,7 +3964,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->isTypedObject($object)) {
                     $class = $this->getObjectType($object);
                     if ($class and $argInfo->class and !$this->isInheritedFrom($class, $argInfo->class)) {
-                        $this->fatalError($arg, "Argument `{$argInfo->name}` must be an instance of `{$argInfo->class}`, `{$class}` given");
+                        $argName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
+                        $this->fatalError($arg, "Argument `{$argName}` must be an instance of `{$argInfo->class}`, `{$class}` given");
                     }
                 }
             }

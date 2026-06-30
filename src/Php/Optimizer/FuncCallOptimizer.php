@@ -195,6 +195,12 @@ trait FuncCallOptimizer
 
     protected function parseFuncCallWithOptimizer(string $name, Node\Expr\FuncCall $expr): string|false
     {
+        foreach ($expr->args as $arg) {
+            if ($arg instanceof Node\Arg && $arg->name !== null) {
+                return false;
+            }
+        }
+
         $config = $this->getFuncCallConfig()[$name] ?? null;
         if ($config === null) {
             return false;

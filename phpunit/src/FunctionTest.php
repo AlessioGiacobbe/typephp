@@ -27,4 +27,14 @@ class FunctionTest extends \BaseTest
         $this->exec('Named argument `value` overwrites previous argument', 'native-call-named-overwrites-positional.php');
     }
 
+    public function testInternalCallUnknownNamedArgument()
+    {
+        $this->exec('Unknown named argument `foo`', 'internal-call-unknown-named-arg.php');
+    }
+
+    public function testInternalCallMissingRequiredNamedArgument()
+    {
+        $this->exec('Named argument `replace` is missing default value', 'internal-call-missing-required-named-arg.php');
+    }
+
 }

@@ -265,7 +265,7 @@ trait TypeCheckGenerator
     protected function genUnionParamTypeErrorExpr(ArgInfo $argInfo, string $valueExpr, string $argNoExpr): string
     {
         $fnName = $this->getTypeCheckCallableName();
-        $paramName = $this->unescapeVarName($argInfo->name);
+        $paramName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
         return 'php::concat({'
             . 'php::Str(' . $this->genCharPtr($fnName . '(): Argument #', true) . '), '
             . 'php::toString(' . $argNoExpr . '), '
@@ -381,7 +381,7 @@ trait TypeCheckGenerator
 
     protected function genClosureParamTypeErrorExpr(ArgInfo $argInfo, string $valueExpr, string $argNoExpr): string
     {
-        $paramName = $this->unescapeVarName($argInfo->name);
+        $paramName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
         return 'php::concat({'
             . 'php::Str(' . $this->genCharPtr('{closure}(): Argument #', true) . '), '
             . 'php::toString(' . $argNoExpr . '), '

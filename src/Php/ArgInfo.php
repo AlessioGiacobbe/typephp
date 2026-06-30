@@ -15,6 +15,7 @@ use PhpParser\NodeAbstract;
 class ArgInfo
 {
     public string $name;
+    public string $phpName = '';
     public string $type;
     public string $default = '';
     public ?ArrayInitPlan $arrayInitPlan = null;

@@ -75,6 +75,7 @@ trait ClosureGenerator
                 $this->fatalError($expr, 'Closure cannot use reference parameter');
             }
             $var = $this->parseIdentifier($param->var);
+            $phpName = is_string($param->var->name) ? $param->var->name : $this->unescapeVarName($var);
             if ($param->variadic) {
                 $code .= $this->getIndent() . self::TYPE_ARRAY . ' ' . $var . ';' . PHP_EOL;
                 $code .= $this->getIndent() . 'for (uint32_t i = ' . $i . '; i < php::getCallArgNum(); i++) {' . PHP_EOL;
@@ -83,7 +84,7 @@ trait ClosureGenerator
                 $this->indentLevel--;
                 $code .= $this->getIndent() . '}' . PHP_EOL;
                 $this->addArgument($var, self::TYPE_ARRAY);
-                $code .= $this->genClosureParamTypeCheck($param, $var, $i, true);
+                $code .= $this->genClosureParamTypeCheck($param, $var, $phpName, $i, true);
                 continue;
             }
             $argExpr = $param->default === null
@@ -91,7 +92,7 @@ trait ClosureGenerator
                 : 'php::getCallArg(' . $i . ', ' . $this->parseParamDefaultValue($param->default) . ')';
             $code .= $this->getIndent() . 'auto ' . $var . ' = ' . $argExpr . ';' . PHP_EOL;
             $this->addArgument($var, self::TYPE_VAR);
-            $code .= $this->genClosureParamTypeCheck($param, $var, $i, false);
+            $code .= $this->genClosureParamTypeCheck($param, $var, $phpName, $i, false);
         }
 
         foreach ($uses as $i => $useItem) {
@@ -164,7 +165,7 @@ trait ClosureGenerator
         return $code;
     }
 
-    private function genClosureParamTypeCheck(Node\Param $param, string $var, int $index, bool $variadic): string
+    private function genClosureParamTypeCheck(Node\Param $param, string $var, string $phpName, int $index, bool $variadic): string
     {
         if (!$param->type instanceof NullableType && !$param->type instanceof UnionType && !$param->type instanceof IntersectionType) {
             return '';
@@ -177,6 +178,7 @@ trait ClosureGenerator
 
         $argInfo = new ArgInfo();
         $argInfo->name = $var;
+        $argInfo->phpName = $phpName;
         $argInfo->type = self::TYPE_VAR;
         $argInfo->variadic = $variadic;
         $argInfo->typeCheck = $typeInfo['check'];
