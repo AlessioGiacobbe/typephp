@@ -999,6 +999,21 @@ CODE;
                 }
                 $parentName = $this->escapeClass($parentDef->extends);
             }
+
+            foreach ($this->getClassImplementedInterfaces($classDef) as $interfaceName) {
+                if (!$this->hasInterface($interfaceName)) {
+                    continue;
+                }
+                $interfaceDef = $this->getInterface($interfaceName);
+                foreach ($interfaceDef->constants as $constant) {
+                    if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
+                        $ownConstNames[$constant->name] = true;
+                        $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
+                        $classConstStr = $this->genCharPtr($constant->name);
+                        $code .= "php::updateConstant($classNameStr, $classConstStr, php::null);\n";
+                    }
+                }
+            }
         }
 
         // 扩展模式，需要在 RSHUTDOWN 阶段中清理函数、类、属性表
@@ -1940,6 +1955,22 @@ CODE;
                     }
                 }
                 $parentName = $this->escapeClass($parentDef->extends);
+            }
+
+            foreach ($this->getClassImplementedInterfaces($classDef) as $interfaceName) {
+                if (!$this->hasInterface($interfaceName)) {
+                    continue;
+                }
+                $interfaceDef = $this->getInterface($interfaceName);
+                foreach ($interfaceDef->constants as $constant) {
+                    if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
+                        $ownConstNames[$constant->name] = true;
+                        $constName = self::PREFIX . $this->getNativeName($constant->name, $interfaceDef->namespace, $interfaceDef->name);
+                        $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
+                        $classConstStr = $this->genCharPtr($constant->name);
+                        $code .= "php::updateConstant($classNameStr, $classConstStr, {$constName});\n";
+                    }
+                }
             }
         }
 
@@ -3175,29 +3206,9 @@ CODE;
     private function checkInterfaceImplementations(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void
     {
         $classDef = $this->classDef;
-        foreach ($this->getImplementedInterfacesForClass($classDef) as $interfaceName) {
+        foreach ($this->getClassImplementedInterfaces($classDef) as $interfaceName) {
             $this->checkInterfaceImplementation($classStmt, $classDef, $interfaceName);
         }
-    }
-
-    /**
-     * @return array<string>
-     */
-    private function getImplementedInterfacesForClass(ClassDef $classDef): array
-    {
-        $interfaces = [];
-        $current = $classDef;
-        while (true) {
-            foreach ($current->implements as $interfaceName) {
-                $interfaces[$interfaceName] = $interfaceName;
-            }
-            if (!$current->extends || !$this->hasClass($current->extends)) {
-                break;
-            }
-            $current = $this->getClass($current->extends);
-        }
-
-        return array_values($interfaces);
     }
 
     private function checkInterfaceImplementation(NodeAbstract $node, ClassDef $classDef, string $interfaceName): void

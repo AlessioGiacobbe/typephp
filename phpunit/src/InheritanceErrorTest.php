@@ -142,6 +142,21 @@ class InheritanceErrorTest extends TestCase
         $this->assertStringContainsString('php::updateConstant("InterfaceArrayConstant", "ITEMS"', file_get_contents($extensionFile));
     }
 
+    public function testInterfaceArrayConstantPropagatesToImplementingClass()
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/interface_array_constant_implements.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $cppFile = $compiler->convertFile($testFile);
+        $extensionFile = $compiler->genExtension();
+
+        $this->assertStringContainsString('php_interfacearrayconstantcontract__items', file_get_contents($cppFile));
+        $this->assertStringContainsString('php::updateConstant("InterfaceArrayConstantImpl", "ITEMS"', file_get_contents($extensionFile));
+    }
+
     public function testConcreteClassMustImplementInheritedAbstractMethod()
     {
         $this->exec('must implement abstract method', 'abstract_parent_method_missing.php');

@@ -1979,15 +1979,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $classDef = $this->getClass($class);
+        $originClassDef = $classDef;
         $constDef = null;
         // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
         while (true) {
             if (!$classDef->hasConstant($const)) {
                 if (!$classDef->extends) {
-                    return false;
+                    break;
                 }
                 if (!$this->hasClass($classDef->extends)) {
-                    return false;
+                    break;
                 }
                 $classDef = $this->getClass($classDef->extends);
             } else {
@@ -1995,7 +1996,24 @@ class CompilerBase extends \PhpAot\Core\Translator
                 break;
             }
         }
-        if (!$this->checkAccessible($classDef, $constDef->flags)) {
+        if ($constDef === null) {
+            foreach ($this->getClassImplementedInterfaces($originClassDef) as $interfaceName) {
+                if (!$this->hasInterface($interfaceName)) {
+                    continue;
+                }
+                $interfaceDef = $this->getInterface($interfaceName);
+                if (!$interfaceDef->hasConstant($const)) {
+                    continue;
+                }
+                $classDef = $interfaceDef;
+                $constDef = $interfaceDef->constants[$const];
+                break;
+            }
+        }
+        if ($constDef === null) {
+            return false;
+        }
+        if ($classDef instanceof ClassDef && !$this->checkAccessible($classDef, $constDef->flags)) {
             $this->fatalError($expr, 'Constant `' . $classDef->getNamespacedName() . '::' . $const . '` is not accessible');
         }
         if ($constDef->type === self::TYPE_ARRAY) {
@@ -2003,6 +2021,44 @@ class CompilerBase extends \PhpAot\Core\Translator
         } else {
             $expr->setAttribute('nativeConst', $constDef);
             return $constDef->value;
+        }
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function getClassImplementedInterfaces(ClassDef $classDef): array
+    {
+        $interfaces = [];
+        $current = $classDef;
+        while (true) {
+            foreach ($current->implements as $interfaceName) {
+                $this->collectInterfaceAndParents($interfaceName, $interfaces);
+            }
+            if (!$current->extends || !$this->hasClass($current->extends)) {
+                break;
+            }
+            $current = $this->getClass($current->extends);
+        }
+
+        return array_values($interfaces);
+    }
+
+    /**
+     * @param array<string, string> $interfaces
+     */
+    private function collectInterfaceAndParents(string $interfaceName, array &$interfaces): void
+    {
+        if (isset($interfaces[$interfaceName])) {
+            return;
+        }
+        $interfaces[$interfaceName] = $interfaceName;
+        if (!$this->hasInterface($interfaceName)) {
+            return;
+        }
+        $interfaceDef = $this->getInterface($interfaceName);
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentInterface) {
+            $this->collectInterfaceAndParents($parentInterface, $interfaces);
         }
     }
 
