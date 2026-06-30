@@ -10,8 +10,38 @@ namespace PhpAot\Php\Entity;
 
 class InterfaceDef extends ClassLikeDef
 {
+    /**
+     * @var array<string, MethodDef>
+     */
+    public array $methods = [];
+
+    /**
+     * @var array<string, ConstantDef>
+     */
+    public array $constants = [];
+
+    /**
+     * @var string[]
+     */
+    public array $extendsList = [];
+
     public function __construct(string $name, string $namespace = '')
     {
         parent::__construct($name, $namespace);
+    }
+
+    public function addMethod(MethodDef $method): void
+    {
+        $this->methods[strtolower($method->name)] = $method;
+    }
+
+    public function hasMethod(string $method): bool
+    {
+        return isset($this->methods[strtolower($method)]);
+    }
+
+    public function hasConstant(string $name): bool
+    {
+        return isset($this->constants[$name]);
     }
 }

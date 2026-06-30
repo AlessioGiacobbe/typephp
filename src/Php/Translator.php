@@ -1864,13 +1864,16 @@ CODE;
     protected function getRegisterClassFunctionCeList(ClassDef|InterfaceDef $classDef): array
     {
         $list = [];
+        if ($classDef instanceof InterfaceDef) {
+            foreach ($classDef->extendsList ?: ($classDef->extends ? [$classDef->extends] : []) as $parentInterface) {
+                $list[] = self::PREFIX . 'class_entry_' . $this->escapeCeName($parentInterface);
+            }
+            return $list;
+        }
+
         $parentCe = $this->getParentClassCe($classDef);
         if ($parentCe !== '') {
             $list = [$parentCe];
-        }
-        //  interface 没有 implements
-        if ($classDef instanceof InterfaceDef) {
-            return $list;
         }
         $implements = $this->getImplementCe($classDef);
 
@@ -2290,14 +2293,13 @@ CODE;
         $sorter = new StringSort();
 
         foreach ($this->interfaces as $interfaceDef) {
-            $parent = $interfaceDef->extends;
             $ce = $this->getClassCe($interfaceDef);
             $deps = [];
 
-            if ($parent) {
+            foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parent) {
+                $tmpCe = self::PREFIX . 'class_entry_' . $this->escapeCeName($parent);
                 // 不存在的接口，说明可能是内置接口
-                $tmpCe = $this->getParentClassCe($interfaceDef);
-                if (!isset($this->interfaces[$parent])) {
+                if (!$this->hasInterface($parent)) {
                     $sorter->add($tmpCe);
                 }
                 $deps[] = $tmpCe;
@@ -2735,6 +2737,9 @@ CODE;
                     break;
             }
         }
+        if (!$class instanceof Node\Stmt\Trait_) {
+            $this->checkInterfaceImplementations($class);
+        }
         $code = $this->genNativeMethod($methodCodes);
 
         $oriCtx = $this->context;
@@ -3084,17 +3089,16 @@ CODE;
                         'Cannot override private method `' .
                         $extends . '::' . $name . '()`');
                 }
-                $parentFuncDef = $methodDef->functionDef;
-                $this->validateMethodOverrideSignature($v, $name, $childFuncDef, $methodDef, $extends);
+                $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
                 break;
             }
         }
     }
 
     private function validateMethodOverrideSignature(
-        Node\Stmt\ClassMethod $v,
+        NodeAbstract $v,
         string $methodName,
-        FunctionDef $childFuncDef,
+        MethodDef $childMethodDef,
         MethodDef $parentMethodDef,
         string $parentClass
     ): void {
@@ -3107,12 +3111,13 @@ CODE;
 
         // PHP allows widening visibility in overrides (e.g. protected -> public),
         // but forbids narrowing it.
-        if ($this->getVisibilityRank($this->methodDef->flags) < $this->getVisibilityRank($parentMethodDef->flags)) {
+        if ($this->getVisibilityRank($childMethodDef->flags) < $this->getVisibilityRank($parentMethodDef->flags)) {
             $error('visibility mismatch');
         }
 
+        $childFuncDef = $childMethodDef->functionDef;
         $parentFuncDef = $parentMethodDef->functionDef;
-        if (!$parentFuncDef) {
+        if (!$childFuncDef || !$parentFuncDef) {
             return;
         }
 
@@ -3151,6 +3156,57 @@ CODE;
             if (!$childArg->variadic && $childArg->defaultValue === null) {
                 $error("extra required parameter #{$i}");
             }
+        }
+    }
+
+    private function checkInterfaceImplementations(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void
+    {
+        $classDef = $this->classDef;
+        foreach ($classDef->implements as $interfaceName) {
+            $this->checkInterfaceImplementation($classStmt, $classDef, $interfaceName);
+        }
+    }
+
+    private function checkInterfaceImplementation(NodeAbstract $node, ClassDef $classDef, string $interfaceName): void
+    {
+        if ($this->isInternalInterface($interfaceName)) {
+            return;
+        }
+        if (!$this->hasInterface($interfaceName)) {
+            return;
+        }
+
+        $interfaceDef = $this->getInterface($interfaceName);
+        foreach ($interfaceDef->methods as $methodName => $interfaceMethodDef) {
+            $childMethodDef = $this->findClassMethodDef($classDef, $methodName);
+            if ($childMethodDef === null) {
+                $this->fatalError($node, "Class `{$classDef->getNamespacedName(false)}` must implement method `{$interfaceName}::{$interfaceMethodDef->name}()`");
+            }
+            $this->validateMethodOverrideSignature(
+                $node,
+                $interfaceMethodDef->name,
+                $childMethodDef,
+                $interfaceMethodDef,
+                $interfaceName
+            );
+        }
+
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentInterface) {
+            $this->checkInterfaceImplementation($node, $classDef, $parentInterface);
+        }
+    }
+
+    private function findClassMethodDef(ClassDef $classDef, string $methodName): ?MethodDef
+    {
+        $current = $classDef;
+        while (true) {
+            if ($current->hasMethod($methodName)) {
+                return $current->getMethod($methodName);
+            }
+            if (!$current->extends || !$this->hasClass($current->extends)) {
+                return null;
+            }
+            $current = $this->getClass($current->extends);
         }
     }
 

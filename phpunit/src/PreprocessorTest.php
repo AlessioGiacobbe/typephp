@@ -5,8 +5,10 @@ namespace PhpAot\Tests;
 use PHPUnit\Framework\TestCase;
 use PhpAot\Php\CompilerTest;
 use PhpAot\Php\ArgInfo;
+use PhpAot\Php\Exception\TestError;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Function_;
+use PhpParser\Modifiers;
 use PhpParser\ParserFactory;
 
 class PreprocessorTest extends TestCase
@@ -57,6 +59,13 @@ class PreprocessorTest extends TestCase
         $prop = $this->ref->getProperty($name);
         $prop->setAccessible(true);
         $prop->setValue($this->compiler, $value);
+    }
+
+    private function getProperty(string $name): mixed
+    {
+        $prop = $this->ref->getProperty($name);
+        $prop->setAccessible(true);
+        return $prop->getValue($this->compiler);
     }
 
     private function parseFunctionNode(string $code): Function_
@@ -233,6 +242,133 @@ class PreprocessorTest extends TestCase
         $this->compiler->sortFiles($files);
         // Empty array stays empty or nearly empty
         $this->assertIsArray($files);
+    }
+
+    public function testPrepareFileParsesInterfaceMembersAndTypeChecks(): void
+    {
+        $file = __DIR__ . '/../code/preprocessor/interface_members.php';
+
+        $this->compiler->prepareFile($file);
+
+        $interfaces = $this->getProperty('interfaces');
+        $this->assertArrayHasKey('demo', $interfaces);
+
+        $iface = $interfaces['demo'];
+        $this->assertSame(['ParentA', 'ParentB'], $iface->extendsList);
+        $this->assertSame('ParentA', $iface->extends);
+        $this->assertArrayHasKey('VERSION', $iface->constants);
+        $this->assertTrue($iface->hasMethod('run'));
+
+        $functionDef = $iface->methods['run']->functionDef;
+        $this->assertTrue($functionDef->method);
+        $this->assertSame('php::Int', $functionDef->argInfoList[0]->type);
+        $this->assertNull($functionDef->argInfoList[0]->typeCheck);
+        $this->assertSame('php::Var', $functionDef->argInfoList[1]->type);
+        $this->assertNotEmpty($functionDef->argInfoList[1]->typeCheck);
+        $this->assertSame('php::Var', $functionDef->returnType);
+        $this->assertNotEmpty($functionDef->returnTypeCheck);
+    }
+
+    public function testPrepareFileRejectsNamespacedDuplicateClassAndInterface(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Duplicate class `App\\Demo`');
+
+        $file = __DIR__ . '/../code/preprocessor/duplicate_namespaced_class_interface.php';
+        $this->compiler->prepareFile($file);
+    }
+
+    public function testPrepareFileParsesNamespacedConstants(): void
+    {
+        $file = __DIR__ . '/../code/preprocessor/namespaced_const.php';
+
+        $this->compiler->prepareFile($file);
+
+        $constants = $this->getProperty('constants');
+        $this->assertArrayHasKey('_const_var_App__VERSION', $constants);
+        $this->assertSame('App\\VERSION', $constants['_const_var_App__VERSION']->name);
+    }
+
+    public function testSortFilesUsesImplementsAndTraitDependencies(): void
+    {
+        $classFile = realpath(__DIR__ . '/../code/preprocessor/deps_class_implements.php');
+        $interfaceFile = realpath(__DIR__ . '/../code/preprocessor/deps_interface.php');
+        $traitUserFile = realpath(__DIR__ . '/../code/preprocessor/deps_class_uses_trait.php');
+        $traitFile = realpath(__DIR__ . '/../code/preprocessor/deps_trait.php');
+
+        $this->compiler->prepareFile($classFile);
+        $this->compiler->prepareFile($interfaceFile);
+        $this->compiler->prepareFile($traitUserFile);
+        $this->compiler->prepareFile($traitFile);
+
+        $files = [$classFile, $interfaceFile, $traitUserFile, $traitFile];
+        $this->compiler->sortFiles($files);
+
+        $this->assertLessThan(array_search($classFile, $files, true), array_search($interfaceFile, $files, true));
+        $this->assertLessThan(array_search($traitUserFile, $files, true), array_search($traitFile, $files, true));
+    }
+
+    public function testPrepareFileParsesTraitAliasModifierWithoutNewName(): void
+    {
+        $file = __DIR__ . '/../code/preprocessor/trait_alias_modifier.php';
+
+        $this->compiler->prepareFile($file);
+
+        $classes = $this->getProperty('classes');
+        $this->assertArrayHasKey('aliasmodifieruser', $classes);
+        $aliases = $classes['aliasmodifieruser']->traitAliases;
+        $this->assertArrayHasKey('aliasmodifiertrait::hello', $aliases);
+        $this->assertSame('hello', $aliases['aliasmodifiertrait::hello']['newName']);
+        $this->assertSame(Modifiers::PRIVATE, $aliases['aliasmodifiertrait::hello']['newModifier']);
+    }
+
+    public function testPrepareFileInfersEachClassConstantTypeIndependently(): void
+    {
+        $file = __DIR__ . '/../code/preprocessor/class_constants.php';
+
+        $this->compiler->prepareFile($file);
+
+        $classes = $this->getProperty('classes');
+        $this->assertArrayHasKey('preprocessorclassconstants', $classes);
+        $constants = $classes['preprocessorclassconstants']->constants;
+        $this->assertSame('php::Str', $constants['TEXT']->type);
+        $this->assertSame('php::Array', $constants['ITEMS']->type);
+    }
+
+    public function testPrepareFileRejectsDuplicateClassConstants(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Duplicate constant `VALUE`');
+
+        $file = __DIR__ . '/../code/preprocessor/duplicate_class_constant.php';
+        $this->compiler->prepareFile($file);
+    }
+
+    public function testPrepareFileParsesAbstractMethodSignatures(): void
+    {
+        $file = __DIR__ . '/../code/preprocessor/abstract_method_signature.php';
+
+        $this->compiler->prepareFile($file);
+
+        $classes = $this->getProperty('classes');
+        $this->assertArrayHasKey('preprocessorabstractsignature', $classes);
+        $methodDef = $classes['preprocessorabstractsignature']->abstractMethodDefs['load'];
+        $functionDef = $methodDef->functionDef;
+        $this->assertTrue($functionDef->method);
+        $this->assertSame('php::Int', $functionDef->argInfoList[0]->type);
+        $this->assertSame('php::Var', $functionDef->argInfoList[1]->type);
+        $this->assertNotEmpty($functionDef->argInfoList[1]->typeCheck);
+        $this->assertSame('php::Object', $functionDef->returnType);
+        $this->assertSame('PreprocessorAbstractSignature', $functionDef->returnClass);
+    }
+
+    public function testPrepareFileRejectsDuplicateAbstractMethods(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Duplicate method `load`');
+
+        $file = __DIR__ . '/../code/preprocessor/duplicate_abstract_method.php';
+        $this->compiler->prepareFile($file);
     }
 
     public function testIntersectionParamDeclFallsBackToVarWithRuntimeCheck(): void

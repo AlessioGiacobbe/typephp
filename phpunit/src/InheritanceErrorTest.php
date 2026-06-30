@@ -97,4 +97,19 @@ class InheritanceErrorTest extends TestCase
     {
         $this->exec('must be compatible', 'inheritance_error_prop_readonly.php');
     }
+
+    public function testInterfaceMethodMissing()
+    {
+        $this->exec('must implement method', 'interface_method_missing.php');
+    }
+
+    public function testInterfaceMethodSignatureMismatch()
+    {
+        $this->exec('must be compatible', 'interface_method_signature_mismatch.php');
+    }
+
+    public function testInterfaceMethodProvidedByTrait()
+    {
+        $this->assertCompiles('interface_method_from_trait.php');
+    }
 }

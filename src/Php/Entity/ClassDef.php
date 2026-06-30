@@ -48,6 +48,12 @@ class ClassDef extends ClassLikeDef
      * @var array<string, int>
      */
     public array $abstractMethods = [];
+
+    /**
+     * Abstract method name (lowercase) => method definition
+     * @var array<string, MethodDef>
+     */
+    public array $abstractMethodDefs = [];
     public ?Trait_ $trait = null;
 
     /**
@@ -79,9 +85,13 @@ class ClassDef extends ClassLikeDef
         $this->methods[strtolower($method->name)] = $method;
     }
 
-    public function addAbstractMethod(string $name, int $flags): void
+    public function addAbstractMethod(string $name, int $flags, ?MethodDef $methodDef = null): void
     {
-        $this->abstractMethods[strtolower($name)] = $flags;
+        $lower = strtolower($name);
+        $this->abstractMethods[$lower] = $flags;
+        if ($methodDef !== null) {
+            $this->abstractMethodDefs[$lower] = $methodDef;
+        }
     }
 
     public function hasMethod(string $method): bool

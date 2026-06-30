@@ -4,6 +4,7 @@ namespace PhpAot\Tests\Entity;
 
 use PHPUnit\Framework\TestCase;
 use PhpAot\Php\Entity\InterfaceDef;
+use PhpAot\Php\Entity\MethodDef;
 
 class InterfaceDefTest extends TestCase
 {
@@ -38,5 +39,23 @@ class InterfaceDefTest extends TestCase
         $iface->extends = 'Parent';
 
         $this->assertEquals('Parent', $iface->extends);
+    }
+
+    public function testTracksMethodsCaseInsensitively(): void
+    {
+        $iface = new InterfaceDef('Runnable');
+        $iface->addMethod(new MethodDef(0, 'run'));
+
+        $this->assertTrue($iface->hasMethod('run'));
+        $this->assertTrue($iface->hasMethod('RUN'));
+        $this->assertArrayHasKey('run', $iface->methods);
+    }
+
+    public function testTracksMultipleParentInterfaces(): void
+    {
+        $iface = new InterfaceDef('Child');
+        $iface->extendsList = ['ParentA', 'ParentB'];
+
+        $this->assertSame(['ParentA', 'ParentB'], $iface->extendsList);
     }
 }

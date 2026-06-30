@@ -212,6 +212,7 @@ class Preprocessor extends CompilerBase
                     $this->parseGroupUse($v2);
                     break;
                 case 'Stmt_Const':
+                    $this->parseConstDef($v2);
                     break;
                 case 'Stmt_Interface':
                     $this->parseInterface($v2);
@@ -554,13 +555,10 @@ class Preprocessor extends CompilerBase
         $flags = $this->parseModifiers($v->flags);
         $class = '';
 
-        if ($v->type) {
-            $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST, $class);
-        } else {
-            $type = null;
-        }
+        $declaredType = $v->type ? $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST, $class) : null;
 
         foreach ($v->consts as $const) {
+            $type = $declaredType;
             if ($type === null) {
                 $type = match ($const->value->getType()) {
                     'Expr_Array' => self::TYPE_ARRAY,
@@ -569,6 +567,9 @@ class Preprocessor extends CompilerBase
                 };
             }
             $constName = $this->parseIdentifier($const->name);
+            if ($this->classDef->hasConstant($constName)) {
+                $this->fatalError($v, "Duplicate constant `{$constName}`");
+            }
             $constValue = $this->parseIdentifier($const->value);
 
             $constInfo = new ConstantDef($constName, $flags, $type, $constValue);
@@ -654,9 +655,16 @@ class Preprocessor extends CompilerBase
             $this->checkRequiredArgNum($name, $this->methodDef, $v);
             $this->classDef->addMethod($this->methodDef);
         } else {
+            if ($this->classDef->hasMethod($name) || $this->classDef->hasAbstractMethod($name)) {
+                $this->fatalError($v, "Duplicate method `{$this->method}`");
+            }
             if (!$class instanceof Node\Stmt\Trait_ && isset($class->flags) && !($class->flags & Modifiers::ABSTRACT)) {
                 $this->fatalError($v, "Non-abstract class {$this->class} contains abstract method {$v->name}");
             }
+            $this->methodDef = new MethodDef($flags, $name);
+            $this->methodDef->functionDef = $this->parseFunctionDecl($v);
+            $this->methodDef->functionDef->method = true;
+            $this->checkRequiredArgNum($name, $this->methodDef, $v);
             if ($this->method === '__construct') {
                 foreach ($v->params as $param) {
                     if ($param->isPromoted()) {
@@ -664,7 +672,7 @@ class Preprocessor extends CompilerBase
                     }
                 }
             }
-            $this->classDef->addAbstractMethod($name, $flags);
+            $this->classDef->addAbstractMethod($name, $flags, $this->methodDef);
         }
 
         $fullClassName = $this->getFullClassName();
@@ -716,12 +724,81 @@ class Preprocessor extends CompilerBase
 
     protected function parseInterface(Node\Stmt\Interface_ $v): void
     {
+        $this->resetClass();
+        $this->resetMethod();
+        $this->resetFunction();
         $name = $this->parseIdentifier($v->name);
         $this->interface = $name;
         $this->interfaceDef = new InterfaceDef($name, $this->namespace);
-        $interfaceName = $this->interfaceDef->getNamespacedName();
+        $interfaceName = $this->interfaceDef->getNamespacedName(false);
+        $interfaceNameLower = strtolower($interfaceName);
+
+        foreach ($v->extends as $parent) {
+            $parentName = $this->getNamespacedClassName($this->parseIdentifier($parent));
+            $this->interfaceDef->extendsList[] = $parentName;
+            if ($this->interfaceDef->extends === '') {
+                $this->interfaceDef->extends = $parentName;
+            }
+            if (!$this->isInternalInterface($parentName)) {
+                $this->symbolCallInFile[$this->file][] = strtolower($parentName);
+            }
+        }
+
+        if (isset($this->symbolDeclInFile[$interfaceNameLower])) {
+            $this->fatalError($v, "Duplicate interface `{$interfaceName}`");
+        }
+
+        $this->symbolDeclInFile[$interfaceNameLower] = $this->file;
         $this->interfaces[$this->escapeClass($interfaceName)] = $this->interfaceDef;
         $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
+
+        foreach ($v->stmts as $stmt) {
+            if ($stmt instanceof Node\Stmt\ClassConst) {
+                foreach ($stmt->consts as $const) {
+                    $constName = $this->parseIdentifier($const->name);
+                    if ($this->interfaceDef->hasConstant($constName)) {
+                        $this->fatalError($stmt, "Duplicate constant `{$constName}`");
+                    }
+                    $class = '';
+                    $type = $stmt->type
+                        ? $this->parseTypeDecl($stmt->type, self::DECL_TYPE_OF_CONST, $class)
+                        : match ($const->value->getType()) {
+                            'Expr_Array' => self::TYPE_ARRAY,
+                            'Scalar_String' => self::TYPE_STR,
+                            default => self::TYPE_VAR,
+                        };
+                    $constInfo = new ConstantDef($constName, $this->parseModifiers($stmt->flags), $type, $this->parseIdentifier($const->value));
+                    $constInfo->class = $class;
+                    $constInfo->valueExpr = $const->value;
+                    $this->interfaceDef->constants[$constName] = $constInfo;
+                }
+                continue;
+            }
+
+            if ($stmt instanceof Node\Stmt\ClassMethod) {
+                $methodName = $this->getMethodName($stmt);
+                if ($this->interfaceDef->hasMethod($methodName)) {
+                    $this->fatalError($stmt, "Duplicate method `{$methodName}`");
+                }
+                $this->method = $methodName;
+                $methodDef = new MethodDef($this->parseModifiers($stmt->flags), $methodName);
+                $methodDef->functionDef = $this->parseFunctionDecl($stmt);
+                $methodDef->functionDef->method = true;
+                $this->interfaceDef->addMethod($methodDef);
+                $this->resetMethod();
+                $this->resetFunction();
+                continue;
+            }
+
+            if (!$stmt instanceof Node\Stmt\Nop) {
+                $this->fatalError($stmt, 'Unsupported interface statement: ' . $stmt->getType());
+            }
+        }
+
+        $this->resetMethod();
+        $this->resetFunction();
+        $this->interface = '';
+        $this->interfaceDef = null;
     }
 
     protected function parseTraitUseOptions(Node\Stmt\TraitUse $traitUse, array &$aliases, array &$ignored): void
@@ -739,7 +816,7 @@ class Preprocessor extends CompilerBase
                     $traits[] = $adaptation->trait;
                 }
                 foreach ($traits as $trait) {
-                    $traitName = $this->getNamespacedClassName($trait);
+                    $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait));
                     $methodName = $adaptation->method->toString();
                     /*
                      * 例如：
@@ -747,7 +824,7 @@ class Preprocessor extends CompilerBase
                      * 这表示 TraitA::method() 会被重命名为 TraitA::newMethod()
                      */
                     $aliases[$this->getFullMethodName($traitName, $methodName)] = [
-                        'newName' => $adaptation->newName->toString(),
+                        'newName' => $adaptation->newName ? $adaptation->newName->toString() : $methodName,
                         'newModifier' => $adaptation->newModifier ?: 0,
                     ];
                 }
@@ -763,7 +840,8 @@ class Preprocessor extends CompilerBase
                  * 这表示 TraitB::method() 将会被忽略，真正执行的是 TraitA::method()
                  */
                 foreach ($adaptation->insteadof as $trait2) {
-                    $ignored[$this->getFullMethodName($trait2, $methodName)] = true;
+                    $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait2));
+                    $ignored[$this->getFullMethodName($traitName, $methodName)] = true;
                 }
             }
         }
@@ -775,6 +853,12 @@ class Preprocessor extends CompilerBase
         $ignored = [];
         if ($v->adaptations) {
             $this->parseTraitUseOptions($v, $aliases, $ignored);
+        }
+        foreach ($v->traits as $trait) {
+            $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait));
+            if (!$this->isInternalClass($traitName)) {
+                $this->symbolCallInFile[$this->file][] = strtolower($traitName);
+            }
         }
         $this->classDef->traitAliases = array_merge($this->classDef->traitAliases, $aliases);
         $this->classDef->traitIgnored = array_merge($this->classDef->traitIgnored, $ignored);

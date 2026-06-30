@@ -1224,7 +1224,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $list = [];
         foreach ($implements as $implement) {
-            $list[] = $this->getNamespacedClassName($implement);
+            $interfaceName = $this->getNamespacedClassName($this->parseIdentifier($implement));
+            $list[] = $interfaceName;
+            if (!$this->isInternalInterface($interfaceName)) {
+                $this->symbolCallInFile[$this->file][] = strtolower($interfaceName);
+            }
         }
         return $list;
     }
@@ -1820,6 +1824,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function hasInterface(string $name): bool
     {
         return array_key_exists($this->escapeClass($name), $this->interfaces);
+    }
+
+    protected function getInterface(string $name): InterfaceDef
+    {
+        return $this->interfaces[$this->escapeClass($name)];
     }
 
     protected function checkFunction(string $name): void
@@ -3578,7 +3587,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isNameExpr($expr->name) and $this->hasConstant($name)) {
             return $this->getConstant($name);
         }
-        if ($this->namespace and $this->isNameExpr($expr->name) and !str_contains($name, '\\')) {
+        if ($this->namespace and $this->isNameExpr($expr->name) and !$expr->name instanceof Node\Name\FullyQualified) {
             $nsName = $this->namespace . '\\' . $name;
             if ($this->hasConstant($nsName)) {
                 return $this->getConstant($nsName);
@@ -3725,12 +3734,19 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 // Check transitive interface inheritance (e.g., Iterator extends Traversable)
                 foreach ($classDef->implements as $iface) {
-                    $check = $iface;
-                    while ($check && $this->hasInterface($check)) {
+                    $stack = [$iface];
+                    while ($stack) {
+                        $check = array_pop($stack);
                         if (strcasecmp($check, $expected) === 0) {
                             return true;
                         }
-                        $check = $this->getInterface($check)->extends;
+                        if (!$this->hasInterface($check)) {
+                            continue;
+                        }
+                        $interfaceDef = $this->getInterface($check);
+                        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentIface) {
+                            $stack[] = $parentIface;
+                        }
                     }
                     if (is_subclass_of($iface, $expected)) {
                         return true;

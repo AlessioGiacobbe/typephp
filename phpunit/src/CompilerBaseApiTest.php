@@ -74,6 +74,11 @@ class CompilerBaseApiTest extends TestCase
         return $m->invoke($this->compiler, ...$args);
     }
 
+    private function fixturePath(string $file): string
+    {
+        return __DIR__ . '/../code/compiler_api/' . $file;
+    }
+
     private function createProjectFile(string $yaml, string $filename = 'project.yml', string $baseDir = ''): string
     {
         $projectDir = $baseDir === '' ? $this->testDir : $this->testDir . '/' . trim($baseDir, '/');
@@ -82,7 +87,7 @@ class CompilerBaseApiTest extends TestCase
         }
 
         $sourceFile = $projectDir . '/main.php';
-        file_put_contents($sourceFile, "<?php\nfunction main() {}\n");
+        copy($this->fixturePath('main.php'), $sourceFile);
 
         $projectFile = $projectDir . '/' . $filename;
         file_put_contents($projectFile, $yaml);
@@ -363,9 +368,9 @@ ignore:
 YAML);
         $projectDir = dirname($projectFile);
         mkdir($projectDir . '/skipped', 0777, true);
-        file_put_contents($projectDir . '/ignored.php', "<?php\nfunction ignored() {}\n");
-        file_put_contents($projectDir . '/skipped/nested.php', "<?php\nfunction skipped() {}\n");
-        file_put_contents($projectDir . '/kept.php', "<?php\nfunction kept() {}\n");
+        copy($this->fixturePath('ignored.php'), $projectDir . '/ignored.php');
+        copy($this->fixturePath('skipped_nested.php'), $projectDir . '/skipped/nested.php');
+        copy($this->fixturePath('kept.php'), $projectDir . '/kept.php');
 
         $files = $this->invokeMethod('parseProjectYaml', $projectFile);
 
@@ -452,7 +457,7 @@ YAML);
         $logFile = $spaceDir . '/format.log';
         $sourceFile = $spaceDir . '/hello world.cc';
 
-        file_put_contents($sourceFile, "int main() { return 0; }\n");
+        copy($this->fixturePath('hello_world.cc'), $sourceFile);
         $this->createFakeClangFormat($binDir, $logFile);
         putenv('PATH=' . $binDir . ':' . ($this->originalPath ?: ''));
 
