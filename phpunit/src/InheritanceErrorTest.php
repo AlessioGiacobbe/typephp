@@ -167,6 +167,21 @@ class InheritanceErrorTest extends TestCase
         $this->exec('must implement method', 'interface_abstract_parent_missing.php');
     }
 
+    public function testCompatibleTraitMemberDuplicatesCompile()
+    {
+        $this->assertCompiles('trait_member_compatible.php');
+    }
+
+    public function testTraitConstantConflict()
+    {
+        $this->exec('constant `VALUE` conflicts', 'trait_constant_conflict.php');
+    }
+
+    public function testTraitPropertyConflict()
+    {
+        $this->exec('property `count` conflicts', 'trait_property_conflict.php');
+    }
+
     public function testAbstractMethodSignatureMismatch()
     {
         $this->exec('must be compatible', 'abstract_method_signature_mismatch.php');

@@ -2585,24 +2585,54 @@ CODE;
                         foreach ($traitStmt->consts as $k2 => $const) {
                             $constName = strtolower($const->name->toString());
                             if (isset($constants[$constName])) {
-                                unset($traitStmts[$k1][$k2]);
+                                unset($traitStmt->consts[$k2]);
+                                if (!$traitStmt->consts) {
+                                    unset($traitStmts[$k1]);
+                                }
+                                continue;
                             }
                             if (isset($traitConstants[$constName])) {
-                                $this->fatalError($classStmt, "Trait `{$traitFullName}` constant `{$constName}` already exists");
+                                [$existingConstStmt, $existingConst] = $traitConstants[$constName];
+                                if ($existingConstStmt->flags !== $traitStmt->flags ||
+                                    $this->typeNodeToStringOrNull($existingConstStmt->type) !== $this->typeNodeToStringOrNull($traitStmt->type) ||
+                                    $this->printer->prettyPrintExpr($existingConst->value) !== $this->printer->prettyPrintExpr($const->value)) {
+                                    $this->fatalError($classStmt, "Trait `{$traitFullName}` constant `{$constName}` already exists");
+                                }
+                                unset($traitStmt->consts[$k2]);
+                                if (!$traitStmt->consts) {
+                                    unset($traitStmts[$k1]);
+                                }
+                                continue;
                             }
-                            $traitConstants[$constName] = $const;
+                            $traitConstants[$constName] = [$traitStmt, $const];
                         }
                     }
                     if ($traitStmt instanceof Node\Stmt\Property) {
                         foreach ($traitStmt->props as $k2 => $prop) {
                             $propName = strtolower($prop->name->toString());
                             if (isset($properties[$propName])) {
-                                unset($traitStmts[$k1][$k2]);
+                                unset($traitStmt->props[$k2]);
+                                if (!$traitStmt->props) {
+                                    unset($traitStmts[$k1]);
+                                }
+                                continue;
                             }
                             if (isset($traitProperties[$propName])) {
-                                $this->fatalError($classStmt, "Trait `{$traitFullName}` property `{$propName}` already exists");
+                                [$existingPropStmt, $existingProp] = $traitProperties[$propName];
+                                $existingDefault = $existingProp->default ? $this->printer->prettyPrintExpr($existingProp->default) : null;
+                                $propDefault = $prop->default ? $this->printer->prettyPrintExpr($prop->default) : null;
+                                if ($existingPropStmt->flags !== $traitStmt->flags ||
+                                    $this->typeNodeToStringOrNull($existingPropStmt->type) !== $this->typeNodeToStringOrNull($traitStmt->type) ||
+                                    $existingDefault !== $propDefault) {
+                                    $this->fatalError($classStmt, "Trait `{$traitFullName}` property `{$propName}` already exists");
+                                }
+                                unset($traitStmt->props[$k2]);
+                                if (!$traitStmt->props) {
+                                    unset($traitStmts[$k1]);
+                                }
+                                continue;
                             }
-                            $traitProperties[$propName] = $prop;
+                            $traitProperties[$propName] = [$traitStmt, $prop];
                         }
                     }
                 }
@@ -2715,6 +2745,11 @@ CODE;
         }
         // Fallback: use pretty printer
         return $this->printer->prettyPrint([$typeNode]);
+    }
+
+    private function typeNodeToStringOrNull(?NodeAbstract $typeNode): ?string
+    {
+        return $typeNode ? $this->typeNodeToString($typeNode) : null;
     }
 
     protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
@@ -3389,12 +3424,18 @@ CODE;
             // 将 Trait 中定义的 常量、静态常量、属性、方法、静态属性复制到当前类中
             foreach ($traitDef->constants as $const) {
                 if ($classDef->hasConstant($const->name)) {
+                    if (!$this->isCompatibleTraitConstant($classDef->getConstant($const->name), $const)) {
+                        $this->fatalError($v, "Trait `{$traitFullName}` constant `{$const->name}` conflicts with class `{$classDef->getNamespacedName(false)}`");
+                    }
                     continue;
                 }
                 $classDef->constants[$const->name] = $const;
             }
             foreach ($traitDef->properties as $prop) {
                 if ($classDef->hasProperty($prop->name)) {
+                    if (!$this->isCompatibleTraitProperty($classDef->getProperty($prop->name), $prop)) {
+                        $this->fatalError($v, "Trait `{$traitFullName}` property `{$prop->name}` conflicts with class `{$classDef->getNamespacedName(false)}`");
+                    }
                     continue;
                 }
                 $classDef->properties[$prop->name] = $prop;
@@ -3452,6 +3493,23 @@ CODE;
                 $methodCodes[$classMethodName] = $code;
             }
         }
+    }
+
+    private function isCompatibleTraitConstant(ConstantDef $existing, ConstantDef $incoming): bool
+    {
+        return $existing->flags === $incoming->flags &&
+            $existing->type === $incoming->type &&
+            $existing->class === $incoming->class &&
+            $existing->value === $incoming->value;
+    }
+
+    private function isCompatibleTraitProperty(PropertyDef $existing, PropertyDef $incoming): bool
+    {
+        return $existing->flags === $incoming->flags &&
+            $existing->type === $incoming->type &&
+            $existing->class === $incoming->class &&
+            $existing->nullable === $incoming->nullable &&
+            $existing->default === $incoming->default;
     }
 
     protected function parseForeachObject(Foreach_ $node): string
