@@ -2850,10 +2850,13 @@ CODE;
         return $code;
     }
 
-    protected function genWrapperFunctionArgs(string $fn, FunctionDef $functionDef): string
+    protected function genWrapperFunctionArgs(string $fn, FunctionDef $functionDef, string $displayName): string
     {
         $cppCode = '';
         $callParams = '';
+        if ($functionDef->argCountRequired > 0) {
+            $cppCode .= $this->genWrapperRequiredArgCountCheck($functionDef, $displayName);
+        }
         foreach ($functionDef->argInfoList as $k => $argInfo) {
             $var = 'arg_' . $argInfo->name;
             if ($argInfo->variadic) {
@@ -2874,8 +2877,6 @@ CODE;
                 } else {
                     if ($argInfo->byRef) {
                         $argExpr = 'php::getCallArgByRef(' . $k . ')';
-                    } elseif ($argInfo->nullable) {
-                        $argExpr = 'php::getCallArg(' . $k . ', php::null)';
                     } else {
                         $argExpr = 'php::getCallArg(' . $k . ')';
                     }
@@ -2905,13 +2906,32 @@ CODE;
         return $cppCode;
     }
 
+    private function genWrapperRequiredArgCountCheck(FunctionDef $functionDef, string $displayName): string
+    {
+        $required = $functionDef->argCountRequired;
+        $message = 'php::concat({'
+            . 'php::Str(' . $this->genCharPtr('Too few arguments to function ' . $displayName . '(), ', true) . '), '
+            . 'php::toString(php::getCallArgNum()), '
+            . 'php::Str(' . $this->genCharPtr(' passed and exactly ' . $required . ' expected', true) . ')'
+            . '})';
+
+        $code = $this->getIndent() . 'if (UNEXPECTED(php::getCallArgNum() < ' . $required . ')) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'php::throwException(zend_ce_argument_count_error, (' . $message . ').toCString());' . PHP_EOL;
+        $code .= $this->getIndent() . 'return;' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+
+        return $code;
+    }
+
     protected function genMethodWrapper(ClassDef $classDef, MethodDef $methodDef): string
     {
         $name = $classDef->getNamespacedName();
         $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
         $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
         $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
-        $cppCode .= $this->genWrapperFunctionArgs($fn, $methodDef->functionDef);
+        $cppCode .= $this->genWrapperFunctionArgs($fn, $methodDef->functionDef, $classDef->getNamespacedName(false) . '::' . $methodDef->name);
 
         return $cppCode;
     }
@@ -3733,7 +3753,7 @@ CODE;
         $name = $this->escapeZendFnName($functionDef->getNamespacedName());
         $cppCode = 'ZEND_FUNCTION(' . $name . '){' . PHP_EOL;
         $fn = self::PREFIX . $this->getNativeName($functionDef->name, $functionDef->namespace);
-        $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef);
+        $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef, $functionDef->getNamespacedName());
 
         return $cppCode;
     }
