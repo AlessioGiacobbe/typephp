@@ -71,6 +71,21 @@ class ClassTest extends \BaseTest
         $this->exec('Method `ConstructorReturnType::__construct()` cannot declare a return type', 'constructor-return-type.php');
     }
 
+    public function testConstructorCannotReturnValue()
+    {
+        $this->exec('Method `ConstructorReturnValue::__construct()` cannot return a value', 'constructor-return-value.php');
+    }
+
+    public function testParentConstructorCannotBeUsedAsValue()
+    {
+        $this->exec('Cannot use void expression as assignment value', 'parent-constructor-used-as-value.php');
+    }
+
+    public function testParentConstructorCannotBeUsedAsArgument()
+    {
+        $this->exec('Cannot use void expression as function argument', 'parent-constructor-used-as-argument.php');
+    }
+
     public function testDestructorCannotDeclareReturnType()
     {
         $this->exec('Method `DestructorReturnType::__destruct()` cannot declare a return type', 'destructor-return-type.php');

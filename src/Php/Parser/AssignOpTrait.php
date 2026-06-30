@@ -155,6 +155,9 @@ trait AssignOpTrait
             $this->fatalError($left, 'Cannot re-assign $this');
         }
         $finalVarType = $type = $this->detectTypeOfExpr($right);
+        if ($type === self::TYPE_VOID) {
+            $this->fatalError($right, 'Cannot use void expression as assignment value');
+        }
 
         if ($this->isVarExpr($left)) {
             if ($this->isStdContainer($var)) {

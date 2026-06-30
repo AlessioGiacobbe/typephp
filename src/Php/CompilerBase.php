@@ -887,6 +887,23 @@ class CompilerBase extends \PhpAot\Core\Translator
         return strtolower($fullClassName . '::' . $method);
     }
 
+    protected function isCurrentConstructor(): bool
+    {
+        return $this->method === '__construct';
+    }
+
+    protected function getCurrentMethodDisplayName(): string
+    {
+        return $this->getFullClassName() . '::' . $this->method;
+    }
+
+    protected function assertExprCanBeUsedAsValue(NodeAbstract $expr, string $context = 'value'): void
+    {
+        if ($this->detectTypeOfExpr($expr) === self::TYPE_VOID) {
+            $this->fatalError($expr, 'Cannot use void expression as ' . $context);
+        }
+    }
+
     public function getNamespacedClassName(string $class, string $currentNamespace = ''): string
     {
         if ($class === '') {
@@ -1686,6 +1703,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         // 实际函数的返回值
         $type = $this->detectTypeOfExpr($v->expr);
+        if ($this->isCurrentConstructor() && !$this->context->inClosure) {
+            $this->fatalError($v, 'Method `' . $this->getCurrentMethodDisplayName() . '()` cannot return a value');
+        }
+        if ($type === self::TYPE_VOID) {
+            $this->fatalError($v, 'Cannot return void expression');
+        }
         $expr = $this->parseExpr($v->expr);
         $returnType = $this->getReturnType();
 
@@ -3609,6 +3632,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCallArgValue(Node\Arg $arg): string
     {
+        $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
         return $this->materializeCallArgValue($arg->value, $this->parseArg($arg));
     }
 
@@ -4493,6 +4517,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function getTypeConvertedArg(Node\Arg $arg, ArgInfo $argInfo): string
     {
         $type = $this->detectTypeOfExpr($arg->value);
+        $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
 
         if ($argInfo->byRef) {
             if ($this->isRefvalCall($arg->value)) {

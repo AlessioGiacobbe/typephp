@@ -22,6 +22,8 @@ When reviewing or changing compiler behavior:
 
 Example: `function test($a = 1, $b, $c) {}` is legal in PHP, but the default value for `$a` is effectively ignored and all parameters become required. This is a PHP historical compatibility artifact. AOT should reject it during preprocessing instead of preserving the behavior.
 
+Example: PHP permits `return $value;` inside `__construct()` and lets callers consume `parent::__construct()` as a value, even though constructors cannot declare a return type. AOT treats constructors consistently with C++/Java-style semantics: constructors initialize objects and must not return values. `return;` is allowed, but `return $value;` or using a constructor call as a value must be rejected during static compilation.
+
 ## Build & Test Commands
 
 ```bash
