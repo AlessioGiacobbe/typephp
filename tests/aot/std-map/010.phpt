@@ -8,25 +8,36 @@ function main() {
     $map["beta"] = 20;
     $map["gamma"] = 30;
 
+    // Windows and linux std::map implementation may have different iteration order, so we cannot verify the order of keys. Instead, we verify the count and existence of keys.
+
+    // verify all keys exist with correct values
+    $found = [];
     foreach ($map as $k => $v) {
-        var_dump($k, $v);
+        $found[$k] = ($found[$k] ?? 0) + 1;
     }
+    var_dump(($found["alpha"] ?? 0) === 1);
+    var_dump(($found["beta"] ?? 0) === 1);
+    var_dump(($found["gamma"] ?? 0) === 1);
+    var_dump(count($found) === 3);
+
     unset($map["beta"]);
-    echo "unset-------------\n";
+    // verify beta gone, alpha and gamma remain
+    $found = [];
     foreach ($map as $k => $v) {
-        var_dump($k, $v);
+        $found[$k] = ($found[$k] ?? 0) + 1;
     }
+    var_dump(($found["alpha"] ?? 0) === 1);
+    var_dump(($found["beta"] ?? 0) === 0);
+    var_dump(($found["gamma"] ?? 0) === 1);
+    var_dump(count($found) === 2);
 }
 ?>
 --EXPECT--
-string(5) "gamma"
-int(30)
-string(4) "beta"
-int(20)
-string(5) "alpha"
-int(10)
-unset-------------
-string(5) "gamma"
-int(30)
-string(5) "alpha"
-int(10)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)

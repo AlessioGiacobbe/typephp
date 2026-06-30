@@ -8,23 +8,25 @@ interface MyInterface {}
 trait MyTrait {}
 enum MyEnum { case A; }
 
-echo "class_exists:\n";
-echo class_exists("MyClass") ? "ok-true\n" : "fail\n";
-echo class_exists("NonExistentClass") ? "fail\n" : "ok-false\n";
+function main() {
+    echo "class_exists:\n";
+    echo class_exists("MyClass") ? "ok-true\n" : "fail\n";
+    echo class_exists("NonExistentClass") ? "fail\n" : "ok-false\n";
 
-echo "interface_exists:\n";
-echo interface_exists("MyInterface") ? "ok-true\n" : "fail\n";
-echo interface_exists("NonExistentInterface") ? "fail\n" : "ok-false\n";
+    echo "interface_exists:\n";
+    echo interface_exists("MyInterface") ? "ok-true\n" : "fail\n";
+    echo interface_exists("NonExistentInterface") ? "fail\n" : "ok-false\n";
 
-echo "trait_exists:\n";
-echo trait_exists("MyTrait") ? "ok-true\n" : "fail\n";
-echo trait_exists("NonExistentTrait") ? "fail\n" : "ok-false\n";
+    echo "trait_exists:\n";
+    echo trait_exists("MyTrait") ? "ok-true\n" : "fail\n";
+    echo trait_exists("NonExistentTrait") ? "fail\n" : "ok-false\n";
 
-echo "enum_exists:\n";
-echo enum_exists("MyEnum") ? "ok-true\n" : "fail\n";
-echo enum_exists("NonExistentEnum") ? "fail\n" : "ok-false\n";
+    echo "enum_exists:\n";
+    echo enum_exists("MyEnum") ? "ok-true\n" : "fail\n";
+    echo enum_exists("NonExistentEnum") ? "fail\n" : "ok-false\n";
 
-echo "done\n";
+    echo "done\n";
+}
 ?>
 --EXPECT--
 class_exists:

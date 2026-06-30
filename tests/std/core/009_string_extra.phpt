@@ -20,17 +20,17 @@ echo strtr("hello world", "wo", "WO") . "\n";
 echo strtr("abcdef", "abc", "123") . "\n";
 
 ?>
---EXPECT--
-== dirname() ==
-/etc
-/
-/
-relative/path
-== basename() ==
+--EXPECTREGEX--
+== dirname\(\) ==
+\/etc
+[\\\/]
+[\\\/]
+relative\/path
+== basename\(\) ==
 passwd
 passwd
 file
-[]
-== strtr() ==
+\[\]
+== strtr\(\) ==
 hellO WOrld
 123def

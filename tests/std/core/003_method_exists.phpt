@@ -11,24 +11,26 @@ class TestClass {
     private function privMethod(): string { return "private"; }
 }
 
-$obj = new TestClass();
+function main() {
+    $obj = new TestClass();
 
-echo "method_exists:\n";
-echo method_exists($obj, "pubMethod") ? "ok-obj-pub\n" : "fail\n";
-echo method_exists($obj, "privMethod") ? "ok-obj-priv\n" : "fail\n";
-echo method_exists($obj, "noSuchMethod") ? "fail\n" : "ok-obj-none\n";
-echo method_exists(TestClass::class, "pubMethod") ? "ok-cls-pub\n" : "fail\n";
-echo method_exists(TestClass::class, "noSuchMethod") ? "fail\n" : "ok-cls-none\n";
+    echo "method_exists:\n";
+    echo method_exists($obj, "pubMethod") ? "ok-obj-pub\n" : "fail\n";
+    echo method_exists($obj, "privMethod") ? "ok-obj-priv\n" : "fail\n";
+    echo method_exists($obj, "noSuchMethod") ? "fail\n" : "ok-obj-none\n";
+    echo method_exists(TestClass::class, "pubMethod") ? "ok-cls-pub\n" : "fail\n";
+    echo method_exists(TestClass::class, "noSuchMethod") ? "fail\n" : "ok-cls-none\n";
 
-echo "property_exists:\n";
-echo property_exists($obj, "pubProp") ? "ok-obj-pub\n" : "fail\n";
-echo property_exists($obj, "privProp") ? "ok-obj-priv\n" : "fail\n";
-echo property_exists($obj, "noSuchProp") ? "fail\n" : "ok-obj-none\n";
-echo property_exists(TestClass::class, "pubProp") ? "ok-cls-pub\n" : "fail\n";
-echo property_exists(TestClass::class, "privProp") ? "ok-cls-priv\n" : "fail\n";
-echo property_exists(TestClass::class, "noSuchProp") ? "fail\n" : "ok-cls-none\n";
+    echo "property_exists:\n";
+    echo property_exists($obj, "pubProp") ? "ok-obj-pub\n" : "fail\n";
+    echo property_exists($obj, "privProp") ? "ok-obj-priv\n" : "fail\n";
+    echo property_exists($obj, "noSuchProp") ? "fail\n" : "ok-obj-none\n";
+    echo property_exists(TestClass::class, "pubProp") ? "ok-cls-pub\n" : "fail\n";
+    echo property_exists(TestClass::class, "privProp") ? "ok-cls-priv\n" : "fail\n";
+    echo property_exists(TestClass::class, "noSuchProp") ? "fail\n" : "ok-cls-none\n";
 
-echo "done\n";
+    echo "done\n";
+}
 ?>
 --EXPECT--
 method_exists:

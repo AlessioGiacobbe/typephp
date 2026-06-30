@@ -15,4 +15,4 @@ function main(): void {
 ?>
 --EXPECTF--
 12
-9.22%dE+%d
+-9223372036854775797

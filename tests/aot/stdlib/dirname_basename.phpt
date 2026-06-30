@@ -20,16 +20,16 @@ function main() {
     var_dump(basename(""));
 }
 ?>
---EXPECT--
-string(10) "/usr/local"
-string(10) "/usr/local"
-string(4) "/usr"
-string(1) "/"
-string(1) "/"
-string(1) "."
-string(0) ""
-string(3) "bin"
-string(3) "bin"
-string(0) ""
-string(3) "usr"
-string(0) ""
+--EXPECTREGEX--
+string\(10\) "\/usr\/local"
+string\(10\) "\/usr\/local"
+string\(4\) "\/usr"
+string\(1\) "[\\\/]"
+string\(1\) "[\\\/]"
+string\(1\) "\."
+string\(0\) ""
+string\(3\) "bin"
+string\(3\) "bin"
+string\(0\) ""
+string\(3\) "usr"
+string\(0\) ""
