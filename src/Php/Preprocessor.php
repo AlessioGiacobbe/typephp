@@ -829,7 +829,7 @@ class Preprocessor extends CompilerBase
                      * use TraitA { TraitA::method as newMethod}
                      * 这表示 TraitA::method() 会被重命名为 TraitA::newMethod()
                      */
-                    $aliases[$this->getFullMethodName($traitName, $methodName)] = [
+                    $aliases[$this->getFullMethodName($traitName, $methodName)][] = [
                         'newName' => $adaptation->newName ? $adaptation->newName->toString() : $methodName,
                         'newModifier' => $adaptation->newModifier ?: 0,
                     ];
@@ -866,7 +866,11 @@ class Preprocessor extends CompilerBase
                 $this->symbolCallInFile[$this->file][] = strtolower($traitName);
             }
         }
-        $this->classDef->traitAliases = array_merge($this->classDef->traitAliases, $aliases);
+        foreach ($aliases as $fullMethodName => $aliasList) {
+            foreach ($aliasList as $alias) {
+                $this->classDef->traitAliases[$fullMethodName][] = $alias;
+            }
+        }
         $this->classDef->traitIgnored = array_merge($this->classDef->traitIgnored, $ignored);
     }
 }

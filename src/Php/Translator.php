@@ -2528,9 +2528,31 @@ CODE;
 
                 $traitAst = clone $traitDef->trait;
                 $traitStmts = $traitAst->stmts;
+                $aliasStmts = [];
                 foreach ($traitStmts as $k1 => $traitStmt) {
                     if ($traitStmt instanceof Node\Stmt\ClassMethod) {
                         $methodName = strtolower($traitStmt->name->toString());
+                        $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
+                        foreach ($classDef->traitAliases[$fullMethodName] ?? [] as $alias) {
+                            $aliasName = strtolower($alias['newName']);
+                            if ($aliasName === $methodName) {
+                                if ($alias['newModifier']) {
+                                    $traitStmt->flags = $alias['newModifier'];
+                                }
+                            } elseif (!isset($methods[$aliasName]) && !isset($traitMethods[$aliasName])) {
+                                $aliasStmt = clone $traitStmt;
+                                $aliasStmt->name = new Node\Identifier($alias['newName']);
+                                if ($alias['newModifier']) {
+                                    $aliasStmt->flags = $alias['newModifier'];
+                                }
+                                $aliasStmts[] = $aliasStmt;
+                                $traitMethods[$aliasName] = [$traitFullName, $aliasStmt];
+                            }
+                        }
+                        if (isset($classDef->traitIgnored[$fullMethodName])) {
+                            unset($traitStmts[$k1]);
+                            continue;
+                        }
                         if (isset($traitMethods[$methodName])) {
                             [$existingTraitName, $existingStmt] = $traitMethods[$methodName];
                             $newAbstract = $traitStmt->isAbstract();
@@ -2562,19 +2584,6 @@ CODE;
 
                             // Both concrete — error
                             $this->fatalError($classStmt, "Trait `{$traitFullName}` method `{$methodName}` already exists");
-                        }
-                        $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
-                        if (isset($classDef->traitAliases[$fullMethodName])) {
-                            $alias = $classDef->traitAliases[$fullMethodName];
-                            $methodName = $alias['newName'];
-                            $traitStmt->name = new Node\Identifier($methodName);
-                            if ($alias['newModifier']) {
-                                $traitStmt->flags = $alias['newModifier'];
-                            }
-                        }
-                        if (isset($classDef->traitIgnored[$fullMethodName])) {
-                            unset($traitStmts[$k1]);
-                            continue;
                         }
                         if (isset($methods[$methodName])) {
                             unset($traitStmts[$k1]);
@@ -2637,7 +2646,7 @@ CODE;
                     }
                 }
 
-                $stmt->stmts = array_merge($stmt->stmts, $traitStmts);
+                $stmt->stmts = array_merge($stmt->stmts, $traitStmts, $aliasStmts);
             }
         }
     }
@@ -3194,6 +3203,10 @@ CODE;
             $error('visibility mismatch');
         }
 
+        if (($childMethodDef->flags & Modifiers::STATIC) !== ($parentMethodDef->flags & Modifiers::STATIC)) {
+            $error('static mismatch');
+        }
+
         $childFuncDef = $childMethodDef->functionDef;
         $parentFuncDef = $parentMethodDef->functionDef;
         if (!$childFuncDef || !$parentFuncDef) {
@@ -3443,56 +3456,105 @@ CODE;
             foreach ($traitDef->methods as $methodDef) {
                 $classMethodName = $traitMethodName = $methodDef->name;
                 $fullMethodName = $this->getFullMethodName($traitFullName, $traitMethodName);
-                // Trait 设置了别名
-                if (isset($classDef->traitAliases[$fullMethodName])) {
-                    $alias = $classDef->traitAliases[$fullMethodName];
-                    $methodDef = clone $methodDef;
-                    $classMethodName = $methodDef->name = $alias['newName'];
-                    if ($alias['newModifier']) {
-                        $methodDef->flags = $this->parseModifiers($alias['newModifier']);
+                $originalMethodDef = $methodDef;
+                $aliasMethodDefs = [];
+                foreach ($classDef->traitAliases[$fullMethodName] ?? [] as $alias) {
+                    if (strtolower($alias['newName']) === strtolower($traitMethodName)) {
+                        if ($alias['newModifier']) {
+                            if ($originalMethodDef === $methodDef) {
+                                $originalMethodDef = clone $methodDef;
+                            }
+                            $originalMethodDef->flags = $this->parseModifiers($alias['newModifier']);
+                        }
+                        continue;
                     }
+                    $aliasMethodDef = clone $methodDef;
+                    $classMethodName = $aliasMethodDef->name = $alias['newName'];
+                    if ($alias['newModifier']) {
+                        $aliasMethodDef->flags = $this->parseModifiers($alias['newModifier']);
+                    }
+                    $aliasMethodDefs[strtolower($classMethodName)] = [$classMethodName, $aliasMethodDef];
                 }
                 // 设置了 insteadof 选项，此 Trait 的方法将不会被使用
                 if (isset($classDef->traitIgnored[$fullMethodName])) {
+                    foreach ($aliasMethodDefs as [$aliasMethodName, $aliasMethodDef]) {
+                        if ($classDef->hasMethod($aliasMethodName)) {
+                            continue;
+                        }
+                        $methodCodes[$aliasMethodName] = $this->addTraitMethodWrapper(
+                            $classDef,
+                            $traitDef,
+                            $aliasMethodDef,
+                            $traitMethodName,
+                            $aliasMethodName
+                        );
+                    }
                     continue;
                 }
                 // 类中已经有同名方法，则不使用 Trait 中的方法
-                if ($classDef->hasMethod($classMethodName)) {
-                    continue;
+                if (!$classDef->hasMethod($traitMethodName)) {
+                    $methodCodes[$traitMethodName] = $this->addTraitMethodWrapper(
+                        $classDef,
+                        $traitDef,
+                        $originalMethodDef,
+                        $traitMethodName,
+                        $traitMethodName
+                    );
                 }
 
-                $classDef->addMethod($methodDef);
-                $traitMethodNativeName = $this->getNativeName($traitMethodName, $traitDef->namespace, $traitDef->name);
-                $classMethodNativeName = $this->getNativeName($classMethodName, $classDef->namespace, $classDef->name);
-                $argList = ['this_'];
-                foreach ($methodDef->functionDef->argInfoList as $argInfo) {
-                    $argList[] = $argInfo->name;
-                }
-                $argv = implode(', ', $argList);
-
-                $code = $methodDef->getReturnType() . ' ' . self::PREFIX . $classMethodNativeName . '(';
-                if ($this->class) {
-                    $code .= self::TYPE_OBJECT . ' &this_';
-                    if ($methodDef->functionDef->params) {
-                        $code .= ', ';
+                foreach ($aliasMethodDefs as [$aliasMethodName, $aliasMethodDef]) {
+                    if ($classDef->hasMethod($aliasMethodName)) {
+                        continue;
                     }
+                    $methodCodes[$aliasMethodName] = $this->addTraitMethodWrapper(
+                        $classDef,
+                        $traitDef,
+                        $aliasMethodDef,
+                        $traitMethodName,
+                        $aliasMethodName
+                    );
                 }
-
-                $this->addFunction($classMethodNativeName, $methodDef->functionDef);
-
-                $code .= $methodDef->functionDef->params . ')';
-                $code .= '{' . PHP_EOL;
-                $this->indentLevel++;
-                $methodCall = self::PREFIX . $traitMethodNativeName . '(' . $argv . ')';
-                if ($methodDef->getReturnType() !== self::TYPE_VOID) {
-                    $methodCall = 'return ' . $methodCall;
-                }
-                $code .= $this->getIndent() . $methodCall . ';' . PHP_EOL;
-                $this->indentLevel--;
-                $code .= $this->getIndent() . '}' . PHP_EOL;
-                $methodCodes[$classMethodName] = $code;
             }
         }
+    }
+
+    private function addTraitMethodWrapper(
+        ClassDef $classDef,
+        ClassDef $traitDef,
+        MethodDef $methodDef,
+        string $traitMethodName,
+        string $classMethodName
+    ): string {
+        $classDef->addMethod($methodDef);
+        $traitMethodNativeName = $this->getNativeName($traitMethodName, $traitDef->namespace, $traitDef->name);
+        $classMethodNativeName = $this->getNativeName($classMethodName, $classDef->namespace, $classDef->name);
+        $argList = ['this_'];
+        foreach ($methodDef->functionDef->argInfoList as $argInfo) {
+            $argList[] = $argInfo->name;
+        }
+        $argv = implode(', ', $argList);
+
+        $code = $methodDef->getReturnType() . ' ' . self::PREFIX . $classMethodNativeName . '(';
+        if ($this->class) {
+            $code .= self::TYPE_OBJECT . ' &this_';
+            if ($methodDef->functionDef->params) {
+                $code .= ', ';
+            }
+        }
+
+        $this->addFunction($classMethodNativeName, $methodDef->functionDef);
+
+        $code .= $methodDef->functionDef->params . ')';
+        $code .= '{' . PHP_EOL;
+        $this->indentLevel++;
+        $methodCall = self::PREFIX . $traitMethodNativeName . '(' . $argv . ')';
+        if ($methodDef->getReturnType() !== self::TYPE_VOID) {
+            $methodCall = 'return ' . $methodCall;
+        }
+        $code .= $this->getIndent() . $methodCall . ';' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        return $code;
     }
 
     private function isCompatibleTraitConstant(ConstantDef $existing, ConstantDef $incoming): bool

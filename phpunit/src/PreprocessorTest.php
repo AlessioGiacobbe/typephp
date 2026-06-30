@@ -332,8 +332,8 @@ class PreprocessorTest extends TestCase
         $this->assertArrayHasKey('aliasmodifieruser', $classes);
         $aliases = $classes['aliasmodifieruser']->traitAliases;
         $this->assertArrayHasKey('aliasmodifiertrait::hello', $aliases);
-        $this->assertSame('hello', $aliases['aliasmodifiertrait::hello']['newName']);
-        $this->assertSame(Modifiers::PRIVATE, $aliases['aliasmodifiertrait::hello']['newModifier']);
+        $this->assertSame('hello', $aliases['aliasmodifiertrait::hello'][0]['newName']);
+        $this->assertSame(Modifiers::PRIVATE, $aliases['aliasmodifiertrait::hello'][0]['newModifier']);
     }
 
     public function testPrepareFileInfersEachClassConstantTypeIndependently(): void

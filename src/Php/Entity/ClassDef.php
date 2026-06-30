@@ -57,8 +57,8 @@ class ClassDef extends ClassLikeDef
     public ?Trait_ $trait = null;
 
     /**
-     * FullMethodName -> NewMethodName
-     * @var array<string, array>
+     * FullMethodName -> alias list
+     * @var array<string, array<int, array{newName: string, newModifier: int}>>
      */
     public array $traitAliases = [];
 

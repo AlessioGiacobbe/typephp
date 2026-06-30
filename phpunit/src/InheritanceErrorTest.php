@@ -68,6 +68,16 @@ class InheritanceErrorTest extends TestCase
         $this->assertCompiles('inheritance_error_visibility.php');
     }
 
+    public function testMethodStaticMismatch()
+    {
+        $this->exec('must be compatible', 'inheritance_error_static.php');
+    }
+
+    public function testInterfaceMethodStaticMismatch()
+    {
+        $this->exec('must be compatible', 'interface_method_static_mismatch.php');
+    }
+
     public function testChildMayAddOptionalTrailingParameter()
     {
         $this->assertCompiles('inheritance_optional_param_allowed.php');
