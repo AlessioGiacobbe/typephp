@@ -1,5 +1,5 @@
 --TEST--
-SSA object prop: typed object property allows null and unset
+SSA object prop: typed object property rejects null and supports unset
 --FILE--
 <?php
 use native_types;
@@ -28,9 +28,12 @@ class ObjPropHolder {
         var_dump(isset($this->prop));
         var_dump($this->prop->name());
 
-        $this->prop = null;
+        try {
+            $this->prop = null;
+        } catch (TypeError $e) {
+            var_dump($e->getMessage());
+        }
         var_dump(isset($this->prop));
-        var_dump($this->prop);
 
         $this->prop = new ObjPropValue();
         unset($this->prop);
@@ -51,8 +54,8 @@ function main(): void {
 --EXPECT--
 bool(true)
 string(5) "value"
-bool(false)
-NULL
+string(61) "ObjPropHolder::$prop must be of type ObjPropValue, null given"
+bool(true)
 bool(false)
 string(5) "value"
 string(5) "value"

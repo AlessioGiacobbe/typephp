@@ -50,6 +50,8 @@ class FunctionContext
     public array $arguments = [];
     public bool $inLoop = false;
     public bool $inClosure = false;
+    public ?array $closureReturnTypeCheck = null;
+    public string $closureReturnTypeStr = '';
 
     /** True if any break N (N > 1) appears in this function. */
     public bool $hasMultiLevelBreak = false;
@@ -92,6 +94,8 @@ class FunctionContext
         $this->scopeLevel = 0;
         $this->inLoop = false;
         $this->inClosure = false;
+        $this->closureReturnTypeCheck = null;
+        $this->closureReturnTypeStr = '';
         $this->inAssignExpr = false;
     }
 

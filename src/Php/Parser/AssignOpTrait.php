@@ -49,6 +49,7 @@ trait AssignOpTrait
         $array = $this->parseIdentifier($left->var);
         $propName = $this->identifierToStr($left->name, literal: true);
         $rightExpr = $this->trimBrackets($this->parseExpr($right));
+        $rightExpr = $this->wrapObjectPropertyAssignTypeCheck($left, $right, $rightExpr);
 
         $tmp = $this->genTmpVarName();
         $this->addLocalVar($tmp, self::TYPE_VAR);
@@ -142,6 +143,7 @@ trait AssignOpTrait
 
     protected function parseAssignFinally(Expr $left, Expr $right): string
     {
+        $this->assertNotNullsafeWriteContext($left);
         if ($left instanceof Expr\List_) {
             return $this->parseAssignToList($left, $right);
         }
@@ -154,6 +156,9 @@ trait AssignOpTrait
             $this->fatalError($left, 'Cannot re-assign $this');
         }
         $finalVarType = $type = $this->detectTypeOfExpr($right);
+        if ($type === self::TYPE_VOID) {
+            $this->fatalError($right, 'Cannot use void expression as assignment value');
+        }
 
         if ($this->isVarExpr($left)) {
             if ($this->isStdContainer($var)) {
@@ -255,7 +260,7 @@ trait AssignOpTrait
                     $this->checkVarAssignExpr($left, $finalVarType, $type);
                 }
             }
-        } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
+        } elseif ($this->isPropertyFetch($left) and !$this->isNativePropertyAccess($left)) {
             return $this->parseAssignPropertyFetch($left, $right);
         } elseif ($this->isArrayDimFetch($left) and $this->isVarExpr($left->var)) {
             $tmp = $this->parseIdentifier($left->var);
@@ -275,6 +280,9 @@ trait AssignOpTrait
         }
 
         $rightExpr = $this->parseAssignRightExpr($right);
+        if ($this->isPropertyFetch($left) || $this->isStaticPropertyFetch($left)) {
+            $rightExpr = $this->wrapObjectPropertyAssignTypeCheck($left, $right, $rightExpr);
+        }
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
         if ($finalVarType === self::TYPE_VAR) {
@@ -318,6 +326,7 @@ trait AssignOpTrait
 
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
+        $this->assertNotNullsafeWriteContext($node->var);
         $oriInAssignExpr = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
         $var          = $this->parseIdentifier($node->var);
@@ -388,7 +397,7 @@ trait AssignOpTrait
             return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
         }
 
-        if ($this->isPropertyFetch($node->var) and !$node->var->getAttribute('nativeProperty')) {
+        if ($this->isPropertyFetch($node->var) and !$this->isNativePropertyAccess($node->var)) {
             $obj = $this->parseIdentifier($node->var->var);
             $propName = $this->identifierToStr($node->var->name, literal: true);
             $binaryOp = $this->removeAssignOp($op);
@@ -514,6 +523,11 @@ trait AssignOpTrait
 
     protected function parseAssignRef(Expr\AssignRef $expr): string
     {
+        $this->assertNotNullsafeWriteContext($expr->var);
+        if ($expr->expr instanceof Expr\NullsafePropertyFetch) {
+            $this->fatalError($expr->expr, 'Cannot take reference of a nullsafe chain');
+        }
+
         $this->context->inAssignExpr = true;
         $left = $this->parseIdentifier($expr->var);
         $this->context->inAssignExpr = false;
@@ -582,7 +596,16 @@ trait AssignOpTrait
         $var = $this->parseIdentifier($expr->var);
         $this->context->inAssignExpr = $inAssignExpr;
 
+        if ($this->isPropertyFetch($expr->var)) {
+            $this->assertCanAssignObjectProp($expr->var, $expr->expr);
+        } elseif ($this->isStaticPropertyFetch($expr->var)) {
+            $this->assertCanAssignStaticProp($expr->var, $expr->expr);
+        }
+
         $right = $this->parseExpr($expr->expr);
+        if ($this->isPropertyFetch($expr->var) || $this->isStaticPropertyFetch($expr->var)) {
+            $right = $this->wrapObjectPropertyAssignTypeCheck($expr->var, $expr->expr, $right);
+        }
         if ($this->isVarExpr($expr->expr) and !$this->hasVar($right)) {
             $this->errorUndefinedVariable($expr->expr);
         }

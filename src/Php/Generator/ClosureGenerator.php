@@ -8,7 +8,12 @@
 
 namespace PhpAot\Php\Generator;
 
+use PhpAot\Php\ArgInfo;
 use PhpAot\Php\Context\FunctionContext;
+use PhpParser\Node;
+use PhpParser\Node\IntersectionType;
+use PhpParser\Node\NullableType;
+use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
 
 trait ClosureGenerator
@@ -36,15 +41,59 @@ trait ClosureGenerator
         $this->context = new FunctionContext();
 
         $this->context->inClosure = true;
+        if ($expr->returnType instanceof NullableType || $expr->returnType instanceof UnionType || $expr->returnType instanceof IntersectionType) {
+            $returnTypeInfo = $this->buildTypeCheckFromNode($expr->returnType);
+            if (!empty($returnTypeInfo['check'])) {
+                $this->context->closureReturnTypeCheck = $returnTypeInfo['check'];
+                $this->context->closureReturnTypeStr = $returnTypeInfo['typeStr'];
+            }
+        }
         $this->indentLevel++;
+
+        $requiredArgCount = 0;
+        foreach ($params as $param) {
+            if ($param->variadic || $param->default !== null) {
+                break;
+            }
+            $requiredArgCount++;
+        }
+        if ($requiredArgCount > 0) {
+            $expected = $requiredArgCount === count($params) ? 'exactly' : 'at least';
+            $message = 'php::concat({'
+                . 'php::Str(' . $this->genCharPtr('Too few arguments to function {closure}(), ', true) . '), '
+                . 'php::toString(php::getCallArgNum()), '
+                . 'php::Str(' . $this->genCharPtr(' passed and ' . $expected . ' ' . $requiredArgCount . ' expected', true) . ')'
+                . '})';
+            $code .= $this->getIndent() . 'if (UNEXPECTED(php::getCallArgNum() < ' . $requiredArgCount . ')) {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . 'return php::throwException(zend_ce_argument_count_error, (' . $message . ').toCString());' . PHP_EOL;
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        }
 
         foreach ($params as $i => $param) {
             if ($param->byRef) {
                 $this->fatalError($expr, 'Closure cannot use reference parameter');
             }
             $var = $this->parseIdentifier($param->var);
-            $code .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
+            $phpName = is_string($param->var->name) ? $param->var->name : $this->unescapeVarName($var);
+            if ($param->variadic) {
+                $code .= $this->getIndent() . self::TYPE_ARRAY . ' ' . $var . ';' . PHP_EOL;
+                $code .= $this->getIndent() . 'for (uint32_t i = ' . $i . '; i < php::getCallArgNum(); i++) {' . PHP_EOL;
+                $this->indentLevel++;
+                $code .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
+                $this->indentLevel--;
+                $code .= $this->getIndent() . '}' . PHP_EOL;
+                $this->addArgument($var, self::TYPE_ARRAY);
+                $code .= $this->genClosureParamTypeCheck($param, $var, $phpName, $i, true);
+                continue;
+            }
+            $argExpr = $param->default === null
+                ? 'php::getCallArg(' . $i . ')'
+                : 'php::getCallArg(' . $i . ', ' . $this->parseParamDefaultValue($param->default) . ')';
+            $code .= $this->getIndent() . 'auto ' . $var . ' = ' . $argExpr . ';' . PHP_EOL;
             $this->addArgument($var, self::TYPE_VAR);
+            $code .= $this->genClosureParamTypeCheck($param, $var, $phpName, $i, false);
         }
 
         foreach ($uses as $i => $useItem) {
@@ -115,5 +164,28 @@ trait ClosureGenerator
         $this->context = $oriCtx;
 
         return $code;
+    }
+
+    private function genClosureParamTypeCheck(Node\Param $param, string $var, string $phpName, int $index, bool $variadic): string
+    {
+        if (!$param->type instanceof NullableType && !$param->type instanceof UnionType && !$param->type instanceof IntersectionType) {
+            return '';
+        }
+
+        $typeInfo = $this->buildTypeCheckFromNode($param->type);
+        if (empty($typeInfo['check'])) {
+            return '';
+        }
+
+        $argInfo = new ArgInfo();
+        $argInfo->name = $var;
+        $argInfo->phpName = $phpName;
+        $argInfo->type = self::TYPE_VAR;
+        $argInfo->variadic = $variadic;
+        $argInfo->typeCheck = $typeInfo['check'];
+        $argInfo->typeStr = $typeInfo['typeStr'];
+        $argInfo->typeNode = $param->type;
+
+        return $this->genClosureParamCheck($argInfo, $index);
     }
 }

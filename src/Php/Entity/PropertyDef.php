@@ -19,6 +19,8 @@ class PropertyDef
     public ?ArrayInitPlan $arrayInitPlan = null;
     public bool $nullable = false;
     public string $class = '';
+    public array $typeCheck = [];
+    public string $typeStr = '';
 
     public function __construct(string $name, int $flags, string $type, ?string $default = null, bool $nullable = false)
     {

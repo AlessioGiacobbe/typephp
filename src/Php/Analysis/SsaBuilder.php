@@ -206,8 +206,9 @@ class SsaBuilder
         private array $argInfoList = []
     ) {
         foreach ($this->argInfoList as $argInfo) {
-            $this->params[] = $argInfo->name;
-            $this->paramByRef[$argInfo->name] = $argInfo->byRef ?? false;
+            $paramName = $argInfo->phpName ?: $argInfo->name;
+            $this->params[] = $paramName;
+            $this->paramByRef[$paramName] = $argInfo->byRef ?? false;
         }
     }
 

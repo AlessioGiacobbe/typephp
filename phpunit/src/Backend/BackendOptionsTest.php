@@ -121,6 +121,21 @@ class BackendOptionsTest extends TestCase
         $this->assertStringContainsString('/DPPROF_ON=1', $options);
     }
 
+    public function testMsvcCompileOptionsEscapesUnsafeDefines(): void
+    {
+        $platform = new Windows();
+        $compiler = new Msvc($platform);
+
+        $options = $compiler->buildCompileOptions([
+            'enable_profiler' => true,
+            'prof_output' => 'profile output.log',
+            'user_defines' => ['APP_NAME="hello world"'],
+        ]);
+
+        $this->assertStringContainsString('/D' . escapeshellarg('APP_NAME="hello world"'), $options);
+        $this->assertStringContainsString('/D' . escapeshellarg('PROF_OUTPUT_FILE="profile output.log"'), $options);
+    }
+
     /**
      * 测试 MSVC 编译选项 - 自定义标志
      */
@@ -274,6 +289,21 @@ class BackendOptionsTest extends TestCase
         ]);
         
         $this->assertStringContainsString('-fPIC', $options);
+    }
+
+    public function testGccCompileOptionsEscapesUnsafeDefines(): void
+    {
+        $platform = new Linux();
+        $compiler = new Gcc($platform);
+
+        $options = $compiler->buildCompileOptions([
+            'enable_profiler' => true,
+            'prof_output' => 'profile output.log',
+            'user_defines' => ['APP_NAME="hello world"'],
+        ]);
+
+        $this->assertStringContainsString('-D' . escapeshellarg('APP_NAME="hello world"'), $options);
+        $this->assertStringContainsString('-D' . escapeshellarg('PROF_OUTPUT_FILE="profile output.log"'), $options);
     }
 
     /**

@@ -5,7 +5,7 @@ arrow function 2
 function main()
 {
     $array = [1, 5, 9];
-    $fn1 = fn($x) => var_dump(0, ...$array);
+    $fn1 = fn() => var_dump(0, ...$array);
     $fn1();
 }
 ?>

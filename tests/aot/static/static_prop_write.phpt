@@ -13,12 +13,12 @@ class Select {
 
 class Worker
 {
-    public static ?stdClass $globalEvent = null;
+    public static ?Select $globalEvent = null;
     public static string $eventLoopClass = 'Select';
 
     public static function init() {
         self::$globalEvent = new static::$eventLoopClass();
-        self::$globalEvent->setErrorHandler(function ($exception) {
+        self::$globalEvent->setErrorHandler(function () {
             var_dump(__FUNCTION__);
         });
     }

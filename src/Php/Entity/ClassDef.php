@@ -48,11 +48,17 @@ class ClassDef extends ClassLikeDef
      * @var array<string, int>
      */
     public array $abstractMethods = [];
+
+    /**
+     * Abstract method name (lowercase) => method definition
+     * @var array<string, MethodDef>
+     */
+    public array $abstractMethodDefs = [];
     public ?Trait_ $trait = null;
 
     /**
-     * FullMethodName -> NewMethodName
-     * @var array<string, array>
+     * FullMethodName -> alias list
+     * @var array<string, array<int, array{newName: string, newModifier: int}>>
      */
     public array $traitAliases = [];
 
@@ -79,9 +85,13 @@ class ClassDef extends ClassLikeDef
         $this->methods[strtolower($method->name)] = $method;
     }
 
-    public function addAbstractMethod(string $name, int $flags): void
+    public function addAbstractMethod(string $name, int $flags, ?MethodDef $methodDef = null): void
     {
-        $this->abstractMethods[strtolower($name)] = $flags;
+        $lower = strtolower($name);
+        $this->abstractMethods[$lower] = $flags;
+        if ($methodDef !== null) {
+            $this->abstractMethodDefs[$lower] = $methodDef;
+        }
     }
 
     public function hasMethod(string $method): bool
@@ -124,6 +134,11 @@ class ClassDef extends ClassLikeDef
     public function getMethod($method): MethodDef
     {
         return $this->methods[strtolower($method)];
+    }
+
+    public function getAbstractMethod($method): MethodDef
+    {
+        return $this->abstractMethodDefs[strtolower($method)];
     }
 
     public function getConstant($name): ConstantDef

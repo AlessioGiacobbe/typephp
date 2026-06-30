@@ -15,7 +15,8 @@ trait PropertyPromotion
     protected function genPropertyPromotion(ArgInfo $argInfo): string
     {
         $code = '';
-        $code .= 'this_.setProperty(' . $this->genCharPtr($argInfo->name) . ', ' . $argInfo->name . ')';
+        $propertyName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
+        $code .= 'this_.setProperty(' . $this->genCharPtr($propertyName) . ', ' . $argInfo->name . ')';
         $code .= ";\n";
         return $code;
     }

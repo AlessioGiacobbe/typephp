@@ -23,7 +23,7 @@ class FlexibleDefaults {
 
         $this->nullable = null;
         $this->nullableObject = null;
-        $this->union = null;
+        $this->union = '';
         var_dump($this->nullable);
         var_dump($this->nullableObject);
         var_dump($this->union);
@@ -43,4 +43,4 @@ NULL
 string(2) "ok"
 NULL
 NULL
-NULL
+string(0) ""

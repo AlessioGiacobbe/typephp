@@ -43,6 +43,8 @@ use PhpAot\Php\Platform\Macos;
 use PhpAot\Php\Platform\PlatformBase;
 use PhpAot\Php\Platform\PlatformFactory;
 use PhpAot\Php\Platform\Windows;
+use PhpAot\Php\Resolver\PropertyAccessResult;
+use PhpAot\Php\Resolver\PropertyAccessResolver;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -50,6 +52,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\CallLike;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\FunctionLike;
+use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\Scalar\MagicConst;
 use PhpParser\Node\Stmt\Foreach_;
@@ -162,8 +165,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string BUILD_MODE_EXT = 'ext';
     public const string ENTRY_FUNCTION = 'main';
     public const string PHPX_VENDOR_DIR = '/vendor/swoole/phpx';
+    protected const string PHASE_IDLE = 'idle';
+    protected const string PHASE_PREPARE = 'prepare';
+    protected const string PHASE_CONVERT = 'convert';
 
     protected string $lang = 'PHP';
+    protected string $compilerPhase = self::PHASE_IDLE;
     protected string $cppCompiler = '';
     protected array $literalStrings = [];
     protected int $literalStringIndex = 0;
@@ -250,7 +257,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected array $linkPaths = [];   // --link-path / -L: user-specified library search paths
     protected int $floatPrecision = 17;
     protected bool $debug = false;
-    protected bool $formatCode = true;   // --format: enable clang-format (disabled by default)
+    protected bool $formatCode = false;   // --format: enable clang-format (disabled by default)
     protected bool $printBacktraceOnError = true;
     protected bool $noLiteralStrings = false;
     protected bool $noConsole = false;  // Windows: hide console window
@@ -844,6 +851,25 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->methodDef = null;
     }
 
+    protected function enterCompilerPhase(string $phase): string
+    {
+        $previous = $this->compilerPhase;
+        $this->compilerPhase = $phase;
+        return $previous;
+    }
+
+    protected function restoreCompilerPhase(string $phase): void
+    {
+        $this->compilerPhase = $phase;
+    }
+
+    protected function assertCompilerPhase(string $expected, string $feature): void
+    {
+        if ($this->compilerPhase !== $expected) {
+            $this->error("Internal compiler error: {$feature} can only be used during {$expected} phase, current phase is {$this->compilerPhase}");
+        }
+    }
+
     protected function resetClass(): void
     {
         $this->class     = '';
@@ -884,6 +910,30 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function getFullMethodName(string $fullClassName, string $method): string
     {
         return strtolower($fullClassName . '::' . $method);
+    }
+
+    protected function isCurrentConstructor(): bool
+    {
+        return $this->method === '__construct';
+    }
+
+    protected function getCurrentMethodDisplayName(): string
+    {
+        return $this->getFullClassName() . '::' . $this->method;
+    }
+
+    protected function assertExprCanBeUsedAsValue(NodeAbstract $expr, string $context = 'value'): void
+    {
+        if ($this->detectTypeOfExpr($expr) === self::TYPE_VOID) {
+            $this->fatalError($expr, 'Cannot use void expression as ' . $context);
+        }
+    }
+
+    protected function assertExprCanBeUsedAsCondition(NodeAbstract $expr, string $context = 'condition'): void
+    {
+        if ($this->detectTypeOfExpr($expr) === self::TYPE_VOID) {
+            $this->fatalError($expr, 'Cannot use void expression as ' . $context);
+        }
     }
 
     public function getNamespacedClassName(string $class, string $currentNamespace = ''): string
@@ -952,6 +1002,12 @@ class CompilerBase extends \PhpAot\Core\Translator
             return new Node\NullableType($this->upgradeToFullyQualifiedName($type->type));
         }
         if ($type instanceof Node\UnionType) {
+            foreach ($type->types as $i => $subType) {
+                $type->types[$i] = $this->upgradeToFullyQualifiedName($subType);
+            }
+            return $type;
+        }
+        if ($type instanceof Node\IntersectionType) {
             foreach ($type->types as $i => $subType) {
                 $type->types[$i] = $this->upgradeToFullyQualifiedName($subType);
             }
@@ -1095,8 +1151,8 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($type === null) {
             return self::TYPE_VAR;
         }
-        if ($type instanceof UnionType or $type instanceof NullableType) {
-            // 联合类型暂时不支持，使用 var 类型代替
+        if ($type instanceof UnionType || $type instanceof NullableType || $type instanceof IntersectionType) {
+            // 复杂类型静态阶段统一按 mixed/var 处理，运行时再由 typeCheck 兜底。
             return self::TYPE_VAR;
         } else {
             $typeName = $this->parseIdentifier($type);
@@ -1217,7 +1273,11 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $list = [];
         foreach ($implements as $implement) {
-            $list[] = $this->getNamespacedClassName($implement);
+            $interfaceName = $this->getNamespacedClassName($this->parseIdentifier($implement));
+            $list[] = $interfaceName;
+            if (!$this->isInternalInterface($interfaceName)) {
+                $this->symbolCallInFile[$this->file][] = strtolower($interfaceName);
+            }
         }
         return $list;
     }
@@ -1337,6 +1397,45 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $code . PHP_EOL;
         }
         return '';
+    }
+
+    protected function parseExprWithCapturedStmts(NodeAbstract $expr): array
+    {
+        $beforeStmtCount = count($this->context->beforeStmtLines);
+        $afterStmtCount = count($this->context->afterStmtLines);
+        $value = $this->parseExpr($expr);
+        $beforeStmts = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
+        $afterStmts = array_slice($this->context->afterStmtLines, $afterStmtCount);
+        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
+        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
+        return [$value, $beforeStmts, $afterStmts];
+    }
+
+    protected function appendCapturedStmtLines(string &$code, array $stmts): void
+    {
+        if ($stmts) {
+            $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+        }
+    }
+
+    protected function genConditionWithCapturedStmts(NodeAbstract $cond, string $openPrefix): string
+    {
+        $this->assertExprCanBeUsedAsCondition($cond);
+        [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($cond);
+        $code = '';
+        $this->appendCapturedStmtLines($code, $beforeStmts);
+        if ($afterStmts) {
+            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $code .= $this->getIndent() . $tmpVar . ' = ' . $condExpr . ';' . PHP_EOL;
+            $this->appendCapturedStmtLines($code, $afterStmts);
+            $condExpr = $tmpVar;
+        }
+
+        if ($cond instanceof Expr\Assign) {
+            $condExpr = '(' . $condExpr . ')';
+        }
+        $code .= $openPrefix . '(' . $condExpr . ') {' . PHP_EOL;
+        return $code;
     }
 
     protected function parseBlockStmts(array $stmts): string
@@ -1621,6 +1720,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($v->expr === null) {
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {
                 return 'return;';
+            } elseif ($this->context->inClosure && $this->context->closureReturnTypeCheck) {
+                $tmpVar = $this->genTmpVarName();
+                $this->addLocalVar($tmpVar, self::TYPE_VAR);
+                $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
+                $code .= $this->genClosureReturnCheck($tmpVar);
+                $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+                return $code;
             } elseif ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
                 $tmpVar = $this->genTmpVarName();
                 $this->addLocalVar($tmpVar, self::TYPE_VAR);
@@ -1634,6 +1740,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         // 实际函数的返回值
         $type = $this->detectTypeOfExpr($v->expr);
+        if ($this->isCurrentConstructor() && !$this->context->inClosure) {
+            $this->fatalError($v, 'Method `' . $this->getCurrentMethodDisplayName() . '()` cannot return a value');
+        }
+        if ($type === self::TYPE_VOID) {
+            $this->fatalError($v, 'Cannot return void expression');
+        }
         $expr = $this->parseExpr($v->expr);
         $returnType = $this->getReturnType();
 
@@ -1668,7 +1780,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $exprCode = $this->convertExprType($expr, $returnType, $type);
         // Union/nullable return type: always use tmpVar for runtime check
-        if ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
+        if ($this->context->inClosure && $this->context->closureReturnTypeCheck) {
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
+            $code .= $this->genClosureReturnCheck($tmpVar);
+            $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
+        } elseif ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
             $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
@@ -1815,6 +1933,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         return array_key_exists($this->escapeClass($name), $this->interfaces);
     }
 
+    protected function getInterface(string $name): InterfaceDef
+    {
+        return $this->interfaces[$this->escapeClass($name)];
+    }
+
     protected function checkFunction(string $name): void
     {
         // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
@@ -1831,6 +1954,10 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->validateNativeNamedCallArgs($funcDef, $args);
 
+        if ($this->hasUnpackCallArg($args)) {
+            return;
+        }
+
         $argc = count($args);
         $type = str_contains($name, '::') ? 'Method' : 'Function';
         if ($argc < $funcDef->argCountRequired) {
@@ -1844,7 +1971,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $argNameIndex = [];
         foreach ($functionDef->argInfoList as $k => $argInfo) {
-            $argNameIndex[$argInfo->name] = $k;
+            $argNameIndex[$argInfo->phpName ?: $this->unescapeVarName($argInfo->name)] = $k;
         }
         return $argNameIndex;
     }
@@ -1861,6 +1988,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function validateNativeNamedCallArgs(FunctionDef $functionDef, array $callArgs): void
     {
         $hasNamedArg = false;
+        $hasUnpack = false;
         $seenNamedArgs = [];
         $providedArgIndexes = [];
         $argNameIndex = $this->getFunctionArgNameIndex($functionDef);
@@ -1870,7 +1998,18 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isPlaceholderExpr($arg)) {
                 continue;
             }
+            if ($arg instanceof Node\Arg && $arg->unpack) {
+                if ($hasNamedArg) {
+                    $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
+                }
+                $hasUnpack = true;
+                $providedArgIndexes[$i] = true;
+                continue;
+            }
             if ($arg->name === null) {
+                if ($hasUnpack) {
+                    $this->fatalError($arg, 'Cannot use positional argument after argument unpacking');
+                }
                 if ($hasNamedArg) {
                     $this->fatalError($arg, 'Cannot use positional argument after named argument');
                 }
@@ -1963,15 +2102,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $classDef = $this->getClass($class);
+        $originClassDef = $classDef;
         $constDef = null;
         // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
         while (true) {
             if (!$classDef->hasConstant($const)) {
                 if (!$classDef->extends) {
-                    return false;
+                    break;
                 }
                 if (!$this->hasClass($classDef->extends)) {
-                    return false;
+                    break;
                 }
                 $classDef = $this->getClass($classDef->extends);
             } else {
@@ -1979,7 +2119,24 @@ class CompilerBase extends \PhpAot\Core\Translator
                 break;
             }
         }
-        if (!$this->checkAccessible($classDef, $constDef->flags)) {
+        if ($constDef === null) {
+            foreach ($this->getClassImplementedInterfaces($originClassDef) as $interfaceName) {
+                if (!$this->hasInterface($interfaceName)) {
+                    continue;
+                }
+                $interfaceDef = $this->getInterface($interfaceName);
+                if (!$interfaceDef->hasConstant($const)) {
+                    continue;
+                }
+                $classDef = $interfaceDef;
+                $constDef = $interfaceDef->constants[$const];
+                break;
+            }
+        }
+        if ($constDef === null) {
+            return false;
+        }
+        if ($classDef instanceof ClassDef && !$this->checkAccessible($classDef, $constDef->flags)) {
             $this->fatalError($expr, 'Constant `' . $classDef->getNamespacedName() . '::' . $const . '` is not accessible');
         }
         if ($constDef->type === self::TYPE_ARRAY) {
@@ -1987,6 +2144,44 @@ class CompilerBase extends \PhpAot\Core\Translator
         } else {
             $expr->setAttribute('nativeConst', $constDef);
             return $constDef->value;
+        }
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function getClassImplementedInterfaces(ClassDef $classDef): array
+    {
+        $interfaces = [];
+        $current = $classDef;
+        while (true) {
+            foreach ($current->implements as $interfaceName) {
+                $this->collectInterfaceAndParents($interfaceName, $interfaces);
+            }
+            if (!$current->extends || !$this->hasClass($current->extends)) {
+                break;
+            }
+            $current = $this->getClass($current->extends);
+        }
+
+        return array_values($interfaces);
+    }
+
+    /**
+     * @param array<string, string> $interfaces
+     */
+    private function collectInterfaceAndParents(string $interfaceName, array &$interfaces): void
+    {
+        if (isset($interfaces[$interfaceName])) {
+            return;
+        }
+        $interfaces[$interfaceName] = $interfaceName;
+        if (!$this->hasInterface($interfaceName)) {
+            return;
+        }
+        $interfaceDef = $this->getInterface($interfaceName);
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentInterface) {
+            $this->collectInterfaceAndParents($parentInterface, $interfaces);
         }
     }
 
@@ -2305,8 +2500,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list = [];
         $this->indentLevel++;
         foreach ($items as $item) {
+            $this->assertExprCanBeUsedAsValue($item->value, 'array value');
             $value = $this->parseIdentifier($item->value);
             if ($item->key) {
+                $this->assertExprCanBeUsedAsValue($item->key, 'array key');
                 $key = $this->parseArrayKey($item->key);
                 $list[] = $this->getIndent() . '{ ' . $key . ', ' . self::TYPE_VAR . '(' . $value . ') }';
             } else {
@@ -2500,24 +2697,66 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $list_expr = [];
         foreach ($init as $expr) {
-            $list_expr[] = $this->parseExpr($expr);
+            [$initExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+            $this->appendCapturedStmtLines($code, $beforeStmts);
+            $list_expr[] = $initExpr;
+            if ($afterStmts) {
+                $list_expr[] = implode(";\n" . $this->getIndent(), $afterStmts);
+            }
         }
         $list_expr[] = '';
         $code .= implode(";\n" . $this->getIndent(), $list_expr);
 
         $list_cond = [];
+        $hasCondStmts = false;
         foreach ($cond as $expr) {
-            $list_cond[] = $this->parseExpr($expr);
+            $this->assertExprCanBeUsedAsCondition($expr, 'for condition');
+            [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+            $hasCondStmts = $hasCondStmts || $beforeStmts || $afterStmts;
+            $list_cond[] = [$condExpr, $beforeStmts, $afterStmts];
         }
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'for (;';
-        $code .= implode(', ', $list_cond);
+        if ($hasCondStmts) {
+            $condCode = '[&]() -> bool {';
+            if (empty($list_cond)) {
+                $condCode .= $this->getIndent() . 'return true;';
+            } else {
+                $condResult = $this->genTmpVarName();
+                $condCode .= $this->getIndent() . 'bool ' . $condResult . ' = true;' . PHP_EOL;
+                foreach ($list_cond as [$condExpr, $beforeStmts, $afterStmts]) {
+                    $this->appendCapturedStmtLines($condCode, $beforeStmts);
+                    if ($afterStmts) {
+                        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                        $condCode .= $this->getIndent() . $tmpVar . ' = ' . $condExpr . ';' . PHP_EOL;
+                        $this->appendCapturedStmtLines($condCode, $afterStmts);
+                        $condExpr = $tmpVar;
+                    }
+                    $condCode .= $this->getIndent() . $condResult . ' = ' . $this->convertBoolExpr($condExpr) . ';' . PHP_EOL;
+                }
+                $condCode .= $this->getIndent() . 'return ' . $condResult . ';';
+            }
+            $condCode .= $this->getIndent() . '}()';
+            $code .= $condCode;
+        } else {
+            $code .= implode(', ', array_map(static fn($item) => $item[0], $list_cond));
+        }
         $code .= '; ';
 
         $list_loop = [];
         foreach ($loop as $expr) {
-            $list_loop[] = $this->parseExpr($expr);
+            [$loopExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+            if ($beforeStmts || $afterStmts) {
+                $loopCode = '[&]() {';
+                $this->appendCapturedStmtLines($loopCode, $beforeStmts);
+                $loopCode .= $this->getIndent() . $loopExpr . ';' . PHP_EOL;
+                $this->appendCapturedStmtLines($loopCode, $afterStmts);
+                $loopCode .= $this->getIndent() . '}()';
+                $list_loop[] = $loopCode;
+            } else {
+                $list_loop[] = $loopExpr;
+            }
         }
         $code .= implode(', ', $list_loop);
         $code .= ') {' . PHP_EOL;
@@ -2537,7 +2776,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function genDynamicPropIncDec($var, string $op, bool $isPre): ?string
     {
-        if (!$this->isPropertyFetch($var) || $var->getAttribute('nativeProperty')) {
+        if (!$this->isPropertyFetch($var) || $this->isNativePropertyAccess($var)) {
             return null;
         }
 
@@ -2558,6 +2797,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePreInc(Expr\PreInc $expr): string
     {
+        $this->assertNotNullsafeWriteContext($expr->var);
         $oriInAssignExpr = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
 
@@ -2756,6 +2996,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (!$ref) {
             return;
         }
+        $this->validateInternalNamedCallArgs($ref, $expr->args);
+        if ($this->hasUnpackCallArg($expr->args)) {
+            return;
+        }
         $minArgs = $ref->getNumberOfRequiredParameters();
         $maxArgs = $ref->getNumberOfParameters();
         $actualArgCount = count($expr->args);
@@ -2764,6 +3008,158 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if (!$ref->isVariadic() && $maxArgs > 0 && $actualArgCount > $maxArgs) {
             $this->fatalError($expr, "{$funcName}() expects at most {$maxArgs} argument(s), {$actualArgCount} given");
+        }
+    }
+
+    protected function hasNamedCallArg(array $args): bool
+    {
+        foreach ($args as $arg) {
+            if ($arg instanceof Node\Arg && $arg->name !== null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function hasUnpackBeforeNamedArg(array $args): bool
+    {
+        $hasUnpack = false;
+        foreach ($args as $arg) {
+            if (!$arg instanceof Node\Arg) {
+                continue;
+            }
+            if ($arg->unpack) {
+                $hasUnpack = true;
+            } elseif ($hasUnpack && $arg->name !== null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function hasUnpackCallArg(array $args): bool
+    {
+        foreach ($args as $arg) {
+            if ($arg instanceof Node\Arg && $arg->unpack) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function shouldUseDynamicCallForNativeArgs(string $nativeFunc, array $args): bool
+    {
+        if (!$this->hasUnpackCallArg($args)) {
+            return false;
+        }
+        if ($this->hasUnpackBeforeNamedArg($args)) {
+            return true;
+        }
+
+        $variadicArgIndex = $this->getVariadicArgIndex($this->getFunction($nativeFunc));
+        foreach ($args as $i => $arg) {
+            if (!$arg instanceof Node\Arg || !$arg->unpack) {
+                continue;
+            }
+            if ($variadicArgIndex === null || $i < $variadicArgIndex) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function genCallUserFuncArray(string $callback, array $args, string $funcName = '', string $className = ''): string
+    {
+        return 'php::call(' . $this->getFuncPtr('call_user_func_array') . ', '
+            . Symbol::argList() . '{' . $callback . ', ' . $this->parseCallArgs($args, $funcName, $className, false, true) . '})';
+    }
+
+    protected function getFunctionCallbackExpr(string $nativeFn): string
+    {
+        $functionDef = $this->getFunction($nativeFn);
+        return $this->getLiteralString($functionDef->getNamespacedName());
+    }
+
+    protected function validateInternalNamedCallArgs(\ReflectionFunctionAbstract $ref, array $callArgs): void
+    {
+        $hasNamedArg = false;
+        $hasUnpack = false;
+        $seenNamedArgs = [];
+        $providedArgIndexes = [];
+        $argNameIndex = [];
+        $requiredArgIndexes = [];
+        $variadicArgIndex = null;
+
+        foreach ($ref->getParameters() as $i => $param) {
+            $argNameIndex[$param->getName()] = $i;
+            if (!$param->isOptional() && !$param->isVariadic()) {
+                $requiredArgIndexes[$i] = $param->getName();
+            }
+            if ($param->isVariadic()) {
+                $variadicArgIndex = $i;
+            }
+        }
+
+        foreach ($callArgs as $i => $arg) {
+            if ($this->isPlaceholderExpr($arg)) {
+                continue;
+            }
+            if ($arg instanceof Node\Arg && $arg->unpack) {
+                if ($hasNamedArg) {
+                    $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
+                }
+                $hasUnpack = true;
+                $providedArgIndexes[$i] = true;
+                continue;
+            }
+            if ($arg->name === null) {
+                if ($hasUnpack) {
+                    $this->fatalError($arg, 'Cannot use positional argument after argument unpacking');
+                }
+                if ($hasNamedArg) {
+                    $this->fatalError($arg, 'Cannot use positional argument after named argument');
+                }
+                $providedArgIndexes[$i] = true;
+                continue;
+            }
+            if (!$this->isIdExpr($arg->name)) {
+                $this->fatalError($arg, 'Named argument must be a string');
+            }
+
+            $argName = $arg->name->name;
+            if (isset($seenNamedArgs[$argName])) {
+                $this->fatalError($arg, "Duplicate named argument `{$argName}`");
+            }
+            if (!array_key_exists($argName, $argNameIndex)) {
+                if ($variadicArgIndex === null) {
+                    $this->fatalError($arg, "Unknown named argument `{$argName}`");
+                }
+                $seenNamedArgs[$argName] = true;
+                $hasNamedArg = true;
+                continue;
+            }
+
+            $argIndex = $argNameIndex[$argName];
+            if ($variadicArgIndex !== null && $argIndex === $variadicArgIndex) {
+                $seenNamedArgs[$argName] = true;
+                $hasNamedArg = true;
+                continue;
+            }
+            if (isset($providedArgIndexes[$argIndex])) {
+                $this->fatalError($arg, "Named argument `{$argName}` overwrites previous argument");
+            }
+
+            $seenNamedArgs[$argName] = true;
+            $providedArgIndexes[$argIndex] = true;
+            $hasNamedArg = true;
+        }
+
+        if ($hasNamedArg && !$hasUnpack) {
+            foreach ($requiredArgIndexes as $index => $name) {
+                if (!isset($providedArgIndexes[$index])) {
+                    $this->fatalError($callArgs[array_key_last($callArgs)] ?? null, "Named argument `{$name}` is missing default value");
+                }
+            }
         }
     }
 
@@ -2789,6 +3185,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return $this->genPlaceHolder($this->identifierToStr($expr->name));
                 }
                 $this->checkNativeCallArgs($expr, $this->getFunction($nativeFn), $expr->args, $name);
+                if ($this->shouldUseDynamicCallForNativeArgs($nativeFn, $expr->args)) {
+                    return $this->genCallUserFuncArray($this->getFunctionCallbackExpr($nativeFn), $expr->args, $name);
+                }
                 try {
                     return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
                 } catch (PlaceHolder) {
@@ -2814,8 +3213,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return 'php::call(' . $fn . ')';
         }
+        if ($this->hasNamedCallArg($expr->args)) {
+            $callback = $name !== '' ? $this->getLiteralString($name) : $fn;
+            return $this->genCallUserFuncArray($callback, $expr->args, $name);
+        }
         try {
-            return 'php::call(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name) . ')';
+            return 'php::call(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name, '', $name !== '') . ')';
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($placeHolder);
         }
@@ -2869,7 +3272,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                                 break;
                             }
                         }
-                        $this->fatalError($errorNode ?? reset($callArgs), 'Named argument `' . $argInfo->name . '` is missing default value');
+                        $argName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
+                        $this->fatalError($errorNode ?? reset($callArgs), 'Named argument `' . $argName . '` is missing default value');
                     }
                     $args[$k] = new Node\Arg($argInfo->defaultValue);
                 }
@@ -2958,6 +3362,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function isReferenceArgument($funcName, $className, $argIndex): bool
     {
+        $argInfo = $this->getAotCallArgInfo($funcName, $className, $argIndex);
+        if ($argInfo !== null) {
+            return $argInfo->byRef;
+        }
+
         if ($className) {
             // 动态调用类方法，无法判断参数是否为引用
             if ($className === self::DYNAMIC_CALLED_CLASS) {
@@ -2977,22 +3386,210 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $variadicParam !== null && $variadicParam->isPassedByReference();
     }
 
-    protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
+    protected function getAotCallArgInfo(string $funcName, string $className, int $argIndex): ?ArgInfo
+    {
+        if ($className !== '') {
+            if ($className === self::DYNAMIC_CALLED_CLASS || !$this->hasClass($className)) {
+                return null;
+            }
+            $classDef = $this->getClass($className);
+            while (true) {
+                if ($classDef->hasMethod($funcName)) {
+                    return $this->getArgInfoByIndex($classDef->getMethod($funcName)->functionDef, $argIndex);
+                }
+                if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
+                    return null;
+                }
+                $classDef = $this->getClass($classDef->extends);
+            }
+        }
+
+        if (!$this->hasFunction($funcName)) {
+            return null;
+        }
+        return $this->getArgInfoByIndex($this->getFunction($funcName), $argIndex);
+    }
+
+    protected function getAotCallArgInfoByName(string $funcName, string $className, string $argName): ?ArgInfo
+    {
+        $functionDef = null;
+        if ($className !== '') {
+            if ($className === self::DYNAMIC_CALLED_CLASS || !$this->hasClass($className)) {
+                return null;
+            }
+            $classDef = $this->getClass($className);
+            while (true) {
+                if ($classDef->hasMethod($funcName)) {
+                    $functionDef = $classDef->getMethod($funcName)->functionDef;
+                    break;
+                }
+                if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
+                    return null;
+                }
+                $classDef = $this->getClass($classDef->extends);
+            }
+        } elseif ($this->hasFunction($funcName)) {
+            $functionDef = $this->getFunction($funcName);
+        }
+
+        if ($functionDef === null) {
+            return null;
+        }
+
+        $variadicArgInfo = null;
+        foreach ($functionDef->argInfoList as $argInfo) {
+            if ($argInfo->variadic) {
+                $variadicArgInfo = $argInfo;
+            }
+            if (($argInfo->phpName ?: $this->unescapeVarName($argInfo->name)) === $argName) {
+                return $argInfo;
+            }
+        }
+        return $variadicArgInfo;
+    }
+
+    protected function getArgInfoByIndex(FunctionDef $functionDef, int $argIndex): ?ArgInfo
+    {
+        if (array_key_exists($argIndex, $functionDef->argInfoList)) {
+            return $functionDef->argInfoList[$argIndex];
+        }
+        if ($functionDef->hasVariadicArg()) {
+            return $functionDef->argInfoList[array_key_last($functionDef->argInfoList)];
+        }
+        return null;
+    }
+
+    protected function isReferenceNamedArgument(string $funcName, string $className, string $argName): bool
+    {
+        $argInfo = $this->getAotCallArgInfoByName($funcName, $className, $argName);
+        if ($argInfo !== null) {
+            return $argInfo->byRef;
+        }
+
+        if ($className) {
+            if ($className === self::DYNAMIC_CALLED_CLASS) {
+                return false;
+            }
+            $ref = Reflection::getClass($className);
+            if (!$ref) {
+                return false;
+            }
+            try {
+                $params = $ref->getMethod($funcName)->getParameters();
+            } catch (\ReflectionException) {
+                return false;
+            }
+        } else {
+            $ref = Reflection::getFunction($funcName);
+            if (!$ref) {
+                return false;
+            }
+            $params = $ref->getParameters();
+        }
+
+        $variadicParam = null;
+        foreach ($params as $param) {
+            if ($param->isVariadic()) {
+                $variadicParam = $param;
+            }
+            if ($param->getName() === $argName) {
+                return $param->isPassedByReference();
+            }
+        }
+        return $variadicParam !== null && $variadicParam->isPassedByReference();
+    }
+
+    protected function parseCallArgs(
+        array $args,
+        string $funcName = '',
+        string $className = '',
+        bool $separateNamedArgs = true,
+        bool $forceArrayArgs = false
+    ): string
     {
         $list_args = [];
-        $last = array_key_last($args);
+        $arrayArgsVar = null;
+        $namedArgsVar = null;
+        $namedArgs = [];
+        $hasNamedArg = false;
+        $hasUnpack = false;
+
+        $ensureArrayArgs = function () use (&$arrayArgsVar, &$list_args): string {
+            if ($arrayArgsVar === null) {
+                $arrayArgsVar = $this->genTmpVarName();
+                $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $arrayArgsVar . '{' . implode(', ', $list_args) . '};';
+                $list_args = [];
+            }
+            return $arrayArgsVar;
+        };
+
+        $ensureNamedArgs = function () use (&$namedArgsVar): string {
+            if ($namedArgsVar === null) {
+                $namedArgsVar = $this->genTmpVarName();
+                $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $namedArgsVar . ';';
+                $this->context->afterStmtLines[] = $namedArgsVar . '.unset();';
+            }
+            return $namedArgsVar;
+        };
+
+        $addPositionalArg = function (string $value) use (&$arrayArgsVar, &$list_args): void {
+            if ($arrayArgsVar !== null) {
+                $this->context->beforeStmtLines[] = $arrayArgsVar . '.append(' . $value . ');';
+            } else {
+                $list_args[] = $value;
+            }
+        };
+
+        if ($forceArrayArgs) {
+            $ensureArrayArgs();
+        }
+
         foreach ($args as $i => $arg) {
             if ($this->isPlaceholderExpr($arg)) {
                 throw new PlaceHolder();
             }
+            if ($arg->unpack) {
+                if ($hasNamedArg) {
+                    $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
+                }
+                $hasUnpack = true;
+                $arrayArgs = $ensureArrayArgs();
+                $this->context->beforeStmtLines[] = $arrayArgs . '.merge(' . $this->parseArrayArg($arg) . ');';
+                continue;
+            }
             if ($arg->name !== null) {
-                return $this->parseNamedCallArgs($args, $i, $list_args);
+                $hasNamedArg = true;
+                if (!$this->isIdExpr($arg->name)) {
+                    $this->fatalError($arg, 'Named argument must be a string');
+                }
+                if (array_key_exists($arg->name->name, $namedArgs)) {
+                    $this->fatalError($arg, "Duplicate named argument `{$arg->name->name}`");
+                }
+                $namedArgs[$arg->name->name] = true;
+                $byRef = $funcName && $this->isReferenceNamedArgument($funcName, $className, $arg->name->name);
+                $value = ($byRef || $this->isRefvalCall($arg->value))
+                    ? $this->parseReferenceCallArgValue($arg)
+                    : $this->parseCallArgValue($arg);
+                if ($separateNamedArgs) {
+                    $namedArgsArray = $ensureNamedArgs();
+                    $this->context->beforeStmtLines[] = $namedArgsArray . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $value . ');';
+                } else {
+                    $arrayArgs = $ensureArrayArgs();
+                    $this->context->beforeStmtLines[] = $arrayArgs . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $value . ');';
+                }
+                continue;
+            }
+            if ($hasNamedArg) {
+                $this->fatalError($arg, 'Cannot use positional argument after named argument');
+            }
+            if ($hasUnpack) {
+                $this->fatalError($arg, 'Cannot use positional argument after argument unpacking');
             }
             $byRef = $funcName && $this->isReferenceArgument($funcName, $className, $i);
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
                 if ($byRef) {
-                    $list_args[] = $this->parseArgRefVar($arg, $name);
+                    $addPositionalArg($this->parseArgRefVar($arg, $name));
                     continue;
                 }
                 if (!$this->hasVar($name)) {
@@ -3004,7 +3601,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
                 }
                 if ($byRef) {
-                    $list_args[] = $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
+                    $addPositionalArg($obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')');
                     continue;
                 }
             } elseif ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
@@ -3015,9 +3612,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($byRef) {
                         $ref = $this->addTmpVar(self::TYPE_REF);
                         $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
-                        $list_args[] = '&' . $ref;
+                        $addPositionalArg('&' . $ref);
                     } else {
-                        $list_args[] = $globalVar;
+                        $addPositionalArg($globalVar);
                     }
                     continue;
                 }
@@ -3028,7 +3625,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($arg->value->dim === null) {
                         $this->fatalError($arg, 'Array dimension must be a constant expression');
                     }
-                    $list_args[] = $array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')';
+                    $addPositionalArg($array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')');
                     continue;
                 }
             } elseif ($this->isFuncCallExpr($arg->value)) {
@@ -3041,12 +3638,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $name = $this->parseVariable($inner);
                         // 消除 refval() 函数调用，直接使用变量
                         $arg->value = $inner;
-                        $list_args[] = $this->parseArgRefVar($arg, $name);
+                        $addPositionalArg($this->parseArgRefVar($arg, $name));
                         continue;
                     }
                     $expr = $this->expandRefvalExpr($inner, $arg);
                     if ($expr !== null) {
-                        $list_args[] = $expr;
+                        $addPositionalArg($expr);
                         continue;
                     }
                     $this->fatalError($arg, 'The refval function only accepts a variable, array element, or object property');
@@ -3059,34 +3656,24 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $tmpRef = $this->genTmpVarName();
                     $this->addLocalVar($tmpRef, self::TYPE_REF);
                     $this->context->beforeStmtLines[] = $tmpRef . ' = ' . $this->parseChainedExpr($arg->value, self::OP_REFVAL) . ';';
-                    $list_args[] = '&' . $tmpRef;
+                    $addPositionalArg('&' . $tmpRef);
                     continue;
                 }
             }
-            // 变长参数展开的语法，例如：array_merge(...$arr)
-            if ($arg->unpack) {
-                if ($i !== $last) {
-                    $this->fatalError($arg, 'The unpack expression for variadic arguments must be the last');
-                }
-                // 如果第一个参数是数组变量，数组展开语法直接传递该变量，没必要创建临时变量
-                // 例如：function (array $args) { var_dump(...$args); }
-                if ($i === 0 and $this->isVarExpr($arg->value) and $this->getVarType($arg->value->name) === self::TYPE_ARRAY) {
-                    return $this->parseIdentifier($arg->value);
-                } else {
-                    $tmpVar = $this->genTmpVarName();
-                    $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $tmpVar . '{' . implode(', ', $list_args) . '};';
-                    $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
-                    return $tmpVar;
-                }
-            }
-            $list_args[] = $this->parseCallArgValue($arg);
+            $value = $this->parseCallArgValue($arg);
+            $addPositionalArg($value);
         }
 
-        return Symbol::argList() . '{' . implode(', ', $list_args) . '}';
+        if ($arrayArgsVar !== null) {
+            return $namedArgsVar !== null ? $arrayArgsVar . ', ' . $namedArgsVar . '.array()' : $arrayArgsVar;
+        }
+        $callArgs = Symbol::argList() . '{' . implode(', ', $list_args) . '}';
+        return $namedArgsVar !== null ? $callArgs . ', ' . $namedArgsVar . '.array()' : $callArgs;
     }
 
     protected function parseCallArgValue(Node\Arg $arg): string
     {
+        $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
         return $this->materializeCallArgValue($arg->value, $this->parseArg($arg));
     }
 
@@ -3105,6 +3692,54 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return $value instanceof Expr\PropertyFetch;
+    }
+
+    protected function parseReferenceCallArgValue(Node\Arg $arg): string
+    {
+        if ($this->isRefvalCall($arg->value)) {
+            if (count($arg->value->args) !== 1) {
+                $this->fatalError($arg, 'The refval function only accepts one parameter');
+            }
+            $arg->value = $arg->value->args[0]->value;
+        }
+
+        if ($this->isVarExpr($arg->value)) {
+            return $this->parseArgRefVar($arg, $this->parseIdentifier($arg->value));
+        }
+
+        if ($this->isPropertyFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
+            $obj = $this->parseIdentifier($arg->value->var);
+            if (!$this->hasVar($obj)) {
+                $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
+            }
+            return $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
+        }
+
+        if ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
+            $array = $this->parseIdentifier($arg->value->var);
+            if ($array === 'GLOBALS') {
+                $globalVar = $this->parseGlobalsArrayDimFetch($arg->value);
+                $ref = $this->addTmpVar(self::TYPE_REF);
+                $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
+                return '&' . $ref;
+            }
+            if (!$this->hasVar($array)) {
+                $this->fatalError($arg, 'Undefined variable `$' . $array . '`');
+            }
+            if ($arg->value->dim === null) {
+                $this->fatalError($arg, 'Array dimension must be a constant expression');
+            }
+            return $array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')';
+        }
+
+        if ($this->isScalar($arg->value)) {
+            $this->fatalError($arg, 'The constants cannot be used as an argument for a reference-type parameter');
+        }
+
+        $tmpRef = $this->genTmpVarName();
+        $this->addLocalVar($tmpRef, self::TYPE_REF);
+        $this->context->beforeStmtLines[] = $tmpRef . ' = ' . $this->parseChainedExpr($arg->value, self::OP_REFVAL) . ';';
+        return '&' . $tmpRef;
     }
 
     /**
@@ -3189,6 +3824,20 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $expr;
     }
 
+    protected function parseOrderedArg(Node\Arg $arg): string
+    {
+        if ($this->isArrayDimFetch($arg->value) and $this->isStdContainerExpr($arg->value)) {
+            return $this->parseArg($arg);
+        }
+        if ($this->isVarExpr($arg->value) and $arg->value->name === 'GLOBALS') {
+            return 'php_globals_array()';
+        }
+        if ($this->isVarExpr($arg->value) and $this->isStdContainer($arg->value->name)) {
+            return $this->convertArrayExpr($this->parseIdentifier($arg->value) . '_ref');
+        }
+        return $this->parseOrderedOperand($arg->value, false);
+    }
+
     protected function parseArrayArg(Node\Arg $expr): string
     {
         $value = $expr->value;
@@ -3206,6 +3855,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePostOp(Expr\PostDec|Expr\PostInc $expr, string $op): string
     {
+        $this->assertNotNullsafeWriteContext($expr->var);
         $result = $this->genDynamicPropIncDec($expr->var, $op, false);
         if ($result !== null) {
             return $result;
@@ -3259,18 +3909,71 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($expr->if === null) {
             return $this->parseValueSelection($expr, $expr->cond, $expr->else, self::OP_NOT_EMPTY);
         }
-        $cond = $this->parseExpr($expr->cond);
+        $this->assertExprCanBeUsedAsCondition($expr->cond, 'ternary condition');
+        $this->assertExprCanBeUsedAsValue($expr->if, 'ternary branch');
+        $this->assertExprCanBeUsedAsValue($expr->else, 'ternary branch');
+        [$cond, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($expr->cond);
+        $ifBeforeStmtCount = count($this->context->beforeStmtLines);
+        $ifAfterStmtCount = count($this->context->afterStmtLines);
         $if = $this->parseExpr($expr->if);
+        $ifBeforeStmts = array_slice($this->context->beforeStmtLines, $ifBeforeStmtCount);
+        $ifAfterStmts = array_slice($this->context->afterStmtLines, $ifAfterStmtCount);
+        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $ifBeforeStmtCount);
+        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $ifAfterStmtCount);
+
+        $elseBeforeStmtCount = count($this->context->beforeStmtLines);
+        $elseAfterStmtCount = count($this->context->afterStmtLines);
         $else = $this->parseExpr($expr->else);
-        if ($this->detectTypeOfExpr($expr->if) !== $this->detectTypeOfExpr($expr->else)) {
+        $elseBeforeStmts = array_slice($this->context->beforeStmtLines, $elseBeforeStmtCount);
+        $elseAfterStmts = array_slice($this->context->afterStmtLines, $elseAfterStmtCount);
+        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $elseBeforeStmtCount);
+        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $elseAfterStmtCount);
+
+        $hasBranchStmts = $condBeforeStmts || $condAfterStmts || $ifBeforeStmts || $ifAfterStmts || $elseBeforeStmts || $elseAfterStmts;
+        $typeChanged = $this->detectTypeOfExpr($expr->if) !== $this->detectTypeOfExpr($expr->else);
+        if (!$hasBranchStmts && $typeChanged) {
             $if = 'php::Var(' . $if . ')';
             $else = 'php::Var(' . $else . ')';
+        }
+        if ($hasBranchStmts) {
+            $appendStmtLines = function (string &$code, array $stmts): void {
+                if ($stmts) {
+                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+                }
+            };
+            $appendReturn = function (string &$code, string $value, array $beforeStmts, array $afterStmts) use ($appendStmtLines): void {
+                $appendStmtLines($code, $beforeStmts);
+                if ($afterStmts) {
+                    $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                    $code .= $this->getIndent() . "{$tmpVar} = {$value};";
+                    $appendStmtLines($code, $afterStmts);
+                    $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+                } else {
+                    $code .= $this->getIndent() . 'return php::Var(' . $value . ');';
+                }
+            };
+            $code = '[&]() -> ' . self::TYPE_VAR . '{';
+            $appendStmtLines($code, $condBeforeStmts);
+            if ($condAfterStmts) {
+                $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $code .= $this->getIndent() . "{$condTmpVar} = {$cond};";
+                $appendStmtLines($code, $condAfterStmts);
+                $cond = $condTmpVar;
+            }
+            $code .= $this->getIndent() . 'if (' . $cond . ') {';
+            $appendReturn($code, $if, $ifBeforeStmts, $ifAfterStmts);
+            $code .= $this->getIndent() . '} else {';
+            $appendReturn($code, $else, $elseBeforeStmts, $elseAfterStmts);
+            $code .= $this->getIndent() . '}';
+            $code .= $this->getIndent() . '}()';
+            return $code;
         }
         return '(' . $cond . ') ? (' . $if . ') : (' . $else . ')';
     }
 
     protected function parseMatch(Expr\Match_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->cond, 'match condition');
         $var = $this->parseIdentifier($expr->cond);
         if ($this->isVarExpr($expr->cond)) {
             if (!$this->hasVar($var)) {
@@ -3282,31 +3985,74 @@ class CompilerBase extends \PhpAot\Core\Translator
             $var = $tmpVar;
         }
 
+        $parseExprWithStmts = function (NodeAbstract $node): array {
+            $beforeStmtCount = count($this->context->beforeStmtLines);
+            $afterStmtCount = count($this->context->afterStmtLines);
+            $value = $this->parseExpr($node);
+            $beforeStmts = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
+            $afterStmts = array_slice($this->context->afterStmtLines, $afterStmtCount);
+            $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
+            $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
+            return [$value, $beforeStmts, $afterStmts];
+        };
+
+        $appendStmtLines = function (string &$code, array $stmts): void {
+            if ($stmts) {
+                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+            }
+        };
+
+        $appendMatchReturn = function (string &$code, NodeAbstract $body) use ($parseExprWithStmts, $appendStmtLines): void {
+            $this->assertExprCanBeUsedAsValue($body, 'match arm');
+            [$value, $beforeStmts, $afterStmts] = $parseExprWithStmts($body);
+            $appendStmtLines($code, $beforeStmts);
+            if ($afterStmts) {
+                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $code .= $this->getIndent() . "{$tmpVar} = {$value};";
+                $appendStmtLines($code, $afterStmts);
+                $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+            } else {
+                $code .= $this->getIndent() . 'return ' . $value . ';';
+            }
+        };
+
         $code = '[&]() -> ' . self::TYPE_VAR . '{';
         $default = null;
-        foreach ($expr->arms as $i => $arm) {
+        foreach ($expr->arms as $arm) {
             if ($arm->conds === null) {
                 $default = $arm->body;
                 continue;
             }
-            $prefix = $i === 0 ? 'if' : 'else if';
-            $condList = [];
+            $matched = $this->genTmpVarName();
+            $code .= $this->getIndent() . 'bool ' . $matched . ' = false;';
             foreach ($arm->conds as $cond) {
                 if ($this->isMatchExpr($cond)) {
                     $this->fatalError($arm, 'Match expression cannot be used as a condition');
                 }
-                $condList[] = 'php::same(' . $var . ', ' . $this->parseExpr($cond) . ')';
+                $this->assertExprCanBeUsedAsValue($cond, 'match arm condition');
+                [$condValue, $beforeStmts, $afterStmts] = $parseExprWithStmts($cond);
+                $code .= $this->getIndent() . 'if (!' . $matched . ') {';
+                $appendStmtLines($code, $beforeStmts);
+                if ($afterStmts) {
+                    $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                    $code .= $this->getIndent() . "{$condTmpVar} = {$condValue};";
+                    $appendStmtLines($code, $afterStmts);
+                    $condValue = $condTmpVar;
+                }
+                $code .= $this->getIndent() . $matched . ' = php::same(' . $var . ', ' . $condValue . ');';
+                $code .= $this->getIndent() . '}';
             }
-            $code .= $prefix . '(' . implode(' || ', $condList) . ') {';
-            $code .= 'return ' . $this->parseExpr($arm->body) . ';';
-            $code .= '}';
+            $code .= $this->getIndent() . 'if (' . $matched . ') {';
+            $appendMatchReturn($code, $arm->body);
+            $code .= $this->getIndent() . '}';
         }
 
-        $else = count($expr->arms) === 0 ? '' : 'else ';
         if ($default) {
-            $code .= $else . ' { return ' . $this->parseExpr($default) . '; }';
+            $code .= $this->getIndent() . '{';
+            $appendMatchReturn($code, $default);
+            $code .= $this->getIndent() . '}';
         } else {
-            $code .= $else . ' { return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
+            $code .= $this->getIndent() . '{ return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
         }
         $code .= '}()';
 
@@ -3315,6 +4061,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePreDec(Expr\PreDec $expr): string
     {
+        $this->assertNotNullsafeWriteContext($expr->var);
         $oriInAssignExpr = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
 
@@ -3336,6 +4083,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseBitwiseNot(Expr\BitwiseNot $expr): string
     {
         $type = $this->detectTypeOfExpr($expr->expr);
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'bitwise operand');
         if ($type === self::TYPE_BIGINT) {
             return 'php::BigInt::bitNot(' . $this->parseExpr($expr->expr) . ')';
         }
@@ -3345,30 +4093,32 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseIf(Node\Stmt\If_ $v): string
     {
-        $cond = $this->parseExpr($v->cond);
-        $cond = $this->parseConditionAssign($v->cond, $cond);
+        $arms = [[$v->cond, $v->stmts]];
+        foreach ($v->elseifs as $elseif) {
+            $arms[] = [$elseif->cond, $elseif->stmts];
+        }
 
-        $code = $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= 'if (' . $cond . ') {' . PHP_EOL;
-        $code .= $this->parseBlockStmts($v->stmts);
-        $code .= $this->getIndent() . '}';
-
-        if ($v->elseifs) {
-            foreach ($v->elseifs as $elseif) {
-                $elseifCond = $this->parseExpr($elseif->cond);
-                $code .= ' else if (' . $elseifCond . ') {' . PHP_EOL;
-                $code .= $this->parseBlockStmts($elseif->stmts);
-                $code .= $this->getIndent() . '}';
+        $emitIfChain = function (int $index) use (&$emitIfChain, $arms, $v): string {
+            if (!isset($arms[$index])) {
+                if (!$v->else) {
+                    return '';
+                }
+                return $this->parseBlockStmts($v->else->stmts);
             }
-        }
 
-        if ($v->else) {
-            $code .= ' else {' . PHP_EOL;
-            $code .= $this->parseBlockStmts($v->else->stmts);
+            [$cond, $stmts] = $arms[$index];
+            $code = $this->genConditionWithCapturedStmts($cond, 'if ');
+            $code .= $this->parseBlockStmts($stmts);
+            $tail = $emitIfChain($index + 1);
+            if ($tail !== '') {
+                $code .= $this->getIndent() . '} else {' . PHP_EOL;
+                $code .= $tail;
+            }
             $code .= $this->getIndent() . '}';
-        }
+            return $code;
+        };
 
-        return $code . PHP_EOL;
+        return $this->parseBeforeStmtLines() . PHP_EOL . $emitIfChain(0) . PHP_EOL;
     }
 
     /**
@@ -3376,17 +4126,30 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function parseBooleanNot(Expr\BooleanNot $expr): string
     {
+        $this->assertExprCanBeUsedAsCondition($expr->expr, 'boolean operand');
         return '!(' . $this->parseExpr($expr->expr) . ')';
     }
 
     protected function parseWhile(Node\Stmt\While_ $v): string
     {
-        $cond  = $this->parseExpr($v->cond);
-        $cond  = $this->parseConditionAssign($v->cond, $cond);
         $stmts = $v->stmts;
+        $this->assertExprCanBeUsedAsCondition($v->cond, 'while condition');
+        [$cond, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($v->cond);
 
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= 'while (' . $cond . ') {' . PHP_EOL;
+        if ($beforeStmts || $afterStmts) {
+            $code .= 'while (true) {' . PHP_EOL;
+            $this->appendCapturedStmtLines($code, $beforeStmts);
+            if ($afterStmts) {
+                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $code .= $this->getIndent() . $tmpVar . ' = ' . $cond . ';' . PHP_EOL;
+                $this->appendCapturedStmtLines($code, $afterStmts);
+                $cond = $tmpVar;
+            }
+            $code .= $this->getIndent() . 'if (!(' . $cond . ')) { break; }' . PHP_EOL;
+        } else {
+            $code .= 'while (' . $cond . ') {' . PHP_EOL;
+        }
         $code .= $this->parseBlockStmts($stmts);
         $code .= $this->genLoopEndFlagCheck();
         $code .= $this->getIndent() . '}' . PHP_EOL;
@@ -3396,14 +4159,28 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePrint(Expr\Print_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'print operand');
         return 'php::print(' . $this->parseExpr($expr->expr) . ')';
     }
 
     protected function parseDo(Node\Stmt\Do_ $v): string
     {
         $stmts = $v->stmts;
-        $cond  = $this->parseExpr($v->cond);
-        $cond  = $this->parseConditionAssign($v->cond, $cond);
+        $this->assertExprCanBeUsedAsCondition($v->cond, 'do-while condition');
+        [$cond, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($v->cond);
+        if ($beforeStmts || $afterStmts) {
+            $condCode = '[&]() -> bool {';
+            $this->appendCapturedStmtLines($condCode, $beforeStmts);
+            if ($afterStmts) {
+                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $condCode .= $this->getIndent() . $tmpVar . ' = ' . $cond . ';' . PHP_EOL;
+                $this->appendCapturedStmtLines($condCode, $afterStmts);
+                $cond = $tmpVar;
+            }
+            $condCode .= $this->getIndent() . 'return ' . $this->convertBoolExpr($cond) . ';';
+            $condCode .= $this->getIndent() . '}()';
+            $cond = $condCode;
+        }
         $code  = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'do {' . PHP_EOL;
         $code .= $this->parseBlockStmts($stmts);
@@ -3418,6 +4195,8 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function parseValueSelection(NodeAbstract $expr, Expr $left, Expr $right, string $op): string
     {
+        $this->assertExprCanBeUsedAsValue($left, 'selection value');
+        $this->assertExprCanBeUsedAsValue($right, 'selection value');
         $leftExpr = $this->parseIdentifier($left);
         if ($this->isVarExpr($left)) {
             $this->checkVarMustExist($left, $leftExpr);
@@ -3429,24 +4208,41 @@ class CompilerBase extends \PhpAot\Core\Translator
             $leftExpr = $chainOpResult;
         }
 
+        $rightBeforeStmtCount = count($this->context->beforeStmtLines);
+        $rightAfterStmtCount = count($this->context->afterStmtLines);
         $rightExpr = $this->parseIdentifier($right);
+        $rightBeforeStmts = array_slice($this->context->beforeStmtLines, $rightBeforeStmtCount);
+        $rightAfterStmts = array_slice($this->context->afterStmtLines, $rightAfterStmtCount);
+        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $rightBeforeStmtCount);
+        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $rightAfterStmtCount);
         $this->checkVarMustExist($right, $rightExpr);
 
         $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-        $this->context->beforeStmtLines[] = '// Expr: ' . $this->printer->prettyPrintExpr($expr) . PHP_EOL .
-            $tmpVar . ' = ' . $condExpr . ' ? ' . $leftExpr . ' : ' . $rightExpr . ';';
+        if ($rightBeforeStmts || $rightAfterStmts) {
+            $code = '// Expr: ' . $this->printer->prettyPrintExpr($expr) . PHP_EOL .
+                'if (' . $condExpr . ') {' . PHP_EOL .
+                $this->getIndent() . $tmpVar . ' = ' . $leftExpr . ';' . PHP_EOL .
+                '} else {' . PHP_EOL;
+            if ($rightBeforeStmts) {
+                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $rightBeforeStmts) . PHP_EOL;
+            }
+            if ($rightAfterStmts) {
+                $rightTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';' . PHP_EOL;
+                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $rightAfterStmts) . PHP_EOL;
+                $code .= $this->getIndent() . $tmpVar . ' = ' . $rightTmpVar . ';' . PHP_EOL;
+            } else {
+                $code .= $this->getIndent() . $tmpVar . ' = ' . $rightExpr . ';' . PHP_EOL;
+            }
+            $code .= '}';
+            $this->context->beforeStmtLines[] = $code;
+        } else {
+            $this->context->beforeStmtLines[] = '// Expr: ' . $this->printer->prettyPrintExpr($expr) . PHP_EOL .
+                $tmpVar . ' = ' . $condExpr . ' ? ' . $leftExpr . ' : ' . $rightExpr . ';';
+        }
         $expr->setAttribute('replace', $tmpVar);
 
         return $tmpVar;
-    }
-
-    /**
-     * while, do while 判断中赋值，在C++编译中会提示
-     * suggest parentheses around assignment used as truth value
-     */
-    protected function parseConditionAssign(NodeAbstract $cond, string $code): string
-    {
-        return $cond instanceof Expr\Assign ? '(' . $code . ')' : $code;
     }
 
     protected function packData(string $bytes): string
@@ -3469,6 +4265,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseNew(Expr\New_ $expr): string
     {
+        $ctorClassName = '';
         // 匿名类
         if ($expr->class instanceof Node\Stmt\Class_) {
             if ($expr->class->name === null) {
@@ -3495,6 +4292,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     . $className . '_defined = true; php::eval((const char *)' . $className . '_code);}';
                 $className = '\\' . $className;
                 $cePtr     = $this->getClassEntryPtr($className);
+                $ctorClassName = $className;
             } else {
                 $this->fatalError($expr, 'must be anonymous class');
             }
@@ -3514,6 +4312,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     } else {
                         $className = $this->getNamespacedClassName($className);
                     }
+                    $ctorClassName = $className;
                     if ($this->hasClass($className)) {
                         $classDef = $this->getClass($className);
                         if ($classDef->flags & Modifiers::ABSTRACT) {
@@ -3531,16 +4330,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($args)) {
             return 'php::newObject(' . $cePtr . ')';
         }
-        return 'php::newObject(' . $cePtr . ', ' . $this->parseCallArgs($args) . ')';
+        return 'php::newObject(' . $cePtr . ', ' . $this->parseCallArgs($args, '__construct', $ctorClassName) . ')';
     }
 
     protected function parseClone(Expr\Clone_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'clone operand');
         return 'php::clone(' . $this->parseExpr($expr->expr) . ')';
     }
 
     protected function parseInstanceof(Expr\Instanceof_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'instanceof operand');
         if ($this->isNameExpr($expr->class)) {
             $className = $this->getNamespacedClassName($this->parseIdentifier($expr->class));
             $className = $this->getClassEntryPtr($className);
@@ -3552,11 +4353,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastInt(Expr\Cast\Int_ $node): string
     {
+        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
         return $this->convertIntExpr($this->parseExpr($node->expr));
     }
 
     protected function parseCastString(Expr\Cast\String_ $node): string
     {
+        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
         return $this->convertExprToStringByType(
             $this->parseExpr($node->expr),
             $this->detectTypeOfExpr($node->expr)
@@ -3565,11 +4368,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastBool(Expr\Cast\Bool_ $node): string
     {
+        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
         return $this->convertBoolExpr($this->parseExpr($node->expr));
     }
 
     protected function parseCastObject(Expr\Cast\Object_ $node): string
     {
+        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
         return $this->convertObjectExpr($this->parseExpr($node->expr));
     }
 
@@ -3583,7 +4388,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isNameExpr($expr->name) and $this->hasConstant($name)) {
             return $this->getConstant($name);
         }
-        if ($this->namespace and $this->isNameExpr($expr->name) and !str_contains($name, '\\')) {
+        if ($this->namespace and $this->isNameExpr($expr->name) and !$expr->name instanceof Node\Name\FullyQualified) {
             $nsName = $this->namespace . '\\' . $name;
             if ($this->hasConstant($nsName)) {
                 return $this->getConstant($nsName);
@@ -3638,6 +4443,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseUnaryMinus(Expr\UnaryMinus $expr): string
     {
         $type = $this->detectTypeOfExpr($expr->expr);
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
         if ($type === self::TYPE_BIGFLOAT) {
                         return 'php::BigFloat::neg(' . $this->parseExpr($expr->expr) . ')';
         }
@@ -3652,8 +4458,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '-' . $code;
     }
 
-    protected function parseUnaryPlus(Expr\UnaryPlus $expr)
+    protected function parseUnaryPlus(Expr\UnaryPlus $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
         return $this->parseExpr($expr->expr);
     }
 
@@ -3662,6 +4469,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $parts = $expr->parts;
         $list  = [];
         foreach ($parts as $part) {
+            if (!$part instanceof Node\InterpolatedStringPart) {
+                $this->assertExprCanBeUsedAsValue($part, 'string interpolation value');
+            }
             $list[] = $this->parseExpr($part);
         }
 
@@ -3730,12 +4540,19 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
                 // Check transitive interface inheritance (e.g., Iterator extends Traversable)
                 foreach ($classDef->implements as $iface) {
-                    $check = $iface;
-                    while ($check && $this->hasInterface($check)) {
+                    $stack = [$iface];
+                    while ($stack) {
+                        $check = array_pop($stack);
                         if (strcasecmp($check, $expected) === 0) {
                             return true;
                         }
-                        $check = $this->getInterface($check)->extends;
+                        if (!$this->hasInterface($check)) {
+                            continue;
+                        }
+                        $interfaceDef = $this->getInterface($check);
+                        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentIface) {
+                            $stack[] = $parentIface;
+                        }
                     }
                     if (is_subclass_of($iface, $expected)) {
                         return true;
@@ -3764,8 +4581,8 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function getTypeConvertedArg(Node\Arg $arg, ArgInfo $argInfo): string
     {
-        $expr = $this->parseArg($arg);
         $type = $this->detectTypeOfExpr($arg->value);
+        $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
 
         if ($argInfo->byRef) {
             if ($this->isRefvalCall($arg->value)) {
@@ -3794,6 +4611,7 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->convertToRef($arg->value);
         }
 
+        $expr = $this->parseOrderedArg($arg);
         $expr = $this->materializeCallArgValue($arg->value, $expr);
 
         $this->checkVarAssignExpr($arg, $argInfo->type, $type);
@@ -3811,7 +4629,8 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->isTypedObject($object)) {
                     $class = $this->getObjectType($object);
                     if ($class and $argInfo->class and !$this->isInheritedFrom($class, $argInfo->class)) {
-                        $this->fatalError($arg, "Argument `{$argInfo->name}` must be an instance of `{$argInfo->class}`, `{$class}` given");
+                        $argName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
+                        $this->fatalError($arg, "Argument `{$argName}` must be an instance of `{$argInfo->class}`, `{$class}` given");
                     }
                 }
             }
@@ -3911,11 +4730,99 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function wrapObjectPropertyAssignTypeCheck(NodeAbstract $left, Expr $right, string $rightExpr): string
+    {
+        if (!$left->hasAttribute('nativePropertyDef')) {
+            return $rightExpr;
+        }
+
+        /** @var PropertyDef $def */
+        $def = $left->getAttribute('nativePropertyDef');
+        $typeCheck = $this->getObjectPropertyAssignTypeCheck($def);
+        if (empty($typeCheck)) {
+            return $rightExpr;
+        }
+
+        $rightClass = $this->detectClassOfExpr($right);
+        if ($rightClass !== '') {
+            return $rightExpr;
+        }
+
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $conditions = [];
+        foreach ($typeCheck as $entry) {
+            $cond = $this->genSingleTypeCondition($tmpVar, $entry);
+            if ($cond !== '') {
+                $conditions[] = $cond;
+            }
+        }
+        if (empty($conditions)) {
+            return $rightExpr;
+        }
+
+        $propDisplay = $this->getObjectPropertyTypeCheckDisplayName($left);
+        $typeStr = $this->getObjectPropertyTypeCheckTypeString($def);
+        $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($propDisplay, true) . ' " must be of type " '
+            . $this->genCharPtr($typeStr, true) . ' ", "), ' . $tmpVar . '.typeStr()), php::Str(" given"))';
+
+        return '([&]() -> ' . self::TYPE_VAR . ' { '
+            . $tmpVar . ' = ' . $rightExpr . '; '
+            . 'if (UNEXPECTED(!(' . implode(' || ', $conditions) . '))) { '
+            . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString()); '
+            . '} '
+            . 'return ' . $tmpVar . '; '
+            . '}())';
+    }
+
+    private function getObjectPropertyAssignTypeCheck(PropertyDef $def): array
+    {
+        if (!empty($def->typeCheck)) {
+            return $def->typeCheck;
+        }
+        if ($def->type !== self::TYPE_OBJECT || $def->class === '') {
+            return [];
+        }
+
+        $check = [];
+        if ($def->nullable) {
+            $check[] = ['kind' => 'isNull'];
+        }
+        $check[] = ['kind' => 'instanceof', 'class' => $def->class];
+        return $check;
+    }
+
+    private function getObjectPropertyTypeCheckDisplayName(NodeAbstract $left): string
+    {
+        $propName = $this->parseIdentifier($left->name);
+        if ($left->hasAttribute('nativeClassDef')) {
+            $class = $left->getAttribute('nativeClassDef')->getNamespacedName(false);
+            return $class . '::$' . $propName;
+        }
+
+        if ($left instanceof Expr\StaticPropertyFetch) {
+            return $this->identifierToStr($left->class, literal: true) . '::$' . $propName;
+        }
+
+        return '$' . $propName;
+    }
+
+    private function getObjectPropertyTypeCheckTypeString(PropertyDef $def): string
+    {
+        if ($def->typeStr !== '') {
+            return $def->typeStr;
+        }
+        if ($def->class !== '') {
+            return ($def->nullable ? '?' : '') . $def->class;
+        }
+        return $def->type;
+    }
+
     protected function parseUnset(Node\Stmt\Unset_ $node): string
     {
         $vars = $node->vars;
         $lines = [];
         foreach ($vars as $var) {
+            $this->assertNotNullsafeWriteContext($var);
             if ($this->isArrayDimFetch($var)) {
                 if ($var->dim === null) {
                     $this->fatalError($var, 'Cannot use [] for array unset');
@@ -3989,13 +4896,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->classDef->trait) {
                     goto _dynamic_attr;
                 }
-                $nativeProperty = $this->findNativeProperty($expr, $propertyName, $this->getFullClassName());
+                $result = $this->resolveNativeInstanceProperty($expr, $propertyName, $this->getFullClassName());
+                $nativeProperty = $result ? $this->applyNativePropertyAccessResult($expr, $result) : null;
             } elseif ($this->isTypedObject($objectName)) {
                 $className = $this->getObjectType($objectName);
-                $nativeProperty = $this->findNativeProperty($expr, $propertyName, $className);
+                $result = $this->resolveNativeInstanceProperty($expr, $propertyName, $className);
+                $nativeProperty = $result ? $this->applyNativePropertyAccessResult($expr, $result) : null;
             }
             if ($nativeProperty) {
-                $expr->setAttribute('nativeProperty', $nativeProperty);
                 return $nativeProperty;
             }
         }
@@ -4217,10 +5125,15 @@ class CompilerBase extends \PhpAot\Core\Translator
         $cond    = $v->cond;
         $tmp_var = $this->genTmpVarName();
         $type    = $this->detectTypeOfExpr($cond);
+        $this->assertExprCanBeUsedAsValue($cond, 'switch condition');
         if ($this->isVarExpr($cond)) {
             $this->requireVar($v, $this->parseIdentifier($cond));
         }
-        $var_def = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
+        [$condExpr, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($cond);
+        $var_def = '';
+        $this->appendCapturedStmtLines($var_def, $condBeforeStmts);
+        $var_def .= $type . ' ' . $tmp_var . ' = ' . $condExpr . ';' . PHP_EOL;
+        $this->appendCapturedStmtLines($var_def, $condAfterStmts);
 
         // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
         $localVars = $this->context->localVars;
@@ -4257,33 +5170,23 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         _fail:
 
-        if (count($v->cases) == 1) {
-            if (!empty($v->cases[0]->cond)) {
-                $code = 'if (' . $tmp_var . '==' . $this->parseIdentifier($v->cases[0]->cond) . ') {' . PHP_EOL;
-            } else {
-                $code = 'if (1) {' . PHP_EOL;
-            }
-            $code .= $this->parseStmts($v->cases[0]->stmts);
-            $code .= $this->getIndent() . '}';
-            return $var_def . $code;
-        }
-
         $code = 'do {' . PHP_EOL;
         $this->indentLevel++;
-        $condList = [];
-        $defaultCase = false;
-        $defaultOnly = true;
+        $switchMatched = $this->genTmpVarName();
+        $code .= $this->getIndent() . 'bool ' . $switchMatched . ' = false;' . PHP_EOL;
+        $caseConds = [];
         foreach ($v->cases as $case) {
             if (empty($case->cond)) {
-                $defaultCase = true;
+                $isDefault = true;
             } else {
-                $condList[] = $tmp_var . '==' . $this->parseIdentifier($case->cond);
+                $isDefault = false;
+                $caseConds[] = $case->cond;
             }
-            $this->indentLevel++;
             $stmts = $case->stmts;
             if (empty($stmts)) {
                 continue;
             }
+            $this->indentLevel++;
             if (count($stmts) === 1 and $stmts[0] instanceof Node\Stmt\Block) {
                 $stmts = $stmts[0]->stmts;
             }
@@ -4296,13 +5199,35 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($case, 'switch case must end with return/break/exit/throw, ' . $lastExpr->getType() . ' given');
             }
 
-            if ($defaultCase) {
-                $else = $defaultOnly ? '' : 'else';
-                $code .= $this->getIndent() . $else . ' {' . PHP_EOL;
+            if ($isDefault) {
+                $code .= $this->getIndent() . 'if (!' . $switchMatched . ') {' . PHP_EOL;
             } else {
-                $code .= $this->getIndent() . 'if (' . implode(' || ', $condList) . ') {' . PHP_EOL;
-                $defaultOnly = false;
-                $condList = [];
+                $groupMatched = $this->genTmpVarName();
+                $code .= $this->getIndent() . 'bool ' . $groupMatched . ' = false;' . PHP_EOL;
+                foreach ($caseConds as $caseCond) {
+                    $this->assertExprCanBeUsedAsValue($caseCond, 'switch case condition');
+                    $caseBeforeStmtCount = count($this->context->beforeStmtLines);
+                    $caseAfterStmtCount = count($this->context->afterStmtLines);
+                    $caseCondExpr = $this->parseIdentifier($caseCond);
+                    $caseBeforeStmts = array_slice($this->context->beforeStmtLines, $caseBeforeStmtCount);
+                    $caseAfterStmts = array_slice($this->context->afterStmtLines, $caseAfterStmtCount);
+                    $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $caseBeforeStmtCount);
+                    $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $caseAfterStmtCount);
+
+                    $code .= $this->getIndent() . 'if (!' . $switchMatched . ' && !' . $groupMatched . ') {' . PHP_EOL;
+                    $this->appendCapturedStmtLines($code, $caseBeforeStmts);
+                    if ($caseAfterStmts) {
+                        $caseTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                        $code .= $this->getIndent() . $caseTmpVar . ' = ' . $caseCondExpr . ';' . PHP_EOL;
+                        $this->appendCapturedStmtLines($code, $caseAfterStmts);
+                        $caseCondExpr = $caseTmpVar;
+                    }
+                    $code .= $this->getIndent() . $groupMatched . ' = php::equals(' . $tmp_var . ', ' . $caseCondExpr . ');' . PHP_EOL;
+                    $code .= $this->getIndent() . '}' . PHP_EOL;
+                }
+                $code .= $this->getIndent() . 'if (' . $groupMatched . ') {' . PHP_EOL;
+                $code .= $this->getIndent() . $switchMatched . ' = true;' . PHP_EOL;
+                $caseConds = [];
             }
 
             $code .= $this->parseStmts($stmts);
@@ -4322,6 +5247,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($v->vars as $var) {
             $varName = $this->escapeVarName($var->var->name);
             $type = $var->default ? $this->detectTypeOfExpr($var->default) : self::TYPE_VAR;
+            if ($var->default) {
+                $this->assertExprCanBeUsedAsValue($var->default, 'static variable default value');
+            }
             $globalVar = $this->addStaticVar($var->var, $varName, $type);
 
             $list[] = self::TYPE_VAR . ' &' . $varName . ' = ' . $this->escapeGlobalVar($globalVar) . ';';
@@ -4350,6 +5278,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseEval(Expr\Eval_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'eval operand');
         // 对 eval() 指令的 PHP 代码段禁止字面量优化
         $expr->expr->setAttribute('noLiteralString', true);
         return 'php::eval(' . $this->identifierToStr($expr->expr) . ')';
@@ -4357,6 +5286,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseInclude(Expr\Include_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'include operand');
         switch ($expr->type) {
             case Expr\Include_::TYPE_INCLUDE:
                 $type = 'php::INCLUDE';
@@ -4467,8 +5397,16 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function checkLeftValue(NodeAbstract $expr): void
     {
+        $this->assertNotNullsafeWriteContext($expr);
         if (!$this->isVarExpr($expr) && !$this->isArrayDimFetch($expr) && !$this->isPropertyFetch($expr) && !$this->isStaticPropertyFetch($expr)) {
             $this->fatalError($expr, 'The left value of assignment operation can only be variable, array item, object property, class static property');
+        }
+    }
+
+    protected function assertNotNullsafeWriteContext(NodeAbstract $expr): void
+    {
+        if ($expr instanceof Expr\NullsafePropertyFetch) {
+            $this->fatalError($expr, "Can't use nullsafe operator in write context");
         }
     }
 
@@ -4493,7 +5431,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 单属性读取（非链式）
         if ($this->isPropertyFetch($expr) and $this->isVarExpr($expr->var) and $this->isIdExpr($expr->name)) {
             $prop = $this->parsePropertyFetch($expr);
-            if ($expr->hasAttribute('nativeProperty')) {
+            if ($this->isNativePropertyAccess($expr)) {
                 if ($op === self::OP_REFVAL) {
                     return $prop . '.toReference()';
                 }
@@ -4502,7 +5440,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if ($this->isStaticPropertyFetch($expr) and $this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
             $prop = $this->parseStaticPropertyFetch($expr);
-            if ($expr->hasAttribute('nativeProperty')) {
+            if ($this->isNativePropertyAccess($expr)) {
                 if ($op === self::OP_REFVAL) {
                     return $prop . '.toReference()';
                 }
@@ -4550,6 +5488,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastArray(Expr\Cast\Array_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'cast operand');
         return $this->convertArrayExpr($this->parseExpr($expr->expr));
     }
 
@@ -4570,6 +5509,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastDouble(mixed $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'cast operand');
         return $this->convertFloatExpr($this->parseIdentifier($expr->expr));
     }
 
@@ -4577,9 +5517,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if ($this->isInternalFunction($name)) {
             $returnType = Reflection::getFunctionReturnType($name);
-            // void 类型将被忽略，类型推测仅用于赋值操作的右值，即使返回值为 void , 赋值操作也应该继续运行，右值会被当做 null
-            // 例如 $a = var_dump('hello'); 虽然 var_dump 返回值为 void ，但是 $a 的类型是 mixed，值为 null
-            if ($returnType and $returnType !== 'void') {
+            if ($returnType) {
                 return $this->getTypeFromZendType($returnType);
             }
         }
@@ -4589,7 +5527,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function detectMethodCallReturnType(string $class, string $method): string
     {
         $returnType = Reflection::getMethodReturnType($class, $method);
-        if ($returnType and $returnType !== 'void') {
+        if ($returnType) {
             return $this->getTypeFromZendType($returnType);
         }
         return self::TYPE_VAR;
@@ -4672,6 +5610,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($nativeFunc) {
                     $expr->setAttribute('nativeCall', $nativeFunc);
                     try {
+                        if ($this->shouldUseDynamicCallForNativeArgs($nativeFunc, $expr->args)) {
+                            return $this->genCallUserFuncArray($this->genArray([$object, $method]), $expr->args, $methodName, $class);
+                        }
                         return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
                     } catch (PlaceHolder) {
                         return $this->genPlaceHolder($this->genArray([$object, $method]));
@@ -4725,9 +5666,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return $object . '.call(' . $methodPtr . ')';
         }
+        if ($this->hasNamedCallArg($expr->args)) {
+            return $this->genCallUserFuncArray($this->genArray([$object, $method]), $expr->args, $funcName, $class);
+        }
         try {
             $class = empty($class) ? self::DYNAMIC_CALLED_CLASS : $class;
-            return $object . '.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
+            return $object . '.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class, false) . ')';
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($this->genArray([$object, $method]));
         }
@@ -4815,6 +5759,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
                 if ($nativeFunc) {
                     try {
+                        if ($this->shouldUseDynamicCallForNativeArgs($nativeFunc, $expr->args)) {
+                            return $this->genCallUserFuncArray($this->genArray($callScope), $expr->args, $method, $class);
+                        }
                         $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
                         $expr->setAttribute('nativeCall', $nativeFunc);
                     } catch (PlaceHolder) {
@@ -4850,6 +5797,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
         }
+        if ($this->hasNamedCallArg($expr->args)) {
+            return $this->genCallUserFuncArray($placeHolder, $expr->args);
+        }
         try {
             $callArgs = $this->parseCallArgs($expr->args);
             return $call . '(' . $fn . ', ' . $callArgs . ')';
@@ -4879,93 +5829,63 @@ class CompilerBase extends \PhpAot\Core\Translator
             } else {
                 $class = $this->getNamespacedClassName($class);
             }
-            $nativeProperty = $this->findNativeProperty($expr, $propertyName, $class, true);
-            if ($nativeProperty) {
-                $expr->setAttribute('nativeProperty', $nativeProperty);
-                return $nativeProperty;
+            $result = $this->resolveNativeStaticProperty($expr, $propertyName, $class);
+            if ($result !== null) {
+                return $this->applyNativePropertyAccessResult($expr, $result);
             }
         }
         return null;
+    }
+
+    private function createPropertyAccessResolver(): PropertyAccessResolver
+    {
+        $this->assertCompilerPhase(self::PHASE_CONVERT, 'PropertyAccessResolver');
+        return new PropertyAccessResolver(
+            fn(string $class): ?ClassDef => $this->classes[$this->escapeClass($class)] ?? null,
+            fn(string $class): string => $this->classExtends[strtolower(ltrim($class, '\\'))] ?? '',
+            fn(NodeAbstract $expr, string $message) => $this->fatalError($expr, $message),
+        );
     }
 
     protected function isSameClassName(string $classA, string $classB): bool
     {
-        return strcasecmp(ltrim($classA, '\\'), ltrim($classB, '\\')) === 0;
+        return $this->createPropertyAccessResolver()->isSameClassName($classA, $classB);
     }
 
     protected function isSameOrSubclassOf(string $class, string $parent): bool
     {
-        $class = strtolower(ltrim($class, '\\'));
-        $parent = strtolower(ltrim($parent, '\\'));
-        while ($class !== '') {
-            if ($class === $parent) {
-                return true;
-            }
-            $class = $this->classExtends[$class] ?? '';
-        }
-        return false;
+        return $this->createPropertyAccessResolver()->isSameOrSubclassOf($class, $parent);
     }
 
     protected function canAccessProtectedProperty(string $scope, string $declaringClass): bool
     {
-        if ($scope === '') {
-            return false;
-        }
-        return $this->isSameOrSubclassOf($scope, $declaringClass)
-            || $this->isSameOrSubclassOf($declaringClass, $scope);
+        return $this->createPropertyAccessResolver()->canAccessProtectedProperty($scope, $declaringClass);
     }
 
-    /**
-     * @param NodeAbstract $expr 仅用于输出错误日志
-     * @param string $class 必须传入带有完整命名空间的类名
-     */
-    protected function findNativeProperty(NodeAbstract $expr, string $property, string $class, bool $static = false): ?string
+    private function resolveNativeInstanceProperty(NodeAbstract $expr, string $property, string $class): ?PropertyAccessResult
     {
-        $class = ltrim($class, '\\');
-        $findClass = $class;
         $scope = $this->class ? $this->getFullClassName() : '';
-        $propertyDef = null;
-        $classDef = null;
-        while (true) {
-            if ($this->hasClass($findClass)) {
-                $classDef = $this->getClass($findClass);
-                if ($classDef->hasProperty($property)) {
-                    $propertyDef = $classDef->getProperty($property);
-                    if (!$static and $propertyDef->isStatic()) {
-                        $this->fatalError($expr, "Cannot access static property `{$class}::\${$property}` as non-static instance property.");
-                    }
-                    if ($static and !$propertyDef->isStatic()) {
-                        $this->fatalError($expr, "Cannot access non-static property `{$class}::\${$property}` as static property.");
-                    }
-                    if ($propertyDef->isPublic()) {
-                        break;
-                    }
-                    if ($propertyDef->isProtected()) {
-                        if ($this->canAccessProtectedProperty($scope, $findClass)) {
-                            break;
-                        }
-                        $displayClass = ltrim($class, '\\');
-                        $this->fatalError($expr, "Cannot access protected property `{$property}` of class `{$displayClass}`");
-                    } else {
-                        if ($this->isSameClassName($scope, $findClass)) {
-                            break;
-                        }
-                        $displayClass = ltrim($class, '\\');
-                        $this->fatalError($expr, "Cannot access private property `{$property}` of class `{$displayClass}`");
-                    }
-                } elseif ($classDef->extends) {
-                    $findClass = $classDef->extends;
-                    continue;
-                }
-            }
-            break;
-        }
-        if ($propertyDef and $classDef) {
-            $expr->setAttribute('nativePropertyDef', $propertyDef);
-            $expr->setAttribute('nativeClassDef', $classDef);
-            return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
-        }
-        return null;
+        return $this->createPropertyAccessResolver()->resolveNativeInstanceProperty($expr, $property, $class, $scope);
+    }
+
+    private function resolveNativeStaticProperty(NodeAbstract $expr, string $property, string $class): ?PropertyAccessResult
+    {
+        $scope = $this->class ? $this->getFullClassName() : '';
+        return $this->createPropertyAccessResolver()->resolveNativeStaticProperty($expr, $property, $class, $scope);
+    }
+
+    private function applyNativePropertyAccessResult(NodeAbstract $expr, PropertyAccessResult $result): string
+    {
+        $offset = $this->getPropertyOffset($result->classDef->getNamespacedName(false), $result->property);
+        $expr->setAttribute('nativePropertyDef', $result->propertyDef);
+        $expr->setAttribute('nativeClassDef', $result->classDef);
+        $expr->setAttribute('nativeProperty', $offset);
+        return $offset;
+    }
+
+    protected function isNativePropertyAccess(NodeAbstract $expr): bool
+    {
+        return $expr->hasAttribute('nativeProperty');
     }
 
     protected function parseNativeStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string|bool
@@ -5006,7 +5926,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $refVar;
             }
 
-            if ($expr->hasAttribute('nativeProperty')) {
+            if ($this->isNativePropertyAccess($expr)) {
                 $classPtr = $this->getClassEntryPtr($class);
                 return Symbol::getStaticProperty() . '(' . $classPtr . ', ' . $nativeProp . ')';
             } else {
@@ -5080,19 +6000,24 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->method === '__destruct') {
             $this->warning($expr, "Throwing exception in {$this->getFullClassName()}::__destruct() may cause memory leak");
         }
+        $type = $this->detectTypeOfExpr($expr->expr);
         if ($this->isNewExpr($expr->expr)) {
             $ex = $this->parseExpr($expr->expr);
+            return 'php::throwException(' . $ex . ')';
         } elseif ($this->isVarExpr($expr->expr)) {
             $ex = $this->parseIdentifier($expr->expr);
-            if ($this->getVarType($ex) != self::TYPE_OBJECT) {
-                goto _to_object;
+            if ($type == self::TYPE_OBJECT) {
+                return 'php::throwException(' . $ex . ')';
             }
         } else {
-            $ex = $this->parseIdentifier($expr->expr);
-            _to_object:
-            $ex = $this->convertObjectExpr($ex);
+            $ex = $this->parseExpr($expr->expr);
         }
-        return 'php::throwException(' . $ex . ')';
+        if ($type != self::TYPE_VAR) {
+            $this->fatalError($expr, 'Can only throw objects');
+        }
+        $tmp = $this->genTmpVarName();
+        $this->addLocalVar($tmp, self::TYPE_VAR);
+        return '([&]() -> php::Var { ' . $tmp . ' = ' . $ex . '; if (!' . $tmp . '.isObject()) { php::throwError("Can only throw objects"); } return php::throwException(php::Object(' . $tmp . ')); })()';
     }
 
     protected function parseTryCatch(mixed $v): string
@@ -5143,16 +6068,18 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
 
         $code .= $this->getIndent() . 'if (' . $var . ' && ';
+        $conditions = [];
         foreach ($types as $type) {
             if ($this->isNameExpr($type) or $this->isFullNameExpr($type)) {
                 $class = $this->getNamespacedClassName($this->parseIdentifier($type));
                 $ce = $this->getClassEntryPtr($class);
-                $code .= Symbol::instanceOf() . '(' . $var . ', ' . $ce . ')';
+                $conditions[] = Symbol::instanceOf() . '(' . $var . ', ' . $ce . ')';
             } else {
                 $this->fatalError($type, 'Unsupported catch type');
             }
         }
 
+        $code .= implode(' || ', $conditions);
         $code .= ') {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->parseStmts($catch->stmts);
@@ -5416,7 +6343,10 @@ class CompilerBase extends \PhpAot\Core\Translator
             if (!$this->classDef) {
                 return false;
             }
-            return $this->isInheritedFrom($this->classDef->getNamespacedName(false), $classDef->getNamespacedName(false));
+            return $this->canAccessProtectedProperty(
+                $this->classDef->getNamespacedName(false),
+                $classDef->getNamespacedName(false)
+            );
         }
         // 类外部调用，只允许调用 public 方法
         return true;
@@ -5775,6 +6705,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function genReturnCode(): string
     {
+        if ($this->context->inClosure && $this->context->closureReturnTypeCheck) {
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
+            $code .= $this->genClosureReturnCheck($tmpVar);
+            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+            return $code;
+        }
         if ($this->functionDef->returnType === self::TYPE_VOID) {
             return '';
         }
@@ -5833,8 +6771,35 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isCallExpr($expr->expr)) {
                 $nativeCall = $expr->expr->getAttribute('nativeCall');
                 if ($nativeCall and $this->getFunction($nativeCall)->returnType === self::TYPE_VOID) {
+                    if ($this->context->closureReturnTypeCheck) {
+                        $tmpVar = $this->genTmpVarName();
+                        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+                        return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL
+                            . $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL
+                            . $this->genClosureReturnCheck($tmpVar)
+                            . $this->getIndent() . 'return ' . $tmpVar . ';';
+                    }
                     return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
                 }
+            }
+            if ($this->detectTypeOfExpr($expr->expr) === self::TYPE_VOID) {
+                if ($this->context->closureReturnTypeCheck) {
+                    $tmpVar = $this->genTmpVarName();
+                    $this->addLocalVar($tmpVar, self::TYPE_VAR);
+                    return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL
+                        . $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL
+                        . $this->genClosureReturnCheck($tmpVar)
+                        . $this->getIndent() . 'return ' . $tmpVar . ';';
+                }
+                return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
+            }
+            if ($this->context->closureReturnTypeCheck) {
+                $tmpVar = $this->genTmpVarName();
+                $this->addLocalVar($tmpVar, self::TYPE_VAR);
+                return $beforeCode . PHP_EOL
+                    . $tmpVar . ' = ' . $code . ';' . PHP_EOL
+                    . $this->genClosureReturnCheck($tmpVar)
+                    . $this->getIndent() . 'return ' . $tmpVar . ';';
             }
             return $beforeCode . PHP_EOL . 'return ' . $code . ';';
         };
@@ -5847,7 +6812,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $cb = function () use ($expr) {
             $fnCode = $this->parseStmts($expr->stmts);
             if (!$this->isReturnStmtInLastLine($expr->stmts)) {
-                $fnCode .= 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
+                if ($this->context->closureReturnTypeCheck) {
+                    $fnCode .= $this->genReturnCode() . PHP_EOL;
+                } else {
+                    $fnCode .= 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
+                }
             }
             return $fnCode;
         };
@@ -5879,7 +6848,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         while (1) {
             if ($expr instanceof Expr\NullsafePropertyFetch) {
-                $list[] = ['property', $this->identifierToStr($expr->name, literal: true)];
+                $list[] = ['property', $this->identifierToStr($expr->name, literal: true), $expr];
                 $expr = $expr->var;
             } elseif ($expr instanceof Expr\NullsafeMethodCall) {
                 $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args];
@@ -5902,6 +6871,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $list = array_reverse($list);
+        $this->checkNullsafePropertyAccesses($expr, $list);
         $last = array_key_last($list);
         $tmpFn = $this->genTmpVarName();
 
@@ -5914,14 +6884,62 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($item[0] == 'property') {
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
             } else {
+                $beforeStmtCount = count($this->context->beforeStmtLines);
+                $afterStmtCount = count($this->context->afterStmtLines);
                 $args = $this->parseCallArgs($item[2]);
+                $argBeforeStmts = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
+                $argAfterStmts = array_slice($this->context->afterStmtLines, $afterStmtCount);
+                $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
+                $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
+                if ($argBeforeStmts) {
+                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argBeforeStmts) . PHP_EOL;
+                }
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.call({$item[1]}, {$args});";
+                if ($argAfterStmts) {
+                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argAfterStmts) . PHP_EOL;
+                }
             }
             $object = $tmpVar;
         }
         $code .= $this->getIndent() . "return {$object}; };";
         $this->context->beforeStmtLines[] = $code;
         return "{$tmpFn}()";
+    }
+
+    private function checkNullsafePropertyAccesses(NodeAbstract $baseExpr, array $list): void
+    {
+        $properties = [];
+        foreach ($list as $item) {
+            if ($item[0] !== 'property') {
+                break;
+            }
+
+            /** @var Expr\NullsafePropertyFetch $node */
+            $node = $item[2];
+            if (!$this->isIdExpr($node->name)) {
+                break;
+            }
+
+            $properties[] = [
+                'node' => $node,
+                'property' => $this->parseIdentifier($node->name),
+            ];
+        }
+
+        if (!$properties) {
+            return;
+        }
+
+        $scope = $this->class ? $this->getFullClassName() : '';
+        $results = $this->createPropertyAccessResolver()->resolveNullsafePropertyChain(
+            $this->detectClassOfExpr($baseExpr),
+            $properties,
+            $scope,
+            self::TYPE_OBJECT,
+        );
+        foreach ($results as $index => $result) {
+            $this->applyNativePropertyAccessResult($properties[$index]['node'], $result);
+        }
     }
 
     protected function parseFullyQualifiedName(Node\Name\FullyQualified $expr): string
@@ -5941,10 +6959,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $items = $node->items;
         foreach ($items as $item) {
+            $this->assertExprCanBeUsedAsValue($item->value, $item->unpack ? 'array unpack value' : 'array value');
             $value = $this->parseIdentifier($item->value);
             if ($item->unpack) {
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
             } elseif ($item->key) {
+                $this->assertExprCanBeUsedAsValue($item->key, 'array key');
                 $key = $this->parseArrayKey($item->key);
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
             } else {

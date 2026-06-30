@@ -19,6 +19,7 @@ use PhpAot\Php\Entity\PropertyDef;
 use PhpAot\Php\Exception\SyntaxError;
 use PhpParser\Modifiers;
 use PhpParser\Node;
+use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
@@ -92,62 +93,67 @@ class Preprocessor extends CompilerBase
 
     public function prepareFile(string $file): void
     {
-        $phpCode = $this->loadFile($file);
-        $this->symbolCallInFile[$this->file] = [];
-        $this->resetFile();
-        $this->resetFunction();
-        $this->resetMethod();
-        $this->resetClass();
-        $this->resetNamespace();
-
-        $this->climate->info('prepare: ' . $this->getRelativePath($this->file));
+        $previousPhase = $this->enterCompilerPhase(self::PHASE_PREPARE);
         try {
-            $ast = $this->parser->parse($phpCode);
-        } catch (\PhpParser\Error $e) {
-            $this->climate->red("Fatal error: {$e->getMessage()} in {$this->file}");
-            throw new SyntaxError($e->getMessage(), $e->getCode());
-        }
+            $phpCode = $this->loadFile($file);
+            $this->symbolCallInFile[$this->file] = [];
+            $this->resetFile();
+            $this->resetFunction();
+            $this->resetMethod();
+            $this->resetClass();
+            $this->resetNamespace();
 
-        $traverser = new NodeTraverser();
-        $traverser->addVisitor(new Visitor());
-        $stmts = $traverser->traverse($ast);
-
-        foreach ($stmts as $v) {
-            $type = $v->getType();
-            switch ($type) {
-                case 'Stmt_Namespace':
-                    $this->prepareNamespace($v);
-                    break;
-                case 'Stmt_Enum':
-                case 'Stmt_Class':
-                case 'Stmt_Trait':
-                    $this->prepareClass($v);
-                    break;
-                case 'Stmt_Interface':
-                    $this->parseInterface($v);
-                    break;
-                case 'Stmt_Function':
-                    $this->prepareFunction($v);
-                    break;
-                case 'Stmt_Use':
-                    $this->parseUse($v);
-                    break;
-                case 'Stmt_GroupUse':
-                    $this->parseGroupUse($v);
-                    break;
-                case 'Stmt_Declare':
-                case 'Stmt_Nop':
-                    break;
-                case 'Stmt_Const':
-                    $this->parseConstDef($v);
-                    break;
-                case 'Stmt_Expression':
-                    $this->foundStrayCode($v);
-                    break;
-                default:
-                    $this->fatalError($v, 'Unsupported statement: ' . $type);
-                    break;
+            $this->climate->info('prepare: ' . $this->getRelativePath($this->file));
+            try {
+                $ast = $this->parser->parse($phpCode);
+            } catch (\PhpParser\Error $e) {
+                $this->climate->red("Fatal error: {$e->getMessage()} in {$this->file}");
+                throw new SyntaxError($e->getMessage(), $e->getCode());
             }
+
+            $traverser = new NodeTraverser();
+            $traverser->addVisitor(new Visitor());
+            $stmts = $traverser->traverse($ast);
+
+            foreach ($stmts as $v) {
+                $type = $v->getType();
+                switch ($type) {
+                    case 'Stmt_Namespace':
+                        $this->prepareNamespace($v);
+                        break;
+                    case 'Stmt_Enum':
+                    case 'Stmt_Class':
+                    case 'Stmt_Trait':
+                        $this->prepareClass($v);
+                        break;
+                    case 'Stmt_Interface':
+                        $this->parseInterface($v);
+                        break;
+                    case 'Stmt_Function':
+                        $this->prepareFunction($v);
+                        break;
+                    case 'Stmt_Use':
+                        $this->parseUse($v);
+                        break;
+                    case 'Stmt_GroupUse':
+                        $this->parseGroupUse($v);
+                        break;
+                    case 'Stmt_Declare':
+                    case 'Stmt_Nop':
+                        break;
+                    case 'Stmt_Const':
+                        $this->parseConstDef($v);
+                        break;
+                    case 'Stmt_Expression':
+                        $this->foundStrayCode($v);
+                        break;
+                    default:
+                        $this->fatalError($v, 'Unsupported statement: ' . $type);
+                        break;
+                }
+            }
+        } finally {
+            $this->restoreCompilerPhase($previousPhase);
         }
     }
 
@@ -211,6 +217,7 @@ class Preprocessor extends CompilerBase
                     $this->parseGroupUse($v2);
                     break;
                 case 'Stmt_Const':
+                    $this->parseConstDef($v2);
                     break;
                 case 'Stmt_Interface':
                     $this->parseInterface($v2);
@@ -243,25 +250,38 @@ class Preprocessor extends CompilerBase
     {
         $list                          = [];
         $functionDef->argCountRequired = count($params);
-        $defaultValueCount = 0;
+        $lastRequiredIndex = -1;
+        $lastRequiredName = '';
         $last = array_key_last($params);
+        foreach ($params as $i => $param) {
+            if (!$param->default && !$param->variadic) {
+                $lastRequiredIndex = $i;
+                if (is_string($param->var->name)) {
+                    $lastRequiredName = $param->var->name;
+                }
+            }
+        }
 
         foreach ($params as $i => $param) {
+            if (!is_string($param->var->name)) {
+                $this->fatalError($param, 'Parameter name must be a string');
+            }
+            $phpName = $param->var->name;
+            $name = $this->escapeVarName($phpName);
             // .stub 存根定义 C++ Native 函数，必须设置函数的参数类型
             if ($this->stubFile and !$param->type) {
-                throw new \RuntimeException('No type for ' . $this->parseIdentifier($param->var));
+                throw new \RuntimeException('No type for ' . $phpName);
             }
             // 构造方法属性定义语法（Constructor Property Promotion）
             if ($param->isPromoted()) {
                 if (!$this->classDef or !$this->methodDef or $this->methodDef->name !== '__construct') {
                     $this->fatalError($param, 'Promoted properties are not supported');
                 }
-                $name = $this->parseIdentifier($param->var);
                 $nullable = $param->type instanceof NullableType;
                 // Promoted property defaults belong to the constructor parameter,
                 // not to the property default table. The property itself must stay
                 // uninitialized until __construct assigns it.
-                $this->addClassProperty($name, $param->flags, $param->type, null, $nullable, $param);
+                $this->addClassProperty($phpName, $param->flags, $param->type, null, $nullable, $param);
             }
             if ($param->variadic) {
                 if ($i !== $last) {
@@ -270,13 +290,21 @@ class Preprocessor extends CompilerBase
                     $this->fatalError($param, 'Variadic parameters cannot be passed by reference');
                 }
             }
-            $name = $this->parseIdentifier($param->var);
+            if ($param->default && $i < $lastRequiredIndex) {
+                $this->fatalError(
+                    $param,
+                    $this->getFunctionDisplayName($functionDef)
+                    . '(): optional parameter `$' . $phpName . '` cannot be declared before required parameter `$'
+                    . $lastRequiredName . '`'
+                );
+            }
             if ($this->method and $name === 'this_') {
                 $this->fatalError($param, 'Cannot use `$this` as parameter of class method');
             }
             $argInfo = new ArgInfo();
             $type = $this->parseParameterType($param, $argInfo, $name);
             $argInfo->name = $name;
+            $argInfo->phpName = $phpName;
             $argInfo->type = $type;
             $argInfo->byRef = $param->byRef;
             $argInfo->variadic = $param->variadic;
@@ -284,7 +312,7 @@ class Preprocessor extends CompilerBase
             if ($param->type === null || $param->type instanceof NullableType) {
                 $argInfo->nullable = true;
             }
-            if ($param->type instanceof NullableType or $param->type instanceof UnionType) {
+            if ($param->type instanceof NullableType || $param->type instanceof UnionType || $param->type instanceof IntersectionType) {
                 $typeInfo = $this->buildTypeCheckFromNode($param->type);
                 if (!empty($typeInfo['check'])) {
                     $argInfo->typeCheck = $typeInfo['check'];
@@ -319,17 +347,23 @@ class Preprocessor extends CompilerBase
                     $argInfo->arrayInitPlan = $arrayInitPlan;
                     $argInfo->defaultValue = $param->default;
                 }
-                $defaultValueCount++;
             } elseif ($param->variadic) {
                 // 变长参数可以视为空数组默认值
-                $defaultValueCount++;
                 $argInfo->default = '{}';
                 $argInfo->defaultValue = new Node\Expr\Array_();
             }
             $functionDef->argInfoList[] = $argInfo;
         }
         $functionDef->params = implode(', ', $list);
-        $functionDef->argCountRequired -= $defaultValueCount;
+        $functionDef->argCountRequired = $lastRequiredIndex + 1;
+    }
+
+    protected function getFunctionDisplayName(FunctionDef $functionDef): string
+    {
+        if ($this->class) {
+            return $this->class . '::' . $functionDef->name;
+        }
+        return $functionDef->getNamespacedName();
     }
 
     protected function parseFunctionDecl(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
@@ -346,6 +380,16 @@ class Preprocessor extends CompilerBase
         if ($v->byRef) {
             $this->fatalError($v, 'The return type of the function `' . $v->name . '` cannot be a reference type');
         }
+        if ($this->method and $v->returnType !== null) {
+            $methodName = $this->class . '::' . $this->method;
+            if (in_array($this->method, ['__construct', '__destruct'], true)) {
+                $this->fatalError($v, 'Method `' . $methodName . '()` cannot declare a return type');
+            }
+            if ($this->method === '__clone'
+                and (!$v->returnType instanceof Node\Identifier or strtolower($v->returnType->name) !== 'void')) {
+                $this->fatalError($v, 'Method `' . $methodName . '()` return type must be void when declared');
+            }
+        }
 
         $fnName = $this->parseIdentifier($v->name);
         $class = '';
@@ -360,7 +404,7 @@ class Preprocessor extends CompilerBase
         $functionDef->stub = $this->stubFile;
         $functionDef->returnTypeUndeclared = $v->returnType === null;
 
-        if ($v->returnType instanceof NullableType or $v->returnType instanceof UnionType) {
+        if ($v->returnType instanceof NullableType || $v->returnType instanceof UnionType || $v->returnType instanceof IntersectionType) {
             $typeInfo = $this->buildTypeCheckFromNode($v->returnType);
             if (!empty($typeInfo['check'])) {
                 $functionDef->returnTypeCheck = $typeInfo['check'];
@@ -429,6 +473,9 @@ class Preprocessor extends CompilerBase
         } else {
             $flags = Modifiers::PUBLIC;
         }
+        if (isset($this->symbolDeclInFile[$fullClassNameLower])) {
+            $this->fatalError($class, "Duplicate class `{$fullClassName}`");
+        }
 
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
         $this->addClass($fullClassName, $this->classDef);
@@ -460,10 +507,6 @@ class Preprocessor extends CompilerBase
         } else {
             $this->classDef->trait = $class;
         }
-        if (isset($this->symbolDeclInFile[$fullClassNameLower])) {
-            $this->fatalError($class, "Duplicate class `{$fullClassName}`");
-        }
-
         $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
         $code = '';
@@ -553,13 +596,10 @@ class Preprocessor extends CompilerBase
         $flags = $this->parseModifiers($v->flags);
         $class = '';
 
-        if ($v->type) {
-            $type = $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST, $class);
-        } else {
-            $type = null;
-        }
+        $declaredType = $v->type ? $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST, $class) : null;
 
         foreach ($v->consts as $const) {
+            $type = $declaredType;
             if ($type === null) {
                 $type = match ($const->value->getType()) {
                     'Expr_Array' => self::TYPE_ARRAY,
@@ -568,22 +608,33 @@ class Preprocessor extends CompilerBase
                 };
             }
             $constName = $this->parseIdentifier($const->name);
-            $constValue = $this->parseIdentifier($const->value);
-
-            $constInfo = new ConstantDef($constName, $flags, $type, $constValue);
-            $constInfo->valueExpr = $const->value;
-
-            if ($this->context->beforeStmtLines) {
-                $arrayExpr = '';
-                if ($this->context->localVars) {
-                    $arrayExpr .= $this->genScopeVarDecl();
-                }
-                $arrayExpr .= $this->parseBeforeStmtLines();
-                $constInfo->arrayExpr = $arrayExpr;
+            if ($this->classDef->hasConstant($constName)) {
+                $this->fatalError($v, "Duplicate constant `{$constName}`");
             }
+            $constInfo = $this->parseClassLikeConstant($const, $flags, $type, $class);
             $constInfo->class = $class;
             $this->classDef->constants[$constInfo->name] = $constInfo;
         }
+    }
+
+    private function parseClassLikeConstant(Node\Const_ $const, int $flags, string $type, string $class = ''): ConstantDef
+    {
+        $constName = $this->parseIdentifier($const->name);
+        $constValue = $this->parseIdentifier($const->value);
+
+        $constInfo = new ConstantDef($constName, $flags, $type, $constValue);
+        $constInfo->valueExpr = $const->value;
+
+        if ($this->context->beforeStmtLines) {
+            $arrayExpr = '';
+            if ($this->context->localVars) {
+                $arrayExpr .= $this->genScopeVarDecl();
+            }
+            $arrayExpr .= $this->parseBeforeStmtLines();
+            $constInfo->arrayExpr = $arrayExpr;
+        }
+        $constInfo->class = $class;
+        return $constInfo;
     }
 
     /**
@@ -615,6 +666,11 @@ class Preprocessor extends CompilerBase
         $propDef = new PropertyDef($name, $flags, $type, $default, $nullable);
         $propDef->class = $class;
         $propDef->arrayInitPlan = $arrayInitPlan;
+        if ($typeNode instanceof NullableType || $typeNode instanceof UnionType || $typeNode instanceof IntersectionType) {
+            $typeInfo = $this->buildTypeCheckFromNode($typeNode);
+            $propDef->typeCheck = $typeInfo['check'];
+            $propDef->typeStr = $typeInfo['typeStr'];
+        }
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
     }
@@ -653,9 +709,16 @@ class Preprocessor extends CompilerBase
             $this->checkRequiredArgNum($name, $this->methodDef, $v);
             $this->classDef->addMethod($this->methodDef);
         } else {
+            if ($this->classDef->hasMethod($name) || $this->classDef->hasAbstractMethod($name)) {
+                $this->fatalError($v, "Duplicate method `{$this->method}`");
+            }
             if (!$class instanceof Node\Stmt\Trait_ && isset($class->flags) && !($class->flags & Modifiers::ABSTRACT)) {
                 $this->fatalError($v, "Non-abstract class {$this->class} contains abstract method {$v->name}");
             }
+            $this->methodDef = new MethodDef($flags, $name);
+            $this->methodDef->functionDef = $this->parseFunctionDecl($v);
+            $this->methodDef->functionDef->method = true;
+            $this->checkRequiredArgNum($name, $this->methodDef, $v);
             if ($this->method === '__construct') {
                 foreach ($v->params as $param) {
                     if ($param->isPromoted()) {
@@ -663,7 +726,7 @@ class Preprocessor extends CompilerBase
                     }
                 }
             }
-            $this->classDef->addAbstractMethod($name, $flags);
+            $this->classDef->addAbstractMethod($name, $flags, $this->methodDef);
         }
 
         $fullClassName = $this->getFullClassName();
@@ -715,12 +778,79 @@ class Preprocessor extends CompilerBase
 
     protected function parseInterface(Node\Stmt\Interface_ $v): void
     {
+        $this->resetClass();
+        $this->resetMethod();
+        $this->resetFunction();
         $name = $this->parseIdentifier($v->name);
         $this->interface = $name;
         $this->interfaceDef = new InterfaceDef($name, $this->namespace);
-        $interfaceName = $this->interfaceDef->getNamespacedName();
+        $interfaceName = $this->interfaceDef->getNamespacedName(false);
+        $interfaceNameLower = strtolower($interfaceName);
+
+        foreach ($v->extends as $parent) {
+            $parentName = $this->getNamespacedClassName($this->parseIdentifier($parent));
+            $this->interfaceDef->extendsList[] = $parentName;
+            if ($this->interfaceDef->extends === '') {
+                $this->interfaceDef->extends = $parentName;
+            }
+            if (!$this->isInternalInterface($parentName)) {
+                $this->symbolCallInFile[$this->file][] = strtolower($parentName);
+            }
+        }
+
+        if (isset($this->symbolDeclInFile[$interfaceNameLower])) {
+            $this->fatalError($v, "Duplicate interface `{$interfaceName}`");
+        }
+
+        $this->symbolDeclInFile[$interfaceNameLower] = $this->file;
         $this->interfaces[$this->escapeClass($interfaceName)] = $this->interfaceDef;
         $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
+
+        foreach ($v->stmts as $stmt) {
+            if ($stmt instanceof Node\Stmt\ClassConst) {
+                foreach ($stmt->consts as $const) {
+                    $constName = $this->parseIdentifier($const->name);
+                    if ($this->interfaceDef->hasConstant($constName)) {
+                        $this->fatalError($stmt, "Duplicate constant `{$constName}`");
+                    }
+                    $class = '';
+                    $type = $stmt->type
+                        ? $this->parseTypeDecl($stmt->type, self::DECL_TYPE_OF_CONST, $class)
+                        : match ($const->value->getType()) {
+                            'Expr_Array' => self::TYPE_ARRAY,
+                            'Scalar_String' => self::TYPE_STR,
+                            default => self::TYPE_VAR,
+                        };
+                    $constInfo = $this->parseClassLikeConstant($const, $this->parseModifiers($stmt->flags), $type, $class);
+                    $this->interfaceDef->constants[$constName] = $constInfo;
+                }
+                continue;
+            }
+
+            if ($stmt instanceof Node\Stmt\ClassMethod) {
+                $methodName = $this->getMethodName($stmt);
+                if ($this->interfaceDef->hasMethod($methodName)) {
+                    $this->fatalError($stmt, "Duplicate method `{$methodName}`");
+                }
+                $this->method = $methodName;
+                $methodDef = new MethodDef($this->parseModifiers($stmt->flags), $methodName);
+                $methodDef->functionDef = $this->parseFunctionDecl($stmt);
+                $methodDef->functionDef->method = true;
+                $this->interfaceDef->addMethod($methodDef);
+                $this->resetMethod();
+                $this->resetFunction();
+                continue;
+            }
+
+            if (!$stmt instanceof Node\Stmt\Nop) {
+                $this->fatalError($stmt, 'Unsupported interface statement: ' . $stmt->getType());
+            }
+        }
+
+        $this->resetMethod();
+        $this->resetFunction();
+        $this->interface = '';
+        $this->interfaceDef = null;
     }
 
     protected function parseTraitUseOptions(Node\Stmt\TraitUse $traitUse, array &$aliases, array &$ignored): void
@@ -738,15 +868,15 @@ class Preprocessor extends CompilerBase
                     $traits[] = $adaptation->trait;
                 }
                 foreach ($traits as $trait) {
-                    $traitName = $this->getNamespacedClassName($trait);
+                    $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait));
                     $methodName = $adaptation->method->toString();
                     /*
                      * 例如：
                      * use TraitA { TraitA::method as newMethod}
                      * 这表示 TraitA::method() 会被重命名为 TraitA::newMethod()
                      */
-                    $aliases[$this->getFullMethodName($traitName, $methodName)] = [
-                        'newName' => $adaptation->newName->toString(),
+                    $aliases[$this->getFullMethodName($traitName, $methodName)][] = [
+                        'newName' => $adaptation->newName ? $adaptation->newName->toString() : $methodName,
                         'newModifier' => $adaptation->newModifier ?: 0,
                     ];
                 }
@@ -762,7 +892,8 @@ class Preprocessor extends CompilerBase
                  * 这表示 TraitB::method() 将会被忽略，真正执行的是 TraitA::method()
                  */
                 foreach ($adaptation->insteadof as $trait2) {
-                    $ignored[$this->getFullMethodName($trait2, $methodName)] = true;
+                    $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait2));
+                    $ignored[$this->getFullMethodName($traitName, $methodName)] = true;
                 }
             }
         }
@@ -775,7 +906,17 @@ class Preprocessor extends CompilerBase
         if ($v->adaptations) {
             $this->parseTraitUseOptions($v, $aliases, $ignored);
         }
-        $this->classDef->traitAliases = array_merge($this->classDef->traitAliases, $aliases);
+        foreach ($v->traits as $trait) {
+            $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait));
+            if (!$this->isInternalClass($traitName)) {
+                $this->symbolCallInFile[$this->file][] = strtolower($traitName);
+            }
+        }
+        foreach ($aliases as $fullMethodName => $aliasList) {
+            foreach ($aliasList as $alias) {
+                $this->classDef->traitAliases[$fullMethodName][] = $alias;
+            }
+        }
         $this->classDef->traitIgnored = array_merge($this->classDef->traitIgnored, $ignored);
     }
 }
