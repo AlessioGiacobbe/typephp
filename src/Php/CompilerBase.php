@@ -3532,11 +3532,53 @@ class CompilerBase extends \PhpAot\Core\Translator
             return $this->parseValueSelection($expr, $expr->cond, $expr->else, self::OP_NOT_EMPTY);
         }
         $cond = $this->parseExpr($expr->cond);
+        $ifBeforeStmtCount = count($this->context->beforeStmtLines);
+        $ifAfterStmtCount = count($this->context->afterStmtLines);
         $if = $this->parseExpr($expr->if);
+        $ifBeforeStmts = array_slice($this->context->beforeStmtLines, $ifBeforeStmtCount);
+        $ifAfterStmts = array_slice($this->context->afterStmtLines, $ifAfterStmtCount);
+        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $ifBeforeStmtCount);
+        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $ifAfterStmtCount);
+
+        $elseBeforeStmtCount = count($this->context->beforeStmtLines);
+        $elseAfterStmtCount = count($this->context->afterStmtLines);
         $else = $this->parseExpr($expr->else);
-        if ($this->detectTypeOfExpr($expr->if) !== $this->detectTypeOfExpr($expr->else)) {
+        $elseBeforeStmts = array_slice($this->context->beforeStmtLines, $elseBeforeStmtCount);
+        $elseAfterStmts = array_slice($this->context->afterStmtLines, $elseAfterStmtCount);
+        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $elseBeforeStmtCount);
+        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $elseAfterStmtCount);
+
+        $hasBranchStmts = $ifBeforeStmts || $ifAfterStmts || $elseBeforeStmts || $elseAfterStmts;
+        $typeChanged = $this->detectTypeOfExpr($expr->if) !== $this->detectTypeOfExpr($expr->else);
+        if (!$hasBranchStmts && $typeChanged) {
             $if = 'php::Var(' . $if . ')';
             $else = 'php::Var(' . $else . ')';
+        }
+        if ($hasBranchStmts) {
+            $appendStmtLines = function (string &$code, array $stmts): void {
+                if ($stmts) {
+                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts);
+                }
+            };
+            $appendReturn = function (string &$code, string $value, array $beforeStmts, array $afterStmts) use ($appendStmtLines): void {
+                $appendStmtLines($code, $beforeStmts);
+                if ($afterStmts) {
+                    $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                    $code .= $this->getIndent() . "{$tmpVar} = {$value};";
+                    $appendStmtLines($code, $afterStmts);
+                    $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+                } else {
+                    $code .= $this->getIndent() . 'return php::Var(' . $value . ');';
+                }
+            };
+            $code = '[&]() -> ' . self::TYPE_VAR . '{';
+            $code .= $this->getIndent() . 'if (' . $cond . ') {';
+            $appendReturn($code, $if, $ifBeforeStmts, $ifAfterStmts);
+            $code .= $this->getIndent() . '} else {';
+            $appendReturn($code, $else, $elseBeforeStmts, $elseAfterStmts);
+            $code .= $this->getIndent() . '}';
+            $code .= $this->getIndent() . '}()';
+            return $code;
         }
         return '(' . $cond . ') ? (' . $if . ') : (' . $else . ')';
     }
@@ -3554,31 +3596,72 @@ class CompilerBase extends \PhpAot\Core\Translator
             $var = $tmpVar;
         }
 
+        $parseExprWithStmts = function (NodeAbstract $node): array {
+            $beforeStmtCount = count($this->context->beforeStmtLines);
+            $afterStmtCount = count($this->context->afterStmtLines);
+            $value = $this->parseExpr($node);
+            $beforeStmts = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
+            $afterStmts = array_slice($this->context->afterStmtLines, $afterStmtCount);
+            $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
+            $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
+            return [$value, $beforeStmts, $afterStmts];
+        };
+
+        $appendStmtLines = function (string &$code, array $stmts): void {
+            if ($stmts) {
+                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts);
+            }
+        };
+
+        $appendMatchReturn = function (string &$code, NodeAbstract $body) use ($parseExprWithStmts, $appendStmtLines): void {
+            [$value, $beforeStmts, $afterStmts] = $parseExprWithStmts($body);
+            $appendStmtLines($code, $beforeStmts);
+            if ($afterStmts) {
+                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $code .= $this->getIndent() . "{$tmpVar} = {$value};";
+                $appendStmtLines($code, $afterStmts);
+                $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+            } else {
+                $code .= $this->getIndent() . 'return ' . $value . ';';
+            }
+        };
+
         $code = '[&]() -> ' . self::TYPE_VAR . '{';
         $default = null;
-        foreach ($expr->arms as $i => $arm) {
+        foreach ($expr->arms as $arm) {
             if ($arm->conds === null) {
                 $default = $arm->body;
                 continue;
             }
-            $prefix = $i === 0 ? 'if' : 'else if';
-            $condList = [];
+            $matched = $this->genTmpVarName();
+            $code .= $this->getIndent() . 'bool ' . $matched . ' = false;';
             foreach ($arm->conds as $cond) {
                 if ($this->isMatchExpr($cond)) {
                     $this->fatalError($arm, 'Match expression cannot be used as a condition');
                 }
-                $condList[] = 'php::same(' . $var . ', ' . $this->parseExpr($cond) . ')';
+                [$condValue, $beforeStmts, $afterStmts] = $parseExprWithStmts($cond);
+                $code .= $this->getIndent() . 'if (!' . $matched . ') {';
+                $appendStmtLines($code, $beforeStmts);
+                if ($afterStmts) {
+                    $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                    $code .= $this->getIndent() . "{$condTmpVar} = {$condValue};";
+                    $appendStmtLines($code, $afterStmts);
+                    $condValue = $condTmpVar;
+                }
+                $code .= $this->getIndent() . $matched . ' = php::same(' . $var . ', ' . $condValue . ');';
+                $code .= $this->getIndent() . '}';
             }
-            $code .= $prefix . '(' . implode(' || ', $condList) . ') {';
-            $code .= 'return ' . $this->parseExpr($arm->body) . ';';
-            $code .= '}';
+            $code .= $this->getIndent() . 'if (' . $matched . ') {';
+            $appendMatchReturn($code, $arm->body);
+            $code .= $this->getIndent() . '}';
         }
 
-        $else = count($expr->arms) === 0 ? '' : 'else ';
         if ($default) {
-            $code .= $else . ' { return ' . $this->parseExpr($default) . '; }';
+            $code .= $this->getIndent() . '{';
+            $appendMatchReturn($code, $default);
+            $code .= $this->getIndent() . '}';
         } else {
-            $code .= $else . ' { return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
+            $code .= $this->getIndent() . '{ return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
         }
         $code .= '}()';
 
@@ -3698,12 +3781,38 @@ class CompilerBase extends \PhpAot\Core\Translator
             $leftExpr = $chainOpResult;
         }
 
+        $rightBeforeStmtCount = count($this->context->beforeStmtLines);
+        $rightAfterStmtCount = count($this->context->afterStmtLines);
         $rightExpr = $this->parseIdentifier($right);
+        $rightBeforeStmts = array_slice($this->context->beforeStmtLines, $rightBeforeStmtCount);
+        $rightAfterStmts = array_slice($this->context->afterStmtLines, $rightAfterStmtCount);
+        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $rightBeforeStmtCount);
+        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $rightAfterStmtCount);
         $this->checkVarMustExist($right, $rightExpr);
 
         $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-        $this->context->beforeStmtLines[] = '// Expr: ' . $this->printer->prettyPrintExpr($expr) . PHP_EOL .
-            $tmpVar . ' = ' . $condExpr . ' ? ' . $leftExpr . ' : ' . $rightExpr . ';';
+        if ($rightBeforeStmts || $rightAfterStmts) {
+            $code = '// Expr: ' . $this->printer->prettyPrintExpr($expr) . PHP_EOL .
+                'if (' . $condExpr . ') {' . PHP_EOL .
+                $this->getIndent() . $tmpVar . ' = ' . $leftExpr . ';' . PHP_EOL .
+                '} else {' . PHP_EOL;
+            if ($rightBeforeStmts) {
+                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $rightBeforeStmts) . PHP_EOL;
+            }
+            if ($rightAfterStmts) {
+                $rightTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';' . PHP_EOL;
+                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $rightAfterStmts) . PHP_EOL;
+                $code .= $this->getIndent() . $tmpVar . ' = ' . $rightTmpVar . ';' . PHP_EOL;
+            } else {
+                $code .= $this->getIndent() . $tmpVar . ' = ' . $rightExpr . ';' . PHP_EOL;
+            }
+            $code .= '}';
+            $this->context->beforeStmtLines[] = $code;
+        } else {
+            $this->context->beforeStmtLines[] = '// Expr: ' . $this->printer->prettyPrintExpr($expr) . PHP_EOL .
+                $tmpVar . ' = ' . $condExpr . ' ? ' . $leftExpr . ' : ' . $rightExpr . ';';
+        }
         $expr->setAttribute('replace', $tmpVar);
 
         return $tmpVar;
@@ -6225,8 +6334,20 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($item[0] == 'property') {
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
             } else {
+                $beforeStmtCount = count($this->context->beforeStmtLines);
+                $afterStmtCount = count($this->context->afterStmtLines);
                 $args = $this->parseCallArgs($item[2]);
+                $argBeforeStmts = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
+                $argAfterStmts = array_slice($this->context->afterStmtLines, $afterStmtCount);
+                $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
+                $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
+                if ($argBeforeStmts) {
+                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argBeforeStmts);
+                }
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.call({$item[1]}, {$args});";
+                if ($argAfterStmts) {
+                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argAfterStmts);
+                }
             }
             $object = $tmpVar;
         }
