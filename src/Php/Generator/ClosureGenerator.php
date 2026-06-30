@@ -38,12 +38,45 @@ trait ClosureGenerator
         $this->context->inClosure = true;
         $this->indentLevel++;
 
+        $requiredArgCount = 0;
+        foreach ($params as $param) {
+            if ($param->variadic || $param->default !== null) {
+                break;
+            }
+            $requiredArgCount++;
+        }
+        if ($requiredArgCount > 0) {
+            $message = 'php::concat({'
+                . 'php::Str(' . $this->genCharPtr('Too few arguments to function {closure}(), ', true) . '), '
+                . 'php::toString(php::getCallArgNum()), '
+                . 'php::Str(' . $this->genCharPtr(' passed and exactly ' . $requiredArgCount . ' expected', true) . ')'
+                . '})';
+            $code .= $this->getIndent() . 'if (UNEXPECTED(php::getCallArgNum() < ' . $requiredArgCount . ')) {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . 'return php::throwException(zend_ce_argument_count_error, (' . $message . ').toCString());' . PHP_EOL;
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        }
+
         foreach ($params as $i => $param) {
             if ($param->byRef) {
                 $this->fatalError($expr, 'Closure cannot use reference parameter');
             }
             $var = $this->parseIdentifier($param->var);
-            $code .= 'auto ' . $var . ' = php::getCallArg(' . $i . ');' . PHP_EOL;
+            if ($param->variadic) {
+                $code .= $this->getIndent() . self::TYPE_ARRAY . ' ' . $var . ';' . PHP_EOL;
+                $code .= $this->getIndent() . 'for (uint32_t i = ' . $i . '; i < php::getCallArgNum(); i++) {' . PHP_EOL;
+                $this->indentLevel++;
+                $code .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
+                $this->indentLevel--;
+                $code .= $this->getIndent() . '}' . PHP_EOL;
+                $this->addArgument($var, self::TYPE_ARRAY);
+                continue;
+            }
+            $argExpr = $param->default === null
+                ? 'php::getCallArg(' . $i . ')'
+                : 'php::getCallArg(' . $i . ', ' . $this->parseParamDefaultValue($param->default) . ')';
+            $code .= $this->getIndent() . 'auto ' . $var . ' = ' . $argExpr . ';' . PHP_EOL;
             $this->addArgument($var, self::TYPE_VAR);
         }
 
