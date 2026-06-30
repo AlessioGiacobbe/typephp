@@ -1350,6 +1350,40 @@ class CompilerBase extends \PhpAot\Core\Translator
         return '';
     }
 
+    protected function parseExprWithCapturedStmts(NodeAbstract $expr): array
+    {
+        $beforeStmtCount = count($this->context->beforeStmtLines);
+        $afterStmtCount = count($this->context->afterStmtLines);
+        $value = $this->parseExpr($expr);
+        $beforeStmts = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
+        $afterStmts = array_slice($this->context->afterStmtLines, $afterStmtCount);
+        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
+        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
+        return [$value, $beforeStmts, $afterStmts];
+    }
+
+    protected function appendCapturedStmtLines(string &$code, array $stmts): void
+    {
+        if ($stmts) {
+            $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+        }
+    }
+
+    protected function genConditionWithCapturedStmts(NodeAbstract $cond, string $openPrefix): string
+    {
+        [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($cond);
+        $code = '';
+        $this->appendCapturedStmtLines($code, $beforeStmts);
+        if ($afterStmts) {
+            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $code .= $this->getIndent() . $tmpVar . ' = ' . $condExpr . ';' . PHP_EOL;
+            $this->appendCapturedStmtLines($code, $afterStmts);
+            $condExpr = $tmpVar;
+        }
+        $code .= $openPrefix . '(' . $condExpr . ') {' . PHP_EOL;
+        return $code;
+    }
+
     protected function parseBlockStmts(array $stmts): string
     {
         $this->indentLevel++;
@@ -2592,24 +2626,65 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $list_expr = [];
         foreach ($init as $expr) {
-            $list_expr[] = $this->parseExpr($expr);
+            [$initExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+            $this->appendCapturedStmtLines($code, $beforeStmts);
+            $list_expr[] = $initExpr;
+            if ($afterStmts) {
+                $list_expr[] = implode(";\n" . $this->getIndent(), $afterStmts);
+            }
         }
         $list_expr[] = '';
         $code .= implode(";\n" . $this->getIndent(), $list_expr);
 
         $list_cond = [];
+        $hasCondStmts = false;
         foreach ($cond as $expr) {
-            $list_cond[] = $this->parseExpr($expr);
+            [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+            $hasCondStmts = $hasCondStmts || $beforeStmts || $afterStmts;
+            $list_cond[] = [$condExpr, $beforeStmts, $afterStmts];
         }
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'for (;';
-        $code .= implode(', ', $list_cond);
+        if ($hasCondStmts) {
+            $condCode = '[&]() -> bool {';
+            if (empty($list_cond)) {
+                $condCode .= $this->getIndent() . 'return true;';
+            } else {
+                $condResult = $this->genTmpVarName();
+                $condCode .= $this->getIndent() . 'bool ' . $condResult . ' = true;' . PHP_EOL;
+                foreach ($list_cond as [$condExpr, $beforeStmts, $afterStmts]) {
+                    $this->appendCapturedStmtLines($condCode, $beforeStmts);
+                    if ($afterStmts) {
+                        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                        $condCode .= $this->getIndent() . $tmpVar . ' = ' . $condExpr . ';' . PHP_EOL;
+                        $this->appendCapturedStmtLines($condCode, $afterStmts);
+                        $condExpr = $tmpVar;
+                    }
+                    $condCode .= $this->getIndent() . $condResult . ' = ' . $this->convertBoolExpr($condExpr) . ';' . PHP_EOL;
+                }
+                $condCode .= $this->getIndent() . 'return ' . $condResult . ';';
+            }
+            $condCode .= $this->getIndent() . '}()';
+            $code .= $condCode;
+        } else {
+            $code .= implode(', ', array_map(static fn($item) => $item[0], $list_cond));
+        }
         $code .= '; ';
 
         $list_loop = [];
         foreach ($loop as $expr) {
-            $list_loop[] = $this->parseExpr($expr);
+            [$loopExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+            if ($beforeStmts || $afterStmts) {
+                $loopCode = '[&]() {';
+                $this->appendCapturedStmtLines($loopCode, $beforeStmts);
+                $loopCode .= $this->getIndent() . $loopExpr . ';' . PHP_EOL;
+                $this->appendCapturedStmtLines($loopCode, $afterStmts);
+                $loopCode .= $this->getIndent() . '}()';
+                $list_loop[] = $loopCode;
+            } else {
+                $list_loop[] = $loopExpr;
+            }
         }
         $code .= implode(', ', $list_loop);
         $code .= ') {' . PHP_EOL;
@@ -3531,7 +3606,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($expr->if === null) {
             return $this->parseValueSelection($expr, $expr->cond, $expr->else, self::OP_NOT_EMPTY);
         }
-        $cond = $this->parseExpr($expr->cond);
+        [$cond, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($expr->cond);
         $ifBeforeStmtCount = count($this->context->beforeStmtLines);
         $ifAfterStmtCount = count($this->context->afterStmtLines);
         $if = $this->parseExpr($expr->if);
@@ -3548,7 +3623,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $elseBeforeStmtCount);
         $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $elseAfterStmtCount);
 
-        $hasBranchStmts = $ifBeforeStmts || $ifAfterStmts || $elseBeforeStmts || $elseAfterStmts;
+        $hasBranchStmts = $condBeforeStmts || $condAfterStmts || $ifBeforeStmts || $ifAfterStmts || $elseBeforeStmts || $elseAfterStmts;
         $typeChanged = $this->detectTypeOfExpr($expr->if) !== $this->detectTypeOfExpr($expr->else);
         if (!$hasBranchStmts && $typeChanged) {
             $if = 'php::Var(' . $if . ')';
@@ -3557,7 +3632,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($hasBranchStmts) {
             $appendStmtLines = function (string &$code, array $stmts): void {
                 if ($stmts) {
-                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts);
+                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
                 }
             };
             $appendReturn = function (string &$code, string $value, array $beforeStmts, array $afterStmts) use ($appendStmtLines): void {
@@ -3572,6 +3647,13 @@ class CompilerBase extends \PhpAot\Core\Translator
                 }
             };
             $code = '[&]() -> ' . self::TYPE_VAR . '{';
+            $appendStmtLines($code, $condBeforeStmts);
+            if ($condAfterStmts) {
+                $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $code .= $this->getIndent() . "{$condTmpVar} = {$cond};";
+                $appendStmtLines($code, $condAfterStmts);
+                $cond = $condTmpVar;
+            }
             $code .= $this->getIndent() . 'if (' . $cond . ') {';
             $appendReturn($code, $if, $ifBeforeStmts, $ifAfterStmts);
             $code .= $this->getIndent() . '} else {';
@@ -3609,7 +3691,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $appendStmtLines = function (string &$code, array $stmts): void {
             if ($stmts) {
-                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts);
+                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
             }
         };
 
@@ -3700,29 +3782,34 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseIf(Node\Stmt\If_ $v): string
     {
-        $cond = $this->parseExpr($v->cond);
+        $arms = [[$v->cond, $v->stmts]];
+        foreach ($v->elseifs as $elseif) {
+            $arms[] = [$elseif->cond, $elseif->stmts];
+        }
 
-        $code = $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= 'if (' . $cond . ') {' . PHP_EOL;
-        $code .= $this->parseBlockStmts($v->stmts);
-        $code .= $this->getIndent() . '}';
+        $emitIfChain = function (int $index) use (&$emitIfChain, $arms, $v): string {
+            if (!isset($arms[$index])) {
+                if (!$v->else) {
+                    return '';
+                }
+                return $this->parseBlockStmts($v->else->stmts);
+            }
 
-        if ($v->elseifs) {
-            foreach ($v->elseifs as $elseif) {
-                $elseifCond = $this->parseExpr($elseif->cond);
-                $code .= ' else if (' . $elseifCond . ') {' . PHP_EOL;
-                $code .= $this->parseBlockStmts($elseif->stmts);
+            [$cond, $stmts] = $arms[$index];
+            $code = $this->genConditionWithCapturedStmts($cond, 'if ');
+            $code .= $this->parseBlockStmts($stmts);
+            $tail = $emitIfChain($index + 1);
+            if ($tail !== '') {
+                $code .= $this->getIndent() . '} else {' . PHP_EOL;
+                $code .= $tail;
+                $code .= $this->getIndent() . '}';
+            } else {
                 $code .= $this->getIndent() . '}';
             }
-        }
+            return $code;
+        };
 
-        if ($v->else) {
-            $code .= ' else {' . PHP_EOL;
-            $code .= $this->parseBlockStmts($v->else->stmts);
-            $code .= $this->getIndent() . '}';
-        }
-
-        return $code . PHP_EOL;
+        return $this->parseBeforeStmtLines() . PHP_EOL . $emitIfChain(0) . PHP_EOL;
     }
 
     /**
@@ -3735,11 +3822,23 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseWhile(Node\Stmt\While_ $v): string
     {
-        $cond  = $this->parseExpr($v->cond);
         $stmts = $v->stmts;
+        [$cond, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($v->cond);
 
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= 'while (' . $cond . ') {' . PHP_EOL;
+        if ($beforeStmts || $afterStmts) {
+            $code .= 'while (true) {' . PHP_EOL;
+            $this->appendCapturedStmtLines($code, $beforeStmts);
+            if ($afterStmts) {
+                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $code .= $this->getIndent() . $tmpVar . ' = ' . $cond . ';' . PHP_EOL;
+                $this->appendCapturedStmtLines($code, $afterStmts);
+                $cond = $tmpVar;
+            }
+            $code .= $this->getIndent() . 'if (!(' . $cond . ')) { break; }' . PHP_EOL;
+        } else {
+            $code .= 'while (' . $cond . ') {' . PHP_EOL;
+        }
         $code .= $this->parseBlockStmts($stmts);
         $code .= $this->genLoopEndFlagCheck();
         $code .= $this->getIndent() . '}' . PHP_EOL;
@@ -3755,7 +3854,20 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseDo(Node\Stmt\Do_ $v): string
     {
         $stmts = $v->stmts;
-        $cond  = $this->parseExpr($v->cond);
+        [$cond, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($v->cond);
+        if ($beforeStmts || $afterStmts) {
+            $condCode = '[&]() -> bool {';
+            $this->appendCapturedStmtLines($condCode, $beforeStmts);
+            if ($afterStmts) {
+                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $condCode .= $this->getIndent() . $tmpVar . ' = ' . $cond . ';' . PHP_EOL;
+                $this->appendCapturedStmtLines($condCode, $afterStmts);
+                $cond = $tmpVar;
+            }
+            $condCode .= $this->getIndent() . 'return ' . $this->convertBoolExpr($cond) . ';';
+            $condCode .= $this->getIndent() . '}()';
+            $cond = $condCode;
+        }
         $code  = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'do {' . PHP_EOL;
         $code .= $this->parseBlockStmts($stmts);
@@ -4597,7 +4709,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($this->isVarExpr($cond)) {
             $this->requireVar($v, $this->parseIdentifier($cond));
         }
-        $var_def = $type . ' ' . $tmp_var . ' = ' . $this->parseExpr($cond) . ';' . PHP_EOL;
+        [$condExpr, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($cond);
+        $var_def = '';
+        $this->appendCapturedStmtLines($var_def, $condBeforeStmts);
+        $var_def .= $type . ' ' . $tmp_var . ' = ' . $condExpr . ';' . PHP_EOL;
+        $this->appendCapturedStmtLines($var_def, $condAfterStmts);
 
         // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
         $localVars = $this->context->localVars;
@@ -4634,33 +4750,23 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         _fail:
 
-        if (count($v->cases) == 1) {
-            if (!empty($v->cases[0]->cond)) {
-                $code = 'if (' . $tmp_var . '==' . $this->parseIdentifier($v->cases[0]->cond) . ') {' . PHP_EOL;
-            } else {
-                $code = 'if (1) {' . PHP_EOL;
-            }
-            $code .= $this->parseStmts($v->cases[0]->stmts);
-            $code .= $this->getIndent() . '}';
-            return $var_def . $code;
-        }
-
         $code = 'do {' . PHP_EOL;
         $this->indentLevel++;
-        $condList = [];
-        $defaultCase = false;
-        $defaultOnly = true;
+        $switchMatched = $this->genTmpVarName();
+        $code .= $this->getIndent() . 'bool ' . $switchMatched . ' = false;' . PHP_EOL;
+        $caseConds = [];
         foreach ($v->cases as $case) {
             if (empty($case->cond)) {
-                $defaultCase = true;
+                $isDefault = true;
             } else {
-                $condList[] = $tmp_var . '==' . $this->parseIdentifier($case->cond);
+                $isDefault = false;
+                $caseConds[] = $case->cond;
             }
-            $this->indentLevel++;
             $stmts = $case->stmts;
             if (empty($stmts)) {
                 continue;
             }
+            $this->indentLevel++;
             if (count($stmts) === 1 and $stmts[0] instanceof Node\Stmt\Block) {
                 $stmts = $stmts[0]->stmts;
             }
@@ -4673,13 +4779,34 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->fatalError($case, 'switch case must end with return/break/exit/throw, ' . $lastExpr->getType() . ' given');
             }
 
-            if ($defaultCase) {
-                $else = $defaultOnly ? '' : 'else';
-                $code .= $this->getIndent() . $else . ' {' . PHP_EOL;
+            if ($isDefault) {
+                $code .= $this->getIndent() . 'if (!' . $switchMatched . ') {' . PHP_EOL;
             } else {
-                $code .= $this->getIndent() . 'if (' . implode(' || ', $condList) . ') {' . PHP_EOL;
-                $defaultOnly = false;
-                $condList = [];
+                $groupMatched = $this->genTmpVarName();
+                $code .= $this->getIndent() . 'bool ' . $groupMatched . ' = false;' . PHP_EOL;
+                foreach ($caseConds as $caseCond) {
+                    $caseBeforeStmtCount = count($this->context->beforeStmtLines);
+                    $caseAfterStmtCount = count($this->context->afterStmtLines);
+                    $caseCondExpr = $this->parseIdentifier($caseCond);
+                    $caseBeforeStmts = array_slice($this->context->beforeStmtLines, $caseBeforeStmtCount);
+                    $caseAfterStmts = array_slice($this->context->afterStmtLines, $caseAfterStmtCount);
+                    $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $caseBeforeStmtCount);
+                    $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $caseAfterStmtCount);
+
+                    $code .= $this->getIndent() . 'if (!' . $switchMatched . ' && !' . $groupMatched . ') {' . PHP_EOL;
+                    $this->appendCapturedStmtLines($code, $caseBeforeStmts);
+                    if ($caseAfterStmts) {
+                        $caseTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                        $code .= $this->getIndent() . $caseTmpVar . ' = ' . $caseCondExpr . ';' . PHP_EOL;
+                        $this->appendCapturedStmtLines($code, $caseAfterStmts);
+                        $caseCondExpr = $caseTmpVar;
+                    }
+                    $code .= $this->getIndent() . $groupMatched . ' = php::equals(' . $tmp_var . ', ' . $caseCondExpr . ');' . PHP_EOL;
+                    $code .= $this->getIndent() . '}' . PHP_EOL;
+                }
+                $code .= $this->getIndent() . 'if (' . $groupMatched . ') {' . PHP_EOL;
+                $code .= $this->getIndent() . $switchMatched . ' = true;' . PHP_EOL;
+                $caseConds = [];
             }
 
             $code .= $this->parseStmts($stmts);
@@ -6342,11 +6469,11 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
                 $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
                 if ($argBeforeStmts) {
-                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argBeforeStmts);
+                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argBeforeStmts) . PHP_EOL;
                 }
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.call({$item[1]}, {$args});";
                 if ($argAfterStmts) {
-                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argAfterStmts);
+                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argAfterStmts) . PHP_EOL;
                 }
             }
             $object = $tmpVar;

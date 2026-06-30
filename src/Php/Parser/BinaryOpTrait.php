@@ -283,12 +283,56 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpLogicalAnd(Expr\BinaryOp\LogicalAnd|Expr\BinaryOp\BooleanAnd $expr): string
     {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '&&'));
+        return $this->parseShortCircuitLogicalOp($expr->left, $expr->right, '&&');
     }
 
     protected function parseBinaryOpLogicalOr(Expr\BinaryOp\LogicalOr|Expr\BinaryOp\BooleanOr $expr): string
     {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '||'));
+        return $this->parseShortCircuitLogicalOp($expr->left, $expr->right, '||');
+    }
+
+    protected function parseShortCircuitLogicalOp(NodeAbstract $left, NodeAbstract $right, string $op): string
+    {
+        $leftExpr = $this->parseNumericIdentifier($left);
+        $this->checkVarMustExist($left, $leftExpr);
+
+        $rightBeforeStmtCount = count($this->context->beforeStmtLines);
+        $rightAfterStmtCount = count($this->context->afterStmtLines);
+        $rightExpr = $this->parseNumericIdentifier($right);
+        $rightBeforeStmts = array_slice($this->context->beforeStmtLines, $rightBeforeStmtCount);
+        $rightAfterStmts = array_slice($this->context->afterStmtLines, $rightAfterStmtCount);
+        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $rightBeforeStmtCount);
+        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $rightAfterStmtCount);
+        $this->checkVarMustExist($right, $rightExpr);
+
+        $leftBool = $this->convertBoolExpr((string) $leftExpr);
+        if (!$rightBeforeStmts && !$rightAfterStmts) {
+            return '(' . $leftBool . ' ' . $op . ' ' . $this->convertBoolExpr((string) $rightExpr) . ')';
+        }
+
+        $appendStmtLines = function (string &$code, array $stmts): void {
+            if ($stmts) {
+                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+            }
+        };
+        $shortCircuitValue = $op === '&&' ? 'false' : 'true';
+        $rightCondition = $op === '&&' ? $leftBool : '!(' . $leftBool . ')';
+
+        $code = '[&]() -> bool {';
+        $code .= $this->getIndent() . 'if (' . $rightCondition . ') {';
+        $appendStmtLines($code, $rightBeforeStmts);
+        if ($rightAfterStmts) {
+            $rightTmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';';
+            $appendStmtLines($code, $rightAfterStmts);
+            $rightExpr = $rightTmpVar;
+        }
+        $code .= $this->getIndent() . 'return ' . $this->convertBoolExpr((string) $rightExpr) . ';';
+        $code .= $this->getIndent() . '}';
+        $code .= $this->getIndent() . 'return ' . $shortCircuitValue . ';';
+        $code .= $this->getIndent() . '}()';
+
+        return $code;
     }
 
     protected function parseBinaryOpLogicalXor(Expr\BinaryOp\LogicalXor $expr): string

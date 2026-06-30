@@ -20,6 +20,12 @@ function build(string $id, string $value): string
     return $id . ':' . $value;
 }
 
+function condition(string $id, string $value): bool
+{
+    echo "cond:$id:$value\n";
+    return true;
+}
+
 function choose(bool $flag): string
 {
     return $flag
@@ -29,11 +35,17 @@ function choose(bool $flag): string
 
 function main(): void
 {
+    var_dump(condition(...makeArgs('C'), value: makeValue('C')) ? build('T', 'T') : build('F', 'F'));
     var_dump(choose(true));
     var_dump(choose(false));
 }
 ?>
 --EXPECT--
+args:C
+value:C
+cond:C:C
+body:T:T
+string(3) "T:T"
 args:T
 value:T
 body:T:T
