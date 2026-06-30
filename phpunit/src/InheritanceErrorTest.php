@@ -138,9 +138,19 @@ class InheritanceErrorTest extends TestCase
         $this->assertCompiles('inheritance_prop_visibility_widen.php');
     }
 
-    public function testPrivateParentPropertyMayBeRedeclared()
+    public function testPrivateParentPropertyCannotBeRedeclared()
     {
-        $this->assertCompiles('inheritance_private_prop_redeclare.php');
+        $this->exec('property shadowing across inheritance is not allowed', 'inheritance_private_prop_redeclare.php');
+    }
+
+    public function testPrivateParentPropertyCannotBeShadowedByPublicProperty()
+    {
+        $this->exec('property shadowing across inheritance is not allowed', 'accessibility/private-prop-in-parent.php');
+    }
+
+    public function testPrivateTraitPropertyCannotBeShadowedByPublicProperty()
+    {
+        $this->exec('property shadowing across inheritance is not allowed', 'accessibility/private-prop-in-trait.php');
     }
 
     public function testConstantTypeMismatch()

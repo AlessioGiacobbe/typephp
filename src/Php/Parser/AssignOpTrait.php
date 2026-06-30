@@ -143,6 +143,7 @@ trait AssignOpTrait
 
     protected function parseAssignFinally(Expr $left, Expr $right): string
     {
+        $this->assertNotNullsafeWriteContext($left);
         if ($left instanceof Expr\List_) {
             return $this->parseAssignToList($left, $right);
         }
@@ -325,6 +326,7 @@ trait AssignOpTrait
 
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
+        $this->assertNotNullsafeWriteContext($node->var);
         $oriInAssignExpr = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
         $var          = $this->parseIdentifier($node->var);
@@ -521,6 +523,11 @@ trait AssignOpTrait
 
     protected function parseAssignRef(Expr\AssignRef $expr): string
     {
+        $this->assertNotNullsafeWriteContext($expr->var);
+        if ($expr->expr instanceof Expr\NullsafePropertyFetch) {
+            $this->fatalError($expr->expr, 'Cannot take reference of a nullsafe chain');
+        }
+
         $this->context->inAssignExpr = true;
         $left = $this->parseIdentifier($expr->var);
         $this->context->inAssignExpr = false;

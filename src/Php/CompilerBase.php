@@ -2768,6 +2768,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePreInc(Expr\PreInc $expr): string
     {
+        $this->assertNotNullsafeWriteContext($expr->var);
         $oriInAssignExpr = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
 
@@ -3825,6 +3826,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePostOp(Expr\PostDec|Expr\PostInc $expr, string $op): string
     {
+        $this->assertNotNullsafeWriteContext($expr->var);
         $result = $this->genDynamicPropIncDec($expr->var, $op, false);
         if ($result !== null) {
             return $result;
@@ -4030,6 +4032,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePreDec(Expr\PreDec $expr): string
     {
+        $this->assertNotNullsafeWriteContext($expr->var);
         $oriInAssignExpr = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
 
@@ -4792,6 +4795,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $vars = $node->vars;
         $lines = [];
         foreach ($vars as $var) {
+            $this->assertNotNullsafeWriteContext($var);
             if ($this->isArrayDimFetch($var)) {
                 if ($var->dim === null) {
                     $this->fatalError($var, 'Cannot use [] for array unset');
@@ -5365,8 +5369,16 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function checkLeftValue(NodeAbstract $expr): void
     {
+        $this->assertNotNullsafeWriteContext($expr);
         if (!$this->isVarExpr($expr) && !$this->isArrayDimFetch($expr) && !$this->isPropertyFetch($expr) && !$this->isStaticPropertyFetch($expr)) {
             $this->fatalError($expr, 'The left value of assignment operation can only be variable, array item, object property, class static property');
+        }
+    }
+
+    protected function assertNotNullsafeWriteContext(NodeAbstract $expr): void
+    {
+        if ($expr instanceof Expr\NullsafePropertyFetch) {
+            $this->fatalError($expr, "Can't use nullsafe operator in write context");
         }
     }
 
@@ -5477,9 +5489,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         if ($this->isInternalFunction($name)) {
             $returnType = Reflection::getFunctionReturnType($name);
-            // void 类型将被忽略，类型推测仅用于赋值操作的右值，即使返回值为 void , 赋值操作也应该继续运行，右值会被当做 null
-            // 例如 $a = var_dump('hello'); 虽然 var_dump 返回值为 void ，但是 $a 的类型是 mixed，值为 null
-            if ($returnType and $returnType !== 'void') {
+            if ($returnType) {
                 return $this->getTypeFromZendType($returnType);
             }
         }
@@ -5489,7 +5499,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function detectMethodCallReturnType(string $class, string $method): string
     {
         $returnType = Reflection::getMethodReturnType($class, $method);
-        if ($returnType and $returnType !== 'void') {
+        if ($returnType) {
             return $this->getTypeFromZendType($returnType);
         }
         return self::TYPE_VAR;
@@ -6774,6 +6784,17 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
                 }
             }
+            if ($this->detectTypeOfExpr($expr->expr) === self::TYPE_VOID) {
+                if ($this->context->closureReturnTypeCheck) {
+                    $tmpVar = $this->genTmpVarName();
+                    $this->addLocalVar($tmpVar, self::TYPE_VAR);
+                    return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL
+                        . $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL
+                        . $this->genClosureReturnCheck($tmpVar)
+                        . $this->getIndent() . 'return ' . $tmpVar . ';';
+                }
+                return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
+            }
             if ($this->context->closureReturnTypeCheck) {
                 $tmpVar = $this->genTmpVarName();
                 $this->addLocalVar($tmpVar, self::TYPE_VAR);
@@ -6829,7 +6850,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         while (1) {
             if ($expr instanceof Expr\NullsafePropertyFetch) {
-                $list[] = ['property', $this->identifierToStr($expr->name, literal: true)];
+                $list[] = ['property', $this->identifierToStr($expr->name, literal: true), $expr];
                 $expr = $expr->var;
             } elseif ($expr instanceof Expr\NullsafeMethodCall) {
                 $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args];
@@ -6852,6 +6873,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         $list = array_reverse($list);
+        $this->checkNullsafePropertyAccesses($expr, $list);
         $last = array_key_last($list);
         $tmpFn = $this->genTmpVarName();
 
@@ -6884,6 +6906,42 @@ class CompilerBase extends \PhpAot\Core\Translator
         $code .= $this->getIndent() . "return {$object}; };";
         $this->context->beforeStmtLines[] = $code;
         return "{$tmpFn}()";
+    }
+
+    private function checkNullsafePropertyAccesses(NodeAbstract $baseExpr, array $list): void
+    {
+        $className = $this->detectClassOfExpr($baseExpr);
+        if ($className === '') {
+            return;
+        }
+
+        foreach ($list as $item) {
+            if ($item[0] !== 'property') {
+                $className = '';
+                continue;
+            }
+
+            /** @var Expr\NullsafePropertyFetch $node */
+            $node = $item[2];
+            if (!$this->isIdExpr($node->name)) {
+                $className = '';
+                continue;
+            }
+
+            $property = $this->parseIdentifier($node->name);
+            $this->findNativeProperty($node, $property, $className);
+            if (!$node->hasAttribute('nativePropertyDef')) {
+                $className = '';
+                continue;
+            }
+
+            /** @var PropertyDef $def */
+            $def = $node->getAttribute('nativePropertyDef');
+            $className = $def->type === self::TYPE_OBJECT ? $def->class : '';
+            if ($className === '') {
+                return;
+            }
+        }
     }
 
     protected function parseFullyQualifiedName(Node\Name\FullyQualified $expr): string

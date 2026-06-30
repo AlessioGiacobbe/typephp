@@ -51,4 +51,44 @@ class NativePropertyTest extends \BaseTest
     {
         $this->exec('Cannot access protected property `value` of class `NativeProtectedOwner`', 'native-property-protected-unrelated-class.php');
     }
+
+    public function testCannotAccessPrivateNativePropertyThroughNullsafe(): void
+    {
+        $this->exec('Cannot access private property `value` of class `NullsafePrivateOwner`', 'nullsafe-private-property.php');
+    }
+
+    public function testCannotAccessNestedPrivateNativePropertyThroughNullsafe(): void
+    {
+        $this->exec('Cannot access private property `value` of class `NullsafeNestedChild`', 'nullsafe-nested-private-property.php');
+    }
+
+    public function testCannotAssignThroughNullsafeProperty(): void
+    {
+        $this->exec("Can't use nullsafe operator in write context", 'nullsafe-write-assign.php');
+    }
+
+    public function testCannotUseCompoundAssignThroughNullsafeProperty(): void
+    {
+        $this->exec("Can't use nullsafe operator in write context", 'nullsafe-write-assign-op.php');
+    }
+
+    public function testCannotIncrementThroughNullsafeProperty(): void
+    {
+        $this->exec("Can't use nullsafe operator in write context", 'nullsafe-write-inc.php');
+    }
+
+    public function testCannotUnsetThroughNullsafeProperty(): void
+    {
+        $this->exec("Can't use nullsafe operator in write context", 'nullsafe-write-unset.php');
+    }
+
+    public function testCannotAssignReferenceToNullsafeProperty(): void
+    {
+        $this->exec("Can't use nullsafe operator in write context", 'nullsafe-write-assign-ref-left.php');
+    }
+
+    public function testCannotTakeReferenceOfNullsafeProperty(): void
+    {
+        $this->exec('Cannot take reference of a nullsafe chain', 'nullsafe-write-assign-ref-right.php');
+    }
 }

@@ -77,4 +77,14 @@ class FunctionTest extends \BaseTest
         $this->exec('OptionalBeforeRequired::method(): optional parameter `$first` cannot be declared before required parameter `$second`', 'method-optional-before-required-param.php');
     }
 
+    public function testInternalVoidFunctionCannotBeAssigned()
+    {
+        $this->exec('Cannot use void expression as assignment value', 'internal-void-function-assignment.php');
+    }
+
+    public function testInternalVoidFunctionCannotBeUsedAsBinaryOperand()
+    {
+        $this->exec('Cannot use void expression as binary operand', 'internal-void-function-binary-operand.php');
+    }
+
 }

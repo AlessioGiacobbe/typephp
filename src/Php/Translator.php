@@ -3441,7 +3441,9 @@ CODE;
                 if ($chainNode->hasProperty($name)) {
                     $parentProp = $chainNode->getProperty($name);
                     if ($parentProp->flags & Modifiers::PRIVATE) {
-                        continue;
+                        $this->fatalError($classStmt,
+                            "Declaration of `{$className}::\${$name}` conflicts with private property " .
+                            "`{$parentClass}::\${$name}`; property shadowing across inheritance is not allowed");
                     }
                     if ($childProp->type !== $parentProp->type || $childProp->class !== $parentProp->class) {
                         $this->fatalError($classStmt,
