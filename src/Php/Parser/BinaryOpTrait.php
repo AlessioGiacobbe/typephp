@@ -18,6 +18,9 @@ trait BinaryOpTrait
 {
     protected function parseBinaryOp(NodeAbstract $left, NodeAbstract $right, string $op): string
     {
+        $this->assertExprCanBeUsedAsValue($left, 'binary operand');
+        $this->assertExprCanBeUsedAsValue($right, 'binary operand');
+
         // 运算逻辑，优先转为数字
         $leftExpr  = $this->parseOrderedBinaryOperand($left);
         $rightExpr = $this->parseOrderedBinaryOperand($right);
@@ -169,6 +172,7 @@ trait BinaryOpTrait
 
     protected function parseOrderedOperand(NodeAbstract $expr, bool $numeric): float|int|string
     {
+        $this->assertExprCanBeUsedAsValue($expr, 'operand');
         if (!$this->shouldMaterializeOrderedOperand($expr)) {
             return $numeric ? $this->parseNumericIdentifier($expr) : $this->parseIdentifier($expr);
         }
@@ -224,7 +228,7 @@ trait BinaryOpTrait
         }
 
         $type = $this->detectTypeOfExpr($expr);
-        return $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
+        return $type;
     }
 
     protected function appendCapturedStmtLinesToContext(array $stmts): void
@@ -298,6 +302,8 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpPow(Expr\BinaryOp\Pow $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->left, 'binary operand');
+        $this->assertExprCanBeUsedAsValue($expr->right, 'binary operand');
         $leftType = $this->detectTypeOfExpr($expr->left);
         if ($leftType === self::TYPE_BIGINT) {
             $leftExpr = $this->parseOrderedOperand($expr->left, false);
@@ -330,6 +336,7 @@ trait BinaryOpTrait
 
     protected function parseCompareExpr(NodeAbstract $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr, 'comparison operand');
         // PHPX 与 bool 值比较会出现重载错误，所以需要转换成 bool 值
         if ($this->isScalarBool($expr)) {
             return $this->getBoolValue($expr);
@@ -397,6 +404,9 @@ trait BinaryOpTrait
 
     protected function parseShortCircuitLogicalOp(NodeAbstract $left, NodeAbstract $right, string $op): string
     {
+        $this->assertExprCanBeUsedAsCondition($left, 'logical operand');
+        $this->assertExprCanBeUsedAsCondition($right, 'logical operand');
+
         $leftExpr = $this->parseNumericIdentifier($left);
         $this->checkVarMustExist($left, $leftExpr);
 

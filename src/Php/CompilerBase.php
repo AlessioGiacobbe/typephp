@@ -904,6 +904,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function assertExprCanBeUsedAsCondition(NodeAbstract $expr, string $context = 'condition'): void
+    {
+        if ($this->detectTypeOfExpr($expr) === self::TYPE_VOID) {
+            $this->fatalError($expr, 'Cannot use void expression as ' . $context);
+        }
+    }
+
     public function getNamespacedClassName(string $class, string $currentNamespace = ''): string
     {
         if ($class === '') {
@@ -1388,6 +1395,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function genConditionWithCapturedStmts(NodeAbstract $cond, string $openPrefix): string
     {
+        $this->assertExprCanBeUsedAsCondition($cond);
         [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($cond);
         $code = '';
         $this->appendCapturedStmtLines($code, $beforeStmts);
@@ -2463,8 +2471,10 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list = [];
         $this->indentLevel++;
         foreach ($items as $item) {
+            $this->assertExprCanBeUsedAsValue($item->value, 'array value');
             $value = $this->parseIdentifier($item->value);
             if ($item->key) {
+                $this->assertExprCanBeUsedAsValue($item->key, 'array key');
                 $key = $this->parseArrayKey($item->key);
                 $list[] = $this->getIndent() . '{ ' . $key . ', ' . self::TYPE_VAR . '(' . $value . ') }';
             } else {
@@ -2671,6 +2681,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $list_cond = [];
         $hasCondStmts = false;
         foreach ($cond as $expr) {
+            $this->assertExprCanBeUsedAsCondition($expr, 'for condition');
             [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
             $hasCondStmts = $hasCondStmts || $beforeStmts || $afterStmts;
             $list_cond[] = [$condExpr, $beforeStmts, $afterStmts];
@@ -3867,6 +3878,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($expr->if === null) {
             return $this->parseValueSelection($expr, $expr->cond, $expr->else, self::OP_NOT_EMPTY);
         }
+        $this->assertExprCanBeUsedAsCondition($expr->cond, 'ternary condition');
+        $this->assertExprCanBeUsedAsValue($expr->if, 'ternary branch');
+        $this->assertExprCanBeUsedAsValue($expr->else, 'ternary branch');
         [$cond, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($expr->cond);
         $ifBeforeStmtCount = count($this->context->beforeStmtLines);
         $ifAfterStmtCount = count($this->context->afterStmtLines);
@@ -3928,6 +3942,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseMatch(Expr\Match_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->cond, 'match condition');
         $var = $this->parseIdentifier($expr->cond);
         if ($this->isVarExpr($expr->cond)) {
             if (!$this->hasVar($var)) {
@@ -3957,6 +3972,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         };
 
         $appendMatchReturn = function (string &$code, NodeAbstract $body) use ($parseExprWithStmts, $appendStmtLines): void {
+            $this->assertExprCanBeUsedAsValue($body, 'match arm');
             [$value, $beforeStmts, $afterStmts] = $parseExprWithStmts($body);
             $appendStmtLines($code, $beforeStmts);
             if ($afterStmts) {
@@ -3982,6 +3998,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->isMatchExpr($cond)) {
                     $this->fatalError($arm, 'Match expression cannot be used as a condition');
                 }
+                $this->assertExprCanBeUsedAsValue($cond, 'match arm condition');
                 [$condValue, $beforeStmts, $afterStmts] = $parseExprWithStmts($cond);
                 $code .= $this->getIndent() . 'if (!' . $matched . ') {';
                 $appendStmtLines($code, $beforeStmts);
@@ -4034,6 +4051,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseBitwiseNot(Expr\BitwiseNot $expr): string
     {
         $type = $this->detectTypeOfExpr($expr->expr);
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'bitwise operand');
         if ($type === self::TYPE_BIGINT) {
             return 'php::BigInt::bitNot(' . $this->parseExpr($expr->expr) . ')';
         }
@@ -4078,12 +4096,14 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function parseBooleanNot(Expr\BooleanNot $expr): string
     {
+        $this->assertExprCanBeUsedAsCondition($expr->expr, 'boolean operand');
         return '!(' . $this->parseExpr($expr->expr) . ')';
     }
 
     protected function parseWhile(Node\Stmt\While_ $v): string
     {
         $stmts = $v->stmts;
+        $this->assertExprCanBeUsedAsCondition($v->cond, 'while condition');
         [$cond, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($v->cond);
 
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
@@ -4109,12 +4129,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parsePrint(Expr\Print_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'print operand');
         return 'php::print(' . $this->parseExpr($expr->expr) . ')';
     }
 
     protected function parseDo(Node\Stmt\Do_ $v): string
     {
         $stmts = $v->stmts;
+        $this->assertExprCanBeUsedAsCondition($v->cond, 'do-while condition');
         [$cond, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($v->cond);
         if ($beforeStmts || $afterStmts) {
             $condCode = '[&]() -> bool {';
@@ -4143,6 +4165,8 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function parseValueSelection(NodeAbstract $expr, Expr $left, Expr $right, string $op): string
     {
+        $this->assertExprCanBeUsedAsValue($left, 'selection value');
+        $this->assertExprCanBeUsedAsValue($right, 'selection value');
         $leftExpr = $this->parseIdentifier($left);
         if ($this->isVarExpr($left)) {
             $this->checkVarMustExist($left, $leftExpr);
@@ -4281,11 +4305,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseClone(Expr\Clone_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'clone operand');
         return 'php::clone(' . $this->parseExpr($expr->expr) . ')';
     }
 
     protected function parseInstanceof(Expr\Instanceof_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'instanceof operand');
         if ($this->isNameExpr($expr->class)) {
             $className = $this->getNamespacedClassName($this->parseIdentifier($expr->class));
             $className = $this->getClassEntryPtr($className);
@@ -4297,11 +4323,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastInt(Expr\Cast\Int_ $node): string
     {
+        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
         return $this->convertIntExpr($this->parseExpr($node->expr));
     }
 
     protected function parseCastString(Expr\Cast\String_ $node): string
     {
+        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
         return $this->convertExprToStringByType(
             $this->parseExpr($node->expr),
             $this->detectTypeOfExpr($node->expr)
@@ -4310,11 +4338,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastBool(Expr\Cast\Bool_ $node): string
     {
+        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
         return $this->convertBoolExpr($this->parseExpr($node->expr));
     }
 
     protected function parseCastObject(Expr\Cast\Object_ $node): string
     {
+        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
         return $this->convertObjectExpr($this->parseExpr($node->expr));
     }
 
@@ -4383,6 +4413,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     protected function parseUnaryMinus(Expr\UnaryMinus $expr): string
     {
         $type = $this->detectTypeOfExpr($expr->expr);
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
         if ($type === self::TYPE_BIGFLOAT) {
                         return 'php::BigFloat::neg(' . $this->parseExpr($expr->expr) . ')';
         }
@@ -4399,6 +4430,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseUnaryPlus(Expr\UnaryPlus $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
         return $this->parseExpr($expr->expr);
     }
 
@@ -4407,6 +4439,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $parts = $expr->parts;
         $list  = [];
         foreach ($parts as $part) {
+            if (!$part instanceof Node\InterpolatedStringPart) {
+                $this->assertExprCanBeUsedAsValue($part, 'string interpolation value');
+            }
             $list[] = $this->parseExpr($part);
         }
 
@@ -5058,6 +5093,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         $cond    = $v->cond;
         $tmp_var = $this->genTmpVarName();
         $type    = $this->detectTypeOfExpr($cond);
+        $this->assertExprCanBeUsedAsValue($cond, 'switch condition');
         if ($this->isVarExpr($cond)) {
             $this->requireVar($v, $this->parseIdentifier($cond));
         }
@@ -5137,6 +5173,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 $groupMatched = $this->genTmpVarName();
                 $code .= $this->getIndent() . 'bool ' . $groupMatched . ' = false;' . PHP_EOL;
                 foreach ($caseConds as $caseCond) {
+                    $this->assertExprCanBeUsedAsValue($caseCond, 'switch case condition');
                     $caseBeforeStmtCount = count($this->context->beforeStmtLines);
                     $caseAfterStmtCount = count($this->context->afterStmtLines);
                     $caseCondExpr = $this->parseIdentifier($caseCond);
@@ -5178,6 +5215,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         foreach ($v->vars as $var) {
             $varName = $this->escapeVarName($var->var->name);
             $type = $var->default ? $this->detectTypeOfExpr($var->default) : self::TYPE_VAR;
+            if ($var->default) {
+                $this->assertExprCanBeUsedAsValue($var->default, 'static variable default value');
+            }
             $globalVar = $this->addStaticVar($var->var, $varName, $type);
 
             $list[] = self::TYPE_VAR . ' &' . $varName . ' = ' . $this->escapeGlobalVar($globalVar) . ';';
@@ -5206,6 +5246,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseEval(Expr\Eval_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'eval operand');
         // 对 eval() 指令的 PHP 代码段禁止字面量优化
         $expr->expr->setAttribute('noLiteralString', true);
         return 'php::eval(' . $this->identifierToStr($expr->expr) . ')';
@@ -5213,6 +5254,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseInclude(Expr\Include_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'include operand');
         switch ($expr->type) {
             case Expr\Include_::TYPE_INCLUDE:
                 $type = 'php::INCLUDE';
@@ -5406,6 +5448,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastArray(Expr\Cast\Array_ $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'cast operand');
         return $this->convertArrayExpr($this->parseExpr($expr->expr));
     }
 
@@ -5426,6 +5469,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseCastDouble(mixed $expr): string
     {
+        $this->assertExprCanBeUsedAsValue($expr->expr, 'cast operand');
         return $this->convertFloatExpr($this->parseIdentifier($expr->expr));
     }
 
@@ -6859,10 +6903,12 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $items = $node->items;
         foreach ($items as $item) {
+            $this->assertExprCanBeUsedAsValue($item->value, $item->unpack ? 'array unpack value' : 'array value');
             $value = $this->parseIdentifier($item->value);
             if ($item->unpack) {
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
             } elseif ($item->key) {
+                $this->assertExprCanBeUsedAsValue($item->key, 'array key');
                 $key = $this->parseArrayKey($item->key);
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
             } else {
