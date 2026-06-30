@@ -1899,6 +1899,13 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isPlaceholderExpr($arg)) {
                 continue;
             }
+            if ($arg instanceof Node\Arg && $arg->unpack) {
+                if ($hasNamedArg) {
+                    $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
+                }
+                $providedArgIndexes[$i] = true;
+                continue;
+            }
             if ($arg->name === null) {
                 if ($hasNamedArg) {
                     $this->fatalError($arg, 'Cannot use positional argument after named argument');
@@ -2853,6 +2860,44 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
+    protected function hasNamedCallArg(array $args): bool
+    {
+        foreach ($args as $arg) {
+            if ($arg instanceof Node\Arg && $arg->name !== null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function hasUnpackBeforeNamedArg(array $args): bool
+    {
+        $hasUnpack = false;
+        foreach ($args as $arg) {
+            if (!$arg instanceof Node\Arg) {
+                continue;
+            }
+            if ($arg->unpack) {
+                $hasUnpack = true;
+            } elseif ($hasUnpack && $arg->name !== null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function genCallUserFuncArray(string $callback, array $args, string $funcName = '', string $className = ''): string
+    {
+        return 'php::call(' . $this->getFuncPtr('call_user_func_array') . ', '
+            . Symbol::argList() . '{' . $callback . ', ' . $this->parseCallArgs($args, $funcName, $className, false, true) . '})';
+    }
+
+    protected function getFunctionCallbackExpr(string $nativeFn): string
+    {
+        $functionDef = $this->getFunction($nativeFn);
+        return $this->getLiteralString($functionDef->getNamespacedName());
+    }
+
     protected function validateInternalNamedCallArgs(\ReflectionFunctionAbstract $ref, array $callArgs): void
     {
         $hasNamedArg = false;
@@ -2874,6 +2919,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         foreach ($callArgs as $i => $arg) {
             if ($this->isPlaceholderExpr($arg)) {
+                continue;
+            }
+            if ($arg instanceof Node\Arg && $arg->unpack) {
+                if ($hasNamedArg) {
+                    $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
+                }
+                $providedArgIndexes[$i] = true;
                 continue;
             }
             if ($arg->name === null) {
@@ -2946,6 +2998,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     return $this->genPlaceHolder($this->identifierToStr($expr->name));
                 }
                 $this->checkNativeCallArgs($expr, $this->getFunction($nativeFn), $expr->args, $name);
+                if ($this->hasUnpackBeforeNamedArg($expr->args)) {
+                    return $this->genCallUserFuncArray($this->getFunctionCallbackExpr($nativeFn), $expr->args, $name);
+                }
                 try {
                     return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
                 } catch (PlaceHolder) {
@@ -2971,8 +3026,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return 'php::call(' . $fn . ')';
         }
+        if ($this->hasNamedCallArg($expr->args)) {
+            $callback = $name !== '' ? $this->getLiteralString($name) : $fn;
+            return $this->genCallUserFuncArray($callback, $expr->args, $name);
+        }
         try {
-            return 'php::call(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name) . ')';
+            return 'php::call(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name, '', $name !== '') . ')';
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($placeHolder);
         }
@@ -3135,22 +3194,88 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $variadicParam !== null && $variadicParam->isPassedByReference();
     }
 
-    protected function parseCallArgs(array $args, string $funcName = '', string $className = ''): string
+    protected function parseCallArgs(
+        array $args,
+        string $funcName = '',
+        string $className = '',
+        bool $separateNamedArgs = true,
+        bool $forceArrayArgs = false
+    ): string
     {
         $list_args = [];
-        $last = array_key_last($args);
+        $arrayArgsVar = null;
+        $namedArgsVar = null;
+        $namedArgs = [];
+        $hasNamedArg = false;
+
+        $ensureArrayArgs = function () use (&$arrayArgsVar, &$list_args): string {
+            if ($arrayArgsVar === null) {
+                $arrayArgsVar = $this->genTmpVarName();
+                $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $arrayArgsVar . '{' . implode(', ', $list_args) . '};';
+                $list_args = [];
+            }
+            return $arrayArgsVar;
+        };
+
+        $ensureNamedArgs = function () use (&$namedArgsVar): string {
+            if ($namedArgsVar === null) {
+                $namedArgsVar = $this->genTmpVarName();
+                $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $namedArgsVar . ';';
+                $this->context->afterStmtLines[] = $namedArgsVar . '.unset();';
+            }
+            return $namedArgsVar;
+        };
+
+        $addPositionalArg = function (string $value) use (&$arrayArgsVar, &$list_args): void {
+            if ($arrayArgsVar !== null) {
+                $this->context->beforeStmtLines[] = $arrayArgsVar . '.append(' . $value . ');';
+            } else {
+                $list_args[] = $value;
+            }
+        };
+
+        if ($forceArrayArgs) {
+            $ensureArrayArgs();
+        }
+
         foreach ($args as $i => $arg) {
             if ($this->isPlaceholderExpr($arg)) {
                 throw new PlaceHolder();
             }
+            if ($arg->unpack) {
+                if ($hasNamedArg) {
+                    $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
+                }
+                $arrayArgs = $ensureArrayArgs();
+                $this->context->beforeStmtLines[] = $arrayArgs . '.merge(' . $this->parseArrayArg($arg) . ');';
+                continue;
+            }
             if ($arg->name !== null) {
-                return $this->parseNamedCallArgs($args, $i, $list_args);
+                $hasNamedArg = true;
+                if (!$this->isIdExpr($arg->name)) {
+                    $this->fatalError($arg, 'Named argument must be a string');
+                }
+                if (array_key_exists($arg->name->name, $namedArgs)) {
+                    $this->fatalError($arg, "Duplicate named argument `{$arg->name->name}`");
+                }
+                $namedArgs[$arg->name->name] = true;
+                if ($separateNamedArgs) {
+                    $namedArgsArray = $ensureNamedArgs();
+                    $this->context->beforeStmtLines[] = $namedArgsArray . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $this->parseCallArgValue($arg) . ');';
+                } else {
+                    $arrayArgs = $ensureArrayArgs();
+                    $this->context->beforeStmtLines[] = $arrayArgs . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $this->parseCallArgValue($arg) . ');';
+                }
+                continue;
+            }
+            if ($hasNamedArg) {
+                $this->fatalError($arg, 'Cannot use positional argument after named argument');
             }
             $byRef = $funcName && $this->isReferenceArgument($funcName, $className, $i);
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
                 if ($byRef) {
-                    $list_args[] = $this->parseArgRefVar($arg, $name);
+                    $addPositionalArg($this->parseArgRefVar($arg, $name));
                     continue;
                 }
                 if (!$this->hasVar($name)) {
@@ -3173,9 +3298,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($byRef) {
                         $ref = $this->addTmpVar(self::TYPE_REF);
                         $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
-                        $list_args[] = '&' . $ref;
+                        $addPositionalArg('&' . $ref);
                     } else {
-                        $list_args[] = $globalVar;
+                        $addPositionalArg($globalVar);
                     }
                     continue;
                 }
@@ -3186,7 +3311,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     if ($arg->value->dim === null) {
                         $this->fatalError($arg, 'Array dimension must be a constant expression');
                     }
-                    $list_args[] = $array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')';
+                    $addPositionalArg($array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')');
                     continue;
                 }
             } elseif ($this->isFuncCallExpr($arg->value)) {
@@ -3199,12 +3324,12 @@ class CompilerBase extends \PhpAot\Core\Translator
                         $name = $this->parseVariable($inner);
                         // 消除 refval() 函数调用，直接使用变量
                         $arg->value = $inner;
-                        $list_args[] = $this->parseArgRefVar($arg, $name);
+                        $addPositionalArg($this->parseArgRefVar($arg, $name));
                         continue;
                     }
                     $expr = $this->expandRefvalExpr($inner, $arg);
                     if ($expr !== null) {
-                        $list_args[] = $expr;
+                        $addPositionalArg($expr);
                         continue;
                     }
                     $this->fatalError($arg, 'The refval function only accepts a variable, array element, or object property');
@@ -3217,30 +3342,19 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $tmpRef = $this->genTmpVarName();
                     $this->addLocalVar($tmpRef, self::TYPE_REF);
                     $this->context->beforeStmtLines[] = $tmpRef . ' = ' . $this->parseChainedExpr($arg->value, self::OP_REFVAL) . ';';
-                    $list_args[] = '&' . $tmpRef;
+                    $addPositionalArg('&' . $tmpRef);
                     continue;
                 }
             }
-            // 变长参数展开的语法，例如：array_merge(...$arr)
-            if ($arg->unpack) {
-                if ($i !== $last) {
-                    $this->fatalError($arg, 'The unpack expression for variadic arguments must be the last');
-                }
-                // 如果第一个参数是数组变量，数组展开语法直接传递该变量，没必要创建临时变量
-                // 例如：function (array $args) { var_dump(...$args); }
-                if ($i === 0 and $this->isVarExpr($arg->value) and $this->getVarType($arg->value->name) === self::TYPE_ARRAY) {
-                    return $this->parseIdentifier($arg->value);
-                } else {
-                    $tmpVar = $this->genTmpVarName();
-                    $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $tmpVar . '{' . implode(', ', $list_args) . '};';
-                    $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
-                    return $tmpVar;
-                }
-            }
-            $list_args[] = $this->parseCallArgValue($arg);
+            $value = $this->parseCallArgValue($arg);
+            $addPositionalArg($value);
         }
 
-        return Symbol::argList() . '{' . implode(', ', $list_args) . '}';
+        if ($arrayArgsVar !== null) {
+            return $namedArgsVar !== null ? $arrayArgsVar . ', ' . $namedArgsVar . '.array()' : $arrayArgsVar;
+        }
+        $callArgs = Symbol::argList() . '{' . implode(', ', $list_args) . '}';
+        return $namedArgsVar !== null ? $callArgs . ', ' . $namedArgsVar . '.array()' : $callArgs;
     }
 
     protected function parseCallArgValue(Node\Arg $arg): string
@@ -4826,6 +4940,9 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($nativeFunc) {
                     $expr->setAttribute('nativeCall', $nativeFunc);
                     try {
+                        if ($this->hasUnpackBeforeNamedArg($expr->args)) {
+                            return $this->genCallUserFuncArray($this->genArray([$object, $method]), $expr->args, $funcName, $class);
+                        }
                         return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
                     } catch (PlaceHolder) {
                         return $this->genPlaceHolder($this->genArray([$object, $method]));
@@ -4879,9 +4996,12 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($expr->args)) {
             return $object . '.call(' . $methodPtr . ')';
         }
+        if ($this->hasNamedCallArg($expr->args)) {
+            return $this->genCallUserFuncArray($this->genArray([$object, $method]), $expr->args, $funcName, $class);
+        }
         try {
             $class = empty($class) ? self::DYNAMIC_CALLED_CLASS : $class;
-            return $object . '.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class) . ')';
+            return $object . '.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class, false) . ')';
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($this->genArray([$object, $method]));
         }
@@ -4969,6 +5089,9 @@ class CompilerBase extends \PhpAot\Core\Translator
 
                 if ($nativeFunc) {
                     try {
+                        if ($this->hasUnpackBeforeNamedArg($expr->args)) {
+                            return $this->genCallUserFuncArray($this->genArray($callScope), $expr->args, $method, $class);
+                        }
                         $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
                         $expr->setAttribute('nativeCall', $nativeFunc);
                     } catch (PlaceHolder) {
@@ -5003,6 +5126,9 @@ class CompilerBase extends \PhpAot\Core\Translator
         $call = 'php::call';
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
+        }
+        if ($this->hasNamedCallArg($expr->args)) {
+            return $this->genCallUserFuncArray($placeHolder, $expr->args);
         }
         try {
             $callArgs = $this->parseCallArgs($expr->args);

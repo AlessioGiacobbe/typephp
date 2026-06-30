@@ -37,4 +37,9 @@ class FunctionTest extends \BaseTest
         $this->exec('Named argument `replace` is missing default value', 'internal-call-missing-required-named-arg.php');
     }
 
+    public function testUnpackAfterNamedArgument()
+    {
+        $this->exec('Cannot use argument unpacking after named arguments', 'unpack-after-named-arg.php');
+    }
+
 }
