@@ -119,6 +119,19 @@
 
 ---
 
+### 9. [核心重构计划](REFACTORING_PLAN.md)
+**必读指数**: ⭐⭐⭐⭐
+
+内容概要：
+- 核心类职责拆分方向
+- TypeSystem、SymbolResolver、PropertyAccessResolver、CallResolver 等模块规划
+- 渐进式重构阶段计划
+- 测试门禁和风险控制要求
+
+**适合人群**: 核心开发者、架构重构参与者
+
+---
+
 ## 🎯 快速导航
 
 ### 按使用场景

@@ -93,62 +93,67 @@ class Preprocessor extends CompilerBase
 
     public function prepareFile(string $file): void
     {
-        $phpCode = $this->loadFile($file);
-        $this->symbolCallInFile[$this->file] = [];
-        $this->resetFile();
-        $this->resetFunction();
-        $this->resetMethod();
-        $this->resetClass();
-        $this->resetNamespace();
-
-        $this->climate->info('prepare: ' . $this->getRelativePath($this->file));
+        $previousPhase = $this->enterCompilerPhase(self::PHASE_PREPARE);
         try {
-            $ast = $this->parser->parse($phpCode);
-        } catch (\PhpParser\Error $e) {
-            $this->climate->red("Fatal error: {$e->getMessage()} in {$this->file}");
-            throw new SyntaxError($e->getMessage(), $e->getCode());
-        }
+            $phpCode = $this->loadFile($file);
+            $this->symbolCallInFile[$this->file] = [];
+            $this->resetFile();
+            $this->resetFunction();
+            $this->resetMethod();
+            $this->resetClass();
+            $this->resetNamespace();
 
-        $traverser = new NodeTraverser();
-        $traverser->addVisitor(new Visitor());
-        $stmts = $traverser->traverse($ast);
-
-        foreach ($stmts as $v) {
-            $type = $v->getType();
-            switch ($type) {
-                case 'Stmt_Namespace':
-                    $this->prepareNamespace($v);
-                    break;
-                case 'Stmt_Enum':
-                case 'Stmt_Class':
-                case 'Stmt_Trait':
-                    $this->prepareClass($v);
-                    break;
-                case 'Stmt_Interface':
-                    $this->parseInterface($v);
-                    break;
-                case 'Stmt_Function':
-                    $this->prepareFunction($v);
-                    break;
-                case 'Stmt_Use':
-                    $this->parseUse($v);
-                    break;
-                case 'Stmt_GroupUse':
-                    $this->parseGroupUse($v);
-                    break;
-                case 'Stmt_Declare':
-                case 'Stmt_Nop':
-                    break;
-                case 'Stmt_Const':
-                    $this->parseConstDef($v);
-                    break;
-                case 'Stmt_Expression':
-                    $this->foundStrayCode($v);
-                    break;
-                default:
-                    $this->fatalError($v, 'Unsupported statement: ' . $type);
-                    break;
+            $this->climate->info('prepare: ' . $this->getRelativePath($this->file));
+            try {
+                $ast = $this->parser->parse($phpCode);
+            } catch (\PhpParser\Error $e) {
+                $this->climate->red("Fatal error: {$e->getMessage()} in {$this->file}");
+                throw new SyntaxError($e->getMessage(), $e->getCode());
             }
+
+            $traverser = new NodeTraverser();
+            $traverser->addVisitor(new Visitor());
+            $stmts = $traverser->traverse($ast);
+
+            foreach ($stmts as $v) {
+                $type = $v->getType();
+                switch ($type) {
+                    case 'Stmt_Namespace':
+                        $this->prepareNamespace($v);
+                        break;
+                    case 'Stmt_Enum':
+                    case 'Stmt_Class':
+                    case 'Stmt_Trait':
+                        $this->prepareClass($v);
+                        break;
+                    case 'Stmt_Interface':
+                        $this->parseInterface($v);
+                        break;
+                    case 'Stmt_Function':
+                        $this->prepareFunction($v);
+                        break;
+                    case 'Stmt_Use':
+                        $this->parseUse($v);
+                        break;
+                    case 'Stmt_GroupUse':
+                        $this->parseGroupUse($v);
+                        break;
+                    case 'Stmt_Declare':
+                    case 'Stmt_Nop':
+                        break;
+                    case 'Stmt_Const':
+                        $this->parseConstDef($v);
+                        break;
+                    case 'Stmt_Expression':
+                        $this->foundStrayCode($v);
+                        break;
+                    default:
+                        $this->fatalError($v, 'Unsupported statement: ' . $type);
+                        break;
+                }
+            }
+        } finally {
+            $this->restoreCompilerPhase($previousPhase);
         }
     }
 

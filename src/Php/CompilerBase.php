@@ -43,6 +43,7 @@ use PhpAot\Php\Platform\Macos;
 use PhpAot\Php\Platform\PlatformBase;
 use PhpAot\Php\Platform\PlatformFactory;
 use PhpAot\Php\Platform\Windows;
+use PhpAot\Php\Resolver\PropertyAccessResolver;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -163,8 +164,12 @@ class CompilerBase extends \PhpAot\Core\Translator
     public const string BUILD_MODE_EXT = 'ext';
     public const string ENTRY_FUNCTION = 'main';
     public const string PHPX_VENDOR_DIR = '/vendor/swoole/phpx';
+    protected const string PHASE_IDLE = 'idle';
+    protected const string PHASE_PREPARE = 'prepare';
+    protected const string PHASE_CONVERT = 'convert';
 
     protected string $lang = 'PHP';
+    protected string $compilerPhase = self::PHASE_IDLE;
     protected string $cppCompiler = '';
     protected array $literalStrings = [];
     protected int $literalStringIndex = 0;
@@ -843,6 +848,25 @@ class CompilerBase extends \PhpAot\Core\Translator
     {
         $this->method = '';
         $this->methodDef = null;
+    }
+
+    protected function enterCompilerPhase(string $phase): string
+    {
+        $previous = $this->compilerPhase;
+        $this->compilerPhase = $phase;
+        return $previous;
+    }
+
+    protected function restoreCompilerPhase(string $phase): void
+    {
+        $this->compilerPhase = $phase;
+    }
+
+    protected function assertCompilerPhase(string $expected, string $feature): void
+    {
+        if ($this->compilerPhase !== $expected) {
+            $this->error("Internal compiler error: {$feature} can only be used during {$expected} phase, current phase is {$this->compilerPhase}");
+        }
     }
 
     protected function resetClass(): void
@@ -5810,31 +5834,29 @@ class CompilerBase extends \PhpAot\Core\Translator
         return null;
     }
 
+    private function createPropertyAccessResolver(): PropertyAccessResolver
+    {
+        $this->assertCompilerPhase(self::PHASE_CONVERT, 'PropertyAccessResolver');
+        return new PropertyAccessResolver(
+            fn(string $class): ?ClassDef => $this->classes[$this->escapeClass($class)] ?? null,
+            fn(string $class): string => $this->classExtends[strtolower(ltrim($class, '\\'))] ?? '',
+            fn(NodeAbstract $expr, string $message) => $this->fatalError($expr, $message),
+        );
+    }
+
     protected function isSameClassName(string $classA, string $classB): bool
     {
-        return strcasecmp(ltrim($classA, '\\'), ltrim($classB, '\\')) === 0;
+        return $this->createPropertyAccessResolver()->isSameClassName($classA, $classB);
     }
 
     protected function isSameOrSubclassOf(string $class, string $parent): bool
     {
-        $class = strtolower(ltrim($class, '\\'));
-        $parent = strtolower(ltrim($parent, '\\'));
-        while ($class !== '') {
-            if ($class === $parent) {
-                return true;
-            }
-            $class = $this->classExtends[$class] ?? '';
-        }
-        return false;
+        return $this->createPropertyAccessResolver()->isSameOrSubclassOf($class, $parent);
     }
 
     protected function canAccessProtectedProperty(string $scope, string $declaringClass): bool
     {
-        if ($scope === '') {
-            return false;
-        }
-        return $this->isSameOrSubclassOf($scope, $declaringClass)
-            || $this->isSameOrSubclassOf($declaringClass, $scope);
+        return $this->createPropertyAccessResolver()->canAccessProtectedProperty($scope, $declaringClass);
     }
 
     /**
@@ -5843,49 +5865,12 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function findNativeProperty(NodeAbstract $expr, string $property, string $class, bool $static = false): ?string
     {
-        $class = ltrim($class, '\\');
-        $findClass = $class;
         $scope = $this->class ? $this->getFullClassName() : '';
-        $propertyDef = null;
-        $classDef = null;
-        while (true) {
-            if ($this->hasClass($findClass)) {
-                $classDef = $this->getClass($findClass);
-                if ($classDef->hasProperty($property)) {
-                    $propertyDef = $classDef->getProperty($property);
-                    if (!$static and $propertyDef->isStatic()) {
-                        $this->fatalError($expr, "Cannot access static property `{$class}::\${$property}` as non-static instance property.");
-                    }
-                    if ($static and !$propertyDef->isStatic()) {
-                        $this->fatalError($expr, "Cannot access non-static property `{$class}::\${$property}` as static property.");
-                    }
-                    if ($propertyDef->isPublic()) {
-                        break;
-                    }
-                    if ($propertyDef->isProtected()) {
-                        if ($this->canAccessProtectedProperty($scope, $findClass)) {
-                            break;
-                        }
-                        $displayClass = ltrim($class, '\\');
-                        $this->fatalError($expr, "Cannot access protected property `{$property}` of class `{$displayClass}`");
-                    } else {
-                        if ($this->isSameClassName($scope, $findClass)) {
-                            break;
-                        }
-                        $displayClass = ltrim($class, '\\');
-                        $this->fatalError($expr, "Cannot access private property `{$property}` of class `{$displayClass}`");
-                    }
-                } elseif ($classDef->extends) {
-                    $findClass = $classDef->extends;
-                    continue;
-                }
-            }
-            break;
-        }
-        if ($propertyDef and $classDef) {
-            $expr->setAttribute('nativePropertyDef', $propertyDef);
-            $expr->setAttribute('nativeClassDef', $classDef);
-            return $this->getPropertyOffset($classDef->getNamespacedName(false), $property);
+        $result = $this->createPropertyAccessResolver()->resolveNativeProperty($expr, $property, $class, $scope, $static);
+        if ($result !== null) {
+            $expr->setAttribute('nativePropertyDef', $result->propertyDef);
+            $expr->setAttribute('nativeClassDef', $result->classDef);
+            return $this->getPropertyOffset($result->classDef->getNamespacedName(false), $result->property);
         }
         return null;
     }

@@ -481,21 +481,26 @@ class Translator extends Preprocessor
 
     public function convertFile(string $file): string
     {
-        $file = realpath($file);
-        $phpCode = $this->loadFile($file);
-        $this->localHeaders = [];
-        while (true) {
-            try {
-                $cppCode = $this->doConvert($phpCode);
-                $cppFile = $this->getCppFile($file);
-                $this->save($cppCode, $cppFile);
-                $this->phpSrcFiles[] = $file;
-                // 生成 stub 文件，依赖 convert 阶段的 use 等信息
-                $this->genStubFile($this->file);
-                return $cppFile;
-            } catch (Redo $e) {
-                continue;
+        $previousPhase = $this->enterCompilerPhase(self::PHASE_CONVERT);
+        try {
+            $file = realpath($file);
+            $phpCode = $this->loadFile($file);
+            $this->localHeaders = [];
+            while (true) {
+                try {
+                    $cppCode = $this->doConvert($phpCode);
+                    $cppFile = $this->getCppFile($file);
+                    $this->save($cppCode, $cppFile);
+                    $this->phpSrcFiles[] = $file;
+                    // 生成 stub 文件，依赖 convert 阶段的 use 等信息
+                    $this->genStubFile($this->file);
+                    return $cppFile;
+                } catch (Redo $e) {
+                    continue;
+                }
             }
+        } finally {
+            $this->restoreCompilerPhase($previousPhase);
         }
     }
 
