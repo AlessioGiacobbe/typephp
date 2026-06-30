@@ -570,22 +570,30 @@ class Preprocessor extends CompilerBase
             if ($this->classDef->hasConstant($constName)) {
                 $this->fatalError($v, "Duplicate constant `{$constName}`");
             }
-            $constValue = $this->parseIdentifier($const->value);
-
-            $constInfo = new ConstantDef($constName, $flags, $type, $constValue);
-            $constInfo->valueExpr = $const->value;
-
-            if ($this->context->beforeStmtLines) {
-                $arrayExpr = '';
-                if ($this->context->localVars) {
-                    $arrayExpr .= $this->genScopeVarDecl();
-                }
-                $arrayExpr .= $this->parseBeforeStmtLines();
-                $constInfo->arrayExpr = $arrayExpr;
-            }
+            $constInfo = $this->parseClassLikeConstant($const, $flags, $type, $class);
             $constInfo->class = $class;
             $this->classDef->constants[$constInfo->name] = $constInfo;
         }
+    }
+
+    private function parseClassLikeConstant(Node\Const_ $const, int $flags, string $type, string $class = ''): ConstantDef
+    {
+        $constName = $this->parseIdentifier($const->name);
+        $constValue = $this->parseIdentifier($const->value);
+
+        $constInfo = new ConstantDef($constName, $flags, $type, $constValue);
+        $constInfo->valueExpr = $const->value;
+
+        if ($this->context->beforeStmtLines) {
+            $arrayExpr = '';
+            if ($this->context->localVars) {
+                $arrayExpr .= $this->genScopeVarDecl();
+            }
+            $arrayExpr .= $this->parseBeforeStmtLines();
+            $constInfo->arrayExpr = $arrayExpr;
+        }
+        $constInfo->class = $class;
+        return $constInfo;
     }
 
     /**
@@ -767,9 +775,7 @@ class Preprocessor extends CompilerBase
                             'Scalar_String' => self::TYPE_STR,
                             default => self::TYPE_VAR,
                         };
-                    $constInfo = new ConstantDef($constName, $this->parseModifiers($stmt->flags), $type, $this->parseIdentifier($const->value));
-                    $constInfo->class = $class;
-                    $constInfo->valueExpr = $const->value;
+                    $constInfo = $this->parseClassLikeConstant($const, $this->parseModifiers($stmt->flags), $type, $class);
                     $this->interfaceDef->constants[$constName] = $constInfo;
                 }
                 continue;

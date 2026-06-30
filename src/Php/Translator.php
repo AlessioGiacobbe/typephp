@@ -752,7 +752,7 @@ class Translator extends Preprocessor
         $propCount = max(1, count($this->propMap));
         $lines[] = 'extern THREAD_LOCAL uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . $propCount . '];' . PHP_EOL;
 
-        foreach ($this->classes as $classDef) {
+        foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
                 if ($constant->type === self::TYPE_ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
@@ -861,8 +861,8 @@ CODE;
         }
 
         $code .= "// class \n";
-        foreach ($this->classes as $classDef) {
-            if ($classDef->requireCtor) {
+        foreach ($this->getClassLikesWithConstants() as $classDef) {
+            if ($classDef instanceof ClassDef && $classDef->requireCtor) {
                 $code .= 'static zend_object* (*create_object_' . $classDef->getNamespacedName() . ")(zend_class_entry *class_type);\n";
             }
             foreach ($classDef->constants as $constant) {
@@ -964,7 +964,7 @@ CODE;
         }
 
         $code .= '// class array constants' . PHP_EOL;
-        foreach ($this->classes as $classDef) {
+        foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
                 if ($constant->type === self::TYPE_ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
@@ -1885,6 +1885,14 @@ CODE;
         return self::PREFIX . 'class_entry_' . $this->escapeCeName($classDef->getNamespacedName());
     }
 
+    /**
+     * @return array<ClassDef|InterfaceDef>
+     */
+    private function getClassLikesWithConstants(): array
+    {
+        return array_merge($this->classes, $this->interfaces);
+    }
+
     protected function getFilesFromDir(string $path): array
     {
         $scanner = new FileScanner($path);
@@ -1895,7 +1903,7 @@ CODE;
     protected function genClassArrayConstants(): string
     {
         $code = '';
-        foreach ($this->classes as $classDef) {
+        foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
                 if ($constant->type === self::TYPE_ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
@@ -2739,6 +2747,7 @@ CODE;
         }
         if (!$class instanceof Node\Stmt\Trait_) {
             $this->checkInterfaceImplementations($class);
+            $this->checkInheritedAbstractMethodsAreImplemented($class);
         }
         $code = $this->genNativeMethod($methodCodes);
 
@@ -3092,6 +3101,10 @@ CODE;
                 $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
                 break;
             }
+            if ($classDef->hasAbstractMethod($name) && isset($classDef->abstractMethodDefs[strtolower($name)])) {
+                $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $classDef->getAbstractMethod($name), $extends);
+                break;
+            }
         }
     }
 
@@ -3162,9 +3175,29 @@ CODE;
     private function checkInterfaceImplementations(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void
     {
         $classDef = $this->classDef;
-        foreach ($classDef->implements as $interfaceName) {
+        foreach ($this->getImplementedInterfacesForClass($classDef) as $interfaceName) {
             $this->checkInterfaceImplementation($classStmt, $classDef, $interfaceName);
         }
+    }
+
+    /**
+     * @return array<string>
+     */
+    private function getImplementedInterfacesForClass(ClassDef $classDef): array
+    {
+        $interfaces = [];
+        $current = $classDef;
+        while (true) {
+            foreach ($current->implements as $interfaceName) {
+                $interfaces[$interfaceName] = $interfaceName;
+            }
+            if (!$current->extends || !$this->hasClass($current->extends)) {
+                break;
+            }
+            $current = $this->getClass($current->extends);
+        }
+
+        return array_values($interfaces);
     }
 
     private function checkInterfaceImplementation(NodeAbstract $node, ClassDef $classDef, string $interfaceName): void
@@ -3178,8 +3211,11 @@ CODE;
 
         $interfaceDef = $this->getInterface($interfaceName);
         foreach ($interfaceDef->methods as $methodName => $interfaceMethodDef) {
-            $childMethodDef = $this->findClassMethodDef($classDef, $methodName);
+            $childMethodDef = $this->findClassMethodDef($classDef, $methodName, $classDef->isAbstract());
             if ($childMethodDef === null) {
+                if ($classDef->isAbstract()) {
+                    continue;
+                }
                 $this->fatalError($node, "Class `{$classDef->getNamespacedName(false)}` must implement method `{$interfaceName}::{$interfaceMethodDef->name}()`");
             }
             $this->validateMethodOverrideSignature(
@@ -3196,17 +3232,42 @@ CODE;
         }
     }
 
-    private function findClassMethodDef(ClassDef $classDef, string $methodName): ?MethodDef
+    private function findClassMethodDef(ClassDef $classDef, string $methodName, bool $includeAbstract = true): ?MethodDef
     {
         $current = $classDef;
         while (true) {
             if ($current->hasMethod($methodName)) {
                 return $current->getMethod($methodName);
             }
+            if ($includeAbstract && $current->hasAbstractMethod($methodName) && isset($current->abstractMethodDefs[strtolower($methodName)])) {
+                return $current->getAbstractMethod($methodName);
+            }
             if (!$current->extends || !$this->hasClass($current->extends)) {
                 return null;
             }
             $current = $this->getClass($current->extends);
+        }
+    }
+
+    private function checkInheritedAbstractMethodsAreImplemented(NodeAbstract $node): void
+    {
+        $classDef = $this->classDef;
+        if ($classDef->isAbstract()) {
+            return;
+        }
+
+        $current = $classDef;
+        while ($current->extends && $this->hasClass($current->extends)) {
+            $parent = $this->getClass($current->extends);
+            foreach ($parent->abstractMethodDefs as $methodName => $abstractMethodDef) {
+                if ($this->findClassMethodDef($classDef, $methodName, false) === null) {
+                    $this->fatalError(
+                        $node,
+                        "Class `{$classDef->getNamespacedName(false)}` must implement abstract method `{$parent->getNamespacedName(false)}::{$abstractMethodDef->name}()`"
+                    );
+                }
+            }
+            $current = $parent;
         }
     }
 

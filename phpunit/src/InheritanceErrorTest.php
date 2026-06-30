@@ -112,4 +112,48 @@ class InheritanceErrorTest extends TestCase
     {
         $this->assertCompiles('interface_method_from_trait.php');
     }
+
+    public function testAbstractClassMayDeferInterfaceMethodImplementation()
+    {
+        $this->assertCompiles('interface_abstract_class_missing.php');
+    }
+
+    public function testAbstractMethodMayImplementInterfaceContract()
+    {
+        $this->assertCompiles('interface_abstract_method_signature.php');
+    }
+
+    public function testAbstractInterfaceMethodSignatureMismatch()
+    {
+        $this->exec('must be compatible', 'interface_abstract_method_mismatch.php');
+    }
+
+    public function testInterfaceArrayConstantInitializesRuntimeValue()
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/interface_array_constant.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $compiler->convertFile($testFile);
+        $extensionFile = $compiler->genExtension();
+
+        $this->assertStringContainsString('php::updateConstant("InterfaceArrayConstant", "ITEMS"', file_get_contents($extensionFile));
+    }
+
+    public function testConcreteClassMustImplementInheritedAbstractMethod()
+    {
+        $this->exec('must implement abstract method', 'abstract_parent_method_missing.php');
+    }
+
+    public function testConcreteClassMustImplementInheritedInterfaceMethod()
+    {
+        $this->exec('must implement method', 'interface_abstract_parent_missing.php');
+    }
+
+    public function testAbstractMethodSignatureMismatch()
+    {
+        $this->exec('must be compatible', 'abstract_method_signature_mismatch.php');
+    }
 }

@@ -269,6 +269,20 @@ class PreprocessorTest extends TestCase
         $this->assertNotEmpty($functionDef->returnTypeCheck);
     }
 
+    public function testPrepareFileParsesInterfaceArrayConstantInitExpr(): void
+    {
+        $file = __DIR__ . '/../code/interface_array_constant.php';
+
+        $this->compiler->prepareFile($file);
+
+        $interfaces = $this->getProperty('interfaces');
+        $this->assertArrayHasKey('interfacearrayconstant', $interfaces);
+        $constant = $interfaces['interfacearrayconstant']->constants['ITEMS'];
+
+        $this->assertSame('php::Array', $constant->type);
+        $this->assertStringContainsString('php::Array', $constant->value);
+    }
+
     public function testPrepareFileRejectsNamespacedDuplicateClassAndInterface(): void
     {
         $this->expectException(TestError::class);

@@ -130,7 +130,6 @@ trait TypeCheckGenerator
             foreach ($typeNode->types as $type) {
                 $parts[] = $this->typeCheckNodeToString($type);
             }
-            sort($parts);
             return implode('|', $parts);
         }
         if ($typeNode instanceof IntersectionType) {
@@ -138,7 +137,6 @@ trait TypeCheckGenerator
             foreach ($typeNode->types as $type) {
                 $parts[] = $this->typeCheckNodeToString($type);
             }
-            sort($parts);
             return implode('&', $parts);
         }
 

@@ -136,6 +136,11 @@ class ClassDef extends ClassLikeDef
         return $this->methods[strtolower($method)];
     }
 
+    public function getAbstractMethod($method): MethodDef
+    {
+        return $this->abstractMethodDefs[strtolower($method)];
+    }
+
     public function getConstant($name): ConstantDef
     {
         return $this->constants[$name];
