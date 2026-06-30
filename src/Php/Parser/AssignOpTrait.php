@@ -260,7 +260,7 @@ trait AssignOpTrait
                     $this->checkVarAssignExpr($left, $finalVarType, $type);
                 }
             }
-        } elseif ($this->isPropertyFetch($left) and !$left->getAttribute('nativeProperty')) {
+        } elseif ($this->isPropertyFetch($left) and !$this->isNativePropertyAccess($left)) {
             return $this->parseAssignPropertyFetch($left, $right);
         } elseif ($this->isArrayDimFetch($left) and $this->isVarExpr($left->var)) {
             $tmp = $this->parseIdentifier($left->var);
@@ -397,7 +397,7 @@ trait AssignOpTrait
             return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
         }
 
-        if ($this->isPropertyFetch($node->var) and !$node->var->getAttribute('nativeProperty')) {
+        if ($this->isPropertyFetch($node->var) and !$this->isNativePropertyAccess($node->var)) {
             $obj = $this->parseIdentifier($node->var->var);
             $propName = $this->identifierToStr($node->var->name, literal: true);
             $binaryOp = $this->removeAssignOp($op);

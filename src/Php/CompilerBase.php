@@ -43,6 +43,7 @@ use PhpAot\Php\Platform\Macos;
 use PhpAot\Php\Platform\PlatformBase;
 use PhpAot\Php\Platform\PlatformFactory;
 use PhpAot\Php\Platform\Windows;
+use PhpAot\Php\Resolver\PropertyAccessResult;
 use PhpAot\Php\Resolver\PropertyAccessResolver;
 use PhpParser\Modifiers;
 use PhpParser\Node;
@@ -2771,7 +2772,7 @@ class CompilerBase extends \PhpAot\Core\Translator
      */
     protected function genDynamicPropIncDec($var, string $op, bool $isPre): ?string
     {
-        if (!$this->isPropertyFetch($var) || $var->getAttribute('nativeProperty')) {
+        if (!$this->isPropertyFetch($var) || $this->isNativePropertyAccess($var)) {
             return null;
         }
 
@@ -4893,13 +4894,14 @@ class CompilerBase extends \PhpAot\Core\Translator
                 if ($this->classDef->trait) {
                     goto _dynamic_attr;
                 }
-                $nativeProperty = $this->findNativeProperty($expr, $propertyName, $this->getFullClassName());
+                $result = $this->resolveNativeInstanceProperty($expr, $propertyName, $this->getFullClassName());
+                $nativeProperty = $result ? $this->applyNativePropertyAccessResult($expr, $result) : null;
             } elseif ($this->isTypedObject($objectName)) {
                 $className = $this->getObjectType($objectName);
-                $nativeProperty = $this->findNativeProperty($expr, $propertyName, $className);
+                $result = $this->resolveNativeInstanceProperty($expr, $propertyName, $className);
+                $nativeProperty = $result ? $this->applyNativePropertyAccessResult($expr, $result) : null;
             }
             if ($nativeProperty) {
-                $expr->setAttribute('nativeProperty', $nativeProperty);
                 return $nativeProperty;
             }
         }
@@ -5427,7 +5429,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         // 单属性读取（非链式）
         if ($this->isPropertyFetch($expr) and $this->isVarExpr($expr->var) and $this->isIdExpr($expr->name)) {
             $prop = $this->parsePropertyFetch($expr);
-            if ($expr->hasAttribute('nativeProperty')) {
+            if ($this->isNativePropertyAccess($expr)) {
                 if ($op === self::OP_REFVAL) {
                     return $prop . '.toReference()';
                 }
@@ -5436,7 +5438,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
         if ($this->isStaticPropertyFetch($expr) and $this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
             $prop = $this->parseStaticPropertyFetch($expr);
-            if ($expr->hasAttribute('nativeProperty')) {
+            if ($this->isNativePropertyAccess($expr)) {
                 if ($op === self::OP_REFVAL) {
                     return $prop . '.toReference()';
                 }
@@ -5825,10 +5827,9 @@ class CompilerBase extends \PhpAot\Core\Translator
             } else {
                 $class = $this->getNamespacedClassName($class);
             }
-            $nativeProperty = $this->findNativeProperty($expr, $propertyName, $class, true);
-            if ($nativeProperty) {
-                $expr->setAttribute('nativeProperty', $nativeProperty);
-                return $nativeProperty;
+            $result = $this->resolveNativeStaticProperty($expr, $propertyName, $class);
+            if ($result !== null) {
+                return $this->applyNativePropertyAccessResult($expr, $result);
             }
         }
         return null;
@@ -5859,20 +5860,30 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->createPropertyAccessResolver()->canAccessProtectedProperty($scope, $declaringClass);
     }
 
-    /**
-     * @param NodeAbstract $expr 仅用于输出错误日志
-     * @param string $class 必须传入带有完整命名空间的类名
-     */
-    protected function findNativeProperty(NodeAbstract $expr, string $property, string $class, bool $static = false): ?string
+    private function resolveNativeInstanceProperty(NodeAbstract $expr, string $property, string $class): ?PropertyAccessResult
     {
         $scope = $this->class ? $this->getFullClassName() : '';
-        $result = $this->createPropertyAccessResolver()->resolveNativeProperty($expr, $property, $class, $scope, $static);
-        if ($result !== null) {
-            $expr->setAttribute('nativePropertyDef', $result->propertyDef);
-            $expr->setAttribute('nativeClassDef', $result->classDef);
-            return $this->getPropertyOffset($result->classDef->getNamespacedName(false), $result->property);
-        }
-        return null;
+        return $this->createPropertyAccessResolver()->resolveNativeInstanceProperty($expr, $property, $class, $scope);
+    }
+
+    private function resolveNativeStaticProperty(NodeAbstract $expr, string $property, string $class): ?PropertyAccessResult
+    {
+        $scope = $this->class ? $this->getFullClassName() : '';
+        return $this->createPropertyAccessResolver()->resolveNativeStaticProperty($expr, $property, $class, $scope);
+    }
+
+    private function applyNativePropertyAccessResult(NodeAbstract $expr, PropertyAccessResult $result): string
+    {
+        $offset = $this->getPropertyOffset($result->classDef->getNamespacedName(false), $result->property);
+        $expr->setAttribute('nativePropertyDef', $result->propertyDef);
+        $expr->setAttribute('nativeClassDef', $result->classDef);
+        $expr->setAttribute('nativeProperty', $offset);
+        return $offset;
+    }
+
+    protected function isNativePropertyAccess(NodeAbstract $expr): bool
+    {
+        return $expr->hasAttribute('nativeProperty');
     }
 
     protected function parseNativeStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string|bool
@@ -5913,7 +5924,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                 return $refVar;
             }
 
-            if ($expr->hasAttribute('nativeProperty')) {
+            if ($this->isNativePropertyAccess($expr)) {
                 $classPtr = $this->getClassEntryPtr($class);
                 return Symbol::getStaticProperty() . '(' . $classPtr . ', ' . $nativeProp . ')';
             } else {
@@ -6895,37 +6906,37 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     private function checkNullsafePropertyAccesses(NodeAbstract $baseExpr, array $list): void
     {
-        $className = $this->detectClassOfExpr($baseExpr);
-        if ($className === '') {
-            return;
-        }
-
+        $properties = [];
         foreach ($list as $item) {
             if ($item[0] !== 'property') {
-                $className = '';
-                continue;
+                break;
             }
 
             /** @var Expr\NullsafePropertyFetch $node */
             $node = $item[2];
             if (!$this->isIdExpr($node->name)) {
-                $className = '';
-                continue;
+                break;
             }
 
-            $property = $this->parseIdentifier($node->name);
-            $this->findNativeProperty($node, $property, $className);
-            if (!$node->hasAttribute('nativePropertyDef')) {
-                $className = '';
-                continue;
-            }
+            $properties[] = [
+                'node' => $node,
+                'property' => $this->parseIdentifier($node->name),
+            ];
+        }
 
-            /** @var PropertyDef $def */
-            $def = $node->getAttribute('nativePropertyDef');
-            $className = $def->type === self::TYPE_OBJECT ? $def->class : '';
-            if ($className === '') {
-                return;
-            }
+        if (!$properties) {
+            return;
+        }
+
+        $scope = $this->class ? $this->getFullClassName() : '';
+        $results = $this->createPropertyAccessResolver()->resolveNullsafePropertyChain(
+            $this->detectClassOfExpr($baseExpr),
+            $properties,
+            $scope,
+            self::TYPE_OBJECT,
+        );
+        foreach ($results as $index => $result) {
+            $this->applyNativePropertyAccessResult($properties[$index]['node'], $result);
         }
     }
 

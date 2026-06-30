@@ -102,6 +102,57 @@ final class PropertyAccessResolver
         return null;
     }
 
+    public function resolveNativeInstanceProperty(
+        NodeAbstract $expr,
+        string $property,
+        string $class,
+        string $scope,
+    ): ?PropertyAccessResult {
+        return $this->resolveNativeProperty($expr, $property, $class, $scope);
+    }
+
+    public function resolveNativeStaticProperty(
+        NodeAbstract $expr,
+        string $property,
+        string $class,
+        string $scope,
+    ): ?PropertyAccessResult {
+        return $this->resolveNativeProperty($expr, $property, $class, $scope, true);
+    }
+
+    /**
+     * @param array<int, array{node: NodeAbstract, property: string}> $properties
+     * @return array<int, PropertyAccessResult>
+     */
+    public function resolveNullsafePropertyChain(
+        string $baseClass,
+        array $properties,
+        string $scope,
+        string $objectType,
+    ): array {
+        if ($baseClass === '') {
+            return [];
+        }
+
+        $className = $baseClass;
+        $resolved = [];
+        foreach ($properties as $index => $property) {
+            $result = $this->resolveNativeProperty($property['node'], $property['property'], $className, $scope);
+            if ($result === null) {
+                break;
+            }
+
+            $resolved[$index] = $result;
+            $def = $result->propertyDef;
+            if ($def->type !== $objectType || $def->class === '') {
+                break;
+            }
+            $className = $def->class;
+        }
+
+        return $resolved;
+    }
+
     private function fatal(NodeAbstract $expr, string $message): never
     {
         ($this->fatalError)($expr, $message);

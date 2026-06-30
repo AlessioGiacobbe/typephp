@@ -234,7 +234,10 @@
 当前进展：
 
 - 已建立 `PropertyAccessResolver` 和 `PropertyAccessResult` 作为属性访问解析的第一层抽象。
-- `CompilerBase::findNativeProperty()` 保留为兼容入口，并委托 resolver 执行 native property 查找、static-vs-instance 检查和可见性检查。
+- 实例属性读取已通过 resolver 的 `resolveNativeInstanceProperty()` 显式接口完成 native property 查找、static-vs-instance 检查和可见性检查。
+- `findNativeStaticProperty()` 已通过 resolver 的 `resolveNativeStaticProperty()` 显式接口完成静态属性检查。
+- nullsafe 属性链检查已通过 resolver 的 `resolveNullsafePropertyChain()` 显式接口完成类名推进和可见性检查。
+- 旧的 `CompilerBase::findNativeProperty()` 泛型入口已移除，避免后续继续扩散带 `$static` 布尔参数的访问模式。
 - `CompilerBase::isSameClassName()`、`isSameOrSubclassOf()`、`canAccessProtectedProperty()` 已委托 resolver，避免规则继续扩散。
 - 已添加 `prepare/convert/idle` 编译阶段状态；`PropertyAccessResolver` 只能在 convert 阶段创建和使用，避免预处理阶段误用不完整的类表状态。
 - 当前迁移保持生成代码不变，后续阶段再统一 read/write emitter。
