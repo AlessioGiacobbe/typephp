@@ -1790,6 +1790,7 @@ CODE;
                     if (!$property->isStatic() && $property->arrayInitPlan && $property->default) {
                         $body = "auto value = {$property->arrayInitPlan->expr};\n";
                         $body .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
+                        $body .= "php::throwErrorIfOccurred();\n";
                         $code .= $this->wrapArrayInitPlan($property->arrayInitPlan, $body);
                     }
                 }
@@ -3120,18 +3121,18 @@ CODE;
         $this->indentLevel++;
         $code .= $this->genScopeVarDecl();
         $code .= "\n";
-        // Constructor Property Promotion
-        foreach ($this->functionDef->argInfoList as $argInfo) {
-            if (!$argInfo->property) {
-                continue;
-            }
-            $code .= $this->genPropertyPromotion($argInfo);
-        }
         // Runtime union/nullable parameter type checks
         foreach ($this->functionDef->argInfoList as $i => $argInfo) {
             if (!empty($argInfo->typeCheck)) {
                 $code .= $this->genUnionParamCheck($argInfo, $i);
             }
+        }
+        // Constructor Property Promotion happens after parameter type validation.
+        foreach ($this->functionDef->argInfoList as $argInfo) {
+            if (!$argInfo->property) {
+                continue;
+            }
+            $code .= $this->genPropertyPromotion($argInfo);
         }
         $this->indentLevel--;
         // 构建 PHP 级别的函数名用于 debug backtrace

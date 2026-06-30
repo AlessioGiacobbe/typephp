@@ -49,6 +49,7 @@ trait AssignOpTrait
         $array = $this->parseIdentifier($left->var);
         $propName = $this->identifierToStr($left->name, literal: true);
         $rightExpr = $this->trimBrackets($this->parseExpr($right));
+        $rightExpr = $this->wrapObjectPropertyAssignTypeCheck($left, $right, $rightExpr);
 
         $tmp = $this->genTmpVarName();
         $this->addLocalVar($tmp, self::TYPE_VAR);
@@ -585,7 +586,16 @@ trait AssignOpTrait
         $var = $this->parseIdentifier($expr->var);
         $this->context->inAssignExpr = $inAssignExpr;
 
+        if ($this->isPropertyFetch($expr->var)) {
+            $this->assertCanAssignObjectProp($expr->var, $expr->expr);
+        } elseif ($this->isStaticPropertyFetch($expr->var)) {
+            $this->assertCanAssignStaticProp($expr->var, $expr->expr);
+        }
+
         $right = $this->parseExpr($expr->expr);
+        if ($this->isPropertyFetch($expr->var) || $this->isStaticPropertyFetch($expr->var)) {
+            $right = $this->wrapObjectPropertyAssignTypeCheck($expr->var, $expr->expr, $right);
+        }
         if ($this->isVarExpr($expr->expr) and !$this->hasVar($right)) {
             $this->errorUndefinedVariable($expr->expr);
         }
