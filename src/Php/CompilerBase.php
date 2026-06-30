@@ -3298,6 +3298,11 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function isReferenceArgument($funcName, $className, $argIndex): bool
     {
+        $argInfo = $this->getAotCallArgInfo($funcName, $className, $argIndex);
+        if ($argInfo !== null) {
+            return $argInfo->byRef;
+        }
+
         if ($className) {
             // 动态调用类方法，无法判断参数是否为引用
             if ($className === self::DYNAMIC_CALLED_CLASS) {
@@ -3314,6 +3319,119 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         // 参数索引超出声明范围，检查最后一个参数是否为变长引用参数（如 &...$rest）
         $variadicParam = Reflection::getVariadicParameter($funcName, $className);
+        return $variadicParam !== null && $variadicParam->isPassedByReference();
+    }
+
+    protected function getAotCallArgInfo(string $funcName, string $className, int $argIndex): ?ArgInfo
+    {
+        if ($className !== '') {
+            if ($className === self::DYNAMIC_CALLED_CLASS || !$this->hasClass($className)) {
+                return null;
+            }
+            $classDef = $this->getClass($className);
+            while (true) {
+                if ($classDef->hasMethod($funcName)) {
+                    return $this->getArgInfoByIndex($classDef->getMethod($funcName)->functionDef, $argIndex);
+                }
+                if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
+                    return null;
+                }
+                $classDef = $this->getClass($classDef->extends);
+            }
+        }
+
+        if (!$this->hasFunction($funcName)) {
+            return null;
+        }
+        return $this->getArgInfoByIndex($this->getFunction($funcName), $argIndex);
+    }
+
+    protected function getAotCallArgInfoByName(string $funcName, string $className, string $argName): ?ArgInfo
+    {
+        $functionDef = null;
+        if ($className !== '') {
+            if ($className === self::DYNAMIC_CALLED_CLASS || !$this->hasClass($className)) {
+                return null;
+            }
+            $classDef = $this->getClass($className);
+            while (true) {
+                if ($classDef->hasMethod($funcName)) {
+                    $functionDef = $classDef->getMethod($funcName)->functionDef;
+                    break;
+                }
+                if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
+                    return null;
+                }
+                $classDef = $this->getClass($classDef->extends);
+            }
+        } elseif ($this->hasFunction($funcName)) {
+            $functionDef = $this->getFunction($funcName);
+        }
+
+        if ($functionDef === null) {
+            return null;
+        }
+
+        $variadicArgInfo = null;
+        foreach ($functionDef->argInfoList as $argInfo) {
+            if ($argInfo->variadic) {
+                $variadicArgInfo = $argInfo;
+            }
+            if (($argInfo->phpName ?: $this->unescapeVarName($argInfo->name)) === $argName) {
+                return $argInfo;
+            }
+        }
+        return $variadicArgInfo;
+    }
+
+    protected function getArgInfoByIndex(FunctionDef $functionDef, int $argIndex): ?ArgInfo
+    {
+        if (array_key_exists($argIndex, $functionDef->argInfoList)) {
+            return $functionDef->argInfoList[$argIndex];
+        }
+        if ($functionDef->hasVariadicArg()) {
+            return $functionDef->argInfoList[array_key_last($functionDef->argInfoList)];
+        }
+        return null;
+    }
+
+    protected function isReferenceNamedArgument(string $funcName, string $className, string $argName): bool
+    {
+        $argInfo = $this->getAotCallArgInfoByName($funcName, $className, $argName);
+        if ($argInfo !== null) {
+            return $argInfo->byRef;
+        }
+
+        if ($className) {
+            if ($className === self::DYNAMIC_CALLED_CLASS) {
+                return false;
+            }
+            $ref = Reflection::getClass($className);
+            if (!$ref) {
+                return false;
+            }
+            try {
+                $params = $ref->getMethod($funcName)->getParameters();
+            } catch (\ReflectionException) {
+                return false;
+            }
+        } else {
+            $ref = Reflection::getFunction($funcName);
+            if (!$ref) {
+                return false;
+            }
+            $params = $ref->getParameters();
+        }
+
+        $variadicParam = null;
+        foreach ($params as $param) {
+            if ($param->isVariadic()) {
+                $variadicParam = $param;
+            }
+            if ($param->getName() === $argName) {
+                return $param->isPassedByReference();
+            }
+        }
         return $variadicParam !== null && $variadicParam->isPassedByReference();
     }
 
@@ -3384,12 +3502,16 @@ class CompilerBase extends \PhpAot\Core\Translator
                     $this->fatalError($arg, "Duplicate named argument `{$arg->name->name}`");
                 }
                 $namedArgs[$arg->name->name] = true;
+                $byRef = $funcName && $this->isReferenceNamedArgument($funcName, $className, $arg->name->name);
+                $value = ($byRef || $this->isRefvalCall($arg->value))
+                    ? $this->parseReferenceCallArgValue($arg)
+                    : $this->parseCallArgValue($arg);
                 if ($separateNamedArgs) {
                     $namedArgsArray = $ensureNamedArgs();
-                    $this->context->beforeStmtLines[] = $namedArgsArray . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $this->parseCallArgValue($arg) . ');';
+                    $this->context->beforeStmtLines[] = $namedArgsArray . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $value . ');';
                 } else {
                     $arrayArgs = $ensureArrayArgs();
-                    $this->context->beforeStmtLines[] = $arrayArgs . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $this->parseCallArgValue($arg) . ');';
+                    $this->context->beforeStmtLines[] = $arrayArgs . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $value . ');';
                 }
                 continue;
             }
@@ -3505,6 +3627,54 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
 
         return $value instanceof Expr\PropertyFetch;
+    }
+
+    protected function parseReferenceCallArgValue(Node\Arg $arg): string
+    {
+        if ($this->isRefvalCall($arg->value)) {
+            if (count($arg->value->args) !== 1) {
+                $this->fatalError($arg, 'The refval function only accepts one parameter');
+            }
+            $arg->value = $arg->value->args[0]->value;
+        }
+
+        if ($this->isVarExpr($arg->value)) {
+            return $this->parseArgRefVar($arg, $this->parseIdentifier($arg->value));
+        }
+
+        if ($this->isPropertyFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
+            $obj = $this->parseIdentifier($arg->value->var);
+            if (!$this->hasVar($obj)) {
+                $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
+            }
+            return $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
+        }
+
+        if ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
+            $array = $this->parseIdentifier($arg->value->var);
+            if ($array === 'GLOBALS') {
+                $globalVar = $this->parseGlobalsArrayDimFetch($arg->value);
+                $ref = $this->addTmpVar(self::TYPE_REF);
+                $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
+                return '&' . $ref;
+            }
+            if (!$this->hasVar($array)) {
+                $this->fatalError($arg, 'Undefined variable `$' . $array . '`');
+            }
+            if ($arg->value->dim === null) {
+                $this->fatalError($arg, 'Array dimension must be a constant expression');
+            }
+            return $array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')';
+        }
+
+        if ($this->isScalar($arg->value)) {
+            $this->fatalError($arg, 'The constants cannot be used as an argument for a reference-type parameter');
+        }
+
+        $tmpRef = $this->genTmpVarName();
+        $this->addLocalVar($tmpRef, self::TYPE_REF);
+        $this->context->beforeStmtLines[] = $tmpRef . ' = ' . $this->parseChainedExpr($arg->value, self::OP_REFVAL) . ';';
+        return '&' . $tmpRef;
     }
 
     /**
@@ -4017,6 +4187,7 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function parseNew(Expr\New_ $expr): string
     {
+        $ctorClassName = '';
         // 匿名类
         if ($expr->class instanceof Node\Stmt\Class_) {
             if ($expr->class->name === null) {
@@ -4043,6 +4214,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     . $className . '_defined = true; php::eval((const char *)' . $className . '_code);}';
                 $className = '\\' . $className;
                 $cePtr     = $this->getClassEntryPtr($className);
+                $ctorClassName = $className;
             } else {
                 $this->fatalError($expr, 'must be anonymous class');
             }
@@ -4062,6 +4234,7 @@ class CompilerBase extends \PhpAot\Core\Translator
                     } else {
                         $className = $this->getNamespacedClassName($className);
                     }
+                    $ctorClassName = $className;
                     if ($this->hasClass($className)) {
                         $classDef = $this->getClass($className);
                         if ($classDef->flags & Modifiers::ABSTRACT) {
@@ -4079,7 +4252,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         if (empty($args)) {
             return 'php::newObject(' . $cePtr . ')';
         }
-        return 'php::newObject(' . $cePtr . ', ' . $this->parseCallArgs($args) . ')';
+        return 'php::newObject(' . $cePtr . ', ' . $this->parseCallArgs($args, '__construct', $ctorClassName) . ')';
     }
 
     protected function parseClone(Expr\Clone_ $expr): string
