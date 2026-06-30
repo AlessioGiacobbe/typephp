@@ -325,6 +325,11 @@ class Translator extends Preprocessor
             $this->targetPlatform = $this->climate->arguments->get('target-platform');
         }
 
+        // 输出文件名/路径
+        if ($this->climate->arguments->defined('output')) {
+            $this->setTargetName($this->climate->arguments->get('output'));
+        }
+
         // 构建目录
         if ($this->climate->arguments->defined('build-dir')) {
             $buildDir = $this->climate->arguments->get('build-dir');
@@ -546,9 +551,6 @@ class Translator extends Preprocessor
 
     public function setTargetName(string $name): void
     {
-        if ($this->climate->arguments->defined('output')) {
-            $name = $this->climate->arguments->get('output');
-        }
         // 如果指定了路径（包含目录分隔符），提取目录和文件名
         if (str_contains($name, '/') || str_contains($name, '\\')) {
             $this->outputDir = dirname($name);
@@ -609,7 +611,7 @@ class Translator extends Preprocessor
         // 在所有配置加载完成后，应用命令行参数（确保优先级最高）
         $this->applyCommandLineArguments();
 
-        return $list;
+        return $this->filterIgnoredFiles($list);
     }
 
     public function prepare(string $path): array
@@ -627,20 +629,7 @@ class Translator extends Preprocessor
         }
 
         $files = $this->getFiles($path);
-        // 应用 ignorePaths 过滤
-        if (!empty($this->ignorePaths)) {
-            $files = array_filter($files, function ($file) {
-                foreach ($this->ignorePaths as $ignorePath) {
-                    if ($file === $ignorePath) {
-                        return false;
-                    }
-                    if (is_dir($ignorePath) && str_starts_with($file, $ignorePath . DIRECTORY_SEPARATOR)) {
-                        return false;
-                    }
-                }
-                return true;
-            });
-        }
+        $files = $this->filterIgnoredFiles($files);
         // 分析 PHP 文件，预处理
         foreach ($files as $k => $file) {
             if (FileScanner::isPhpFile($file)) {
@@ -657,6 +646,29 @@ class Translator extends Preprocessor
         }
         $this->sortFiles($files);
         return $files;
+    }
+
+    protected function shouldIgnoreFile(string $file): bool
+    {
+        foreach ($this->ignorePaths as $ignorePath) {
+            if ($file === $ignorePath) {
+                return true;
+            }
+            if (is_dir($ignorePath) && str_starts_with($file, rtrim($ignorePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function filterIgnoredFiles(array $files): array
+    {
+        if (empty($this->ignorePaths)) {
+            return $files;
+        }
+
+        return array_values(array_filter($files, fn(string $file): bool => !$this->shouldIgnoreFile($file)));
     }
 
     public function convert(array $files): array
@@ -2071,7 +2083,7 @@ CODE;
         $includePaths = $cfg['include-paths'] ?? null;
         if (!empty($includePaths) && is_array($includePaths)) {
             foreach ($includePaths as $includePath) {
-                $this->userIncludePaths[] = (string) $includePath;
+                $this->userIncludePaths[] = $this->resolvePath((string) $includePath, $projectDir, 'Include path');
             }
         }
 
@@ -2105,14 +2117,14 @@ CODE;
         $linkPaths = $cfg['link-paths'] ?? null;
         if (!empty($linkPaths) && is_array($linkPaths)) {
             foreach ($linkPaths as $linkPath) {
-                $this->linkPaths[] = (string)$linkPath;
+                $this->linkPaths[] = $this->resolvePath((string) $linkPath, $projectDir, 'Link path');
             }
         }
 
         // 读取 output/name
         $output = $cfg['output'] ?? $cfg['name'] ?? null;
         if (!empty($output)) {
-            $this->setTargetName((string) $output);
+            $this->setTargetName($this->resolvePath((string) $output, $projectDir, 'Output path'));
         }
 
         // 读取 cpp-compiler
@@ -2175,7 +2187,7 @@ CODE;
             $this->resourceConfig['_projectDir'] = $projectDir;
         }
 
-        return $list;
+        return $this->filterIgnoredFiles($list);
     }
 
     protected function getInternalCeInfo(string $ce): array

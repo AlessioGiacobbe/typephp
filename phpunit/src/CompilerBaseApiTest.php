@@ -232,7 +232,7 @@ YAML);
         $this->assertTrue($this->getPropertyValue('noLiteralStrings'));
         $this->assertSame('address', $this->getPropertyValue('sanitize'));
         $this->assertSame('aarch64-linux-gnu', $this->getPropertyValue('targetPlatform'));
-        $this->assertSame(['/opt/mylib/include', '../shared/headers'], $this->compiler->getUserIncludePaths());
+        $this->assertSame(['/opt/mylib/include', dirname($projectFile) . '/../shared/headers'], $this->compiler->getUserIncludePaths());
         $this->assertSame(['ENABLE_LOGGING=1', 'DEBUG_LEVEL=3'], $this->compiler->getUserDefines());
         $this->assertTrue($this->compiler->isLtoEnabled());
         $this->assertSame(['curl', 'ssl'], $this->compiler->getLinkLibs());
@@ -272,7 +272,58 @@ YAML, 'custom-name.yml', 'yaml-alias');
         $this->assertSame(CompilerBase::BUILD_MODE_EXT, $this->getPropertyValue('buildMode'));
         $this->assertTrue($this->getPropertyValue('dryRun'));
         $this->assertSame('custom_ext', $this->getPropertyValue('targetName'));
-        $this->assertSame('out', $this->getPropertyValue('outputDir'));
+        $this->assertSame(dirname($projectFile) . '/out', $this->getPropertyValue('outputDir'));
+    }
+
+    public function testParseProjectYamlResolvesRelativePathOptionsAgainstYamlDirectory(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+include-paths:
+  - includes
+link-paths:
+  - libs
+output: bin/my-app
+YAML, 'myproject.yml', 'nested/config');
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $projectDir = dirname($projectFile);
+        $this->assertSame([$projectDir . '/includes'], $this->compiler->getUserIncludePaths());
+        $this->assertSame([$projectDir . '/libs'], $this->compiler->getLinkPaths());
+        $this->assertSame($projectDir . '/bin', $this->getPropertyValue('outputDir'));
+        $this->assertSame('my_app', $this->getPropertyValue('targetName'));
+    }
+
+    public function testCliOutputOverridesYamlOutputOnlyWhenCommandLineArgumentsAreApplied(): void
+    {
+        global $argv;
+        $argv = ['compiler.php', '--output', 'cli/out-file'];
+        $compiler = CompilerTest::create($this->testDir);
+        $ref = new \ReflectionClass($compiler);
+        $parseMethod = $ref->getMethod('parseProjectYaml');
+        $parseMethod->setAccessible(true);
+        $applyMethod = $ref->getMethod('applyCommandLineArguments');
+        $applyMethod->setAccessible(true);
+        $targetProp = $ref->getProperty('targetName');
+        $targetProp->setAccessible(true);
+        $outputProp = $ref->getProperty('outputDir');
+        $outputProp->setAccessible(true);
+
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+output: yaml/out-file
+YAML, 'myproject.yml', 'cli-output');
+
+        $parseMethod->invoke($compiler, $projectFile);
+        $this->assertSame(dirname($projectFile) . '/yaml', $outputProp->getValue($compiler));
+        $this->assertSame('out_file', $targetProp->getValue($compiler));
+
+        $applyMethod->invoke($compiler);
+        $this->assertSame('cli', $outputProp->getValue($compiler));
+        $this->assertSame('out_file', $targetProp->getValue($compiler));
     }
 
     public function testApplyCommandLineArgumentsDoesNotClearYamlRepeatableOptionsWhenCliAbsent(): void
@@ -299,6 +350,29 @@ YAML);
         $this->assertTrue($this->compiler->isLtoEnabled());
         $this->assertSame(['yamlssl'], $this->compiler->getLinkLibs());
         $this->assertSame(['/yaml/lib'], $this->compiler->getLinkPaths());
+    }
+
+    public function testParseProjectYamlFiltersIgnoredFilesFromReturnedSources(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - .
+ignore:
+  - ignored.php
+  - skipped
+YAML);
+        $projectDir = dirname($projectFile);
+        mkdir($projectDir . '/skipped', 0777, true);
+        file_put_contents($projectDir . '/ignored.php', "<?php\nfunction ignored() {}\n");
+        file_put_contents($projectDir . '/skipped/nested.php', "<?php\nfunction skipped() {}\n");
+        file_put_contents($projectDir . '/kept.php', "<?php\nfunction kept() {}\n");
+
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertContains(realpath($projectDir . '/main.php'), $files);
+        $this->assertContains(realpath($projectDir . '/kept.php'), $files);
+        $this->assertNotContains(realpath($projectDir . '/ignored.php'), $files);
+        $this->assertNotContains(realpath($projectDir . '/skipped/nested.php'), $files);
     }
 
     public function testCCompileCommandOptionsKeepCommonUserConfiguration(): void
