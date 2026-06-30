@@ -1632,6 +1632,13 @@ class CompilerBase extends \PhpAot\Core\Translator
         if ($v->expr === null) {
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {
                 return 'return;';
+            } elseif ($this->context->inClosure && $this->context->closureReturnTypeCheck) {
+                $tmpVar = $this->genTmpVarName();
+                $this->addLocalVar($tmpVar, self::TYPE_VAR);
+                $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
+                $code .= $this->genClosureReturnCheck($tmpVar);
+                $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+                return $code;
             } elseif ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
                 $tmpVar = $this->genTmpVarName();
                 $this->addLocalVar($tmpVar, self::TYPE_VAR);
@@ -1679,7 +1686,13 @@ class CompilerBase extends \PhpAot\Core\Translator
 
         $exprCode = $this->convertExprType($expr, $returnType, $type);
         // Union/nullable return type: always use tmpVar for runtime check
-        if ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
+        if ($this->context->inClosure && $this->context->closureReturnTypeCheck) {
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
+            $code .= $this->genClosureReturnCheck($tmpVar);
+            $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
+        } elseif ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
             $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
@@ -5845,6 +5858,14 @@ class CompilerBase extends \PhpAot\Core\Translator
 
     protected function genReturnCode(): string
     {
+        if ($this->context->inClosure && $this->context->closureReturnTypeCheck) {
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
+            $code .= $this->genClosureReturnCheck($tmpVar);
+            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+            return $code;
+        }
         if ($this->functionDef->returnType === self::TYPE_VOID) {
             return '';
         }
@@ -5903,8 +5924,24 @@ class CompilerBase extends \PhpAot\Core\Translator
             if ($this->isCallExpr($expr->expr)) {
                 $nativeCall = $expr->expr->getAttribute('nativeCall');
                 if ($nativeCall and $this->getFunction($nativeCall)->returnType === self::TYPE_VOID) {
+                    if ($this->context->closureReturnTypeCheck) {
+                        $tmpVar = $this->genTmpVarName();
+                        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+                        return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL
+                            . $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL
+                            . $this->genClosureReturnCheck($tmpVar)
+                            . $this->getIndent() . 'return ' . $tmpVar . ';';
+                    }
                     return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
                 }
+            }
+            if ($this->context->closureReturnTypeCheck) {
+                $tmpVar = $this->genTmpVarName();
+                $this->addLocalVar($tmpVar, self::TYPE_VAR);
+                return $beforeCode . PHP_EOL
+                    . $tmpVar . ' = ' . $code . ';' . PHP_EOL
+                    . $this->genClosureReturnCheck($tmpVar)
+                    . $this->getIndent() . 'return ' . $tmpVar . ';';
             }
             return $beforeCode . PHP_EOL . 'return ' . $code . ';';
         };
@@ -5917,7 +5954,11 @@ class CompilerBase extends \PhpAot\Core\Translator
         $cb = function () use ($expr) {
             $fnCode = $this->parseStmts($expr->stmts);
             if (!$this->isReturnStmtInLastLine($expr->stmts)) {
-                $fnCode .= 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
+                if ($this->context->closureReturnTypeCheck) {
+                    $fnCode .= $this->genReturnCode() . PHP_EOL;
+                } else {
+                    $fnCode .= 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
+                }
             }
             return $fnCode;
         };

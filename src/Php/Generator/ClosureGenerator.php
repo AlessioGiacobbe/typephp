@@ -8,7 +8,12 @@
 
 namespace PhpAot\Php\Generator;
 
+use PhpAot\Php\ArgInfo;
 use PhpAot\Php\Context\FunctionContext;
+use PhpParser\Node;
+use PhpParser\Node\IntersectionType;
+use PhpParser\Node\NullableType;
+use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
 
 trait ClosureGenerator
@@ -36,6 +41,13 @@ trait ClosureGenerator
         $this->context = new FunctionContext();
 
         $this->context->inClosure = true;
+        if ($expr->returnType instanceof NullableType || $expr->returnType instanceof UnionType || $expr->returnType instanceof IntersectionType) {
+            $returnTypeInfo = $this->buildTypeCheckFromNode($expr->returnType);
+            if (!empty($returnTypeInfo['check'])) {
+                $this->context->closureReturnTypeCheck = $returnTypeInfo['check'];
+                $this->context->closureReturnTypeStr = $returnTypeInfo['typeStr'];
+            }
+        }
         $this->indentLevel++;
 
         $requiredArgCount = 0;
@@ -71,6 +83,7 @@ trait ClosureGenerator
                 $this->indentLevel--;
                 $code .= $this->getIndent() . '}' . PHP_EOL;
                 $this->addArgument($var, self::TYPE_ARRAY);
+                $code .= $this->genClosureParamTypeCheck($param, $var, $i, true);
                 continue;
             }
             $argExpr = $param->default === null
@@ -78,6 +91,7 @@ trait ClosureGenerator
                 : 'php::getCallArg(' . $i . ', ' . $this->parseParamDefaultValue($param->default) . ')';
             $code .= $this->getIndent() . 'auto ' . $var . ' = ' . $argExpr . ';' . PHP_EOL;
             $this->addArgument($var, self::TYPE_VAR);
+            $code .= $this->genClosureParamTypeCheck($param, $var, $i, false);
         }
 
         foreach ($uses as $i => $useItem) {
@@ -148,5 +162,27 @@ trait ClosureGenerator
         $this->context = $oriCtx;
 
         return $code;
+    }
+
+    private function genClosureParamTypeCheck(Node\Param $param, string $var, int $index, bool $variadic): string
+    {
+        if (!$param->type instanceof NullableType && !$param->type instanceof UnionType && !$param->type instanceof IntersectionType) {
+            return '';
+        }
+
+        $typeInfo = $this->buildTypeCheckFromNode($param->type);
+        if (empty($typeInfo['check'])) {
+            return '';
+        }
+
+        $argInfo = new ArgInfo();
+        $argInfo->name = $var;
+        $argInfo->type = self::TYPE_VAR;
+        $argInfo->variadic = $variadic;
+        $argInfo->typeCheck = $typeInfo['check'];
+        $argInfo->typeStr = $typeInfo['typeStr'];
+        $argInfo->typeNode = $param->type;
+
+        return $this->genClosureParamCheck($argInfo, $index);
     }
 }

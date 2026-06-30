@@ -62,11 +62,11 @@ trait Utils
 
     protected function escapeVarName(string $name): string
     {
-        if (in_array($name, Constants::CPP_RESERVED_NAMES)) {
-            return '_php__var__' . $name;
-        }
         if ($name === 'this') {
             return 'this_';
+        }
+        if (in_array($name, Constants::CPP_RESERVED_NAMES, true)) {
+            return '_php__var__' . $name;
         }
         return $name;
     }
