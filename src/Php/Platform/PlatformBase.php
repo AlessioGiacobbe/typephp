@@ -154,18 +154,22 @@ abstract class PlatformBase
             $long = str_replace('/', '\\', $long);
         }
 
-        $len = min(strlen($short), strlen($long));
+        $short = rtrim($short, $separator);
+        $long = rtrim($long, $separator);
+        $shortParts = explode($separator, $short);
+        $longParts = explode($separator, $long);
         $prefixLen = 0;
+        $len = min(count($shortParts), count($longParts));
 
         for ($i = 0; $i < $len; $i++) {
-            if ($short[$i] === $long[$i]) {
+            if ($shortParts[$i] === $longParts[$i]) {
                 $prefixLen++;
             } else {
                 break;
             }
         }
 
-        return ltrim(substr($long, $prefixLen), $separator);
+        return implode($separator, array_slice($longParts, $prefixLen));
     }
 
     /**

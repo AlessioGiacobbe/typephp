@@ -110,6 +110,15 @@ class PlatformTest extends TestCase
         $this->assertSame('src/app.php', $linux->removeCommonPrefix('/project', '/project/src/app.php'));
     }
 
+    public function testPlatformPathPrefixRemovalUsesPathSegments(): void
+    {
+        $windows = new Windows();
+        $linux = new Linux();
+
+        $this->assertSame('project2\src\app.php', $windows->removeCommonPrefix('C:\project', 'C:/project2/src/app.php'));
+        $this->assertSame('project2/src/app.php', $linux->removeCommonPrefix('/tmp/project', '/tmp/project2/src/app.php'));
+    }
+
     /**
      * 测试 Windows 子系统选项
      */

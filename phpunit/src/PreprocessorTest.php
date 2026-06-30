@@ -135,6 +135,15 @@ class PreprocessorTest extends TestCase
         $this->assertStringStartsWith($this->compiler->getBuildDir(), $result);
     }
 
+    public function testGetCppFileDoesNotTrimSiblingDirectoryByCharacterPrefix(): void
+    {
+        $this->setProperty('buildDir', '/tmp/project/build');
+
+        $result = $this->compiler->getCppFile('/tmp/project2/src/app.php');
+
+        $this->assertSame('/tmp/project/build/project2/src/app.cc', $result);
+    }
+
     public function testGetCppFileDotPhpReplaced(): void
     {
         $phpFile = '/tmp/test_file.php';
