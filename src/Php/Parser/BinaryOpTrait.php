@@ -39,7 +39,7 @@ trait BinaryOpTrait
             if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
                 $this->fatalError($left, 'Cannot mix BigFloat and Decimal implicitly. Use std::bigFloat() to convert explicitly.');
             }
-                        if ($leftType !== self::TYPE_BIGFLOAT) {
+            if ($leftType !== self::TYPE_BIGFLOAT) {
                 $leftExpr = $this->convertBigFloatExpr($leftExpr, $leftType);
             }
             if ($rightType !== self::TYPE_BIGFLOAT) {
@@ -61,7 +61,7 @@ trait BinaryOpTrait
             if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
                 $this->fatalError($left, 'Cannot mix BigInt and Decimal implicitly. Use std::decimal() or std::bigInt() to convert explicitly.');
             }
-                        if ($leftType !== self::TYPE_DECIMAL) {
+            if ($leftType !== self::TYPE_DECIMAL) {
                 $leftExpr = $this->convertDecimalExpr($leftExpr, $leftType, $left);
             }
             if ($rightType !== self::TYPE_DECIMAL) {
@@ -92,7 +92,7 @@ trait BinaryOpTrait
                 $method = ($op === '<<') ? 'bitShiftLeft' : 'bitShiftRight';
                 return 'php::BigInt::' . $method . '(' . $leftExpr . ', ' . $rightExpr . ')';
             }
-                        if ($leftType !== self::TYPE_BIGINT) {
+            if ($leftType !== self::TYPE_BIGINT) {
                 $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
             }
             if ($rightType !== self::TYPE_BIGINT) {
@@ -427,21 +427,22 @@ trait BinaryOpTrait
             return '(' . $leftBool . ' ' . $op . ' ' . $this->convertBoolExpr((string) $rightExpr) . ')';
         }
 
-        $appendStmtLines = function (string &$code, array $stmts): void {
-            if ($stmts) {
-                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+        $appendStmtLines = function (array $stmts): string {
+            if (!$stmts) {
+                return '';
             }
+            return $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
         };
         $shortCircuitValue = $op === '&&' ? 'false' : 'true';
         $rightCondition = $op === '&&' ? $leftBool : '!(' . $leftBool . ')';
 
         $code = '[&]() -> bool {';
         $code .= $this->getIndent() . 'if (' . $rightCondition . ') {';
-        $appendStmtLines($code, $rightBeforeStmts);
+        $code .= $appendStmtLines($rightBeforeStmts);
         if ($rightAfterStmts) {
             $rightTmpVar = $this->addTmpVar(self::TYPE_VAR);
             $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';';
-            $appendStmtLines($code, $rightAfterStmts);
+            $code .= $appendStmtLines($rightAfterStmts);
             $rightExpr = $rightTmpVar;
         }
         $code .= $this->getIndent() . 'return ' . $this->convertBoolExpr((string) $rightExpr) . ';';

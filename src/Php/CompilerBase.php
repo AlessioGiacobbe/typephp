@@ -2171,9 +2171,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 if (!$interfaceDef->hasConstant($const)) {
                     continue;
                 }
-                $classDef = $interfaceDef;
-                $constDef = $interfaceDef->constants[$const];
-                break;
+                $interfaceConstDef = $interfaceDef->constants[$const];
+                if ($interfaceConstDef->type === self::TYPE_ARRAY) {
+                    return self::PREFIX . $this->getNativeName($interfaceConstDef->name, $interfaceDef->namespace, $interfaceDef->name);
+                }
+                $expr->setAttribute('nativeConst', $interfaceConstDef);
+                return $interfaceConstDef->value;
             }
         }
         if ($constDef === null) {
@@ -3970,34 +3973,36 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $else = 'php::Var(' . $else . ')';
         }
         if ($hasBranchStmts) {
-            $appendStmtLines = function (string &$code, array $stmts): void {
-                if ($stmts) {
-                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+            $appendStmtLines = function (array $stmts): string {
+                if (!$stmts) {
+                    return '';
                 }
+                return $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
             };
-            $appendReturn = function (string &$code, string $value, array $beforeStmts, array $afterStmts) use ($appendStmtLines): void {
-                $appendStmtLines($code, $beforeStmts);
+            $appendReturn = function (string $value, array $beforeStmts, array $afterStmts) use ($appendStmtLines): string {
+                $code = $appendStmtLines($beforeStmts);
                 if ($afterStmts) {
                     $tmpVar = $this->addTmpVar(self::TYPE_VAR);
                     $code .= $this->getIndent() . "{$tmpVar} = {$value};";
-                    $appendStmtLines($code, $afterStmts);
+                    $code .= $appendStmtLines($afterStmts);
                     $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
                 } else {
                     $code .= $this->getIndent() . 'return php::Var(' . $value . ');';
                 }
+                return $code;
             };
             $code = '[&]() -> ' . self::TYPE_VAR . '{';
-            $appendStmtLines($code, $condBeforeStmts);
+            $code .= $appendStmtLines($condBeforeStmts);
             if ($condAfterStmts) {
                 $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
                 $code .= $this->getIndent() . "{$condTmpVar} = {$cond};";
-                $appendStmtLines($code, $condAfterStmts);
+                $code .= $appendStmtLines($condAfterStmts);
                 $cond = $condTmpVar;
             }
             $code .= $this->getIndent() . 'if (' . $cond . ') {';
-            $appendReturn($code, $if, $ifBeforeStmts, $ifAfterStmts);
+            $code .= $appendReturn($if, $ifBeforeStmts, $ifAfterStmts);
             $code .= $this->getIndent() . '} else {';
-            $appendReturn($code, $else, $elseBeforeStmts, $elseAfterStmts);
+            $code .= $appendReturn($else, $elseBeforeStmts, $elseAfterStmts);
             $code .= $this->getIndent() . '}';
             $code .= $this->getIndent() . '}()';
             return $code;
@@ -4030,24 +4035,26 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return [$value, $beforeStmts, $afterStmts];
         };
 
-        $appendStmtLines = function (string &$code, array $stmts): void {
-            if ($stmts) {
-                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+        $appendStmtLines = function (array $stmts): string {
+            if (!$stmts) {
+                return '';
             }
+            return $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
         };
 
-        $appendMatchReturn = function (string &$code, NodeAbstract $body) use ($parseExprWithStmts, $appendStmtLines): void {
+        $appendMatchReturn = function (NodeAbstract $body) use ($parseExprWithStmts, $appendStmtLines): string {
             $this->assertExprCanBeUsedAsValue($body, 'match arm');
             [$value, $beforeStmts, $afterStmts] = $parseExprWithStmts($body);
-            $appendStmtLines($code, $beforeStmts);
+            $code = $appendStmtLines($beforeStmts);
             if ($afterStmts) {
                 $tmpVar = $this->addTmpVar(self::TYPE_VAR);
                 $code .= $this->getIndent() . "{$tmpVar} = {$value};";
-                $appendStmtLines($code, $afterStmts);
+                $code .= $appendStmtLines($afterStmts);
                 $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
             } else {
                 $code .= $this->getIndent() . 'return ' . $value . ';';
             }
+            return $code;
         };
 
         $code = '[&]() -> ' . self::TYPE_VAR . '{';
@@ -4066,24 +4073,24 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 $this->assertExprCanBeUsedAsValue($cond, 'match arm condition');
                 [$condValue, $beforeStmts, $afterStmts] = $parseExprWithStmts($cond);
                 $code .= $this->getIndent() . 'if (!' . $matched . ') {';
-                $appendStmtLines($code, $beforeStmts);
+                $code .= $appendStmtLines($beforeStmts);
                 if ($afterStmts) {
                     $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
                     $code .= $this->getIndent() . "{$condTmpVar} = {$condValue};";
-                    $appendStmtLines($code, $afterStmts);
+                    $code .= $appendStmtLines($afterStmts);
                     $condValue = $condTmpVar;
                 }
                 $code .= $this->getIndent() . $matched . ' = php::same(' . $var . ', ' . $condValue . ');';
                 $code .= $this->getIndent() . '}';
             }
             $code .= $this->getIndent() . 'if (' . $matched . ') {';
-            $appendMatchReturn($code, $arm->body);
+            $code .= $appendMatchReturn($arm->body);
             $code .= $this->getIndent() . '}';
         }
 
         if ($default) {
             $code .= $this->getIndent() . '{';
-            $appendMatchReturn($code, $default);
+            $code .= $appendMatchReturn($default);
             $code .= $this->getIndent() . '}';
         } else {
             $code .= $this->getIndent() . '{ return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
