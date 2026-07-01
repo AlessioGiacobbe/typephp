@@ -131,7 +131,13 @@ abstract class UnixPlatform extends PlatformBase
             if ($includes) {
                 preg_match_all('/-I([^\s]+)/', $includes, $matches);
                 if (!empty($matches[1])) {
-                    return array_filter($matches[1], 'is_dir');
+                    $includePaths = [];
+                    foreach ($matches[1] as $path) {
+                        if (is_dir($path)) {
+                            $includePaths[] = $path;
+                        }
+                    }
+                    return $includePaths;
                 }
             }
         }
@@ -144,7 +150,14 @@ abstract class UnixPlatform extends PlatformBase
             $phpDir . '/include/php/ext',
         ];
 
-        return array_filter($paths, 'is_dir');
+        $includePaths = [];
+        foreach ($paths as $path) {
+            if (is_dir($path)) {
+                $includePaths[] = $path;
+            }
+        }
+
+        return $includePaths;
     }
 
     /**

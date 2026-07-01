@@ -11,6 +11,7 @@ namespace PhpAot\Php\Generator;
 use PhpAot\Php\ArgInfo;
 use PhpAot\Php\Context\FunctionContext;
 use PhpParser\Node;
+use PhpParser\Node\Expr;
 use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\UnionType;
@@ -26,7 +27,7 @@ trait ClosureGenerator
         return $code;
     }
 
-    protected function genClosure(NodeAbstract $expr, array $params, callable $bodyGenCb, array $uses = []): string
+    protected function genClosure(Expr\ArrowFunction|Expr\Closure $expr, array $params, array $uses = []): string
     {
         $tmpVar = $this->genTmpVarName();
 
@@ -106,7 +107,7 @@ trait ClosureGenerator
             $this->addArgument('this_', self::TYPE_OBJECT);
         }
 
-        $body = $bodyGenCb();
+        $body = $this->genClosureBody($expr);
         $code .= $this->genScopeVarDecl() . $body;
 
         $this->indentLevel--;
@@ -143,27 +144,50 @@ trait ClosureGenerator
         }
     }
 
-    protected function genLambdaCall(callable $cb): string
+    protected function genClosureBody(NodeAbstract $expr): string
     {
-        $code = '';
-        $oriCtx = $this->context;
+        if ($expr instanceof Node\Expr\ArrowFunction) {
+            return $this->genArrowFunctionBody($expr);
+        }
+        if ($expr instanceof Node\Expr\Closure) {
+            return $this->genAnonymousClosureBody($expr);
+        }
+        $this->fatalError($expr, 'Unsupported closure expression');
+    }
 
-        // 使用 lambda 函数来对 static 变量进行赋值
-        $this->context = new FunctionContext();
-        // C++ lambda 使用 & 捕获了当前函数的所有局部变量，可直接使用，不需要再声明，将其作为 arguments 来处理，隐式使用
-        $this->context->arguments = $oriCtx->localVars;
+    protected function genArrowFunctionBody(Node\Expr\ArrowFunction $expr): string
+    {
+        $code = $this->parseExpr($expr->expr);
+        if ($this->context->beforeStmtLines) {
+            $beforeCode = implode(PHP_EOL, $this->context->beforeStmtLines);
+        } else {
+            $beforeCode = '';
+        }
+        if ($this->isCallExpr($expr->expr)) {
+            $nativeCall = $expr->expr->getAttribute('nativeCall');
+            if ($nativeCall and $this->getFunction($nativeCall)->returnType === self::TYPE_VOID) {
+                return $this->genArrowFunctionVoidReturn($beforeCode, $code);
+            }
+        }
+        if ($this->detectTypeOfExpr($expr->expr) === self::TYPE_VOID) {
+            return $this->genArrowFunctionVoidReturn($beforeCode, $code);
+        }
+        return $beforeCode . PHP_EOL . $this->genClosureReturnValue($code);
+    }
 
-        $code .= '([&](){' . PHP_EOL;
-        $body = $cb();
-        $code .= $this->genScopeVarDecl();
-        $code .= $this->parseBeforeStmtLines();
-        $code .= $body;
-        $code .= $this->parseAfterStmtLines();
-        $code .= '})();' . PHP_EOL;
+    protected function genArrowFunctionVoidReturn(string $beforeCode, string $exprCode): string
+    {
+        $code = $beforeCode . PHP_EOL . $exprCode . ';' . PHP_EOL;
+        return $code . $this->genClosureReturnNull();
+    }
 
-        $this->context = $oriCtx;
-
-        return $code;
+    protected function genAnonymousClosureBody(Node\Expr\Closure $expr): string
+    {
+        $fnCode = $this->parseStmts($expr->stmts);
+        if (!$this->isReturnStmtInLastLine($expr->stmts)) {
+            $fnCode .= $this->genClosureReturnNull() . PHP_EOL;
+        }
+        return $fnCode;
     }
 
     private function genClosureParamTypeCheck(Node\Param $param, string $var, string $phpName, int $index, bool $variadic): string

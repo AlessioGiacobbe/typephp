@@ -93,14 +93,12 @@ trait AnonClassGenerator
     {
         if ($stmt instanceof Class_) {
             $stmt = clone $stmt;
-            $shouldAddMixedReturn = fn (Class_ $class, ClassMethod $method): bool =>
-                $this->shouldAddMixedReturnToEmbeddedClassMethod($class, $method);
             $traverser = new NodeTraverser();
-            $traverser->addVisitor(new class($shouldAddMixedReturn) extends NodeVisitorAbstract {
+            $traverser->addVisitor(new class($this) extends NodeVisitorAbstract {
                 /** @var list<Class_> */
                 private array $classStack = [];
 
-                public function __construct(private \Closure $shouldAddMixedReturn)
+                public function __construct(private object $compiler)
                 {
                 }
 
@@ -113,7 +111,7 @@ trait AnonClassGenerator
 
                     if ($node instanceof ClassMethod && $node->returnType === null) {
                         $class = $this->classStack[count($this->classStack) - 1] ?? null;
-                        if ($class !== null && ($this->shouldAddMixedReturn)($class, $node)) {
+                        if ($class !== null && $this->compiler->shouldAddMixedReturnToEmbeddedClassMethod($class, $node)) {
                             $node->returnType = new Identifier('mixed');
                         }
                     }
@@ -133,7 +131,7 @@ trait AnonClassGenerator
         return $this->printer->prettyPrint([$stmt]);
     }
 
-    protected function shouldAddMixedReturnToEmbeddedClassMethod(Class_ $class, ClassMethod $method): bool
+    public function shouldAddMixedReturnToEmbeddedClassMethod(Class_ $class, ClassMethod $method): bool
     {
         $methodName = strtolower($method->name->toString());
         if ($this->isEmbeddedMagicMethodReturnSensitive($methodName)) {

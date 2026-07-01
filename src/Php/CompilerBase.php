@@ -1466,8 +1466,16 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function appendCapturedStmtLines(string &$code, array $stmts): void
     {
         if ($stmts) {
-            $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($stmts);
         }
+    }
+
+    protected function formatCapturedStmtLines(array $stmts): string
+    {
+        if (!$stmts) {
+            return '';
+        }
+        return $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
     }
 
     protected function genConditionWithCapturedStmts(NodeAbstract $cond, string $openPrefix): string
@@ -1772,20 +1780,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($v->expr === null) {
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {
                 return 'return;';
-            } elseif ($this->context->inClosure && $this->context->closureReturnTypeCheck) {
-                $tmpVar = $this->genTmpVarName();
-                $this->addLocalVar($tmpVar, self::TYPE_VAR);
-                $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
-                $code .= $this->genClosureReturnCheck($tmpVar);
-                $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
-                return $code;
+            } elseif ($this->shouldCheckClosureReturnType()) {
+                return $this->genClosureCheckedReturn(self::VALUE_NULL);
             } elseif ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
-                $tmpVar = $this->genTmpVarName();
-                $this->addLocalVar($tmpVar, self::TYPE_VAR);
-                $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
-                $code .= $this->genUnionReturnCheck($tmpVar);
-                $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
-                return $code;
+                return $this->genUnionCheckedReturn(self::VALUE_NULL);
             } else {
                 return 'return ' . self::VALUE_NULL . ';';
             }
@@ -1832,17 +1830,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
         $exprCode = $this->convertExprType($expr, $returnType, $type);
         // Union/nullable return type: always use tmpVar for runtime check
-        if ($this->context->inClosure && $this->context->closureReturnTypeCheck) {
-            $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
-            $code .= $this->genClosureReturnCheck($tmpVar);
+        if ($this->shouldCheckClosureReturnType()) {
+            [$code, $tmpVar] = $this->genClosureCheckedReturnAssignment($exprCode);
             $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
         } elseif ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
-            $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
-            $code .= $this->genUnionReturnCheck($tmpVar);
+            [$code, $tmpVar] = $this->genUnionCheckedReturnAssignment($exprCode);
             $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
         } elseif (!$this->isVarExpr($v->expr) and !$this->isScalar($v->expr)) {
             // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
@@ -1858,6 +1850,57 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
 
         return $code;
+    }
+
+    protected function genClosureCheckedReturn(string $exprCode): string
+    {
+        [$code, $tmpVar] = $this->genClosureCheckedReturnAssignment($exprCode);
+        return $code . $this->getIndent() . 'return ' . $tmpVar . ';';
+    }
+
+    protected function genClosureReturnValue(string $exprCode): string
+    {
+        if ($this->context->closureReturnTypeCheck) {
+            return $this->genClosureCheckedReturn($exprCode);
+        }
+
+        return 'return ' . $exprCode . ';';
+    }
+
+    protected function genClosureReturnNull(): string
+    {
+        return $this->genClosureReturnValue(self::VALUE_NULL);
+    }
+
+    protected function genUnionCheckedReturn(string $exprCode): string
+    {
+        [$code, $tmpVar] = $this->genUnionCheckedReturnAssignment($exprCode);
+        return $code . $this->getIndent() . 'return ' . $tmpVar . ';';
+    }
+
+    protected function genClosureCheckedReturnAssignment(string $exprCode): array
+    {
+        return $this->genCheckedReturnAssignment($exprCode, true);
+    }
+
+    protected function genUnionCheckedReturnAssignment(string $exprCode): array
+    {
+        return $this->genCheckedReturnAssignment($exprCode, false);
+    }
+
+    protected function genCheckedReturnAssignment(string $exprCode, bool $closure): array
+    {
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+        $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
+        $code .= $closure ? $this->genClosureReturnCheck($tmpVar) : $this->genUnionReturnCheck($tmpVar);
+
+        return [$code, $tmpVar];
+    }
+
+    protected function shouldCheckClosureReturnType(): bool
+    {
+        return $this->context->inClosure && $this->context->closureReturnTypeCheck;
     }
 
     protected function addLocalVar(string $name, string $type): void
@@ -4000,41 +4043,37 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $else = 'php::Var(' . $else . ')';
         }
         if ($hasBranchStmts) {
-            $appendStmtLines = function (array $stmts): string {
-                if (!$stmts) {
-                    return '';
-                }
-                return $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
-            };
-            $appendReturn = function (string $value, array $beforeStmts, array $afterStmts) use ($appendStmtLines): string {
-                $code = $appendStmtLines($beforeStmts);
-                if ($afterStmts) {
-                    $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-                    $code .= $this->getIndent() . "{$tmpVar} = {$value};";
-                    $code .= $appendStmtLines($afterStmts);
-                    $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
-                } else {
-                    $code .= $this->getIndent() . 'return php::Var(' . $value . ');';
-                }
-                return $code;
-            };
             $code = '[&]() -> ' . self::TYPE_VAR . '{';
-            $code .= $appendStmtLines($condBeforeStmts);
+            $code .= $this->formatCapturedStmtLines($condBeforeStmts);
             if ($condAfterStmts) {
                 $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
                 $code .= $this->getIndent() . "{$condTmpVar} = {$cond};";
-                $code .= $appendStmtLines($condAfterStmts);
+                $code .= $this->formatCapturedStmtLines($condAfterStmts);
                 $cond = $condTmpVar;
             }
             $code .= $this->getIndent() . 'if (' . $cond . ') {';
-            $code .= $appendReturn($if, $ifBeforeStmts, $ifAfterStmts);
+            $code .= $this->formatTernaryReturn($if, $ifBeforeStmts, $ifAfterStmts);
             $code .= $this->getIndent() . '} else {';
-            $code .= $appendReturn($else, $elseBeforeStmts, $elseAfterStmts);
+            $code .= $this->formatTernaryReturn($else, $elseBeforeStmts, $elseAfterStmts);
             $code .= $this->getIndent() . '}';
             $code .= $this->getIndent() . '}()';
             return $code;
         }
         return '(' . $cond . ') ? (' . $if . ') : (' . $else . ')';
+    }
+
+    protected function formatTernaryReturn(string $value, array $beforeStmts, array $afterStmts): string
+    {
+        $code = $this->formatCapturedStmtLines($beforeStmts);
+        if ($afterStmts) {
+            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $code .= $this->getIndent() . "{$tmpVar} = {$value};";
+            $code .= $this->formatCapturedStmtLines($afterStmts);
+            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+        } else {
+            $code .= $this->getIndent() . 'return php::Var(' . $value . ');';
+        }
+        return $code;
     }
 
     protected function parseMatch(Expr\Match_ $expr): string
@@ -4051,39 +4090,6 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $var = $tmpVar;
         }
 
-        $parseExprWithStmts = function (NodeAbstract $node): array {
-            $beforeStmtCount = count($this->context->beforeStmtLines);
-            $afterStmtCount = count($this->context->afterStmtLines);
-            $value = $this->parseExpr($node);
-            $beforeStmts = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
-            $afterStmts = array_slice($this->context->afterStmtLines, $afterStmtCount);
-            $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
-            $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
-            return [$value, $beforeStmts, $afterStmts];
-        };
-
-        $appendStmtLines = function (array $stmts): string {
-            if (!$stmts) {
-                return '';
-            }
-            return $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
-        };
-
-        $appendMatchReturn = function (NodeAbstract $body) use ($parseExprWithStmts, $appendStmtLines): string {
-            $this->assertExprCanBeUsedAsValue($body, 'match arm');
-            [$value, $beforeStmts, $afterStmts] = $parseExprWithStmts($body);
-            $code = $appendStmtLines($beforeStmts);
-            if ($afterStmts) {
-                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-                $code .= $this->getIndent() . "{$tmpVar} = {$value};";
-                $code .= $appendStmtLines($afterStmts);
-                $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
-            } else {
-                $code .= $this->getIndent() . 'return ' . $value . ';';
-            }
-            return $code;
-        };
-
         $code = '[&]() -> ' . self::TYPE_VAR . '{';
         $default = null;
         foreach ($expr->arms as $arm) {
@@ -4098,32 +4104,48 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $this->fatalError($arm, 'Match expression cannot be used as a condition');
                 }
                 $this->assertExprCanBeUsedAsValue($cond, 'match arm condition');
-                [$condValue, $beforeStmts, $afterStmts] = $parseExprWithStmts($cond);
+                [$condValue, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($cond);
                 $code .= $this->getIndent() . 'if (!' . $matched . ') {';
-                $code .= $appendStmtLines($beforeStmts);
+                $code .= $this->formatCapturedStmtLines($beforeStmts);
                 if ($afterStmts) {
                     $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
                     $code .= $this->getIndent() . "{$condTmpVar} = {$condValue};";
-                    $code .= $appendStmtLines($afterStmts);
+                    $code .= $this->formatCapturedStmtLines($afterStmts);
                     $condValue = $condTmpVar;
                 }
                 $code .= $this->getIndent() . $matched . ' = php::same(' . $var . ', ' . $condValue . ');';
                 $code .= $this->getIndent() . '}';
             }
             $code .= $this->getIndent() . 'if (' . $matched . ') {';
-            $code .= $appendMatchReturn($arm->body);
+            $code .= $this->formatMatchReturn($arm->body);
             $code .= $this->getIndent() . '}';
         }
 
         if ($default) {
             $code .= $this->getIndent() . '{';
-            $code .= $appendMatchReturn($default);
+            $code .= $this->formatMatchReturn($default);
             $code .= $this->getIndent() . '}';
         } else {
             $code .= $this->getIndent() . '{ return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
         }
         $code .= '}()';
 
+        return $code;
+    }
+
+    protected function formatMatchReturn(NodeAbstract $body): string
+    {
+        $this->assertExprCanBeUsedAsValue($body, 'match arm');
+        [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($body);
+        $code = $this->formatCapturedStmtLines($beforeStmts);
+        if ($afterStmts) {
+            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $code .= $this->getIndent() . "{$tmpVar} = {$value};";
+            $code .= $this->formatCapturedStmtLines($afterStmts);
+            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+        } else {
+            $code .= $this->getIndent() . 'return ' . $value . ';';
+        }
         return $code;
     }
 
@@ -4166,27 +4188,28 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $arms[] = [$elseif->cond, $elseif->stmts];
         }
 
-        $emitIfChain = function (int $index) use (&$emitIfChain, $arms, $v): string {
-            if (!isset($arms[$index])) {
-                if (!$v->else) {
-                    return '';
-                }
-                return $this->parseBlockStmts($v->else->stmts);
-            }
+        return $this->parseBeforeStmtLines() . PHP_EOL . $this->parseIfChain($arms, $v->else, 0) . PHP_EOL;
+    }
 
-            [$cond, $stmts] = $arms[$index];
-            $code = $this->genConditionWithCapturedStmts($cond, 'if ');
-            $code .= $this->parseBlockStmts($stmts);
-            $tail = $emitIfChain($index + 1);
-            if ($tail !== '') {
-                $code .= $this->getIndent() . '} else {' . PHP_EOL;
-                $code .= $tail;
+    protected function parseIfChain(array $arms, ?Node\Stmt\Else_ $else, int $index): string
+    {
+        if (!isset($arms[$index])) {
+            if (!$else) {
+                return '';
             }
-            $code .= $this->getIndent() . '}';
-            return $code;
-        };
+            return $this->parseBlockStmts($else->stmts);
+        }
 
-        return $this->parseBeforeStmtLines() . PHP_EOL . $emitIfChain(0) . PHP_EOL;
+        [$cond, $stmts] = $arms[$index];
+        $code = $this->genConditionWithCapturedStmts($cond, 'if ');
+        $code .= $this->parseBlockStmts($stmts);
+        $tail = $this->parseIfChain($arms, $else, $index + 1);
+        if ($tail !== '') {
+            $code .= $this->getIndent() . '} else {' . PHP_EOL;
+            $code .= $tail;
+        }
+        $code .= $this->getIndent() . '}';
+        return $code;
     }
 
     /**
@@ -5355,9 +5378,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 $initCode .= $this->getIndent() . "if (!{$initState}) { \n";
                 $this->indentLevel++;
                 $initCode .= $this->getIndent() . "{$initState} = true;\n";
-                $initCode .= $this->genLambdaCall(function () use ($var, $varName) {
-                    return $this->getIndent() . $varName . ' = ' . $this->parseExpr($var->default) . ';';
-                });
+                $initCode .= $this->genStaticVarInitLambda($var, $varName);
                 $this->indentLevel--;
                 $initCode .= $this->getIndent() . '}';
                 $list[] = $initCode;
@@ -5365,6 +5386,26 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
 
         return implode(PHP_EOL . $this->getIndent(), $list);
+    }
+
+    protected function genStaticVarInitLambda(Node\Stmt\StaticVar $var, string $varName): string
+    {
+        $oriCtx = $this->context;
+
+        $this->context = new FunctionContext();
+        $this->context->arguments = $oriCtx->localVars;
+
+        $code = '([&](){' . PHP_EOL;
+        $body = $this->getIndent() . $varName . ' = ' . $this->parseExpr($var->default) . ';';
+        $code .= $this->genScopeVarDecl();
+        $code .= $this->parseBeforeStmtLines();
+        $code .= $body;
+        $code .= $this->parseAfterStmtLines();
+        $code .= '})();' . PHP_EOL;
+
+        $this->context = $oriCtx;
+
+        return $code;
     }
 
     protected function parseEnum(Node\Stmt\Enum_ $v): string
@@ -6883,24 +6924,14 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function genReturnCode(): string
     {
-        if ($this->context->inClosure && $this->context->closureReturnTypeCheck) {
-            $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
-            $code .= $this->genClosureReturnCheck($tmpVar);
-            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
-            return $code;
+        if ($this->shouldCheckClosureReturnType()) {
+            return $this->genClosureCheckedReturn(self::VALUE_NULL);
         }
         if ($this->functionDef->returnType === self::TYPE_VOID) {
             return '';
         }
         if ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
-            $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            $code = $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL;
-            $code .= $this->genUnionReturnCheck($tmpVar);
-            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
-            return $code;
+            return $this->genUnionCheckedReturn(self::VALUE_NULL);
         }
         if ($this->functionDef->returnType === self::TYPE_INT
             or $this->functionDef->returnType === self::TYPE_FLOAT
@@ -6939,66 +6970,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
         $uses = array_values($uses);
 
-        $cb = function () use ($expr) {
-            $code = $this->parseExpr($expr->expr);
-            if ($this->context->beforeStmtLines) {
-                $beforeCode = implode(PHP_EOL, $this->context->beforeStmtLines);
-            } else {
-                $beforeCode = '';
-            }
-            if ($this->isCallExpr($expr->expr)) {
-                $nativeCall = $expr->expr->getAttribute('nativeCall');
-                if ($nativeCall and $this->getFunction($nativeCall)->returnType === self::TYPE_VOID) {
-                    if ($this->context->closureReturnTypeCheck) {
-                        $tmpVar = $this->genTmpVarName();
-                        $this->addLocalVar($tmpVar, self::TYPE_VAR);
-                        return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL
-                            . $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL
-                            . $this->genClosureReturnCheck($tmpVar)
-                            . $this->getIndent() . 'return ' . $tmpVar . ';';
-                    }
-                    return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
-                }
-            }
-            if ($this->detectTypeOfExpr($expr->expr) === self::TYPE_VOID) {
-                if ($this->context->closureReturnTypeCheck) {
-                    $tmpVar = $this->genTmpVarName();
-                    $this->addLocalVar($tmpVar, self::TYPE_VAR);
-                    return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL
-                        . $tmpVar . ' = ' . self::VALUE_NULL . ';' . PHP_EOL
-                        . $this->genClosureReturnCheck($tmpVar)
-                        . $this->getIndent() . 'return ' . $tmpVar . ';';
-                }
-                return $beforeCode . PHP_EOL . $code . ';' . PHP_EOL . 'return ' . self::VALUE_NULL . ';';
-            }
-            if ($this->context->closureReturnTypeCheck) {
-                $tmpVar = $this->genTmpVarName();
-                $this->addLocalVar($tmpVar, self::TYPE_VAR);
-                return $beforeCode . PHP_EOL
-                    . $tmpVar . ' = ' . $code . ';' . PHP_EOL
-                    . $this->genClosureReturnCheck($tmpVar)
-                    . $this->getIndent() . 'return ' . $tmpVar . ';';
-            }
-            return $beforeCode . PHP_EOL . 'return ' . $code . ';';
-        };
-
-        return $this->genClosure($expr, $expr->params, $cb, $uses);
+        return $this->genClosure($expr, $expr->params, $uses);
     }
 
     protected function parseClosure(Expr\Closure $expr): string
     {
-        $cb = function () use ($expr) {
-            $fnCode = $this->parseStmts($expr->stmts);
-            if (!$this->isReturnStmtInLastLine($expr->stmts)) {
-                if ($this->context->closureReturnTypeCheck) {
-                    $fnCode .= $this->genReturnCode() . PHP_EOL;
-                } else {
-                    $fnCode .= 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
-                }
-            }
-            return $fnCode;
-        };
-        return $this->genClosure($expr, $expr->params, $cb, $expr->uses);
+        return $this->genClosure($expr, $expr->params, $expr->uses);
     }
 
     protected function isReturnStmtInLastLine(array $stmts): bool

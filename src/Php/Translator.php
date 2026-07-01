@@ -669,7 +669,14 @@ class Translator extends Preprocessor
             return $files;
         }
 
-        return array_values(array_filter($files, fn(string $file): bool => !$this->shouldIgnoreFile($file)));
+        $filteredFiles = [];
+        foreach ($files as $file) {
+            if (!$this->shouldIgnoreFile($file)) {
+                $filteredFiles[] = $file;
+            }
+        }
+
+        return $filteredFiles;
     }
 
     public function convert(array $files): array
@@ -1682,7 +1689,11 @@ CODE;
         $targetArgs = $this->getTargetArgs();
         $command = escapeshellcmd($targetFile);
         if (!empty($targetArgs)) {
-            $command .= ' ' . implode(' ', array_map('escapeshellarg', $targetArgs));
+            $escapedArgs = [];
+            foreach ($targetArgs as $targetArg) {
+                $escapedArgs[] = escapeshellarg($targetArg);
+            }
+            $command .= ' ' . implode(' ', $escapedArgs);
         }
 
         fwrite(STDERR, "Running: {$command}\n");
@@ -3225,20 +3236,15 @@ CODE;
         string $parentClass
     ): void {
         $className = $this->getFullClassName();
-        $error = function (string $detail) use ($v, $className, $methodName, $parentClass) {
-            $this->fatalError($v,
-                "Declaration of `{$className}::{$methodName}()` must be compatible " .
-                "with `{$parentClass}::{$methodName}()`");
-        };
 
         // PHP allows widening visibility in overrides (e.g. protected -> public),
         // but forbids narrowing it.
         if ($this->getVisibilityRank($childMethodDef->flags) < $this->getVisibilityRank($parentMethodDef->flags)) {
-            $error('visibility mismatch');
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
 
         if (($childMethodDef->flags & Modifiers::STATIC) !== ($parentMethodDef->flags & Modifiers::STATIC)) {
-            $error('static mismatch');
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
 
         $childFuncDef = $childMethodDef->functionDef;
@@ -3248,29 +3254,29 @@ CODE;
         }
 
         if (!$this->isReturnTypeOverrideCompatible($childFuncDef, $parentFuncDef)) {
-            $error('return type mismatch');
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
 
         // Child methods may add optional trailing parameters, but they cannot
         // require more arguments than the parent contract.
         if ($childFuncDef->argCountRequired > $parentFuncDef->argCountRequired) {
-            $error('required parameter count mismatch');
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
 
         // Compare each parent-declared parameter position.
         foreach ($parentFuncDef->argInfoList as $i => $parentArg) {
             if (!isset($childFuncDef->argInfoList[$i])) {
-                $error("missing parameter #{$i}");
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
             $childArg = $childFuncDef->argInfoList[$i];
             if (!$this->isParameterTypeOverrideCompatible($childArg, $parentArg)) {
-                $error("parameter #{$i} type mismatch");
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
             if ($childArg->byRef !== $parentArg->byRef) {
-                $error("parameter #{$i} by-reference mismatch");
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
             if ($childArg->variadic !== $parentArg->variadic) {
-                $error("parameter #{$i} variadic mismatch");
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
         }
 
@@ -3278,9 +3284,20 @@ CODE;
         for ($i = count($parentFuncDef->argInfoList); $i < count($childFuncDef->argInfoList); $i++) {
             $childArg = $childFuncDef->argInfoList[$i];
             if (!$childArg->variadic && $childArg->defaultValue === null) {
-                $error("extra required parameter #{$i}");
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
         }
+    }
+
+    private function fatalMethodOverrideIncompatible(
+        NodeAbstract $v,
+        string $className,
+        string $methodName,
+        string $parentClass
+    ): void {
+        $this->fatalError($v,
+            "Declaration of `{$className}::{$methodName}()` must be compatible " .
+            "with `{$parentClass}::{$methodName}()`");
     }
 
     private function isReturnTypeOverrideCompatible(FunctionDef $childFuncDef, FunctionDef $parentFuncDef): bool

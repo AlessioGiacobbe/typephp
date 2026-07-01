@@ -427,22 +427,16 @@ trait BinaryOpTrait
             return '(' . $leftBool . ' ' . $op . ' ' . $this->convertBoolExpr((string) $rightExpr) . ')';
         }
 
-        $appendStmtLines = function (array $stmts): string {
-            if (!$stmts) {
-                return '';
-            }
-            return $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
-        };
         $shortCircuitValue = $op === '&&' ? 'false' : 'true';
         $rightCondition = $op === '&&' ? $leftBool : '!(' . $leftBool . ')';
 
         $code = '[&]() -> bool {';
         $code .= $this->getIndent() . 'if (' . $rightCondition . ') {';
-        $code .= $appendStmtLines($rightBeforeStmts);
+        $code .= $this->formatCapturedStmtLines($rightBeforeStmts);
         if ($rightAfterStmts) {
             $rightTmpVar = $this->addTmpVar(self::TYPE_VAR);
             $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';';
-            $code .= $appendStmtLines($rightAfterStmts);
+            $code .= $this->formatCapturedStmtLines($rightAfterStmts);
             $rightExpr = $rightTmpVar;
         }
         $code .= $this->getIndent() . 'return ' . $this->convertBoolExpr((string) $rightExpr) . ';';

@@ -202,9 +202,9 @@ class ResourceFileGenerator
         // 用点号分隔
         $parts = explode('.', $version);
         // 确保每个部分都是数字（过滤掉非数字字符）
-        $parts = array_map(function ($p) {
-            return preg_replace('/[^0-9]/', '', $p) ?: '0';
-        }, $parts);
+        foreach ($parts as $i => $part) {
+            $parts[$i] = preg_replace('/[^0-9]/', '', $part) ?: '0';
+        }
 
         // 确保恰好有4个部分
         while (count($parts) < 4) {
