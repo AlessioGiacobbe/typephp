@@ -1444,6 +1444,25 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return [$value, $beforeStmts, $afterStmts];
     }
 
+    protected function stringifyParsedExpr(mixed $expr): string
+    {
+        if (is_string($expr)) {
+            return $expr;
+        }
+        if (is_int($expr) || is_float($expr)) {
+            return (string) $expr;
+        }
+        if (is_object($expr)) {
+            if (method_exists($expr, 'toString')) {
+                return $expr->toString();
+            }
+            if (method_exists($expr, '__toString')) {
+                return $expr->__toString();
+            }
+        }
+        throw new \LogicException('Parsed expression must be stringable');
+    }
+
     protected function appendCapturedStmtLines(string &$code, array $stmts): void
     {
         if ($stmts) {
@@ -2744,6 +2763,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $list_expr = [];
         foreach ($init as $expr) {
             [$initExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+            $initExpr = $this->stringifyParsedExpr($initExpr);
             $this->appendCapturedStmtLines($code, $beforeStmts);
             $list_expr[] = $initExpr;
             if ($afterStmts) {
@@ -2754,12 +2774,15 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $code .= implode(";\n" . $this->getIndent(), $list_expr);
 
         $list_cond = [];
+        $list_cond_expr = [];
         $hasCondStmts = false;
         foreach ($cond as $expr) {
             $this->assertExprCanBeUsedAsCondition($expr, 'for condition');
             [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+            $condExpr = $this->stringifyParsedExpr($condExpr);
             $hasCondStmts = $hasCondStmts || $beforeStmts || $afterStmts;
             $list_cond[] = [$condExpr, $beforeStmts, $afterStmts];
+            $list_cond_expr[] = $condExpr;
         }
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
@@ -2786,13 +2809,14 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $condCode .= $this->getIndent() . '}()';
             $code .= $condCode;
         } else {
-            $code .= implode(', ', array_map(static fn($item) => $item[0], $list_cond));
+            $code .= implode(', ', $list_cond_expr);
         }
         $code .= '; ';
 
         $list_loop = [];
         foreach ($loop as $expr) {
             [$loopExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+            $loopExpr = $this->stringifyParsedExpr($loopExpr);
             if ($beforeStmts || $afterStmts) {
                 $loopCode = '[&]() {';
                 $this->appendCapturedStmtLines($loopCode, $beforeStmts);
@@ -3551,34 +3575,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $hasNamedArg = false;
         $hasUnpack = false;
 
-        $ensureArrayArgs = function () use (&$arrayArgsVar, &$list_args): string {
-            if ($arrayArgsVar === null) {
-                $arrayArgsVar = $this->genTmpVarName();
-                $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $arrayArgsVar . '{' . implode(', ', $list_args) . '};';
-                $list_args = [];
-            }
-            return $arrayArgsVar;
-        };
-
-        $ensureNamedArgs = function () use (&$namedArgsVar): string {
-            if ($namedArgsVar === null) {
-                $namedArgsVar = $this->genTmpVarName();
-                $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $namedArgsVar . ';';
-                $this->context->afterStmtLines[] = $namedArgsVar . '.unset();';
-            }
-            return $namedArgsVar;
-        };
-
-        $addPositionalArg = function (string $value) use (&$arrayArgsVar, &$list_args): void {
-            if ($arrayArgsVar !== null) {
-                $this->context->beforeStmtLines[] = $arrayArgsVar . '.append(' . $value . ');';
-            } else {
-                $list_args[] = $value;
-            }
-        };
-
         if ($forceArrayArgs) {
-            $ensureArrayArgs();
+            $this->ensureCallArrayArgs($arrayArgsVar, $list_args);
         }
 
         foreach ($args as $i => $arg) {
@@ -3590,7 +3588,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
                 }
                 $hasUnpack = true;
-                $arrayArgs = $ensureArrayArgs();
+                $arrayArgs = $this->ensureCallArrayArgs($arrayArgsVar, $list_args);
                 $this->context->beforeStmtLines[] = $arrayArgs . '.merge(' . $this->parseArrayArg($arg) . ');';
                 continue;
             }
@@ -3608,10 +3606,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     ? $this->parseReferenceCallArgValue($arg)
                     : $this->parseCallArgValue($arg);
                 if ($separateNamedArgs) {
-                    $namedArgsArray = $ensureNamedArgs();
+                    $namedArgsArray = $this->ensureCallNamedArgs($namedArgsVar);
                     $this->context->beforeStmtLines[] = $namedArgsArray . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $value . ');';
                 } else {
-                    $arrayArgs = $ensureArrayArgs();
+                    $arrayArgs = $this->ensureCallArrayArgs($arrayArgsVar, $list_args);
                     $this->context->beforeStmtLines[] = $arrayArgs . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $value . ');';
                 }
                 continue;
@@ -3626,7 +3624,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
                 if ($byRef) {
-                    $addPositionalArg($this->parseArgRefVar($arg, $name));
+                    $this->addPositionalCallArg($this->parseArgRefVar($arg, $name), $arrayArgsVar, $list_args);
                     continue;
                 }
                 if (!$this->hasVar($name)) {
@@ -3638,7 +3636,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
                 }
                 if ($byRef) {
-                    $addPositionalArg($obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')');
+                    $this->addPositionalCallArg($obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')', $arrayArgsVar, $list_args);
                     continue;
                 }
             } elseif ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
@@ -3649,9 +3647,9 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     if ($byRef) {
                         $ref = $this->addTmpVar(self::TYPE_REF);
                         $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
-                        $addPositionalArg('&' . $ref);
+                        $this->addPositionalCallArg('&' . $ref, $arrayArgsVar, $list_args);
                     } else {
-                        $addPositionalArg($globalVar);
+                        $this->addPositionalCallArg($globalVar, $arrayArgsVar, $list_args);
                     }
                     continue;
                 }
@@ -3662,7 +3660,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     if ($arg->value->dim === null) {
                         $this->fatalError($arg, 'Array dimension must be a constant expression');
                     }
-                    $addPositionalArg($array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')');
+                    $this->addPositionalCallArg($array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')', $arrayArgsVar, $list_args);
                     continue;
                 }
             } elseif ($this->isFuncCallExpr($arg->value)) {
@@ -3675,12 +3673,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                         $name = $this->parseVariable($inner);
                         // 消除 refval() 函数调用，直接使用变量
                         $arg->value = $inner;
-                        $addPositionalArg($this->parseArgRefVar($arg, $name));
+                        $this->addPositionalCallArg($this->parseArgRefVar($arg, $name), $arrayArgsVar, $list_args);
                         continue;
                     }
                     $expr = $this->expandRefvalExpr($inner, $arg);
                     if ($expr !== null) {
-                        $addPositionalArg($expr);
+                        $this->addPositionalCallArg($expr, $arrayArgsVar, $list_args);
                         continue;
                     }
                     $this->fatalError($arg, 'The refval function only accepts a variable, array element, or object property');
@@ -3693,12 +3691,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $tmpRef = $this->genTmpVarName();
                     $this->addLocalVar($tmpRef, self::TYPE_REF);
                     $this->context->beforeStmtLines[] = $tmpRef . ' = ' . $this->parseChainedExpr($arg->value, self::OP_REFVAL) . ';';
-                    $addPositionalArg('&' . $tmpRef);
+                    $this->addPositionalCallArg('&' . $tmpRef, $arrayArgsVar, $list_args);
                     continue;
                 }
             }
             $value = $this->parseCallArgValue($arg);
-            $addPositionalArg($value);
+            $this->addPositionalCallArg($value, $arrayArgsVar, $list_args);
         }
 
         if ($arrayArgsVar !== null) {
@@ -3706,6 +3704,35 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
         $callArgs = Symbol::argList() . '{' . implode(', ', $list_args) . '}';
         return $namedArgsVar !== null ? $callArgs . ', ' . $namedArgsVar . '.array()' : $callArgs;
+    }
+
+    protected function ensureCallArrayArgs(?string &$arrayArgsVar, array &$listArgs): string
+    {
+        if ($arrayArgsVar === null) {
+            $arrayArgsVar = $this->genTmpVarName();
+            $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $arrayArgsVar . '{' . implode(', ', $listArgs) . '};';
+            $listArgs = [];
+        }
+        return $arrayArgsVar;
+    }
+
+    protected function ensureCallNamedArgs(?string &$namedArgsVar): string
+    {
+        if ($namedArgsVar === null) {
+            $namedArgsVar = $this->genTmpVarName();
+            $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $namedArgsVar . ';';
+            $this->context->afterStmtLines[] = $namedArgsVar . '.unset();';
+        }
+        return $namedArgsVar;
+    }
+
+    protected function addPositionalCallArg(string $value, ?string $arrayArgsVar, array &$listArgs): void
+    {
+        if ($arrayArgsVar !== null) {
+            $this->context->beforeStmtLines[] = $arrayArgsVar . '.append(' . $value . ');';
+        } else {
+            $listArgs[] = $value;
+        }
     }
 
     protected function parseCallArgValue(Node\Arg $arg): string
