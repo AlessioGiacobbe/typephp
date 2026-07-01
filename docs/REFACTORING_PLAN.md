@@ -242,6 +242,7 @@
 - `CompilerBase::isSameClassName()`、`isSameOrSubclassOf()`、`canAccessProtectedProperty()` 已委托 resolver，避免规则继续扩散。
 - 已添加 `prepare/convert/idle` 编译阶段状态；`PropertyAccessResolver` 只能在 convert 阶段创建和使用，避免预处理阶段误用不完整的类表状态。
 - `PropertyAccessResolver` 已改为依赖 `PropertyAccessContext` 只读接口，而不是完整依赖 `CompilerBase` 大类。
+- 已建立 `PropertyAssignTypeInfo`，抽离 typed property 写入的纯 metadata 计算，包括固定类型属性判断、默认值、runtime typecheck 列表和类型字符串。
 - 当前迁移保持生成代码不变，后续阶段再统一 read/write emitter。
 
 验证：

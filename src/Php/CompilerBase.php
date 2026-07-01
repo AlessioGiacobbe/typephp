@@ -46,6 +46,7 @@ use PhpAot\Php\Platform\Windows;
 use PhpAot\Php\Resolver\PropertyAccessContext;
 use PhpAot\Php\Resolver\PropertyAccessResult;
 use PhpAot\Php\Resolver\PropertyAccessResolver;
+use PhpAot\Php\Resolver\PropertyAssignTypeInfo;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -98,6 +99,9 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     public const string TYPE_DECIMAL = 'php::Decimal';
     public const string TYPE_BIGFLOAT = 'php::BigFloat';
     public const string TYPE_BOX = 'php::Box';
+
+    protected const string NATIVE_PROPERTY_VALUE_VAR = 'var';
+    protected const string NATIVE_PROPERTY_VALUE_DYNAMIC = 'dynamic';
 
     /**
      * Keyword methods (to* builtins) with mandated return types.
@@ -2416,13 +2420,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 break;
             case 'Expr_StaticPropertyFetch':
                 if ($this->isIdExpr($expr->name)) {
-                    if (!$expr->hasAttribute('nativePropertyDef')) {
+                    if (!$this->getNativePropertyDef($expr)) {
                         $class = null;
                         $this->findNativeStaticProperty($expr, $class);
                     }
-                    if ($expr->hasAttribute('nativePropertyDef')) {
-                        /** @var PropertyDef $def */
-                        $def = $expr->getAttribute('nativePropertyDef');
+                    $def = $this->getNativePropertyDef($expr);
+                    if ($def) {
                         return $def->type;
                     }
                 }
@@ -4650,25 +4653,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function getFixedObjectPropDefaultValue(PropertyDef $def): ?string
     {
-        return match ($def->type) {
-            self::TYPE_INT => $def->default ?? '0',
-            self::TYPE_FLOAT => $def->default ?? '0.0',
-            self::TYPE_BOOL => $def->default ?? 'false',
-            self::TYPE_STR => $def->default ?? self::TYPE_STR . '()',
-            self::TYPE_ARRAY => $def->default ?? self::TYPE_ARRAY . '{}',
-            default => null,
-        };
+        return (new PropertyAssignTypeInfo())->getFixedDefaultValue($def);
     }
 
     protected function isFixedObjectProp(PropertyDef $def): bool
     {
-        return in_array($def->type, [
-            self::TYPE_INT,
-            self::TYPE_FLOAT,
-            self::TYPE_BOOL,
-            self::TYPE_STR,
-            self::TYPE_ARRAY,
-        ], true) && !$def->nullable;
+        return (new PropertyAssignTypeInfo())->isFixed($def);
     }
 
     protected function assertCanAssignObjectProp(Expr\PropertyFetch $left, Expr $right): void
@@ -4683,12 +4673,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     private function assertCanAssignObjectProperty(NodeAbstract $left, Expr $right, string $label): void
     {
-        if (!$left->hasAttribute('nativePropertyDef')) {
+        $def = $this->getNativePropertyDef($left);
+        if (!$def) {
             return;
         }
 
-        /** @var PropertyDef $def */
-        $def = $left->getAttribute('nativePropertyDef');
         $propName = $this->parseIdentifier($left->name);
 
         if ($this->isNull($right)) {
@@ -4732,12 +4721,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function wrapObjectPropertyAssignTypeCheck(NodeAbstract $left, Expr $right, string $rightExpr): string
     {
-        if (!$left->hasAttribute('nativePropertyDef')) {
+        $def = $this->getNativePropertyDef($left);
+        if (!$def) {
             return $rightExpr;
         }
 
-        /** @var PropertyDef $def */
-        $def = $left->getAttribute('nativePropertyDef');
         $typeCheck = $this->getObjectPropertyAssignTypeCheck($def);
         if (empty($typeCheck)) {
             return $rightExpr;
@@ -4776,26 +4764,15 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     private function getObjectPropertyAssignTypeCheck(PropertyDef $def): array
     {
-        if (!empty($def->typeCheck)) {
-            return $def->typeCheck;
-        }
-        if ($def->type !== self::TYPE_OBJECT || $def->class === '') {
-            return [];
-        }
-
-        $check = [];
-        if ($def->nullable) {
-            $check[] = ['kind' => 'isNull'];
-        }
-        $check[] = ['kind' => 'instanceof', 'class' => $def->class];
-        return $check;
+        return (new PropertyAssignTypeInfo())->getRuntimeTypeCheck($def);
     }
 
     private function getObjectPropertyTypeCheckDisplayName(NodeAbstract $left): string
     {
         $propName = $this->parseIdentifier($left->name);
-        if ($left->hasAttribute('nativeClassDef')) {
-            $class = $left->getAttribute('nativeClassDef')->getNamespacedName(false);
+        $classDef = $this->getNativePropertyClassDef($left);
+        if ($classDef) {
+            $class = $classDef->getNamespacedName(false);
             return $class . '::$' . $propName;
         }
 
@@ -4808,13 +4785,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     private function getObjectPropertyTypeCheckTypeString(PropertyDef $def): string
     {
-        if ($def->typeStr !== '') {
-            return $def->typeStr;
-        }
-        if ($def->class !== '') {
-            return ($def->nullable ? '?' : '') . $def->class;
-        }
-        return $def->type;
+        return (new PropertyAssignTypeInfo())->getTypeString($def);
     }
 
     protected function parseUnset(Node\Stmt\Unset_ $node): string
@@ -4843,9 +4814,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 $restoreDefault = null;
                 if ($this->isIdExpr($var->name)) {
                     $propertyId = $this->getPropertyIdentifier($var, $var->var, $var->name);
-                    if ($var->hasAttribute('nativePropertyDef')) {
-                        /** @var PropertyDef $def */
-                        $def = $var->getAttribute('nativePropertyDef');
+                    $def = $this->getNativePropertyDef($var);
+                    if ($def) {
                         if ($this->isFixedObjectProp($def)) {
                             $restoreDefault = $this->getFixedObjectPropDefaultValue($def);
                             if ($restoreDefault === null) {
@@ -4922,11 +4892,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
         $objectVar = $objectName;
         $getProperty = $objectVar . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
-        if ($expr->hasAttribute('nativePropertyDef') and $this->nativeTypes) {
-            /**
-             * @var PropertyDef $def
-             */
-            $def = $expr->getAttribute('nativePropertyDef');
+        $def = $this->getNativePropertyDef($expr);
+        if ($def and $this->nativeTypes) {
             $propName = $this->parseIdentifier($property);
             $propVar = $this->getObjectPropVarName($objectVar, $propName);
             if ($objectVar === 'this_') {
@@ -4940,14 +4907,19 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                         ];
                     }
                     $expr->setAttribute('nativePropertyVar', $propVar);
+                    $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
                     return $propVar;
                 }
             } elseif ($this->canHoistStableObjectProp($objectVar, $propName)) {
                 // SSA-stable object: lazily create reference at first access point
                 $result = $this->hoistStableObjectProp($objectVar, $propName, $id, $def->type);
                 $expr->setAttribute('nativePropertyVar', $result);
+                $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
                 return $result;
             }
+        }
+        if ($def) {
+            $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
         }
         return $getProperty;
     }
@@ -5884,14 +5856,33 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return $expr->hasAttribute('nativeProperty');
     }
 
+    protected function getNativePropertyDef(NodeAbstract $expr): ?PropertyDef
+    {
+        return $expr->hasAttribute('nativePropertyDef') ? $expr->getAttribute('nativePropertyDef') : null;
+    }
+
+    protected function getNativePropertyClassDef(NodeAbstract $expr): ?ClassDef
+    {
+        return $expr->hasAttribute('nativeClassDef') ? $expr->getAttribute('nativeClassDef') : null;
+    }
+
+    protected function setNativePropertyValueSource(NodeAbstract $expr, string $source): void
+    {
+        $expr->setAttribute('nativePropertyValueSource', $source);
+    }
+
+    protected function isNativePropertyTypedValue(NodeAbstract $expr): bool
+    {
+        return $expr->getAttribute('nativePropertyValueSource') === self::NATIVE_PROPERTY_VALUE_VAR;
+    }
+
     protected function parseNativeStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string|bool
     {
         $class = null;
         $nativeProp = $this->findNativeStaticProperty($expr, $class);
         if ($nativeProp) {
-            if ($this->nativeTypes && $expr->hasAttribute('nativePropertyDef')) {
-                /** @var PropertyDef $def */
-                $def = $expr->getAttribute('nativePropertyDef');
+            $def = $this->getNativePropertyDef($expr);
+            if ($this->nativeTypes && $def) {
                 $info = $this->getHoistedObjectPropInfo($def->type);
                 $propName = $this->parseIdentifier($expr->name);
                 $refVar = '_static_' . str_replace('\\', '_', $class) . '_' . $propName;
@@ -5907,6 +5898,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                         ];
                     }
                     $helper = $def->type === self::TYPE_FLOAT ? 'php_aot_static_float_ref' : 'php_aot_static_int_ref';
+                    $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
                     return $helper . '(' . $refVar . ')';
                 }
 
@@ -5919,13 +5911,16 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                         'kind' => $info['kind'],
                     ];
                 }
+                $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
                 return $refVar;
             }
 
             if ($this->isNativePropertyAccess($expr)) {
                 $classPtr = $this->getClassEntryPtr($class);
+                $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
                 return Symbol::getStaticProperty() . '(' . $classPtr . ', ' . $nativeProp . ')';
             } else {
+                $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
                 return $nativeProp;
             }
         }

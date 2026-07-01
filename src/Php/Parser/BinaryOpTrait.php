@@ -209,16 +209,18 @@ trait BinaryOpTrait
                 if (isset($this->context->objectProps[$nativePropertyVar])) {
                     return $this->context->objectProps[$nativePropertyVar]['type'];
                 }
-                if (!str_contains($nativePropertyVar, '.attr(') && $expr->hasAttribute('nativePropertyDef')) {
-                    return $expr->getAttribute('nativePropertyDef')->type;
+                $def = $this->getNativePropertyDef($expr);
+                if ($def && $this->isNativePropertyTypedValue($expr)) {
+                    return $def->type;
                 }
             }
             return self::TYPE_VAR;
         }
 
         if ($expr instanceof Expr\StaticPropertyFetch) {
-            if ($expr->hasAttribute('nativePropertyDef') && !str_contains($value, 'getStaticProperty')) {
-                return $expr->getAttribute('nativePropertyDef')->type;
+            $def = $this->getNativePropertyDef($expr);
+            if ($def && $this->isNativePropertyTypedValue($expr)) {
+                return $def->type;
             }
             return self::TYPE_VAR;
         }
