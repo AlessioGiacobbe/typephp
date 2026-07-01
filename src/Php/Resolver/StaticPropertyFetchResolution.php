@@ -1,0 +1,19 @@
+<?php
+/**
+ * This file is part of Swoole-Compiler(AOT).
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+namespace PhpAot\Php\Resolver;
+
+final readonly class StaticPropertyFetchResolution
+{
+    public function __construct(
+        public ?string $class,
+        public string $expression,
+        public bool $nativeProperty,
+    ) {
+    }
+}

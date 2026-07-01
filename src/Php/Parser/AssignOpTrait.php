@@ -86,7 +86,7 @@ trait AssignOpTrait
     {
         $value    = $this->trimBrackets($this->parseExpr($right));
         $native = $this->parseNativeStaticPropertyFetch($left);
-        if ($native) {
+        if ($native !== null) {
             return $native . ' = ' . $value;
         }
         $class = $this->identifierToStr($left->class);
