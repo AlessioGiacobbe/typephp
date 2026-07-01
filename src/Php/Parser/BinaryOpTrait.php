@@ -206,8 +206,9 @@ trait BinaryOpTrait
         if ($expr instanceof Expr\PropertyFetch) {
             $nativePropertyVar = $this->getNativePropertyVar($expr);
             if ($nativePropertyVar !== null && $nativePropertyVar === $value) {
-                if (isset($this->context->objectProps[$nativePropertyVar])) {
-                    return $this->context->objectProps[$nativePropertyVar]['type'];
+                $info = $this->getObjectPropInfoByVar($nativePropertyVar);
+                if ($info !== null) {
+                    return $info['type'];
                 }
                 $def = $this->getNativePropertyDef($expr);
                 if ($def && $this->isNativePropertyTypedValue($expr)) {

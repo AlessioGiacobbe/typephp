@@ -1063,6 +1063,29 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return $this->context->objectProps[$this->getObjectPropVarName($object, $prop)];
     }
 
+    protected function getObjectPropInfoByVar(string $var): ?array
+    {
+        return $this->context->objectProps[$var] ?? null;
+    }
+
+    protected function registerObjectPropVar(string $var, array $info): void
+    {
+        if (isset($this->context->objectProps[$var])) {
+            return;
+        }
+        $this->context->objectProps[$var] = $info;
+    }
+
+    protected function registerHoistedObjectPropVar(string $var, string $type, string $getter): void
+    {
+        $info = $this->getHoistedObjectPropInfo($type);
+        $this->registerObjectPropVar($var, [
+            'type' => $info['type'],
+            'getter' => $getter,
+            'kind' => $info['kind'],
+        ]);
+    }
+
     protected function getNativeName(string $fn, string $ns = '', string $class = ''): string
     {
         $names = [];
@@ -2420,8 +2443,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                         $this->parsePropertyFetch($expr);
                         $propVar = $this->getNativePropertyVar($expr);
                         if ($propVar !== null) {
-                            $info = $this->context->objectProps[$propVar];
-                            return $info['type'];
+                            $info = $this->getObjectPropInfoByVar($propVar);
+                            if ($info !== null) {
+                                return $info['type'];
+                            }
                         }
                     }
                 }
@@ -4942,14 +4967,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             if (!$this->canHoistObjectProp($objectVar, $propName)) {
                 return null;
             }
-            if (!$this->hasObjectPropVar($propVar)) {
-                $info = $this->getHoistedObjectPropInfo($def->type);
-                $this->context->objectProps[$propVar] = [
-                    'type' => $info['type'],
-                    'getter' => $getter,
-                    'kind' => $info['kind'],
-                ];
-            }
+            $this->registerHoistedObjectPropVar($propVar, $def->type, $getter);
             $this->setNativePropertyVar($expr, $propVar);
             $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
             return $propVar;
