@@ -1437,6 +1437,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $this->appendCapturedStmtLines($code, $afterStmts);
             $condExpr = $tmpVar;
         }
+
+        if ($cond instanceof Expr\Assign) {
+            $condExpr = '(' . $condExpr . ')';
+        }
         $code .= $openPrefix . '(' . $condExpr . ') {' . PHP_EOL;
         return $code;
     }
@@ -4115,10 +4119,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             if ($tail !== '') {
                 $code .= $this->getIndent() . '} else {' . PHP_EOL;
                 $code .= $tail;
-                $code .= $this->getIndent() . '}';
-            } else {
-                $code .= $this->getIndent() . '}';
             }
+            $code .= $this->getIndent() . '}';
             return $code;
         };
 
