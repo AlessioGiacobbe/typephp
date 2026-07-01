@@ -5937,17 +5937,29 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function isSameClassName(string $classA, string $classB): bool
     {
-        return $this->createPropertyAccessResolver()->isSameClassName($classA, $classB);
+        return strcasecmp(ltrim($classA, '\\'), ltrim($classB, '\\')) === 0;
     }
 
     protected function isSameOrSubclassOf(string $class, string $parent): bool
     {
-        return $this->createPropertyAccessResolver()->isSameOrSubclassOf($class, $parent);
+        $class = strtolower(ltrim($class, '\\'));
+        $parent = strtolower(ltrim($parent, '\\'));
+        while ($class !== '') {
+            if ($class === $parent) {
+                return true;
+            }
+            $class = $this->getParentClass($class);
+        }
+        return false;
     }
 
     protected function canAccessProtectedProperty(string $scope, string $declaringClass): bool
     {
-        return $this->createPropertyAccessResolver()->canAccessProtectedProperty($scope, $declaringClass);
+        if ($scope === '') {
+            return false;
+        }
+        return $this->isSameOrSubclassOf($scope, $declaringClass)
+            || $this->isSameOrSubclassOf($declaringClass, $scope);
     }
 
     private function resolveNativeInstanceProperty(NodeAbstract $expr, string $property, string $class): ?PropertyAccessResult

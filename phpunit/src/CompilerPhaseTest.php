@@ -24,7 +24,9 @@ class CompilerPhaseProbe extends CompilerTest
 
     public function probePropertyAccessResolver(): bool
     {
-        return $this->canAccessProtectedProperty('ProbeClass', 'ProbeClass');
+        $method = new ReflectionMethod(\PhpAot\Php\CompilerBase::class, 'createPropertyAccessResolver');
+        $resolver = $method->invoke($this);
+        return $resolver->canAccessProtectedProperty('ProbeClass', 'ProbeClass');
     }
 }
 
