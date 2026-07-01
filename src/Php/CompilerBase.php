@@ -43,6 +43,7 @@ use PhpAot\Php\Platform\Macos;
 use PhpAot\Php\Platform\PlatformBase;
 use PhpAot\Php\Platform\PlatformFactory;
 use PhpAot\Php\Platform\Windows;
+use PhpAot\Php\Resolver\PropertyAccessContext;
 use PhpAot\Php\Resolver\PropertyAccessResult;
 use PhpAot\Php\Resolver\PropertyAccessResolver;
 use PhpParser\Modifiers;
@@ -64,7 +65,7 @@ use PhpParser\ParserFactory;
 use PhpParser\PhpVersion;
 use PhpParser\PrettyPrinter;
 
-class CompilerBase extends \PhpAot\Core\Translator
+class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessContext
 {
     use AstNodeType;
     use FuncCallOptimizer;
@@ -1919,6 +1920,16 @@ class CompilerBase extends \PhpAot\Core\Translator
         return $this->classes[$this->escapeClass($name)];
     }
 
+    public function getClassDef(string $name): ?ClassDef
+    {
+        return $this->classes[$this->escapeClass($name)] ?? null;
+    }
+
+    public function getParentClass(string $class): string
+    {
+        return $this->classExtends[strtolower(ltrim($class, '\\'))] ?? '';
+    }
+
     protected function hasClass(string $name): bool
     {
         return array_key_exists($this->escapeClass($name), $this->classes);
@@ -2813,16 +2824,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     }
 
     /**
-     * Expand a Big* compound-assignment into `$v = Type::method($v, $rhs)`.
-     *
-     * BigInt/BigDecimal/BigFloat are immutable Box types — Variant operator+=
-     * goes through ZendVM add_function which does not understand them, so we
-     * must emit the static-method form instead.
-     */
-    /**
-     * Generate the C++ expression for a Big* binary operation.
-     *
-     * @param NodeAbstract $errorNode node to blame on unsupported operators
+     * Report a compiler fatal error.
      */
     public function error(string $msg): never
     {
@@ -2837,7 +2839,7 @@ class CompilerBase extends \PhpAot\Core\Translator
         }
     }
 
-    protected function fatalError(Node $node, string $msg): never
+    public function fatalError(NodeAbstract $node, string $msg): never
     {
         $this->error("{$msg} in {$this->file}:{$node->getStartLine()}");
     }
@@ -5838,11 +5840,7 @@ class CompilerBase extends \PhpAot\Core\Translator
     private function createPropertyAccessResolver(): PropertyAccessResolver
     {
         $this->assertCompilerPhase(self::PHASE_CONVERT, 'PropertyAccessResolver');
-        return new PropertyAccessResolver(
-            fn(string $class): ?ClassDef => $this->classes[$this->escapeClass($class)] ?? null,
-            fn(string $class): string => $this->classExtends[strtolower(ltrim($class, '\\'))] ?? '',
-            fn(NodeAbstract $expr, string $message) => $this->fatalError($expr, $message),
-        );
+        return new PropertyAccessResolver($this);
     }
 
     protected function isSameClassName(string $classA, string $classB): bool

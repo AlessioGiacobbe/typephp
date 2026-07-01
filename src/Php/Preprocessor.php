@@ -456,11 +456,6 @@ class Preprocessor extends CompilerBase
         }
     }
 
-    protected function getParentClass(NodeAbstract $extends): string
-    {
-        return $this->getNamespacedClassName($this->parseIdentifier($extends));
-    }
-
     protected function prepareClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->resetClass();
@@ -481,7 +476,7 @@ class Preprocessor extends CompilerBase
         $this->addClass($fullClassName, $this->classDef);
 
         if (!empty($class->extends)) {
-            $this->parentClass = $this->getParentClass($class->extends);
+            $this->parentClass = $this->getNamespacedClassName($this->parseIdentifier($class->extends));
             $parentClassLower = strtolower($this->parentClass);
             if ($parentClassLower === $fullClassNameLower) {
                 $this->fatalError($class, "Class {$fullClassName} cannot extend itself");

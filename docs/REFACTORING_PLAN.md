@@ -21,6 +21,7 @@
 5. 优先使用小型 service/helper、明确 DTO、resolver、emitter；仅在边界稳定后再引入 Visitor、Strategy 等模式。
 6. 所有错误信息保持 PHP 风格，不暴露实现细节，不使用 “AOT 禁止” 这类表述。
 7. 每个阶段必须有 phpunit 或 phpt 回归验证，尤其是属性、类型、调用、继承、异常等高风险路径。
+8. 面向 resolver/emitter 暴露的编译器接口优先保持只读。只读查询接口可以按需设为 public，写操作必须格外谨慎，避免绕过统一状态管理。
 
 ## 目标架构方向
 
@@ -240,6 +241,7 @@
 - 旧的 `CompilerBase::findNativeProperty()` 泛型入口已移除，避免后续继续扩散带 `$static` 布尔参数的访问模式。
 - `CompilerBase::isSameClassName()`、`isSameOrSubclassOf()`、`canAccessProtectedProperty()` 已委托 resolver，避免规则继续扩散。
 - 已添加 `prepare/convert/idle` 编译阶段状态；`PropertyAccessResolver` 只能在 convert 阶段创建和使用，避免预处理阶段误用不完整的类表状态。
+- `PropertyAccessResolver` 已改为依赖 `PropertyAccessContext` 只读接口，而不是完整依赖 `CompilerBase` 大类。
 - 当前迁移保持生成代码不变，后续阶段再统一 read/write emitter。
 
 验证：

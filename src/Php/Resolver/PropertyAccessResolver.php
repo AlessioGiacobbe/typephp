@@ -8,20 +8,12 @@
 
 namespace PhpAot\Php\Resolver;
 
-use Closure;
-use PhpAot\Php\Entity\ClassDef;
 use PhpParser\NodeAbstract;
 
 final class PropertyAccessResolver
 {
-    /**
-     * @param Closure(string): ?ClassDef $getClassDef
-     * @param Closure(string): string $getParentClass
-     */
     public function __construct(
-        private readonly Closure $getClassDef,
-        private readonly Closure $getParentClass,
-        private readonly Closure $fatalError,
+        private readonly PropertyAccessContext $compiler,
     ) {
     }
 
@@ -38,7 +30,7 @@ final class PropertyAccessResolver
             if ($class === $parent) {
                 return true;
             }
-            $class = ($this->getParentClass)($class);
+            $class = $this->compiler->getParentClass($class);
         }
         return false;
     }
@@ -63,7 +55,7 @@ final class PropertyAccessResolver
         $findClass = $class;
 
         while (true) {
-            $classDef = ($this->getClassDef)($findClass);
+            $classDef = $this->compiler->getClassDef($findClass);
             if ($classDef === null) {
                 break;
             }
@@ -155,6 +147,6 @@ final class PropertyAccessResolver
 
     private function fatal(NodeAbstract $expr, string $message): never
     {
-        ($this->fatalError)($expr, $message);
+        $this->compiler->fatalError($expr, $message);
     }
 }

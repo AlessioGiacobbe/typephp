@@ -2776,7 +2776,7 @@ CODE;
         // 如果不是继承自内置类，需要检查父类是否存在，在预处理阶段只需检查了是否继承内置类
         // 目前不允许继承自动态加载的自定义类
         if ($this->classDef->extends and !$this->classDef->inheritedFromInternalClass) {
-            $parentClass = $this->getParentClass($class->extends);
+            $parentClass = $this->getNamespacedClassName($this->parseIdentifier($class->extends));
             if ($this->hasClass($parentClass)) {
                 $parent = $this->getClass($parentClass);
                 // 父类是 final 无法继承
