@@ -49,6 +49,7 @@ use PhpAot\Php\Resolver\NativePropertyAccess;
 use PhpAot\Php\Resolver\PropertyAccessResult;
 use PhpAot\Php\Resolver\PropertyAccessResolver;
 use PhpAot\Php\Resolver\PropertyAssignTypeInfo;
+use PhpAot\Php\Resolver\PropertyWriteTarget;
 use PhpAot\Php\Resolver\StaticPropertyFetchResolution;
 use PhpAot\Php\Resolver\StaticPropertyFetchTarget;
 use PhpParser\Modifiers;
@@ -2828,10 +2829,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $this->addLocalVar($tmpVar, self::TYPE_VAR);
 
         if ($isPre) {
-            $this->context->beforeStmtLines[] = "{$tmpVar} = {$obj}.getProperty({$propName}) {$op} 1; {$obj}.setProperty({$propName}, {$tmpVar});";
+            $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyRead($obj, $propName) . " {$op} 1; " . $this->emitDynamicPropertyWrite($obj, $propName, $tmpVar) . ';';
         } else {
-            $this->context->beforeStmtLines[] = "{$tmpVar} = {$obj}.getProperty({$propName});";
-            $this->context->afterStmtLines[] = "{$obj}.setProperty({$propName}, {$tmpVar} {$op} 1);";
+            $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyRead($obj, $propName) . ';';
+            $this->context->afterStmtLines[] = $this->emitDynamicPropertyWrite($obj, $propName, "{$tmpVar} {$op} 1") . ';';
         }
 
         return $tmpVar;
@@ -4701,6 +4702,35 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $this->assertCanAssignObjectProperty($left, $right, 'static property');
     }
 
+    protected function preparePropertyWriteTarget(NodeAbstract $left): ?PropertyWriteTarget
+    {
+        if ($left instanceof Expr\PropertyFetch) {
+            if ($this->isIdExpr($left->name)) {
+                $this->getPropertyIdentifier($left, $left->var, $left->name);
+            }
+            return new PropertyWriteTarget($left, 'object property');
+        }
+
+        if ($left instanceof Expr\StaticPropertyFetch) {
+            if ($this->isIdExpr($left->name)) {
+                $this->resolveNativeStaticPropertyFetch($left);
+            }
+            return new PropertyWriteTarget($left, 'static property');
+        }
+
+        return null;
+    }
+
+    protected function assertCanAssignPropertyWrite(PropertyWriteTarget $target, Expr $right): void
+    {
+        $this->assertCanAssignObjectProperty($target->node, $right, $target->label);
+    }
+
+    protected function wrapPropertyWriteTypeCheck(PropertyWriteTarget $target, Expr $right, string $rightExpr): string
+    {
+        return $this->wrapObjectPropertyAssignTypeCheck($target->node, $right, $rightExpr);
+    }
+
     private function assertCanAssignObjectProperty(NodeAbstract $left, Expr $right, string $label): void
     {
         $def = $this->getNativePropertyDef($left);
@@ -5440,6 +5470,16 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($expr instanceof Expr\NullsafePropertyFetch) {
             $this->fatalError($expr, "Can't use nullsafe operator in write context");
         }
+    }
+
+    protected function emitDynamicPropertyRead(string $object, string $property): string
+    {
+        return "{$object}.getProperty({$property})";
+    }
+
+    protected function emitDynamicPropertyWrite(string $object, string $property, string $value): string
+    {
+        return "{$object}.setProperty({$property}, {$value})";
     }
 
     protected function getChainedFunc(string $op): string

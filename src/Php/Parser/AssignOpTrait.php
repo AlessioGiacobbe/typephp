@@ -54,7 +54,7 @@ trait AssignOpTrait
         $tmp = $this->genTmpVarName();
         $this->addLocalVar($tmp, self::TYPE_VAR);
         // Comma expression: store RHS → execute side effect → evaluate to stored value
-        return '((' . $tmp . ' = ' . $rightExpr . ', ' . "{$array}.setProperty({$propName}, {$tmp})" . '), ' . $tmp . ')';
+        return '((' . $tmp . ' = ' . $rightExpr . ', ' . $this->emitDynamicPropertyWrite($array, $propName, $tmp) . '), ' . $tmp . ')';
     }
 
     protected function parseRightAssociativeAssign(NodeAbstract $left, Expr\Assign $right): string
@@ -152,6 +152,7 @@ trait AssignOpTrait
         $this->context->inAssignExpr = true;
         $var = $this->parseIdentifier($left);
         $this->context->inAssignExpr = $oriInAssignExpr;
+        $propertyWriteTarget = $this->preparePropertyWriteTarget($left);
         if ($var === 'this_') {
             $this->fatalError($left, 'Cannot re-assign $this');
         }
@@ -273,15 +274,13 @@ trait AssignOpTrait
             return $this->parseAssignArrayDim($left, $right);
         }
 
-        if ($this->isPropertyFetch($left)) {
-            $this->assertCanAssignObjectProp($left, $right);
-        } elseif ($this->isStaticPropertyFetch($left)) {
-            $this->assertCanAssignStaticProp($left, $right);
+        if ($propertyWriteTarget !== null) {
+            $this->assertCanAssignPropertyWrite($propertyWriteTarget, $right);
         }
 
         $rightExpr = $this->parseAssignRightExpr($right);
-        if ($this->isPropertyFetch($left) || $this->isStaticPropertyFetch($left)) {
-            $rightExpr = $this->wrapObjectPropertyAssignTypeCheck($left, $right, $rightExpr);
+        if ($propertyWriteTarget !== null) {
+            $rightExpr = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $right, $rightExpr);
         }
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
@@ -332,6 +331,7 @@ trait AssignOpTrait
         $var          = $this->parseIdentifier($node->var);
         $this->context->inAssignExpr = $oriInAssignExpr;
         $expr         = $this->parseIdentifier($node->expr);
+        $propertyWriteTarget = $this->preparePropertyWriteTarget($node->var);
         $this->guardLiteralDivisionByZero($node->expr, $op);
 
         if ($this->isVarExpr($node->var)) {
@@ -398,19 +398,23 @@ trait AssignOpTrait
         }
 
         if ($this->isPropertyFetch($node->var) and !$this->isNativePropertyAccess($node->var)) {
+            if ($propertyWriteTarget !== null) {
+                $this->assertCanAssignPropertyWrite($propertyWriteTarget, $node->expr);
+            }
             $obj = $this->parseIdentifier($node->var->var);
             $propName = $this->identifierToStr($node->var->name, literal: true);
             $binaryOp = $this->removeAssignOp($op);
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $readProperty = $this->emitDynamicPropertyRead($obj, $propName);
             if ($this->isAssignOpConcat($op)) {
-                $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat({$obj}.getProperty({$propName}), {$expr});";
+                $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat({$readProperty}, {$expr});";
             } elseif ($this->isAssignOpPow($op)) {
-                $this->context->beforeStmtLines[] = "{$tmpVar} = php::fn::pow({$obj}.getProperty({$propName}), {$expr});";
+                $this->context->beforeStmtLines[] = "{$tmpVar} = php::fn::pow({$readProperty}, {$expr});";
             } else {
-                $this->context->beforeStmtLines[] = "{$tmpVar} = {$obj}.getProperty({$propName}) {$binaryOp} ({$expr});";
+                $this->context->beforeStmtLines[] = "{$tmpVar} = {$readProperty} {$binaryOp} ({$expr});";
             }
-            $this->context->afterStmtLines[] = "{$obj}.setProperty({$propName}, {$tmpVar});";
+            $this->context->afterStmtLines[] = $this->emitDynamicPropertyWrite($obj, $propName, $tmpVar) . ';';
             return $tmpVar;
         }
 
@@ -595,16 +599,15 @@ trait AssignOpTrait
         $this->context->inAssignExpr = true;
         $var = $this->parseIdentifier($expr->var);
         $this->context->inAssignExpr = $inAssignExpr;
+        $propertyWriteTarget = $this->preparePropertyWriteTarget($expr->var);
 
-        if ($this->isPropertyFetch($expr->var)) {
-            $this->assertCanAssignObjectProp($expr->var, $expr->expr);
-        } elseif ($this->isStaticPropertyFetch($expr->var)) {
-            $this->assertCanAssignStaticProp($expr->var, $expr->expr);
+        if ($propertyWriteTarget !== null) {
+            $this->assertCanAssignPropertyWrite($propertyWriteTarget, $expr->expr);
         }
 
         $right = $this->parseExpr($expr->expr);
-        if ($this->isPropertyFetch($expr->var) || $this->isStaticPropertyFetch($expr->var)) {
-            $right = $this->wrapObjectPropertyAssignTypeCheck($expr->var, $expr->expr, $right);
+        if ($propertyWriteTarget !== null) {
+            $right = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $expr->expr, $right);
         }
         if ($this->isVarExpr($expr->expr) and !$this->hasVar($right)) {
             $this->errorUndefinedVariable($expr->expr);

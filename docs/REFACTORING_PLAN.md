@@ -239,11 +239,21 @@
 - `findNativeStaticProperty()` 已通过 resolver 的 `resolveNativeStaticProperty()` 显式接口完成静态属性检查。
 - nullsafe 属性链检查已通过 resolver 的 `resolveNullsafePropertyChain()` 显式接口完成类名推进和可见性检查。
 - 旧的 `CompilerBase::findNativeProperty()` 泛型入口已移除，避免后续继续扩散带 `$static` 布尔参数的访问模式。
+- 旧的 `findNativeStaticProperty(..., &$class)` by-ref 协议已移除，静态属性读取改为 `StaticPropertyFetchTarget` 和 `StaticPropertyFetchResolution` 显式 DTO。
+- 实例属性读取的目标类解析已抽离为 `InstancePropertyFetchTarget`，`getPropertyIdentifier()` 不再混合目标解析、resolver 调用和动态 fallback 分支。
+- 原先散落在 AST attribute 上的 `nativeProperty`、`nativePropertyDef`、`nativeClassDef` 已合并为 `NativePropertyAccess` metadata，避免三者状态不一致。
+- `nativePropertyVar`、`nativePropertyValueSource`、`objectProps`、`staticPropRefs` 的直接读写已收敛到 helper 方法；业务路径不再通过字符串内容判断属性访问语义。
+- typed instance property hoist 和 typed static property ref 注册已提取为独立 helper，当前仍保持原有生成代码结构。
 - `CompilerBase::isSameClassName()`、`isSameOrSubclassOf()`、`canAccessProtectedProperty()` 已委托 resolver，避免规则继续扩散。
 - 已添加 `prepare/convert/idle` 编译阶段状态；`PropertyAccessResolver` 只能在 convert 阶段创建和使用，避免预处理阶段误用不完整的类表状态。
 - `PropertyAccessResolver` 已改为依赖 `PropertyAccessContext` 只读接口，而不是完整依赖 `CompilerBase` 大类。
 - 已建立 `PropertyAssignTypeInfo`，抽离 typed property 写入的纯 metadata 计算，包括固定类型属性判断、默认值、runtime typecheck 列表和类型字符串。
 - 当前迁移保持生成代码不变，后续阶段再统一 read/write emitter。
+
+状态：
+
+- 阶段 1 已基本收尾。后续除非发现属性读取 resolver 绕过或行为回归，否则不再继续扩大阶段 1 范围。
+- 阶段 2 已开始；属性写入相关的 assignment、compound assignment、inc/dec、unset、refval 路径仍需继续统一。
 
 验证：
 
@@ -276,6 +286,15 @@
 - object property optimization 相关 phpt。
 - nullsafe 写上下文错误测试。
 - private/protected/static 属性错误测试。
+
+当前进展：
+
+- 阶段 2 已开始。
+- 已建立 `PropertyWriteTarget` 作为属性写入路径的最小目标 DTO。
+- 普通赋值和 `??=` 已接入 `preparePropertyWriteTarget()`，在写入前统一完成属性 target 准备，并通过 `assertCanAssignPropertyWrite()` 与 `wrapPropertyWriteTypeCheck()` 执行静态检查和 runtime typecheck 包装。
+- dynamic object property 的 `getProperty()` / `setProperty()` 生成已收敛到 `emitDynamicPropertyRead()` / `emitDynamicPropertyWrite()` helper；普通动态属性赋值、复合赋值、自增自减已复用该入口。
+- 复合赋值的动态属性路径已接入 `preparePropertyWriteTarget()`，先统一完成属性写入 target 准备和静态检查。
+- 当前步骤保持生成代码不变；后续继续收敛 dynamic/native property write emitter、compound assignment、inc/dec、unset 和 refval 路径。
 
 ### 阶段 3：类型系统模块化
 
