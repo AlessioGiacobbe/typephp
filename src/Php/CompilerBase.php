@@ -44,6 +44,7 @@ use PhpAot\Php\Platform\PlatformBase;
 use PhpAot\Php\Platform\PlatformFactory;
 use PhpAot\Php\Platform\Windows;
 use PhpAot\Php\Resolver\PropertyAccessContext;
+use PhpAot\Php\Resolver\NativePropertyAccess;
 use PhpAot\Php\Resolver\PropertyAccessResult;
 use PhpAot\Php\Resolver\PropertyAccessResolver;
 use PhpAot\Php\Resolver\PropertyAssignTypeInfo;
@@ -2410,8 +2411,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     // Native property var type
                     if ($this->isVarExpr($expr->var)) {
                         $this->parsePropertyFetch($expr);
-                        if ($expr->getAttribute('nativePropertyVar')) {
-                            $propVar = $expr->getAttribute('nativePropertyVar');
+                        $propVar = $this->getNativePropertyVar($expr);
+                        if ($propVar !== null) {
                             $info = $this->context->objectProps[$propVar];
                             return $info['type'];
                         }
@@ -4906,14 +4907,14 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                             'kind' => $info['kind'],
                         ];
                     }
-                    $expr->setAttribute('nativePropertyVar', $propVar);
+                    $this->setNativePropertyVar($expr, $propVar);
                     $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
                     return $propVar;
                 }
             } elseif ($this->canHoistStableObjectProp($objectVar, $propName)) {
                 // SSA-stable object: lazily create reference at first access point
                 $result = $this->hoistStableObjectProp($objectVar, $propName, $id, $def->type);
-                $expr->setAttribute('nativePropertyVar', $result);
+                $this->setNativePropertyVar($expr, $result);
                 $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
                 return $result;
             }
@@ -5845,25 +5846,40 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     private function applyNativePropertyAccessResult(NodeAbstract $expr, PropertyAccessResult $result): string
     {
         $offset = $this->getPropertyOffset($result->classDef->getNamespacedName(false), $result->property);
-        $expr->setAttribute('nativePropertyDef', $result->propertyDef);
-        $expr->setAttribute('nativeClassDef', $result->classDef);
-        $expr->setAttribute('nativeProperty', $offset);
+        $expr->setAttribute('nativePropertyAccess', new NativePropertyAccess($offset, $result));
         return $offset;
     }
 
     protected function isNativePropertyAccess(NodeAbstract $expr): bool
     {
-        return $expr->hasAttribute('nativeProperty');
+        return $this->getNativePropertyAccess($expr) !== null;
     }
 
     protected function getNativePropertyDef(NodeAbstract $expr): ?PropertyDef
     {
-        return $expr->hasAttribute('nativePropertyDef') ? $expr->getAttribute('nativePropertyDef') : null;
+        return $this->getNativePropertyAccess($expr)?->getPropertyDef();
     }
 
     protected function getNativePropertyClassDef(NodeAbstract $expr): ?ClassDef
     {
-        return $expr->hasAttribute('nativeClassDef') ? $expr->getAttribute('nativeClassDef') : null;
+        return $this->getNativePropertyAccess($expr)?->getClassDef();
+    }
+
+    private function getNativePropertyAccess(NodeAbstract $expr): ?NativePropertyAccess
+    {
+        $access = $expr->getAttribute('nativePropertyAccess');
+        return $access instanceof NativePropertyAccess ? $access : null;
+    }
+
+    protected function setNativePropertyVar(NodeAbstract $expr, string $var): void
+    {
+        $expr->setAttribute('nativePropertyVar', $var);
+    }
+
+    protected function getNativePropertyVar(NodeAbstract $expr): ?string
+    {
+        $var = $expr->getAttribute('nativePropertyVar');
+        return is_string($var) ? $var : null;
     }
 
     protected function setNativePropertyValueSource(NodeAbstract $expr, string $source): void
