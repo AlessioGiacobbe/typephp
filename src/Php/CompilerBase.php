@@ -43,12 +43,14 @@ use PhpAot\Php\Platform\Macos;
 use PhpAot\Php\Platform\PlatformBase;
 use PhpAot\Php\Platform\PlatformFactory;
 use PhpAot\Php\Platform\Windows;
+use PhpAot\Php\Resolver\InstancePropertyFetchTarget;
 use PhpAot\Php\Resolver\PropertyAccessContext;
 use PhpAot\Php\Resolver\NativePropertyAccess;
 use PhpAot\Php\Resolver\PropertyAccessResult;
 use PhpAot\Php\Resolver\PropertyAccessResolver;
 use PhpAot\Php\Resolver\PropertyAssignTypeInfo;
 use PhpAot\Php\Resolver\StaticPropertyFetchResolution;
+use PhpAot\Php\Resolver\StaticPropertyFetchTarget;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -4861,27 +4863,38 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function getPropertyIdentifier(Expr\PropertyFetch $expr, NodeAbstract $object, NodeAbstract $property): ?string
     {
-        if ($this->isVarExpr($object) and $this->isIdExpr($property)) {
-            $objectName = $this->parseIdentifier($object);
-            $propertyName = $this->parseIdentifier($property);
-            $nativeProperty = null;
-            if ($objectName === 'this_') {
-                if ($this->classDef->trait) {
-                    goto _dynamic_attr;
-                }
-                $result = $this->resolveNativeInstanceProperty($expr, $propertyName, $this->getFullClassName());
-                $nativeProperty = $result ? $this->applyNativePropertyAccessResult($expr, $result) : null;
-            } elseif ($this->isTypedObject($objectName)) {
-                $className = $this->getObjectType($objectName);
-                $result = $this->resolveNativeInstanceProperty($expr, $propertyName, $className);
-                $nativeProperty = $result ? $this->applyNativePropertyAccessResult($expr, $result) : null;
-            }
-            if ($nativeProperty) {
-                return $nativeProperty;
+        $target = $this->resolveInstancePropertyFetchTarget($object, $property);
+        if ($target !== null) {
+            $result = $this->resolveNativeInstanceProperty($expr, $target->property, $target->class);
+            if ($result !== null) {
+                return $this->applyNativePropertyAccessResult($expr, $result);
             }
         }
-        _dynamic_attr:
+
         return $this->identifierToStr($property, literal: true);
+    }
+
+    private function resolveInstancePropertyFetchTarget(
+        NodeAbstract $object,
+        NodeAbstract $property,
+    ): ?InstancePropertyFetchTarget {
+        if (!$this->isVarExpr($object) or !$this->isIdExpr($property)) {
+            return null;
+        }
+
+        $objectName = $this->parseIdentifier($object);
+        $propertyName = $this->parseIdentifier($property);
+        if ($objectName === 'this_') {
+            if ($this->classDef->trait) {
+                return null;
+            }
+            return new InstancePropertyFetchTarget($propertyName, $this->getFullClassName());
+        }
+        if ($this->isTypedObject($objectName)) {
+            return new InstancePropertyFetchTarget($propertyName, $this->getObjectType($objectName));
+        }
+
+        return null;
     }
 
     protected function parsePropertyFetch(Expr\PropertyFetch $expr, bool $update = false): string
@@ -4898,33 +4911,59 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $def = $this->getNativePropertyDef($expr);
         if ($def and $this->nativeTypes) {
             $propName = $this->parseIdentifier($property);
-            $propVar = $this->getObjectPropVarName($objectVar, $propName);
-            if ($objectVar === 'this_') {
-                if ($this->canHoistObjectProp($objectVar, $propName)) {
-                    if (!$this->hasObjectPropVar($propVar)) {
-                        $info = $this->getHoistedObjectPropInfo($def->type);
-                        $this->context->objectProps[$propVar] = [
-                            'type' => $info['type'],
-                            'getter' => $getProperty,
-                            'kind' => $info['kind'],
-                        ];
-                    }
-                    $this->setNativePropertyVar($expr, $propVar);
-                    $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
-                    return $propVar;
-                }
-            } elseif ($this->canHoistStableObjectProp($objectVar, $propName)) {
-                // SSA-stable object: lazily create reference at first access point
-                $result = $this->hoistStableObjectProp($objectVar, $propName, $id, $def->type);
-                $this->setNativePropertyVar($expr, $result);
-                $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
-                return $result;
+            $typedFetch = $this->emitNativeInstancePropertyTypedFetch(
+                $expr,
+                $objectVar,
+                $propName,
+                $id,
+                $def,
+                $getProperty,
+            );
+            if ($typedFetch !== null) {
+                return $typedFetch;
             }
         }
         if ($def) {
             $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
         }
         return $getProperty;
+    }
+
+    private function emitNativeInstancePropertyTypedFetch(
+        Expr\PropertyFetch $expr,
+        string $objectVar,
+        string $propName,
+        string $propertyId,
+        PropertyDef $def,
+        string $getter,
+    ): ?string {
+        $propVar = $this->getObjectPropVarName($objectVar, $propName);
+        if ($objectVar === 'this_') {
+            if (!$this->canHoistObjectProp($objectVar, $propName)) {
+                return null;
+            }
+            if (!$this->hasObjectPropVar($propVar)) {
+                $info = $this->getHoistedObjectPropInfo($def->type);
+                $this->context->objectProps[$propVar] = [
+                    'type' => $info['type'],
+                    'getter' => $getter,
+                    'kind' => $info['kind'],
+                ];
+            }
+            $this->setNativePropertyVar($expr, $propVar);
+            $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
+            return $propVar;
+        }
+
+        if (!$this->canHoistStableObjectProp($objectVar, $propName)) {
+            return null;
+        }
+
+        // SSA-stable object: lazily create reference at first access point.
+        $result = $this->hoistStableObjectProp($objectVar, $propName, $propertyId, $def->type);
+        $this->setNativePropertyVar($expr, $result);
+        $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
+        return $result;
     }
 
     protected function parseMagicConst(MagicConst $expr): string
@@ -5785,33 +5824,51 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function resolveNativeStaticPropertyFetch(Expr\StaticPropertyFetch $expr): ?StaticPropertyFetchResolution
     {
-        if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
-            $class = $this->parseIdentifier($expr->class);
-            $propertyName = $this->parseIdentifier($expr->name);
-            if ($class === 'static') {
-                return null;
-            }
-            if ($class === 'self') {
-                if ($this->classDef->trait) {
-                    $expression = Symbol::getStaticProperty() . '(' . Symbol::getCalledCe() . ', ' . $this->getLiteralString($propertyName) . ')';
-                    return new StaticPropertyFetchResolution(null, $expression, false);
-                }
-                $class = $this->getFullClassName();
-            } elseif ($class === 'parent') {
-                if (!$this->classDef->extends) {
-                    $this->fatalError($expr, 'Cannot access parent:: when current class does not extend any class');
-                }
-                $class = $this->classDef->extends;
-            } else {
-                $class = $this->getNamespacedClassName($class);
-            }
-            $result = $this->resolveNativeStaticProperty($expr, $propertyName, $class);
-            if ($result !== null) {
-                $expression = $this->applyNativePropertyAccessResult($expr, $result);
-                return new StaticPropertyFetchResolution($class, $expression, true);
-            }
+        $target = $this->resolveStaticPropertyFetchTarget($expr);
+        if ($target === null) {
+            return null;
+        }
+        if ($target->isDynamic()) {
+            return new StaticPropertyFetchResolution(null, $target->dynamicExpression, false);
+        }
+        $class = $target->class;
+        if ($class === null) {
+            return null;
+        }
+        $result = $this->resolveNativeStaticProperty($expr, $target->property, $class);
+        if ($result !== null) {
+            $expression = $this->applyNativePropertyAccessResult($expr, $result);
+            return new StaticPropertyFetchResolution($class, $expression, true);
         }
         return null;
+    }
+
+    private function resolveStaticPropertyFetchTarget(Expr\StaticPropertyFetch $expr): ?StaticPropertyFetchTarget
+    {
+        if (!$this->isNameExpr($expr->class) or !$this->isIdExpr($expr->name)) {
+            return null;
+        }
+
+        $class = $this->parseIdentifier($expr->class);
+        $propertyName = $this->parseIdentifier($expr->name);
+        if ($class === 'static') {
+            return null;
+        }
+        if ($class === 'self') {
+            if ($this->classDef->trait) {
+                $expression = Symbol::getStaticProperty() . '(' . Symbol::getCalledCe() . ', ' . $this->getLiteralString($propertyName) . ')';
+                return new StaticPropertyFetchTarget($propertyName, null, $expression);
+            }
+            return new StaticPropertyFetchTarget($propertyName, $this->getFullClassName(), null);
+        }
+        if ($class === 'parent') {
+            if (!$this->classDef->extends) {
+                $this->fatalError($expr, 'Cannot access parent:: when current class does not extend any class');
+            }
+            return new StaticPropertyFetchTarget($propertyName, $this->classDef->extends, null);
+        }
+
+        return new StaticPropertyFetchTarget($propertyName, $this->getNamespacedClassName($class), null);
     }
 
     private function createPropertyAccessResolver(): PropertyAccessResolver
@@ -5902,41 +5959,14 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($resolution !== null) {
             $nativeProp = $resolution->expression;
             $def = $this->getNativePropertyDef($expr);
-            if ($this->nativeTypes && $def && $resolution->class !== null) {
-                $info = $this->getHoistedObjectPropInfo($def->type);
-                $propName = $this->parseIdentifier($expr->name);
-                $refVar = '_static_' . str_replace('\\', '_', $resolution->class) . '_' . $propName;
-
-                if ($info['kind'] === 'zval') {
-                    if (!isset($this->context->staticPropRefs[$refVar])) {
-                        $classPtr = $this->getClassEntryPtr($resolution->class);
-                        $this->context->staticPropRefs[$refVar] = [
-                            'type' => $info['type'],
-                            'classPtr' => $classPtr,
-                            'offsetExpr' => $nativeProp,
-                            'kind' => $info['kind'],
-                        ];
-                    }
-                    $helper = $def->type === self::TYPE_FLOAT ? 'php_aot_static_float_ref' : 'php_aot_static_int_ref';
-                    $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
-                    return $helper . '(' . $refVar . ')';
-                }
-
-                if (!isset($this->context->staticPropRefs[$refVar])) {
-                    $classPtr = $this->getClassEntryPtr($resolution->class);
-                    $this->context->staticPropRefs[$refVar] = [
-                        'type' => $info['type'],
-                        'classPtr' => $classPtr,
-                        'offsetExpr' => $nativeProp,
-                        'kind' => $info['kind'],
-                    ];
-                }
+            $class = $resolution->class;
+            if ($this->nativeTypes && $def && $class !== null) {
                 $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
-                return $refVar;
+                return $this->emitNativeStaticPropertyTypedFetch($expr, $class, $def, $nativeProp);
             }
 
-            if ($resolution->nativeProperty && $resolution->class !== null) {
-                $classPtr = $this->getClassEntryPtr($resolution->class);
+            if ($resolution->nativeProperty && $class !== null) {
+                $classPtr = $this->getClassEntryPtr($class);
                 $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
                 return Symbol::getStaticProperty() . '(' . $classPtr . ', ' . $nativeProp . ')';
             } else {
@@ -5945,6 +5975,39 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             }
         }
         return null;
+    }
+
+    private function emitNativeStaticPropertyTypedFetch(
+        Expr\StaticPropertyFetch $expr,
+        string $class,
+        PropertyDef $def,
+        string $nativeProp,
+    ): string {
+        $info = $this->getHoistedObjectPropInfo($def->type);
+        $propName = $this->parseIdentifier($expr->name);
+        $refVar = '_static_' . str_replace('\\', '_', $class) . '_' . $propName;
+        $this->registerStaticPropertyRef($refVar, $class, $nativeProp, $info);
+
+        if ($info['kind'] === 'zval') {
+            $helper = $def->type === self::TYPE_FLOAT ? 'php_aot_static_float_ref' : 'php_aot_static_int_ref';
+            return $helper . '(' . $refVar . ')';
+        }
+
+        return $refVar;
+    }
+
+    private function registerStaticPropertyRef(string $refVar, string $class, string $offsetExpr, array $info): void
+    {
+        if (isset($this->context->staticPropRefs[$refVar])) {
+            return;
+        }
+
+        $this->context->staticPropRefs[$refVar] = [
+            'type' => $info['type'],
+            'classPtr' => $this->getClassEntryPtr($class),
+            'offsetExpr' => $offsetExpr,
+            'kind' => $info['kind'],
+        ];
     }
 
     protected function parseStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string
