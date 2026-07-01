@@ -5555,7 +5555,7 @@ function generateFunctionAttributeInitialization(iterable $funcInfos, array $all
                     "func_" . $funcInfo->name->getNameForAttributes() . "_$key",
                     $allConstInfos,
                     $phpVersionIdMinimumCompatibility,
-                    $useDeclared
+                    refval($useDeclared)
                 );
             }
 
@@ -5566,7 +5566,7 @@ function generateFunctionAttributeInitialization(iterable $funcInfos, array $all
                         "func_{$funcInfo->name->getNameForAttributes()}_arg{$index}_$key",
                         $allConstInfos,
                         $phpVersionIdMinimumCompatibility,
-                        $useDeclared
+                        refval($useDeclared)
                     );
                 }
             }
@@ -5627,7 +5627,7 @@ function generateGlobalConstantAttributeInitialization(
                     $constVarName . "_$key",
                     $allConstInfos,
                     PHP_85_VERSION_ID,
-                    $useDeclared
+                    refval($useDeclared)
                 );
             }
 
@@ -5675,7 +5675,7 @@ function generateConstantAttributeInitialization(
                     "const_" . $constInfo->name->getDeclarationName() . "_$key",
                     $allConstInfos,
                     $phpVersionIdMinimumCompatibility,
-                    $useDeclared
+                    refval($useDeclared)
                 );
             }
 
@@ -5705,7 +5705,7 @@ function generatePropertyAttributeInitialization(
                 "property_" . $propertyInfo->name->getDeclarationName() . "_" . $key,
                 $allConstInfos,
                 $phpVersionIdMinimumCompatibility,
-                $declaredStrings
+                refval($declaredStrings)
             );
         }
     }
