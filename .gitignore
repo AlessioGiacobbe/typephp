@@ -17,3 +17,5 @@
 *.obj
 *.pdb
 *.class
+/swoole_compiler
+/tpc

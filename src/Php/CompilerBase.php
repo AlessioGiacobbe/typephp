@@ -2893,11 +2893,22 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return null;
         }
 
-        $obj = $this->parseIdentifier($var->var);
-        $propName = $this->identifierToStr($var->name, literal: true);
+        $target = $this->preparePropertyWriteTarget($var);
         $tmpVar = $this->genTmpVarName();
         $this->addLocalVar($tmpVar, self::TYPE_VAR);
+        if ($target !== null && $target->isDynamicObjectProperty()) {
+            if ($isPre) {
+                $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyTargetRead($target) . " {$op} 1; " . $this->emitDynamicPropertyTargetWrite($target, $tmpVar) . ';';
+            } else {
+                $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyTargetRead($target) . ';';
+                $this->context->afterStmtLines[] = $this->emitDynamicPropertyTargetWrite($target, "{$tmpVar} {$op} 1") . ';';
+            }
 
+            return $tmpVar;
+        }
+
+        $obj = $this->parseIdentifier($var->var);
+        $propName = $this->identifierToStr($var->name, literal: true);
         if ($isPre) {
             $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyRead($obj, $propName) . " {$op} 1; " . $this->emitDynamicPropertyWrite($obj, $propName, $tmpVar) . ';';
         } else {
@@ -3674,13 +3685,13 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $this->fatalError($arg, 'Undefined variable `$' . $name . '`');
                 }
             } elseif ($this->isPropertyFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
-                $obj = $this->parseIdentifier($arg->value->var);
-                if (!$this->hasVar($obj)) {
-                    $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
-                }
                 if ($byRef) {
-                    $this->addPositionalCallArg($obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')', $arrayArgsVar, $list_args);
+                    $this->addPositionalCallArg($this->emitDynamicPropertyFetchRef($arg->value, $arg), $arrayArgsVar, $list_args);
                     continue;
+                }
+                $objectExpr = $this->parseIdentifier($arg->value->var);
+                if (!$this->hasVar($objectExpr)) {
+                    $this->fatalError($arg, 'Undefined variable `$' . $objectExpr . '`');
                 }
             } elseif ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
                 $array = $this->parseIdentifier($arg->value->var);
@@ -3815,11 +3826,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
 
         if ($this->isPropertyFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
-            $obj = $this->parseIdentifier($arg->value->var);
-            if (!$this->hasVar($obj)) {
-                $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
-            }
-            return $obj . '.attrRef(' . $this->identifierToStr($arg->value->name) . ')';
+            return $this->emitDynamicPropertyFetchRef($arg->value, $arg);
         }
 
         if ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
@@ -3856,11 +3863,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function expandRefvalExpr(NodeAbstract $inner, Node\Arg $arg): ?string
     {
         if ($this->isPropertyFetch($inner) and $this->isVarExpr($inner->var)) {
-            $obj = $this->parseIdentifier($inner->var);
-            if (!$this->hasVar($obj)) {
-                $this->fatalError($arg, 'Undefined variable `$' . $obj . '`');
-            }
-            return $obj . '.attrRef(' . $this->identifierToStr($inner->name) . ')';
+            return $this->emitDynamicPropertyFetchRef($inner, $arg);
         }
         if ($this->isArrayDimFetch($inner) and $this->isVarExpr($inner->var)) {
             $array = $this->parseIdentifier($inner->var);
@@ -4762,10 +4765,16 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function preparePropertyWriteTarget(NodeAbstract $left): ?PropertyWriteTarget
     {
         if ($left instanceof Expr\PropertyFetch) {
+            $objectExpr = null;
+            $propertyExpr = null;
+            if (!$this->isNativePropertyAccess($left) && $this->isVarExpr($left->var)) {
+                $objectExpr = $this->parseIdentifier($left->var);
+                $propertyExpr = $this->identifierToStr($left->name, literal: true);
+            }
             if ($this->isIdExpr($left->name)) {
                 $this->getPropertyIdentifier($left, $left->var, $left->name);
             }
-            return new PropertyWriteTarget($left, 'object property');
+            return new PropertyWriteTarget($left, 'object property', $objectExpr, $propertyExpr);
         }
 
         if ($left instanceof Expr\StaticPropertyFetch) {
@@ -4927,7 +4936,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $lines[] = $array . '.offsetUnset(' . $dim . ');';
                 }
             } elseif ($this->isPropertyFetch($var)) {
-                $object = $this->parseIdentifier($var->var);
+                $propertyWriteTarget = $this->preparePropertyWriteTarget($var);
+                $object = $propertyWriteTarget !== null && $propertyWriteTarget->isDynamicObjectProperty()
+                    ? $propertyWriteTarget->objectExpr
+                    : $this->parseIdentifier($var->var);
                 $restoreDefault = null;
                 if ($this->isIdExpr($var->name)) {
                     $propertyId = $this->getPropertyIdentifier($var, $var->var, $var->name);
@@ -4950,7 +4962,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     }
                 }
                 if ($restoreDefault === null) {
-                    $lines[] = $object . '.unsetProperty(' . $this->identifierToStr($var->name, literal: true) . ');';
+                    if ($propertyWriteTarget !== null && $propertyWriteTarget->isDynamicObjectProperty()) {
+                        $lines[] = $this->emitDynamicPropertyTargetUnset($propertyWriteTarget) . ';';
+                    } else {
+                        $lines[] = $object . '.unsetProperty(' . $this->identifierToStr($var->name, literal: true) . ');';
+                    }
                 }
             } elseif ($this->isStaticPropertyFetch($var)) {
                 $this->fatalError($var, 'Attempt to unset static property ' . $this->parseIdentifier($var->class) . '::$' . $this->parseIdentifier($var->name));
@@ -5555,6 +5571,57 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function emitDynamicPropertyWrite(string $object, string $property, string $value): string
     {
         return "{$object}.setProperty({$property}, {$value})";
+    }
+
+    protected function emitDynamicPropertyTargetRead(PropertyWriteTarget $target): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $this->emitDynamicPropertyRead($target->objectExpr, $target->propertyExpr);
+    }
+
+    protected function emitDynamicPropertyTargetWrite(PropertyWriteTarget $target, string $value): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $this->emitDynamicPropertyWrite($target->objectExpr, $target->propertyExpr, $value);
+    }
+
+    protected function emitDynamicPropertyTargetUnset(PropertyWriteTarget $target): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $target->objectExpr . '.unsetProperty(' . $target->propertyExpr . ')';
+    }
+
+    protected function emitDynamicPropertyTargetRef(PropertyWriteTarget $target): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $target->objectExpr . '.attrRef(' . $target->propertyExpr . ')';
+    }
+
+    protected function assertDynamicPropertyTarget(PropertyWriteTarget $target): void
+    {
+        if (!$target->isDynamicObjectProperty()) {
+            $this->fatalError($target->node, 'Internal error: property write target is not a dynamic object property');
+        }
+    }
+
+    protected function emitDynamicPropertyFetchRef(Expr\PropertyFetch $expr, NodeAbstract $errorNode): string
+    {
+        $target = $this->preparePropertyWriteTarget($expr);
+        $objectExpr = $target !== null && $target->isDynamicObjectProperty()
+            ? $target->objectExpr
+            : $this->parseIdentifier($expr->var);
+        if (!$this->hasVar($objectExpr)) {
+            $this->fatalError($errorNode, 'Undefined variable `$' . $objectExpr . '`');
+        }
+        if ($target !== null && $target->isDynamicObjectProperty()) {
+            return $this->emitDynamicPropertyTargetRef($target);
+        }
+
+        return $objectExpr . '.attrRef(' . $this->identifierToStr($expr->name) . ')';
     }
 
     protected function getChainedFunc(string $op): string

@@ -294,7 +294,11 @@
 - 普通赋值和 `??=` 已接入 `preparePropertyWriteTarget()`，在写入前统一完成属性 target 准备，并通过 `assertCanAssignPropertyWrite()` 与 `wrapPropertyWriteTypeCheck()` 执行静态检查和 runtime typecheck 包装。
 - dynamic object property 的 `getProperty()` / `setProperty()` 生成已收敛到 `emitDynamicPropertyRead()` / `emitDynamicPropertyWrite()` helper；普通动态属性赋值、复合赋值、自增自减已复用该入口。
 - 复合赋值的动态属性路径已接入 `preparePropertyWriteTarget()`，先统一完成属性写入 target 准备和静态检查。
-- 当前步骤保持生成代码不变；后续继续收敛 dynamic/native property write emitter、compound assignment、inc/dec、unset 和 refval 路径。
+- `PropertyWriteTarget` 已开始携带安全动态属性写入目标的 object/property 表达式；普通动态属性赋值、复合赋值、自增自减已优先通过 target 级 read/write helper 发射代码。
+- 动态属性 `unset`、属性数组维度写入、引用参数/refval/引用赋值中的安全对象属性引用路径已开始复用 target 级 unset/ref helper。
+- 对象属性引用表达式的 target/ref 生成已收敛到 `emitDynamicPropertyFetchRef()`；未使用的旧静态属性赋值入口已删除，静态属性赋值继续走统一 assignment target 路径。
+- 为避免改变复杂表达式求值顺序，当前仅对对象部分为变量的动态属性写入填充 target object/property 字段，复杂对象表达式仍保留旧路径。
+- 当前步骤对有效代码保持生成逻辑兼容，但会让更多属性写入路径进入统一静态检查；后续继续收敛 dynamic/native property write emitter、compound assignment、inc/dec、unset 和 refval 路径。
 
 ### 阶段 3：类型系统模块化
 

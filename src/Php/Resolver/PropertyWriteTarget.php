@@ -15,6 +15,13 @@ final readonly class PropertyWriteTarget
     public function __construct(
         public NodeAbstract $node,
         public string $label,
+        public ?string $objectExpr = null,
+        public ?string $propertyExpr = null,
     ) {
+    }
+
+    public function isDynamicObjectProperty(): bool
+    {
+        return $this->objectExpr !== null && $this->propertyExpr !== null;
     }
 }
