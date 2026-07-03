@@ -1392,8 +1392,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 return $this->parseConstFetch($expr);
             case 'Expr_Assign':
             case 'Expr_AssignRef':
-                if (!$this->isVarExpr($expr->var)) {
-                    $this->fatalError($expr, 'When an assignment expression serves as an rvalue, it must be an assignment of a variable');
+                if (!$this->isVarExpr($expr->var) && !$this->isPropertyFetch($expr->var) && !$this->isArrayDimFetch($expr->var)) {
+                    $this->fatalError($expr, 'When an assignment expression serves as an rvalue, it must be an assignment of a variable, property, or array element');
                 }
                 return $this->parseExprAsValue($expr);
             default:
@@ -2318,6 +2318,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function detectVarType($var): string
     {
+        // Unwrap ArrayDimFetch to get the underlying variable type;
+        // the dim/index does not affect the base variable's type.
+        if ($var instanceof Expr\ArrayDimFetch) {
+            return $this->detectVarType($var->var);
+        }
         $name = $this->parseIdentifier($var);
         if ($this->isStdContainer($name)) {
             return self::TYPE_ARRAY;

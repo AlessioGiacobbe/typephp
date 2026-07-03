@@ -79,13 +79,13 @@ trait AssignOpTrait
         $chain = array_reverse($chain);
         $list  = [];
 
-        $list[] = $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($next);
+        $list[] = $tmpVar . ' = ' . $this->parseExpr($next);
         $rightVar  = new Variable($tmpVar);
         foreach ($chain as $var) {
-            $list[] = $this->getIndent() . $this->parseAssignFinally($var, $rightVar);
+            $list[] = $this->parseAssignFinally($var, $rightVar);
         }
 
-        return implode(";\n" . $this->getIndent(), $list);
+        return '(' . implode(', ', $list) . ')';
     }
 
     protected function parseAssign(Expr\Assign $v): string
@@ -266,6 +266,8 @@ trait AssignOpTrait
                 return $this->parseStdContainerAssign($left, $right);
             }
             return $this->parseAssignArrayDim($left, $right);
+        } elseif ($this->isArrayDimFetch($left) and $this->isPropertyFetch($left->var)) {
+            return $this->parseAssignPropertyArrayDim($left, $right);
         }
 
         if ($propertyWriteTarget !== null) {
