@@ -5889,7 +5889,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         // 可转为原生调用的 MethodCall
         if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
             $type = $this->getVarType($object);
-            if (!$this->checkArgType($type, self::TYPE_OBJECT)) {
+            // 引用参数允许方法调用：有class信息走原生调用，无class信息走动态调用
+            if (!$this->checkArgType($type, self::TYPE_OBJECT) and $type !== self::TYPE_REF) {
                 $methodName = $expr->name->toString();
                 // 非对象类型可使用内置方法
                 $fn = $this->findUniversalMethodAnyType($type, $methodName);
