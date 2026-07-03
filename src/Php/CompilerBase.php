@@ -6341,9 +6341,17 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             }
         }
 
-        $class = $this->getNamespacedClassName($class);
+        if ($self or $this->isNameExpr($expr->class)) {
+            $class = $this->getNamespacedClassName($class);
+        }
         if ($const === 'class') {
-            return $this->getLiteralString($class);
+            if ($self or $this->isNameExpr($expr->class)) {
+                return $this->getLiteralString($class);
+            }
+            if ($this->isVarExpr($expr->class) and $this->isTypedObject($expr->class->name)) {
+                return $this->getLiteralString($this->getObjectType($expr->class->name));
+            }
+            return 'php::fn::get_class(' . $class . ')';
         }
         if (($self or $this->isNameExpr($expr->class)) and $this->isIdExpr($expr->name)) {
             if ($this->hasClass($class)) {
