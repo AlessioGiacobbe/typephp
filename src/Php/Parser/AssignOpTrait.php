@@ -272,6 +272,8 @@ trait AssignOpTrait
                 return $this->parseStdContainerAssign($left, $right);
             }
             return $this->parseAssignArrayDim($left, $right);
+        } elseif ($this->isArrayDimFetch($left) and $this->isPropertyFetch($left->var)) {
+            return $this->parseAssignPropertyArrayDim($left, $right);
         }
 
         if ($propertyWriteTarget !== null) {

@@ -2304,6 +2304,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function detectVarType($var): string
     {
+        // Unwrap ArrayDimFetch to get the underlying variable type;
+        // the dim/index does not affect the base variable's type.
+        if ($var instanceof Expr\ArrayDimFetch) {
+            return $this->detectVarType($var->var);
+        }
         $name = $this->parseIdentifier($var);
         if ($this->isStdContainer($name)) {
             return self::TYPE_ARRAY;
