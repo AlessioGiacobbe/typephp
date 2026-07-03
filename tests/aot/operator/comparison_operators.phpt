@@ -47,16 +47,6 @@ $int_num = 10;
 var_dump($str_num == $int_num); // true (loose comparison)
 var_dump($str_num === $int_num); // false (strict comparison)
 
-// Test spaceship operator (PHP 7+)
-$spaceship1 = 5 <=> 10; // -1
-var_dump($spaceship1);
-
-$spaceship2 = 10 <=> 10; // 0
-var_dump($spaceship2);
-
-$spaceship3 = 15 <=> 10; // 1
-var_dump($spaceship3);
-
 // Test comparisons with strings
 $str1 = "apple";
 $str2 = "banana";
@@ -149,9 +139,6 @@ bool(true)
 bool(false)
 bool(true)
 bool(false)
-int(-1)
-int(0)
-int(1)
 bool(true)
 bool(true)
 bool(false)

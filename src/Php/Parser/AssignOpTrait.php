@@ -142,20 +142,20 @@ trait AssignOpTrait
             return $this->parseAssignToList($left, $right);
         }
 
-        $oriInAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $var = $this->parseIdentifier($left);
-        $this->context->inAssignExpr = $oriInAssignExpr;
         $propertyWriteTarget = $this->preparePropertyWriteTarget($left);
-        if ($var === 'this_') {
-            $this->fatalError($left, 'Cannot re-assign $this');
-        }
         $finalVarType = $type = $this->detectTypeOfExpr($right);
         if ($type === self::TYPE_VOID) {
             $finalVarType = $type = self::TYPE_VAR;
         }
 
         if ($this->isVarExpr($left)) {
+            $oriInAssignExpr = $this->context->inAssignExpr;
+            $this->context->inAssignExpr = true;
+            $var = $this->parseIdentifier($left);
+            $this->context->inAssignExpr = $oriInAssignExpr;
+            if ($var === 'this_') {
+                $this->fatalError($left, 'Cannot re-assign $this');
+            }
             if ($this->isStdContainer($var)) {
                 $copyAssign = $this->parseStdContainerCopyAssign($var, $right);
                 if ($copyAssign !== null) {
@@ -274,6 +274,10 @@ trait AssignOpTrait
             $this->assertCanAssignPropertyWrite($propertyWriteTarget, $right);
         }
 
+        $oriInAssignExpr = $this->context->inAssignExpr;
+        $this->context->inAssignExpr = true;
+        $var = $this->parseIdentifier($left);
+        $this->context->inAssignExpr = $oriInAssignExpr;
         $rightExpr = $this->parseAssignRightExpr($right);
         if ($propertyWriteTarget !== null) {
             $rightExpr = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $right, $rightExpr);
