@@ -2223,7 +2223,7 @@ CODE;
             }
         }
 
-        // 读取 resource（Windows 资源配置：图标、版本信息等）
+        // 读取 resource（Windows 资源配置：图标、版本信息）
         $resource = $cfg['resource'] ?? null;
         if (!empty($resource)) {
             if (!is_array($resource)) {
@@ -2241,6 +2241,25 @@ CODE;
             }
             $this->resourceConfig = $resource;
             $this->resourceConfig['_projectDir'] = $projectDir;
+        }
+
+        // 读取 manifest（Windows 清单文件，与 resource 同级，缺省不携带）
+        $manifest = $cfg['manifest'] ?? null;
+        if (!empty($manifest)) {
+            if (!is_string($manifest)) {
+                $this->error('`manifest` must be a string (path to manifest file)');
+            }
+            $manifestPath = $manifest;
+            if (!preg_match('/^[A-Za-z]:\\|^\//', $manifestPath)) {
+                $manifestPath = $projectDir . DIRECTORY_SEPARATOR . $manifestPath;
+            }
+            if (!file_exists($manifestPath)) {
+                $this->error('Manifest file not exists: `' . $manifest . '`');
+            }
+            if (empty($this->resourceConfig)) {
+                $this->resourceConfig = ['_projectDir' => $projectDir];
+            }
+            $this->resourceConfig['manifest'] = $manifest;
         }
 
         return $this->filterIgnoredFiles($list);
