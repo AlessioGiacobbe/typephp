@@ -9,16 +9,22 @@ require __DIR__ . '/../src/gen_stub.php';
 
 class BaseTest extends TestCase
 {
+    protected function compile(string $file): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/code/' . $file;
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $compiler->convertFile($testFile);
+        $this->addToAssertionCount(1);
+    }
+
     protected function exec(string $expected, string $file): void
     {
         try {
-            global $translator;
-            $compiler = CompilerTest::create(ROOT_PATH);
-            $translator = $compiler;
-            $testFile = __DIR__ . '/code/' . $file;
-            $compiler->addFiles([$testFile]);
-            $compiler->prepareFile($testFile);
-            $compiler->convertFile($testFile);
+            $this->compile($file);
         } catch (TestError $exception) {
             $this->assertStringContainsString($expected, $exception->getMessage());
             return;

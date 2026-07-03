@@ -259,10 +259,7 @@ trait BinaryOpTrait
         $argList = [];
         foreach ($items as $item) {
             $type = $this->detectTypeOfExpr($item);
-            if ($type === self::TYPE_VOID) {
-                $this->fatalError($expr, 'Cannot concat void');
-            }
-            $argList[] = $this->convertExprToStringByType($this->parseExpr($item), $type);
+            $argList[] = $this->convertExprToStringByType($this->parseExprAsValue($item), $type);
         }
 
         return Symbol::concat() . '(' . Symbol::argList() . '{' . implode(', ', $argList) . '})';

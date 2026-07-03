@@ -78,37 +78,37 @@ class ClassTest extends \BaseTest
 
     public function testParentConstructorCannotBeUsedAsValue()
     {
-        $this->exec('Cannot use void expression as assignment value', 'parent-constructor-used-as-value.php');
+        $this->compile('parent-constructor-used-as-value.php');
     }
 
     public function testParentConstructorCannotBeUsedAsArgument()
     {
-        $this->exec('Cannot use void expression as function argument', 'parent-constructor-used-as-argument.php');
+        $this->compile('parent-constructor-used-as-argument.php');
     }
 
     public function testVoidExpressionCannotBeUsedAsBinaryOperand()
     {
-        $this->exec('Cannot use void expression as binary operand', 'void-expression-binary-operand.php');
+        $this->compile('void-expression-binary-operand.php');
     }
 
     public function testVoidExpressionCannotBeUsedAsCondition()
     {
-        $this->exec('Cannot use void expression as condition', 'void-expression-condition.php');
+        $this->compile('void-expression-condition.php');
     }
 
     public function testVoidExpressionCannotBeUsedAsTernaryBranch()
     {
-        $this->exec('Cannot use void expression as ternary branch', 'void-expression-ternary-branch.php');
+        $this->compile('void-expression-ternary-branch.php');
     }
 
     public function testVoidExpressionCannotBeUsedAsArrayValue()
     {
-        $this->exec('Cannot use void expression as array value', 'void-expression-array-value.php');
+        $this->compile('void-expression-array-value.php');
     }
 
     public function testVoidExpressionCannotBeUsedAsMatchArm()
     {
-        $this->exec('Cannot use void expression as match arm', 'void-expression-match-arm.php');
+        $this->compile('void-expression-match-arm.php');
     }
 
     public function testDestructorCannotDeclareReturnType()

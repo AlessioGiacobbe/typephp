@@ -308,13 +308,4 @@ class UtilsTest extends TestCase
         $this->assertFalse($this->invokeMethod('isClosedExpr', 'bar(1, 2)', 'foo'));
     }
 
-    // ========================================================================
-    // trimBrackets
-    // ========================================================================
-
-    public function testTrimBrackets(): void
-    {
-        $this->assertEquals('a + b', $this->invokeMethod('trimBrackets', '(a + b)'));
-        $this->assertEquals('not wrapped', $this->invokeMethod('trimBrackets', 'not wrapped'));
-    }
 }

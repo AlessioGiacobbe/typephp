@@ -86,6 +86,8 @@ trait TypeDetectionTrait
 
     protected function isInternalFunction(string $name): bool
     {
+        $name = ltrim($name, '\\');
+
         return array_key_exists($name, $this->internalFunctions);
     }
 

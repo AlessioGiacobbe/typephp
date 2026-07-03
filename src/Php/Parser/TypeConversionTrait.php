@@ -30,7 +30,7 @@ trait TypeConversionTrait
     protected function convertIntExpr(string $expr): string
     {
         if (!$this->isClosedExpr($expr, 'php::toInt')) {
-            return 'php::toInt(' . $this->trimBrackets($expr) . ')';
+            return 'php::toInt(' . $expr . ')';
         }
 
         return $expr;
@@ -39,7 +39,7 @@ trait TypeConversionTrait
     protected function convertFloatExpr(string $expr): string
     {
         if (!$this->isClosedExpr($expr, 'php::toFloat')) {
-            return 'php::toFloat(' . $this->trimBrackets($expr) . ')';
+            return 'php::toFloat(' . $expr . ')';
         }
 
         return $expr;
@@ -59,13 +59,13 @@ trait TypeConversionTrait
             if ($node instanceof Node\Scalar\String_) {
                 return 'php::toDecimal(' . $this->getLiteralString($node->value) . ')';
             }
-            return 'php::toDecimal(php::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toDecimal(php::toString(' . $expr . '))';
         }
         if ($fromType === self::TYPE_INT) {
-            return 'php::toDecimal(php::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toDecimal(php::toString(' . $expr . '))';
         }
         if ($fromType === self::TYPE_BIGINT) {
-            return 'php::toDecimal(php::BigInt::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toDecimal(php::BigInt::toString(' . $expr . '))';
         }
         return $expr;
     }
@@ -73,13 +73,13 @@ trait TypeConversionTrait
     protected function convertBigIntExpr(string $expr, string $fromType = ''): string
     {
         if ($fromType === self::TYPE_INT) {
-            return 'php::toBigInt(' . $this->trimBrackets($expr) . ')';
+            return 'php::toBigInt(' . $expr . ')';
         }
         if ($fromType === self::TYPE_FLOAT) {
             $this->error('Cannot convert float to BigInt, use string or int instead');
         }
         if ($fromType === self::TYPE_STR) {
-            return 'php::toBigInt(php::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toBigInt(php::toString(' . $expr . '))';
         }
         return $expr;
     }
@@ -87,19 +87,19 @@ trait TypeConversionTrait
     protected function convertBigFloatExpr(string $expr, string $fromType = ''): string
     {
         if ($fromType === self::TYPE_INT) {
-            return 'php::toBigFloat(' . $this->trimBrackets($expr) . ')';
+            return 'php::toBigFloat(' . $expr . ')';
         }
         if ($fromType === self::TYPE_FLOAT) {
-            return 'php::toBigFloat(' . $this->trimBrackets($expr) . ')';
+            return 'php::toBigFloat(' . $expr . ')';
         }
         if ($fromType === self::TYPE_STR) {
-            return 'php::toBigFloat(php::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::toBigFloat(php::toString(' . $expr . '))';
         }
         if ($fromType === self::TYPE_BIGINT) {
-            return 'php::BigFloat::newInstance(php::BigInt::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::BigFloat::newInstance(php::BigInt::toString(' . $expr . '))';
         }
         if ($fromType === self::TYPE_DECIMAL) {
-            return 'php::BigFloat::newInstance(php::Decimal::toString(' . $this->trimBrackets($expr) . '))';
+            return 'php::BigFloat::newInstance(php::Decimal::toString(' . $expr . '))';
         }
         return $expr;
     }
@@ -107,7 +107,7 @@ trait TypeConversionTrait
     protected function convertStringExpr(string $expr): string
     {
         if (!$this->isClosedExpr($expr, 'php::toString')) {
-            return 'php::toString(' . $this->trimBrackets($expr) . ')';
+            return 'php::toString(' . $expr . ')';
         }
 
         return $expr;
@@ -117,9 +117,9 @@ trait TypeConversionTrait
     {
         if (!$this->isClosedExpr($expr, 'php::toObject')) {
             if ($class === '') {
-                return 'php::toObject(' . $this->trimBrackets($expr) . ')';
+                return 'php::toObject(' . $expr . ')';
             }
-            return 'php::toObject(' . $this->trimBrackets($expr) . ', ' . $class . ')';
+            return 'php::toObject(' . $expr . ', ' . $class . ')';
         }
 
         return $expr;
@@ -128,7 +128,7 @@ trait TypeConversionTrait
     protected function convertArrayExpr(string $expr): string
     {
         if (!$this->isClosedExpr($expr, 'php::toArray')) {
-            return 'php::toArray(' . $this->trimBrackets($expr) . ')';
+            return 'php::toArray(' . $expr . ')';
         }
 
         return $expr;
@@ -137,7 +137,7 @@ trait TypeConversionTrait
     protected function convertBoolExpr(string $expr): string
     {
         if (!$this->isClosedExpr($expr, 'php::toBool')) {
-            return 'php::toBool(' . $this->trimBrackets($expr) . ')';
+            return 'php::toBool(' . $expr . ')';
         }
 
         return $expr;

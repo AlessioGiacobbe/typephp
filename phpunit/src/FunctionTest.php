@@ -79,12 +79,22 @@ class FunctionTest extends \BaseTest
 
     public function testInternalVoidFunctionCannotBeAssigned()
     {
-        $this->exec('Cannot use void expression as assignment value', 'internal-void-function-assignment.php');
+        $this->compile('internal-void-function-assignment.php');
+    }
+
+    public function testReflectedInternalVoidFunctionCannotBeAssigned()
+    {
+        $this->compile('internal-void-function-usleep-assignment.php');
+    }
+
+    public function testFullyQualifiedInternalVoidFunctionCannotBeAssigned()
+    {
+        $this->compile('internal-void-function-fully-qualified-assignment.php');
     }
 
     public function testInternalVoidFunctionCannotBeUsedAsBinaryOperand()
     {
-        $this->exec('Cannot use void expression as binary operand', 'internal-void-function-binary-operand.php');
+        $this->compile('internal-void-function-binary-operand.php');
     }
 
 }

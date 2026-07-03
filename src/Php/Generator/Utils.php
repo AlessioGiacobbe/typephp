@@ -180,15 +180,6 @@ trait Utils
         return str_replace('_', '', $rawValue);
     }
 
-    protected function trimBrackets(string $str): string
-    {
-        if ($this->isClosedExpr($str, '')) {
-            return substr($str, 1, -1);
-        }
-
-        return $str;
-    }
-
     protected function getNamespaceOfClass(string $class): string
     {
         $lastPos = strrpos($class, '\\');

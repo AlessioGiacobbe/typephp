@@ -934,16 +934,33 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function assertExprCanBeUsedAsValue(NodeAbstract $expr, string $context = 'value'): void
     {
-        if ($this->detectTypeOfExpr($expr) === self::TYPE_VOID) {
-            $this->fatalError($expr, 'Cannot use void expression as ' . $context);
-        }
+        // PHP permits using a void/never call as an expression; the expression
+        // result is null after the call side effect has run.
     }
 
     protected function assertExprCanBeUsedAsCondition(NodeAbstract $expr, string $context = 'condition'): void
     {
-        if ($this->detectTypeOfExpr($expr) === self::TYPE_VOID) {
-            $this->fatalError($expr, 'Cannot use void expression as ' . $context);
+        // Conditions are value contexts in PHP. A void/never expression is
+        // evaluated for side effects and then coerced from null.
+    }
+
+    protected function isVoidValueExpr(NodeAbstract $expr): bool
+    {
+        return $this->detectTypeOfExpr($expr) === self::TYPE_VOID;
+    }
+
+    protected function wrapVoidExprAsNull(NodeAbstract $expr, string $exprCode): string
+    {
+        if (!$this->isVoidValueExpr($expr)) {
+            return $exprCode;
         }
+
+        return '((void) (' . $exprCode . '), ' . self::VALUE_NULL . ')';
+    }
+
+    protected function parseExprAsValue(NodeAbstract $expr): string
+    {
+        return $this->wrapVoidExprAsNull($expr, $this->parseExpr($expr));
     }
 
     public function getNamespacedClassName(string $class, string $currentNamespace = ''): string
@@ -1378,9 +1395,9 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 if (!$this->isVarExpr($expr->var)) {
                     $this->fatalError($expr, 'When an assignment expression serves as an rvalue, it must be an assignment of a variable');
                 }
-                return $this->parseExpr($expr);
+                return $this->parseExprAsValue($expr);
             default:
-                return $this->parseExpr($expr);
+                return $this->parseExprAsValue($expr);
         }
     }
 
@@ -1436,7 +1453,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     {
         $beforeStmtCount = count($this->context->beforeStmtLines);
         $afterStmtCount = count($this->context->afterStmtLines);
-        $value = $this->parseExpr($expr);
+        $value = $this->parseExprAsValue($expr);
         $beforeStmts = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
         $afterStmts = array_slice($this->context->afterStmtLines, $afterStmtCount);
         $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
@@ -1631,7 +1648,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 $this->fatalError($expr, 'Cannot echo assign expression');
             } else {
                 $type = $this->detectTypeOfExpr($expr);
-                $parsed = $this->convertExprToStringByType($this->parseExpr($expr), $type);
+                $parsed = $this->convertExprToStringByType($this->parseExprAsValue($expr), $type);
                 $lines[] = 'php::echo(' . $parsed . ');';
             }
         }
@@ -1793,10 +1810,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($this->isCurrentConstructor() && !$this->context->inClosure) {
             $this->fatalError($v, 'Method `' . $this->getCurrentMethodDisplayName() . '()` cannot return a value');
         }
-        if ($type === self::TYPE_VOID) {
-            $this->fatalError($v, 'Cannot return void expression');
-        }
-        $expr = $this->parseExpr($v->expr);
+        $expr = $this->parseExprAsValue($v->expr);
         $returnType = $this->getReturnType();
 
         // 匿名函数的返回值一定是 var
@@ -2896,24 +2910,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $target = $this->preparePropertyWriteTarget($var);
         $tmpVar = $this->genTmpVarName();
         $this->addLocalVar($tmpVar, self::TYPE_VAR);
-        if ($target !== null && $target->isDynamicObjectProperty()) {
-            if ($isPre) {
-                $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyTargetRead($target) . " {$op} 1; " . $this->emitDynamicPropertyTargetWrite($target, $tmpVar) . ';';
-            } else {
-                $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyTargetRead($target) . ';';
-                $this->context->afterStmtLines[] = $this->emitDynamicPropertyTargetWrite($target, "{$tmpVar} {$op} 1") . ';';
-            }
-
-            return $tmpVar;
-        }
-
-        $obj = $this->parseIdentifier($var->var);
-        $propName = $this->identifierToStr($var->name, literal: true);
         if ($isPre) {
-            $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyRead($obj, $propName) . " {$op} 1; " . $this->emitDynamicPropertyWrite($obj, $propName, $tmpVar) . ';';
+            $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyFetchRead($var, $target) . " {$op} 1; " . $this->emitDynamicPropertyFetchWrite($var, $tmpVar, $target) . ';';
         } else {
-            $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyRead($obj, $propName) . ';';
-            $this->context->afterStmtLines[] = $this->emitDynamicPropertyWrite($obj, $propName, "{$tmpVar} {$op} 1") . ';';
+            $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyFetchRead($var, $target) . ';';
+            $this->context->afterStmtLines[] = $this->emitDynamicPropertyFetchWrite($var, "{$tmpVar} {$op} 1", $target) . ';';
         }
 
         return $tmpVar;
@@ -3049,7 +3050,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $this->context->inAssignExpr = false;
             $dim = $this->parseIdentifier($node->dim);
             $this->context->inAssignExpr = $oriInAssignExpr;
-            return $var . '.item(' . $this->trimBrackets($dim) . ', ' . $this->escapeBool($write) . ')';
+            return $var . '.item(' . $dim . ', ' . $this->escapeBool($write) . ')';
         }
     }
 
@@ -4221,7 +4222,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseBooleanNot(Expr\BooleanNot $expr): string
     {
         $this->assertExprCanBeUsedAsCondition($expr->expr, 'boolean operand');
-        return '!(' . $this->parseExpr($expr->expr) . ')';
+        return '!(' . $this->parseExprAsValue($expr->expr) . ')';
     }
 
     protected function parseWhile(Node\Stmt\While_ $v): string
@@ -4254,7 +4255,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parsePrint(Expr\Print_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'print operand');
-        return 'php::print(' . $this->parseExpr($expr->expr) . ')';
+        return 'php::print(' . $this->parseExprAsValue($expr->expr) . ')';
     }
 
     protected function parseDo(Node\Stmt\Do_ $v): string
@@ -4430,32 +4431,33 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseClone(Expr\Clone_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'clone operand');
-        return 'php::clone(' . $this->parseExpr($expr->expr) . ')';
+        return 'php::clone(' . $this->parseExprAsValue($expr->expr) . ')';
     }
 
     protected function parseInstanceof(Expr\Instanceof_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'instanceof operand');
+        $value = $this->parseExprAsValue($expr->expr);
         if ($this->isNameExpr($expr->class)) {
             $className = $this->getNamespacedClassName($this->parseIdentifier($expr->class));
             $className = $this->getClassEntryPtr($className);
-            return 'php::instanceOf(' . $this->parseExpr($expr->expr) . ', ' . $className . ')';
+            return 'php::instanceOf(' . $value . ', ' . $className . ')';
         } else {
-            return 'php::instanceOf(' . $this->parseExpr($expr->expr) . ', ' . $this->identifierToStr($expr->class) . ')';
+            return 'php::instanceOf(' . $value . ', ' . $this->identifierToStr($expr->class) . ')';
         }
     }
 
     protected function parseCastInt(Expr\Cast\Int_ $node): string
     {
         $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
-        return $this->convertIntExpr($this->parseExpr($node->expr));
+        return $this->convertIntExpr($this->parseExprAsValue($node->expr));
     }
 
     protected function parseCastString(Expr\Cast\String_ $node): string
     {
         $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
         return $this->convertExprToStringByType(
-            $this->parseExpr($node->expr),
+            $this->parseExprAsValue($node->expr),
             $this->detectTypeOfExpr($node->expr)
         );
     }
@@ -4463,13 +4465,13 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseCastBool(Expr\Cast\Bool_ $node): string
     {
         $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
-        return $this->convertBoolExpr($this->parseExpr($node->expr));
+        return $this->convertBoolExpr($this->parseExprAsValue($node->expr));
     }
 
     protected function parseCastObject(Expr\Cast\Object_ $node): string
     {
         $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
-        return $this->convertObjectExpr($this->parseExpr($node->expr));
+        return $this->convertObjectExpr($this->parseExprAsValue($node->expr));
     }
 
     protected function parseConstFetch(Expr\ConstFetch $expr, bool $scalar = false): string
@@ -4539,15 +4541,15 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $type = $this->detectTypeOfExpr($expr->expr);
         $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
         if ($type === self::TYPE_BIGFLOAT) {
-                        return 'php::BigFloat::neg(' . $this->parseExpr($expr->expr) . ')';
+                        return 'php::BigFloat::neg(' . $this->parseExprAsValue($expr->expr) . ')';
         }
         if ($type === self::TYPE_BIGINT) {
-                        return 'php::BigInt::neg(' . $this->parseExpr($expr->expr) . ')';
+                        return 'php::BigInt::neg(' . $this->parseExprAsValue($expr->expr) . ')';
         }
         if ($type === self::TYPE_DECIMAL) {
-                        return 'php::Decimal::neg(' . $this->parseExpr($expr->expr) . ')';
+                        return 'php::Decimal::neg(' . $this->parseExprAsValue($expr->expr) . ')';
         }
-        $code = $this->parseExpr($expr->expr);
+        $code = $this->parseExprAsValue($expr->expr);
 
         return '-' . $code;
     }
@@ -4555,7 +4557,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseUnaryPlus(Expr\UnaryPlus $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
-        return $this->parseExpr($expr->expr);
+        return $this->parseExprAsValue($expr->expr);
     }
 
     protected function parseInterpolatedString(Node\Scalar\InterpolatedString $expr): string
@@ -4937,9 +4939,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 }
             } elseif ($this->isPropertyFetch($var)) {
                 $propertyWriteTarget = $this->preparePropertyWriteTarget($var);
-                $object = $propertyWriteTarget !== null && $propertyWriteTarget->isDynamicObjectProperty()
-                    ? $propertyWriteTarget->objectExpr
-                    : $this->parseIdentifier($var->var);
+                $object = $this->getDynamicPropertyFetchObjectExpr($var, $propertyWriteTarget);
                 $restoreDefault = null;
                 if ($this->isIdExpr($var->name)) {
                     $propertyId = $this->getPropertyIdentifier($var, $var->var, $var->name);
@@ -4962,11 +4962,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     }
                 }
                 if ($restoreDefault === null) {
-                    if ($propertyWriteTarget !== null && $propertyWriteTarget->isDynamicObjectProperty()) {
-                        $lines[] = $this->emitDynamicPropertyTargetUnset($propertyWriteTarget) . ';';
-                    } else {
-                        $lines[] = $object . '.unsetProperty(' . $this->identifierToStr($var->name, literal: true) . ');';
-                    }
+                    $lines[] = $this->emitDynamicPropertyFetchUnset($var, $propertyWriteTarget) . ';';
                 }
             } elseif ($this->isStaticPropertyFetch($var)) {
                 $this->fatalError($var, 'Attempt to unset static property ' . $this->parseIdentifier($var->class) . '::$' . $this->parseIdentifier($var->name));
@@ -5577,28 +5573,108 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     {
         $this->assertDynamicPropertyTarget($target);
 
-        return $this->emitDynamicPropertyRead($target->objectExpr, $target->propertyExpr);
+        return $this->emitDynamicPropertyRead($target->getDynamicObjectExpr(), $target->getDynamicPropertyExpr());
     }
 
     protected function emitDynamicPropertyTargetWrite(PropertyWriteTarget $target, string $value): string
     {
         $this->assertDynamicPropertyTarget($target);
 
-        return $this->emitDynamicPropertyWrite($target->objectExpr, $target->propertyExpr, $value);
+        return $this->emitDynamicPropertyWrite($target->getDynamicObjectExpr(), $target->getDynamicPropertyExpr(), $value);
     }
 
     protected function emitDynamicPropertyTargetUnset(PropertyWriteTarget $target): string
     {
         $this->assertDynamicPropertyTarget($target);
 
-        return $target->objectExpr . '.unsetProperty(' . $target->propertyExpr . ')';
+        return $target->getDynamicObjectExpr() . '.unsetProperty(' . $target->getDynamicPropertyExpr() . ')';
     }
 
     protected function emitDynamicPropertyTargetRef(PropertyWriteTarget $target): string
     {
         $this->assertDynamicPropertyTarget($target);
 
-        return $target->objectExpr . '.attrRef(' . $target->propertyExpr . ')';
+        return $target->getDynamicObjectExpr() . '.attrRef(' . $target->getDynamicPropertyExpr() . ')';
+    }
+
+    protected function emitDynamicPropertyTargetAppendArray(PropertyWriteTarget $target, string $value): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $target->getDynamicObjectExpr() . '.appendArrayProperty(' . $target->getDynamicPropertyExpr() . ', ' . $value . ')';
+    }
+
+    protected function emitDynamicPropertyTargetUpdateArray(PropertyWriteTarget $target, string $dim, string $value): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $target->getDynamicObjectExpr() . '.updateArrayProperty(' . $target->getDynamicPropertyExpr() . ', ' . $dim . ', ' . $value . ')';
+    }
+
+    protected function canEmitDynamicPropertyTarget(?PropertyWriteTarget $target): bool
+    {
+        return $target !== null && $target->isDynamicObjectProperty();
+    }
+
+    protected function emitDynamicPropertyFetchRead(Expr\PropertyFetch $expr, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetRead($target);
+        }
+
+        return $this->emitDynamicPropertyRead(
+            $this->parseIdentifier($expr->var),
+            $this->identifierToStr($expr->name, literal: true)
+        );
+    }
+
+    protected function emitDynamicPropertyFetchWrite(Expr\PropertyFetch $expr, string $value, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetWrite($target, $value);
+        }
+
+        return $this->emitDynamicPropertyWrite(
+            $this->parseIdentifier($expr->var),
+            $this->identifierToStr($expr->name, literal: true),
+            $value
+        );
+    }
+
+    protected function getDynamicPropertyFetchObjectExpr(Expr\PropertyFetch $expr, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $target->getDynamicObjectExpr();
+        }
+
+        return $this->parseIdentifier($expr->var);
+    }
+
+    protected function emitDynamicPropertyFetchUnset(Expr\PropertyFetch $expr, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetUnset($target);
+        }
+
+        return $this->parseIdentifier($expr->var) . '.unsetProperty(' . $this->identifierToStr($expr->name, literal: true) . ')';
+    }
+
+    protected function emitDynamicPropertyFetchAppendArray(Expr\PropertyFetch $expr, string $value, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetAppendArray($target, $value);
+        }
+
+        return $this->parseIdentifier($expr->var) . '.appendArrayProperty(' . $this->identifierToStr($expr->name) . ', ' . $value . ')';
+    }
+
+    protected function emitDynamicPropertyFetchUpdateArray(Expr\PropertyFetch $expr, string $dim, string $value, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetUpdateArray($target, $dim, $value);
+        }
+
+        return $this->parseIdentifier($expr->var) . '.updateArrayProperty(' . $this->identifierToStr($expr->name) . ', ' . $dim . ', ' . $value . ')';
     }
 
     protected function assertDynamicPropertyTarget(PropertyWriteTarget $target): void
@@ -5611,14 +5687,21 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function emitDynamicPropertyFetchRef(Expr\PropertyFetch $expr, NodeAbstract $errorNode): string
     {
         $target = $this->preparePropertyWriteTarget($expr);
-        $objectExpr = $target !== null && $target->isDynamicObjectProperty()
-            ? $target->objectExpr
-            : $this->parseIdentifier($expr->var);
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            $objectExpr = $target->getDynamicObjectExpr();
+            if (!$this->hasVar($objectExpr)) {
+                $this->fatalError($errorNode, 'Undefined variable `$' . $objectExpr . '`');
+            }
+            return $this->emitDynamicPropertyTargetRef($target);
+        }
+
+        if (!$this->isVarExpr($expr->var)) {
+            return $this->parseExpr($expr->var) . '.attrRef(' . $this->identifierToStr($expr->name) . ')';
+        }
+
+        $objectExpr = $this->parseIdentifier($expr->var);
         if (!$this->hasVar($objectExpr)) {
             $this->fatalError($errorNode, 'Undefined variable `$' . $objectExpr . '`');
-        }
-        if ($target !== null && $target->isDynamicObjectProperty()) {
-            return $this->emitDynamicPropertyTargetRef($target);
         }
 
         return $objectExpr . '.attrRef(' . $this->identifierToStr($expr->name) . ')';
@@ -5703,7 +5786,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseCastArray(Expr\Cast\Array_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'cast operand');
-        return $this->convertArrayExpr($this->parseExpr($expr->expr));
+        return $this->convertArrayExpr($this->parseExprAsValue($expr->expr));
     }
 
     protected function hasGlobalVar(string $name): bool
@@ -5729,12 +5812,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function detectFuncCallReturnType(string $name): string
     {
-        if ($this->isInternalFunction($name)) {
-            $returnType = Reflection::getFunctionReturnType($name);
-            if ($returnType) {
-                return $this->getTypeFromZendType($returnType);
-            }
+        $name = ltrim($name, '\\');
+        $returnType = Reflection::getFunctionReturnType($name);
+        if ($returnType !== null) {
+            return $this->getTypeFromZendType($returnType);
         }
+
         return self::TYPE_VAR;
     }
 
@@ -5787,7 +5870,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $methodName = $expr->name->toString();
             $receiverType = $this->isVarExpr($expr->var) ? $this->getVarType($object) : $this->detectTypeOfExpr($expr->var);
             if ($receiverType === self::TYPE_VOID) {
-                $this->fatalError($expr->var, 'Cannot call method on void');
+                $receiverType = self::TYPE_VAR;
             }
             // to* builtins
             if (isset(self::KEYWORD_METHOD_MAP[$methodName])) {
@@ -5841,7 +5924,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if (!$this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
             $type = $this->detectTypeOfExpr($expr->var);
             if ($type === self::TYPE_VOID) {
-                $this->fatalError($expr->var, 'Cannot call method on void');
+                $type = self::TYPE_VAR;
             }
             if ($type !== self::TYPE_VAR && !$this->checkArgType($type, self::TYPE_OBJECT)) {
                 $methodName = $expr->name->toString();
@@ -6825,7 +6908,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $this->fatalError($expr, 'Cannot construct BigInt from float, use string or int instead');
                 }
                                 if ($argType === self::TYPE_INT) {
-                    return 'php::toBigInt(' . $this->trimBrackets($valueExpr) . ')';
+                    return 'php::toBigInt(' . $valueExpr . ')';
                 }
                 return 'php::BigInt::newInstance(' . $valueExpr . ')';
             }
@@ -6840,16 +6923,16 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $this->fatalError($expr, 'Cannot construct Decimal from float variable, use string or int instead');
                 }
                                 if ($argType === self::TYPE_INT) {
-                    return 'php::toDecimal(' . $this->trimBrackets($valueExpr) . ')';
+                    return 'php::toDecimal(' . $valueExpr . ')';
                 }
                 return 'php::Decimal::newInstance(' . $valueExpr . ')';
             }
             if ($type === self::TYPE_BIGFLOAT) {
                                 if ($argType === self::TYPE_INT) {
-                    return 'php::toBigFloat(' . $this->trimBrackets($valueExpr) . ')';
+                    return 'php::toBigFloat(' . $valueExpr . ')';
                 }
                 if ($argType === self::TYPE_FLOAT) {
-                    return 'php::toBigFloat(' . $this->trimBrackets($valueExpr) . ')';
+                    return 'php::toBigFloat(' . $valueExpr . ')';
                 }
                 return 'php::BigFloat::newInstance(' . $valueExpr . ')';
             }

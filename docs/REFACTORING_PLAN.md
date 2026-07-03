@@ -297,8 +297,11 @@
 - `PropertyWriteTarget` 已开始携带安全动态属性写入目标的 object/property 表达式；普通动态属性赋值、复合赋值、自增自减已优先通过 target 级 read/write helper 发射代码。
 - 动态属性 `unset`、属性数组维度写入、引用参数/refval/引用赋值中的安全对象属性引用路径已开始复用 target 级 unset/ref helper。
 - 对象属性引用表达式的 target/ref 生成已收敛到 `emitDynamicPropertyFetchRef()`；未使用的旧静态属性赋值入口已删除，静态属性赋值继续走统一 assignment target 路径。
+- `PropertyWriteTarget` 的动态 object/property 字段已封装为 getter；属性数组维度写入已接入 target 级 append/update emitter。
+- 已建立 `emitDynamicPropertyFetchRead/Write/Unset/AppendArray/UpdateArray()` 包装层，调用方只传入属性访问 AST 与可选 target，由 `CompilerBase` 统一选择 target 路径或旧 fallback 路径。
+- 普通赋值、复合赋值、自增自减、unset、属性数组维度写入、引用赋值已去除 Parser trait 中对 dynamic target 的直接分支判断，改为复用统一 emitter 包装。
 - 为避免改变复杂表达式求值顺序，当前仅对对象部分为变量的动态属性写入填充 target object/property 字段，复杂对象表达式仍保留旧路径。
-- 当前步骤对有效代码保持生成逻辑兼容，但会让更多属性写入路径进入统一静态检查；后续继续收敛 dynamic/native property write emitter、compound assignment、inc/dec、unset 和 refval 路径。
+- 当前步骤对有效代码保持生成逻辑兼容，但会让更多属性写入路径进入统一静态检查；后续继续收敛 static/native property write emitter 与 `??=` 属性写入结果生成。
 
 ### 阶段 3：类型系统模块化
 

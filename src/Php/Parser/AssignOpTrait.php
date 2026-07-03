@@ -31,7 +31,7 @@ trait AssignOpTrait
             $this->addLocalVar($array, self::TYPE_ARRAY);
         }
 
-        $value = $this->trimBrackets($this->parseExpr($right));
+        $value = $this->parseExprAsValue($right);
 
         $tmp = $this->genTmpVarName();
         $this->addLocalVar($tmp, self::TYPE_VAR);
@@ -39,7 +39,7 @@ trait AssignOpTrait
         if ($left->dim === null) {
             return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet(" . self::VALUE_NULL . ", {$tmp})" . '), ' . $tmp . ')';
         }
-        $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
+        $dim = $this->parseIdentifier($left->dim);
 
         return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet({$dim}, {$tmp})" . '), ' . $tmp . ')';
     }
@@ -50,7 +50,7 @@ trait AssignOpTrait
             $this->assertCanAssignPropertyWrite($target, $right);
         }
 
-        $rightExpr = $this->trimBrackets($this->parseExpr($right));
+        $rightExpr = $this->parseExprAsValue($right);
         if ($target !== null) {
             $rightExpr = $this->wrapPropertyWriteTypeCheck($target, $right, $rightExpr);
         } else {
@@ -60,13 +60,7 @@ trait AssignOpTrait
         $tmp = $this->genTmpVarName();
         $this->addLocalVar($tmp, self::TYPE_VAR);
         // Comma expression: store RHS → execute side effect → evaluate to stored value
-        if ($target !== null && $target->isDynamicObjectProperty()) {
-            return '((' . $tmp . ' = ' . $rightExpr . ', ' . $this->emitDynamicPropertyTargetWrite($target, $tmp) . '), ' . $tmp . ')';
-        }
-
-        $array = $this->parseIdentifier($left->var);
-        $propName = $this->identifierToStr($left->name, literal: true);
-        return '((' . $tmp . ' = ' . $rightExpr . ', ' . $this->emitDynamicPropertyWrite($array, $propName, $tmp) . '), ' . $tmp . ')';
+        return '((' . $tmp . ' = ' . $rightExpr . ', ' . $this->emitDynamicPropertyFetchWrite($left, $tmp, $target) . '), ' . $tmp . ')';
     }
 
     protected function parseRightAssociativeAssign(NodeAbstract $left, Expr\Assign $right): string
@@ -158,7 +152,7 @@ trait AssignOpTrait
         }
         $finalVarType = $type = $this->detectTypeOfExpr($right);
         if ($type === self::TYPE_VOID) {
-            $this->fatalError($right, 'Cannot use void expression as assignment value');
+            $finalVarType = $type = self::TYPE_VAR;
         }
 
         if ($this->isVarExpr($left)) {
@@ -308,7 +302,7 @@ trait AssignOpTrait
 
     protected function parseAssignRightExpr(Expr $right): string
     {
-        $rightExpr = $this->parseExpr($right);
+        $rightExpr = $this->parseExprAsValue($right);
         if ($this->isVarExpr($right)) {
             $rightVar = $this->parseIdentifier($right);
             if ($this->isStdContainer($rightVar)) {
@@ -404,13 +398,7 @@ trait AssignOpTrait
             $binaryOp = $this->removeAssignOp($op);
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, self::TYPE_VAR);
-            if ($propertyWriteTarget !== null && $propertyWriteTarget->isDynamicObjectProperty()) {
-                $readProperty = $this->emitDynamicPropertyTargetRead($propertyWriteTarget);
-            } else {
-                $obj = $this->parseIdentifier($node->var->var);
-                $propName = $this->identifierToStr($node->var->name, literal: true);
-                $readProperty = $this->emitDynamicPropertyRead($obj, $propName);
-            }
+            $readProperty = $this->emitDynamicPropertyFetchRead($node->var, $propertyWriteTarget);
             if ($this->isAssignOpConcat($op)) {
                 $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat({$readProperty}, {$expr});";
             } elseif ($this->isAssignOpPow($op)) {
@@ -418,11 +406,7 @@ trait AssignOpTrait
             } else {
                 $this->context->beforeStmtLines[] = "{$tmpVar} = {$readProperty} {$binaryOp} ({$expr});";
             }
-            if ($propertyWriteTarget !== null && $propertyWriteTarget->isDynamicObjectProperty()) {
-                $this->context->afterStmtLines[] = $this->emitDynamicPropertyTargetWrite($propertyWriteTarget, $tmpVar) . ';';
-            } else {
-                $this->context->afterStmtLines[] = $this->emitDynamicPropertyWrite($obj, $propName, $tmpVar) . ';';
-            }
+            $this->context->afterStmtLines[] = $this->emitDynamicPropertyFetchWrite($node->var, $tmpVar, $propertyWriteTarget) . ';';
             return $tmpVar;
         }
 
@@ -515,7 +499,7 @@ trait AssignOpTrait
         $id = $this->parseIdentifier($array);
         $this->context->inAssignExpr = $oriInAssignExpr;
 
-        return $id . '.offsetSet(' . $this->trimBrackets($dim) . ', ' . $this->trimBrackets($var) . ')';
+        return $id . '.offsetSet(' . $dim . ', ' . $var . ')';
     }
 
     protected function parseAssignOpShiftLeft(Expr\AssignOp\ShiftLeft $node): string
@@ -562,14 +546,7 @@ trait AssignOpTrait
             $rightExpr = $tmpVar . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
         } elseif ($this->isPropertyFetch($expr->expr)) {
             $left = $this->parseIdentifier($expr->var);
-            $propertyWriteTarget = $this->preparePropertyWriteTarget($expr->expr);
-            if ($propertyWriteTarget !== null && $propertyWriteTarget->isDynamicObjectProperty()) {
-                $rightExpr = $tmpVar . ' = ' . $this->emitDynamicPropertyTargetRef($propertyWriteTarget);
-            } else {
-                $object = $this->parseExpr($expr->expr->var);
-                $prop = $this->identifierToStr($expr->expr->name);
-                $rightExpr = $tmpVar . ' = ' . $object . '.attrRef(' . $prop . ')';
-            }
+            $rightExpr = $tmpVar . ' = ' . $this->emitDynamicPropertyFetchRef($expr->expr, $expr);
         } elseif ($this->isArrayDimFetch($expr->expr)) {
             $left = $this->parseIdentifier($expr->var);
             $array = $this->parseIdentifier($expr->expr->var);
@@ -588,25 +565,18 @@ trait AssignOpTrait
     protected function parseAssignPropertyArrayDim(NodeAbstract $left, NodeAbstract $right): string
     {
         $propertyWriteTarget = $this->preparePropertyWriteTarget($left->var);
-        if ($propertyWriteTarget !== null && $propertyWriteTarget->isDynamicObjectProperty()) {
-            $obj = $propertyWriteTarget->objectExpr;
-            $propName = $propertyWriteTarget->propertyExpr;
-        } else {
-            $obj = $this->parseIdentifier($left->var->var);
-            $propName = $this->identifierToStr($left->var->name);
-        }
         $code     = '';
-        $value    = $this->trimBrackets($this->parseExpr($right));
+        $value    = $this->parseExprAsValue($right);
 
         $tmp = $this->genTmpVarName();
         $this->addLocalVar($tmp, self::TYPE_VAR);
 
         if ($left->dim === null) {
-            return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$obj}.appendArrayProperty({$propName}, {$tmp})" . '), ' . $tmp . ')';
+            return $code . '((' . $tmp . ' = ' . $value . ', ' . $this->emitDynamicPropertyFetchAppendArray($left->var, $tmp, $propertyWriteTarget) . '), ' . $tmp . ')';
         }
-        $dim = $this->trimBrackets($this->parseIdentifier($left->dim));
+        $dim = $this->parseIdentifier($left->dim);
 
-        return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$obj}.updateArrayProperty({$propName}, {$dim}, {$tmp})" . '), ' . $tmp . ')';
+        return $code . '((' . $tmp . ' = ' . $value . ', ' . $this->emitDynamicPropertyFetchUpdateArray($left->var, $dim, $tmp, $propertyWriteTarget) . '), ' . $tmp . ')';
     }
 
     protected function parseAssignOpCoalesce(Expr\AssignOp\Coalesce $expr): string
