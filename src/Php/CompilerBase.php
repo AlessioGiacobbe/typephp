@@ -1375,8 +1375,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 return $this->parseConstFetch($expr);
             case 'Expr_Assign':
             case 'Expr_AssignRef':
-                if (!$this->isVarExpr($expr->var)) {
-                    $this->fatalError($expr, 'When an assignment expression serves as an rvalue, it must be an assignment of a variable');
+                if (!$this->isVarExpr($expr->var) && !$this->isPropertyFetch($expr->var) && !$this->isArrayDimFetch($expr->var)) {
+                    $this->fatalError($expr, 'When an assignment expression serves as an rvalue, it must be an assignment of a variable, property, or array element');
                 }
                 return $this->parseExpr($expr);
             default:
