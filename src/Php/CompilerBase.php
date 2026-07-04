@@ -1071,7 +1071,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return ltrim($funcName, '\\');
         }
         if (isset($this->useFunctions[$funcName])) {
-            return $this->useFunctions[$funcName] . '\\' . $funcName;
+            return $this->useFunctions[$funcName];
         }
         return $funcName;
     }
@@ -3082,7 +3082,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $this->escapeName($funcName);
             }
             if (isset($this->useFunctions[$funcName])) {
-                $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$funcName]) . self::NAMESPACE_SEPARATOR . $this->escapeName($funcName);
+                $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$funcName]);
             }
             // 复杂命名空间规则，组合命名空间
             // 例子：use foo\bar;  bar\fn();
@@ -6705,11 +6705,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             if ($type === Node\Stmt\Use_::TYPE_FUNCTION) {
                 $lastIndex = strrpos($id, '\\');
                 $fn = substr($id, $lastIndex + 1);
-                $ns = substr($id, 0, $lastIndex);
                 if ($use->alias) {
-                    $this->useFunctions[$use->alias->toString()] = $ns;
+                    $this->useFunctions[$use->alias->toString()] = $id;
                 } else {
-                    $this->useFunctions[$fn] = $ns;
+                    $this->useFunctions[$fn] = $id;
                 }
             } elseif ($type === Node\Stmt\Use_::TYPE_CONSTANT) {
                 $lastIndex = strrpos($id, '\\');

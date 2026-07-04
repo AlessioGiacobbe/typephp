@@ -2433,7 +2433,11 @@ CODE;
         $declares = $v->declares;
         foreach ($declares as $declare) {
             $key = $this->parseIdentifier($declare->key);
-            $value = $this->parseIdentifier($declare->value);
+            $value = match (true) {
+                $declare->value instanceof Node\Scalar\String_ => $declare->value->value,
+                $declare->value instanceof Node\Scalar\Int_ => (string) $declare->value->value,
+                default => $this->parseIdentifier($declare->value),
+            };
             if ($key === 'ticks') {
                 $this->fatalError($v, 'declare(ticks=1) is not supported');
             } elseif ($key === 'encoding') {
