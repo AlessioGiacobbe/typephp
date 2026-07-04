@@ -23,6 +23,12 @@ resource:
     product-name: "Swoole Compiler"
     comments: "PHP 原生编译器，可将 PHP 项目编译为 Windows/Linux/macOS 平台原生的可执行文件"
 
+# Windows 应用程序清单文件（缺省不携带 manifest）
+# 仅在 Windows 平台编译 bin 模式时生效
+# 清单文件为 XML 格式，可配置 UAC 权限级别、DPI 感知、运行时依赖等
+# 示例：如需启用，取消注释下一行并指定 manifest 文件路径
+# manifest: app.manifest
+
 sources:
   - ./src/Php
   - ./src/Core

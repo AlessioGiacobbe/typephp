@@ -27,6 +27,9 @@ namespace PhpAot\Php\Generator;
  *     original-filename: "myapp.exe"
  *     product-name: "My Product"
  *     comments: "Built with Swoole Compiler"
+ *
+ * # manifest 与 resource 同级（可选，Windows 平台缺省不携带）
+ * manifest: path/to/app.manifest
  */
 class ResourceFileGenerator
 {
@@ -51,7 +54,9 @@ class ResourceFileGenerator
      */
     public function hasResource(): bool
     {
-        return !empty($this->config['icon']) || !empty($this->config['version-info']);
+        return !empty($this->config['icon'])
+            || !empty($this->config['version-info'])
+            || !empty($this->config['manifest']);
     }
 
     /**
@@ -64,13 +69,34 @@ class ResourceFileGenerator
             return null;
         }
 
+        return $this->resolvePath($icon);
+    }
+
+    /**
+     * 获取 manifest 文件的绝对路径
+     */
+    public function getManifestPath(): ?string
+    {
+        $manifest = $this->config['manifest'] ?? null;
+        if (empty($manifest)) {
+            return null;
+        }
+
+        return $this->resolvePath($manifest);
+    }
+
+    /**
+     * 解析相对/绝对路径为绝对路径
+     */
+    private function resolvePath(string $path): string
+    {
         // 如果是绝对路径，直接使用
-        if (preg_match('/^[A-Za-z]:\\\\|^\//', $icon)) {
-            return $icon;
+        if (preg_match('/^[A-Za-z]:\\\\|^\//', $path)) {
+            return $path;
         }
 
         // 相对路径，基于项目目录解析
-        return $this->projectDir . DIRECTORY_SEPARATOR . $icon;
+        return $this->projectDir . DIRECTORY_SEPARATOR . $path;
     }
 
     /**
@@ -90,6 +116,15 @@ class ResourceFileGenerator
         // 包含 Windows 版本信息头文件
         $content .= '#include <windows.h>' . PHP_EOL;
         $content .= PHP_EOL;
+
+        // Manifest 资源（Windows 清单文件，如 UAC、DPI 感知等）
+        $manifestPath = $this->getManifestPath();
+        if ($manifestPath) {
+            $manifestPathRc = str_replace('\\', '/', $manifestPath);
+            $content .= '// Manifest Resource' . PHP_EOL;
+            $content .= 'CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "' . addslashes($manifestPathRc) . '"' . PHP_EOL;
+            $content .= PHP_EOL;
+        }
 
         // 图标资源
         $iconPath = $this->getIconPath();
