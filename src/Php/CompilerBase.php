@@ -756,26 +756,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function genExtraNamedVariadicArgs(string $var): string
     {
-        $keyVar = $var . '_named_key';
-        $valueVar = $var . '_named_value';
-
-        $code = $this->getIndent() . 'if (zend_array *named_args = php::getCallExtraNamedArgs()) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . 'zend_string *' . $keyVar . ';' . PHP_EOL;
-        $code .= $this->getIndent() . 'zval *' . $valueVar . ';' . PHP_EOL;
-        $code .= $this->getIndent() . 'ZEND_HASH_MAP_FOREACH_STR_KEY_VAL(named_args, ' . $keyVar . ', ' . $valueVar . ') {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . 'if (' . $keyVar . ') {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $var . '.set(' . $keyVar . ', php::Variant(' . $valueVar . ', php::Ctor::CopyRef));' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '} ZEND_HASH_FOREACH_END();' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        return $code;
+        return $this->getIndent() . 'php::appendCallExtraNamedArgs(' . $var . ');' . PHP_EOL;
     }
 
     public function writeFile(string $file, string $content): void
@@ -4466,13 +4447,18 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseInstanceof(Expr\Instanceof_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'instanceof operand');
-        $value = $this->parseExprAsValue($expr->expr);
         if ($this->isNameExpr($expr->class)) {
+            $value = $this->parseExprAsValue($expr->expr);
             $className = $this->getNamespacedClassName($this->parseIdentifier($expr->class));
             $className = $this->getClassEntryPtr($className);
             return 'php::instanceOf(' . $value . ', ' . $className . ')';
         } else {
-            return 'php::instanceOf(' . $value . ', ' . $this->identifierToStr($expr->class) . ')';
+            [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr->expr);
+            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $this->appendCapturedStmtLinesToContext($beforeStmts);
+            $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
+            $this->appendCapturedStmtLinesToContext($afterStmts);
+            return 'php::instanceOf(' . $tmpVar . ', ' . $this->identifierToStr($expr->class) . ')';
         }
     }
 
@@ -4768,12 +4754,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseExit(Expr\Exit_ $node): string
     {
         if (!$node->expr) {
-            return 'std::exit(0)';
+            return 'php::aotExit()';
         }
         $status = $this->parseExprAsValue($node->expr);
-        return '([&]() -> php::Var { php::Var exit_status = ' . $status . '; '
-            . 'if (exit_status.isInt()) { std::exit(exit_status.toInt()); } '
-            . 'php::echo(php::toString(exit_status)); std::exit(0); return php::null; })()';
+        return 'php::aotExit(' . $status . ')';
     }
 
     protected function getFixedObjectPropDefaultValue(PropertyDef $def): ?string
@@ -6453,9 +6437,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($type != self::TYPE_VAR) {
             $this->fatalError($expr, 'Can only throw objects');
         }
-        $tmp = $this->genTmpVarName();
-        $this->addLocalVar($tmp, self::TYPE_VAR);
-        return '([&]() -> php::Var { ' . $tmp . ' = ' . $ex . '; if (!' . $tmp . '.isObject()) { php::throwError("Can only throw objects"); } return php::throwException(php::Object(' . $tmp . ')); })()';
+        return 'php::throwValue(' . $ex . ')';
     }
 
     protected function parseTryCatch(mixed $v): string

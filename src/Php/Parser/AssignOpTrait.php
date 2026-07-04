@@ -22,6 +22,13 @@ trait AssignOpTrait
         if ($this->isPropertyFetch($left)) {
             return $this->parseAssignPropertyArrayDim($left, $right);
         }
+        if ($this->isVarExpr($left->var) && $left->var->name === 'GLOBALS') {
+            $target = $this->parseGlobalsArrayDimFetch($left);
+            $value = $this->parseExprAsValue($right);
+            $tmp = $this->genTmpVarName();
+            $this->addLocalVar($tmp, self::TYPE_VAR);
+            return '((' . $tmp . ' = ' . $value . ', ' . $target . ' = ' . $tmp . '), ' . $tmp . ')';
+        }
         $oriInAssignExpr    = $this->context->inAssignExpr;
         $this->context->inAssignExpr = true;
         $array              = $this->parseIdentifier($left->var);
@@ -394,6 +401,9 @@ trait AssignOpTrait
                     $this->convertExprType($expr, $type, $rightType) . ';';
             }
 
+            if ($this->isVarExpr($node->var->var) && $node->var->var->name === 'GLOBALS') {
+                return $var . ' = ' . $tmpVar;
+            }
             return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
         }
 
