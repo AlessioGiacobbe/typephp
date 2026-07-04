@@ -1,5 +1,11 @@
 --TEST--
 var convert chained on array element
+--SKIPIF--
+<?php
+if (PHP_OS_FAMILY != 'Linux') {
+    echo "skip: only run on linux\n";
+    exit(0);
+}
 --FILE--
 <?php
 function stream_write_test(stream $stream) {
@@ -8,7 +14,7 @@ function stream_write_test(stream $stream) {
 
 function main()
 {
-    $pair = stream_socket_pair(STREAM_PF_INET, STREAM_SOCK_STREAM, STREAM_IPPROTO_TCP);
+    $pair = stream_socket_pair(AF_UNIX, STREAM_SOCK_STREAM, 0);
     $pair[0]->toStream()->write('hello');
     var_dump($pair[1]->toStream()->read(5));
 

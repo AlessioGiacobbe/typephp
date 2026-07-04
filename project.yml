@@ -1,4 +1,4 @@
-name: swoole-compiler
+name: tpc
 build-mode: bin
 version: 0.1.0
 cxx-std: c++17

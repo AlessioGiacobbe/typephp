@@ -4744,9 +4744,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseExit(Expr\Exit_ $node): string
     {
         if (!$node->expr) {
-            return 'php::exit(0)';
+            return 'std::exit(0)';
         }
-        return 'php::exit(' . $this->parseIdentifier($node->expr) . ')';
+        $status = $this->parseExprAsValue($node->expr);
+        return '([&]() -> php::Var { php::Var exit_status = ' . $status . '; '
+            . 'if (exit_status.isInt()) { std::exit(exit_status.toInt()); } '
+            . 'php::echo(php::toString(exit_status)); std::exit(0); return php::null; })()';
     }
 
     protected function getFixedObjectPropDefaultValue(PropertyDef $def): ?string
@@ -5606,14 +5609,23 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     {
         $this->assertDynamicPropertyTarget($target);
 
-        return $target->getDynamicObjectExpr() . '.appendArrayProperty(' . $target->getDynamicPropertyExpr() . ', ' . $value . ')';
+        return $this->emitDynamicPropertyAppendArray(
+            $target->getDynamicObjectExpr(),
+            $target->getDynamicPropertyExpr(),
+            $value
+        );
     }
 
     protected function emitDynamicPropertyTargetUpdateArray(PropertyWriteTarget $target, string $dim, string $value): string
     {
         $this->assertDynamicPropertyTarget($target);
 
-        return $target->getDynamicObjectExpr() . '.updateArrayProperty(' . $target->getDynamicPropertyExpr() . ', ' . $dim . ', ' . $value . ')';
+        return $this->emitDynamicPropertyUpdateArray(
+            $target->getDynamicObjectExpr(),
+            $target->getDynamicPropertyExpr(),
+            $dim,
+            $value
+        );
     }
 
     protected function canEmitDynamicPropertyTarget(?PropertyWriteTarget $target): bool
@@ -5670,7 +5682,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return $this->emitDynamicPropertyTargetAppendArray($target, $value);
         }
 
-        return $this->parseIdentifier($expr->var) . '.appendArrayProperty(' . $this->identifierToStr($expr->name) . ', ' . $value . ')';
+        return $this->emitDynamicPropertyAppendArray(
+            $this->parseIdentifier($expr->var),
+            $this->identifierToStr($expr->name, literal: true),
+            $value
+        );
     }
 
     protected function emitDynamicPropertyFetchUpdateArray(Expr\PropertyFetch $expr, string $dim, string $value, ?PropertyWriteTarget $target = null): string
@@ -5679,7 +5695,22 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return $this->emitDynamicPropertyTargetUpdateArray($target, $dim, $value);
         }
 
-        return $this->parseIdentifier($expr->var) . '.updateArrayProperty(' . $this->identifierToStr($expr->name) . ', ' . $dim . ', ' . $value . ')';
+        return $this->emitDynamicPropertyUpdateArray(
+            $this->parseIdentifier($expr->var),
+            $this->identifierToStr($expr->name, literal: true),
+            $dim,
+            $value
+        );
+    }
+
+    protected function emitDynamicPropertyAppendArray(string $object, string $property, string $value): string
+    {
+        return "{$object}.attr({$property}, true).newItem() = {$value}";
+    }
+
+    protected function emitDynamicPropertyUpdateArray(string $object, string $property, string $dim, string $value): string
+    {
+        return "{$object}.attr({$property}, true).item({$dim}, true) = {$value}";
     }
 
     protected function assertDynamicPropertyTarget(PropertyWriteTarget $target): void
@@ -6417,7 +6448,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $finally = $v->finally;
 
         $exVar = $this->genTmpVarName();
-        $this->addLocalVar($exVar, self::TYPE_OBJECT);
+        $this->addLocalVar($exVar, self::TYPE_VAR);
 
         $code .= 'catch(zend_object *_ex) {' . PHP_EOL;
         $code .= $this->getIndent() . $exVar . ' = php::catchException();' . PHP_EOL;
@@ -6434,7 +6465,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $code .= $this->parseStmts($finally->stmts);
             $code .= PHP_EOL;
         }
-        $code .= 'if (' . $exVar . ') {' . PHP_EOL . $this->getIndent() . 'php::throwException(' . $exVar . ');' . PHP_EOL . $this->getIndent() . '}';
+        $code .= 'if (' . $exVar . ') {' . PHP_EOL . $this->getIndent() . 'php::throwException(php::Object(' . $exVar . '));' . PHP_EOL . $this->getIndent() . '}';
 
         return $code;
     }
@@ -6465,8 +6496,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $code .= implode(' || ', $conditions);
         $code .= ') {' . PHP_EOL;
         $this->indentLevel++;
+        $code .= $this->getIndent() . "{$exVar} = php::null;" . PHP_EOL;
         $code .= $this->parseStmts($catch->stmts);
-        $code .= $this->getIndent() . "{$exVar}.unset();" . PHP_EOL;
         $this->indentLevel--;
         $code .= $this->getIndent() . '}';
 

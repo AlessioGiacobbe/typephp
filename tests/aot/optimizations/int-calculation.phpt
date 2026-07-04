@@ -3,6 +3,7 @@ SSA: int
 --FILE--
 <?php
 function main(): void {
+    ini_set('precision', 17);
     $a = 100;
     $a += 3;
     $a *= 232;
@@ -15,4 +16,4 @@ function main(): void {
 ?>
 --EXPECTF--
 12
--9223372036854775797
+9.2233720368547758E+18
