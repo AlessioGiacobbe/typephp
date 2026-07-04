@@ -2898,6 +2898,7 @@ CODE;
                 $cppCode .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
                 $this->indentLevel--;
                 $cppCode .= '}' . PHP_EOL;
+                $cppCode .= $this->genExtraNamedVariadicArgs($var);
             } else {
                 if ($argInfo->default) {
                     $defaultExpr = $this->genDefaultArgumentExpr($functionDef, $argInfo);

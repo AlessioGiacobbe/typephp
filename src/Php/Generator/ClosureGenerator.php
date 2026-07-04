@@ -85,6 +85,7 @@ trait ClosureGenerator
                 $code .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
                 $this->indentLevel--;
                 $code .= $this->getIndent() . '}' . PHP_EOL;
+                $code .= $this->genExtraNamedVariadicArgs($var);
                 $this->addArgument($var, self::TYPE_ARRAY);
                 $code .= $this->genClosureParamTypeCheck($param, $var, $phpName, $i, true);
                 continue;

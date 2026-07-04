@@ -754,6 +754,30 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return 'tmp_var_' . $this->context->tmpVarIndex++;
     }
 
+    protected function genExtraNamedVariadicArgs(string $var): string
+    {
+        $keyVar = $var . '_named_key';
+        $valueVar = $var . '_named_value';
+
+        $code = $this->getIndent() . 'if (zend_array *named_args = php::getCallExtraNamedArgs()) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'zend_string *' . $keyVar . ';' . PHP_EOL;
+        $code .= $this->getIndent() . 'zval *' . $valueVar . ';' . PHP_EOL;
+        $code .= $this->getIndent() . 'ZEND_HASH_MAP_FOREACH_STR_KEY_VAL(named_args, ' . $keyVar . ', ' . $valueVar . ') {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'if (' . $keyVar . ') {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $var . '.set(' . $keyVar . ', php::Variant(' . $valueVar . ', php::Ctor::CopyRef));' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '} ZEND_HASH_FOREACH_END();' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+
+        return $code;
+    }
+
     public function writeFile(string $file, string $content): void
     {
         $dir = dirname($file);
