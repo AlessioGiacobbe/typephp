@@ -2503,11 +2503,13 @@ CODE;
         $this->climate->info('generate arginfo file: ' . $this->getRelativePath($file));
         generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true);
 
-        if ($this->useRegisterSymbolsFn) {
-            preg_match('/php_(.*)_arginfo.h/', $headerFile, $matches);
-            $registerSymbolFn = 'register_' . $matches[1] . '_symbols';
-            $registerSymbol = PHP_EOL . 'static void ' . $registerSymbolFn . '(int module_number)' . PHP_EOL;
-            if (str_contains(file_get_contents($this->getBuildDir() . '/include/' . $headerFile), $registerSymbol)) {
+        $headerCode = file_get_contents($this->getBuildDir() . '/include/' . $headerFile);
+        $needsAttributeSymbols = str_contains($headerCode, 'zend_add_function_attribute(')
+            || str_contains($headerCode, 'zend_add_parameter_attribute(')
+            || str_contains($headerCode, 'zend_add_global_constant_attribute(');
+        if ($this->useRegisterSymbolsFn || $needsAttributeSymbols) {
+            if (preg_match('/\bstatic\s+void\s+(register_[A-Za-z0-9_]+_symbols)\s*\(\s*int\s+module_number\s*\)/', $headerCode, $matches)) {
+                $registerSymbolFn = $matches[1];
                 $this->registerSymbols[] = $registerSymbolFn;
             }
         }

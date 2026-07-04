@@ -5467,20 +5467,9 @@ function generateArgInfoCode(
             }
         }
 
-        if ($attributeInitializationCode !== "" || !empty($fileInfo->constInfos)) {
+        if ($attributeInitializationCode !== "") {
             $code .= "\nstatic void register_{$stubFilenameWithoutExtension}_symbols(int module_number)\n";
             $code .= "{\n";
-
-            $code .= generateCodeWithConditions(
-                $fileInfo->constInfos,
-                '',
-                static fn (ConstInfo $constInfo): string => $constInfo->getDeclaration($allConstInfos)
-            );
-
-            if ($attributeInitializationCode !== "" && $fileInfo->constInfos) {
-                $code .= "\n";
-            }
-
             $code .= $attributeInitializationCode;
             $code .= "}\n";
         }
@@ -5550,8 +5539,9 @@ function generateFunctionAttributeInitialization(iterable $funcInfos, array $all
             }
 
             foreach ($funcInfo->attributes as $key => $attribute) {
+                $functionLookup = "(zend_function *) zend_hash_str_find_ptr($functionTable, \"" . $funcInfo->name->getNameForAttributes() . "\", sizeof(\"" . $funcInfo->name->getNameForAttributes() . "\") - 1)";
                 $code .= $attribute->generateCode(
-                    "zend_add_function_attribute(zend_hash_str_find_ptr($functionTable, \"" . $funcInfo->name->getNameForAttributes() . "\", sizeof(\"" . $funcInfo->name->getNameForAttributes() . "\") - 1)",
+                    "zend_add_function_attribute($functionLookup",
                     "func_" . $funcInfo->name->getNameForAttributes() . "_$key",
                     $allConstInfos,
                     $phpVersionIdMinimumCompatibility,
@@ -5561,8 +5551,9 @@ function generateFunctionAttributeInitialization(iterable $funcInfos, array $all
 
             foreach ($funcInfo->args as $index => $arg) {
                 foreach ($arg->attributes as $key => $attribute) {
+                    $functionLookup = "(zend_function *) zend_hash_str_find_ptr($functionTable, \"" . $funcInfo->name->getNameForAttributes() . "\", sizeof(\"" . $funcInfo->name->getNameForAttributes() . "\") - 1)";
                     $code .= $attribute->generateCode(
-                        "zend_add_parameter_attribute(zend_hash_str_find_ptr($functionTable, \"" . $funcInfo->name->getNameForAttributes() . "\", sizeof(\"" . $funcInfo->name->getNameForAttributes() . "\") - 1), $index",
+                        "zend_add_parameter_attribute($functionLookup, $index",
                         "func_{$funcInfo->name->getNameForAttributes()}_arg{$index}_$key",
                         $allConstInfos,
                         $phpVersionIdMinimumCompatibility,
@@ -5615,12 +5606,7 @@ function generateGlobalConstantAttributeInitialization(
             $constName = str_replace('\\', '\\\\', $constInfo->name->__toString());
             $constVarName = 'const_' . $constName;
 
-            // The entire attribute block will be conditional if PHP < 8.5 is
-            // supported, but also if PHP < 8.5 is supported we need to search
-            // for the constant; see GH-19029
-            if ($isConditional) {
-                $code .= "\tzend_constant *$constVarName = zend_hash_str_find_ptr(EG(zend_constants), \"" . $constName . "\", sizeof(\"" . $constName . "\") - 1);\n";
-            }
+            $code .= "\tzend_constant *$constVarName = zend_hash_str_find_ptr(EG(zend_constants), \"" . $constName . "\", sizeof(\"" . $constName . "\") - 1);\n";
             foreach ($constInfo->attributes as $key => $attribute) {
                 $code .= $attribute->generateCode(
                     "zend_add_global_constant_attribute($constVarName",

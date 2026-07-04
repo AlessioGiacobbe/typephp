@@ -6444,14 +6444,14 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     {
         $code = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'try {';
-        $stmts = $v->stmts;
+        $finally = $v->finally;
+        $stmts = $finally ? $this->injectFinallyBeforeReturn($v->stmts, $finally->stmts) : $v->stmts;
 
         $code .= PHP_EOL;
         $code .= $this->parseBlockStmts($stmts);
         $code .= $this->getIndent() . '}' . PHP_EOL;
 
         $catches = $v->catches;
-        $finally = $v->finally;
 
         $exVar = $this->genTmpVarName();
         $this->addLocalVar($exVar, self::TYPE_VAR);
@@ -6461,7 +6461,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($catches) {
             $this->indentLevel++;
             foreach ($catches as $catch) {
-                $code .= $this->parseCatch($catch, $exVar);
+                $code .= $this->parseCatch($catch, $exVar, $finally?->stmts ?? []);
             }
             $this->indentLevel--;
         }
@@ -6476,7 +6476,74 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return $code;
     }
 
-    protected function parseCatch(Node\Stmt\Catch_ $catch, string $exVar): string
+    protected function injectFinallyBeforeReturn(array $stmts, array $finallyStmts): array
+    {
+        $result = [];
+        foreach ($stmts as $stmt) {
+            if ($stmt instanceof Node\Stmt\Return_) {
+                if ($stmt->expr) {
+                    $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                    $result[] = new Node\Stmt\Expression(new Expr\Assign(new Variable($tmpVar), $stmt->expr));
+                    array_push($result, ...$this->cloneStmtList($finallyStmts));
+                    $result[] = new Node\Stmt\Return_(new Variable($tmpVar));
+                    continue;
+                }
+                array_push($result, ...$this->cloneStmtList($finallyStmts));
+                $result[] = $stmt;
+                continue;
+            }
+
+            $result[] = $this->injectFinallyBeforeReturnInStmt($stmt, $finallyStmts);
+        }
+        return $result;
+    }
+
+    protected function injectFinallyBeforeReturnInStmt(Node\Stmt $stmt, array $finallyStmts): Node\Stmt
+    {
+        if ($stmt instanceof Node\Stmt\If_) {
+            $stmt = clone $stmt;
+            $stmt->stmts = $this->injectFinallyBeforeReturn($stmt->stmts, $finallyStmts);
+            foreach ($stmt->elseifs as $index => $elseIf) {
+                $elseIf = clone $elseIf;
+                $elseIf->stmts = $this->injectFinallyBeforeReturn($elseIf->stmts, $finallyStmts);
+                $stmt->elseifs[$index] = $elseIf;
+            }
+            if ($stmt->else) {
+                $stmt->else = clone $stmt->else;
+                $stmt->else->stmts = $this->injectFinallyBeforeReturn($stmt->else->stmts, $finallyStmts);
+            }
+            return $stmt;
+        }
+
+        if ($stmt instanceof Node\Stmt\For_
+            || $stmt instanceof Node\Stmt\Foreach_
+            || $stmt instanceof Node\Stmt\While_
+            || $stmt instanceof Node\Stmt\Do_
+        ) {
+            $stmt = clone $stmt;
+            $stmt->stmts = $this->injectFinallyBeforeReturn($stmt->stmts, $finallyStmts);
+            return $stmt;
+        }
+
+        if ($stmt instanceof Node\Stmt\Switch_) {
+            $stmt = clone $stmt;
+            foreach ($stmt->cases as $index => $case) {
+                $case = clone $case;
+                $case->stmts = $this->injectFinallyBeforeReturn($case->stmts, $finallyStmts);
+                $stmt->cases[$index] = $case;
+            }
+            return $stmt;
+        }
+
+        return $stmt;
+    }
+
+    protected function cloneStmtList(array $stmts): array
+    {
+        return array_map(static fn (Node\Stmt $stmt): Node\Stmt => clone $stmt, $stmts);
+    }
+
+    protected function parseCatch(Node\Stmt\Catch_ $catch, string $exVar, array $finallyStmts = []): string
     {
         $types = $catch->types;
         $var = $catch->var ? $this->parseIdentifier($catch->var) : $this->genTmpVarName();
@@ -6503,7 +6570,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $code .= ') {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . "{$exVar} = php::null;" . PHP_EOL;
-        $code .= $this->parseStmts($catch->stmts);
+        $stmts = $finallyStmts ? $this->injectFinallyBeforeReturn($catch->stmts, $finallyStmts) : $catch->stmts;
+        $code .= $this->parseStmts($stmts);
         $this->indentLevel--;
         $code .= $this->getIndent() . '}';
 
