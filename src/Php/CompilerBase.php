@@ -4203,7 +4203,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseIfChain(array $arms, ?Node\Stmt\Else_ $else, int $index): string
     {
         if (!isset($arms[$index])) {
-            if (!$else) {
+            if (!$else || (count($else->stmts) == 1 && $else->stmts[0] instanceof Node\Stmt\Nop)) {
                 return '';
             }
             return $this->parseBlockStmts($else->stmts);
