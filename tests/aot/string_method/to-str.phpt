@@ -2,6 +2,7 @@
 any
 --FILE--
 <?php
+ini_set('precision', 17);
 $s = 12345678;
 var_dump(strlen($s));
 var_dump(strrev($s));

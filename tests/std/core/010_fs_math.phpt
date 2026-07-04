@@ -6,7 +6,7 @@ Filesystem and math functions - is_dir, is_file, round
 echo "== is_dir() ==\n";
 var_dump(is_dir("/"));
 var_dump(is_dir("/nonexistent_path_xyz123"));
-var_dump(is_dir("/etc"));
+var_dump(is_dir(sys_get_temp_dir()));
 
 echo "== is_file() ==\n";
 var_dump(is_file("/nonexistent_file_xyz123"));

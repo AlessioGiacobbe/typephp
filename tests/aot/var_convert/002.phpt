@@ -8,7 +8,7 @@ function stream_write_test(stream $stream) {
 
 function main()
 {
-    $pair = stream_socket_pair(AF_UNIX, SOCK_STREAM, 0);
+    $pair = stream_socket_pair(STREAM_PF_INET, STREAM_SOCK_STREAM, STREAM_IPPROTO_TCP);
     $pair[0]->toStream()->write('hello');
     var_dump($pair[1]->toStream()->read(5));
 

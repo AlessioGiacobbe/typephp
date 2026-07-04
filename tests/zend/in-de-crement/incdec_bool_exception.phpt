@@ -17,12 +17,12 @@ foreach ($values as $value) {
     }
 }
 ?>
---EXPECT--
-Warning: Increment on type bool has no effect, this will change in the next major version of PHP in Unknown(0) : eval() on line 1
+--EXPECTF--
+Warning: Increment on type bool has no effect, this will change in the next major version of PHP in %s on line %d
 
-Warning: Increment on type bool has no effect, this will change in the next major version of PHP in Unknown(0) : eval() on line 1
+Warning: Decrement on type bool has no effect, this will change in the next major version of PHP in %s on line %d
 
-Warning: Increment on type bool has no effect, this will change in the next major version of PHP in Unknown(0) : eval() on line 1
+Warning: Increment on type bool has no effect, this will change in the next major version of PHP in %s on line %d
 
-Warning: Increment on type bool has no effect, this will change in the next major version of PHP in Unknown(0) : eval() on line 1
+Warning: Decrement on type bool has no effect, this will change in the next major version of PHP in %s on line %d
 

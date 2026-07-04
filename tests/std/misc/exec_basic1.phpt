@@ -3,7 +3,7 @@ exec, system, passthru  — Basic command execution functions
 --SKIPIF--
 <?php
 // If this does not work for Windows, please uncomment or fix test
-// if(substr(PHP_OS, 0, 3) == "WIN") die("skip not for Windows");
+if(substr(PHP_OS, 0, 3) == "WIN") die("skip not for Windows");
 ?>
 --FILE--
 <?php

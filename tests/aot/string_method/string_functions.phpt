@@ -58,8 +58,9 @@ var_dump($joined);
 $cmp1 = strcmp("abc", "abc");
 var_dump($cmp1);
 
+// Windows is -1, linux is -3
 $cmp2 = strcmp("abc", "def");
-var_dump($cmp2);
+var_dump($cmp2 < 0);
 
 $cmp3 = strcasecmp("ABC", "abc");
 var_dump($cmp3);
@@ -132,7 +133,7 @@ array(3) {
 }
 string(19) "apple-banana-orange"
 int(0)
-int(-3)
+bool(true)
 int(0)
 string(22) "Value: 42, Text: hello"
 array(4) {
