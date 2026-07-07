@@ -145,9 +145,10 @@ trait AssignOpTrait
         }
 
         $propertyWriteTarget = $this->preparePropertyWriteTarget($left);
-        $finalVarType = $type = $this->detectTypeOfExpr($right);
+        $type = $this->detectTypeOfExpr($right);
+        $finalVarType = $this->getNormalAssignType($type);
         if ($type === self::TYPE_VOID) {
-            $finalVarType = $type = self::TYPE_VAR;
+            $type = self::TYPE_VAR;
         }
 
         if ($this->isVarExpr($left)) {
@@ -239,6 +240,7 @@ trait AssignOpTrait
                 } elseif ($this->isVarExpr($right)) {
                     $rightVar = $this->parseIdentifier($right);
                     $type = $this->isStdContainer($rightVar) ? self::TYPE_ARRAY : $this->getVarType($rightVar);
+                    $finalVarType = $this->getNormalAssignType($type);
                     if ($this->isTypedObject($rightVar) and $this->isTypedObject($var)) {
                         $leftClass = $this->getObjectType($var);
                         $rightClass = $this->getObjectType($rightVar);
@@ -247,7 +249,8 @@ trait AssignOpTrait
                 }
                 // 变量第一次被赋值，确定其类型，由于 PHP 的变量作用域是 function 级的，在 for/while 块中声明的变量，可以在块外使用
                 if (!$this->hasVar($var)) {
-                    $finalVarType = $this->isNativeType($type) ? $this->getNativeType($type) : $type;
+                    $finalVarType = $this->getNormalAssignType($type);
+                    $finalVarType = $this->isNativeType($finalVarType) ? $this->getNativeType($finalVarType) : $finalVarType;
                     $this->addLocalVar($var, $finalVarType);
                 } else {
                     $finalVarType = $this->getVarType($var);
@@ -597,9 +600,14 @@ trait AssignOpTrait
             $this->errorUndefinedVariable($expr->expr);
         }
         if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
-            $this->addLocalVar($var, $this->detectTypeOfExpr($expr->expr));
+            $this->addLocalVar($var, $this->getNormalAssignType($this->detectTypeOfExpr($expr->expr)));
         }
         return '(' . $isset . '?' . $var . ':(' . $var . ' = ' . $right . '))';
+    }
+
+    protected function getNormalAssignType(string $type): string
+    {
+        return $type === self::TYPE_REF || $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
     }
 
 }
