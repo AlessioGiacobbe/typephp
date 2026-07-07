@@ -196,6 +196,9 @@ trait FuncCallOptimizer
     protected function parseFuncCallWithOptimizer(string $name, Node\Expr\FuncCall $expr): string|false
     {
         foreach ($expr->args as $arg) {
+            if ($this->isPlaceholderExpr($arg)) {
+                return false;
+            }
             if ($arg instanceof Node\Arg && $arg->name !== null) {
                 return false;
             }
@@ -209,6 +212,9 @@ trait FuncCallOptimizer
         // 检测参数中使用的变量是否已定义，若变量不存在则回退到动态调用路径
         // 动态路径中的 parseCallArgs() 会给出明确的错误信息
         foreach ($expr->args as $arg) {
+            if (!$arg instanceof Node\Arg) {
+                continue;
+            }
             if ($this->isVarExpr($arg->value) && is_string($arg->value->name) && !$this->hasVar($arg->value->name)) {
                 return false;
             }
