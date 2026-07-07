@@ -3358,15 +3358,22 @@ CODE;
     {
         // Child methods may omit parameter types (contravariance — accepting a
         // wider set of inputs is always compatible with the parent contract).
-        if ($childArg->undeclared || $childArg->type === self::TYPE_VAR) {
+        if ($this->isTopParameterType($childArg)) {
             return true;
         }
-        if ($parentArg->undeclared || $parentArg->type === self::TYPE_VAR) {
+        if ($this->isTopParameterType($parentArg)) {
             return false;
         }
-        if ($parentArg->typeCheck || $childArg->typeCheck) {
-            return $parentArg->typeStr === $childArg->typeStr;
+
+        $parentAcceptedTypes = $this->getParameterAcceptedTypes($parentArg);
+        $childAcceptedTypes = $this->getParameterAcceptedTypes($childArg);
+        if ($parentAcceptedTypes !== null || $childAcceptedTypes !== null) {
+            if ($parentAcceptedTypes === null || $childAcceptedTypes === null) {
+                return false;
+            }
+            return $this->isAcceptedTypeSubset($parentAcceptedTypes, $childAcceptedTypes);
         }
+
         if ($childArg->type !== $parentArg->type) {
             return false;
         }
@@ -3380,6 +3387,82 @@ CODE;
             return false;
         }
         return $this->isInheritedFrom($parentArg->class, $childArg->class);
+    }
+
+    private function isTopParameterType(ArgInfo $arg): bool
+    {
+        return $arg->undeclared || $arg->explicitMixed;
+    }
+
+    private function getParameterAcceptedTypes(ArgInfo $arg): ?array
+    {
+        if (!empty($arg->typeCheck)) {
+            return $arg->typeCheck;
+        }
+
+        return match ($arg->type) {
+            self::TYPE_INT => [['kind' => 'isInt']],
+            self::TYPE_FLOAT => [['kind' => 'isFloat']],
+            self::TYPE_BOOL => [['kind' => 'isBool']],
+            self::TYPE_STR => [['kind' => 'isString']],
+            self::TYPE_ARRAY => [['kind' => 'isArray']],
+            self::TYPE_RESOURCE => [['kind' => 'isResource']],
+            self::TYPE_OBJECT => $arg->class
+                ? [['kind' => 'instanceof', 'class' => $arg->class]]
+                : [['kind' => 'isObject']],
+            default => null,
+        };
+    }
+
+    private function isAcceptedTypeSubset(array $parentTypes, array $childTypes): bool
+    {
+        foreach ($parentTypes as $parentType) {
+            if (!$this->isAcceptedTypeCovered($parentType, $childTypes)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function isAcceptedTypeCovered(array $parentType, array $childTypes): bool
+    {
+        foreach ($childTypes as $childType) {
+            if ($this->isAcceptedTypeCompatible($parentType, $childType)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function isAcceptedTypeCompatible(array $parentType, array $childType): bool
+    {
+        $parentKind = $parentType['kind'] ?? null;
+        $childKind = $childType['kind'] ?? null;
+
+        if ($parentKind === 'instanceof' && $childKind === 'isObject') {
+            return true;
+        }
+        if ($parentKind !== $childKind) {
+            return false;
+        }
+
+        if ($parentKind === 'allOf') {
+            return $parentType == $childType;
+        }
+
+        if ($parentKind !== 'instanceof') {
+            return true;
+        }
+
+        $parentClass = $parentType['class'] ?? '';
+        $childClass = $childType['class'] ?? '';
+        if ($parentClass === $childClass) {
+            return true;
+        }
+        if ($parentClass === '' || $childClass === '') {
+            return false;
+        }
+        return $this->isInheritedFrom($parentClass, $childClass);
     }
 
     private function checkInterfaceImplementations(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void
