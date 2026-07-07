@@ -108,6 +108,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected const string NATIVE_PROPERTY_VALUE_VAR = 'var';
     protected const string NATIVE_PROPERTY_VALUE_DYNAMIC = 'dynamic';
     protected const string ATTR_ARRAY_DIM_FETCH_UPDATE = 'aotArrayDimFetchUpdate';
+    protected const string ATTR_PROPERTY_FETCH_UPDATE = 'aotPropertyFetchUpdate';
 
     /**
      * Keyword methods (to* builtins) with mandated return types.
@@ -628,7 +629,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             case 'Expr_ArrayDimFetch':
                 return $this->parseArrayDimFetch($expr);
             case 'Expr_PropertyFetch':
-                return $this->parsePropertyFetch($expr, $this->context->inAssignExpr);
+                return $this->parsePropertyFetch($expr);
             case 'Expr_NullsafePropertyFetch':
                 return $this->parseNullsafePropertyFetch($expr);
             case 'Expr_NullsafeMethodCall':
@@ -3018,11 +3019,26 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return $this->parseArrayDimFetchUpdate($expr);
         }
 
-        $oriInAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $code = $this->parseIdentifier($expr);
-        $this->context->inAssignExpr = $oriInAssignExpr;
-        return $code;
+        if ($expr instanceof Expr\PropertyFetch) {
+            return $this->parsePropertyFetchUpdate($expr);
+        }
+
+        if ($expr instanceof Expr\NullsafePropertyFetch) {
+            return $this->parseNullsafePropertyFetchUpdate($expr);
+        }
+
+        return $this->parseIdentifier($expr);
+    }
+
+    protected function parseNodeWithUpdateAttribute(NodeAbstract $node, string $attribute, bool $update, callable $parser): string
+    {
+        $attributes = $node->getAttributes();
+        $node->setAttribute($attribute, $update);
+        try {
+            return $parser();
+        } finally {
+            $node->setAttributes($attributes);
+        }
     }
 
     protected function parseArrayDimFetchRead(Expr\ArrayDimFetch $node): string
@@ -3037,13 +3053,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function parseArrayDimFetchWithUpdate(Expr\ArrayDimFetch $node, bool $update): string
     {
-        $attributes = $node->getAttributes();
-        $node->setAttribute(self::ATTR_ARRAY_DIM_FETCH_UPDATE, $update);
-        try {
-            return $this->parseArrayDimFetch($node);
-        } finally {
-            $node->setAttributes($attributes);
-        }
+        return $this->parseNodeWithUpdateAttribute(
+            $node,
+            self::ATTR_ARRAY_DIM_FETCH_UPDATE,
+            $update,
+            fn() => $this->parseArrayDimFetch($node)
+        );
     }
 
     protected function isArrayDimFetchUpdate(Expr\ArrayDimFetch $node): bool
@@ -3061,9 +3076,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return $this->parseStdContainerDimFetch($node);
         }
 
-        $var = $write && $node->var instanceof Expr\ArrayDimFetch
-            ? $this->parseArrayDimFetchUpdate($node->var)
-            : $this->parseIdentifier($node->var);
+        $var = $write ? $this->parseWritableIdentifier($node->var) : $this->parseIdentifier($node->var);
         if ($this->isVarExpr($node->var)) {
             if ($var === 'GLOBALS') {
                 return $this->parseGlobalsArrayDimFetch($node);
@@ -3094,10 +3107,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 return $var . '.newItem()';
             }
         } else {
-            $oriInAssignExpr = $this->context->inAssignExpr;
-            $this->context->inAssignExpr = false;
             $dim = $this->parseIdentifier($node->dim);
-            $this->context->inAssignExpr = $oriInAssignExpr;
             return $var . '.item(' . $dim . ', ' . $this->escapeBool($write) . ')';
         }
     }
@@ -5124,12 +5134,38 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return null;
     }
 
-    protected function parsePropertyFetch(Expr\PropertyFetch $expr, bool $update = false): string
+    protected function parsePropertyFetchRead(Expr\PropertyFetch $expr): string
     {
+        return $this->parsePropertyFetchWithUpdate($expr, false);
+    }
+
+    protected function parsePropertyFetchUpdate(Expr\PropertyFetch $expr): string
+    {
+        return $this->parsePropertyFetchWithUpdate($expr, true);
+    }
+
+    protected function parsePropertyFetchWithUpdate(Expr\PropertyFetch $expr, bool $update): string
+    {
+        return $this->parseNodeWithUpdateAttribute(
+            $expr,
+            self::ATTR_PROPERTY_FETCH_UPDATE,
+            $update,
+            fn() => $this->parsePropertyFetch($expr)
+        );
+    }
+
+    protected function isPropertyFetchUpdate(Expr\PropertyFetch|Expr\NullsafePropertyFetch $expr): bool
+    {
+        return $expr->getAttribute(self::ATTR_PROPERTY_FETCH_UPDATE, false) === true;
+    }
+
+    protected function parsePropertyFetch(Expr\PropertyFetch $expr): string
+    {
+        $update = $this->isPropertyFetchUpdate($expr);
         $object = $expr->var;
         $property = $expr->name;
         $id = $this->getPropertyIdentifier($expr, $object, $property);
-        $objectName = $this->parseIdentifier($object);
+        $objectName = $update ? $this->parseWritableIdentifier($object) : $this->parseIdentifier($object);
         if ($this->isVarExpr($object) and !$this->hasVar($objectName)) {
             $this->errorUndefinedVariable($object);
         }
@@ -7460,6 +7496,16 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return $this->parseNullsafeExpr($expr);
     }
 
+    protected function parseNullsafePropertyFetchUpdate(Expr\NullsafePropertyFetch $expr): string
+    {
+        return $this->parseNodeWithUpdateAttribute(
+            $expr,
+            self::ATTR_PROPERTY_FETCH_UPDATE,
+            true,
+            fn() => $this->parseNullsafePropertyFetch($expr)
+        );
+    }
+
     protected function parseNullsafeMethodCall(Expr\NullsafeMethodCall $expr): string
     {
         return $this->parseNullsafeExpr($expr);
@@ -7500,12 +7546,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $tmpFn = $this->genTmpVarName();
 
         $code = $comment . PHP_EOL . 'auto ' . $tmpFn . ' = [&]() -> ' . self::TYPE_VAR . '{' . PHP_EOL;
-        $update = $this->escapeBool($this->context->inAssignExpr);
 
         foreach ($list as $key => $item) {
             $tmpVar = $this->addTmpVar($key !== $last ? self::TYPE_OBJECT : self::TYPE_VAR);
             $code .= "if ({$object}.isNull()) { return " . self::VALUE_NULL . '; }';
             if ($item[0] == 'property') {
+                $update = $this->escapeBool($this->isPropertyFetchUpdate($item[2]));
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
             } else {
                 $beforeStmtCount = count($this->context->beforeStmtLines);

@@ -59,10 +59,6 @@ class FunctionContext
     /** True if any continue N (N > 1) appears in this function. */
     public bool $hasMultiLevelContinue = false;
 
-    /**
-     * 赋值表达式的左值，写操作，右值为读操作.
-     */
-    public bool $inAssignExpr = false;
     public array $beforeStmtLines = [];
     public array $afterStmtLines = [];
     public array $objectProps;
@@ -96,7 +92,6 @@ class FunctionContext
         $this->inClosure = false;
         $this->closureReturnTypeCheck = null;
         $this->closureReturnTypeStr = '';
-        $this->inAssignExpr = false;
     }
 
     public function enterScope(): void
@@ -123,6 +118,5 @@ class FunctionContext
         $this->scopeLayouts = [];
         $this->scopeLevel = 0;
         $this->inLoop = false;
-        $this->inAssignExpr = false;
     }
 }
