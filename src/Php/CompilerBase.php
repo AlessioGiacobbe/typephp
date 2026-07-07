@@ -5384,13 +5384,37 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             }
         }
 
-        $iteratorVar = $this->genTmpVarName();
-
         $code = '';
         $expr = $this->parseIdentifier($node->expr);
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= self::TYPE_ARRAY . " {$iteratorVar} = " . $expr . ';' . PHP_EOL;
-        $code .= $this->parseForeachArray($node, $iteratorVar);
+
+        $iterableVar = $this->genTmpVarName();
+        $arrayVar = $this->genTmpVarName();
+        $objectVar = $this->genTmpVarName();
+        $this->addLocalVar($iterableVar, self::TYPE_VAR);
+        $this->addLocalVar($arrayVar, self::TYPE_ARRAY);
+        $this->addLocalVar($objectVar, self::TYPE_OBJECT);
+
+        $code .= $iterableVar . ' = ' . $expr . ';' . PHP_EOL;
+        $code .= 'if (' . $iterableVar . '.isArray()) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $arrayVar . ' = ' . $iterableVar . ';' . PHP_EOL;
+        $code .= $this->parseForeachArray($node, $arrayVar) . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '} else if (' . $iterableVar . '.isObject()) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $objectVar . ' = ' . $iterableVar . ';' . PHP_EOL;
+        if ($node->byRef) {
+            $code .= $this->getIndent() . 'php::throwException(zend_ce_error, "Cannot use & with foreach");' . PHP_EOL;
+        } else {
+            $code .= $this->parseForeachObject($node, $objectVar);
+        }
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '} else {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, "foreach() argument must be of type array|object");' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}';
 
         return $code;
     }

@@ -52,7 +52,6 @@
 - `match` 的 arm condition 不能是 `match` 表达式。
 - `foreach` by reference 的 value 只能是变量。
 - `foreach` by reference 不支持 list destructuring。
-- `foreach` 遍历 `IteratorAggregate` 返回的 `ArrayObject` 时，当前行为与标准 PHP 不完全一致。
 - 固定 native typed object property 不允许按 PHP 未初始化语义自由 `unset()`。
 - native 类型变量执行 `unset()` 不会产生标准 PHP 的变量删除语义。
 

@@ -1,7 +1,5 @@
 --TEST--
 Symfony pattern: anonymous IteratorAggregate with cached ??= ArrayObject
---XFAIL--
-Known AOT bug: foreach over ArrayObject returned from IteratorAggregate can call ArrayObject::rewind() directly.
 --FILE--
 <?php
 

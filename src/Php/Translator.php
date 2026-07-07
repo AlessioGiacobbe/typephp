@@ -3796,11 +3796,17 @@ CODE;
             $existing->default === $incoming->default;
     }
 
-    protected function parseForeachObject(Foreach_ $node): string
+    protected function parseForeachObject(Foreach_ $node, ?string $objectExpr = null): string
     {
-        $obj = $this->parseIdentifier($node->expr);
-        $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_OBJECT);
+        $obj = $objectExpr ?? $this->parseIdentifier($node->expr);
+        $iterableVar = $this->genTmpVarName();
+        $this->addLocalVar($iterableVar, self::TYPE_VAR);
+
+        $iteratorObj = $this->genTmpVarName();
+        $this->addLocalVar($iteratorObj, self::TYPE_OBJECT);
+
+        $aggregateObj = $this->genTmpVarName();
+        $this->addLocalVar($aggregateObj, self::TYPE_OBJECT);
 
         $tmpArrayVar = $this->genTmpVarName();
         $this->addLocalVar($tmpArrayVar, self::TYPE_ARRAY);
@@ -3813,25 +3819,52 @@ CODE;
         $keyStr = $this->getLiteralString('key');
         $nextStr = $this->getLiteralString('next');
         $rewindStr = $this->getLiteralString('rewind');
+        $invalidAggregateReturn = static function (string $aggregateObj): string {
+            return 'php::throwException(zend_ce_exception, (php::concat({'
+                . 'php::Str("Objects returned by "), '
+                . $aggregateObj . '.getClassName(), '
+                . 'php::Str("::getIterator() must be traversable or implement interface Iterator")'
+                . '})).toCString());';
+        };
 
-        $code = 'if (' . $obj . '.instanceOf(' . $IteratorAggregateCe . ')) {' . PHP_EOL;
-        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . '.call(' . $getIteratorStr . ');' . PHP_EOL . '}' . PHP_EOL;
-        $code .= 'else if (' . $obj . '.instanceOf(' . $IteratorCe . ')) {' . PHP_EOL;
-        $code .= $this->getIndent() . $tmpVar . ' = ' . $obj . ';' . PHP_EOL . '}' . PHP_EOL;
+        $code = $iterableVar . ' = ' . $obj . ';' . PHP_EOL;
+        $code .= $iteratorObj . ' = ' . $iterableVar . ';' . PHP_EOL;
+        $code .= 'if (' . $iteratorObj . '.instanceOf(' . $IteratorAggregateCe . ')) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'do {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $aggregateObj . ' = ' . $iteratorObj . ';' . PHP_EOL;
+        $code .= $this->getIndent() . $iterableVar . ' = ' . $aggregateObj . '.call(' . $getIteratorStr . ');' . PHP_EOL;
+        $code .= $this->getIndent() . 'if (UNEXPECTED(!' . $iterableVar . '.isObject())) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $invalidAggregateReturn($aggregateObj) . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $code .= $this->getIndent() . $iteratorObj . ' = ' . $iterableVar . ';' . PHP_EOL;
+        $code .= $this->getIndent() . 'if (UNEXPECTED(!' . $iteratorObj . '.instanceOf(' . $IteratorCe . ') && !' . $iteratorObj . '.instanceOf(' . $IteratorAggregateCe . '))) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $invalidAggregateReturn($aggregateObj) . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '} while (' . $iteratorObj . '.instanceOf(' . $IteratorAggregateCe . '));' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
 
-        $code .= 'if (' . $tmpVar . ') {' . PHP_EOL;
+        $code .= 'if (' . $iteratorObj . '.instanceOf(' . $IteratorCe . ')) {' . PHP_EOL;
 
         $this->indentLevel++;
-        $code .= $this->getIndent() . $tmpVar . '.call(' . $rewindStr . ');' . PHP_EOL;
-        $code .= $this->getIndent() . 'for (;' . $tmpVar . '.call(' . $validStr . ');  ' . $tmpVar . '.call(' . $nextStr . ')) {' . PHP_EOL;
+        $code .= $this->getIndent() . $iteratorObj . '.call(' . $rewindStr . ');' . PHP_EOL;
+        $code .= $this->getIndent() . 'for (;' . $iteratorObj . '.call(' . $validStr . ');  ' . $iteratorObj . '.call(' . $nextStr . ')) {' . PHP_EOL;
         $this->indentLevel++;
 
-        $code .= $this->parseForeachKeyAssignment($node, $tmpVar . '.call(' . $keyStr . ')');
-        $code .= $this->parseForeachValueAssignment($node, $tmpVar . '.call(' . $currentStr . ')');
+        $code .= $this->parseForeachKeyAssignment($node, $iteratorObj . '.call(' . $keyStr . ')');
+        $code .= $this->parseForeachValueAssignment($node, $iteratorObj . '.call(' . $currentStr . ')');
         $code .= $this->parseForeachBody($node);
         $code .= '}' . PHP_EOL;
         $this->indentLevel--;
         $code .= $this->getIndent() . '} else {' . PHP_EOL;
+        $this->indentLevel++;
         $code .= $this->getIndent() . $tmpArrayVar . ' = php::call(' . $this->getFuncPtr('get_object_vars') . ', {' . $obj . '});' . PHP_EOL;
         $code .= $this->parseForeachArray($node, $tmpArrayVar);
         $this->indentLevel--;
