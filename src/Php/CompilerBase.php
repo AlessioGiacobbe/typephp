@@ -5141,6 +5141,14 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 continue;
             }
             if ($item instanceof ArrayItem) {
+                $key = $item->key ? $this->parseArrayKey($item->key) : (string) $k;
+                if ($item->value instanceof Expr\List_) {
+                    $nestedTmpVar = $this->genTmpVarName();
+                    $this->addLocalVar($nestedTmpVar, self::TYPE_VAR);
+                    $code .= $this->getIndent() . ' ' . $nestedTmpVar . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
+                    $code .= $this->parseForeachItemAsList($nestedTmpVar, $item->value->items);
+                    continue;
+                }
                 $oriInAssignExpr = $this->context->inAssignExpr;
                 $this->context->inAssignExpr = true;
                 $var = $this->parseIdentifier($item->value);
@@ -5148,7 +5156,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
                     $this->addLocalVar($var, self::TYPE_VAR);
                 }
-                $code .= $this->getIndent() . ' ' . $var . ' = ' . $listTmpVar . '.item(' . $k . ');' . PHP_EOL;
+                $code .= $this->getIndent() . ' ' . $var . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
             } else {
                 $this->fatalError($item, 'Unsupported foreach item type');
             }
@@ -5319,21 +5327,24 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
         $code = 'do {' . PHP_EOL;
         $this->indentLevel++;
+        $switchTarget = $this->genTmpVarName();
         $switchMatched = $this->genTmpVarName();
+        $code .= $this->getIndent() . 'int ' . $switchTarget . ' = -1;' . PHP_EOL;
         $code .= $this->getIndent() . 'bool ' . $switchMatched . ' = false;' . PHP_EOL;
         $caseConds = [];
+        $caseGroups = [];
+        $hasDefault = false;
+        $defaultTarget = null;
         foreach ($v->cases as $case) {
             if (empty($case->cond)) {
-                $isDefault = true;
+                $hasDefault = true;
             } else {
-                $isDefault = false;
                 $caseConds[] = $case->cond;
             }
             $stmts = $case->stmts;
             if (empty($stmts)) {
                 continue;
             }
-            $this->indentLevel++;
             if (count($stmts) === 1 and $stmts[0] instanceof Node\Stmt\Block) {
                 $stmts = $stmts[0]->stmts;
             }
@@ -5345,13 +5356,20 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             ) {
                 $this->fatalError($case, 'switch case must end with return/break/exit/throw, ' . $lastExpr->getType() . ' given');
             }
+            $target = count($caseGroups);
+            if ($hasDefault) {
+                $defaultTarget = $target;
+            }
+            $caseGroups[] = [$caseConds, $hasDefault, $stmts];
+            $caseConds = [];
+            $hasDefault = false;
+        }
 
-            if ($isDefault) {
-                $code .= $this->getIndent() . 'if (!' . $switchMatched . ') {' . PHP_EOL;
-            } else {
+        foreach ($caseGroups as $target => [$conds]) {
+            if (!empty($conds)) {
                 $groupMatched = $this->genTmpVarName();
                 $code .= $this->getIndent() . 'bool ' . $groupMatched . ' = false;' . PHP_EOL;
-                foreach ($caseConds as $caseCond) {
+                foreach ($conds as $caseCond) {
                     $this->assertExprCanBeUsedAsValue($caseCond, 'switch case condition');
                     $caseBeforeStmtCount = count($this->context->beforeStmtLines);
                     $caseAfterStmtCount = count($this->context->afterStmtLines);
@@ -5374,12 +5392,30 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 }
                 $code .= $this->getIndent() . 'if (' . $groupMatched . ') {' . PHP_EOL;
                 $code .= $this->getIndent() . $switchMatched . ' = true;' . PHP_EOL;
-                $caseConds = [];
+                $code .= $this->getIndent() . $switchTarget . ' = ' . $target . ';' . PHP_EOL;
+                $code .= $this->getIndent() . '}' . PHP_EOL;
             }
+        }
+        if ($defaultTarget !== null) {
+            $code .= $this->getIndent() . 'if (!' . $switchMatched . ') {' . PHP_EOL;
+            $code .= $this->getIndent() . $switchTarget . ' = ' . $defaultTarget . ';' . PHP_EOL;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        }
 
+        foreach ($caseGroups as $target => [, , $stmts]) {
+            $code .= $this->getIndent() . 'if (' . $switchTarget . ' == ' . $target . ') {' . PHP_EOL;
+            $this->indentLevel++;
             $code .= $this->parseStmts($stmts);
             $this->indentLevel--;
             $code .= $this->getIndent() . '}' . PHP_EOL;
+        }
+        if (!empty($caseConds) || $hasDefault) {
+            // PHP allows a trailing label without statements; it has no code to execute.
+            if ($hasDefault && $defaultTarget === null) {
+                $code .= $this->getIndent() . 'if (!' . $switchMatched . ') {' . PHP_EOL;
+                $code .= $this->getIndent() . $switchTarget . ' = -1;' . PHP_EOL;
+                $code .= $this->getIndent() . '}' . PHP_EOL;
+            }
         }
         $code .= $this->genLoopEndFlagCheck();
         $this->indentLevel--;
@@ -6476,7 +6512,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return $code;
     }
 
-    protected function injectFinallyBeforeReturn(array $stmts, array $finallyStmts): array
+    protected function injectFinallyBeforeReturn(array $stmts, array $finallyStmts, int $localControlDepth = 0): array
     {
         $result = [];
         foreach ($stmts as $stmt) {
@@ -6493,24 +6529,39 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 continue;
             }
 
-            $result[] = $this->injectFinallyBeforeReturnInStmt($stmt, $finallyStmts);
+            if ($stmt instanceof Node\Stmt\Break_ || $stmt instanceof Node\Stmt\Continue_) {
+                $level = $stmt->num instanceof Node\Scalar\Int_ ? $stmt->num->value : 1;
+                if ($level > $localControlDepth) {
+                    array_push($result, ...$this->cloneStmtList($finallyStmts));
+                }
+                $result[] = $stmt;
+                continue;
+            }
+
+            if ($stmt instanceof Node\Stmt\Goto_) {
+                array_push($result, ...$this->cloneStmtList($finallyStmts));
+                $result[] = $stmt;
+                continue;
+            }
+
+            $result[] = $this->injectFinallyBeforeReturnInStmt($stmt, $finallyStmts, $localControlDepth);
         }
         return $result;
     }
 
-    protected function injectFinallyBeforeReturnInStmt(Node\Stmt $stmt, array $finallyStmts): Node\Stmt
+    protected function injectFinallyBeforeReturnInStmt(Node\Stmt $stmt, array $finallyStmts, int $localControlDepth): Node\Stmt
     {
         if ($stmt instanceof Node\Stmt\If_) {
             $stmt = clone $stmt;
-            $stmt->stmts = $this->injectFinallyBeforeReturn($stmt->stmts, $finallyStmts);
+            $stmt->stmts = $this->injectFinallyBeforeReturn($stmt->stmts, $finallyStmts, $localControlDepth);
             foreach ($stmt->elseifs as $index => $elseIf) {
                 $elseIf = clone $elseIf;
-                $elseIf->stmts = $this->injectFinallyBeforeReturn($elseIf->stmts, $finallyStmts);
+                $elseIf->stmts = $this->injectFinallyBeforeReturn($elseIf->stmts, $finallyStmts, $localControlDepth);
                 $stmt->elseifs[$index] = $elseIf;
             }
             if ($stmt->else) {
                 $stmt->else = clone $stmt->else;
-                $stmt->else->stmts = $this->injectFinallyBeforeReturn($stmt->else->stmts, $finallyStmts);
+                $stmt->else->stmts = $this->injectFinallyBeforeReturn($stmt->else->stmts, $finallyStmts, $localControlDepth);
             }
             return $stmt;
         }
@@ -6521,7 +6572,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             || $stmt instanceof Node\Stmt\Do_
         ) {
             $stmt = clone $stmt;
-            $stmt->stmts = $this->injectFinallyBeforeReturn($stmt->stmts, $finallyStmts);
+            $stmt->stmts = $this->injectFinallyBeforeReturn($stmt->stmts, $finallyStmts, $localControlDepth + 1);
             return $stmt;
         }
 
@@ -6529,7 +6580,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $stmt = clone $stmt;
             foreach ($stmt->cases as $index => $case) {
                 $case = clone $case;
-                $case->stmts = $this->injectFinallyBeforeReturn($case->stmts, $finallyStmts);
+                $case->stmts = $this->injectFinallyBeforeReturn($case->stmts, $finallyStmts, $localControlDepth + 1);
                 $stmt->cases[$index] = $case;
             }
             return $stmt;

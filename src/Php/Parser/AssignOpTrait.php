@@ -118,10 +118,11 @@ trait AssignOpTrait
                 continue;
             }
             if ($item instanceof ArrayItem) {
+                $key = $item->key ? $this->parseArrayKey($item->key) : (string) $k;
                 if ($item->value instanceof Expr\List_) {
                     $nestedTmp = $this->genTmpVarName();
                     $this->addLocalVar($nestedTmp, self::TYPE_ARRAY);
-                    $code .= "{$nestedTmp} = {$tmpVar}.item({$k}); ";
+                    $code .= "{$nestedTmp} = {$tmpVar}.item({$key}); ";
                     $code .= $this->parseAssignToList($item->value, new Variable($nestedTmp));
                 } else {
                     $oriInAssignExpr = $this->context->inAssignExpr;
@@ -131,7 +132,7 @@ trait AssignOpTrait
                     if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
                         $this->addLocalVar($var, self::TYPE_VAR);
                     }
-                    $code .= "{$var} = {$tmpVar}.item({$k}); ";
+                    $code .= "{$var} = {$tmpVar}.item({$key}); ";
                 }
             } else {
                 abort($item);
