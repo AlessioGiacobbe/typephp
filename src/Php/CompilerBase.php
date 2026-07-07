@@ -6556,11 +6556,25 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $finally = $v->finally;
         $stmts = $finally ? $this->injectFinallyBeforeReturn($v->stmts, $finally->stmts) : $v->stmts;
 
+        $catches = $v->catches;
+
+        // Pre-register catch variables before parsing the try block so that
+        // injected finally code referencing catch variables (e.g. $e) does not
+        // trigger undefined-variable errors.
+        if ($finally) {
+            foreach ($catches as $catch) {
+                if ($catch->var) {
+                    $varName = $this->parseIdentifier($catch->var);
+                    if (!$this->hasVar($varName)) {
+                        $this->addLocalVar($varName, self::TYPE_OBJECT);
+                    }
+                }
+            }
+        }
+
         $code .= PHP_EOL;
         $code .= $this->parseBlockStmts($stmts);
         $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        $catches = $v->catches;
 
         $exVar = $this->genTmpVarName();
         $this->addLocalVar($exVar, self::TYPE_VAR);
@@ -6695,7 +6709,19 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $this->indentLevel++;
         $code .= $this->getIndent() . "{$exVar} = php::null;" . PHP_EOL;
         $stmts = $finallyStmts ? $this->injectFinallyBeforeReturn($catch->stmts, $finallyStmts) : $catch->stmts;
-        $code .= $this->parseStmts($stmts);
+        if ($finallyStmts) {
+            $code .= $this->getIndent() . 'try {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->parseStmts($stmts);
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '} catch(zend_object *_catch_throw_ex) {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . "{$exVar} = php::catchException();" . PHP_EOL;
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        } else {
+            $code .= $this->parseStmts($stmts);
+        }
         $this->indentLevel--;
         $code .= $this->getIndent() . '}';
 
