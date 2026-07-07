@@ -3686,6 +3686,13 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 $this->fatalError($arg, 'Cannot use positional argument after argument unpacking');
             }
             $byRef = $funcName && $this->isReferenceArgument($funcName, $className, $i);
+            if (($funcName === 'call_user_func' || $funcName === 'call_user_func_array') && $i === 0) {
+                $callback = $this->parseScopedCallbackArg($arg);
+                if ($callback !== null) {
+                    $this->addPositionalCallArg($callback, $arrayArgsVar, $list_args);
+                    continue;
+                }
+            }
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
                 if ($byRef) {
@@ -3769,6 +3776,46 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
         $callArgs = Symbol::argList() . '{' . implode(', ', $list_args) . '}';
         return $namedArgsVar !== null ? $callArgs . ', ' . $namedArgsVar . '.array()' : $callArgs;
+    }
+
+    protected function parseScopedCallbackArg(Node\Arg $arg): ?string
+    {
+        $value = $arg->value;
+        if (!$value instanceof Expr\Array_ || count($value->items) < 2 || !$this->methodDef) {
+            return null;
+        }
+
+        $first = $value->items[0];
+        if (!$first instanceof ArrayItem || $first->key !== null || $first->unpack) {
+            return null;
+        }
+        if (!$first->value instanceof Node\Scalar\String_) {
+            return null;
+        }
+
+        $scope = strtolower($first->value->value);
+        $classExpr = match ($scope) {
+            'static' => ($this->methodDef->flags & Modifiers::STATIC)
+                ? $this->getLiteralString($this->getFullClassName())
+                : Symbol::getCalledClass(),
+            'self' => $this->getLiteralString($this->getFullClassName()),
+            'parent' => $this->classDef->extends ? $this->getLiteralString($this->classDef->extends) : null,
+            default => null,
+        };
+        if ($classExpr === null) {
+            return null;
+        }
+
+        $items = [$classExpr];
+        foreach (array_slice($value->items, 1) as $item) {
+            if (!$item instanceof ArrayItem || $item->key !== null || $item->unpack) {
+                return null;
+            }
+            $this->assertExprCanBeUsedAsValue($item->value, 'callback array item');
+            $items[] = $this->parseIdentifier($item->value);
+        }
+
+        return $this->genArray($items);
     }
 
     protected function ensureCallArrayArgs(?string &$arrayArgsVar, array &$listArgs): string

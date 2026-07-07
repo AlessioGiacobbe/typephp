@@ -362,7 +362,7 @@ trait AssignOpTrait
                 if ($this->isArrayVar($node->var)) {
                     $this->fatalError($node->var, 'Cannot concat string to array');
                 }
-                return $var . '.append(' . $rightExprStr . ')';
+                return $var . ' = php::concat(' . $var . ', ' . $rightExprStr . ')';
             }
             if ($this->isAssignOpPow($op)) {
                 $powExpr = 'php::fn::pow(' . $var . ', ' . $rightExprStr . ')';
