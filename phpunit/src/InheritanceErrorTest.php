@@ -58,6 +58,16 @@ class InheritanceErrorTest extends TestCase
         $this->exec('must be compatible', 'inheritance_error_param_covariant_class.php');
     }
 
+    public function testUnionParameterCannotNarrowUntypedParent()
+    {
+        $this->exec('must be compatible', 'interface_param_union_narrows_untyped.php');
+    }
+
+    public function testUnionParameterCannotNarrowMixedParent()
+    {
+        $this->exec('must be compatible', 'interface_param_union_narrows_mixed.php');
+    }
+
     public function testByRefMismatch()
     {
         $this->exec('must be compatible', 'inheritance_error_byref.php');

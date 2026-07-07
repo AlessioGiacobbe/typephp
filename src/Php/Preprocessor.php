@@ -237,6 +237,14 @@ class Preprocessor extends CompilerBase
         $class = '';
         $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
         $argInfo->undeclared = $param->type === null;
+        if (
+            $param->type !== null
+            && !$param->type instanceof NullableType
+            && !$param->type instanceof UnionType
+            && !$param->type instanceof IntersectionType
+        ) {
+            $argInfo->explicitMixed = in_array(strtolower($this->parseIdentifier($param->type)), ['mixed', 'any'], true);
+        }
         if ($class and !$this->hasInterface($class) and !$this->isAbstractClass($class)) {
             $argInfo->class = $class;
         }

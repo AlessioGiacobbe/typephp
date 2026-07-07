@@ -25,6 +25,7 @@ class ArgInfo
     public bool $variadic = false;
     public bool $nullable = false;
     public bool $undeclared = false;
+    public bool $explicitMixed = false;
     public bool $property = false;
 
     /**
