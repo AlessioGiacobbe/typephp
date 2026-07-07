@@ -41,6 +41,15 @@ function reportFilePutContents(string $filename, string $content): void {
     getTranslator()->writeFile($filename, $content);
 }
 
+function getClassConstFetchClassName(Expr\ClassConstFetch $expr): string
+{
+    $className = $expr->class->toString();
+    if ($expr->class instanceof PhpParser\Node\Name\FullyQualified) {
+        return '\\' . $className;
+    }
+    return $className;
+}
+
 /**
  * @return FileInfo[]
  */
@@ -2339,7 +2348,7 @@ class EvaluatedValue
                 }
 
                 if ($expr instanceof Expr\ClassConstFetch) {
-                    $class = $expr->class->toString();
+                    $class = getClassConstFetchClassName($expr);
                     if ($class === 'self') {
                         $constName = ClassInfo::$currentClass . "::" . $expr->name->__toString();
                         if (isset($allConstInfos[$constName])) {
