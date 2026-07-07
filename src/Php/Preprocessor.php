@@ -114,6 +114,7 @@ class Preprocessor extends CompilerBase
             $traverser = new NodeTraverser();
             $traverser->addVisitor(new Visitor());
             $stmts = $traverser->traverse($ast);
+            $this->validateUnsupportedAttributeArguments($stmts);
 
             foreach ($stmts as $v) {
                 $type = $v->getType();
@@ -154,6 +155,26 @@ class Preprocessor extends CompilerBase
             }
         } finally {
             $this->restoreCompilerPhase($previousPhase);
+        }
+    }
+
+    /**
+     * @param array<Node> $stmts
+     */
+    private function validateUnsupportedAttributeArguments(array $stmts): void
+    {
+        $nodeFinder = new NodeFinder();
+        $attributes = $nodeFinder->findInstanceOf($stmts, Node\Attribute::class);
+
+        foreach ($attributes as $attribute) {
+            foreach ($attribute->args as $arg) {
+                if ($arg->value instanceof Node\Expr\Array_ && count($arg->value->items) > 0) {
+                    $this->fatalError($arg, 'Array arguments to attributes are not supported');
+                }
+                if ($arg->value instanceof Node\Expr\New_) {
+                    $this->fatalError($arg, 'New expressions in attribute arguments are not supported');
+                }
+            }
         }
     }
 

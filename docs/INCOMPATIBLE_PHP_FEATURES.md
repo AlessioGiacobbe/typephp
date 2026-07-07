@@ -22,7 +22,7 @@
 - 不支持引用可变参数 `&...$args`。
 - 联合类型、交叉类型、`nullable` 类型在静态编译阶段按 `mixed/any` 处理，只保留运行时 type check。
 - 局部变量类型一旦被静态推断为具体 native 类型，不支持在同一作用域内重新赋值为不兼容类型。
-- attribute 参数不支持数组值。
+- attribute 参数不支持数组值和 `new` 表达式。
 
 ## declare
 

@@ -385,6 +385,24 @@ class PreprocessorTest extends TestCase
         $this->compiler->prepareFile($file);
     }
 
+    public function testPrepareFileRejectsAttributeArrayArguments(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Array arguments to attributes are not supported');
+
+        $file = __DIR__ . '/../code/preprocessor/attribute_array_argument.php';
+        $this->compiler->prepareFile($file);
+    }
+
+    public function testPrepareFileRejectsAttributeNewExpressionArguments(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('New expressions in attribute arguments are not supported');
+
+        $file = __DIR__ . '/../code/preprocessor/attribute_new_expression_argument.php';
+        $this->compiler->prepareFile($file);
+    }
+
     public function testIntersectionParamDeclFallsBackToVarWithRuntimeCheck(): void
     {
         $fn = $this->parseFunctionNode('<?php interface A {} interface B {} function demo(A&B $value): void {}');
