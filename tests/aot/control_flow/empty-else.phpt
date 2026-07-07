@@ -1,5 +1,5 @@
 --TEST--
-empty else
+empty else with comments
 --FILE--
 <?php
 function main() {

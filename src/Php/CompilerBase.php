@@ -4203,7 +4203,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parseIfChain(array $arms, ?Node\Stmt\Else_ $else, int $index): string
     {
         if (!isset($arms[$index])) {
-            if (!$else || (count($else->stmts) == 1 && $else->stmts[0] instanceof Node\Stmt\Nop)) {
+            if (!$else || $this->isEmptyStmtList($else->stmts)) {
                 return '';
             }
             return $this->parseBlockStmts($else->stmts);
@@ -4219,6 +4219,16 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
         $code .= $this->getIndent() . '}';
         return $code;
+    }
+
+    protected function isEmptyStmtList(array $stmts): bool
+    {
+        foreach ($stmts as $stmt) {
+            if (!$stmt instanceof Node\Stmt\Nop) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
