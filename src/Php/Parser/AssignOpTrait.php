@@ -29,10 +29,7 @@ trait AssignOpTrait
             $this->addLocalVar($tmp, self::TYPE_VAR);
             return '((' . $tmp . ' = ' . $value . ', ' . $target . ' = ' . $tmp . '), ' . $tmp . ')';
         }
-        $oriInAssignExpr    = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $array              = $this->parseIdentifier($left->var);
-        $this->context->inAssignExpr = $oriInAssignExpr;
+        $array              = $this->parseWritableIdentifier($left->var);
         $code               = '';
         if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
             $this->addLocalVar($array, self::TYPE_ARRAY);
@@ -125,10 +122,7 @@ trait AssignOpTrait
                     $code .= "{$nestedTmp} = {$tmpVar}.item({$key}); ";
                     $code .= $this->parseAssignToList($item->value, new Variable($nestedTmp));
                 } else {
-                    $oriInAssignExpr = $this->context->inAssignExpr;
-                    $this->context->inAssignExpr = true;
-                    $var = $this->parseIdentifier($item->value);
-                    $this->context->inAssignExpr = $oriInAssignExpr;
+                    $var = $this->parseWritableIdentifier($item->value);
                     if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
                         $this->addLocalVar($var, self::TYPE_VAR);
                     }
@@ -157,10 +151,7 @@ trait AssignOpTrait
         }
 
         if ($this->isVarExpr($left)) {
-            $oriInAssignExpr = $this->context->inAssignExpr;
-            $this->context->inAssignExpr = true;
-            $var = $this->parseIdentifier($left);
-            $this->context->inAssignExpr = $oriInAssignExpr;
+            $var = $this->parseWritableIdentifier($left);
             if ($var === 'this_') {
                 $this->fatalError($left, 'Cannot re-assign $this');
             }
@@ -282,10 +273,7 @@ trait AssignOpTrait
             $this->assertCanAssignPropertyWrite($propertyWriteTarget, $right);
         }
 
-        $oriInAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $var = $this->parseIdentifier($left);
-        $this->context->inAssignExpr = $oriInAssignExpr;
+        $var = $this->parseWritableIdentifier($left);
         $rightExpr = $this->parseAssignRightExpr($right);
         if ($propertyWriteTarget !== null) {
             $rightExpr = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $right, $rightExpr);
@@ -334,10 +322,7 @@ trait AssignOpTrait
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
         $this->assertNotNullsafeWriteContext($node->var);
-        $oriInAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $var          = $this->parseIdentifier($node->var);
-        $this->context->inAssignExpr = $oriInAssignExpr;
+        $var          = $this->parseWritableIdentifier($node->var);
         $expr         = $this->parseIdentifier($node->expr);
         $propertyWriteTarget = $this->preparePropertyWriteTarget($node->var);
         $this->guardLiteralDivisionByZero($node->expr, $op);
@@ -386,7 +371,7 @@ trait AssignOpTrait
             $tmpVar    = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, $rightType);
             $dim      = $this->parseIdentifier($node->var->dim);
-            $readVar  = $this->parseArrayDimFetch($node->var, false);
+            $readVar  = $this->parseArrayDimFetchRead($node->var);
             $binaryOp = $this->removeAssignOp($op);
 
             if ($binaryOp === '.') {
@@ -512,10 +497,7 @@ trait AssignOpTrait
 
     protected function parseArrayDimStore($array, $dim, $var): string
     {
-        $oriInAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $id = $this->parseIdentifier($array);
-        $this->context->inAssignExpr = $oriInAssignExpr;
+        $id = $this->parseWritableIdentifier($array);
 
         return $id . '.offsetSet(' . $dim . ', ' . $var . ')';
     }
@@ -542,9 +524,7 @@ trait AssignOpTrait
             $this->fatalError($expr->expr, 'Cannot take reference of a nullsafe chain');
         }
 
-        $this->context->inAssignExpr = true;
-        $left = $this->parseIdentifier($expr->var);
-        $this->context->inAssignExpr = false;
+        $left = $this->parseWritableIdentifier($expr->var);
 
         if ($this->isVarExpr($expr->var)) {
             if (!$this->hasVar($left)) {
@@ -567,7 +547,7 @@ trait AssignOpTrait
             $rightExpr = $tmpVar . ' = ' . $this->emitDynamicPropertyFetchRef($expr->expr, $expr);
         } elseif ($this->isArrayDimFetch($expr->expr)) {
             $left = $this->parseIdentifier($expr->var);
-            $array = $this->parseIdentifier($expr->expr->var);
+            $array = $this->parseWritableIdentifier($expr->expr->var);
             if ($expr->expr->dim == null) {
                 $this->fatalError($expr, 'Cannot assign reference to array dim fetch without dim');
             }
@@ -602,10 +582,7 @@ trait AssignOpTrait
         $this->checkLeftValue($expr->var);
         $isset = $this->parseChainedExpr($expr->var, self::OP_ISSET);
 
-        $inAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-        $var = $this->parseIdentifier($expr->var);
-        $this->context->inAssignExpr = $inAssignExpr;
+        $var = $this->parseWritableIdentifier($expr->var);
         $propertyWriteTarget = $this->preparePropertyWriteTarget($expr->var);
 
         if ($propertyWriteTarget !== null) {

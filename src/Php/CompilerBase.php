@@ -107,6 +107,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected const string NATIVE_PROPERTY_VALUE_VAR = 'var';
     protected const string NATIVE_PROPERTY_VALUE_DYNAMIC = 'dynamic';
+    protected const string ATTR_ARRAY_DIM_FETCH_UPDATE = 'aotArrayDimFetchUpdate';
 
     /**
      * Keyword methods (to* builtins) with mandated return types.
@@ -625,7 +626,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             case 'Expr_Array':
                 return $this->parseArray($expr);
             case 'Expr_ArrayDimFetch':
-                return $this->parseArrayDimFetch($expr, $this->context->inAssignExpr);
+                return $this->parseArrayDimFetch($expr);
             case 'Expr_PropertyFetch':
                 return $this->parsePropertyFetch($expr, $this->context->inAssignExpr);
             case 'Expr_NullsafePropertyFetch':
@@ -2933,12 +2934,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parsePreInc(Expr\PreInc $expr): string
     {
         $this->assertNotNullsafeWriteContext($expr->var);
-        $oriInAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-
         $result = $this->genDynamicPropIncDec($expr->var, '+', true);
         if ($result !== null) {
-            $this->context->inAssignExpr = $oriInAssignExpr;
             return $result;
         }
 
@@ -2946,8 +2943,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use ++ on ' . $type . '. Use += 1 instead (Big* types are immutable).');
         }
-        $result = '++' . $this->parseIdentifier($expr->var);
-        $this->context->inAssignExpr = $oriInAssignExpr;
+        $result = '++' . $this->parseWritableIdentifier($expr->var);
         return $result;
     }
 
@@ -3016,8 +3012,48 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
     }
 
-    protected function parseArrayDimFetch(Expr\ArrayDimFetch $node, bool $write): string
+    protected function parseWritableIdentifier(NodeAbstract $expr): string
     {
+        if ($expr instanceof Expr\ArrayDimFetch) {
+            return $this->parseArrayDimFetchUpdate($expr);
+        }
+
+        $oriInAssignExpr = $this->context->inAssignExpr;
+        $this->context->inAssignExpr = true;
+        $code = $this->parseIdentifier($expr);
+        $this->context->inAssignExpr = $oriInAssignExpr;
+        return $code;
+    }
+
+    protected function parseArrayDimFetchRead(Expr\ArrayDimFetch $node): string
+    {
+        return $this->parseArrayDimFetchWithUpdate($node, false);
+    }
+
+    protected function parseArrayDimFetchUpdate(Expr\ArrayDimFetch $node): string
+    {
+        return $this->parseArrayDimFetchWithUpdate($node, true);
+    }
+
+    protected function parseArrayDimFetchWithUpdate(Expr\ArrayDimFetch $node, bool $update): string
+    {
+        $attributes = $node->getAttributes();
+        $node->setAttribute(self::ATTR_ARRAY_DIM_FETCH_UPDATE, $update);
+        try {
+            return $this->parseArrayDimFetch($node);
+        } finally {
+            $node->setAttributes($attributes);
+        }
+    }
+
+    protected function isArrayDimFetchUpdate(Expr\ArrayDimFetch $node): bool
+    {
+        return $node->getAttribute(self::ATTR_ARRAY_DIM_FETCH_UPDATE, false) === true;
+    }
+
+    protected function parseArrayDimFetch(Expr\ArrayDimFetch $node): string
+    {
+        $write = $this->isArrayDimFetchUpdate($node);
         if ($this->isStdContainerExpr($node)) {
             if ($write && $node->dim === null) {
                 return $this->parseIdentifier($node->var);
@@ -3025,7 +3061,9 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return $this->parseStdContainerDimFetch($node);
         }
 
-        $var = $this->parseIdentifier($node->var);
+        $var = $write && $node->var instanceof Expr\ArrayDimFetch
+            ? $this->parseArrayDimFetchUpdate($node->var)
+            : $this->parseIdentifier($node->var);
         if ($this->isVarExpr($node->var)) {
             if ($var === 'GLOBALS') {
                 return $this->parseGlobalsArrayDimFetch($node);
@@ -4030,10 +4068,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
 
         if ($this->isVarExpr($expr->var) or $this->isPropertyFetch($expr->var) or $this->isArrayDimFetch($expr->var)) {
-            $oriInAssignExpr = $this->context->inAssignExpr;
-            $this->context->inAssignExpr = true;
-            $var = $this->parseIdentifier($expr->var);
-            $this->context->inAssignExpr = $oriInAssignExpr;
+            $var = $this->parseWritableIdentifier($expr->var);
             if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
                 $this->errorUndefinedVariable($expr->var);
             }
@@ -4213,12 +4248,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected function parsePreDec(Expr\PreDec $expr): string
     {
         $this->assertNotNullsafeWriteContext($expr->var);
-        $oriInAssignExpr = $this->context->inAssignExpr;
-        $this->context->inAssignExpr = true;
-
         $result = $this->genDynamicPropIncDec($expr->var, '-', true);
         if ($result !== null) {
-            $this->context->inAssignExpr = $oriInAssignExpr;
             return $result;
         }
 
@@ -4226,8 +4257,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use -- on ' . $type . '. Use -= 1 instead (Big* types are immutable).');
         }
-        $result = '--' . $this->parseIdentifier($expr->var);
-        $this->context->inAssignExpr = $oriInAssignExpr;
+        $result = '--' . $this->parseWritableIdentifier($expr->var);
         return $result;
     }
 
@@ -5206,10 +5236,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $code .= $this->parseForeachItemAsList($nestedTmpVar, $item->value->items);
                     continue;
                 }
-                $oriInAssignExpr = $this->context->inAssignExpr;
-                $this->context->inAssignExpr = true;
-                $var = $this->parseIdentifier($item->value);
-                $this->context->inAssignExpr = $oriInAssignExpr;
+                $var = $this->parseWritableIdentifier($item->value);
                 if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
                     $this->addLocalVar($var, self::TYPE_VAR);
                 }
