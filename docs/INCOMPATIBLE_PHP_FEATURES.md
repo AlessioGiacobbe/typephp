@@ -15,12 +15,14 @@
 
 - 不支持 `yield` / `yield from`。
 - 不支持可变变量 `$$var`。
-- 不支持 property hooks。
+- 不支持 PHP 8.4 property hooks。
 - 不支持函数或方法按引用返回。
 - `__construct()` 不允许返回值。
 - 参数默认值不允许出现在必填参数之前（`PHP`允许，但会直接丢弃此默认参数）。
 - 不支持引用可变参数 `&...$args`。
 - 联合类型、交叉类型、`nullable` 类型在静态编译阶段按 `mixed/any` 处理，只保留运行时 type check。
+- 局部变量类型一旦被静态推断为具体 native 类型，不支持在同一作用域内重新赋值为不兼容类型。
+- attribute 参数不支持数组值。
 
 ## declare
 
@@ -40,6 +42,8 @@
 
 - 禁止子类覆盖父类私有属性。
 - `parent::method()` 的方法名必须是字面量。
+- 通过变量持有的 clone 对象写入私有 typed property 时，可能无法完全复现 PHP 的私有属性访问语义。
+- constructor property promotion 的运行时属性可用，但 `ReflectionProperty::isPromoted()` 目前不返回标准 PHP 结果。
 
 ## 表达式与控制流
 
@@ -47,6 +51,7 @@
 - `match` 的 arm condition 不能是 `match` 表达式。
 - `foreach` by reference 的 value 只能是变量。
 - `foreach` by reference 不支持 list destructuring。
+- `foreach` 遍历 `IteratorAggregate` 返回的 `ArrayObject` 时，当前行为与标准 PHP 不完全一致。
 - 固定 native typed object property 不允许按 PHP 未初始化语义自由 `unset()`。
 - native 类型变量执行 `unset()` 不会产生标准 PHP 的变量删除语义。
 
@@ -57,4 +62,6 @@
 - `__CLASS__` 只允许在 `class` 定义的代码段中使用（`PHP`允许，返回空字符串）。
 - `__TRAIT__` 只允许在 `trait` 定义的代码段中使用（`PHP`允许，返回空字符串）。
 - 动态属性链、动态类名、动态函数名、动态回调在部分 native 优化路径上会退化或被拒绝。
+- `Closure::bind()` 绑定静态闭包访问私有成员时，当前行为与标准 PHP 不完全一致。
+- first-class callable 存入 typed nullable `Closure` 属性后，当前存在运行时稳定性限制。
 - 所有源文件必须是 `UTF-8` 编码。
