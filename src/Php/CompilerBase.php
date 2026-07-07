@@ -5161,6 +5161,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function parsePropertyFetch(Expr\PropertyFetch $expr): string
     {
+        if ($this->containsNullsafeChain($expr->var)) {
+            return $this->parseNullsafeExpr($expr);
+        }
+
         $update = $this->isPropertyFetchUpdate($expr);
         $object = $expr->var;
         $property = $expr->name;
@@ -6101,6 +6105,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function parseMethodCall(Expr\MethodCall $expr): string
     {
+        if ($this->containsNullsafeChain($expr->var)) {
+            return $this->parseNullsafeExpr($expr);
+        }
+
         $class = '';
         $object = $this->parseIdentifier($expr->var);
         if ($this->isVarExpr($expr->var)) {
@@ -7535,17 +7543,25 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return $this->parseNullsafeExpr($expr);
     }
 
-    protected function parseNullsafeExpr(Expr\NullsafePropertyFetch|Expr\NullsafeMethodCall $expr): string
+    protected function parseNullsafeExpr(
+        Expr\PropertyFetch|Expr\MethodCall|Expr\NullsafePropertyFetch|Expr\NullsafeMethodCall $expr
+    ): string
     {
         $list = [];
         $comment = '// Nullsafe Operator: ' . $this->printer->prettyPrint([$expr]);
 
         while (1) {
             if ($expr instanceof Expr\NullsafePropertyFetch) {
-                $list[] = ['property', $this->identifierToStr($expr->name, literal: true), $expr];
+                $list[] = ['property', $this->identifierToStr($expr->name, literal: true), $expr, true];
                 $expr = $expr->var;
             } elseif ($expr instanceof Expr\NullsafeMethodCall) {
-                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args];
+                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, true];
+                $expr = $expr->var;
+            } elseif ($expr instanceof Expr\PropertyFetch) {
+                $list[] = ['property', $this->identifierToStr($expr->name, literal: true), $expr, false];
+                $expr = $expr->var;
+            } elseif ($expr instanceof Expr\MethodCall) {
+                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, false];
                 $expr = $expr->var;
             } else {
                 if ($this->isVarExpr($expr)) {
@@ -7573,7 +7589,9 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
         foreach ($list as $key => $item) {
             $tmpVar = $this->addTmpVar($key !== $last ? self::TYPE_OBJECT : self::TYPE_VAR);
-            $code .= "if ({$object}.isNull()) { return " . self::VALUE_NULL . '; }';
+            if ($item[3]) {
+                $code .= "if ({$object}.isNull()) { return " . self::VALUE_NULL . '; }';
+            }
             if ($item[0] == 'property') {
                 $update = $this->escapeBool($this->isPropertyFetchUpdate($item[2]));
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
@@ -7598,6 +7616,21 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $code .= $this->getIndent() . "return {$object}; };";
         $this->context->beforeStmtLines[] = $code;
         return "{$tmpFn}()";
+    }
+
+    private function containsNullsafeChain(NodeAbstract $expr): bool
+    {
+        while ($expr instanceof Expr\PropertyFetch
+            || $expr instanceof Expr\MethodCall
+            || $expr instanceof Expr\NullsafePropertyFetch
+            || $expr instanceof Expr\NullsafeMethodCall) {
+            if ($expr instanceof Expr\NullsafePropertyFetch || $expr instanceof Expr\NullsafeMethodCall) {
+                return true;
+            }
+            $expr = $expr->var;
+        }
+
+        return false;
     }
 
     private function checkNullsafePropertyAccesses(NodeAbstract $baseExpr, array $list): void
