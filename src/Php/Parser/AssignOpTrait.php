@@ -386,18 +386,19 @@ trait AssignOpTrait
             $tmpVar    = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, $rightType);
             $dim      = $this->parseIdentifier($node->var->dim);
+            $readVar  = $this->parseArrayDimFetch($node->var, false);
             $binaryOp = $this->removeAssignOp($op);
 
             if ($binaryOp === '.') {
                 $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat(" .
-                    $this->convertVarType($tmpVar, $var) . ', ' .
+                    $this->convertVarType($tmpVar, $readVar) . ', ' .
                     $this->convertExprType($expr, $type, $rightType) . ');';
             } elseif ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
-                $bigAssign = $this->parseBigAssignOpExpr($var, $type, $expr, $rightType, $binaryOp, $node->var, $node->expr);
+                $bigAssign = $this->parseBigAssignOpExpr($readVar, $type, $expr, $rightType, $binaryOp, $node->var, $node->expr);
                 $this->context->beforeStmtLines[] = "{$tmpVar} = {$bigAssign};";
             } else {
                 $this->context->beforeStmtLines[] = "{$tmpVar} = " .
-                    $this->convertVarType($tmpVar, $var) . ' ' .
+                    $this->convertVarType($tmpVar, $readVar) . ' ' .
                     $binaryOp . ' ' .
                     $this->convertExprType($expr, $type, $rightType) . ';';
             }
@@ -405,7 +406,7 @@ trait AssignOpTrait
             if ($this->isVarExpr($node->var->var) && $node->var->var->name === 'GLOBALS') {
                 return $var . ' = ' . $tmpVar;
             }
-            return $this->parseArrayDimStore($node->var->var, $dim, $tmpVar);
+            return '(' . $this->parseArrayDimStore($node->var->var, $dim, $tmpVar) . ', ' . $tmpVar . ')';
         }
 
         if ($this->isPropertyFetch($node->var) and !$this->isNativePropertyAccess($node->var)) {

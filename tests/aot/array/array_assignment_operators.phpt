@@ -95,6 +95,11 @@ $seqArray['counter'] -= 3;
 $seqArray['counter'] /= 7;
 var_dump($seqArray['counter']); // 1 (7*2-3=7, then 7/7=1)
 
+$exprResult = ['value' => 10];
+$compoundResult = ($exprResult['value'] += 5);
+var_dump($exprResult['value']);
+var_dump($compoundResult);
+
 echo "All array assignment tests passed!\n";
 ?>
 --EXPECT--
@@ -121,4 +126,6 @@ string(33) "nested array assignment operators"
 int(150)
 int(15)
 int(1)
+int(15)
+int(15)
 All array assignment tests passed!
