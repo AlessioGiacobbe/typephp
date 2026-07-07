@@ -3356,14 +3356,16 @@ CODE;
 
     private function isParameterTypeOverrideCompatible(ArgInfo $childArg, ArgInfo $parentArg): bool
     {
-        if ($parentArg->typeCheck || $childArg->typeCheck) {
-            return $parentArg->typeStr === $childArg->typeStr;
-        }
+        // Child methods may omit parameter types (contravariance — accepting a
+        // wider set of inputs is always compatible with the parent contract).
         if ($childArg->undeclared || $childArg->type === self::TYPE_VAR) {
             return true;
         }
         if ($parentArg->undeclared || $parentArg->type === self::TYPE_VAR) {
             return false;
+        }
+        if ($parentArg->typeCheck || $childArg->typeCheck) {
+            return $parentArg->typeStr === $childArg->typeStr;
         }
         if ($childArg->type !== $parentArg->type) {
             return false;
