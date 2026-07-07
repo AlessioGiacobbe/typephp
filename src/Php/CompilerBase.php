@@ -6566,11 +6566,25 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $finally = $v->finally;
         $stmts = $finally ? $this->injectFinallyBeforeReturn($v->stmts, $finally->stmts) : $v->stmts;
 
+        $catches = $v->catches;
+
+        // Pre-register catch variables before parsing the try block so that
+        // injected finally code referencing catch variables (e.g. $e) does not
+        // trigger undefined-variable errors.
+        if ($finally) {
+            foreach ($catches as $catch) {
+                if ($catch->var) {
+                    $varName = $this->parseIdentifier($catch->var);
+                    if (!$this->hasVar($varName) && $this->stmtListUsesVariable($finally->stmts, $varName)) {
+                        $this->addLocalVar($varName, self::TYPE_OBJECT);
+                    }
+                }
+            }
+        }
+
         $code .= PHP_EOL;
         $code .= $this->parseBlockStmts($stmts);
         $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        $catches = $v->catches;
 
         $exVar = $this->genTmpVarName();
         $this->addLocalVar($exVar, self::TYPE_VAR);
@@ -6578,9 +6592,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $code .= 'catch(zend_object *_ex) {' . PHP_EOL;
         $code .= $this->getIndent() . $exVar . ' = php::catchException();' . PHP_EOL;
         if ($catches) {
+            $catchMatched = $this->genTmpVarName();
+            $code .= $this->getIndent() . 'bool ' . $catchMatched . ' = false;' . PHP_EOL;
             $this->indentLevel++;
             foreach ($catches as $catch) {
-                $code .= $this->parseCatch($catch, $exVar, $finally?->stmts ?? []);
+                $code .= $this->parseCatch($catch, $exVar, $catchMatched, $finally?->stmts ?? []);
             }
             $this->indentLevel--;
         }
@@ -6677,35 +6693,59 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return array_map(static fn (Node\Stmt $stmt): Node\Stmt => clone $stmt, $stmts);
     }
 
-    protected function parseCatch(Node\Stmt\Catch_ $catch, string $exVar, array $finallyStmts = []): string
+    protected function stmtListUsesVariable(array $stmts, string $name): bool
+    {
+        $nodeFinder = new NodeFinder();
+        foreach ($nodeFinder->findInstanceOf($stmts, Variable::class) as $var) {
+            if (is_string($var->name) && $this->escapeVarName($var->name) === $name) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function parseCatch(Node\Stmt\Catch_ $catch, string $exVar, string $catchMatched, array $finallyStmts = []): string
     {
         $types = $catch->types;
-        $var = $catch->var ? $this->parseIdentifier($catch->var) : $this->genTmpVarName();
-        if (!$this->hasVar($var)) {
+        $var = $catch->var ? $this->parseIdentifier($catch->var) : '';
+        if ($var !== '' && !$this->hasVar($var)) {
             $this->addLocalVar($var, self::TYPE_OBJECT);
         }
-        $code = $this->getIndent() . $var . ' = ' . $exVar . ';' . PHP_EOL;
 
-        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
-
-        $code .= $this->getIndent() . 'if (' . $var . ' && ';
+        $code = $this->parseBeforeStmtLines() . PHP_EOL;
+        $code .= $this->getIndent() . 'if (!' . $catchMatched . ' && ' . $exVar . ' && ';
         $conditions = [];
         foreach ($types as $type) {
             if ($this->isNameExpr($type) or $this->isFullNameExpr($type)) {
                 $class = $this->getNamespacedClassName($this->parseIdentifier($type));
                 $ce = $this->getClassEntryPtr($class);
-                $conditions[] = Symbol::instanceOf() . '(' . $var . ', ' . $ce . ')';
+                $conditions[] = Symbol::instanceOf() . '(' . $exVar . ', ' . $ce . ')';
             } else {
                 $this->fatalError($type, 'Unsupported catch type');
             }
         }
 
-        $code .= implode(' || ', $conditions);
-        $code .= ') {' . PHP_EOL;
+        $code .= '(' . implode(' || ', $conditions) . ')) {' . PHP_EOL;
         $this->indentLevel++;
+        $code .= $this->getIndent() . $catchMatched . ' = true;' . PHP_EOL;
+        if ($var !== '') {
+            $code .= $this->getIndent() . $var . ' = ' . $exVar . ';' . PHP_EOL;
+        }
         $code .= $this->getIndent() . "{$exVar} = php::null;" . PHP_EOL;
         $stmts = $finallyStmts ? $this->injectFinallyBeforeReturn($catch->stmts, $finallyStmts) : $catch->stmts;
-        $code .= $this->parseStmts($stmts);
+        if ($finallyStmts) {
+            $code .= $this->getIndent() . 'try {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->parseStmts($stmts);
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '} catch(zend_object *_catch_throw_ex) {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . "{$exVar} = php::catchException();" . PHP_EOL;
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        } else {
+            $code .= $this->parseStmts($stmts);
+        }
         $this->indentLevel--;
         $code .= $this->getIndent() . '}';
 
