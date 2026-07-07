@@ -29,7 +29,6 @@ use PhpAot\Php\Platform\Windows;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
-use PhpParser\Node\Expr\List_;
 use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
@@ -3742,29 +3741,9 @@ CODE;
         $code .= $this->getIndent() . 'for (;' . $tmpVar . '.call(' . $validStr . ');  ' . $tmpVar . '.call(' . $nextStr . ')) {' . PHP_EOL;
         $this->indentLevel++;
 
-        if ($node->valueVar instanceof List_) {
-            $listTmpVar = $this->genTmpVarName();
-            $this->addLocalVar($listTmpVar, self::TYPE_VAR);
-            $code .= $this->getIndent() . ' ' . $listTmpVar . ' = ' . $tmpVar . '.call(' . $currentStr . ');' . PHP_EOL;
-            if ($node->keyVar) {
-                $keyVar = $this->parseIdentifier($node->keyVar);
-                $this->checkVar($node, $keyVar);
-                $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call(' . $keyStr . ');' . PHP_EOL;
-            }
-            $code .= $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
-        } else {
-            $valueVar = $this->parseIdentifier($node->valueVar);
-            $this->checkVar($node, $valueVar);
-
-            $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.call(' . $currentStr . ');' . PHP_EOL;
-            if ($node->keyVar) {
-                $keyVar = $this->parseIdentifier($node->keyVar);
-                $this->checkVar($node, $keyVar);
-                $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.call(' . $keyStr . ');' . PHP_EOL;
-            }
-        }
-        $code .= $this->parseStmts($node->stmts);
-        $code .= $this->genLoopEndFlagCheck();
+        $code .= $this->parseForeachKeyAssignment($node, $tmpVar . '.call(' . $keyStr . ')');
+        $code .= $this->parseForeachValueAssignment($node, $tmpVar . '.call(' . $currentStr . ')');
+        $code .= $this->parseForeachBody($node);
         $code .= '}' . PHP_EOL;
         $this->indentLevel--;
         $code .= $this->getIndent() . '} else {' . PHP_EOL;

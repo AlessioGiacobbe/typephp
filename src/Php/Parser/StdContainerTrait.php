@@ -383,8 +383,7 @@ trait StdContainerTrait
             $code .= $this->getIndent() . "$valueVar = {$iterator}->second;" . PHP_EOL;
         }
 
-        $body = $this->parseStmts($node->stmts);
-        $body .= $this->genLoopEndFlagCheck();
+        $body = $this->parseForeachBody($node);
         $this->indentLevel--;
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;

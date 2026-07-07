@@ -5164,15 +5164,26 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return $code;
     }
 
-    protected function parseForeachArray(Foreach_ $node, string $iteratorVar): string
+    protected function parseForeachBody(Foreach_ $node): string
     {
-        $tmpVar = $this->genTmpVarName();
-        $code = "for (auto $tmpVar = $iteratorVar.begin(); $tmpVar != $iteratorVar.end(); ++$tmpVar) {" . PHP_EOL;
-        $this->indentLevel++;
-        if ($node->keyVar) {
-            $keyVar = $this->parseIdentifier($node->keyVar);
-            $this->checkVar($node, $keyVar);
-            $code .= $this->getIndent() . ' ' . $keyVar . ' = ' . $tmpVar . '.key();' . PHP_EOL;
+        return $this->parseStmts($node->stmts) . $this->genLoopEndFlagCheck();
+    }
+
+    protected function parseForeachKeyAssignment(Foreach_ $node, string $keyExpr, string $defaultType = self::TYPE_VAR): string
+    {
+        if (!$node->keyVar) {
+            return '';
+        }
+
+        $keyVar = $this->parseIdentifier($node->keyVar);
+        $this->checkVar($node, $keyVar, $defaultType);
+        return $this->getIndent() . ' ' . $keyVar . ' = ' . $keyExpr . ';' . PHP_EOL;
+    }
+
+    protected function parseForeachValueAssignment(Foreach_ $node, string $valueExpr, ?string $valueRefExpr = null): string
+    {
+        if ($node->byRef && $valueRefExpr === null) {
+            $this->fatalError($node, 'Cannot use & with foreach');
         }
 
         if ($node->byRef and !$this->isVarExpr($node->valueVar)) {
@@ -5185,32 +5196,47 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             }
             $listTmpVar = $this->genTmpVarName();
             $this->addLocalVar($listTmpVar, self::TYPE_VAR);
-            $code .= $this->getIndent() . ' ' . $listTmpVar . ' = ' . $tmpVar . '.value();' . PHP_EOL;
-            $code .= $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
-        } elseif ($this->isArrayDimFetch($node->valueVar)) {
+            return $this->getIndent() . ' ' . $listTmpVar . ' = ' . $valueExpr . ';' . PHP_EOL
+                . $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
+        }
+
+        if ($this->isArrayDimFetch($node->valueVar)) {
+            if ($node->byRef) {
+                $this->fatalError($node, 'Foreach by reference only supports variable as value');
+            }
             $array = $this->parseIdentifier($node->valueVar->var);
             if (!$this->hasVar($array) or $node->valueVar->dim === null) {
                 abort($node->valueVar);
             }
             $dim = $this->parseIdentifier($node->valueVar->dim);
-            $code .= $this->getIndent() . "{$array}.offsetSet({$dim}, {$tmpVar}.value());";
-        } else {
-            $valueVar = $this->parseIdentifier($node->valueVar);
-            if ($node->byRef) {
-                if (!$this->hasVar($valueVar)) {
-                    $this->addLocalVar($valueVar, self::TYPE_REF);
-                } elseif ($this->getVarType($valueVar) !== self::TYPE_REF) {
-                    $this->fatalError($node, 'Cannot assign value to reference of type');
-                }
-                $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.valueRef();' . PHP_EOL;
-            } else {
-                $this->checkVar($node, $valueVar);
-                $code .= $this->getIndent() . ' ' . $valueVar . ' = ' . $tmpVar . '.value();' . PHP_EOL;
-            }
+            return $this->getIndent() . "{$array}.offsetSet({$dim}, {$valueExpr});";
         }
 
-        $body = $this->parseStmts($node->stmts);
-        $body .= $this->genLoopEndFlagCheck();
+        $valueVar = $this->parseIdentifier($node->valueVar);
+        if ($node->byRef) {
+            if (!$this->hasVar($valueVar)) {
+                $this->addLocalVar($valueVar, self::TYPE_REF);
+            } elseif ($this->getVarType($valueVar) !== self::TYPE_REF) {
+                $this->fatalError($node, 'Cannot assign value to reference of type');
+            }
+            return $this->getIndent() . ' ' . $valueVar . ' = ' . $valueRefExpr . ';' . PHP_EOL;
+        }
+
+        if ($this->isVarExpr($node->valueVar)) {
+            $this->checkVar($node, $valueVar);
+        }
+        return $this->getIndent() . ' ' . $valueVar . ' = ' . $valueExpr . ';' . PHP_EOL;
+    }
+
+    protected function parseForeachArray(Foreach_ $node, string $iteratorVar): string
+    {
+        $tmpVar = $this->genTmpVarName();
+        $code = "for (auto $tmpVar = $iteratorVar.begin(); $tmpVar != $iteratorVar.end(); ++$tmpVar) {" . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->parseForeachKeyAssignment($node, $tmpVar . '.key()');
+        $code .= $this->parseForeachValueAssignment($node, $tmpVar . '.value()', $tmpVar . '.valueRef()');
+
+        $body = $this->parseForeachBody($node);
         $this->indentLevel--;
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
