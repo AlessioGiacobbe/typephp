@@ -3,9 +3,9 @@
 # 打包脚本：创建包含指定文件的 zip 压缩包
 # Linux 系统下使用 UPX 压缩二进制文件，macOS 系统使用 strip 删除调试符号
 # 支持版本管理，每次打包版本号自动递增
-# 输出文件名格式：swoole_compiler_v{版本}_{操作系统}_{架构}.zip
+# 输出文件名格式：tpc_v{版本}_{操作系统}_{架构}.zip
 
-BINARY_FILE="swoole_compiler"
+BINARY_FILE="tpc"
 VERSION_FILE="version.txt"
 BACKUP_FILE="${BINARY_FILE}.backup"
 
@@ -90,7 +90,7 @@ echo "检测到操作系统: $OS_TYPE"
 echo "检测到硬件架构: $ARCH_TYPE"
 
 # 生成带版本号、操作系统和架构的输出文件名
-OUTPUT_FILE="swoole_compiler_v${VERSION_ID}_${OS_TYPE}_${ARCH_TYPE}.zip"
+OUTPUT_FILE="tpc_v${VERSION_ID}_${OS_TYPE}_${ARCH_TYPE}.zip"
 
 echo "输出文件: $OUTPUT_FILE"
 
