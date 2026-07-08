@@ -13,9 +13,23 @@ use PhpAot\Php\Constants;
 
 trait Utils
 {
+    protected function genIntegerLiteral(int $value): string
+    {
+        if ($value === PHP_INT_MIN) {
+            return 'ZEND_LONG_MIN';
+        }
+        if ($value === PHP_INT_MAX) {
+            return 'ZEND_LONG_MAX';
+        }
+        return $value . $this->getPlatform()->getIntegerLiteralSuffix();
+    }
+
     protected function genCValue(mixed $value): mixed
     {
-        if (is_int($value) or is_float($value)) {
+        if (is_int($value)) {
+            return $this->genIntegerLiteral($value);
+        }
+        if (is_float($value)) {
             return $value;
         }
         if (is_bool($value)) {

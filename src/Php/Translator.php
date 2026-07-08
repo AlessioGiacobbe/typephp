@@ -1862,14 +1862,7 @@ CODE;
         if ($this->isInternalConstant($name)) {
             $value = $this->internalConstants[$name];
             if (is_int($value)) {
-                $expr = strval($value);
-                if ($value === PHP_INT_MIN) {
-                    $expr = 'LONG_MIN';
-                } elseif ($value === PHP_INT_MAX) {
-                    $expr = 'LONG_MAX';
-                } else {
-                    $expr = $expr . 'L';
-                }
+                $expr = $this->genIntegerLiteral($value);
             } elseif (is_float($value)) {
                 return $value;
             } elseif (is_bool($value)) {

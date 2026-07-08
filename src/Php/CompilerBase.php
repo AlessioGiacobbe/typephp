@@ -5651,13 +5651,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     {
         $value = $this->internalConstants[$name];
         if (is_int($value)) {
-            if ($value === PHP_INT_MIN) {
-                return 'LONG_MIN';
-            }
-            if ($value === PHP_INT_MAX) {
-                return 'LONG_MAX';
-            }
-            return $value . 'L';
+            return $this->genIntegerLiteral($value);
         }
         if (is_float($value)) {
             if (is_nan($value)) {

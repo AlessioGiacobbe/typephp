@@ -5,6 +5,7 @@ namespace PhpAot\Tests;
 use PHPUnit\Framework\TestCase;
 use PhpAot\Php\CompilerTest;
 use PhpAot\Php\CompilerBase;
+use PhpAot\Php\Platform\Windows;
 
 class CompilerBaseApiTest extends TestCase
 {
@@ -151,6 +152,25 @@ class CompilerBaseApiTest extends TestCase
         $this->assertNotEquals($name1, $name2);
         $this->assertNotEquals($name2, $name3);
         $this->assertNotEquals($name1, $name3);
+    }
+
+    public function testWindowsIntegerLiteralSuffixForGeneratedCValues(): void
+    {
+        $this->setPropertyValue('platform', new Windows());
+
+        $this->assertSame('42LL', $this->invokeMethod('genCValue', 42));
+        $this->assertSame('-42LL', $this->invokeMethod('genCValue', -42));
+        $this->assertSame('ZEND_LONG_MAX', $this->invokeMethod('genCValue', PHP_INT_MAX));
+        $this->assertSame('ZEND_LONG_MIN', $this->invokeMethod('genCValue', PHP_INT_MIN));
+    }
+
+    public function testWindowsIntegerLiteralSuffixForInternalConstants(): void
+    {
+        $this->setPropertyValue('platform', new Windows());
+
+        $this->assertSame(PHP_INT_SIZE . 'LL', $this->compiler->getConstValue('PHP_INT_SIZE'));
+        $this->assertSame('ZEND_LONG_MAX', $this->compiler->getConstValue('PHP_INT_MAX'));
+        $this->assertSame('ZEND_LONG_MIN', $this->compiler->getConstValue('PHP_INT_MIN'));
     }
 
     // ========================================================================
