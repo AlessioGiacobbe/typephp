@@ -1,5 +1,5 @@
 --TEST--
-std vector: exact class value type
+std vector: class value type accepts subclasses
 --FILE--
 <?php
 class StdVectorClassValue
@@ -33,6 +33,7 @@ function main() {
 
     try {
         $vector[] = std_vector_class_value_mixed(new StdVectorClassValueChild(3));
+        var_dump($vector[2]->getValue());
     } catch (Throwable $e) {
         echo $e->getMessage(), "\n";
     }
@@ -41,4 +42,4 @@ function main() {
 --EXPECT--
 int(1)
 int(2)
-The parameter `object` must be instance of class `StdVectorClassValue`, object of `StdVectorClassValueChild` given
+int(3)

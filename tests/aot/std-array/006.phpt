@@ -1,5 +1,5 @@
 --TEST--
-std array: exact class value type
+std array: class value type accepts subclasses
 --FILE--
 <?php
 class StdArrayClassValue
@@ -33,6 +33,7 @@ function main() {
 
     try {
         $array[2] = std_array_class_value_mixed(new StdArrayClassValueChild(3));
+        var_dump($array[2]->getValue());
     } catch (Throwable $e) {
         echo $e->getMessage(), "\n";
     }
@@ -41,4 +42,4 @@ function main() {
 --EXPECT--
 int(1)
 int(2)
-The parameter `object` must be instance of class `StdArrayClassValue`, object of `StdArrayClassValueChild` given
+int(3)

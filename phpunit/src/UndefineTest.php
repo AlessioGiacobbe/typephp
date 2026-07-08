@@ -20,7 +20,7 @@ class UndefineTest extends \BaseTest
 
     public function testPropertyAccessOnUndefinedVar(): void
     {
-        $this->exec('The variable `$obj` is undefined', 'undefined-prop-access.php');
+        $this->compile('undefined-prop-access.php');
     }
 
     public function testMethodCallOnUndefinedVar(): void

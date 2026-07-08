@@ -1,5 +1,5 @@
 --TEST--
-std map: exact class value type
+std map: class value type accepts subclasses
 --FILE--
 <?php
 class StdMapClassValue
@@ -33,6 +33,7 @@ function main() {
 
     try {
         $map["c"] = std_map_class_value_mixed(new StdMapClassValueChild(3));
+        var_dump($map["c"]->getValue());
     } catch (Throwable $e) {
         echo $e->getMessage(), "\n";
     }
@@ -41,4 +42,4 @@ function main() {
 --EXPECT--
 int(1)
 int(2)
-The parameter `object` must be instance of class `StdMapClassValue`, object of `StdMapClassValueChild` given
+int(3)

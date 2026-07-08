@@ -266,7 +266,10 @@ class Preprocessor extends CompilerBase
         ) {
             $argInfo->explicitMixed = in_array(strtolower($this->parseIdentifier($param->type)), ['mixed', 'any'], true);
         }
-        if ($class and !$this->hasInterface($class) and !$this->isAbstractClass($class)) {
+        if ($class) {
+            $argInfo->declaredClass = $class;
+        }
+        if ($class and !$this->hasInterface($class)) {
             $argInfo->class = $class;
         }
         return $type;

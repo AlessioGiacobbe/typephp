@@ -262,6 +262,18 @@ YAML, 'myproject.yml', 'nested/config');
         );
     }
 
+    public function testGetFilesAcceptsYamlExtension(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+YAML, 'project.yaml');
+
+        $files = $this->compiler->getFiles($projectFile);
+
+        $this->assertSame([realpath(dirname($projectFile) . '/main.php')], $files);
+    }
+
     public function testParseProjectYamlSupportsCliStyleModeAndOutputAliases(): void
     {
         $projectFile = $this->createProjectFile(<<<'YAML'
@@ -378,6 +390,199 @@ YAML);
         $this->assertContains(realpath($projectDir . '/kept.php'), $files);
         $this->assertNotContains(realpath($projectDir . '/ignored.php'), $files);
         $this->assertNotContains(realpath($projectDir . '/skipped/nested.php'), $files);
+    }
+
+    public function testParseProjectYamlSupportsConditionalSourcesByPhpVersion(): void
+    {
+        $futureVersion = PHP_VERSION_ID + 10000;
+        $projectFile = $this->createProjectFile(<<<YAML
+sources:
+  - main.php
+  - path: php-current.php
+    if: PHP_VERSION_ID >= 80000
+  - path: php-id-reversed.php
+    if: 80000 <= PHP_VERSION_ID
+  - path: missing-future.php
+    if: PHP_VERSION_ID >= {$futureVersion}
+YAML);
+        $projectDir = dirname($projectFile);
+        file_put_contents($projectDir . '/php-current.php', "<?php\nfunction php_current_source(): void {}\n");
+        file_put_contents($projectDir . '/php-id-reversed.php', "<?php\nfunction php_id_reversed_source(): void {}\n");
+
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertContains(realpath($projectDir . '/main.php'), $files);
+        $this->assertContains(realpath($projectDir . '/php-current.php'), $files);
+        $this->assertContains(realpath($projectDir . '/php-id-reversed.php'), $files);
+        $this->assertNotContains($projectDir . '/missing-future.php', $files);
+    }
+
+    public function testParseProjectYamlConditionalSourceAllowsIfBeforePath(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - if: PHP_VERSION_ID >= 80000
+    path: if-before-path.php
+YAML);
+        $projectDir = dirname($projectFile);
+        file_put_contents($projectDir . '/if-before-path.php', "<?php\nfunction if_before_path_source(): void {}\n");
+
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame([realpath($projectDir . '/if-before-path.php')], $files);
+    }
+
+    public function testParseProjectYamlSupportsCompositeConditionalSources(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - path: composite.php
+    if: PHP_VERSION_ID >= 80000 && PHP_VERSION_ID < 90000
+YAML);
+        $projectDir = dirname($projectFile);
+        file_put_contents($projectDir . '/composite.php', "<?php\nfunction composite_source(): void {}\n");
+
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame([realpath($projectDir . '/composite.php')], $files);
+    }
+
+    public function testParseProjectYamlSupportsPhpVersionStringConditionalSources(): void
+    {
+        $major = PHP_MAJOR_VERSION;
+        $nextMajor = PHP_MAJOR_VERSION + 1;
+        $projectFile = $this->createProjectFile(<<<YAML
+sources:
+  - path: php-version-current.php
+    if: PHP_VERSION >= "{$major}.0.0"
+  - path: php-version-reversed.php
+    if: '"{$major}.0.0" <= PHP_VERSION'
+  - path: missing-next-major.php
+    if: PHP_VERSION >= "{$nextMajor}.0.0"
+YAML);
+        $projectDir = dirname($projectFile);
+        file_put_contents($projectDir . '/php-version-current.php', "<?php\nfunction php_version_current_source(): void {}\n");
+        file_put_contents($projectDir . '/php-version-reversed.php', "<?php\nfunction php_version_reversed_source(): void {}\n");
+
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame(
+            [
+                realpath($projectDir . '/php-version-current.php'),
+                realpath($projectDir . '/php-version-reversed.php'),
+            ],
+            $files
+        );
+    }
+
+    public function testParseProjectYamlSupportsAllVersionCompareOperators(): void
+    {
+        $current = PHP_VERSION;
+        $projectFile = $this->createProjectFile(<<<YAML
+sources:
+  - path: op-lt.php
+    if: PHP_VERSION lt "{$current}.1"
+  - path: op-le.php
+    if: PHP_VERSION le "{$current}"
+  - path: op-gt.php
+    if: PHP_VERSION gt "0.0.0"
+  - path: op-ge.php
+    if: PHP_VERSION ge "{$current}"
+  - path: op-eq.php
+    if: PHP_VERSION eq "{$current}"
+  - path: op-ne.php
+    if: PHP_VERSION ne "0.0.0"
+  - path: op-symbol-eq.php
+    if: PHP_VERSION = "{$current}"
+  - path: op-symbol-ne.php
+    if: PHP_VERSION <> "0.0.0"
+  - path: op-id-alias.php
+    if: PHP_VERSION_ID GE 80000
+YAML);
+        $projectDir = dirname($projectFile);
+        foreach (['lt', 'le', 'gt', 'ge', 'eq', 'ne', 'symbol-eq', 'symbol-ne', 'id-alias'] as $name) {
+            file_put_contents($projectDir . '/op-' . $name . '.php', "<?php\nfunction op_" . str_replace('-', '_', $name) . "(): void {}\n");
+        }
+
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        foreach (['lt', 'le', 'gt', 'ge', 'eq', 'ne', 'symbol-eq', 'symbol-ne', 'id-alias'] as $name) {
+            $this->assertContains(realpath($projectDir . '/op-' . $name . '.php'), $files);
+        }
+    }
+
+    public function testParseProjectYamlSupportsPhpOsFamilyConditionalSources(): void
+    {
+        $osFamily = PHP_OS_FAMILY;
+        $otherFamily = $osFamily === 'Windows' ? 'Linux' : 'Windows';
+        $projectFile = $this->createProjectFile(<<<YAML
+sources:
+  - path: os-current.php
+    if: PHP_OS_FAMILY == "{$osFamily}"
+  - path: os-not-windows.php
+    if: PHP_OS_FAMILY != "{$otherFamily}"
+  - path: os-reversed.php
+    if: '"{$osFamily}" == PHP_OS_FAMILY'
+  - path: os-composite.php
+    if: PHP_OS_FAMILY == "{$osFamily}" && PHP_VERSION_ID >= 80000
+  - path: os-or.php
+    if: PHP_OS_FAMILY == "{$otherFamily}" || PHP_OS_FAMILY == "{$osFamily}"
+  - path: missing-os.php
+    if: PHP_OS_FAMILY == "{$otherFamily}" && PHP_OS_FAMILY != "{$osFamily}"
+YAML);
+        $projectDir = dirname($projectFile);
+        foreach (['current', 'not-windows', 'reversed', 'composite', 'or'] as $name) {
+            file_put_contents($projectDir . '/os-' . $name . '.php', "<?php\nfunction os_" . str_replace('-', '_', $name) . "(): void {}\n");
+        }
+
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        foreach (['current', 'not-windows', 'reversed', 'composite', 'or'] as $name) {
+            $this->assertContains(realpath($projectDir . '/os-' . $name . '.php'), $files);
+        }
+        $this->assertNotContains($projectDir . '/missing-os.php', $files);
+    }
+
+    public function testParseProjectYamlRejectsUnsupportedPhpOsFamilyOperator(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - path: main.php
+    if: PHP_OS_FAMILY >= "Linux"
+YAML);
+
+        $this->expectException(\PhpAot\Php\Exception\TestError::class);
+        $this->expectExceptionMessage('Unsupported source condition');
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+    }
+
+    public function testParseProjectYamlRejectsBarePhpVersionCondition(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - path: main.php
+    if: PHP_VERSION
+YAML);
+
+        $this->expectException(\PhpAot\Php\Exception\TestError::class);
+        $this->expectExceptionMessage('Unsupported source condition');
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+    }
+
+    public function testParseProjectYamlRejectsUnsafeConditionalSourceExpression(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - path: main.php
+    if: PHP_VERSION_ID >= getenv("MIN_PHP")
+YAML);
+
+        $this->expectException(\PhpAot\Php\Exception\TestError::class);
+        $this->expectExceptionMessage('Unsupported source condition');
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
     }
 
     public function testCCompileCommandOptionsKeepCommonUserConfiguration(): void
@@ -655,7 +860,7 @@ YAML);
     public function testGetNamespacedFuncNameWithUseFunction(): void
     {
         $this->setPropertyValue('useFunctions', [
-            'helper_func' => 'App\\Lib',
+            'helper_func' => 'App\\Lib\\helper_func',
         ]);
         $this->assertEquals(
             'App\\Lib\\helper_func',
@@ -678,7 +883,7 @@ YAML);
 
     public function testGetNamespacedFuncNameNotInUseFunctions(): void
     {
-        $this->setPropertyValue('useFunctions', ['other' => 'Some\\Ns']);
+        $this->setPropertyValue('useFunctions', ['other' => 'Some\\Ns\\other']);
         $this->assertEquals(
             'my_func',
             $this->compiler->getNamespacedFuncName('my_func')

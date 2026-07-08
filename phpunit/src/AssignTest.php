@@ -14,12 +14,41 @@ class AssignTest extends \BaseTest
         $this->exec('Cannot re-assign typed object `$obj1` from `stdClass` to `ArrayObject`', 're-assign-2.php');
     }
 
-    public function testStdContainerStaticClassMismatch()
+    public function testCannotAssignParentObjectToChildTypedObject()
     {
         $this->exec(
-            'Cannot assign object of class `StdContainerStaticChild` to std container value of class `StdContainerStaticBase`',
-            'std-container-static-class-mismatch.php'
+            'Cannot re-assign typed object `$child` from `TypedObjectAssignChild` to `TypedObjectAssignBase`',
+            're-assign-parent-to-child-object.php'
         );
+    }
+
+    public function testCannotAssignUnrelatedObjectToInterfaceDeclaredObject()
+    {
+        $this->exec(
+            'Cannot re-assign typed object `$object` from `InterfaceDeclaredAssignContract` to `InterfaceDeclaredAssignOther`',
+            'interface-declared-object-mismatch.php'
+        );
+    }
+
+    public function testCannotPassUnrelatedObjectToInterfaceParameter()
+    {
+        $this->exec(
+            'Argument `object` must be an instance of `InterfaceParamMismatchContract`, `InterfaceParamMismatchOther` given',
+            'interface-param-mismatch.php'
+        );
+    }
+
+    public function testCannotReturnUnrelatedObjectFromInterfaceReturn()
+    {
+        $this->exec(
+            'The return type is `InterfaceReturnMismatchContract`, cannot return an instance of `InterfaceReturnMismatchOther`',
+            'interface-return-mismatch.php'
+        );
+    }
+
+    public function testStdContainerAcceptsSubclassValue()
+    {
+        $this->compile('std-container-static-class-mismatch.php');
     }
 
     // === Object value assigned to non-object variable (right side is New_ expr) ===
@@ -71,12 +100,14 @@ class AssignTest extends \BaseTest
         $this->exec("Cannot re-assign `\$obj` from `php::Array` to `php::Object`", 're-assign-array-to-obj.php');
     }
 
-    public function testCannotAssignSubclassToTypedObjectProperty()
+    public function testCanAssignSubclassToTypedObjectProperty()
     {
-        $this->exec(
-            'Cannot assign object of class `TypedObjectPropChild` to object property `prop` of class `TypedObjectPropBase`',
-            'object-prop-subclass-mismatch.php'
-        );
+        $this->compile('object-prop-subclass-mismatch.php');
+    }
+
+    public function testCanPassExternalLibrarySubclassToParentParameter()
+    {
+        $this->compile('external-library-subclass-param.php');
     }
 
     // === Str / Array value assigned to non-object scalar variable ===

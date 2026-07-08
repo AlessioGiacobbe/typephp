@@ -207,17 +207,20 @@ class PreprocessorTest extends TestCase
 
     public function testGetParentClassWithNamespace(): void
     {
-        $extends = new Node\Name('BaseController');
-        $this->setProperty('namespace', 'App\\Controllers');
-        $result = $this->invokeMethod('getParentClass', $extends);
-        $this->assertEquals('App\\Controllers\\BaseController', $result);
+        $this->setProperty('classExtends', [
+            'app\\controllers\\homecontroller' => 'app\\controllers\\basecontroller',
+        ]);
+        $result = $this->compiler->getParentClass('App\\Controllers\\HomeController');
+        $this->assertEquals('app\\controllers\\basecontroller', $result);
     }
 
     public function testGetParentClassFullyQualified(): void
     {
-        $extends = new Node\Name\FullyQualified('App\\Entity\\Base');
-        $result = $this->invokeMethod('getParentClass', $extends);
-        $this->assertEquals('App\\Entity\\Base', $result);
+        $this->setProperty('classExtends', [
+            'app\\entity\\user' => 'app\\entity\\base',
+        ]);
+        $result = $this->compiler->getParentClass('\\App\\Entity\\User');
+        $this->assertEquals('app\\entity\\base', $result);
     }
 
     // ========================================================================

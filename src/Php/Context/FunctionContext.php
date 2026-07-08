@@ -30,6 +30,13 @@ class FunctionContext
     public array $objects = [];
 
     /**
+     * Declared object constraints that are not used for native-call dispatch.
+     *
+     * @var array<string, string>
+     */
+    public array $declaredObjects = [];
+
+    /**
      * @var array<string, array>
      */
     public array $stdArrays = [];
@@ -76,6 +83,7 @@ class FunctionContext
         $this->staticVars = [];
         $this->arguments = [];
         $this->objects = [];
+        $this->declaredObjects = [];
         $this->stdArrays = [];
         $this->stdContainers = [];
         $this->objectProps = [];
@@ -106,10 +114,11 @@ class FunctionContext
         unset($this->scopeLayouts[$this->scopeLevel]);
     }
 
-    public function resetAnalysisTemporaries(array $localVars, int $tmpVarIndex): void
+    public function resetAnalysisTemporaries(array $localVars, int $tmpVarIndex, array $declaredObjects): void
     {
         $this->localVars = $localVars;
         $this->tmpVarIndex = $tmpVarIndex;
+        $this->declaredObjects = $declaredObjects;
         $this->beforeStmtLines = [];
         $this->afterStmtLines = [];
         $this->objectProps = [];

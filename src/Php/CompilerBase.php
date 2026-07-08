@@ -125,6 +125,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         'toBigFloat' => self::TYPE_BIGFLOAT,
         'toDecimal'  => self::TYPE_DECIMAL,
         'toObject'   => self::TYPE_OBJECT,
+        'toAny'      => self::TYPE_VAR,
+        'toRef'      => self::TYPE_REF,
     ];
 
     private const array STREAM_FUNCTIONS = [
@@ -527,6 +529,17 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return $this->context->stableObjects[$object];
         }
         return $this->context->objects[$object] ?? 'stdClass';
+    }
+
+    protected function getDeclaredObjectType(string $object): string
+    {
+        if (isset($this->context->declaredObjects[$object])) {
+            return $this->context->declaredObjects[$object];
+        }
+        if (isset($this->context->objects[$object]) || isset($this->context->stableObjects[$object])) {
+            return $this->getObjectType($object);
+        }
+        return '';
     }
 
     public function parseExpr(NodeAbstract $expr): string
@@ -1775,6 +1788,66 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return '';
     }
 
+    protected function detectDeclaredClassOfExpr(NodeAbstract $expr): string
+    {
+        // 对象表达式有两类类型信息：
+        // 1. detectClassOfExpr() 返回“实际可推断的类”，例如 new Foo()、typed object 变量；
+        // 2. getDeclaredObjectType() 返回变量声明/首次赋值记录的 declared type，可能是接口或抽象类。
+        // 参数和属性赋值检查需要先使用实际类；实际类不可知时才退回 declared type。
+        $class = $this->detectClassOfExpr($expr);
+        if ($class !== '') {
+            return $class;
+        }
+        if ($this->isVarExpr($expr)) {
+            return $this->getDeclaredObjectType($this->parseVariable($expr));
+        }
+        return '';
+    }
+
+    protected function isObjectClassStaticallyAssignableTo(string $class, string $expected): bool
+    {
+        // 这个函数只回答“编译器在静态阶段能否证明 $class is-a $expected”。
+        // 这里禁止使用 class_exists()/interface_exists()/is_a() 去查询当前运行编译器的 PHP 进程：
+        // - 编译器进程已加载的 Composer/工具类，不等价于被编译项目运行时可用的类；
+        // - 自举编译时还会把编译器自身依赖的外部库误判为项目静态类；
+        // - AOT 的静态判断必须只依赖 hasClass()/hasInterface() 记录的项目类图，或明确的内置类/接口。
+        // 如果类不属于这些集合，说明它是动态类/外部库类，不能在这里静态判定，应返回 false，
+        // 由调用处决定是延迟到运行时 php::toObject()/TypeCheck，还是因为确定 concrete mismatch 而 fatal。
+        $class = ltrim($class, '\\');
+        $expected = ltrim($expected, '\\');
+        if (strcasecmp($class, $expected) === 0) {
+            return true;
+        }
+
+        if (!$this->hasClass($class)
+            && !$this->hasInterface($class)
+            && !$this->isInternalClass($class)
+            && !$this->isInternalInterface($class)
+        ) {
+            return false;
+        }
+
+        return $this->isInheritedFrom($class, $expected);
+    }
+
+    protected function isKnownConcreteObjectExpr(NodeAbstract $expr, string $class): bool
+    {
+        // “已知 concrete object” 的要求比“表达式写着 new SomeClass”更严格：
+        // 只有 AOT 项目类图中的类或内置类，编译器才能在静态阶段确认其继承关系。
+        // 外部库类即使出现在 new 表达式中，也不能用当前编译器进程的反射信息判定，
+        // 否则会把编译器/Composer 运行环境泄漏进被编译项目的类型系统。
+        if ($class === '' || $this->isInterface($class) || $this->isAbstractClass($class)) {
+            return false;
+        }
+        if (!$this->hasClass($class) && !$this->isInternalClass($class)) {
+            return false;
+        }
+        if (!$this->isNewExpr($expr) || !$this->isNameExpr($expr->class)) {
+            return false;
+        }
+        return $this->parseIdentifier($expr->class) !== 'static';
+    }
+
     protected function resolveClassNameArg(NodeAbstract $arg): string
     {
         if ($this->isScalarString($arg)) {
@@ -1829,27 +1902,25 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $returnType = self::TYPE_VAR;
         }
 
+        $returnObjectCheckClass = '';
         // 返回值的表达式是一个类的对象
-        $objectClass = $this->detectClassOfExpr($v->expr);
-        $returnClass = $this->getReturnClass();
+        $objectClass = $this->detectDeclaredClassOfExpr($v->expr);
+        $returnClass = $this->context->inClosure ? '' : $this->getReturnClass();
         if ($returnClass) {
-            if (!$objectClass or $this->hasInterface($objectClass)) {
-                // TODO 返回值的类型无法确定，或者是一个接口，无法继承关系，需要插入动态类型检测代码
-            } elseif (!$this->isInheritedFrom($objectClass, $returnClass)) {
-                $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
-            }
-            // 把子类当做父类返回时，父类必须是抽象类或者接口
-            // 仅原生类进行静态检查，若类不存在，说明该类是动态类，无法进行编译期验证
-            if ($objectClass and $objectClass !== $returnClass
-                and $this->hasClass($returnClass)
-                and !$this->isAbstractClass($returnClass)
-                and !$this->hasInterface($returnClass)
-                and !$this->isInternalInterface($returnClass)) {
-                $this->fatalError($v, "When returning a subclass `$objectClass` instance as parent type, the parent class `$returnClass` must be abstract/interface");
+            if ($objectClass === '') {
+                $returnObjectCheckClass = $returnClass;
+            } elseif (!$this->isObjectClassStaticallyAssignableTo($objectClass, $returnClass)) {
+                if ($this->isKnownConcreteObjectExpr($v->expr, $objectClass)) {
+                    $this->fatalError($v, 'The return type is `' . $returnClass . '`, cannot return an instance of `' . $objectClass . '`');
+                }
+                $returnObjectCheckClass = $returnClass;
             }
         }
 
         $exprCode = $this->convertExprType($expr, $returnType, $type);
+        if ($returnObjectCheckClass !== '') {
+            $exprCode = $this->convertObjectExpr($exprCode, $this->getClassEntryPtr($returnObjectCheckClass));
+        }
         // Union/nullable return type: always use tmpVar for runtime check
         if ($this->shouldCheckClosureReturnType()) {
             [$code, $tmpVar] = $this->genClosureCheckedReturnAssignment($exprCode);
@@ -1989,9 +2060,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function addObject(string $name, string $class): void
     {
-        // 接口、抽象类、非原生类，无法作为 TypedObject 使用
-        if (!$this->isInterface($class) and !$this->isAbstractClass($class) and
-            ($this->isNativeClass($class) or $this->isInternalClass($class))) {
+        // Interfaces have no concrete method body for native calls. Abstract classes may have concrete methods.
+        if ($this->isInterface($class)) {
+            $this->context->declaredObjects[$name] = $class;
+        } elseif ($this->isNativeClass($class) or $this->isInternalClass($class)) {
             $this->context->objects[$name] = $class;
         }
     }
@@ -3716,7 +3788,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 }
                 $namedArgs[$arg->name->name] = true;
                 $byRef = $funcName && $this->isReferenceNamedArgument($funcName, $className, $arg->name->name);
-                $value = ($byRef || $this->isRefvalCall($arg->value))
+                $value = ($byRef || $this->isRefvalCall($arg->value) || $this->isToRefCall($arg->value))
                     ? $this->parseReferenceCallArgValue($arg)
                     : $this->parseCallArgValue($arg);
                 if ($separateNamedArgs) {
@@ -3784,26 +3856,20 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $this->addPositionalCallArg($array . '.itemRef(' . $this->identifierToStr($arg->value->dim) . ')', $arrayArgsVar, $list_args);
                     continue;
                 }
-            } elseif ($this->isFuncCallExpr($arg->value)) {
-                if ($this->isNameExpr($arg->value->name) and $arg->value->name->toString() === 'refval') {
-                    if (count($arg->value->args) !== 1) {
-                        $this->fatalError($arg, 'The refval function only accepts one parameter');
-                    }
-                    $inner = $arg->value->args[0]->value;
-                    if ($this->isVarExpr($inner)) {
-                        $name = $this->parseVariable($inner);
-                        // 消除 refval() 函数调用，直接使用变量
-                        $arg->value = $inner;
-                        $this->addPositionalCallArg($this->parseArgRefVar($arg, $name), $arrayArgsVar, $list_args);
-                        continue;
-                    }
-                    $expr = $this->expandRefvalExpr($inner, $arg);
-                    if ($expr !== null) {
-                        $this->addPositionalCallArg($expr, $arrayArgsVar, $list_args);
-                        continue;
-                    }
-                    $this->fatalError($arg, 'The refval function only accepts a variable, array element, or object property');
+            } elseif ($this->isReferenceWrapperCall($arg->value)) {
+                $inner = $this->unwrapReferenceWrapperCall($arg->value, $arg);
+                if ($this->isVarExpr($inner)) {
+                    $name = $this->parseVariable($inner);
+                    $arg->value = $inner;
+                    $this->addPositionalCallArg($this->parseArgRefVar($arg, $name), $arrayArgsVar, $list_args);
+                    continue;
                 }
+                $expr = $this->expandRefvalExpr($inner, $arg);
+                if ($expr !== null) {
+                    $this->addPositionalCallArg($expr, $arrayArgsVar, $list_args);
+                    continue;
+                }
+                $this->fatalError($arg, 'The refval function only accepts a variable, array element, or object property');
             } else {
                 if ($byRef) {
                     if ($this->isScalar($arg->value)) {
@@ -3934,11 +4000,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function parseReferenceCallArgValue(Node\Arg $arg): string
     {
-        if ($this->isRefvalCall($arg->value)) {
-            if (count($arg->value->args) !== 1) {
-                $this->fatalError($arg, 'The refval function only accepts one parameter');
-            }
-            $arg->value = $arg->value->args[0]->value;
+        if ($this->isReferenceWrapperCall($arg->value)) {
+            $arg->value = $this->unwrapReferenceWrapperCall($arg->value, $arg);
         }
 
         if ($this->isVarExpr($arg->value)) {
@@ -3974,6 +4037,37 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $this->addLocalVar($tmpRef, self::TYPE_REF);
         $this->context->beforeStmtLines[] = $tmpRef . ' = ' . $this->parseChainedExpr($arg->value, self::OP_REFVAL) . ';';
         return '&' . $tmpRef;
+    }
+
+    protected function isToRefCall(NodeAbstract $expr): bool
+    {
+        return $this->isMethodCall($expr)
+            && $this->isNamedMethod($expr->name)
+            && $expr->name->toString() === 'toRef';
+    }
+
+    protected function isReferenceWrapperCall(NodeAbstract $expr): bool
+    {
+        return $this->isRefvalCall($expr) || $this->isToRefCall($expr);
+    }
+
+    protected function unwrapReferenceWrapperCall(NodeAbstract $expr, NodeAbstract $errorNode): NodeAbstract
+    {
+        if ($this->isRefvalCall($expr)) {
+            if (count($expr->args) !== 1) {
+                $this->fatalError($errorNode, 'The refval function only accepts one parameter');
+            }
+            return $expr->args[0]->value;
+        }
+
+        if ($this->isToRefCall($expr)) {
+            if (!empty($expr->args)) {
+                $this->fatalError($errorNode, 'The toRef method does not accept parameters');
+            }
+            return $expr->var;
+        }
+
+        $this->fatalError($errorNode, 'Expected a reference wrapper call');
     }
 
     /**
@@ -4654,6 +4748,9 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($name === 'PHP_EOL') {
             return '"' . $this->escapeString(PHP_EOL) . '"';
         }
+        if ($this->isInternalScalarConstant($name)) {
+            return $this->getInternalScalarConstantValue($name);
+        }
         if ($scalar) {
             return constant($expr->name);
         }
@@ -4768,8 +4865,35 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function isInheritedFrom(string $class, string $expected): bool
     {
+        // 继承关系判断的唯一入口。调用者不应直接使用 PHP 运行时反射函数判断普通项目类。
+        // 对 AOT 已扫描到的项目类/接口，必须走 classDef/interfaceDef 中的 extends/implements 图；
+        // 对 PHP 内置类/接口，可以使用 Zend 运行时反射，因为这部分属于目标 PHP 运行时的固定能力；
+        // 对动态类返回 true 表示“静态阶段无法否定”，后续必须保留运行时检查兜底。
+        $class = ltrim($class, '\\');
+        $expected = ltrim($expected, '\\');
+        if (strcasecmp($class, $expected) === 0) {
+            return true;
+        }
+
         $internal = ($this->isInternalClass($expected) or $this->isInternalInterface($expected));
         $isInterface = ($this->hasInterface($expected) or $this->isInternalInterface($expected));
+
+        if ($this->hasInterface($class)) {
+            if (!$isInterface) {
+                return false;
+            }
+            return $this->interfaceExtends($class, $expected);
+        }
+
+        if ($this->isInternalClass($class) or $this->isInternalInterface($class)) {
+            // 只允许内置类型之间使用 Zend 的继承关系。这里不是查询任意用户类，
+            // 因此不会把编译器进程加载过的外部库类混入项目静态类型系统。
+            if (!$internal) {
+                return false;
+            }
+            return is_subclass_of($class, $expected);
+        }
+
         // 类不存在，说明这是一个动态类，跳过静态检查，需要运行时检查
         if (!$this->hasClass($class)) {
             return true;
@@ -4789,15 +4913,15 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                             return true;
                         }
                         if (!$this->hasInterface($check)) {
+                            if ($internal && $this->isInternalInterface($check) && is_subclass_of($check, $expected)) {
+                                return true;
+                            }
                             continue;
                         }
                         $interfaceDef = $this->getInterface($check);
                         foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentIface) {
                             $stack[] = $parentIface;
                         }
-                    }
-                    if (is_subclass_of($iface, $expected)) {
-                        return true;
                     }
                 }
             } else {
@@ -4817,8 +4941,37 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 return false;
             }
             $class = $classDef->extends;
+            if ($this->isInternalClass($class)) {
+                // 项目类可以继承内置类。进入内置父类链后，后续关系交给 Zend 判断；
+                // 但 expected 也必须是内置类/接口，否则不能跨到外部用户类命名空间做运行时反射。
+                return $internal && is_subclass_of($class, $expected);
+            }
             $classDef = $this->getClass($class);
         }
+    }
+
+    private function interfaceExtends(string $interface, string $expected): bool
+    {
+        // 接口继承需要单独处理，因为 interfaceDef 没有 classDef 的父类链。
+        // 这里同样只遍历 AOT 已知接口图；遇到内置接口时，才允许使用 Zend 的 is_subclass_of()。
+        $stack = [$interface];
+        while ($stack) {
+            $check = array_pop($stack);
+            if (strcasecmp($check, $expected) === 0) {
+                return true;
+            }
+            if (!$this->hasInterface($check)) {
+                if ($this->isInternalInterface($check) && $this->isInternalInterface($expected) && is_subclass_of($check, $expected)) {
+                    return true;
+                }
+                continue;
+            }
+            $interfaceDef = $this->getInterface($check);
+            foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentInterface) {
+                $stack[] = $parentInterface;
+            }
+        }
+        return false;
     }
 
     protected function getTypeConvertedArg(Node\Arg $arg, ArgInfo $argInfo): string
@@ -4827,13 +4980,9 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
 
         if ($argInfo->byRef) {
-            if ($this->isRefvalCall($arg->value)) {
-                if (count($arg->value->args) !== 1) {
-                    $this->fatalError($arg, 'The refval function only accepts one parameter');
-                }
-                $inner = $arg->value->args[0]->value;
+            if ($this->isReferenceWrapperCall($arg->value)) {
+                $inner = $this->unwrapReferenceWrapperCall($arg->value, $arg);
                 if ($this->isVarExpr($inner)) {
-                    // 消除 refval() 函数调用，直接使用变量
                     $arg->value = $inner;
                 } else {
                     $expr = $this->expandRefvalExpr($inner, $arg);
@@ -4866,17 +5015,25 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
 
         if ($argInfo->type === self::TYPE_OBJECT) {
-            if ($this->isVarExpr($arg->value)) {
-                $object = $this->parseVariable($arg->value);
-                if ($this->isTypedObject($object)) {
-                    $class = $this->getObjectType($object);
-                    if ($class and $argInfo->class and !$this->isInheritedFrom($class, $argInfo->class)) {
+            $declaredClass = $argInfo->declaredClass ?: $argInfo->class;
+            if ($declaredClass !== '') {
+                $class = $this->detectDeclaredClassOfExpr($arg->value);
+                if ($class !== '') {
+                    // native call 是性能热点，若静态阶段已经证明实参 is-a 声明类型，
+                    // 就不要再生成 php::toObject($expr, target_ce) 做重复运行时检查。
+                    // 如果无法证明，但右值是已知 concrete object，说明一定不兼容，直接编译期 fatal；
+                    // 其他动态/外部库/any 场景保留 php::toObject() 作为运行时兜底。
+                    if ($this->isObjectClassStaticallyAssignableTo($class, $declaredClass)) {
+                        return $type === self::TYPE_OBJECT ? $expr : $this->convertObjectExpr($expr);
+                    }
+                    if ($this->isKnownConcreteObjectExpr($arg->value, $class)) {
                         $argName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
-                        $this->fatalError($arg, "Argument `{$argName}` must be an instance of `{$argInfo->class}`, `{$class}` given");
+                        $this->fatalError($arg, "Argument `{$argName}` must be an instance of `{$declaredClass}`, `{$class}` given");
                     }
                 }
+                return $this->convertObjectExpr($expr, $this->getClassEntryPtr($declaredClass));
             }
-            return $this->convertObjectExpr($expr);
+            return $type === self::TYPE_OBJECT ? $expr : $this->convertObjectExpr($expr);
         }
 
         return $this->convertExprType($expr, $argInfo->type, $type);
@@ -4978,6 +5135,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
 
         if ($def->class === '' or $this->isAbstractClass($def->class) or $this->isInterface($def->class) or !$this->hasClass($def->class)) {
+            // 属性 declared class 若是接口、抽象类或动态类，当前属性布局优化无法静态确认最终对象类型。
+            // 不在这里 fatal；后续 wrapObjectPropertyAssignTypeCheck() 会在需要时插入运行时检查。
             return;
         }
 
@@ -4986,7 +5145,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if ($rightClass === '') {
             return;
         }
-        if ($rightClass !== $def->class) {
+        if (!$this->isObjectClassStaticallyAssignableTo($rightClass, $def->class)) {
             $this->fatalError(
                 $left,
                 "Cannot assign object of class `{$rightClass}` to {$label} `{$propName}` of class `{$def->class}`"
@@ -5481,6 +5640,41 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return self::TYPE_FLOAT;
         }
         return self::TYPE_VAR;
+    }
+
+    protected function isInternalScalarConstant(string $name): bool
+    {
+        return $this->isInternalConstant($name) && is_scalar($this->internalConstants[$name]);
+    }
+
+    protected function getInternalScalarConstantValue(string $name): string|int|float
+    {
+        $value = $this->internalConstants[$name];
+        if (is_int($value)) {
+            if ($value === PHP_INT_MIN) {
+                return 'LONG_MIN';
+            }
+            if ($value === PHP_INT_MAX) {
+                return 'LONG_MAX';
+            }
+            return $value . 'L';
+        }
+        if (is_float($value)) {
+            if (is_nan($value)) {
+                return self::VALUE_NAN;
+            }
+            if (is_infinite($value)) {
+                return $value > 0 ? self::VALUE_INF : '-' . self::VALUE_INF;
+            }
+            return $this->genCValue($value);
+        }
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+        if (is_string($value)) {
+            return $this->genCharPtr($value, true);
+        }
+        $this->error('Unsupported constant type: ' . gettype($value));
     }
 
     protected function parseSwitch(Node\Stmt\Switch_ $v): string
@@ -6129,7 +6323,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
         $receiver = $this->parseExpr($expr->args[0]->value);
         $className = $this->resolveClassNameArg($expr->args[1]->value);
-        return 'php::toObject(' . $receiver . ', ' . $this->getClassEntryPtr($className) . ', true)';
+        return 'php::toObject(' . $receiver . ', ' . $this->getClassEntryPtr($className) . ')';
     }
 
     protected function genToObjectCall(Expr\MethodCall $expr, string $receiver): string
@@ -6138,7 +6332,15 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return 'php::toObject(' . $receiver . ')';
         }
         $className = $this->resolveClassNameArg($expr->args[0]->value);
-        return 'php::toObject(' . $receiver . ', ' . $this->getClassEntryPtr($className) . ', true)';
+        return 'php::toObject(' . $receiver . ', ' . $this->getClassEntryPtr($className) . ')';
+    }
+
+    protected function genToRefCall(Expr\MethodCall $expr): string
+    {
+        if (!empty($expr->args)) {
+            $this->fatalError($expr, 'The toRef method does not accept parameters');
+        }
+        return $this->parseChainedExpr($expr->var, self::OP_REFVAL);
     }
 
     protected function parseMethodCall(Expr\MethodCall $expr): string
@@ -6172,6 +6374,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             if (isset(self::KEYWORD_METHOD_MAP[$methodName])) {
                 if ($methodName === 'toObject') {
                     return $this->genToObjectCall($expr, $object);
+                }
+                if ($methodName === 'toRef') {
+                    return $this->genToRefCall($expr);
+                }
+                if ($methodName === 'toAny' && !empty($expr->args)) {
+                    $this->fatalError($expr, 'The toAny method does not accept parameters');
                 }
                 return $this->genToConvertCall($object, $methodName, $receiverType);
             }
@@ -6516,7 +6724,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return $this->getNativePropertyAccess($expr)?->getClassDef();
     }
 
-    private function getNativePropertyAccess(NodeAbstract $expr): ?NativePropertyAccess
+    public function getNativePropertyAccess(NodeAbstract $expr): ?NativePropertyAccess
     {
         $access = $expr->getAttribute('nativePropertyAccess');
         return $access instanceof NativePropertyAccess ? $access : null;

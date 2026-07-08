@@ -147,6 +147,8 @@ trait AssignOpTrait
         $propertyWriteTarget = $this->preparePropertyWriteTarget($left);
         $type = $this->detectTypeOfExpr($right);
         $finalVarType = $this->getNormalAssignType($type);
+        $runtimeObjectAssignClass = '';
+        $rightExprOverride = null;
         if ($type === self::TYPE_VOID) {
             $type = self::TYPE_VAR;
         }
@@ -169,11 +171,16 @@ trait AssignOpTrait
                 if (!$this->hasVar($var)) {
                     $this->addLocalVar($var, self::TYPE_OBJECT);
                     $this->addObject($var, $rightClass);
-                } elseif ($this->isTypedObject($var)) {
-                    $leftClass = $this->getObjectType($var);
-                    // 对象的类不一致，不能互相赋值，必须使用 toObject() 对齐类型
-                    // 注意这里必须使用绝对相等比较，即使存在继承关系，类的方法也可能不一致
-                    if ($leftClass !== $rightClass) {
+                } elseif (($leftClass = $this->getDeclaredObjectType($var)) !== '') {
+                    if ($this->isObjectClassStaticallyAssignableTo($rightClass, $leftClass)) {
+                        // A child object can be assigned to a parent typed object.
+                    } elseif ($this->isInterface($rightClass) || $this->isAbstractClass($rightClass) || $this->isObjectClassStaticallyAssignableTo($leftClass, $rightClass)) {
+                        if ($this->isKnownConcreteObjectExpr($right, $rightClass)) {
+                            $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
+                        }
+                        // Parent/interface/abstract declarations are not precise enough for a concrete typed object.
+                        $runtimeObjectAssignClass = $leftClass;
+                    } else {
                         $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
                     }
                 } else {
@@ -199,8 +206,9 @@ trait AssignOpTrait
                         if (!$this->hasVar($var)) {
                             $this->addLocalVar($var, $type);
                             $finalVarType = $type;
+                            return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
                         }
-                        return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
+                        $rightExprOverride = $this->parseIdentifier($right->args[0]->value);
                     } else {
                         $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
                     }
@@ -241,10 +249,16 @@ trait AssignOpTrait
                     $rightVar = $this->parseIdentifier($right);
                     $type = $this->isStdContainer($rightVar) ? self::TYPE_ARRAY : $this->getVarType($rightVar);
                     $finalVarType = $this->getNormalAssignType($type);
-                    if ($this->isTypedObject($rightVar) and $this->isTypedObject($var)) {
-                        $leftClass = $this->getObjectType($var);
-                        $rightClass = $this->getObjectType($rightVar);
-                        $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
+                    $leftClass = $this->getDeclaredObjectType($var);
+                    $rightClass = $this->getDeclaredObjectType($rightVar);
+                    if ($leftClass !== '' and $rightClass !== '') {
+                        if ($this->isObjectClassStaticallyAssignableTo($rightClass, $leftClass)) {
+                            // A child object can be assigned to a parent typed object.
+                        } elseif ($this->isInterface($rightClass) || $this->isAbstractClass($rightClass) || $this->isObjectClassStaticallyAssignableTo($leftClass, $rightClass)) {
+                            $runtimeObjectAssignClass = $leftClass;
+                        } else {
+                            $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
+                        }
                     }
                 }
                 // 变量第一次被赋值，确定其类型，由于 PHP 的变量作用域是 function 级的，在 for/while 块中声明的变量，可以在块外使用
@@ -255,6 +269,10 @@ trait AssignOpTrait
                 } else {
                     $finalVarType = $this->getVarType($var);
                     $this->checkVarAssignExpr($left, $finalVarType, $type);
+                    $declaredObjectClass = $this->getDeclaredObjectType($var);
+                    if ($finalVarType === self::TYPE_OBJECT && $declaredObjectClass !== '' && ($type === self::TYPE_VAR || $type === self::TYPE_OBJECT)) {
+                        $runtimeObjectAssignClass = $declaredObjectClass;
+                    }
                 }
             }
         } elseif ($this->isPropertyFetch($left) and !$this->isNativePropertyAccess($left)) {
@@ -277,9 +295,12 @@ trait AssignOpTrait
         }
 
         $var = $this->parseWritableIdentifier($left);
-        $rightExpr = $this->parseAssignRightExpr($right);
+        $rightExpr = $rightExprOverride ?? $this->parseAssignRightExpr($right);
         if ($propertyWriteTarget !== null) {
             $rightExpr = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $right, $rightExpr);
+        }
+        if ($runtimeObjectAssignClass !== '') {
+            $rightExpr = 'php::toObject(' . $rightExpr . ', ' . $this->getClassEntryPtr($runtimeObjectAssignClass) . ')';
         }
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);

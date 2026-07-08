@@ -21,6 +21,13 @@ class ArgInfo
     public ?ArrayInitPlan $arrayInitPlan = null;
     public ?Expr $defaultValue = null;
     public string $class = '';
+
+    /**
+     * Object type declared in the PHP signature, including interfaces.
+     * Unlike $class, this is only an assignment/type-check constraint and must
+     * not be used for typed-object native-call dispatch.
+     */
+    public string $declaredClass = '';
     public bool $byRef = false;
     public bool $variadic = false;
     public bool $nullable = false;

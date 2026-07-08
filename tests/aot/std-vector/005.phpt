@@ -1,5 +1,5 @@
 --TEST--
-std vector: exact class value type rejects non-object value
+std vector: class value type rejects non-object value
 --FILE--
 <?php
 class StdVectorRuntimeScalarValue

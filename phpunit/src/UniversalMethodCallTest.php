@@ -19,7 +19,7 @@ class UniversalMethodCallTest extends \BaseTest
 
     public function testVoidMethodCall()
     {
-        $this->exec('Cannot call method on void', 'void-method-call.php');
+        $this->compile('void-method-call.php');
     }
 
 }

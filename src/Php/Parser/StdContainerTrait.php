@@ -541,12 +541,6 @@ trait StdContainerTrait
         } else {
             $class = $this->getNamespacedClassName($class);
         }
-        if ($this->hasInterface($class)) {
-            $this->fatalError($expr, "{$owner} class value cannot use interface `{$class}`");
-        }
-        if ($this->isAbstractClass($class)) {
-            $this->fatalError($expr, "{$owner} class value cannot use abstract class `{$class}`");
-        }
         return $class;
     }
 
@@ -563,12 +557,12 @@ trait StdContainerTrait
         }
         $rightClass = $this->detectClassOfExpr($expr);
         if ($rightClass !== '') {
-            if ($rightClass !== $class) {
+            if (!$this->isObjectClassStaticallyAssignableTo($rightClass, $class)) {
                 $this->fatalError($expr, "Cannot assign object of class `{$rightClass}` to std container value of class `{$class}`");
             }
         }
 
-        return 'php::toObject(' . $valueExpr . ', ' . $this->getClassEntryPtr($class) . ', true)';
+        return 'php::toObject(' . $valueExpr . ', ' . $this->getClassEntryPtr($class) . ')';
     }
 
     protected function convertStdVarBackedExpr(string $targetType, string $valueExpr, NodeAbstract $expr): string

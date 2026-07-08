@@ -594,7 +594,7 @@ class Translator extends Preprocessor
             $this->sourceDirs[] = $path;
         } else {
             $ext = pathinfo($path, PATHINFO_EXTENSION);
-            if ($ext === 'yml') {
+            if ($ext === 'yml' || $ext === 'yaml') {
                 // YAML 配置模式：先解析 YAML
                 $list = $this->parseProjectYaml($path);
             } elseif ($ext === 'php') {
@@ -2031,7 +2031,11 @@ CODE;
                 $this->error('`sources` must be array');
             }
             $list = [];
-            foreach ($sources as $src) {
+            foreach ($sources as $sourceEntry) {
+                [$src, $condition] = $this->parseProjectYamlSourceEntry($sourceEntry);
+                if ($condition !== null && !$this->evaluateProjectYamlCondition($condition)) {
+                    continue;
+                }
                 $realPath = $this->getAbsolutePath($src, $projectDir);
                 if (!$realPath) {
                     $this->error('Source file not exists: `' . $src . '`');
@@ -2262,6 +2266,194 @@ CODE;
         }
 
         return $this->filterIgnoredFiles($list);
+    }
+
+    /**
+     * @return array{0: string, 1: string|null}
+     */
+    protected function parseProjectYamlSourceEntry(mixed $entry): array
+    {
+        if (is_string($entry)) {
+            return [$entry, null];
+        }
+        if (!is_array($entry)) {
+            $this->error('Each `sources` entry must be a string or map');
+        }
+
+        $path = $entry['path'] ?? $entry['source'] ?? $entry['file'] ?? null;
+        if (!is_string($path) || trim($path) === '') {
+            $this->error('Conditional `sources` entries must include a non-empty `path`');
+        }
+
+        $condition = $entry['if'] ?? $entry['when'] ?? null;
+        if ($condition !== null && !is_string($condition)) {
+            $this->error('Source condition must be a string');
+        }
+
+        return [$path, $condition];
+    }
+
+    protected function evaluateProjectYamlCondition(string $condition): bool
+    {
+        $condition = trim($condition);
+        if ($condition === '') {
+            $this->error('Source condition must not be empty');
+        }
+
+        $expr = $this->replaceProjectYamlPhpVersionComparisons($condition);
+        $expr = $this->replaceProjectYamlPhpOsFamilyComparisons($expr, $condition);
+        if (preg_match('/[A-Za-z_]/', $expr)) {
+            $this->error('Unsupported source condition: `' . $condition . '`');
+        }
+        if (!preg_match('/^[0-9\s<>=!&|().+-]+$/', $expr)) {
+            $this->error('Unsupported source condition: `' . $condition . '`');
+        }
+        if (preg_match('/(?<![&])&(?!&)|(?<![|])\|(?!\|)/', $expr)) {
+            $this->error('Unsupported source condition: `' . $condition . '`');
+        }
+
+        try {
+            /** @phpstan-ignore-next-line */
+            return (bool) eval('return (' . $expr . ');');
+        } catch (\ParseError|\Throwable) {
+            $this->error('Invalid source condition: `' . $condition . '`');
+        }
+    }
+
+    protected function replaceProjectYamlPhpVersionComparisons(string $condition): string
+    {
+        $versionLiteral = '"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"|\'([^\'\\\\]*(?:\\\\.[^\'\\\\]*)*)\'';
+        $operator = '(>=|<=|==|!=|<>|=|>|<|lt|le|gt|ge|eq|ne)';
+
+        $expr = preg_replace_callback(
+            '/\bPHP_VERSION_ID\b\s*' . $operator . '\s*([0-9]+)/i',
+            function (array $matches): string {
+                return version_compare(PHP_VERSION, $this->phpVersionIdToString((int) $matches[2]), $this->normalizeProjectYamlVersionOperator($matches[1])) ? '1' : '0';
+            },
+            $condition
+        );
+        if ($expr === null) {
+            $this->error('Invalid source condition: `' . $condition . '`');
+        }
+
+        $expr = preg_replace_callback(
+            '/([0-9]+)\s*' . $operator . '\s*\bPHP_VERSION_ID\b/i',
+            function (array $matches): string {
+                return version_compare($this->phpVersionIdToString((int) $matches[1]), PHP_VERSION, $this->normalizeProjectYamlVersionOperator($matches[2])) ? '1' : '0';
+            },
+            $expr
+        );
+        if ($expr === null) {
+            $this->error('Invalid source condition: `' . $condition . '`');
+        }
+
+        $expr = preg_replace_callback(
+            '/\bPHP_VERSION\b\s*' . $operator . '\s*(' . $versionLiteral . ')/i',
+            function (array $matches): string {
+                $version = stripcslashes(($matches[3] ?? '') !== '' ? $matches[3] : $matches[4]);
+                $this->assertProjectYamlVersionLiteral($version);
+                return version_compare(PHP_VERSION, $version, $this->normalizeProjectYamlVersionOperator($matches[1])) ? '1' : '0';
+            },
+            $expr
+        );
+        if ($expr === null) {
+            $this->error('Invalid source condition: `' . $condition . '`');
+        }
+
+        $expr = preg_replace_callback(
+            '/(' . $versionLiteral . ')\s*' . $operator . '\s*\bPHP_VERSION\b/i',
+            function (array $matches): string {
+                $version = stripcslashes($matches[2] !== '' ? $matches[2] : $matches[3]);
+                $this->assertProjectYamlVersionLiteral($version);
+                return version_compare($version, PHP_VERSION, $this->normalizeProjectYamlVersionOperator($matches[4])) ? '1' : '0';
+            },
+            $expr
+        );
+        if ($expr === null) {
+            $this->error('Invalid source condition: `' . $condition . '`');
+        }
+
+        if (preg_match('/\bPHP_VERSION(?:_ID)?\b/', $expr)) {
+            $this->error('Unsupported source condition: `' . $condition . '`');
+        }
+
+        return $expr;
+    }
+
+    protected function replaceProjectYamlPhpOsFamilyComparisons(string $expr, string $condition): string
+    {
+        $stringLiteral = '"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"|\'([^\'\\\\]*(?:\\\\.[^\'\\\\]*)*)\'';
+        $operator = '(==|!=)';
+
+        $expr = preg_replace_callback(
+            '/\bPHP_OS_FAMILY\b\s*' . $operator . '\s*(' . $stringLiteral . ')/i',
+            function (array $matches): string {
+                $expected = stripcslashes(($matches[3] ?? '') !== '' ? $matches[3] : $matches[4]);
+                $this->assertProjectYamlOsFamilyLiteral($expected);
+                $result = PHP_OS_FAMILY === $expected;
+                if ($matches[1] === '!=') {
+                    $result = !$result;
+                }
+                return $result ? '1' : '0';
+            },
+            $expr
+        );
+        if ($expr === null) {
+            $this->error('Invalid source condition: `' . $condition . '`');
+        }
+
+        $expr = preg_replace_callback(
+            '/(' . $stringLiteral . ')\s*' . $operator . '\s*\bPHP_OS_FAMILY\b/i',
+            function (array $matches): string {
+                $expected = stripcslashes(($matches[2] ?? '') !== '' ? $matches[2] : $matches[3]);
+                $this->assertProjectYamlOsFamilyLiteral($expected);
+                $result = $expected === PHP_OS_FAMILY;
+                if ($matches[4] === '!=') {
+                    $result = !$result;
+                }
+                return $result ? '1' : '0';
+            },
+            $expr
+        );
+        if ($expr === null) {
+            $this->error('Invalid source condition: `' . $condition . '`');
+        }
+
+        if (preg_match('/\bPHP_OS_FAMILY\b/', $expr)) {
+            $this->error('Unsupported source condition: `' . $condition . '`');
+        }
+
+        return $expr;
+    }
+
+    protected function normalizeProjectYamlVersionOperator(string $operator): string
+    {
+        return strtolower($operator);
+    }
+
+    protected function assertProjectYamlVersionLiteral(string $version): void
+    {
+        if ($version === '' || !preg_match('/^[0-9A-Za-z_.+\-]+$/', $version)) {
+            $this->error('Invalid PHP_VERSION literal: `' . $version . '`');
+        }
+    }
+
+    protected function assertProjectYamlOsFamilyLiteral(string $osFamily): void
+    {
+        if (!in_array($osFamily, ['Windows', 'BSD', 'Darwin', 'Solaris', 'Linux', 'Unknown'], true)) {
+            $this->error('Invalid PHP_OS_FAMILY literal: `' . $osFamily . '`');
+        }
+    }
+
+    protected function phpVersionIdToString(int $versionId): string
+    {
+        if ($versionId < 0) {
+            $this->error('Invalid PHP_VERSION_ID literal: `' . $versionId . '`');
+        }
+        $major = intdiv($versionId, 10000);
+        $minor = intdiv($versionId % 10000, 100);
+        $patch = $versionId % 100;
+        return $major . '.' . $minor . '.' . $patch;
     }
 
     protected function getInternalCeInfo(string $ce): array
@@ -2920,7 +3112,12 @@ CODE;
                     }
                 }
                 $cppType = $this->getDefaultArgumentType($argInfo);
-                $expr = $this->convertExprFromType($argInfo->type, $argExpr);
+                $declaredClass = $argInfo->declaredClass ?: $argInfo->class;
+                if ($argInfo->type === self::TYPE_OBJECT && $declaredClass !== '') {
+                    $expr = $this->convertObjectExpr($argExpr, $this->getClassEntryPtr($declaredClass));
+                } else {
+                    $expr = $this->convertExprFromType($argInfo->type, $argExpr);
+                }
                 $cppCode .= $this->getIndent() . $cppType . ' ' . $var . ' = ' . $expr . ';' . PHP_EOL;
             }
             $callParams .= 'arg_' . $argInfo->name . ',';
@@ -3110,8 +3307,8 @@ CODE;
         }
         foreach ($this->functionDef->argInfoList as $argInfo) {
             $this->addArgument($argInfo->name, $argInfo->variadic ? self::TYPE_ARRAY : $argInfo->type);
-            if (!$argInfo->variadic and $argInfo->class) {
-                $this->addObject($argInfo->name, $argInfo->class);
+            if (!$argInfo->variadic and $argInfo->declaredClass) {
+                $this->addObject($argInfo->name, $argInfo->declaredClass);
             }
         }
 
@@ -3119,6 +3316,7 @@ CODE;
         if ($v->stmts) {
             $oriLocalVars = $this->context->localVars;
             $oriTmpVarIndex = $this->context->tmpVarIndex;
+            $oriDeclaredObjects = $this->context->declaredObjects;
             /** SSA/e-SSA analysis for the current function. Built once per function, discarded with the context. */
             $ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
             $ssaBuilder->build();
@@ -3131,7 +3329,7 @@ CODE;
                 $this->optimizeLoopVars($ssaBuilder);
                 $this->optimizeObjectProps($ssaBuilder);
             }
-            $this->context->resetAnalysisTemporaries($oriLocalVars, $oriTmpVarIndex);
+            $this->context->resetAnalysisTemporaries($oriLocalVars, $oriTmpVarIndex, $oriDeclaredObjects);
         }
 
         $stmts = '';

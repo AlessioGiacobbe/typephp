@@ -1,5 +1,5 @@
 --TEST--
-std containers: exact class value type
+std containers: class value type accepts subclasses
 --FILE--
 <?php
 class StdContainerClassValue
@@ -47,6 +47,7 @@ function main() {
 
     try {
         $unordered[2] = std_container_class_value_mixed(new StdContainerClassValueChild(5));
+        var_dump($unordered[2]->getValue());
     } catch (Throwable $e) {
         echo $e->getMessage(), "\n";
     }
@@ -63,5 +64,5 @@ int(1)
 int(2)
 int(3)
 int(4)
-The parameter `object` must be instance of class `StdContainerClassValue`, object of `StdContainerClassValueChild` given
+int(5)
 The parameter `object` must be instance of class `StdContainerClassValue`, object of `StdContainerClassValueOther` given

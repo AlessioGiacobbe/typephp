@@ -374,6 +374,7 @@ trait UniversalMethodCall
             'toBigInt'    => 'php::BigInt::newInstance(' . $receiver . ')',
             'toBigFloat'  => 'php::BigFloat::newInstance(' . $receiver . ')',
             'toDecimal'   => 'php::Decimal::newInstance(' . $receiver . ')',
+            'toAny'       => $receiver,
             default       => $receiver,
         };
     }

@@ -5,7 +5,7 @@ use PhpAot\Php\Exception\TestError;
 
 class NativePropertyTest extends \BaseTest
 {
-    private function compile(string $file): string
+    private function compileNativeProperty(string $file): string
     {
         global $translator;
 
@@ -23,7 +23,7 @@ class NativePropertyTest extends \BaseTest
     public function testFindNativePropertyUsesFullClassNameAcrossBranches(): void
     {
         try {
-            $this->compile('native-property-full-name.php');
+            $this->compileNativeProperty('native-property-full-name.php');
         } catch (TestError $e) {
             $this->fail($e->getMessage());
         }
@@ -32,7 +32,7 @@ class NativePropertyTest extends \BaseTest
     public function testStaticStaticPropertyUsesDynamicCalledClassPath(): void
     {
         try {
-            $outputFile = $this->compile('native-property-full-name.php');
+            $outputFile = $this->compileNativeProperty('native-property-full-name.php');
         } catch (TestError $e) {
             $this->fail($e->getMessage());
         }

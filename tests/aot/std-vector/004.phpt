@@ -1,5 +1,5 @@
 --TEST--
-std vector: exact class value type checks typed parameter at runtime
+std vector: class value type accepts typed parameter subclass at runtime
 --FILE--
 <?php
 class StdVectorRuntimeClassValue
@@ -19,6 +19,7 @@ function std_vector_runtime_class_value(StdVectorRuntimeClassValue $value): void
 
     try {
         $vector[] = $value;
+        var_dump($vector[0]->value);
     } catch (Throwable $e) {
         echo $e->getMessage(), "\n";
     }
@@ -29,4 +30,4 @@ function main() {
 }
 ?>
 --EXPECT--
-The parameter `object` must be instance of class `StdVectorRuntimeClassValue`, object of `StdVectorRuntimeClassValueChild` given
+int(1)

@@ -29,7 +29,6 @@ class FunctionContextTest extends TestCase
         $this->assertSame(0, $ctx->scopeLevel);
         $this->assertFalse($ctx->inLoop);
         $this->assertFalse($ctx->inClosure);
-        $this->assertFalse($ctx->inAssignExpr);
     }
 
     public function testEnterScopeIncrementsLevel(): void
@@ -71,9 +70,6 @@ class FunctionContextTest extends TestCase
 
         $ctx->inClosure = true;
         $this->assertTrue($ctx->inClosure);
-
-        $ctx->inAssignExpr = true;
-        $this->assertTrue($ctx->inAssignExpr);
 
         $ctx->tmpVarIndex = 5;
         $this->assertSame(5, $ctx->tmpVarIndex);
