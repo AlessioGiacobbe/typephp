@@ -3185,16 +3185,6 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
     }
 
-    protected function hasNamedCallArg(array $args): bool
-    {
-        foreach ($args as $arg) {
-            if ($arg instanceof Node\Arg && $arg->name !== null) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     protected function hasUnpackBeforeNamedArg(array $args): bool
     {
         $hasUnpack = false;
@@ -3242,16 +3232,24 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         return false;
     }
 
-    protected function genCallUserFuncArray(string $callback, array $args, string $funcName = '', string $className = ''): string
-    {
-        return 'php::call(' . $this->getFuncPtr('call_user_func_array') . ', '
-            . Symbol::argList() . '{' . $callback . ', ' . $this->parseCallArgs($args, $funcName, $className, false, true) . '})';
+    protected function genRuntimeFunctionCall(
+        string $callable,
+        array $args,
+        string $funcName = '',
+        string $className = '',
+        bool $separateNamedArgs = true
+    ): string {
+        return 'php::call(' . $callable . ', ' . $this->parseCallArgs($args, $funcName, $className, $separateNamedArgs) . ')';
     }
 
-    protected function getFunctionCallbackExpr(string $nativeFn): string
-    {
-        $functionDef = $this->getFunction($nativeFn);
-        return $this->getLiteralString($functionDef->getNamespacedName());
+    protected function genRuntimeObjectMethodCall(
+        string $object,
+        string $method,
+        array $args,
+        string $funcName = '',
+        string $className = ''
+    ): string {
+        return $object . '.call(' . $method . ', ' . $this->parseCallArgs($args, $funcName, $className) . ')';
     }
 
     protected function validateInternalNamedCallArgs(\ReflectionFunctionAbstract $ref, array $callArgs): void
@@ -3360,7 +3358,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 }
                 $this->checkNativeCallArgs($expr, $this->getFunction($nativeFn), $expr->args, $name);
                 if ($this->shouldUseDynamicCallForNativeArgs($nativeFn, $expr->args)) {
-                    return $this->genCallUserFuncArray($this->getFunctionCallbackExpr($nativeFn), $expr->args, $name);
+                    $functionDef = $this->getFunction($nativeFn);
+                    return $this->genRuntimeFunctionCall($this->getFuncPtr($functionDef->getNamespacedName()), $expr->args, $name);
                 }
                 try {
                     return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
@@ -3387,12 +3386,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if (empty($expr->args)) {
             return 'php::call(' . $fn . ')';
         }
-        if ($this->hasNamedCallArg($expr->args)) {
-            $callback = $name !== '' ? $this->getLiteralString($name) : $fn;
-            return $this->genCallUserFuncArray($callback, $expr->args, $name);
-        }
         try {
-            return 'php::call(' . $fn . ', ' . $this->parseCallArgs($expr->args, $name, '', $name !== '') . ')';
+            return $this->genRuntimeFunctionCall($fn, $expr->args, $name);
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($placeHolder);
         }
@@ -3683,6 +3678,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     {
         $list_args = [];
         $arrayArgsVar = null;
+        $argsVar = null;
         $namedArgsVar = null;
         $namedArgs = [];
         $hasNamedArg = false;
@@ -3701,8 +3697,13 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $this->fatalError($arg, 'Cannot use argument unpacking after named arguments');
                 }
                 $hasUnpack = true;
-                $arrayArgs = $this->ensureCallArrayArgs($arrayArgsVar, $list_args);
-                $this->context->beforeStmtLines[] = $arrayArgs . '.merge(' . $this->parseArrayArg($arg) . ');';
+                if (!$forceArrayArgs && $separateNamedArgs) {
+                    $callArgs = $this->ensureCallArgs($argsVar, $list_args);
+                    $this->context->beforeStmtLines[] = $callArgs . '.appendUnpacked(' . $this->parseArrayArg($arg) . ');';
+                } else {
+                    $arrayArgs = $this->ensureCallArrayArgs($arrayArgsVar, $list_args);
+                    $this->context->beforeStmtLines[] = $arrayArgs . '.merge(' . $this->parseArrayArg($arg) . ');';
+                }
                 continue;
             }
             if ($arg->name !== null) {
@@ -3819,6 +3820,9 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $this->addPositionalCallArg($value, $arrayArgsVar, $list_args);
         }
 
+        if ($argsVar !== null) {
+            return $namedArgsVar !== null ? $argsVar . ', ' . $namedArgsVar . '.array()' : $argsVar;
+        }
         if ($arrayArgsVar !== null) {
             return $namedArgsVar !== null ? $arrayArgsVar . ', ' . $namedArgsVar . '.array()' : $arrayArgsVar;
         }
@@ -3864,6 +3868,16 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         }
 
         return $this->genArray($items);
+    }
+
+    protected function ensureCallArgs(?string &$argsVar, array &$listArgs): string
+    {
+        if ($argsVar === null) {
+            $argsVar = $this->genTmpVarName();
+            $this->context->beforeStmtLines[] = self::TYPE_ARGS . ' ' . $argsVar . '{' . Symbol::argList() . '{' . implode(', ', $listArgs) . '}};';
+            $listArgs = [];
+        }
+        return $argsVar;
     }
 
     protected function ensureCallArrayArgs(?string &$arrayArgsVar, array &$listArgs): string
@@ -4546,9 +4560,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $this->assertExprCanBeUsedAsValue($expr->expr, 'instanceof operand');
         if ($this->isNameExpr($expr->class)) {
             $value = $this->parseExprAsValue($expr->expr);
-            $className = $this->getNamespacedClassName($this->parseIdentifier($expr->class));
-            $className = $this->getClassEntryPtr($className);
-            return 'php::instanceOf(' . $value . ', ' . $className . ')';
+            $classPtr = $this->resolveInstanceofClassPtr($expr->class);
+            return 'php::instanceOf(' . $value . ', ' . $classPtr . ')';
         } else {
             [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr->expr);
             $tmpVar = $this->addTmpVar(self::TYPE_VAR);
@@ -4557,6 +4570,27 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             $this->appendCapturedStmtLinesToContext($afterStmts);
             return 'php::instanceOf(' . $tmpVar . ', ' . $this->identifierToStr($expr->class) . ')';
         }
+    }
+
+    protected function resolveInstanceofClassPtr(NodeAbstract $class): string
+    {
+        $className = $this->parseIdentifier($class);
+        if ($className === 'self') {
+            $className = $this->getFullClassName();
+        } elseif ($className === 'parent') {
+            if (!$this->classDef || !$this->classDef->extends) {
+                $this->fatalError($class, 'Cannot use "parent" when current class scope has no parent');
+            }
+            $className = $this->classDef->extends;
+        } elseif ($className === 'static') {
+            if (!$this->classDef) {
+                $this->fatalError($class, 'Cannot use "static" outside a class');
+            }
+            return Symbol::getCalledCe();
+        } else {
+            $className = $this->getNamespacedClassName($className);
+        }
+        return $this->getClassEntryPtr($className);
     }
 
     protected function parseCastInt(Expr\Cast\Int_ $node): string
@@ -6171,7 +6205,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                     $expr->setAttribute('nativeCall', $nativeFunc);
                     try {
                         if ($this->shouldUseDynamicCallForNativeArgs($nativeFunc, $expr->args)) {
-                            return $this->genCallUserFuncArray($this->genArray([$object, $method]), $expr->args, $methodName, $class);
+                            return $this->genRuntimeObjectMethodCall($object, $this->getMethodPtr($class, $methodName), $expr->args, $methodName, $class);
                         }
                         return $this->parseNativeMethodCall($object, $nativeFunc, $expr->args);
                     } catch (PlaceHolder) {
@@ -6226,12 +6260,9 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if (empty($expr->args)) {
             return $object . '.call(' . $methodPtr . ')';
         }
-        if ($this->hasNamedCallArg($expr->args)) {
-            return $this->genCallUserFuncArray($this->genArray([$object, $method]), $expr->args, $funcName, $class);
-        }
         try {
             $class = empty($class) ? self::DYNAMIC_CALLED_CLASS : $class;
-            return $object . '.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $funcName, $class, false) . ')';
+            return $this->genRuntimeObjectMethodCall($object, $methodPtr, $expr->args, $funcName, $class);
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($this->genArray([$object, $method]));
         }
@@ -6320,7 +6351,12 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 if ($nativeFunc) {
                     try {
                         if ($this->shouldUseDynamicCallForNativeArgs($nativeFunc, $expr->args)) {
-                            return $this->genCallUserFuncArray($this->genArray($callScope), $expr->args, $method, $class);
+                            return $this->genRuntimeFunctionCall(
+                                $this->getClassEntryPtr($class) . ', ' . $this->getFuncPtr($class . '::' . $method),
+                                $expr->args,
+                                $method,
+                                $class
+                            );
                         }
                         $args = $this->parseNativeCallArgs($expr->args, $nativeFunc);
                         $expr->setAttribute('nativeCall', $nativeFunc);
@@ -6357,12 +6393,8 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         if (empty($expr->args)) {
             return $call . '(' . $fn . ')';
         }
-        if ($this->hasNamedCallArg($expr->args)) {
-            return $this->genCallUserFuncArray($placeHolder, $expr->args);
-        }
         try {
-            $callArgs = $this->parseCallArgs($expr->args);
-            return $call . '(' . $fn . ', ' . $callArgs . ')';
+            return $this->genRuntimeFunctionCall($fn, $expr->args);
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($placeHolder);
         }
