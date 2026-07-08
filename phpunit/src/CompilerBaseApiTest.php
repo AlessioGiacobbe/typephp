@@ -312,6 +312,21 @@ YAML, 'custom-name.yml', 'yaml-alias');
         $this->assertSame(dirname($projectFile) . '/out', $this->getPropertyValue('outputDir'));
     }
 
+    public function testParseProjectYamlNameDoesNotSetOutputDirectory(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+name: tetris
+sources:
+  - main.php
+YAML, 'myproject.yml', 'examples/tetris-sdl');
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame('tetris', $this->getPropertyValue('targetName'));
+        $this->assertSame('', $this->getPropertyValue('outputDir'));
+        $this->assertSame('tetris', $this->invokeMethod('getTargetFileName'));
+    }
+
     public function testParseProjectYamlResolvesRelativePathOptionsAgainstYamlDirectory(): void
     {
         $projectFile = $this->createProjectFile(<<<'YAML'

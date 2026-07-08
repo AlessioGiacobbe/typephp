@@ -2173,10 +2173,12 @@ CODE;
             }
         }
 
-        // 读取 output/name
-        $output = $cfg['output'] ?? $cfg['name'] ?? null;
+        // 读取 output/name。name 只表示目标名，不能按 YAML 目录解析成输出路径。
+        $output = $cfg['output'] ?? null;
         if (!empty($output)) {
             $this->setTargetName($this->resolvePath((string) $output, $projectDir, 'Output path'));
+        } elseif (!empty($cfg['name'])) {
+            $this->setTargetName((string) $cfg['name']);
         }
 
         // 读取 cpp-compiler

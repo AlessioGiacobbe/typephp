@@ -5,8 +5,8 @@ sources:
   - main.php
   - ./php-src
   - ./cpp-src
-ldflags:
+ld-flags:
   - "-lSDL2"
-cxxflags:
+cxx-flags:
   - "-I/usr/include/SDL2"
   - "-D_REENTRANT"
