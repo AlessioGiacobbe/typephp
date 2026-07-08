@@ -5977,7 +5977,11 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $fn = $this->getChainedFunc($op);
         $expr = $node;
         if ($this->isVarExpr($expr)) {
-            return $fn . '(' . $this->parseExpr($expr) . ')';
+            if (!$getValue) {
+                return $fn . '(' . $this->parseExpr($expr) . ')';
+            }
+            // $getValue is true: fall through to use the chain+result mechanism,
+            // which ensures the result type is TYPE_VAR (compatible with ternaries).
         }
         // 单属性读取（非链式）
         if ($this->isPropertyFetch($expr) and $this->isVarExpr($expr->var) and $this->isIdExpr($expr->name)) {
