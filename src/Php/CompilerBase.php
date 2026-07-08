@@ -5087,12 +5087,6 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
                 $type = $this->getVarType($name);
                 if ($this->isNativeType($type)) {
                     $this->warning($var, "Variable of native type `\${$name}` cannot be unset");
-                } elseif ($type === self::TYPE_REF) {
-                    // Reinitialize as a fresh empty Ref so subsequent writes
-                    // to this variable don't access freed memory.
-                    // Do NOT change localVars type — it must stay TYPE_REF
-                    // for foreach-by-ref to work correctly.
-                    $lines[] = $name . ' = ' . self::TYPE_REF . '();';
                 } else {
                     $lines[] = "{$name}.unset();";
                 }
