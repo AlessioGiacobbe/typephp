@@ -72,7 +72,7 @@ class PlatformTest extends TestCase
     {
         $platform = new Windows();
         
-        $this->assertEquals('src\Php\Backend', $platform->normalizePath('src/Php/Backend'));
+        $this->assertEquals('src\Backend', $platform->normalizePath('src/Backend'));
         $this->assertEquals('C:\PHP\include', $platform->normalizePath('C:/PHP/include'));
     }
 

@@ -255,7 +255,7 @@ protected const string MODULE_NAME_PREFIX = 'app_';
 
 ### 方案 B：临时修改代码
 
-修改 `src/Php/Translator.php`：
+修改 `src/Translator.php`：
 
 ```php
 // 第 31-32 行

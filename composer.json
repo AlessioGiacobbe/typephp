@@ -15,10 +15,7 @@
   },
   "autoload": {
     "psr-4": {
-      "TypePhp\\": [
-        "src/Php",
-        "src"
-      ]
+      "TypePhp\\": "src"
     }
   },
   "scripts": {

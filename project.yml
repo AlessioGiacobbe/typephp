@@ -30,9 +30,10 @@ resource:
 # manifest: app.manifest
 
 sources:
-  - ./src/Php
-  - ./src/functions.php
-  - ./src/gen_stub.php
-  - ./src/compiler.php
+  - ./src
   - vendor/nikic/php-parser/lib/PhpParser/NodeVisitor.php
   - vendor/nikic/php-parser/lib/PhpParser/NodeVisitorAbstract.php
+
+ignore:
+  - ./src/Assert.php
+  - ./src/polyfills.php

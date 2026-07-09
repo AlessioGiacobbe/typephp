@@ -50,7 +50,7 @@ php run-tests.php tests/aot/arrays.phpt
 
 ### Translation Pipeline
 
-The compiler follows a 4-stage pipeline, orchestrated by `src/Php/Translator.php` (the main entry point):
+The compiler follows a 4-stage pipeline, orchestrated by `src/Translator.php` (the main entry point):
 
 1. **prepare()** — Scan PHP files, collect symbol declarations and dependencies, topological-sort for compilation order
 2. **convert()** — Parse PHP AST via `nikic/php-parser`, translate each node to C++ source code
@@ -60,31 +60,31 @@ The compiler follows a 4-stage pipeline, orchestrated by `src/Php/Translator.php
 ### Class Hierarchy
 
 ```
-src/Php/CompilerBase (core PHP→C++ translation logic, indent/output/mode helpers)
+src/CompilerBase.php (core PHP→C++ translation logic, indent/output/mode helpers)
  ├─ uses traits: AstNodeType, FuncCallOptimizer, ClosureGenerator,
  │    PlaceHolderGenerator, PropertyPromotion, MagicMethodDetector
- └─ src/Php/Preprocessor (scanning, symbol tables, dependency sort, YAML config)
-     └─ src/Php/Translator (full pipeline: prepare→convert→compile→build)
-         └─ src/Php/CompilerTest (test-only subclass, used by PHPUnit tests)
+ └─ src/Preprocessor.php (scanning, symbol tables, dependency sort, YAML config)
+     └─ src/Translator.php (full pipeline: prepare→convert→compile→build)
+         └─ src/CompilerTest.php (test-only subclass, used by PHPUnit tests)
 ```
 
 ### Key Components
 
 | Directory | Purpose |
 |-----------|---------|
-| `src/Php/Entity/` | Data classes: `ClassDef`, `FunctionDef`, `MethodDef`, `PropertyDef`, `ConstantDef`, `InterfaceDef` |
-| `src/Php/Generator/` | Codegen helpers: `ClosureGenerator`, `PlaceHolderGenerator`, `PropertyPromotion`, `Utils` |
-| `src/Php/Backend/` | Compiler abstraction: `CompilerBackend` (abstract) → `Gcc`, `Clang`, `Msvc`. Factory pattern via `CompilerFactory` |
-| `src/Php/Platform/` | OS abstraction: `PlatformBase` → `Linux`, `Macos`, `Windows`. Factory via `PlatformFactory` |
-| `src/Php/Context/` | `ScopeContext` and `FunctionContext` for variable scoping and type tracking |
-| `src/Php/Exception/` | `SyntaxError`, `Unsupported`, `DynamicCall`, `PlaceHolder`, `Skip`, `Redo`, `TestError` |
-| `src/Php/Parser/` | Special-purpose parsers like `StdContainerParser` (C++ std container foreach support) |
-| `src/Php/Reflection.php` | Static helpers wrapping PHP reflection (internal class/function detection) |
-| `src/Php/Symbol.php` | Maps PHP operations to `phpx` C++ API symbol names |
-| `src/Php/FileScanner.php` | Recursive file discovery with extension filtering (supports `.php`, `.cpp`, `.c`, `.s`, `.m`, `.mm`) |
-| `src/Php/ArgInfo.php` | Generates C function argument info structures for internal function registration |
-| `src/Php/Extractor.php` | Extracts interfaces from PHP classes |
-| `src/Php/Visitor.php` | Base `NodeVisitorAbstract` extension (skeleton for custom AST visitors) |
+| `src/Entity/` | Data classes: `ClassDef`, `FunctionDef`, `MethodDef`, `PropertyDef`, `ConstantDef`, `InterfaceDef` |
+| `src/Generator/` | Codegen helpers: `ClosureGenerator`, `PlaceHolderGenerator`, `PropertyPromotion`, `Utils` |
+| `src/Backend/` | Compiler abstraction: `CompilerBackend` (abstract) → `Gcc`, `Clang`, `Msvc`. Factory pattern via `CompilerFactory` |
+| `src/Platform/` | OS abstraction: `PlatformBase` → `Linux`, `Macos`, `Windows`. Factory via `PlatformFactory` |
+| `src/Context/` | `ScopeContext` and `FunctionContext` for variable scoping and type tracking |
+| `src/Exception/` | `SyntaxError`, `Unsupported`, `DynamicCall`, `PlaceHolder`, `Skip`, `Redo`, `TestError` |
+| `src/Parser/` | Special-purpose parsers like `StdContainerParser` (C++ std container foreach support) |
+| `src/Reflection.php` | Static helpers wrapping PHP reflection (internal class/function detection) |
+| `src/Symbol.php` | Maps PHP operations to `phpx` C++ API symbol names |
+| `src/FileScanner.php` | Recursive file discovery with extension filtering (supports `.php`, `.cpp`, `.c`, `.s`, `.m`, `.mm`) |
+| `src/ArgInfo.php` | Generates C function argument info structures for internal function registration |
+| `src/Extractor.php` | Extracts interfaces from PHP classes |
+| `src/Visitor.php` | Base `NodeVisitorAbstract` extension (skeleton for custom AST visitors) |
 
 ### Configuration
 
@@ -100,4 +100,4 @@ Generated `.cc` and `.o` files land in `build/` directory. The compiled binary i
 - **PHPUnit tests** (`phpunit/src/`) — unit/integration tests for compiler internals. Bootstrap at `phpunit/bootstrap.php` defines a `BaseTest` class with an `exec()` helper that runs the compiler and expects a `TestError` exception containing a given string
 - **PHPT tests** (`tests/aot/`) — end-to-end tests using the standard PHPT format (`run-tests.php`). Each `.phpt` contains PHP source and expected output sections
 
-When writing new compiler tests, use `CompilerTest::create(ROOT_PATH)` (in `src/Php/CompilerTest.php`) which sets `forTest = true` to enable test-specific behavior without writing files to disk.
+When writing new compiler tests, use `CompilerTest::create(ROOT_PATH)` (in `src/CompilerTest.php`) which sets `forTest = true` to enable test-specific behavior without writing files to disk.

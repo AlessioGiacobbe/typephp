@@ -9,7 +9,7 @@ TypePHP is an ahead-of-time compiler that translates PHP source into C++, then c
 3. `compile()` chooses the platform/compiler backend, generates support sources and headers, and compiles sources, using `pcntl` parallelism when available.
 4. `build()` links object files into the final executable or extension.
 
-`src/Php/CompilerBase.php` contains most PHP-to-C++ translation logic and mixes in many traits for syntax handling and optimizations. `src/Php/Preprocessor.php` owns dependency discovery and file ordering. Platform-specific behavior lives under `src/Php/Platform/`, compiler backends under `src/Php/Backend/`, and metadata/state objects under `src/Php/Entity/` and `src/Php/Context/`.
+`src/CompilerBase.php` contains most PHP-to-C++ translation logic and mixes in many traits for syntax handling and optimizations. `src/Preprocessor.php` owns dependency discovery and file ordering. Platform-specific behavior lives under `src/Platform/`, compiler backends under `src/Backend/`, and metadata/state objects under `src/Entity/` and `src/Context/`.
 
 ## Setup and build commands
 

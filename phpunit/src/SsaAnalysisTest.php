@@ -32,7 +32,7 @@ class SsaAnalysisTest extends TestCase
         parent::setUp();
         // SsaFlags, SsaVar, SsaBlock, etc. are defined in SsaBuilder.php
         // but PSR-4 expects each class in its own file. Load them early.
-        require_once __DIR__ . '/../../src/Php/Analysis/SsaBuilder.php';
+        require_once __DIR__ . '/../../src/Analysis/SsaBuilder.php';
         $this->tmpDir = sys_get_temp_dir() . '/ssa_test_' . uniqid();
         mkdir($this->tmpDir, 0777, true);
         $this->compiler = CompilerTest::create($this->tmpDir);
