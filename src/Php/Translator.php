@@ -1,6 +1,6 @@
 <?php
 /**
- * This file is part of Swoole-Compiler(AOT).
+ * This file is part of TypePHP.
  *
  * @link     https://www.swoole.com/
  * @contact  service@swoole.com
@@ -39,7 +39,7 @@ use Symfony\Component\Yaml\Yaml;
 class Translator extends Preprocessor
 {
     public const string VERSION = '0.3.0';
-    public const string APP_NAME = 'Swoole-Compiler (AOT)';
+    public const string APP_NAME = 'TypePHP';
     protected string $targetName = 'app';
     protected array $sourceDirs = [];
     protected bool $verbose = false;

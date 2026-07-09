@@ -1,6 +1,6 @@
 <?php
 /**
- * This file is part of Swoole-Compiler(AOT).
+ * This file is part of TypePHP.
  *
  * @link     https://www.swoole.com/
  * @contact  service@swoole.com
@@ -6282,7 +6282,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function parseChainedExpr(NodeAbstract $node, string $op, bool $getValue = false): string
     {
-        // AOT 编译器不允许操作未定义的变量，PHP 的 isset($var) 可能 $var 未定义
+        // TypePHP 编译器不允许操作未定义的变量，PHP 的 isset($var) 可能 $var 未定义
         $this->checkVarMustExist($node, $this->parseIdentifier($node));
         $fn = $this->getChainedFunc($op);
         $expr = $node;

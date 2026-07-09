@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Swoole-Compiler is an AOT (Ahead-of-Time) compiler that translates PHP source code to C++, then compiles it with GCC/Clang/MSVC into native binaries. It supports Linux (primary), macOS, and Windows.
+TypePHP is an AOT (Ahead-of-Time) compiler that translates PHP source code to C++, then compiles it with GCC/Clang/MSVC into native binaries. It supports Linux (primary), macOS, and Windows.
 
 **Prerequisites**: PHP 8.2+, GCC 9+ (C++17), CMake 3.24+. The `swoole/phpx` extension must be compiled (see README.md).
 
@@ -31,7 +31,7 @@ Example: PHP permits `return $value;` inside `__construct()` and lets callers co
 composer install
 
 # Compile a PHP project to a native binary
-php bin/compiler.php <path-to-project-or-file>
+./tpc <path-to-project-or-file>
 
 # Run all PHPUnit tests
 ./vendor/bin/phpunit

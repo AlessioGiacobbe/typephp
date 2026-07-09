@@ -15,12 +15,12 @@ resource:
     file-version: 0.1.0.1052
     product-version: 0.1.0
     company-name: "上海识沃网络科技有限公司"
-    file-description: "Swoole AOT Compiler"
-    internal-name: "swoole-compiler"
+    file-description: "TypePHP Compiler"
+    internal-name: "typephp"
     legal-copyright: "Copyright (C) 2026 上海识沃网络科技有限公司"
     legal-trademarks: "Swoole is a trademark of 上海识沃网络科技有限公司"
-    original-filename: "swoole_compiler.exe"
-    product-name: "Swoole Compiler"
+    original-filename: "tpc.exe"
+    product-name: "TypePHP"
     comments: "PHP 原生编译器，可将 PHP 项目编译为 Windows/Linux/macOS 平台原生的可执行文件"
 
 # Windows 应用程序清单文件（缺省不携带 manifest）

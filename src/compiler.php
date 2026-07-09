@@ -7,7 +7,7 @@ function main(int $argc, array $argv): void
         define("ROOT_PATH", getcwd());
     }
 
-    // .prof 文件分析模式：php bin/compiler.php app.prof
+    // .prof 文件分析模式：./tpc app.prof
     if ($argc >= 2 && str_ends_with($argv[1], '.prof')) {
         profileAnalyze($argc, $argv);
         return;
@@ -58,7 +58,7 @@ function profileAnalyze(int $argc, array $argv): void
 
     if (!file_exists($binary)) {
         fwrite(STDERR, "Binary not found: {$binary} (expected from prof file name)\n");
-        fwrite(STDERR, "Usage: php bin/compiler.php <binary>.prof\n");
+        fwrite(STDERR, "Usage: ./tpc <binary>.prof\n");
         exit(1);
     }
 

@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Swoole-Compiler is an AOT compiler that translates PHP source into C++, then compiles and links it into a native binary or a PHP extension. The primary entrypoint is `bin/compiler.php`, which boots `src/compiler.php`; that drives `PhpAot\Php\Translator` through a fixed pipeline:
+TypePHP is an AOT compiler that translates PHP source into C++, then compiles and links it into a native binary or a PHP extension. The primary entrypoint is `tpc`, which boots `src/compiler.php`; that drives `PhpAot\Php\Translator` through a fixed pipeline:
 
 1. `prepare()` scans files, parses ASTs, collects symbols, and topologically sorts PHP files by cross-file symbol usage.
 2. `convert()` turns PHP ASTs into generated `.cc` files while passing through native source files (`.cpp`, `.c`, `.s`, `.m`, `.mm`).
@@ -30,9 +30,9 @@ make -j32
 Compile a project, directory, single file, or `project.yml`:
 
 ```bash
-php bin/compiler.php <path-to-project-or-file>
-php bin/compiler.php <path> -O2
-php bin/compiler.php <path> --mode=ext -o <output_name>
+./tpc <path-to-project-or-file>
+./tpc <path> -O2
+./tpc <path> --mode=ext -o <output_name>
 ```
 
 ## Test commands
