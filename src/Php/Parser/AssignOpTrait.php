@@ -153,6 +153,10 @@ trait AssignOpTrait
             $type = self::TYPE_VAR;
         }
 
+        if ($propertyWriteTarget !== null && $this->shouldUseDynamicNativePropertyWrite($left, $type)) {
+            return $this->parseAssignPropertyFetch($left, $right, $propertyWriteTarget);
+        }
+
         if ($this->isVarExpr($left)) {
             $var = $this->parseWritableIdentifier($left);
             if ($var === 'this_') {
@@ -304,11 +308,33 @@ trait AssignOpTrait
         }
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
+        if ($propertyWriteTarget !== null && ($propertyDef = $this->getNativePropertyDef($left)) !== null) {
+            return $var . ' = ' . $this->convertExprFromType($propertyDef->type, $rightExpr);
+        }
         if ($finalVarType === self::TYPE_VAR) {
             return $var . ' = ' . $rightExpr;
         } else {
             return $var . ' = ' . $this->convertExprType($rightExpr, $leftExprType, $rightExprType);
         }
+    }
+
+    protected function shouldUseDynamicNativePropertyWrite(Expr $left, string $rightType): bool
+    {
+        if (!$this->isPropertyFetch($left)) {
+            return false;
+        }
+
+        $def = $this->getNativePropertyDef($left);
+        if ($def === null) {
+            return false;
+        }
+
+        if ($rightType === self::TYPE_VAR) {
+            return true;
+        }
+
+        return in_array($def->type, [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL, self::TYPE_STR], true)
+            && $rightType !== $def->type;
     }
 
     protected function parseStdContainerCopyAssign(string $leftVar, Expr $right): ?string
@@ -346,10 +372,16 @@ trait AssignOpTrait
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
         $this->assertNotNullsafeWriteContext($node->var);
-        $var          = $this->parseWritableIdentifier($node->var);
-        $expr         = $this->parseIdentifier($node->expr);
         $propertyWriteTarget = $this->preparePropertyWriteTarget($node->var);
         $this->guardLiteralDivisionByZero($node->expr, $op);
+
+        $nativePropertyAssignOp = $this->parseNativePropertyAssignOp($node, $op);
+        if ($nativePropertyAssignOp !== null) {
+            return $nativePropertyAssignOp;
+        }
+
+        $var          = $this->parseWritableIdentifier($node->var);
+        $expr         = $this->parseIdentifier($node->expr);
 
         if ($this->isVarExpr($node->var)) {
             if (!$this->hasVar($var)) {
@@ -441,6 +473,44 @@ trait AssignOpTrait
             return $var . '.append(' . $expr . ')';
         }
         return $var . ' ' . $op . ' (' . $expr . ')';
+    }
+
+    protected function parseNativePropertyAssignOp(Expr\AssignOp $node, string $op): ?string
+    {
+        if (!$this->isPropertyFetch($node->var)) {
+            return null;
+        }
+
+        $def = $this->getNativePropertyDef($node->var);
+        if ($def === null) {
+            return null;
+        }
+
+        $rightType = $this->detectTypeOfExpr($node->expr);
+        if (!$this->canUseNativePropertyAssignOp($def->type, $rightType, $op)) {
+            return null;
+        }
+
+        $var = $this->parseWritableIdentifier($node->var);
+        if (!$this->isNativePropertyTypedValue($node->var)) {
+            $helper = $def->type === self::TYPE_FLOAT ? 'php_aot_static_float_ref' : 'php_aot_static_int_ref';
+            $var = $helper . '(' . $var . '.unwrap_ptr())';
+        }
+
+        return $var . ' ' . $op . ' (' . $this->convertExprFromType($def->type, $this->parseIdentifier($node->expr)) . ')';
+    }
+
+    protected function canUseNativePropertyAssignOp(string $propertyType, string $rightType, string $op): bool
+    {
+        if ($propertyType !== $rightType) {
+            return false;
+        }
+
+        return match ($propertyType) {
+            self::TYPE_INT => in_array($op, ['+=', '-=', '*=', '%=', '<<=', '>>=', '&=', '|=', '^='], true),
+            self::TYPE_FLOAT => in_array($op, ['+=', '-=', '*=', '/='], true),
+            default => false,
+        };
     }
 
     protected function parseBigAssignOp(Expr\AssignOp $node, string $var, string $type, string $expr, string $rightType, string $op): string

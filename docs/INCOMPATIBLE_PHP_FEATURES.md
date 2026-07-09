@@ -44,6 +44,7 @@
 - 禁止子类覆盖父类私有属性。
 - `parent::method()` 的方法名必须是字面量。
 - 通过变量持有的 clone 对象写入私有 typed property 时，可能无法完全复现 PHP 的私有属性访问语义。
+- 为避免 typed property 写入路径引入额外动态检查，native typed property 在右值类型不确定或与属性类型不一致时会退化为 `setProperty()`；部分标量赋值可能遵循 Zend 弱类型转换，而不是 AOT 默认 strict 语义。
 - constructor property promotion 的运行时属性可用，但 `ReflectionProperty::isPromoted()` 目前不返回标准 PHP 结果。
 
 ## 表达式与控制流

@@ -42,6 +42,22 @@ class NativePropertyTest extends \BaseTest
         $this->assertStringContainsString('php::getStaticProperty(php_get_called_class(this_), "count") = php::toInt(value)', $code);
     }
 
+    public function testNativeIntPropertyAssignOpUsesNativeReference(): void
+    {
+        try {
+            $outputFile = $this->compileNativeProperty('native-property-assign-op-int.php');
+        } catch (TestError $e) {
+            $this->fail($e->getMessage());
+        }
+
+        $code = file_get_contents($outputFile);
+        $this->assertStringContainsString('php_aot_static_int_ref(this_.attr(', $code);
+        $this->assertStringContainsString('php_aot_static_int_ref(box.attr(', $code);
+        $this->assertSame(2, substr_count($code, 'php_aot_static_int_ref('));
+        $this->assertStringNotContainsString('this_.attr(php_get_prop(0, _literal_strings[0], 0, _literal_strings[1]), true) +=', $code);
+        $this->assertStringNotContainsString('box.attr(php_get_prop(0, _literal_strings[0], 0, _literal_strings[1]), true) +=', $code);
+    }
+
     public function testCannotAccessPrivateNativePropertyFromUnrelatedClass(): void
     {
         $this->exec('Cannot access private property `value` of class `NativePrivateOwner`', 'native-property-private-other-class.php');
