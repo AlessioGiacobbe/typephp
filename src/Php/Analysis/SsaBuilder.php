@@ -1,6 +1,6 @@
 <?php
 /**
- * SSA/e-SSA builder for AOT compiler.
+ * SSA/e-SSA builder for TypePHP.
  *
  * Based on php-src Zend Optimizer's SSA/e-SSA mechanisms (zend_ssa.h, sccp.c, dce.c).
  * Adapted to operate on nikic/php-parser AST nodes instead of Zend VM opcodes.
@@ -1394,7 +1394,7 @@ class SsaBuilder
     /**
      * Handle function/method calls that receive variables by reference.
      *
-     * Two mechanisms in the AOT compiler:
+     * Two mechanisms in TypePHP:
      *   1. Explicit &$var at call site: func(&$x) — detected via $arg->byRef
      *   2. refval() pseudo-function: func(refval($x)) — used for dynamic calls
      *      where the compiler can't statically determine if the parameter is byRef.
@@ -1493,7 +1493,7 @@ class SsaBuilder
                 $varName = $arg->value->name;
             }
 
-            // Case 2: refval($var) — AOT compiler convention for dynamic calls
+            // Case 2: refval($var) — TypePHP convention for dynamic calls
             if ($varName === null && $arg->value instanceof Expr\FuncCall
                 && $arg->value->name instanceof Node\Name
                 && $arg->value->name->toLowerString() === 'refval'

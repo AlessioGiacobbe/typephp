@@ -2,7 +2,7 @@
 
 ## Project overview
 
-TypePHP is an AOT compiler that translates PHP source into C++, then compiles and links it into a native binary or a PHP extension. The primary entrypoint is `tpc`, which boots `src/compiler.php`; that drives `PhpAot\Php\Translator` through a fixed pipeline:
+TypePHP is an ahead-of-time compiler that translates PHP source into C++, then compiles and links it into a native binary or a PHP extension. The primary entrypoint is `tpc`, which boots `src/compiler.php`; that drives `PhpAot\Php\Translator` through a fixed pipeline:
 
 1. `prepare()` scans files, parses ASTs, collects symbols, and topologically sorts PHP files by cross-file symbol usage.
 2. `convert()` turns PHP ASTs into generated `.cc` files while passing through native source files (`.cpp`, `.c`, `.s`, `.m`, `.mm`).

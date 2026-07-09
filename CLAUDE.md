@@ -8,21 +8,21 @@ TypePHP is an AOT (Ahead-of-Time) compiler that translates PHP source code to C+
 
 **Prerequisites**: PHP 8.2+, GCC 9+ (C++17), CMake 3.24+. The `swoole/phpx` extension must be compiled (see README.md).
 
-## AOT Language Design Principles
+## TypePHP Language Design Principles
 
-The AOT compiler should not blindly mirror every PHP language behavior. Most PHP syntax and semantics should remain compatible with ZendPHP, but some legal PHP constructs are historical baggage or language-design mistakes that conflict with static compilation, clear semantics, or robust generated C++ code.
+TypePHP should not blindly mirror every PHP language behavior. Most PHP syntax and semantics should remain compatible with ZendPHP, but some legal PHP constructs are historical baggage or language-design mistakes that conflict with static compilation, clear semantics, or robust generated C++ code.
 
 When reviewing or changing compiler behavior:
 
-- Prefer PHP compatibility for common, well-defined syntax that does not weaken the AOT static model.
+- Prefer PHP compatibility for common, well-defined syntax that does not weaken the TypePHP static model.
 - Reject PHP historical baggage when the syntax is ambiguous, surprising, or only preserved for legacy compatibility.
 - Diagnose such cases as early as possible during preprocessing/static compilation, instead of deferring to runtime TypeCheck or ZendVM errors.
 - Provide precise errors that include the relevant function/method name, parameter/property name, and type information where applicable.
-- Compare with other statically compiled languages such as C/C++, Java, C#, Go, Rust, Kotlin, and TypeScript before deciding whether AOT should preserve or reject a PHP behavior.
+- Compare with other statically compiled languages such as C/C++, Java, C#, Go, Rust, Kotlin, and TypeScript before deciding whether TypePHP should preserve or reject a PHP behavior.
 
-Example: `function test($a = 1, $b, $c) {}` is legal in PHP, but the default value for `$a` is effectively ignored and all parameters become required. This is a PHP historical compatibility artifact. AOT should reject it during preprocessing instead of preserving the behavior.
+Example: `function test($a = 1, $b, $c) {}` is legal in PHP, but the default value for `$a` is effectively ignored and all parameters become required. This is a PHP historical compatibility artifact. TypePHP should reject it during preprocessing instead of preserving the behavior.
 
-Example: PHP permits `return $value;` inside `__construct()` and lets callers consume `parent::__construct()` as a value, even though constructors cannot declare a return type. AOT treats constructors consistently with C++/Java-style semantics: constructors initialize objects and must not return values. `return;` is allowed, but `return $value;` or using a constructor call as a value must be rejected during static compilation.
+Example: PHP permits `return $value;` inside `__construct()` and lets callers consume `parent::__construct()` as a value, even though constructors cannot declare a return type. TypePHP treats constructors consistently with C++/Java-style semantics: constructors initialize objects and must not return values. `return;` is allowed, but `return $value;` or using a constructor call as a value must be rejected during static compilation.
 
 ## Build & Test Commands
 
