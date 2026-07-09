@@ -58,6 +58,19 @@ class NativePropertyTest extends \BaseTest
         $this->assertStringNotContainsString('box.attr(php_get_prop(0, _literal_strings[0], 0, _literal_strings[1]), true) +=', $code);
     }
 
+    public function testNativeIntPropertyAssignOpConvertsBitwiseNotClassConst(): void
+    {
+        try {
+            $outputFile = $this->compileNativeProperty('native-property-assign-op-class-const.php');
+        } catch (TestError $e) {
+            $this->fail($e->getMessage());
+        }
+
+        $code = file_get_contents($outputFile);
+        $this->assertStringContainsString('php_aot_static_int_ref(this_.attr(', $code);
+        $this->assertStringContainsString('&= (~php::toInt(php::constant(', $code);
+    }
+
     public function testNativePropertyWriteConvertsOnlyWhenTypesDiffer(): void
     {
         try {

@@ -4423,7 +4423,7 @@ class CompilerBase implements PropertyAccessContext
             return 'php::BigInt::bitNot(' . $this->parseExpr($expr->expr) . ')';
         }
         $var = $this->parseIdentifier($expr->expr);
-        return '~' . $var;
+        return '~' . $this->convertIntExpr($var);
     }
 
     protected function parseIf(Node\Stmt\If_ $v): string

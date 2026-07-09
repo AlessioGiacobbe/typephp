@@ -1,7 +1,8 @@
 --TEST--
-Native int property assignment converts RHS without explicit cast
+Native int property assignment follows strict property type rules
 --FILE--
 <?php
+declare(strict_types=1);
 class GridSize
 {
     public int $size = 0;
@@ -41,7 +42,12 @@ function main(): void
     $gi = new GridItem();
     $gi->colStart = $idx % $numCols;
     $gi->colEnd = $gi->colStart + 1;
-    $gi->rowStart = $idx / $numCols;
+    try {
+        $gi->rowStart = $idx / $numCols;
+    } catch (TypeError $e) {
+        var_dump($e->getMessage());
+    }
+    $gi->rowStart = intdiv($idx, $numCols);
     $gi->rowEnd = $gi->rowStart + 1;
     $gi->w = $cols[$gi->colStart]->size;
     $gi->h = $gi->rowStart < count($rows) ? $rows[$gi->rowStart]->size : 50;
@@ -53,6 +59,7 @@ function main(): void
 }
 ?>
 --EXPECT--
+string(63) "Cannot assign float to property GridItem::$rowStart of type int"
 int(2)
 int(3)
 int(1)

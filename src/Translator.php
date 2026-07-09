@@ -39,7 +39,7 @@ use Symfony\Component\Yaml\Yaml;
 class Translator extends Preprocessor
 {
     public const string VERSION = '0.3.0';
-    public const string APP_NAME = 'TypePHP';
+    public const string APP_NAME = 'TypePHP Compiler (AOT)';
     protected string $targetName = 'app';
     protected array $sourceDirs = [];
     protected bool $verbose = false;
@@ -1881,12 +1881,12 @@ CODE;
         $nativeConst = $this->findNativeClassConst($expr, $class, $name);
         if ($nativeConst and $expr->hasAttribute('nativeConst')) {
             $constDef = $expr->getAttribute('nativeConst');
-            return $this->genCValue($constDef->valueExpr->value);
+            return $constDef->valueExpr->value;
         }
         if ($this->isInternalClass($class)) {
             $constName = $class . '::' . $name;
             if (defined($constName)) {
-                return $this->genCValue(constant($constName));
+                return constant($constName);
             }
         }
         // Resolve enum case references. Enum cases are runtime objects; their
@@ -1897,7 +1897,7 @@ CODE;
             $classDef = $this->getClass($class);
             if ($classDef->enum && array_key_exists($name, $classDef->enumCases)) {
                 $caseValue = $classDef->enumCases[$name];
-                return $this->genCValue($caseValue ?? $name);
+                return $caseValue ?? $name;
             }
         }
         $this->fatalError($expr, "Class constant `{$class}::{$name}` not found");

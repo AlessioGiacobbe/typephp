@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TypePHP is an AOT (Ahead-of-Time) compiler that translates PHP source code to C++, then compiles it with GCC/Clang/MSVC into native binaries. It supports Linux (primary), macOS, and Windows.
+TypePHP is a PHP native compilation project. Its `tpc` command is TypePHP Compiler (AOT), which translates PHP source code to C++, then compiles it with GCC/Clang/MSVC into native binaries. It supports Linux (primary), macOS, and Windows.
 
 **Prerequisites**: PHP 8.2+, GCC 9+ (C++17), CMake 3.24+. The `swoole/phpx` extension must be compiled (see README.md).
 
