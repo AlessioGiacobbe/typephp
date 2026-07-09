@@ -86,7 +86,6 @@ src/Core/Translator (abstract base — indent/output/mode helpers)
 | `src/Php/ArgInfo.php` | Generates C function argument info structures for internal function registration |
 | `src/Php/Extractor.php` | Extracts interfaces from PHP classes |
 | `src/Php/Visitor.php` | Base `NodeVisitorAbstract` extension (skeleton for custom AST visitors) |
-| `src/Python/Translator.php` | Python-to-C++ translator (separate from the PHP pipeline) |
 
 ### Configuration
 
