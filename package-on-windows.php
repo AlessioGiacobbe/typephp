@@ -2,7 +2,7 @@
 <?php
 /**
  * Windows 打包脚本
- * 将构建好的 swoole_compiler.exe 及相关文件打包为 zip
+ * 将构建好的 tpc.exe 及相关文件打包为 zip
  * 参考 package.sh，但针对 Windows 特性进行了调整
  */
 
@@ -39,7 +39,7 @@ if (empty($phpxDir)) {
 echo "PHP 目录: {$phpDir}\n";
 echo "phpx 目录: {$phpxDir}\n\n";
 
-$compilerExe = 'swoole_compiler.exe';
+$compilerExe = 'tpc.exe';
 $versionFile = 'version.txt';
 
 // ==================== 1. 版本号管理 ====================
@@ -67,7 +67,7 @@ $arch = match (getenv('PROCESSOR_ARCHITECTURE')) {
 };
 
 $osType = 'windows';
-$outputFile = "swoole_compiler_v{$versionId}_{$osType}_{$arch}.zip";
+$outputFile = "tpc_v{$versionId}_{$osType}_{$arch}.zip";
 
 echo "操作系统: {$osType}\n";
 echo "硬件架构: {$arch}\n";
@@ -146,7 +146,7 @@ echo "\n";
 echo "[5/7] 准备 PHP 目录结构...\n";
 
 // 创建顶层目录（压缩包根目录）
-$topLevelDir = "swoole_compiler_v{$versionId}_{$osType}_{$arch}";
+$topLevelDir = "tpc_v{$versionId}_{$osType}_{$arch}";
 
 // 清理旧的临时目录
 if (is_dir($topLevelDir)) {
@@ -426,7 +426,7 @@ echo "  - examples/tetris-win32/ (俄罗斯方块游戏实例)\n\n";
 echo "使用说明:\n";
 echo "  1. 解压到任意目录\n";
 echo "  2. 确保 PHP 8.4+ 已安装并添加到 PATH\n";
-echo "  3. 运行: php swoole_compiler.php <your_script.php>\n\n";
+echo "  3. 运行: tpc <your_script.php>\n\n";
 
 /**
  * 递归复制目录
