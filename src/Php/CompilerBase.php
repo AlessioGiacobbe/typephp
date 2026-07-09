@@ -3104,12 +3104,19 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     protected function parseNodeWithUpdateAttribute(NodeAbstract $node, string $attribute, bool $update, callable $parser): string
     {
-        $attributes = $node->getAttributes();
+        $hadAttribute = $node->hasAttribute($attribute);
+        $previousValue = $node->getAttribute($attribute);
         $node->setAttribute($attribute, $update);
         try {
             return $parser();
         } finally {
-            $node->setAttributes($attributes);
+            if ($hadAttribute) {
+                $node->setAttribute($attribute, $previousValue);
+            } else {
+                $attributes = $node->getAttributes();
+                unset($attributes[$attribute]);
+                $node->setAttributes($attributes);
+            }
         }
     }
 
@@ -5122,11 +5129,23 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return;
         }
 
+        $rightType = $this->detectTypeOfExpr($right);
+        if ($this->isFixedObjectProp($def) && $rightType !== self::TYPE_VAR) {
+            if (!$this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
+                $this->fatalError(
+                    $left,
+                    'Cannot assign ' . $this->getPropertyAssignmentTypeName($rightType)
+                    . ' to property ' . $this->getObjectPropertyTypeCheckDisplayName($left)
+                    . ' of type ' . $this->getObjectPropertyTypeCheckTypeString($def)
+                );
+            }
+            return;
+        }
+
         if ($def->type !== self::TYPE_OBJECT) {
             return;
         }
 
-        $rightType = $this->detectTypeOfExpr($right);
         if ($rightType !== self::TYPE_VAR && $rightType !== self::TYPE_OBJECT) {
             $this->fatalError(
                 $left,
@@ -5165,6 +5184,14 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
             return $rightExpr;
         }
 
+        $rightType = $this->detectTypeOfExpr($right);
+        if ($rightType !== self::TYPE_VAR && $this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
+            return $rightExpr;
+        }
+        if ($rightType === self::TYPE_VAR && ($helper = $this->getNativeScalarPropertyTypeCheckHelper($def)) !== null) {
+            return $helper . '(' . $rightExpr . ', ' . $this->genCharPtr($this->getObjectPropertyTypeCheckDisplayName($left)) . ')';
+        }
+
         $rightClass = $this->detectClassOfExpr($right);
         if ($rightClass !== '') {
             return $rightExpr;
@@ -5184,8 +5211,14 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
         $propDisplay = $this->getObjectPropertyTypeCheckDisplayName($left);
         $typeStr = $this->getObjectPropertyTypeCheckTypeString($def);
-        $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($propDisplay, true) . ' " must be of type " '
-            . $this->genCharPtr($typeStr, true) . ' ", "), ' . $tmpVar . '.typeStr()), php::Str(" given"))';
+        if ($this->usesPhpStylePropertyAssignTypeError($def)) {
+            $msgExpr = 'php::concat({php::Str("Cannot assign "), ' . $tmpVar . '.typeStr(), php::Str(" to property "), '
+                . 'php::Str(' . $this->genCharPtr($propDisplay, true) . '), php::Str(" of type "), '
+                . 'php::Str(' . $this->genCharPtr($typeStr, true) . ')})';
+        } else {
+            $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($propDisplay, true) . ' " must be of type " '
+                . $this->genCharPtr($typeStr, true) . ' ", "), ' . $tmpVar . '.typeStr()), php::Str(" given"))';
+        }
 
         return '([&]() -> ' . self::TYPE_VAR . ' { '
             . $tmpVar . ' = ' . $rightExpr . '; '
@@ -5220,6 +5253,52 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     private function getObjectPropertyTypeCheckTypeString(PropertyDef $def): string
     {
         return (new PropertyAssignTypeInfo())->getTypeString($def);
+    }
+
+    private function usesPhpStylePropertyAssignTypeError(PropertyDef $def): bool
+    {
+        return empty($def->typeCheck) && $def->class === '' && in_array($def->type, [
+            self::TYPE_INT,
+            self::TYPE_FLOAT,
+            self::TYPE_BOOL,
+            self::TYPE_STR,
+            self::TYPE_ARRAY,
+        ], true);
+    }
+
+    protected function getNativeScalarPropertyTypeCheckHelper(PropertyDef $def): ?string
+    {
+        if (!empty($def->typeCheck) || $def->class !== '' || $def->nullable) {
+            return null;
+        }
+
+        return match ($def->type) {
+            self::TYPE_INT => 'php::toIntExact',
+            self::TYPE_FLOAT => 'php::toFloatExact',
+            self::TYPE_BOOL => 'php::toBoolExact',
+            default => null,
+        };
+    }
+
+    protected function canAssignStaticTypeToObjectProperty(PropertyDef $def, string $rightType): bool
+    {
+        return match ($def->type) {
+            self::TYPE_FLOAT => $rightType === self::TYPE_FLOAT || $rightType === self::TYPE_INT,
+            default => $rightType === $def->type,
+        };
+    }
+
+    protected function getPropertyAssignmentTypeName(string $type): string
+    {
+        return match ($type) {
+            self::TYPE_INT => 'int',
+            self::TYPE_FLOAT => 'float',
+            self::TYPE_BOOL => 'bool',
+            self::TYPE_STR => 'string',
+            self::TYPE_ARRAY => 'array',
+            self::TYPE_OBJECT => 'object',
+            default => 'value',
+        };
     }
 
     protected function parseUnset(Node\Stmt\Unset_ $node): string
@@ -5397,6 +5476,15 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         PropertyDef $def,
         string $getter,
     ): ?string {
+        if ($this->isPropertyFetchUpdate($expr) && !in_array($def->type, [self::TYPE_INT, self::TYPE_FLOAT], true)) {
+            return null;
+        }
+
+        if ($def->type === self::TYPE_BOOL) {
+            $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
+            return $this->convertBoolExpr($getter);
+        }
+
         $propVar = $this->getObjectPropVarName($objectVar, $propName);
         if ($objectVar === 'this_') {
             if (!$this->canHoistObjectProp($objectVar, $propName)) {

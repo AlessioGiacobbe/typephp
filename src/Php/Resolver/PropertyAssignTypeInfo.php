@@ -41,14 +41,25 @@ final class PropertyAssignTypeInfo
         if (!empty($def->typeCheck)) {
             return $def->typeCheck;
         }
-        if ($def->type !== CompilerBase::TYPE_OBJECT || $def->class === '') {
-            return [];
-        }
-
         $check = [];
         if ($def->nullable) {
             $check[] = ['kind' => 'isNull'];
         }
+        $scalarCheck = match ($def->type) {
+            CompilerBase::TYPE_INT => [['kind' => 'isInt']],
+            CompilerBase::TYPE_FLOAT => [['kind' => 'isFloat'], ['kind' => 'isInt']],
+            CompilerBase::TYPE_BOOL => [['kind' => 'isBool']],
+            CompilerBase::TYPE_STR => [['kind' => 'isString']],
+            CompilerBase::TYPE_ARRAY => [['kind' => 'isArray']],
+            default => null,
+        };
+        if ($scalarCheck !== null) {
+            return array_merge($check, $scalarCheck);
+        }
+        if ($def->type !== CompilerBase::TYPE_OBJECT || $def->class === '') {
+            return [];
+        }
+
         $check[] = ['kind' => 'instanceof', 'class' => $def->class];
         return $check;
     }
@@ -61,6 +72,14 @@ final class PropertyAssignTypeInfo
         if ($def->class !== '') {
             return ($def->nullable ? '?' : '') . $def->class;
         }
-        return $def->type;
+        return match ($def->type) {
+            CompilerBase::TYPE_INT => 'int',
+            CompilerBase::TYPE_FLOAT => 'float',
+            CompilerBase::TYPE_BOOL => 'bool',
+            CompilerBase::TYPE_STR => 'string',
+            CompilerBase::TYPE_ARRAY => 'array',
+            CompilerBase::TYPE_OBJECT => 'object',
+            default => $def->type,
+        };
     }
 }

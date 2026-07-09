@@ -58,6 +58,41 @@ class NativePropertyTest extends \BaseTest
         $this->assertStringNotContainsString('box.attr(php_get_prop(0, _literal_strings[0], 0, _literal_strings[1]), true) +=', $code);
     }
 
+    public function testNativePropertyWriteConvertsOnlyWhenTypesDiffer(): void
+    {
+        try {
+            $outputFile = $this->compileNativeProperty('native-property-write-conversion.php');
+        } catch (TestError $e) {
+            $this->fail($e->getMessage());
+        }
+
+        $code = file_get_contents($outputFile);
+        $this->assertStringContainsString(' = nativeValue;', $code);
+        $this->assertStringContainsString(' = php::toIntExact(dynamicValue, "NativePropertyWriteConversionBox::$value");', $code);
+        $this->assertStringNotContainsString(' = php::toInt(nativeValue);', $code);
+    }
+
+    public function testNativeThisPropertyWriteUsesExactHelperOnNativeReference(): void
+    {
+        try {
+            $outputFile = $this->compileNativeProperty('native-property-this-write-conversion.php');
+        } catch (TestError $e) {
+            $this->fail($e->getMessage());
+        }
+
+        $code = file_get_contents($outputFile);
+        $this->assertStringContainsString('php::Int &_object_prop_this___value = Z_LVAL_P(this_.attr(', $code);
+        $this->assertStringContainsString('_object_prop_this___value = php::toIntExact(dynamicValue, "NativePropertyThisWriteConversionBox::$value");', $code);
+    }
+
+    public function testNativePropertyStaticScalarTypeMismatchFailsAtCompileTime(): void
+    {
+        $this->exec(
+            'Cannot assign string to property NativePropertyStaticTypeMismatchBox::$value of type int',
+            'native-property-static-type-mismatch.php'
+        );
+    }
+
     public function testCannotAccessPrivateNativePropertyFromUnrelatedClass(): void
     {
         $this->exec('Cannot access private property `value` of class `NativePrivateOwner`', 'native-property-private-other-class.php');

@@ -812,7 +812,12 @@ trait SsaPropOptimizer
         }
 
         if ($this->context->inLoop || $this->context->scopeLevel > 1) {
-            return $objName . '.attr(' . $id . ', true)';
+            $refGetter = $objName . '.attr(' . $id . ', true)';
+            $zvalMacro = $this->getZvalValueMacroForPropType($cType);
+            if ($zvalMacro !== null) {
+                return $zvalMacro . '(' . $refGetter . '.unwrap_ptr())';
+            }
+            return $refGetter;
         }
 
         $refGetter = $objName . '.attr(' . $id . ', true)';

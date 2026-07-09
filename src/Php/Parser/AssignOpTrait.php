@@ -309,7 +309,10 @@ trait AssignOpTrait
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
         if ($propertyWriteTarget !== null && ($propertyDef = $this->getNativePropertyDef($left)) !== null) {
-            return $var . ' = ' . $this->convertExprFromType($propertyDef->type, $rightExpr);
+            $effectiveRightType = $rightExprType === self::TYPE_VAR && $this->getNativeScalarPropertyTypeCheckHelper($propertyDef) !== null
+                ? $propertyDef->type
+                : $rightExprType;
+            return $var . ' = ' . $this->convertNativePropertyWriteExpr($propertyDef->type, $effectiveRightType, $rightExpr);
         }
         if ($finalVarType === self::TYPE_VAR) {
             return $var . ' = ' . $rightExpr;
@@ -329,12 +332,8 @@ trait AssignOpTrait
             return false;
         }
 
-        if ($rightType === self::TYPE_VAR) {
-            return true;
-        }
-
-        return in_array($def->type, [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL, self::TYPE_STR], true)
-            && $rightType !== $def->type;
+        return !in_array($def->type, [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL, self::TYPE_STR, self::TYPE_ARRAY], true)
+            && $rightType === self::TYPE_VAR;
     }
 
     protected function parseStdContainerCopyAssign(string $leftVar, Expr $right): ?string
@@ -487,6 +486,14 @@ trait AssignOpTrait
         }
 
         $rightType = $this->detectTypeOfExpr($node->expr);
+        if ($this->isFixedObjectProp($def) && $rightType !== self::TYPE_VAR && !$this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
+            $this->fatalError(
+                $node->var,
+                'Cannot assign ' . $this->getPropertyAssignmentTypeName($rightType)
+                . ' to property ' . $this->getObjectPropertyTypeCheckDisplayName($node->var)
+                . ' of type ' . $this->getObjectPropertyTypeCheckTypeString($def)
+            );
+        }
         if (!$this->canUseNativePropertyAssignOp($def->type, $rightType, $op)) {
             return null;
         }
@@ -497,12 +504,29 @@ trait AssignOpTrait
             $var = $helper . '(' . $var . '.unwrap_ptr())';
         }
 
-        return $var . ' ' . $op . ' (' . $this->convertExprFromType($def->type, $this->parseIdentifier($node->expr)) . ')';
+        $rightExpr = $this->parseIdentifier($node->expr);
+        if ($rightType === self::TYPE_VAR) {
+            $rightExpr = $this->wrapObjectPropertyAssignTypeCheck($node->var, $node->expr, $rightExpr);
+        }
+        $effectiveRightType = $rightType === self::TYPE_VAR && $this->getNativeScalarPropertyTypeCheckHelper($def) !== null
+            ? $def->type
+            : $rightType;
+
+        return $var . ' ' . $op . ' (' . $this->convertNativePropertyWriteExpr($def->type, $effectiveRightType, $rightExpr) . ')';
+    }
+
+    protected function convertNativePropertyWriteExpr(string $propertyType, string $rightType, string $rightExpr): string
+    {
+        if ($propertyType === $rightType) {
+            return $rightExpr;
+        }
+
+        return $this->convertExprFromType($propertyType, $rightExpr);
     }
 
     protected function canUseNativePropertyAssignOp(string $propertyType, string $rightType, string $op): bool
     {
-        if ($propertyType !== $rightType) {
+        if ($rightType !== self::TYPE_VAR && !($propertyType === $rightType || ($propertyType === self::TYPE_FLOAT && $rightType === self::TYPE_INT))) {
             return false;
         }
 

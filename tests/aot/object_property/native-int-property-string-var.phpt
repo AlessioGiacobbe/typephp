@@ -1,5 +1,5 @@
 --TEST--
-Native int property assignment from string var uses setProperty fallback
+Native int property assignment rejects string var in strict mode
 --FILE--
 <?php
 class NativeIntStringVarBox
@@ -11,11 +11,14 @@ function main(): void
 {
     $box = new NativeIntStringVarBox();
 
-    $numeric = "123";
-    $box->value = $numeric;
-    var_dump($box->value);
+    $numeric = any("123");
+    try {
+        $box->value = $numeric;
+    } catch (TypeError $e) {
+        var_dump($e->getMessage());
+    }
 
-    $bad = "abc";
+    $bad = any("abc");
     try {
         $box->value = $bad;
     } catch (TypeError $e) {
@@ -24,5 +27,5 @@ function main(): void
 }
 ?>
 --EXPECT--
-int(123)
+string(74) "Cannot assign string to property NativeIntStringVarBox::$value of type int"
 string(74) "Cannot assign string to property NativeIntStringVarBox::$value of type int"

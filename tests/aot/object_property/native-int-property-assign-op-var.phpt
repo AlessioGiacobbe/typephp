@@ -20,8 +20,11 @@ function main(): void
     var_dump($box->value);
 
     $text = any("3");
-    $box->value += $text;
-    var_dump($box->value);
+    try {
+        $box->value += $text;
+    } catch (TypeError $e) {
+        var_dump($e->getMessage());
+    }
 
     $bad = any("abc");
     try {
@@ -38,6 +41,6 @@ function main(): void
 ?>
 --EXPECT--
 int(3)
-int(6)
-string(39) "Unsupported operand types: int + string"
+string(73) "Cannot assign string to property NativeIntAssignOpBox::$value of type int"
+string(73) "Cannot assign string to property NativeIntAssignOpBox::$value of type int"
 int(6)
