@@ -3674,6 +3674,9 @@ class CompilerBase implements PropertyAccessContext
                 if ($classDef->hasMethod($funcName)) {
                     return $this->getArgInfoByIndex($classDef->getMethod($funcName)->functionDef, $argIndex);
                 }
+                if ($classDef->hasAbstractMethod($funcName)) {
+                    return $this->getArgInfoByIndex($classDef->getAbstractMethod($funcName)->functionDef, $argIndex);
+                }
                 if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
                     return null;
                 }
@@ -3698,6 +3701,10 @@ class CompilerBase implements PropertyAccessContext
             while (true) {
                 if ($classDef->hasMethod($funcName)) {
                     $functionDef = $classDef->getMethod($funcName)->functionDef;
+                    break;
+                }
+                if ($classDef->hasAbstractMethod($funcName)) {
+                    $functionDef = $classDef->getAbstractMethod($funcName)->functionDef;
                     break;
                 }
                 if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
@@ -6468,6 +6475,9 @@ class CompilerBase implements PropertyAccessContext
             }
             if ($this->isTypedObject($object)) {
                 $class = $this->getObjectType($object);
+            } elseif ($object === 'this_') {
+                // $this 在构造函数/方法中静态类型为当前类，便于解析抽象方法等按引用参数签名
+                $class = $this->classDef !== null ? $this->classDef->getNamespacedName(false) : $this->class;
             }
         }
 
