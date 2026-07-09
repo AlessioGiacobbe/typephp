@@ -173,6 +173,46 @@ class CompilerBaseApiTest extends TestCase
         $this->assertSame('ZEND_LONG_MIN', $this->compiler->getConstValue('PHP_INT_MIN'));
     }
 
+    public function testConstDeclarationsAreStaticallyExpanded(): void
+    {
+        $this->compiler->prepareFile($this->fixturePath('const_decl.php'));
+
+        $code = $this->invokeMethod(
+            'parseConstFetch',
+            new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name('AOT_COMPILE_TIME_CONST'))
+        );
+
+        $this->assertSame(CompilerBase::CONST_VAR . 'AOT_COMPILE_TIME_CONST', $code);
+    }
+
+    public function testDefineConstantsAreNotStaticallyExpanded(): void
+    {
+        $internalConstants = $this->getPropertyValue('internalConstants');
+        $this->assertArrayHasKey('PHP_VERSION', $internalConstants);
+        $this->assertArrayNotHasKey('ROOT_PATH', $internalConstants);
+
+        $code = $this->invokeMethod(
+            'parseConstFetch',
+            new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name('ROOT_PATH'))
+        );
+
+        $this->assertStringStartsWith('php::constant(nullptr, ', $code);
+        $this->assertStringNotContainsString(ROOT_PATH, $code);
+    }
+
+    public function testDynamicallyDefinedConstantsAreNotInternalConstants(): void
+    {
+        $name = 'AOT_USER_DEFINE_' . str_replace('.', '_', uniqid('', true));
+        define($name, 'runtime-value');
+
+        $compiler = CompilerTest::create($this->testDir);
+        $ref = new \ReflectionClass($compiler);
+        $prop = $ref->getProperty('internalConstants');
+        $prop->setAccessible(true);
+
+        $this->assertArrayNotHasKey($name, $prop->getValue($compiler));
+    }
+
     // ========================================================================
     // genAnonClassName
     // ========================================================================

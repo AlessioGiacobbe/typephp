@@ -128,7 +128,7 @@ class Translator extends Preprocessor
         // 这样可以确保优先级：命令行 > YAML > 默认值
         $this->internalFunctions = array_flip(get_defined_functions()['internal']);
         unset($this->internalFunctions[self::ENTRY_FUNCTION]);
-        $this->internalConstants = get_defined_constants();
+        $this->internalConstants = $this->loadInternalConstants();
         if ($this->climate->arguments->defined('help')) {
             $this->showUsage();
             exit(0);
@@ -146,6 +146,26 @@ class Translator extends Preprocessor
 
         // 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
         $this->detectPlatform();
+    }
+
+    protected function loadInternalConstants(): array
+    {
+        $groups = get_defined_constants(true);
+        if (!is_array($groups)) {
+            return get_defined_constants();
+        }
+
+        $constants = [];
+        foreach ($groups as $groupName => $group) {
+            // 编译器进程中的用户常量属于被编译程序的运行时状态，不能在静态阶段展开。
+            if (strcasecmp((string) $groupName, 'user') === 0 || !is_array($group)) {
+                continue;
+            }
+            foreach ($group as $name => $value) {
+                $constants[$name] = $value;
+            }
+        }
+        return $constants;
     }
 
     /**
