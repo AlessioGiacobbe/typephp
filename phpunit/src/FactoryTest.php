@@ -11,6 +11,48 @@ use PhpAot\Php\Platform\Macos;
 
 class FactoryTest extends TestCase
 {
+    private string|false $originalPath;
+    private string $tmpDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->originalPath = getenv('PATH');
+        $this->tmpDir = sys_get_temp_dir() . '/compiler_factory_test_' . uniqid();
+        mkdir($this->tmpDir, 0777, true);
+    }
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        if ($this->originalPath === false) {
+            putenv('PATH');
+        } else {
+            putenv('PATH=' . $this->originalPath);
+        }
+        $this->removeDirectory($this->tmpDir);
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+        foreach (array_diff(scandir($dir), ['.', '..']) as $file) {
+            $path = $dir . DIRECTORY_SEPARATOR . $file;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+        rmdir($dir);
+    }
+
+    private function createFakeExecutable(string $name): string
+    {
+        $path = $this->tmpDir . DIRECTORY_SEPARATOR . $name;
+        file_put_contents($path, "#!/bin/sh\nexit 0\n");
+        chmod($path, 0755);
+        return $path;
+    }
+
     /**
      * 测试 PlatformFactory 自动检测
      */
@@ -171,5 +213,29 @@ class FactoryTest extends TestCase
         $retrievedPlatform = $compiler->getPlatform();
         
         $this->assertSame($platform, $retrievedPlatform);
+    }
+
+    public function testCompilerCommandProgramParsesArgumentsAndQuotes(): void
+    {
+        $this->assertSame('clang++', CompilerFactory::getCommandProgram('clang++ -stdlib=libc++'));
+        $this->assertSame('/opt/llvm/bin/clang++', CompilerFactory::getCommandProgram('"/opt/llvm/bin/clang++" -O2'));
+        $this->assertSame('C:\\LLVM\\bin\\clang++.exe', CompilerFactory::getCommandProgram('"C:\\LLVM\\bin\\clang++.exe" -O2'));
+        $this->assertSame('', CompilerFactory::getCommandProgram('   '));
+    }
+
+    public function testCompilerCommandExecutableUsesPathAndIgnoresArguments(): void
+    {
+        $this->createFakeExecutable('fake-g++');
+        putenv('PATH=' . $this->tmpDir);
+
+        $this->assertTrue(CompilerFactory::isCommandExecutable('fake-g++ -std=c++20'));
+        $this->assertFalse(CompilerFactory::isCommandExecutable('missing-g++ -std=c++20'));
+    }
+
+    public function testCompilerCommandExecutableAcceptsQuotedAbsolutePath(): void
+    {
+        $compiler = $this->createFakeExecutable('quoted-clang++');
+
+        $this->assertTrue(CompilerFactory::isCommandExecutable('"' . $compiler . '" -O2'));
     }
 }

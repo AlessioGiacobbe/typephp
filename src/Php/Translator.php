@@ -636,6 +636,9 @@ class Translator extends Preprocessor
 
     public function prepare(string $path): array
     {
+        $files = $this->getFiles($path);
+        $this->validateCompilerToolchain();
+
         // shell_exec 和 define 已通过 php::fn:: 直接调用，无需动态符号表
 
         // 根据平台检查库文件（仅在构建二进制文件时需要）
@@ -648,7 +651,6 @@ class Translator extends Preprocessor
             }
         }
 
-        $files = $this->getFiles($path);
         $files = $this->filterIgnoredFiles($files);
         // 分析 PHP 文件，预处理
         foreach ($files as $k => $file) {
@@ -666,6 +668,30 @@ class Translator extends Preprocessor
         }
         $this->sortFiles($files);
         return $files;
+    }
+
+    protected function validateCompilerToolchain(): void
+    {
+        $backend = $this->getCompilerBackend();
+        $compilerCommand = $backend->getCompilerCommand();
+        if (!CompilerFactory::isCommandExecutable($compilerCommand)) {
+            $program = CompilerFactory::getCommandProgram($compilerCommand);
+            $this->error(
+                "C/C++ compiler executable not found: {$program}\n" .
+                "Configured compiler command: {$compilerCommand}\n" .
+                "Install a supported compiler or set `cpp-compiler` in project.yml / PHPX_CC / CXX."
+            );
+        }
+
+        $linkerCommand = $backend->getLinkerCommand();
+        if ($linkerCommand !== $compilerCommand && !CompilerFactory::isCommandExecutable($linkerCommand)) {
+            $program = CompilerFactory::getCommandProgram($linkerCommand);
+            $this->error(
+                "Linker executable not found: {$program}\n" .
+                "Configured linker command: {$linkerCommand}\n" .
+                "Install the required linker or update compiler configuration."
+            );
+        }
     }
 
     protected function shouldIgnoreFile(string $file): bool

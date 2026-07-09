@@ -110,10 +110,69 @@ class CompilerFactory
         ];
     }
 
+    public static function isCommandExecutable(string $command): bool
+    {
+        $program = self::getCommandProgram($command);
+        if ($program === '') {
+            return false;
+        }
+
+        if (self::isPathLikeCommand($program)) {
+            return is_file($program) && is_executable($program);
+        }
+
+        $path = getenv('PATH');
+        if ($path === false || $path === '') {
+            return false;
+        }
+
+        $extensions = [''];
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $pathext = getenv('PATHEXT') ?: '.COM;.EXE;.BAT;.CMD';
+            $extensions = array_filter(array_map('strtolower', explode(';', $pathext)));
+            if (preg_match('/\.[A-Za-z0-9]+$/', $program)) {
+                array_unshift($extensions, '');
+            }
+        }
+
+        foreach (explode(PATH_SEPARATOR, $path) as $dir) {
+            if ($dir === '') {
+                continue;
+            }
+            foreach ($extensions as $extension) {
+                $candidate = rtrim($dir, DIRECTORY_SEPARATOR . '/\\') . DIRECTORY_SEPARATOR . $program . $extension;
+                if (is_file($candidate) && is_executable($candidate)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public static function getCommandProgram(string $command): string
+    {
+        $command = trim($command);
+        if ($command === '') {
+            return '';
+        }
+
+        if ($command[0] === '"' || $command[0] === "'") {
+            $quote = $command[0];
+            $end = strpos($command, $quote, 1);
+            if ($end !== false) {
+                return substr($command, 1, $end - 1);
+            }
+        }
+
+        $firstToken = strtok($command, " \t\r\n");
+        return $firstToken === false ? '' : $firstToken;
+    }
+
     private static function normalizeCompilerName(string $compilerName): string
     {
-        $firstToken = strtok(trim($compilerName), ' ');
-        if ($firstToken === false || $firstToken === '') {
+        $firstToken = self::getCommandProgram($compilerName);
+        if ($firstToken === '') {
             return '';
         }
 
@@ -121,5 +180,12 @@ class CompilerFactory
         $name = strtolower($name);
 
         return preg_replace('/\.exe$/', '', $name);
+    }
+
+    private static function isPathLikeCommand(string $program): bool
+    {
+        return str_contains($program, '/')
+            || str_contains($program, '\\')
+            || preg_match('/^[A-Za-z]:[\/\\\\]/', $program) === 1;
     }
 }
