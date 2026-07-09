@@ -16,7 +16,8 @@ class native_types
     public const type_decimal = 'decimal';
 }
 
-class complex_types {
+class complex_types
+{
     public const type_any = 'any';
     public const type_var = 'any';
     public const type_variant = 'any';
@@ -45,6 +46,21 @@ class std
         return boolval($value);
     }
 
+    public static function bigInt(mixed $value): mixed
+    {
+        return $value;
+    }
+
+    public static function decimal(mixed $value): mixed
+    {
+        return $value;
+    }
+
+    public static function bigFloat(mixed $value): mixed
+    {
+        return $value;
+    }
+
     public static function array(mixed $type, int $size): array
     {
         return [];
@@ -60,21 +76,9 @@ class std
         return [];
     }
 
-    public static function vector(mixed $value_type): array
+    public static function vector(mixed $value_type, ?int $size = null): array
     {
         return [];
-    }
-
-    public static function unsafe_ptr(mixed &$value): mixed
-    {
-        return null;
-    }
-
-    public static function fill(array $array, mixed $value): void
-    {
-        for ($i = 0; $i < count($array); $i++) {
-            $array[$i] = $value;
-        }
     }
 }
 
@@ -93,4 +97,3 @@ function objval(mixed $var, string $className): mixed
 {
     return $var;
 }
-
