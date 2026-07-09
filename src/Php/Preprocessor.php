@@ -6,17 +6,17 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php;
+namespace TypePhp;
 
 use MJS\TopSort\Implementations\StringSort;
-use PhpAot\Php\Entity\ArrayInitPlan;
-use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\ConstantDef;
-use PhpAot\Php\Entity\FunctionDef;
-use PhpAot\Php\Entity\InterfaceDef;
-use PhpAot\Php\Entity\MethodDef;
-use PhpAot\Php\Entity\PropertyDef;
-use PhpAot\Php\Exception\SyntaxError;
+use TypePhp\Entity\ArrayInitPlan;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\ConstantDef;
+use TypePhp\Entity\FunctionDef;
+use TypePhp\Entity\InterfaceDef;
+use TypePhp\Entity\MethodDef;
+use TypePhp\Entity\PropertyDef;
+use TypePhp\Exception\SyntaxError;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\IntersectionType;

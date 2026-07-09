@@ -6,10 +6,10 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Generator;
+namespace TypePhp\Generator;
 
-use PhpAot\Php\ArgInfo;
-use PhpAot\Php\Context\FunctionContext;
+use TypePhp\ArgInfo;
+use TypePhp\Context\FunctionContext;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\IntersectionType;

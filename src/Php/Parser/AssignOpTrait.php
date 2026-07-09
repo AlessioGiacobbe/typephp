@@ -6,9 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Parser;
+namespace TypePhp\Parser;
 
-use PhpAot\Php\Resolver\PropertyWriteTarget;
+use TypePhp\Resolver\PropertyWriteTarget;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Expr;

@@ -6,9 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Resolver;
+namespace TypePhp\Resolver;
 
-use PhpAot\Php\Entity\ClassDef;
+use TypePhp\Entity\ClassDef;
 use PhpParser\NodeAbstract;
 
 interface PropertyAccessContext

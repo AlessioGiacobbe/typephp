@@ -22,11 +22,11 @@
  * unset path, so a hoisted reference is not invalidated by direct unset alone.
  */
 
-namespace PhpAot\Php\Optimizer;
+namespace TypePhp\Optimizer;
 
-use PhpAot\Php\Analysis\SsaBuilder;
-use PhpAot\Php\Analysis\SsaFlags;
-use PhpAot\Php\Reflection;
+use TypePhp\Analysis\SsaBuilder;
+use TypePhp\Analysis\SsaFlags;
+use TypePhp\Reflection;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 

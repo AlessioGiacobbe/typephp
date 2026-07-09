@@ -1,6 +1,6 @@
 <?php
 
-namespace PhpAot\Php\Context;
+namespace TypePhp\Context;
 
 class ScopeContext
 {

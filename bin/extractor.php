@@ -80,7 +80,7 @@ function main(array $argv): void
     }
 
     // 创建提取器
-    $extractor = new PhpAot\Php\Extractor();
+    $extractor = new TypePhp\Extractor();
 
     // 批量模式
     if ($options['batch']) {

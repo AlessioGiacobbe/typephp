@@ -1,11 +1,11 @@
 <?php
 
-namespace PhpAot\Tests\Entity;
+namespace TypePhp\Tests\Entity;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Entity\MethodDef;
-use PhpAot\Php\Entity\FunctionDef;
-use PhpAot\Php\ArgInfo;
+use TypePhp\Entity\MethodDef;
+use TypePhp\Entity\FunctionDef;
+use TypePhp\ArgInfo;
 use PhpParser\Modifiers;
 
 class MethodDefExtendedTest extends TestCase

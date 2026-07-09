@@ -6,10 +6,10 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Resolver;
+namespace TypePhp\Resolver;
 
-use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\PropertyDef;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\PropertyDef;
 
 final readonly class PropertyAccessResult
 {

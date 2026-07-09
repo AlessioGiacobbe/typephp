@@ -15,7 +15,10 @@
   },
   "autoload": {
     "psr-4": {
-      "PhpAot\\": "src"
+      "TypePhp\\": [
+        "src/Php",
+        "src"
+      ]
     }
   },
   "scripts": {

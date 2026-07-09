@@ -1,11 +1,11 @@
 <?php
 
-namespace PhpAot\Php\Backend;
+namespace TypePhp\Backend;
 
-use PhpAot\Php\Platform\PlatformBase;
-use PhpAot\Php\Platform\Windows;
-use PhpAot\Php\Platform\Linux;
-use PhpAot\Php\Platform\Macos;
+use TypePhp\Platform\PlatformBase;
+use TypePhp\Platform\Windows;
+use TypePhp\Platform\Linux;
+use TypePhp\Platform\Macos;
 
 /**
  * 编译器工厂类
@@ -98,7 +98,7 @@ class CompilerFactory
     public static function autoDetect(string $compilerName = '', ?PlatformBase $platform = null): array
     {
         // 创建平台
-        $platform ??= \PhpAot\Php\Platform\PlatformFactory::create();
+        $platform ??= \TypePhp\Platform\PlatformFactory::create();
         
         // 创建编译器
         $compilerName = self::detectCompilerName($platform, $compilerName);

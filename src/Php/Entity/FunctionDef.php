@@ -6,9 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Entity;
+namespace TypePhp\Entity;
 
-use PhpAot\Php\ArgInfo;
+use TypePhp\ArgInfo;
 use PhpParser\NodeAbstract;
 
 class FunctionDef

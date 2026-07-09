@@ -1,18 +1,18 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Analysis\SsaBuilder;
-use PhpAot\Php\Analysis\SsaFlags;
-use PhpAot\Php\Analysis\SsaVar;
-use PhpAot\Php\Analysis\SsaBlock;
-use PhpAot\Php\Analysis\VarState;
-use PhpAot\Php\Analysis\PiConstraint;
-use PhpAot\Php\CompilerBase;
-use PhpAot\Php\CompilerTest;
-use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\MethodDef;
+use TypePhp\Analysis\SsaBuilder;
+use TypePhp\Analysis\SsaFlags;
+use TypePhp\Analysis\SsaVar;
+use TypePhp\Analysis\SsaBlock;
+use TypePhp\Analysis\VarState;
+use TypePhp\Analysis\PiConstraint;
+use TypePhp\CompilerBase;
+use TypePhp\CompilerTest;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\MethodDef;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\FunctionLike;

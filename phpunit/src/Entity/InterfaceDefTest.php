@@ -1,10 +1,10 @@
 <?php
 
-namespace PhpAot\Tests\Entity;
+namespace TypePhp\Tests\Entity;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Entity\InterfaceDef;
-use PhpAot\Php\Entity\MethodDef;
+use TypePhp\Entity\InterfaceDef;
+use TypePhp\Entity\MethodDef;
 
 class InterfaceDefTest extends TestCase
 {

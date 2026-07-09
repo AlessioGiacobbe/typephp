@@ -1,9 +1,9 @@
 <?php
 
-namespace PhpAot\Tests\Entity;
+namespace TypePhp\Tests\Entity;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Entity\ConstantDef;
+use TypePhp\Entity\ConstantDef;
 use PhpParser\Modifiers;
 
 class ConstantDefTest extends TestCase

@@ -1,12 +1,12 @@
 <?php
 
-namespace PhpAot\Tests\Analysis;
+namespace TypePhp\Tests\Analysis;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Analysis\SsaBlock;
-use PhpAot\Php\Analysis\SsaBuilder;
-use PhpAot\Php\Analysis\SsaFlags;
-use PhpAot\Php\Analysis\SsaVar;
+use TypePhp\Analysis\SsaBlock;
+use TypePhp\Analysis\SsaBuilder;
+use TypePhp\Analysis\SsaFlags;
+use TypePhp\Analysis\SsaVar;
 use PhpParser\Node\Expr;
 use PhpParser\Node\FunctionLike;
 use PhpParser\Node\Stmt;

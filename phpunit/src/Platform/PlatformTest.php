@@ -1,11 +1,11 @@
 <?php
 
-namespace PhpAot\Tests\Platform;
+namespace TypePhp\Tests\Platform;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Platform\Windows;
-use PhpAot\Php\Platform\Linux;
-use PhpAot\Php\Platform\Macos;
+use TypePhp\Platform\Windows;
+use TypePhp\Platform\Linux;
+use TypePhp\Platform\Macos;
 
 class PlatformTest extends TestCase
 {

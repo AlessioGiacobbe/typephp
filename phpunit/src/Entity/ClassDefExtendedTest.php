@@ -1,10 +1,10 @@
 <?php
 
-namespace PhpAot\Tests\Entity;
+namespace TypePhp\Tests\Entity;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\MethodDef;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\MethodDef;
 use PhpParser\Modifiers;
 use PhpParser\Node\Stmt\Trait_;
 

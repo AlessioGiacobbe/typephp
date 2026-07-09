@@ -1,8 +1,8 @@
 <?php
 
-namespace PhpAot\Php\Backend;
+namespace TypePhp\Backend;
 
-use PhpAot\Php\Platform\PlatformBase;
+use TypePhp\Platform\PlatformBase;
 
 /**
  * GCC/Clang 共享后端基类
@@ -124,7 +124,7 @@ abstract class GccLikeBackend extends CompilerBackend
         if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['shared'])) {
             $flags .= ' ' . $this->platform->getSharedLinkFlag();
 
-            if ($this->platform instanceof \PhpAot\Php\Platform\Macos && !empty($config['install_name'])) {
+            if ($this->platform instanceof \TypePhp\Platform\Macos && !empty($config['install_name'])) {
                 $flags .= ' ' . $this->platform->getCurrentInstallNameOption($config['install_name']);
             }
         }

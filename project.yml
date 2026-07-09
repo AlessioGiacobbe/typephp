@@ -31,7 +31,6 @@ resource:
 
 sources:
   - ./src/Php
-  - ./src/Core
   - ./src/functions.php
   - ./src/gen_stub.php
   - ./src/compiler.php

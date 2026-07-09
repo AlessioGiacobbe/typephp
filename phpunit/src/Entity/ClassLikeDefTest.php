@@ -1,11 +1,11 @@
 <?php
 
-namespace PhpAot\Tests\Entity;
+namespace TypePhp\Tests\Entity;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Entity\ClassLikeDef;
-use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\InterfaceDef;
+use TypePhp\Entity\ClassLikeDef;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\InterfaceDef;
 use PhpParser\Modifiers;
 
 class ClassLikeDefTest extends TestCase

@@ -1,9 +1,9 @@
 <?php
 
-namespace PhpAot\Tests\Entity;
+namespace TypePhp\Tests\Entity;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Entity\PropertyDef;
+use TypePhp\Entity\PropertyDef;
 use PhpParser\Modifiers;
 
 class PropertyDefTest extends TestCase

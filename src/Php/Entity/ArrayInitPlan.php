@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Entity;
+namespace TypePhp\Entity;
 
 class ArrayInitPlan
 {

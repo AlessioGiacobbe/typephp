@@ -1,10 +1,10 @@
 <?php
 
-namespace PhpAot\Php\Backend;
+namespace TypePhp\Backend;
 
-use PhpAot\Php\Platform\PlatformBase;
-use PhpAot\Php\Platform\Windows;
-use PhpAot\Php\Platform\Macos;
+use TypePhp\Platform\PlatformBase;
+use TypePhp\Platform\Windows;
+use TypePhp\Platform\Macos;
 
 /**
  * Clang 编译器后端实现

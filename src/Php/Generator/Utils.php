@@ -6,10 +6,10 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Generator;
+namespace TypePhp\Generator;
 
-use PhpAot\Php\CompilerBase;
-use PhpAot\Php\Constants;
+use TypePhp\CompilerBase;
+use TypePhp\Constants;
 
 trait Utils
 {

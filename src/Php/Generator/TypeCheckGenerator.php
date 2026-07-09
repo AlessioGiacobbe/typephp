@@ -6,9 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Generator;
+namespace TypePhp\Generator;
 
-use PhpAot\Php\ArgInfo;
+use TypePhp\ArgInfo;
 use PhpParser\Node;
 use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;

@@ -6,26 +6,26 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php;
+namespace TypePhp;
 
 use MJS\TopSort\Implementations\StringSort;
-use PhpAot\Php\Analysis\SsaBuilder;
-use PhpAot\Php\Backend\CompilerFactory;
-use PhpAot\Php\Entity\ArrayInitPlan;
-use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\ClassLikeDef;
-use PhpAot\Php\Entity\ConstantDef;
-use PhpAot\Php\Entity\FunctionDef;
-use PhpAot\Php\Entity\InterfaceDef;
-use PhpAot\Php\Entity\MethodDef;
-use PhpAot\Php\Entity\PropertyDef;
-use PhpAot\Php\Exception\Redo;
-use PhpAot\Php\Exception\Skip;
-use PhpAot\Php\Exception\SyntaxError;
-use PhpAot\Php\Exception\Unsupported;
-use PhpAot\Php\Generator\ResourceFileGenerator;
-use PhpAot\Php\Platform\PlatformFactory;
-use PhpAot\Php\Platform\Windows;
+use TypePhp\Analysis\SsaBuilder;
+use TypePhp\Backend\CompilerFactory;
+use TypePhp\Entity\ArrayInitPlan;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\ClassLikeDef;
+use TypePhp\Entity\ConstantDef;
+use TypePhp\Entity\FunctionDef;
+use TypePhp\Entity\InterfaceDef;
+use TypePhp\Entity\MethodDef;
+use TypePhp\Entity\PropertyDef;
+use TypePhp\Exception\Redo;
+use TypePhp\Exception\Skip;
+use TypePhp\Exception\SyntaxError;
+use TypePhp\Exception\Unsupported;
+use TypePhp\Generator\ResourceFileGenerator;
+use TypePhp\Platform\PlatformFactory;
+use TypePhp\Platform\Windows;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -1540,7 +1540,7 @@ CODE;
 
         // 使用 MSVC 的 rc.exe 编译 .rc -> .res
         $backend = $this->getCompilerBackend();
-        if ($backend instanceof \PhpAot\Php\Backend\Msvc) {
+        if ($backend instanceof \TypePhp\Backend\Msvc) {
             $resFile = $this->getResourceResFile();
             $cmd = $backend->compileResourceFile($rcFile, $resFile);
             $this->climate->comment($cmd);

@@ -1,4 +1,4 @@
 <?php
 require __DIR__ . '/bootstrap.php';
-$r = \PhpAot\Php\Reflection::getFunctionParameter('array_push', 0);
+$r = \TypePhp\Reflection::getFunctionParameter('array_push', 0);
 var_dump($r->isPassedByReference());

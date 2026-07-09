@@ -1,6 +1,6 @@
 <?php
 
-namespace PhpAot\Php\Platform;
+namespace TypePhp\Platform;
 
 /**
  * macOS 平台实现

@@ -30,7 +30,7 @@ class ClassTest extends \BaseTest
     public function testSelfCanBePartOfUnionType()
     {
         global $translator;
-        $compiler = \PhpAot\Php\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/union_type_self_allowed.php';
         $compiler->addFiles([$testFile]);
@@ -42,7 +42,7 @@ class ClassTest extends \BaseTest
     public function testParentCanBePartOfUnionType()
     {
         global $translator;
-        $compiler = \PhpAot\Php\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/union_type_parent_allowed.php';
         $compiler->addFiles([$testFile]);

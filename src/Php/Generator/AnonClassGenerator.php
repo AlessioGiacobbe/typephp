@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Generator;
+namespace TypePhp\Generator;
 
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
@@ -21,7 +21,7 @@ use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\Property;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitorAbstract;
-use PhpAot\Php\Reflection;
+use TypePhp\Reflection;
 
 trait AnonClassGenerator
 {

@@ -1,16 +1,16 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Exception\DynamicCall;
-use PhpAot\Php\Exception\PlaceHolder;
-use PhpAot\Php\Exception\Redo;
-use PhpAot\Php\Exception\Skip;
-use PhpAot\Php\Exception\SyntaxError;
-use PhpAot\Php\Exception\TestError;
-use PhpAot\Php\Exception\Unsupported;
-use PhpAot\Php\Constants;
+use TypePhp\Exception\DynamicCall;
+use TypePhp\Exception\PlaceHolder;
+use TypePhp\Exception\Redo;
+use TypePhp\Exception\Skip;
+use TypePhp\Exception\SyntaxError;
+use TypePhp\Exception\TestError;
+use TypePhp\Exception\Unsupported;
+use TypePhp\Constants;
 
 class ExceptionTest extends TestCase
 {

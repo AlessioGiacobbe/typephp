@@ -1,8 +1,8 @@
 <?php
 
-namespace PhpAot\Php\Backend;
+namespace TypePhp\Backend;
 
-use PhpAot\Php\Platform\Windows;
+use TypePhp\Platform\Windows;
 
 /**
  * MSVC 编译器后端实现

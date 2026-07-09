@@ -7,11 +7,11 @@
  * provably produce the same type and no dangerous operations exist.
  */
 
-namespace PhpAot\Php\Optimizer;
+namespace TypePhp\Optimizer;
 
-use PhpAot\Php\Analysis\SsaBuilder;
-use PhpAot\Php\Analysis\SsaFlags;
-use PhpAot\Php\Analysis\SsaVar;
+use TypePhp\Analysis\SsaBuilder;
+use TypePhp\Analysis\SsaFlags;
+use TypePhp\Analysis\SsaVar;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
 

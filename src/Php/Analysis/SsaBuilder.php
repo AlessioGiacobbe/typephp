@@ -23,9 +23,9 @@
  *                      unknown value after the call. Tracked via IS_REFERENCE flag.
  */
 
-namespace PhpAot\Php\Analysis;
+namespace TypePhp\Analysis;
 
-use PhpAot\Php\AstNodeType;
+use TypePhp\AstNodeType;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;

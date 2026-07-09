@@ -1,9 +1,9 @@
 <?php
 
-namespace PhpAot\Tests\Context;
+namespace TypePhp\Tests\Context;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Context\ScopeContext;
+use TypePhp\Context\ScopeContext;
 
 class ScopeContextTest extends TestCase
 {

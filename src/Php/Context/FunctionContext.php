@@ -6,9 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Context;
+namespace TypePhp\Context;
 
-use PhpAot\Php\Analysis\SsaBuilder;
+use TypePhp\Analysis\SsaBuilder;
 
 class FunctionContext
 {

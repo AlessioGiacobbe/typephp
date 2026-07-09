@@ -1,9 +1,9 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\CompilerTest;
+use TypePhp\CompilerTest;
 
 class CompilerBaseAdapterTest extends TestCase
 {
@@ -164,7 +164,7 @@ class CompilerBaseAdapterTest extends TestCase
         $platform = $platformProp->getValue($compiler);
         
         if ($platform !== null) {
-            $isWindowsNew = $platform instanceof \PhpAot\Php\Platform\Windows;
+            $isWindowsNew = $platform instanceof \TypePhp\Platform\Windows;
             
             // 新旧方法应该一致
             $this->assertEquals($isWindowsOld, $isWindowsNew, 

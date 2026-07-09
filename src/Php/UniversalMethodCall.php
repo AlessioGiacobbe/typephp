@@ -1,6 +1,6 @@
 <?php
 
-namespace PhpAot\Php;
+namespace TypePhp;
 
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -527,7 +527,7 @@ trait UniversalMethodCall
         ];
     }
 
-    protected function validateExtensionFirstParam(string $type, \PhpAot\Php\Entity\FunctionDef $funcDef): bool
+    protected function validateExtensionFirstParam(string $type, \TypePhp\Entity\FunctionDef $funcDef): bool
     {
         if (empty($funcDef->argInfoList)) {
             return false;

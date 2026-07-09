@@ -1,11 +1,11 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\CompilerTest;
-use PhpAot\Php\CompilerBase;
-use PhpAot\Php\Platform\Windows;
+use TypePhp\CompilerTest;
+use TypePhp\CompilerBase;
+use TypePhp\Platform\Windows;
 
 class CompilerBaseApiTest extends TestCase
 {
@@ -626,7 +626,7 @@ sources:
     if: PHP_OS_FAMILY >= "Linux"
 YAML);
 
-        $this->expectException(\PhpAot\Php\Exception\TestError::class);
+        $this->expectException(\TypePhp\Exception\TestError::class);
         $this->expectExceptionMessage('Unsupported source condition');
 
         $this->invokeMethod('parseProjectYaml', $projectFile);
@@ -640,7 +640,7 @@ sources:
     if: PHP_VERSION
 YAML);
 
-        $this->expectException(\PhpAot\Php\Exception\TestError::class);
+        $this->expectException(\TypePhp\Exception\TestError::class);
         $this->expectExceptionMessage('Unsupported source condition');
 
         $this->invokeMethod('parseProjectYaml', $projectFile);
@@ -654,7 +654,7 @@ sources:
     if: PHP_VERSION_ID >= getenv("MIN_PHP")
 YAML);
 
-        $this->expectException(\PhpAot\Php\Exception\TestError::class);
+        $this->expectException(\TypePhp\Exception\TestError::class);
         $this->expectExceptionMessage('Unsupported source condition');
 
         $this->invokeMethod('parseProjectYaml', $projectFile);

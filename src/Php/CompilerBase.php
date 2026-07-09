@@ -6,52 +6,52 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php;
+namespace TypePhp;
 
 use League\CLImate\CLImate;
-use PhpAot\Php\Backend\CompilerBackend;
-use PhpAot\Php\Backend\CompilerFactory;
-use PhpAot\Php\Context\FunctionContext;
-use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\ConstantDef;
-use PhpAot\Php\Entity\FunctionDef;
-use PhpAot\Php\Entity\InterfaceDef;
-use PhpAot\Php\Entity\MethodDef;
-use PhpAot\Php\Entity\PropertyDef;
-use PhpAot\Php\Exception\DynamicCall;
-use PhpAot\Php\Exception\PlaceHolder;
-use PhpAot\Php\Exception\Redo;
-use PhpAot\Php\Exception\Skip;
-use PhpAot\Php\Exception\TestError;
-use PhpAot\Php\Generator\AnonClassGenerator;
-use PhpAot\Php\Generator\ClosureGenerator;
-use PhpAot\Php\Generator\PlaceHolderGenerator;
-use PhpAot\Php\Generator\PropertyPromotion;
-use PhpAot\Php\Generator\Utils;
-use PhpAot\Php\Generator\TypeCheckGenerator;
-use PhpAot\Php\Optimizer\SsaPropOptimizer;
-use PhpAot\Php\Optimizer\SsaTypeOptimizer;
-use PhpAot\Php\Optimizer\LoopVarOptimizer;
-use PhpAot\Php\Parser\StdContainerTrait;
-use PhpAot\Php\Parser\AssignOpTrait;
-use PhpAot\Php\Parser\BinaryOpTrait;
-use PhpAot\Php\Parser\TypeConversionTrait;
-use PhpAot\Php\Parser\TypeDetectionTrait;
-use PhpAot\Php\Optimizer\FuncCallOptimizer;
-use PhpAot\Php\Platform\Linux;
-use PhpAot\Php\Platform\Macos;
-use PhpAot\Php\Platform\PlatformBase;
-use PhpAot\Php\Platform\PlatformFactory;
-use PhpAot\Php\Platform\Windows;
-use PhpAot\Php\Resolver\InstancePropertyFetchTarget;
-use PhpAot\Php\Resolver\PropertyAccessContext;
-use PhpAot\Php\Resolver\NativePropertyAccess;
-use PhpAot\Php\Resolver\PropertyAccessResult;
-use PhpAot\Php\Resolver\PropertyAccessResolver;
-use PhpAot\Php\Resolver\PropertyAssignTypeInfo;
-use PhpAot\Php\Resolver\PropertyWriteTarget;
-use PhpAot\Php\Resolver\StaticPropertyFetchResolution;
-use PhpAot\Php\Resolver\StaticPropertyFetchTarget;
+use TypePhp\Backend\CompilerBackend;
+use TypePhp\Backend\CompilerFactory;
+use TypePhp\Context\FunctionContext;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\ConstantDef;
+use TypePhp\Entity\FunctionDef;
+use TypePhp\Entity\InterfaceDef;
+use TypePhp\Entity\MethodDef;
+use TypePhp\Entity\PropertyDef;
+use TypePhp\Exception\DynamicCall;
+use TypePhp\Exception\PlaceHolder;
+use TypePhp\Exception\Redo;
+use TypePhp\Exception\Skip;
+use TypePhp\Exception\TestError;
+use TypePhp\Generator\AnonClassGenerator;
+use TypePhp\Generator\ClosureGenerator;
+use TypePhp\Generator\PlaceHolderGenerator;
+use TypePhp\Generator\PropertyPromotion;
+use TypePhp\Generator\Utils;
+use TypePhp\Generator\TypeCheckGenerator;
+use TypePhp\Optimizer\SsaPropOptimizer;
+use TypePhp\Optimizer\SsaTypeOptimizer;
+use TypePhp\Optimizer\LoopVarOptimizer;
+use TypePhp\Parser\StdContainerTrait;
+use TypePhp\Parser\AssignOpTrait;
+use TypePhp\Parser\BinaryOpTrait;
+use TypePhp\Parser\TypeConversionTrait;
+use TypePhp\Parser\TypeDetectionTrait;
+use TypePhp\Optimizer\FuncCallOptimizer;
+use TypePhp\Platform\Linux;
+use TypePhp\Platform\Macos;
+use TypePhp\Platform\PlatformBase;
+use TypePhp\Platform\PlatformFactory;
+use TypePhp\Platform\Windows;
+use TypePhp\Resolver\InstancePropertyFetchTarget;
+use TypePhp\Resolver\PropertyAccessContext;
+use TypePhp\Resolver\NativePropertyAccess;
+use TypePhp\Resolver\PropertyAccessResult;
+use TypePhp\Resolver\PropertyAccessResolver;
+use TypePhp\Resolver\PropertyAssignTypeInfo;
+use TypePhp\Resolver\PropertyWriteTarget;
+use TypePhp\Resolver\StaticPropertyFetchResolution;
+use TypePhp\Resolver\StaticPropertyFetchTarget;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -71,7 +71,7 @@ use PhpParser\ParserFactory;
 use PhpParser\PhpVersion;
 use PhpParser\PrettyPrinter;
 
-class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessContext
+class CompilerBase implements PropertyAccessContext
 {
     use AstNodeType;
     use FuncCallOptimizer;
@@ -184,6 +184,10 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
     protected const string PHASE_CONVERT = 'convert';
 
     protected string $lang = 'PHP';
+    protected int $indentLevel = 0;
+    protected string $indentStr = "\t";
+    public string $mode = 'cli';
+    protected string $osType = 'linux';
     protected string $compilerPhase = self::PHASE_IDLE;
     protected string $cppCompiler = '';
     protected array $literalStrings = [];
@@ -406,7 +410,7 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
 
     public function __construct(string $rootPath)
     {
-        parent::__construct();
+        $this->osType = PHP_OS_FAMILY;
         if (version_compare(PHP_VERSION, '8.2.0', '<')) {
             $this->error('PHP 8.2.0 or later is required');
         }
@@ -419,6 +423,31 @@ class CompilerBase extends \PhpAot\Core\Translator implements PropertyAccessCont
         $this->setBuildDir($rootPath . '/build');
         $climate = new CLImate();
         $this->climate = $climate;
+    }
+
+    public function setMode($mode): void
+    {
+        $this->mode = $mode;
+    }
+
+    public function setIndent(string $indent): void
+    {
+        $this->indentStr = $indent;
+    }
+
+    public function setIndentLevel(int $level): void
+    {
+        $this->indentLevel = $level;
+    }
+
+    public function getLang(): string
+    {
+        return $this->lang;
+    }
+
+    protected function getIndent(): string
+    {
+        return str_repeat($this->indentStr, $this->indentLevel);
     }
 
     protected function getPhpxDir(): string

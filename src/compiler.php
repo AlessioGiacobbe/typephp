@@ -1,5 +1,5 @@
 <?php
-use PhpAot\Php\Translator;
+use TypePhp\Translator;
 
 function main(int $argc, array $argv): void
 {

@@ -6,9 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Optimizer;
+namespace TypePhp\Optimizer;
 
-use PhpAot\Php\Reflection;
+use TypePhp\Reflection;
 use PhpParser\Node;
 
 /**

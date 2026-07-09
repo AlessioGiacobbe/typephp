@@ -1,10 +1,10 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Symbol;
-use PhpAot\Php\CompilerBase;
+use TypePhp\Symbol;
+use TypePhp\CompilerBase;
 
 class SymbolTest extends TestCase
 {

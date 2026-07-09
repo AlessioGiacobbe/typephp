@@ -1,13 +1,13 @@
 <?php
 
-namespace PhpAot\Tests\Entity;
+namespace TypePhp\Tests\Entity;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\MethodDef;
-use PhpAot\Php\Entity\PropertyDef;
-use PhpAot\Php\Entity\ConstantDef;
-use PhpAot\Php\Entity\FunctionDef;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\MethodDef;
+use TypePhp\Entity\PropertyDef;
+use TypePhp\Entity\ConstantDef;
+use TypePhp\Entity\FunctionDef;
 use PhpParser\Modifiers;
 
 class ClassDefTest extends TestCase
@@ -40,7 +40,7 @@ class ClassDefTest extends TestCase
     {
         $class = new ClassDef('Foo', Modifiers::PUBLIC);
         $this->assertNotNull($class->propertyContext);
-        $this->assertInstanceOf(\PhpAot\Php\Context\FunctionContext::class, $class->propertyContext);
+        $this->assertInstanceOf(\TypePhp\Context\FunctionContext::class, $class->propertyContext);
     }
 
     public function testGetNamespacedNameInheritedFromClassLikeDef(): void

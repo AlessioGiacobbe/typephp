@@ -1,10 +1,10 @@
 <?php
 
-namespace PhpAot\Tests\Generator;
+namespace TypePhp\Tests\Generator;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\CompilerTest;
-use PhpAot\Php\CompilerBase;
+use TypePhp\CompilerTest;
+use TypePhp\CompilerBase;
 
 class UtilsTest extends TestCase
 {
@@ -40,9 +40,9 @@ class UtilsTest extends TestCase
 
     public function testGenCValueInt(): void
     {
-        $this->assertSame(42, $this->invokeMethod('genCValue', 42));
-        $this->assertSame(-1, $this->invokeMethod('genCValue', -1));
-        $this->assertSame(0, $this->invokeMethod('genCValue', 0));
+        $this->assertSame($this->invokeMethod('genIntegerLiteral', 42), $this->invokeMethod('genCValue', 42));
+        $this->assertSame($this->invokeMethod('genIntegerLiteral', -1), $this->invokeMethod('genCValue', -1));
+        $this->assertSame($this->invokeMethod('genIntegerLiteral', 0), $this->invokeMethod('genCValue', 0));
     }
 
     public function testGenCValueFloat(): void

@@ -1,6 +1,6 @@
 <?php
 
-namespace PhpAot\Php\Generator;
+namespace TypePhp\Generator;
 
 /**
  * Windows 资源文件 (.rc) 生成器

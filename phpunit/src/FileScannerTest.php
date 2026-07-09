@@ -1,9 +1,9 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\FileScanner;
+use TypePhp\FileScanner;
 
 class FileScannerTest extends TestCase
 {

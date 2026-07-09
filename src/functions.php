@@ -6,8 +6,8 @@
  * @contact  service@swoole.com
  */
 
-use PhpAot\Core\Translator;
-use PhpAot\Php\Exception\Unsupported;
+use TypePhp\CompilerBase;
+use TypePhp\Exception\Unsupported;
 
 function abort($v)
 {

@@ -1,9 +1,9 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\CompilerTest;
+use TypePhp\CompilerTest;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\VariadicPlaceholder;

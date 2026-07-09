@@ -1,8 +1,8 @@
 <?php
 
-namespace PhpAot\Php\Backend;
+namespace TypePhp\Backend;
 
-use PhpAot\Php\Platform\PlatformBase;
+use TypePhp\Platform\PlatformBase;
 
 /**
  * GCC 编译器后端实现

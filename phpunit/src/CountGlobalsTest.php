@@ -1,6 +1,6 @@
 <?php
 
-use PhpAot\Php\CompilerTest;
+use TypePhp\CompilerTest;
 
 /**
  * 从 count-globals.php 拆解的测试用例：

@@ -6,9 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Entity;
+namespace TypePhp\Entity;
 
-use PhpAot\Php\Context\FunctionContext;
+use TypePhp\Context\FunctionContext;
 use PhpParser\Modifiers;
 use PhpParser\Node\Stmt\Trait_;
 

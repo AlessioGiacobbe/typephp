@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Generator;
+namespace TypePhp\Generator;
 
 trait PlaceHolderGenerator
 {

@@ -1,11 +1,11 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\CompilerTest;
-use PhpAot\Php\CompilerBase;
-use PhpAot\Php\ArgInfo;
+use TypePhp\CompilerTest;
+use TypePhp\CompilerBase;
+use TypePhp\ArgInfo;
 
 class TraitsTest extends TestCase
 {

@@ -2,7 +2,7 @@
 
 ## Project overview
 
-TypePHP is an ahead-of-time compiler that translates PHP source into C++, then compiles and links it into a native binary or a PHP extension. The primary entrypoint is `tpc`, which boots `src/compiler.php`; that drives `PhpAot\Php\Translator` through a fixed pipeline:
+TypePHP is an ahead-of-time compiler that translates PHP source into C++, then compiles and links it into a native binary or a PHP extension. The primary entrypoint is `tpc`, which boots `src/compiler.php`; that drives `TypePhp\Translator` through a fixed pipeline:
 
 1. `prepare()` scans files, parses ASTs, collects symbols, and topologically sorts PHP files by cross-file symbol usage.
 2. `convert()` turns PHP ASTs into generated `.cc` files while passing through native source files (`.cpp`, `.c`, `.s`, `.m`, `.mm`).
@@ -86,5 +86,5 @@ Generated C++ is auto-formatted by the compiler itself when `clang-format` is av
 ## Test-specific conventions
 
 - PHPUnit tests for compiler internals should use `CompilerTest::create(ROOT_PATH)`, which enables test mode instead of normal fatal exits.
-- `phpunit/bootstrap.php` exposes a `BaseTest::exec()` helper that expects compilation failures to surface as `PhpAot\Php\Exception\TestError`.
+- `phpunit/bootstrap.php` exposes a `BaseTest::exec()` helper that expects compilation failures to surface as `TypePhp\Exception\TestError`.
 - PHPT end-to-end tests live in `tests/aot/`; existing guidance and examples generally put executable test logic inside a `main()` function.

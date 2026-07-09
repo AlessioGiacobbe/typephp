@@ -1,6 +1,6 @@
 <?php
 
-namespace PhpAot\Php\Platform;
+namespace TypePhp\Platform;
 
 /**
  * 平台工厂类

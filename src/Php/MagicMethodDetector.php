@@ -6,9 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php;
+namespace TypePhp;
 
-use PhpAot\Php\Entity\MethodDef;
+use TypePhp\Entity\MethodDef;
 use PhpParser\NodeAbstract;
 
 trait MagicMethodDetector

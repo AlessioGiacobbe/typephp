@@ -1,9 +1,9 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\ArgInfo;
+use TypePhp\ArgInfo;
 
 class ArgInfoTest extends TestCase
 {

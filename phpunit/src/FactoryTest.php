@@ -1,13 +1,13 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Platform\PlatformFactory;
-use PhpAot\Php\Backend\CompilerFactory;
-use PhpAot\Php\Platform\Windows;
-use PhpAot\Php\Platform\Linux;
-use PhpAot\Php\Platform\Macos;
+use TypePhp\Platform\PlatformFactory;
+use TypePhp\Backend\CompilerFactory;
+use TypePhp\Platform\Windows;
+use TypePhp\Platform\Linux;
+use TypePhp\Platform\Macos;
 
 class FactoryTest extends TestCase
 {

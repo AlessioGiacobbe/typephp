@@ -1,11 +1,11 @@
 <?php
 
-namespace PhpAot\Tests;
+namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\CompilerTest;
-use PhpAot\Php\ArgInfo;
-use PhpAot\Php\Exception\TestError;
+use TypePhp\CompilerTest;
+use TypePhp\ArgInfo;
+use TypePhp\Exception\TestError;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Function_;
 use PhpParser\Modifiers;

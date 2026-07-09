@@ -1,6 +1,6 @@
 <?php
 
-use PhpAot\Php\CompilerTest;
+use TypePhp\CompilerTest;
 
 class ClassMethodOverrideTest extends \BaseTest
 {

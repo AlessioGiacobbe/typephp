@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Parser;
+namespace TypePhp\Parser;
 
 use PhpParser\Node;
 use PhpParser\NodeAbstract;

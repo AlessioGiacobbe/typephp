@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Exception;
+namespace TypePhp\Exception;
 
 class TestError extends \RuntimeException
 {

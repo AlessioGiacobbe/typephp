@@ -60,13 +60,12 @@ The compiler follows a 4-stage pipeline, orchestrated by `src/Php/Translator.php
 ### Class Hierarchy
 
 ```
-src/Core/Translator (abstract base — indent/output/mode helpers)
- └─ src/Php/CompilerBase (core PHP→C++ translation logic)
-     ├─ uses traits: AstNodeType, FuncCallOptimizer, ClosureGenerator,
-     │    PlaceHolderGenerator, PropertyPromotion, MagicMethodDetector
-     └─ src/Php/Preprocessor (scanning, symbol tables, dependency sort, YAML config)
-         └─ src/Php/Translator (full pipeline: prepare→convert→compile→build)
-             └─ src/Php/CompilerTest (test-only subclass, used by PHPUnit tests)
+src/Php/CompilerBase (core PHP→C++ translation logic, indent/output/mode helpers)
+ ├─ uses traits: AstNodeType, FuncCallOptimizer, ClosureGenerator,
+ │    PlaceHolderGenerator, PropertyPromotion, MagicMethodDetector
+ └─ src/Php/Preprocessor (scanning, symbol tables, dependency sort, YAML config)
+     └─ src/Php/Translator (full pipeline: prepare→convert→compile→build)
+         └─ src/Php/CompilerTest (test-only subclass, used by PHPUnit tests)
 ```
 
 ### Key Components

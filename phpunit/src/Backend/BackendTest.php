@@ -1,15 +1,15 @@
 <?php
 
-namespace PhpAot\Tests\Backend;
+namespace TypePhp\Tests\Backend;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Platform\Windows;
-use PhpAot\Php\Platform\Linux;
-use PhpAot\Php\Platform\Macos;
-use PhpAot\Php\Backend\Msvc;
-use PhpAot\Php\Backend\Gcc;
-use PhpAot\Php\Backend\Clang;
-use PhpAot\Php\Backend\CompilerFactory;
+use TypePhp\Platform\Windows;
+use TypePhp\Platform\Linux;
+use TypePhp\Platform\Macos;
+use TypePhp\Backend\Msvc;
+use TypePhp\Backend\Gcc;
+use TypePhp\Backend\Clang;
+use TypePhp\Backend\CompilerFactory;
 
 class BackendTest extends TestCase
 {

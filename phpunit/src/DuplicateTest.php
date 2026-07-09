@@ -1,8 +1,8 @@
 <?php
 
 
-use PhpAot\Php\CompilerTest;
-use PhpAot\Php\Exception\TestError;
+use TypePhp\CompilerTest;
+use TypePhp\Exception\TestError;
 use PHPUnit\Framework\TestCase;
 
 class DuplicateTest extends TestCase

@@ -1,6 +1,6 @@
 <?php
 
-namespace PhpAot\Php\Platform;
+namespace TypePhp\Platform;
 
 /**
  * Windows 平台实现

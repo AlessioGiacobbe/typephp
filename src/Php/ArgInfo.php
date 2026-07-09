@@ -6,9 +6,9 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php;
+namespace TypePhp;
 
-use PhpAot\Php\Entity\ArrayInitPlan;
+use TypePhp\Entity\ArrayInitPlan;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 

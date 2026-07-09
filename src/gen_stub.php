@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
 
-use PhpAot\Php\Exception\Skip;
-use PhpAot\Php\Translator;
+use TypePhp\Exception\Skip;
+use TypePhp\Translator;
 use PhpParser\Comment\Doc as DocComment;
 use PhpParser\ConstExprEvaluator;
 use PhpParser\Modifiers;

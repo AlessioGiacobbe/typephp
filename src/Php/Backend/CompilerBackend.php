@@ -1,8 +1,8 @@
 <?php
 
-namespace PhpAot\Php\Backend;
+namespace TypePhp\Backend;
 
-use PhpAot\Php\Platform\PlatformBase;
+use TypePhp\Platform\PlatformBase;
 
 /**
  * 编译器后端抽象基类

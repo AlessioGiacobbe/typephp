@@ -8,10 +8,10 @@
  * statically bounded range are accepted.
  */
 
-namespace PhpAot\Php\Optimizer;
+namespace TypePhp\Optimizer;
 
-use PhpAot\Php\Analysis\SsaBuilder;
-use PhpAot\Php\Analysis\SsaFlags;
+use TypePhp\Analysis\SsaBuilder;
+use TypePhp\Analysis\SsaFlags;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;

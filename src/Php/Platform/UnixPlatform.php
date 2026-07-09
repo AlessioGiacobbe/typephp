@@ -1,6 +1,6 @@
 <?php
 
-namespace PhpAot\Php\Platform;
+namespace TypePhp\Platform;
 
 /**
  * Unix-like 平台基类（Linux, macOS）

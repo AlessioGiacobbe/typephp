@@ -1,10 +1,10 @@
 <?php
 
-namespace PhpAot\Tests\Context;
+namespace TypePhp\Tests\Context;
 
 use PHPUnit\Framework\TestCase;
-use PhpAot\Php\Context\FunctionContext;
-use PhpAot\Php\Context\ScopeContext;
+use TypePhp\Context\FunctionContext;
+use TypePhp\Context\ScopeContext;
 
 class FunctionContextExtendedTest extends TestCase
 {

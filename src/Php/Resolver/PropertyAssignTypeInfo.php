@@ -6,10 +6,10 @@
  * @contact  service@swoole.com
  */
 
-namespace PhpAot\Php\Resolver;
+namespace TypePhp\Resolver;
 
-use PhpAot\Php\CompilerBase;
-use PhpAot\Php\Entity\PropertyDef;
+use TypePhp\CompilerBase;
+use TypePhp\Entity\PropertyDef;
 
 final class PropertyAssignTypeInfo
 {

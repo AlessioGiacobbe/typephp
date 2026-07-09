@@ -1,9 +1,9 @@
 <?php
 
-use PhpAot\Php\ArgInfo;
-use PhpAot\Php\CompilerTest;
-use PhpAot\Php\Entity\ClassDef;
-use PhpAot\Php\Entity\FunctionDef;
+use TypePhp\ArgInfo;
+use TypePhp\CompilerTest;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\FunctionDef;
 
 class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
 {
