@@ -1918,29 +1918,38 @@ class CompilerBase implements PropertyAccessContext
             if ($v->expr === null) {
                 return 'return ' . self::TYPE_REF . '{};';
             }
-            if (!$this->isVarExpr($v->expr)) {
+            if (!$this->isVarExpr($v->expr)
+                && !$this->isPropertyFetch($v->expr)
+                && !$this->isStaticPropertyFetch($v->expr)
+                && !$this->isArrayDimFetch($v->expr)) {
                 $this->fatalError($v, 'A function returning by reference must return a variable');
             }
-            $name = $this->parseIdentifier($v->expr);
-            if (!$this->hasVar($name)) {
-                $this->errorUndefinedVariable($v->expr);
-            }
-            if ($this->hasLocalVar($name) && $this->getVarType($name) !== self::TYPE_VAR && $this->getVarType($name) !== self::TYPE_REF) {
-                $isParameter = false;
-                foreach ($this->functionDef->argInfoList as $argInfo) {
-                    if ($argInfo->name === $name) {
-                        $isParameter = true;
-                        break;
+            if ($this->isVarExpr($v->expr)) {
+                $name = $this->parseIdentifier($v->expr);
+                if (!$this->hasVar($name)) {
+                    $this->errorUndefinedVariable($v->expr);
+                }
+                if ($this->hasLocalVar($name) && $this->getVarType($name) !== self::TYPE_VAR && $this->getVarType($name) !== self::TYPE_REF) {
+                    $isParameter = false;
+                    foreach ($this->functionDef->argInfoList as $argInfo) {
+                        if ($argInfo->name === $name) {
+                            $isParameter = true;
+                            break;
+                        }
                     }
+                    if ($isParameter) {
+                        $this->fatalError($v, 'A function returning by reference cannot return a native typed parameter');
+                    }
+                    // The declaration is emitted after parsing the body, so a local can
+                    // be promoted to Variant before C++ is generated.
+                    $this->context->localVars[$name] = self::TYPE_VAR;
                 }
-                if ($isParameter) {
-                    $this->fatalError($v, 'A function returning by reference cannot return a native typed parameter');
-                }
-                // The declaration is emitted after parsing the body, so a local can
-                // be promoted to Variant before C++ is generated.
-                $this->context->localVars[$name] = self::TYPE_VAR;
+                return 'return ' . $name . '.toReference();';
             }
-            return 'return ' . $name . '.toReference();';
+            if ($this->isPropertyFetch($v->expr)) {
+                return 'return ' . $this->emitDynamicPropertyFetchRef($v->expr, $v) . ';';
+            }
+            return 'return ' . $this->parseChainedExpr($v->expr, self::OP_REFVAL) . ';';
         }
         if ($v->expr === null) {
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {

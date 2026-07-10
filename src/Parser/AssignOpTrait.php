@@ -675,7 +675,49 @@ trait AssignOpTrait
             }
             $rightExpr = $tmpVar . ' = ' . $this->parseExpr($expr->expr);
         } elseif ($expr->expr instanceof Expr\FuncCall) {
-            $this->fatalError($expr, 'Cannot assign reference from a dynamic function call');
+            $rightExpr = $tmpVar . ' = php::toReferenceExact(' . $this->parseExpr($expr->expr) . ')';
+        } elseif ($expr->expr instanceof Expr\MethodCall) {
+            if (!$this->isNamedMethod($expr->expr->name) || !$this->isVarExpr($expr->expr->var)) {
+                $rightExpr = $tmpVar . ' = php::toReferenceExact(' . $this->parseExpr($expr->expr) . ')';
+            } else {
+                $object = $this->parseIdentifier($expr->expr->var);
+                $method = $this->parseIdentifier($expr->expr->name);
+                $function = $this->findNativeMethod($expr->expr, $object, $method);
+                if (!$function) {
+                    $rightExpr = $tmpVar . ' = php::toReferenceExact(' . $this->parseExpr($expr->expr) . ')';
+                } else {
+                    if (!$this->getFunction($function)->returnsByRef) {
+                        $this->fatalError($expr, 'Cannot assign reference to a method that does not return by reference');
+                    }
+                    $rightExpr = $tmpVar . ' = ' . $this->parseExpr($expr->expr);
+                }
+            }
+        } elseif ($expr->expr instanceof Expr\StaticCall) {
+            if (!$this->isNameExpr($expr->expr->class) || !$this->isIdExpr($expr->expr->name)) {
+                $rightExpr = $tmpVar . ' = php::toReferenceExact(' . $this->parseExpr($expr->expr) . ')';
+            } else {
+                $class = $this->parseIdentifier($expr->expr->class);
+                if ($class === 'self') {
+                    $class = $this->getFullClassName();
+                } elseif ($class === 'parent') {
+                    if (!$this->classDef || !$this->classDef->extends) {
+                        $this->fatalError($expr, 'Cannot use "parent" outside a class or class does not extend any class');
+                    }
+                    $class = $this->classDef->extends;
+                } elseif ($class !== 'static') {
+                    $class = $this->getNamespacedClassName($class);
+                }
+                $method = $this->parseIdentifier($expr->expr->name);
+                $function = $class === 'static' ? false : $this->getNativeMethod($expr->expr, $class, $method);
+                if (!$function) {
+                    $rightExpr = $tmpVar . ' = php::toReferenceExact(' . $this->parseExpr($expr->expr) . ')';
+                } else {
+                    if (!$this->getFunction($function)->returnsByRef) {
+                        $this->fatalError($expr, 'Cannot assign reference to a static method that does not return by reference');
+                    }
+                    $rightExpr = $tmpVar . ' = ' . $this->parseExpr($expr->expr);
+                }
+            }
         } elseif ($this->isPropertyFetch($expr->expr)) {
             $left = $this->parseIdentifier($expr->var);
             $rightExpr = $tmpVar . ' = ' . $this->emitDynamicPropertyFetchRef($expr->expr, $expr);
