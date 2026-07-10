@@ -1,7 +1,5 @@
 --TEST--
 Symfony pattern: nullable callable converted to first-class callable
---XFAIL--
-Known AOT bug: first-class callable stored in a typed nullable Closure property can crash during shutdown.
 --FILE--
 <?php
 

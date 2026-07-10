@@ -1,7 +1,5 @@
 --TEST--
 Symfony pattern: uksort with priority fallback comparator
---XFAIL--
-Known AOT bug: uksort with captured arrays in a static arrow comparator can crash during shutdown.
 --FILE--
 <?php
 
