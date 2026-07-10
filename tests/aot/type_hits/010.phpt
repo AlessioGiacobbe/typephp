@@ -4,6 +4,8 @@ type hits: property coalesce assignment uses runtime type check
 USE_ZEND_ALLOC=0
 --FILE--
 <?php
+function dynamic_value(mixed $value): mixed { return $value; }
+
 class TypeHitCoalesceProperty
 {
     public int|string $union;
@@ -11,13 +13,13 @@ class TypeHitCoalesceProperty
     public function run(): void
     {
         try {
-            $this->union ??= null;
+            $this->union ??= dynamic_value(null);
         } catch (TypeError $e) {
             var_dump($e->getMessage());
         }
 
         $this->union = "ok";
-        $this->union ??= null;
+        $this->union ??= dynamic_value(null);
         var_dump($this->union);
     }
 }

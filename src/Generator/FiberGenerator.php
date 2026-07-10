@@ -165,6 +165,21 @@ trait FiberGenerator
 
     protected function genFiberGeneratorFunction(Function_|ClassMethod $v, FunctionDef $functionDef, string $nativeName): string
     {
+        $entryContext = $this->context;
+        $entryIndent = $this->indentLevel;
+        $entryInGeneratorBody = $this->inGeneratorBody;
+
+        try {
+            return $this->doGenFiberGeneratorFunction($v, $functionDef, $nativeName);
+        } finally {
+            $this->context = $entryContext;
+            $this->indentLevel = $entryIndent;
+            $this->inGeneratorBody = $entryInGeneratorBody;
+        }
+    }
+
+    private function doGenFiberGeneratorFunction(Function_|ClassMethod $v, FunctionDef $functionDef, string $nativeName): string
+    {
         $functionDeclCode = self::TYPE_VAR . ' ' . self::PREFIX . $nativeName . '(';
         if ($this->class) {
             $functionDeclCode .= self::TYPE_OBJECT . ' &this_';

@@ -1977,6 +1977,15 @@ class CompilerBase implements PropertyAccessContext
         if ($this->isCurrentConstructor() && !$this->context->inClosure) {
             $this->fatalError($v, 'Method `' . $this->getCurrentMethodDisplayName() . '()` cannot return a value');
         }
+        if (!$this->context->inClosure && !empty($this->functionDef->returnTypeCheck)) {
+            $this->checkCompositeTypeAssignment(
+                $v,
+                $this->functionDef->returnTypeCheck,
+                $this->functionDef->returnTypeStr,
+                $v->expr,
+                'return value'
+            );
+        }
         $expr = $this->parseExprAsValue($v->expr);
         $returnType = $this->getReturnType();
 
@@ -5125,6 +5134,16 @@ class CompilerBase implements PropertyAccessContext
         $type = $this->detectTypeOfExpr($arg->value);
         $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
 
+        if (!empty($argInfo->typeCheck)) {
+            $this->checkCompositeTypeAssignment(
+                $arg,
+                $argInfo->typeCheck,
+                $argInfo->typeStr,
+                $arg->value,
+                'argument `$' . ($argInfo->phpName ?: $this->unescapeVarName($argInfo->name)) . '`'
+            );
+        }
+
         if ($argInfo->byRef) {
             if ($this->isReferenceWrapperCall($arg->value)) {
                 $inner = $this->unwrapReferenceWrapperCall($arg->value, $arg);
@@ -5324,6 +5343,18 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $rightType = $this->detectTypeOfExpr($right);
+        if (!empty($def->typeCheck) && $this->checkCompositeTypeAssignment(
+                $left,
+                $def->typeCheck,
+                $def->typeStr,
+                $right,
+                'property assignment'
+            ) && $rightType !== self::TYPE_VAR) {
+            // A statically known member of the composite type needs no
+            // Variant runtime guard on this property write.
+            return $rightExpr;
+        }
+
         if ($rightType !== self::TYPE_VAR && $this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
             return $rightExpr;
         }
@@ -7582,6 +7613,135 @@ class CompilerBase implements PropertyAccessContext
             $varName = '`$' . $this->parseIdentifier($left) . '`';
         }
         $this->fatalError($left, "Cannot re-assign $varName from `{$fromType}` to `{$toType}`");
+    }
+
+    /**
+     * Check a value against a composite PHP type when the value's static type
+     * is precise enough to prove a mismatch. Composite declarations still use
+     * Variant in generated C++, so unknown values must be left to the runtime
+     * type check emitted from the same descriptor.
+     *
+     * The outer descriptor list is a union (OR); an allOf entry represents an
+     * intersection (AND). Nullable is represented by an isNull union member.
+     */
+    protected function checkCompositeTypeAssignment(
+        NodeAbstract $errorNode,
+        array $typeCheck,
+        string $typeStr,
+        NodeAbstract $value,
+        string $context
+    ): bool {
+        if ($this->compositeTypeMayMatch($value, $typeCheck)) {
+            return true;
+        }
+
+        $valueType = $this->staticTypeNameOfExpr($value);
+        $this->fatalError($errorNode, "Cannot assign {$valueType} to {$context} of type `{$typeStr}`");
+    }
+
+    protected function compositeTypeMayMatch(NodeAbstract $value, array $clauses): bool
+    {
+        // TYPE_VAR means that the expression is dynamic or its result cannot
+        // be represented by the current scalar type system. Do not reject it.
+        if ($this->detectTypeOfExpr($value) === self::TYPE_VAR && !$this->isNullExpr($value)) {
+            return true;
+        }
+
+        foreach ($clauses as $clause) {
+            if ($this->compositeTypeClauseMayMatch($value, $clause)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function compositeTypeClauseMayMatch(NodeAbstract $value, array $clause): bool
+    {
+        if (($clause['kind'] ?? '') === 'allOf') {
+            foreach ($clause['types'] ?? [] as $entry) {
+                if (!$this->compositeTypeEntryMayMatch($value, $entry)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return $this->compositeTypeEntryMayMatch($value, $clause);
+    }
+
+    protected function compositeTypeEntryMayMatch(NodeAbstract $value, array $entry): bool
+    {
+        $kind = $entry['kind'] ?? '';
+        if ($kind === 'isNull') {
+            return $this->isNullExpr($value);
+        }
+
+        $type = $this->detectTypeOfExpr($value);
+        return match ($kind) {
+            'isInt' => $type === self::TYPE_INT,
+            'isFloat' => $type === self::TYPE_FLOAT,
+            'isBool' => $type === self::TYPE_BOOL,
+            'isString' => $type === self::TYPE_STR,
+            'isArray' => $type === self::TYPE_ARRAY,
+            'isObject' => $type === self::TYPE_OBJECT,
+            'isTrue', 'isFalse' => $type === self::TYPE_BOOL,
+            'isResource' => $type === self::TYPE_RESOURCE,
+            // These checks depend on runtime callable/traversable state unless
+            // a future value lattice adds those properties.
+            'callable', 'iterable' => true,
+            'instanceof' => $this->compositeObjectEntryMayMatch($value, $entry),
+            default => true,
+        };
+    }
+
+    protected function compositeObjectEntryMayMatch(NodeAbstract $value, array $entry): bool
+    {
+        if ($this->detectTypeOfExpr($value) !== self::TYPE_OBJECT) {
+            return false;
+        }
+
+        $class = $this->detectDeclaredClassOfExpr($value);
+        if ($class === '') {
+            return true;
+        }
+
+        $expected = $entry['class'] ?? '';
+        // If the expected class/interface is outside the AOT class graph,
+        // static analysis cannot prove incompatibility. Keep the runtime
+        // instanceof check (this is common for extension-provided interfaces).
+        if ($expected === ''
+            || (!$this->hasClass($expected)
+                && !$this->hasInterface($expected)
+                && !$this->isInternalClass($expected)
+                && !$this->isInternalInterface($expected))) {
+            return true;
+        }
+
+        return $expected === 'static'
+            ? true
+            : $this->isObjectClassStaticallyAssignableTo($class, $expected);
+    }
+
+    protected function isNullExpr(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Expr\ConstFetch
+            && strcasecmp($this->parseIdentifier($expr->name), 'null') === 0;
+    }
+
+    protected function staticTypeNameOfExpr(NodeAbstract $expr): string
+    {
+        if ($this->isNullExpr($expr)) {
+            return 'null';
+        }
+        $type = $this->detectTypeOfExpr($expr);
+        return match ($type) {
+            self::TYPE_INT => 'int',
+            self::TYPE_FLOAT => 'float',
+            self::TYPE_BOOL => 'bool',
+            self::TYPE_STR => 'string',
+            self::TYPE_ARRAY => 'array',
+            self::TYPE_OBJECT => 'object',
+            default => 'mixed',
+        };
     }
 
     protected function mustNoCall(NodeAbstract $node): void

@@ -1204,7 +1204,7 @@ CODE;
 
     /**
      * 检查 phpx/src/misc/ 下的源文件是否已有有效缓存，始终生效（除非指定 --force）。
-     * 仅检查 .o 文件是否比源文件和 phpx 头文件更新。
+     * 缓存必须匹配编译命令和 PHP ABI，且 .o 文件必须不早于源文件和 phpx 头文件。
      */
     public function hasMiscObjectFileCache(string $cppFile): bool
     {
@@ -1214,6 +1214,16 @@ CODE;
 
         $objectFile = $this->getObjectFile($cppFile);
         if (!file_exists($objectFile)) {
+            return false;
+        }
+
+        $metadataFile = $this->getMiscObjectCacheMetadataFile($objectFile);
+        if (!is_file($metadataFile)) {
+            return false;
+        }
+
+        $cachedKey = file_get_contents($metadataFile);
+        if ($cachedKey === false || trim($cachedKey) !== $this->getMiscObjectCacheKey($cppFile, $objectFile)) {
             return false;
         }
 
@@ -1240,6 +1250,41 @@ CODE;
         }
 
         return true;
+    }
+
+    protected function getMiscObjectCacheMetadataFile(string $objectFile): string
+    {
+        return $objectFile . '.typephp-cache';
+    }
+
+    protected function getMiscObjectCacheKey(string $sourceFile, string $objectFile): string
+    {
+        $abi = [
+            'php_version_id' => PHP_VERSION_ID,
+            'php_api_version' => defined('PHP_API_VERSION') ? PHP_API_VERSION : null,
+            'zend_module_api' => defined('ZEND_MODULE_API_NO') ? ZEND_MODULE_API_NO : null,
+            'php_zts' => defined('PHP_ZTS') ? PHP_ZTS : null,
+            'php_debug' => defined('PHP_DEBUG') ? PHP_DEBUG : null,
+            'integer_size' => PHP_INT_SIZE,
+        ];
+
+        return hash('sha256', $this->buildCompileFileCommand($sourceFile, $objectFile) . "\0" . serialize($abi));
+    }
+
+    protected function writeMiscObjectCacheMetadata(string $sourceFile, string $objectFile): void
+    {
+        $metadataFile = $this->getMiscObjectCacheMetadataFile($objectFile);
+        if (file_put_contents($metadataFile, $this->getMiscObjectCacheKey($sourceFile, $objectFile) . PHP_EOL) === false) {
+            throw new \RuntimeException('Cannot write misc object cache metadata: ' . $metadataFile);
+        }
+    }
+
+    protected function invalidateMiscObjectCache(string $objectFile): void
+    {
+        $metadataFile = $this->getMiscObjectCacheMetadataFile($objectFile);
+        if (is_file($metadataFile)) {
+            unlink($metadataFile);
+        }
     }
 
     public function isPhpxMiscFile(string $cppFile): bool
@@ -1293,35 +1338,12 @@ CODE;
             return;
         }
 
-        // 检测文件语言类型
-        $language = $this->getLanguageFromExtension($cppFile);
-
-        // 使用 Backend 层构建编译命令
-        if ($language === null) {
-            // C++ 文件：使用标准的编译命令构建
-            $cmd = $this->getCompilerBackend()->buildCompileCommand(
-                $cppFile,
-                $objectFile,
-                $this->getCompileCommandOptions()
-            );
-        } elseif ($language === 'c') {
-            // C 文件：使用 buildCCompileCommand，后端自动添加 -x c 或 /TC
-            $cmd = $this->getCompilerBackend()->buildCCompileCommand(
-                $cppFile,
-                $objectFile,
-                $this->getCCompileCommandOptions()
-            );
-        } else {
-            // 其他原生源文件（assembler, objective-c, objective-c++）
-            // 使用 buildNativeCompileCommand，传入语言类型以添加 -x 标志
-            $cmd = $this->getCompilerBackend()->buildNativeCompileCommand(
-                $cppFile,
-                $objectFile,
-                $this->getNativeCompileCommandOptions($language),
-                $language
-            );
+        $isMiscFile = $this->isPhpxMiscFile($cppFile);
+        if ($isMiscFile) {
+            $this->invalidateMiscObjectCache($objectFile);
         }
 
+        $cmd = $this->buildCompileFileCommand($cppFile, $objectFile);
         if (!$parallel) {
             $this->climate->comment($cmd);
         }
@@ -1339,6 +1361,36 @@ CODE;
             }
             $this->error('compile failed: ' . $cppFile);
         }
+
+        if ($isMiscFile) {
+            $this->writeMiscObjectCacheMetadata($cppFile, $objectFile);
+        }
+    }
+
+    protected function buildCompileFileCommand(string $sourceFile, string $objectFile): string
+    {
+        $language = $this->getLanguageFromExtension($sourceFile);
+        if ($language === null) {
+            return $this->getCompilerBackend()->buildCompileCommand(
+                $sourceFile,
+                $objectFile,
+                $this->getCompileCommandOptions()
+            );
+        }
+        if ($language === 'c') {
+            return $this->getCompilerBackend()->buildCCompileCommand(
+                $sourceFile,
+                $objectFile,
+                $this->getCCompileCommandOptions()
+            );
+        }
+
+        return $this->getCompilerBackend()->buildNativeCompileCommand(
+            $sourceFile,
+            $objectFile,
+            $this->getNativeCompileCommandOptions($language),
+            $language
+        );
     }
 
     public function compile(array $sourceFiles): array
@@ -1416,6 +1468,53 @@ CODE;
     /**
      * Unix/Linux/macOS 平台并行编译（使用 pcntl）
      */
+    protected function pcntlWait(?int &$status): int
+    {
+        return pcntl_wait($status);
+    }
+
+    protected function pcntlFork(): int
+    {
+        return pcntl_fork();
+    }
+
+    protected function pcntlLastError(): int
+    {
+        return pcntl_get_last_error();
+    }
+
+    protected function waitForCompileChild(): array
+    {
+        do {
+            $status = null;
+            $pid = $this->pcntlWait($status);
+            $error = $pid === -1 ? $this->pcntlLastError() : 0;
+        } while ($pid === -1 && defined('PCNTL_EINTR') && $error === PCNTL_EINTR);
+
+        if ($pid === -1) {
+            $message = function_exists('pcntl_strerror') ? pcntl_strerror($error) : 'error ' . $error;
+            throw new \RuntimeException('Failed to wait for compiler process: ' . $message);
+        }
+
+        return [$pid, (int) $status];
+    }
+
+    protected function compileChildSucceeded(int $status): bool
+    {
+        return pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0;
+    }
+
+    protected function getCompileChildFailureReason(int $status): string
+    {
+        if (pcntl_wifsignaled($status)) {
+            return 'terminated by signal ' . pcntl_wtermsig($status);
+        }
+        if (pcntl_wifexited($status)) {
+            return 'exited with status ' . pcntl_wexitstatus($status);
+        }
+        return 'terminated abnormally';
+    }
+
     protected function compileWithPcntl(array $sourceFiles, int $job): array
     {
         // 检查 pcntl 扩展是否可用
@@ -1448,9 +1547,16 @@ CODE;
                 $cppFile = array_shift($fileQueue);
                 $objectFile = $this->getObjectFile($cppFile);
 
-                $pid = pcntl_fork();
+                $pid = $this->pcntlFork();
                 if ($pid == -1) {
-                    throw new \Exception('Failed to fork process');
+                    $failedFiles[] = $cppFile;
+                    foreach ($fileQueue as $queuedFile) {
+                        $failedFiles[] = $queuedFile;
+                    }
+                    $compiledCount += count($fileQueue) + 1;
+                    $fileQueue = [];
+                    $this->climate->red('Failed to fork compiler process; no additional files will be scheduled');
+                    break;
                 }
                 if ($pid === 0) {
                     // 子进程：执行编译
@@ -1473,51 +1579,51 @@ CODE;
 
             // 等待任意一个子进程完成
             if ($runningProcesses > 0) {
-                $status = null;
-                $pid = pcntl_wait($status);
-                if ($pid > 0) {
-                    $processInfo = $processPipes[$pid] ?? null;
-                    unset($processPipes[$pid]);
-                    $runningProcesses--;
+                [$pid, $status] = $this->waitForCompileChild();
+                $processInfo = $processPipes[$pid] ?? null;
+                unset($processPipes[$pid]);
+                $runningProcesses--;
 
-                    $exitCode = pcntl_wexitstatus($status);
-                    if ($exitCode !== 0) {
-                        $failedFile = $processInfo['file'] ?? 'unknown';
-                        $failedFiles[] = $failedFile;
-                        echo PHP_EOL;
-                        $this->climate->red("Compilation failed: {$failedFile}");
-                        echo PHP_EOL;
-                    } else {
-                        if ($processInfo) {
-                            $objectFiles[] = $processInfo['object'];
-                        }
-                    }
-                    $compiledCount++;
-                    if ($this->noProgress) {
-                        $percent = intval($compiledCount / $totalFiles * 100);
-                        $file = $processInfo['file'] ?? 'unknown';
-                        $fileShorted = $this->removeCommonPrefix($this->buildDir, $file);
-                        $this->climate->white("[{$compiledCount}/{$totalFiles}] {$percent}% {$fileShorted}");
-                    } else {
-                        $progress->renderInPlace($compiledCount, $totalFiles, 'Compiling');
-                    }
+                if (!$this->compileChildSucceeded($status)) {
+                    $failedFile = $processInfo['file'] ?? 'unknown';
+                    $failedFiles[] = $failedFile;
+                    echo PHP_EOL;
+                    $reason = $this->getCompileChildFailureReason($status);
+                    $this->climate->red("Compilation failed: {$failedFile} ({$reason})");
+                    echo PHP_EOL;
+                } elseif ($processInfo) {
+                    $objectFiles[] = $processInfo['object'];
+                }
+                $compiledCount++;
+                if ($this->noProgress) {
+                    $percent = intval($compiledCount / $totalFiles * 100);
+                    $file = $processInfo['file'] ?? 'unknown';
+                    $fileShorted = $this->removeCommonPrefix($this->buildDir, $file);
+                    $this->climate->white("[{$compiledCount}/{$totalFiles}] {$percent}% {$fileShorted}");
+                } else {
+                    $progress->renderInPlace($compiledCount, $totalFiles, 'Compiling');
                 }
             }
         }
 
         // 确保所有子进程都已结束
         while ($runningProcesses > 0) {
-            $status = null;
-            $pid = pcntl_wait($status);
-            if ($pid > 0) {
-                $processInfo = $processPipes[$pid] ?? null;
-                unset($processPipes[$pid]);
-                $runningProcesses--;
-                $compiledCount++;
-                if ($this->noProgress && $processInfo) {
-                    $percent = intval($compiledCount / $totalFiles * 100);
-                    $this->climate->darkGray("[{$compiledCount}/{$totalFiles}] {$percent}% {$processInfo['file']}");
-                }
+            [$pid, $status] = $this->waitForCompileChild();
+            $processInfo = $processPipes[$pid] ?? null;
+            unset($processPipes[$pid]);
+            $runningProcesses--;
+            $compiledCount++;
+            if (!$this->compileChildSucceeded($status)) {
+                $failedFile = $processInfo['file'] ?? 'unknown';
+                $failedFiles[] = $failedFile;
+                $reason = $this->getCompileChildFailureReason($status);
+                $this->climate->red("Compilation failed: {$failedFile} ({$reason})");
+            } elseif ($processInfo) {
+                $objectFiles[] = $processInfo['object'];
+            }
+            if ($this->noProgress && $processInfo) {
+                $percent = intval($compiledCount / $totalFiles * 100);
+                $this->climate->darkGray("[{$compiledCount}/{$totalFiles}] {$percent}% {$processInfo['file']}");
             }
         }
 
@@ -3422,9 +3528,11 @@ CODE;
         }
 
         if ($this->functionDef->generator) {
-            $code = $this->genFiberGeneratorFunction($v, $this->functionDef, $name);
-            $this->resetFunction();
-            return $code;
+            try {
+                return $this->genFiberGeneratorFunction($v, $this->functionDef, $name);
+            } finally {
+                $this->resetFunction();
+            }
         }
 
         // Build SSA/e-SSA analysis for this function

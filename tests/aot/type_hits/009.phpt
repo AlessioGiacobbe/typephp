@@ -2,6 +2,8 @@
 type hits: instance property type check message includes class name
 --FILE--
 <?php
+function dynamic_value(mixed $value): mixed { return $value; }
+
 class TypeHitPropertyMessage
 {
     public int|string $union;
@@ -9,7 +11,7 @@ class TypeHitPropertyMessage
     public function setInvalid(): void
     {
         try {
-            $this->union = null;
+            $this->union = dynamic_value(null);
         } catch (TypeError $e) {
             var_dump($e->getMessage());
         }

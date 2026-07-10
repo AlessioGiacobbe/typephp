@@ -115,6 +115,22 @@ class CompilerBaseApiTest extends TestCase
         $this->assertSame(CompilerBase::BUILD_MODE_BIN, $this->compiler->getBuildMode());
     }
 
+    public function testMiscObjectCacheIsInvalidatedWhenCompileOptionsChange(): void
+    {
+        $source = $this->testDir . '/typephp_runtime.cc';
+        $object = $this->testDir . '/typephp_runtime.o';
+        file_put_contents($source, "int typephp_runtime_test = 1;\n");
+        file_put_contents($object, 'object');
+        touch($source, time() - 10);
+        touch($object, time() + 10);
+
+        $this->invokeMethod('writeMiscObjectCacheMetadata', $source, $object);
+        $this->assertTrue($this->compiler->hasMiscObjectFileCache($source));
+
+        $this->setPropertyValue('cxxFlags', '-fno-rtti');
+        $this->assertFalse($this->compiler->hasMiscObjectFileCache($source));
+    }
+
     // ========================================================================
     // getTypeFromZendType
     // ========================================================================
