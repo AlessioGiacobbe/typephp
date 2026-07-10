@@ -1,0 +1,154 @@
+# PHP Incompatibility Classification
+
+This document classifies TypePHP AOT incompatibilities by their cause and
+expected future direction.
+
+The goal is to distinguish:
+
+- Hard limits that should not be promised as fully compatible PHP behavior.
+- Intentional TypePHP language rules.
+- Features that are implementable but not supported yet.
+- Partial support where the current behavior is known to differ from PHP.
+
+The main compatibility checklist remains `INCOMPATIBLE_PHP_FEATURES.md`. This
+document explains how those items should be interpreted.
+
+## Categories
+
+### Hard Limit
+
+The feature conflicts with the current AOT execution model, or exact PHP
+compatibility would require unreasonable runtime mirroring, heavy dynamic state,
+or semantics that are not naturally visible from compiled C++ frames.
+
+This does not always mean "theoretically impossible", but TypePHP should not
+promise full PHP compatibility for these cases.
+
+### Intentional Rule
+
+The feature could be implemented, but TypePHP intentionally rejects or restricts
+it to keep the AOT model explicit, predictable and optimizable.
+
+These are language or product rules, not missing implementation work.
+
+### Pending
+
+The feature is technically implementable and should be described as currently
+unsupported, not as impossible.
+
+These items usually need better IR, symbol binding, runtime helpers, or codegen
+lowering.
+
+### Partial
+
+The feature exists but does not fully match standard PHP behavior in all edge
+cases.
+
+These items should be documented with the exact boundary.
+
+## Hard Limits and Non-Promised Compatibility
+
+| Feature | Classification | Reason |
+|---|---|---|
+| `eval()` accessing AOT-compiled local variables | Hard Limit | AOT locals are C++ stack variables. PHP code executed by Zend VM through `eval()` cannot naturally access that compiled stack frame. Exact compatibility would require a locals mirror and synchronization layer. |
+| Standard PHP variable deletion semantics for `unset($nativeTypedVar)` | Hard Limit / Intentional Rule | Native typed locals are C++ variables, not entries in a PHP symbol table. They cannot be deleted like PHP zval variables. |
+| Fully standard uninitialized / `unset()` semantics for fixed native typed object properties | Hard Limit / Intentional Rule | Fixed native property storage conflicts with PHP's dynamic property state, uninitialized state and unset behavior. |
+| `Closure::bind()` with static closures accessing private members across AOT/native boundaries | Hard Limit / Partial | This depends on Zend closure scope, private visibility checks and AOT native method/property access. Partial support may be possible, but complete equivalence is difficult. |
+| Non-UTF-8 source files | Intentional Rule | Other encodings could be converted before compilation, but TypePHP requires UTF-8 to keep parsing and generated code deterministic. |
+| `declare(encoding=...)` values other than `UTF-8` | Intentional Rule | Same reason as source file encoding. |
+
+## Intentional TypePHP Rules
+
+| Feature | Classification | Reason |
+|---|---|---|
+| No executable statements in global scope | Intentional Rule | A global execution block could be generated, but it complicates initialization order, side effects and include-like behavior. TypePHP requires executable code to be under functions or methods. |
+| Binary mode requires global `main()` | Intentional Rule | This defines the binary entry ABI. |
+| `main()` only accepts no parameters or `(int $argc, array $argv)` | Intentional Rule | Keeps the entry ABI explicit and stable. |
+| `main()` must return `void` | Intentional Rule | An integer exit-code convention could be added later, but current TypePHP rules reject return values. |
+| `declare(strict_types=...)` only supports `strict_types=1` | Intentional Rule | Supporting mixed strict/weak typing is possible, but TypePHP keeps strict behavior predictable. |
+| Default parameter before required parameter | Intentional Rule | PHP allows this legacy pattern but ignores the default. TypePHP rejects it to avoid misleading declarations. |
+| Child class overriding parent private property | Intentional Rule / Pending if dynamicized | PHP stores private properties by declaring class. TypePHP native/fixed layouts make this expensive. Rejecting it keeps property layout predictable. |
+| `__construct()` return value | Intentional Rule | PHP constructors should not return values. TypePHP rejects this explicitly. |
+| Reassigning a statically inferred native local to an incompatible type | Intentional Rule | This is the cost of native type optimization. Use dynamic zval variables when PHP-style type changes are required. |
+| Native `std::int` overflow and integer division behavior | Intentional Rule | Native numeric types trade PHP compatibility for performance and C++ storage. |
+| `__CLASS__` outside class context and `__TRAIT__` outside trait context | Intentional Rule | PHP returns an empty string for legacy compatibility. TypePHP rejects this as a clearer rule. |
+
+## Implementable but Currently Unsupported
+
+| Feature | Classification | Implementation Direction |
+|---|---|---|
+| `yield` / `yield from` | Pending | Lower generator functions to state machines and provide a Generator runtime object. |
+| Variable variables (`$$var`) | Pending | Add a function-local symbol table mirror for dynamic locals, and disable or synchronize native locals that escape into dynamic lookup. |
+| PHP 8.4 property hooks | Pending | Add parser and AST support, then lower property read/write paths to hook calls. |
+| Closure or arrow function returning by reference | Pending | Closure metadata and wrappers must preserve return-by-reference and emit `ReturnRef`. |
+| Closure and arrow function by-reference parameters | Pending | Closure arginfo must preserve by-reference parameters and call lowering must pass reference slots. |
+| By-reference variadic parameters (`&...$args`) | Pending | Variadic storage must preserve references instead of copying values. |
+| By-reference parameters with default values | Pending | Need PHP-compatible handling for omitted arguments using temporary default values while still binding references for passed arguments. |
+| Reference assignment from complex static property expressions | Pending | Static property reference targets need complete lowering and lifetime handling. |
+| Dynamic calls automatically converting by-reference arguments | Pending | Runtime callable metadata or reflection can identify by-reference parameters and build reference arguments dynamically. |
+| Calls with unpack plus trailing named arguments staying native | Pending | Normalize and reorder call arguments in IR before native-call selection. |
+| Dynamic `parent::method()` name | Pending | Needs runtime parent method lookup with correct call scope. |
+| Private typed property access on cloned objects through variables | Pending / Partial | Requires a complete declaring-class-aware access resolver. |
+| `ReflectionProperty::isPromoted()` for constructor-promoted properties | Pending | Generated class metadata should record promoted-property flags. |
+| `echo` with assignment expressions | Pending | Requires expression lowering that preserves evaluation order and returns the assigned value. |
+| Nested `match` expressions in arm conditions | Pending | Requires recursive match lowering and temporary value ordering. |
+| `foreach` by-reference value targets beyond simple variables | Pending | Requires explicit lvalue/reference target modeling. |
+| `foreach` by-reference with list destructuring | Pending | Requires by-reference foreach value lowering followed by destructuring assignment. |
+| Dynamic `ClassName::class` | Pending | Runtime class-name resolution can be used when the class expression is dynamic. |
+| `static::class` in runtime contexts | Pending / Partial | Runtime contexts can use called-class lookup. True compile-time constant contexts should remain unsupported. |
+| Dynamic property chains, class names, function names and callbacks in native-optimized paths | Pending | A unified dynamic runtime path should handle these cases; native paths should be optimization only. |
+| First-class callable stored in nullable `Closure` typed property | Pending / Partial | Requires stable runtime lifetime, refcount and typed-property write handling. |
+| Attribute arguments containing arrays or `new` expressions | Pending | Requires full constant-expression and attribute metadata generation support. |
+| Static analysis of union, intersection and nullable types | Pending optimization | Requires a real union/intersection type lattice instead of treating these as `mixed/any` during static analysis. |
+
+## Partial Support and Behavioral Differences
+
+| Feature | Classification | Boundary |
+|---|---|---|
+| `eval()` | Partial / Hard Limit | `eval()` can execute PHP code through Zend VM, but it cannot access compiled local variables. Use return values or `$GLOBALS` for data exchange. |
+| Dynamic calls and callbacks | Partial | Many cases can fall back to Zend dynamic calls, but by-reference argument conversion and native-call optimization are limited. |
+| Dynamic properties and dynamic property chains | Partial | Simple dynamic property paths may work; complex chains may be rejected or fall back to slower runtime paths. |
+| Native typed properties | Partial / Intentional Rule | Fast native paths may not preserve every PHP dynamic state transition. Unknown or incompatible values can fall back to `setProperty()`. |
+| Reflection metadata | Partial | Runtime declarations exist, but some AOT-specific metadata such as promoted-property flags may be incomplete. |
+
+## Outdated or Ambiguous Items in `UNSUPPORTED_SYNTAX.md`
+
+`UNSUPPORTED_SYNTAX.md` contains historical material and should not be treated as
+the authoritative current compatibility list without verification.
+
+Items that need review:
+
+- Attributes are not necessarily wholly unsupported. The current limitation is
+  narrower: some attribute argument forms, such as arrays and `new`, are not
+  supported.
+- Traits may no longer be purely "planned support"; current implementation and
+  tests should be checked before documenting them as unsupported.
+- `foreach` by-reference support is partial, not absent.
+- `break N` and `continue N` should be rechecked against current compiler
+  behavior before keeping them in the unsupported list.
+- DOM or `innerHTML` is not PHP language syntax and should not be listed as a
+  core AOT syntax incompatibility.
+- Duplicate function or class names should be documented carefully. Some cases
+  are PHP fatal errors, while conditional declarations are a separate dynamic
+  declaration problem.
+
+## Documentation Rule
+
+When documenting a compatibility difference, use one of these labels:
+
+- `Hard Limit`
+- `Intentional Rule`
+- `Pending`
+- `Partial`
+
+Avoid using only "unsupported" unless the reason is also clear.
+
+Recommended wording:
+
+- "Hard limit: not promised to match PHP exactly."
+- "Intentional TypePHP rule."
+- "Currently unsupported; implementable in a future compiler/runtime revision."
+- "Partially supported with the following boundary."
+
+This distinction helps users know whether they should rewrite code permanently,
+wait for future support, or disable native optimization for a specific path.
