@@ -124,6 +124,12 @@ abstract class GccLikeBackend extends CompilerBackend
         if ((!empty($config['build_mode']) && ($config['build_mode'] === 'ext' || $config['build_mode'] === 'lib')) || !empty($config['shared'])) {
             $flags .= ' ' . $this->platform->getSharedLinkFlag();
 
+            // Shared libraries must be self-contained. Executables can defer symbols
+            // to their host, but a lib-mode artifact must be loadable via dlopen().
+            if (($config['build_mode'] ?? null) === 'lib' && !($this->platform instanceof \TypePhp\Platform\Macos)) {
+                $flags .= ' -Wl,-z,defs';
+            }
+
             if ($this->platform instanceof \TypePhp\Platform\Macos && !empty($config['install_name'])) {
                 $flags .= ' ' . $this->platform->getCurrentInstallNameOption($config['install_name']);
             }

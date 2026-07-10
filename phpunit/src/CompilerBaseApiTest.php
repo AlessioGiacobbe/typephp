@@ -103,6 +103,18 @@ class CompilerBaseApiTest extends TestCase
         chmod($binDir . '/clang-format', 0755);
     }
 
+    public function testBuildModeAliasesAreNormalized(): void
+    {
+        $this->compiler->setBuildMode('library');
+        $this->assertSame(CompilerBase::BUILD_MODE_LIB, $this->compiler->getBuildMode());
+
+        $this->compiler->setBuildMode('extension');
+        $this->assertSame(CompilerBase::BUILD_MODE_EXT, $this->compiler->getBuildMode());
+
+        $this->compiler->setBuildMode('cli');
+        $this->assertSame(CompilerBase::BUILD_MODE_BIN, $this->compiler->getBuildMode());
+    }
+
     // ========================================================================
     // getTypeFromZendType
     // ========================================================================
@@ -365,6 +377,24 @@ YAML, 'myproject.yml', 'examples/tetris-sdl');
         $this->assertSame('tetris', $this->getPropertyValue('targetName'));
         $this->assertSame('', $this->getPropertyValue('outputDir'));
         $this->assertSame('tetris', $this->invokeMethod('getTargetFileName'));
+    }
+
+    public function testLibModeUsesUnixLibraryPrefixUnlessOutputIsExplicit(): void
+    {
+        $this->compiler->setBuildMode(CompilerBase::BUILD_MODE_LIB);
+        $this->compiler->setTargetName('demo');
+        $this->assertSame('libdemo.so', $this->invokeMethod('getTargetFileName'));
+
+        $this->compiler->setOutputPath('demo.so');
+        $this->assertSame('demo.so', $this->invokeMethod('getTargetFileName'));
+    }
+
+    public function testExtensionModeDoesNotUseUnixLibraryPrefix(): void
+    {
+        $this->compiler->setBuildMode(CompilerBase::BUILD_MODE_EXT);
+        $this->compiler->setTargetName('demo');
+
+        $this->assertSame('demo.so', $this->invokeMethod('getTargetFileName'));
     }
 
     public function testParseProjectYamlResolvesRelativePathOptionsAgainstYamlDirectory(): void

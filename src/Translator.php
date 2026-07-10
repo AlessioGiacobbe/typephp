@@ -41,6 +41,8 @@ class Translator extends Preprocessor
     public const string VERSION = '0.3.0';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
     protected string $targetName = 'app';
+    protected bool $hasExplicitOutput = false;
+    protected ?string $explicitOutputExtension = null;
     protected array $sourceDirs = [];
     protected bool $verbose = false;
     protected array $phpSrcFiles = [];
@@ -248,7 +250,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('-v, --version        Show version');
         $climate->tab()->out('-h, --help           Show this help message');
         $climate->tab()->out('-f, --force          Force recompile phpx misc files (ignore cache)');
-        $climate->tab()->out('-m, --mode <mode>    Compilation mode, -m bin(binary) or -m ext(extension), default: bin');
+        $climate->tab()->out('-m, --mode <mode>    Compilation mode: bin (binary), lib (shared library), or ext (PHP extension); default: bin');
         $climate->tab()->out('-r, --run           Run the compiled binary after build');
         $climate->tab()->out('-j, --job <num>      Number of parallel compilation jobs (default: 4)');
         $climate->tab()->out('--cxx-std <ver>      C++ standard version (c++17, c++20, etc., default: c++17)');
@@ -282,7 +284,7 @@ class Translator extends Preprocessor
 
         // 构建模式
         if ($this->climate->arguments->defined('mode')) {
-            $this->buildMode = $this->climate->arguments->get('mode');
+            $this->setBuildMode($this->climate->arguments->get('mode'));
         }
 
         // 调试行号
@@ -346,7 +348,7 @@ class Translator extends Preprocessor
 
         // 输出文件名/路径
         if ($this->climate->arguments->defined('output')) {
-            $this->setTargetName($this->climate->arguments->get('output'));
+            $this->setOutputPath($this->climate->arguments->get('output'));
         }
 
         // 构建目录
@@ -570,6 +572,18 @@ class Translator extends Preprocessor
 
     public function setBuildMode(string $mode): void
     {
+        $mode = strtolower(trim($mode));
+        $mode = match ($mode) {
+            'binary', 'cli' => self::BUILD_MODE_BIN,
+            'extension' => self::BUILD_MODE_EXT,
+            'library', 'shared', 'dll', 'dylib', 'so' => self::BUILD_MODE_LIB,
+            default => $mode,
+        };
+
+        if (!in_array($mode, [self::BUILD_MODE_BIN, self::BUILD_MODE_EXT, self::BUILD_MODE_LIB], true)) {
+            $this->error("Invalid build mode `{$mode}`. Expected bin, lib, or ext.");
+        }
+
         $this->buildMode = $mode;
     }
 
@@ -591,6 +605,47 @@ class Translator extends Preprocessor
             exit(1);
         }
         $this->targetName = $name;
+    }
+
+    /**
+     * Set an explicit output path without using its extension in generated symbols.
+     */
+    public function setOutputPath(string $path): void
+    {
+        if (str_contains($path, '/') || str_contains($path, '\\')) {
+            $this->outputDir = dirname($path);
+            $path = basename($path);
+        }
+
+        $extension = pathinfo($path, PATHINFO_EXTENSION);
+        if ($extension !== '') {
+            $this->explicitOutputExtension = '.' . $extension;
+            $path = substr($path, 0, -strlen($this->explicitOutputExtension));
+        } else {
+            $this->explicitOutputExtension = null;
+        }
+
+        $this->hasExplicitOutput = true;
+        $this->setTargetName($path);
+    }
+
+    protected function getTargetFileName(): string
+    {
+        $targetFile = $this->targetName;
+        if ($this->isBuildModeLib() && !$this->isWindows() && !$this->hasExplicitOutput) {
+            $targetFile = 'lib' . $targetFile;
+        }
+
+        $extension = $this->explicitOutputExtension ?? $this->getPlatform()->getTargetExtension($this->buildMode);
+        if ($extension !== '' && !str_ends_with($targetFile, $extension)) {
+            $targetFile .= $extension;
+        }
+
+        if ($this->outputDir !== '') {
+            $targetFile = rtrim($this->outputDir, '/\\') . '/' . $targetFile;
+        }
+
+        return $targetFile;
     }
 
     public function addFiles(array $files): void
@@ -833,6 +888,11 @@ class Translator extends Preprocessor
 
         $code = '#include <cstring>' . PHP_EOL;
         $code .= $this->genIncludeHeaderFiles();
+
+        if ($this->isBuildModeLib() && !$this->isWindows()) {
+            // PHPX's embedded runtime references this CLI-only symbol even when main() is disabled.
+            $code .= 'extern "C" void save_ps_args(int, char **) {}' . PHP_EOL;
+        }
 
         if ($this->isBuildModeBin()) {
             $cliHeaders = [
@@ -1731,7 +1791,7 @@ CODE;
     public function run(string $targetFile): never
     {
         if ($this->buildMode !== self::BUILD_MODE_BIN) {
-            $this->climate->error('--run is only supported in binary mode (-m bin), not extension mode (-m ext)');
+            $this->climate->error('--run is only supported in binary mode (-m bin), not library or extension mode');
             exit(1);
         }
 
@@ -2230,7 +2290,7 @@ CODE;
         // 读取 output/name。name 只表示目标名，不能按 YAML 目录解析成输出路径。
         $output = $cfg['output'] ?? null;
         if (!empty($output)) {
-            $this->setTargetName($this->resolvePath((string) $output, $projectDir, 'Output path'));
+            $this->setOutputPath($this->resolvePath((string) $output, $projectDir, 'Output path'));
         } elseif (!empty($cfg['name'])) {
             $this->setTargetName((string) $cfg['name']);
         }
@@ -2244,22 +2304,7 @@ CODE;
         // 读取 mode/type/build-mode（支持 CLI/YAML 两套命名）
         $buildMode = $cfg['mode'] ?? $cfg['build-mode'] ?? $cfg['type'] ?? null;
         if (!empty($buildMode)) {
-            // 映射常见的类型名称到内部 buildMode
-            $modeMap = [
-                'extension' => self::BUILD_MODE_EXT,
-                'ext' => self::BUILD_MODE_EXT,
-                'library' => self::BUILD_MODE_LIB,
-                'lib' => self::BUILD_MODE_LIB,
-                'shared' => self::BUILD_MODE_LIB,
-                'dll' => self::BUILD_MODE_LIB,
-                'dylib' => self::BUILD_MODE_LIB,
-                'so' => self::BUILD_MODE_LIB,
-                'binary' => self::BUILD_MODE_BIN,
-                'bin' => self::BUILD_MODE_BIN,
-                'cli' => self::BUILD_MODE_BIN,
-            ];
-            $mappedMode = $modeMap[strtolower($buildMode)] ?? $buildMode;
-            $this->setBuildMode($mappedMode);
+            $this->setBuildMode((string) $buildMode);
         }
 
         // 读取 ignore（支持中横线和下划线）

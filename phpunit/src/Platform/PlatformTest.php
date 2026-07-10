@@ -95,10 +95,13 @@ class PlatformTest extends TestCase
 
         $this->assertSame('.exe', $windows->getTargetExtension('bin'));
         $this->assertSame('.dll', $windows->getTargetExtension('ext'));
+        $this->assertSame('.dll', $windows->getTargetExtension('lib'));
         $this->assertSame('', $linux->getTargetExtension('bin'));
         $this->assertSame('.so', $linux->getTargetExtension('ext'));
+        $this->assertSame('.so', $linux->getTargetExtension('lib'));
         $this->assertSame('', $macos->getTargetExtension('bin'));
         $this->assertSame('.so', $macos->getTargetExtension('ext'));
+        $this->assertSame('.dylib', $macos->getTargetExtension('lib'));
     }
 
     public function testPlatformPathPrefixRemoval(): void

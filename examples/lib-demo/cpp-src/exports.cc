@@ -1,14 +1,11 @@
-#include <php_typephp_lib_demo_func_decl.h>
-
-#ifdef _WIN32
-#define TYPEPHP_API extern "C" __declspec(dllexport)
-#else
-#define TYPEPHP_API extern "C" __attribute__((visibility("default")))
-#endif
+#define TYPEPHP_LIB_DEMO_BUILD
+#include "../include/typephp_lib_demo.h"
+#include <phpx.h>
 
 extern "C" int php_aot_runtime_init(int argc, char **argv);
+extern php::Int php_demo_add(php::Int a, php::Int b);
 
-TYPEPHP_API int typephp_lib_demo_add(int a, int b)
+extern "C" TYPEPHP_LIB_DEMO_API int typephp_lib_demo_add(int a, int b)
 {
     char app_name[] = "typephp_lib_demo";
     char *argv[] = {app_name, nullptr};

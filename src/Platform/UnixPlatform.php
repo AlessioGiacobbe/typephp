@@ -8,6 +8,15 @@ namespace TypePhp\Platform;
  */
 abstract class UnixPlatform extends PlatformBase
 {
+    public function getTargetExtension(string $buildMode): string
+    {
+        if ($buildMode === 'lib') {
+            return $this->getSharedLibraryExtension();
+        }
+
+        return parent::getTargetExtension($buildMode);
+    }
+
     public function getIncludeFlags(array $includePaths): string
     {
         if (empty($includePaths)) {

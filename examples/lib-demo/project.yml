@@ -1,4 +1,4 @@
-name: typephp_lib_demo
+name: demo
 mode: lib
 version: 0.1.0
 cxx-std: c++17
