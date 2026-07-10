@@ -1733,13 +1733,9 @@ class CompilerBase implements PropertyAccessContext
     {
         $lines = [];
         foreach ($v->exprs as $expr) {
-            if ($expr instanceof Expr\Assign) {
-                $this->fatalError($expr, 'Cannot echo assign expression');
-            } else {
-                $type = $this->detectTypeOfExpr($expr);
-                $parsed = $this->convertExprToStringByType($this->parseExprAsValue($expr), $type);
-                $lines[] = 'php::echo(' . $parsed . ');';
-            }
+            $type = $this->detectTypeOfExpr($expr);
+            $parsed = $this->convertExprToStringByType($this->parseExprAsValue($expr), $type);
+            $lines[] = 'php::echo(' . $parsed . ');';
         }
 
         return implode("\n" . $this->getIndent(), $lines);
@@ -5329,10 +5325,14 @@ class CompilerBase implements PropertyAccessContext
         $propName = $this->parseIdentifier($left->name);
 
         if ($this->isNull($right)) {
-            if ($this->isFixedObjectProp($def)) {
+            // Untyped properties retain normal PHP mixed semantics: assigning
+            // null is valid. Only an explicitly typed non-nullable property
+            // can be rejected at compile time.
+            if ($def->type !== self::TYPE_VAR && !$def->nullable) {
+                $typeStr = $this->getObjectPropertyTypeCheckTypeString($def);
                 $this->fatalError(
                     $left,
-                    "Cannot assign null to {$label} `{$propName}` of fixed type `{$def->type}`"
+                    "Cannot assign null to {$label} `{$propName}` of type `{$typeStr}`"
                 );
             }
             return;
@@ -5560,7 +5560,11 @@ class CompilerBase implements PropertyAccessContext
                     $propertyId = $this->getPropertyIdentifier($var, $var->var, $var->name);
                     $def = $this->getNativePropertyDef($var);
                     if ($def) {
-                        if ($this->isFixedObjectProp($def)) {
+                        // Object typed properties are backed by Zend object
+                        // properties, so PHP can represent their uninitialized
+                        // state after unset(). Keep that behavior instead of
+                        // restoring a fixed default value.
+                        if ($this->isFixedObjectProp($def) && $def->type !== self::TYPE_OBJECT) {
                             $restoreDefault = $this->getFixedObjectPropDefaultValue($def);
                             if ($restoreDefault === null) {
                                 $this->fatalError($var, "Cannot unset object property `{$this->parseIdentifier($var->name)}` of fixed type `{$def->type}` without default value");
@@ -6833,6 +6837,13 @@ class CompilerBase implements PropertyAccessContext
         $callScope = [];
         $class = $this->parseIdentifier($expr->class);
 
+        // parent::$method() still has a lexical parent class even when the
+        // method name itself is dynamic. Handle it before the generic dynamic
+        // static-call branch below.
+        if ($this->isNameExpr($expr->class) && $class === 'parent') {
+            return $this->parseParentMethodCall($expr);
+        }
+
         if ($this->isVarExpr($expr->class) or $this->isVarExpr($expr->name)) {
             $var = $class;
             if ($this->isTypedObject($var)) {
@@ -6857,8 +6868,6 @@ class CompilerBase implements PropertyAccessContext
             if ($class === 'self') {
                 $class = $this->class;
                 $self = true;
-            } elseif ($class === 'parent') {
-                return $this->parseParentMethodCall($expr);
             } elseif ($class === 'std') {
                 return $this->parseStdCall($expr);
             }
@@ -8119,21 +8128,25 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseParentMethodCall(Expr\StaticCall $expr): string
     {
-        $methodStr = $this->classDef->name . '::' . $this->parseIdentifier($expr->name);
         if (!$this->classDef->extends) {
-            $this->fatalError($expr, 'Cannot call parent method `' . $methodStr . '()` because class `' . $this->classDef->name . '` does not extend any class');
-        }
-        if (!$this->isIdExpr($expr->name)) {
-            $this->fatalError($expr, 'Cannot call parent method `' . $methodStr . '()` because method name is not a literal');
+            $this->fatalError($expr, 'Cannot call parent method because class `' . $this->classDef->name . '` does not extend any class');
         }
         $parentClass = $this->classDef->extends;
-        $method = $this->parseIdentifier($expr->name);
-        $this->guardAbstractMethod($parentClass, $method, $expr);
-        // TODO 是否转为 native 调用
-        if (empty($expr->args)) {
-            return 'this_.call(' . $this->getMethodPtr($parentClass, $method) . ')';
+        if ($this->isIdExpr($expr->name)) {
+            $method = $this->parseIdentifier($expr->name);
+            $this->guardAbstractMethod($parentClass, $method, $expr);
+            $methodPtr = $this->getMethodPtr($parentClass, $method);
+        } else {
+            // parent:: is bound to the lexical parent class, not the runtime
+            // object's parent. Look the method up on that class, then invoke it
+            // through this_ so Zend receives the current call scope.
+            $methodPtr = 'php::getMethod(' . $this->getClassEntryPtr($parentClass) . ', '
+                . $this->identifierToStr($expr->name) . ')';
         }
-        return 'this_.call(' . $this->getMethodPtr($parentClass, $method) . ', ' . $this->parseCallArgs($expr->args) . ')';
+        if (empty($expr->args)) {
+            return 'this_.call(' . $methodPtr . ')';
+        }
+        return 'this_.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args) . ')';
     }
 
     protected function genDebugInfo(?NodeAbstract $stmt = null, string $functionName = '', int $startLine = 0): string

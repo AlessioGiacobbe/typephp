@@ -4095,6 +4095,11 @@ CODE;
             foreach ($this->classDef->properties as $name => $childProp) {
                 if ($chainNode->hasProperty($name)) {
                     $parentProp = $chainNode->getProperty($name);
+                    // A parent private property would be a separate PHP slot
+                    // hidden by the child declaration. TypePHP forbids that
+                    // dual-slot model. Public/protected declarations instead
+                    // describe the same inherited property slot and must obey
+                    // PHP-compatible type, visibility and readonly rules.
                     if ($parentProp->flags & Modifiers::PRIVATE) {
                         $this->fatalError($classStmt,
                             "Declaration of `{$className}::\${$name}` conflicts with private property " .
