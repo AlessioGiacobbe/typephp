@@ -213,6 +213,36 @@ class InheritanceErrorTest extends TestCase
         $this->assertCompiles('interface_abstract_method_signature.php');
     }
 
+    public function testAbstractMethodWithReferenceParameter()
+    {
+        // 抽象方法的按引用参数签名应被正确识别，基类构造中向未定义变量按引用传参不报错
+        $this->assertCompiles('abstract_method_byref.php');
+    }
+
+    public function testAbstractMethodWithReferenceParameterAcrossNamespace()
+    {
+        // 跨命名空间的抽象方法按引用参数签名应被正确识别（使用完全限定类名解析）
+        $this->assertCompiles('abstract_method_byref_namespace.php');
+    }
+
+    public function testInterfaceMethodWithReferenceParameter()
+    {
+        // 接口的按引用方法签名应被正确识别
+        $this->assertCompiles('abstract_method_byref_interface.php');
+    }
+
+    public function testInterfaceTypedReceiverWithReferenceParameter()
+    {
+        // 接口类型接收者必须从接口及其父接口解析按引用参数签名。
+        $this->assertCompiles('abstract_method_byref_interface_typed.php');
+    }
+
+    public function testAbstractMethodWithReferenceParameterMultilevel()
+    {
+        // 多级继承下，沿父类链查找抽象方法的按引用参数签名
+        $this->assertCompiles('abstract_method_byref_multilevel.php');
+    }
+
     public function testAbstractInterfaceMethodSignatureMismatch()
     {
         $this->exec('must be compatible', 'interface_abstract_method_mismatch.php');
