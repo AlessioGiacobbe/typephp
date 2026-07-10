@@ -177,6 +177,7 @@ class CompilerBase implements PropertyAccessContext
     public const string OP_NOP = "if (0) {}\n";
     public const string BUILD_MODE_BIN = 'bin';
     public const string BUILD_MODE_EXT = 'ext';
+    public const string BUILD_MODE_LIB = 'lib';
     public const string ENTRY_FUNCTION = 'main';
     public const string PHPX_VENDOR_DIR = '/vendor/swoole/phpx';
     protected const string PHASE_IDLE = 'idle';
@@ -521,6 +522,16 @@ class CompilerBase implements PropertyAccessContext
     public function isBuildModeExt(): bool
     {
         return $this->buildMode === self::BUILD_MODE_EXT;
+    }
+
+    public function isBuildModeLib(): bool
+    {
+        return $this->buildMode === self::BUILD_MODE_LIB;
+    }
+
+    public function isBuildModeEmbed(): bool
+    {
+        return $this->isBuildModeBin() || $this->isBuildModeLib();
     }
 
     public function getPhpDir(): string
@@ -2860,7 +2871,7 @@ class CompilerBase implements PropertyAccessContext
         // extension 和 bin 模式都需要链接 PHP 库
         if ($platform instanceof Windows) {
             // Windows: 根据构建模式选择不同的库
-            if ($this->isBuildModeBin()) {
+            if ($this->isBuildModeEmbed()) {
                 // bin 模式：需要同时链接 php8ts.lib 和 php8embed.lib
                 // 注意：php8ts.lib 必须在 php8embed.lib 之前，因为 embed 依赖 core
                 // php8ts.lib 提供 PHP 核心全局符号（executor_globals, compiler_globals, sapi_globals）

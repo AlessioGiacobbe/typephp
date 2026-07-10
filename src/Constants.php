@@ -165,7 +165,7 @@ class Constants
         'mode' => [
             'longPrefix' => 'mode',
             'prefix' => 'm',
-            'description' => 'Build mode, -m bin(binary) or -m ext(extension), default: bin',
+            'description' => 'Build mode, -m bin(binary), -m lib(shared library), or -m ext(PHP extension), default: bin',
             'required' => false,
             'defaultValue' => CompilerBase::BUILD_MODE_BIN,
         ],

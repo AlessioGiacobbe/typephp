@@ -83,7 +83,7 @@ abstract class PlatformBase
      */
     public function getTargetExtension(string $buildMode): string
     {
-        return $buildMode === 'ext'
+        return ($buildMode === 'ext' || $buildMode === 'lib')
             ? '.so'
             : $this->getExecutableExtension();
     }
@@ -93,7 +93,7 @@ abstract class PlatformBase
      */
     public function getBuildLibraryWarnings(string $phpDir, string $phpxDir, string $buildMode): array
     {
-        if ($buildMode !== 'bin') {
+        if ($buildMode !== 'bin' && $buildMode !== 'lib') {
             return [];
         }
 

@@ -90,7 +90,7 @@ class Clang extends GccLikeBackend
         if ($this->platform instanceof Windows) {
             return '';
         }
-        if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['pic'])) {
+        if ((!empty($config['build_mode']) && ($config['build_mode'] === 'ext' || $config['build_mode'] === 'lib')) || !empty($config['pic'])) {
             return ' -fPIC';
         }
         return '';
@@ -108,7 +108,7 @@ class Clang extends GccLikeBackend
             }
             $flags .= ' ' . $this->platform->getCrtConfig();
 
-            if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
+            if (!empty($config['build_mode']) && ($config['build_mode'] === 'ext' || $config['build_mode'] === 'lib')) {
                 $flags .= ' /DLL';
             }
             return $flags;

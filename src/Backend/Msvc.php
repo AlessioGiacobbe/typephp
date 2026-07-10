@@ -393,7 +393,7 @@ class Msvc extends CompilerBackend
         $cmd .= ' ' . $this->platform->getCrtConfig();
 
         // 扩展模块选项
-        if (!empty($config['build_mode']) && $config['build_mode'] === 'ext') {
+        if (!empty($config['build_mode']) && ($config['build_mode'] === 'ext' || $config['build_mode'] === 'lib')) {
             $cmd .= ' /DLL';
         }
 

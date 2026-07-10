@@ -53,7 +53,7 @@ abstract class GccLikeBackend extends CompilerBackend
     /** 获取 PIC 标志 */
     protected function getPICFlag(array $config): string
     {
-        if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['pic'])) {
+        if ((!empty($config['build_mode']) && ($config['build_mode'] === 'ext' || $config['build_mode'] === 'lib')) || !empty($config['pic'])) {
             return ' -fPIC';
         }
         return '';
@@ -121,7 +121,7 @@ abstract class GccLikeBackend extends CompilerBackend
     {
         $flags = '';
 
-        if ((!empty($config['build_mode']) && $config['build_mode'] === 'ext') || !empty($config['shared'])) {
+        if ((!empty($config['build_mode']) && ($config['build_mode'] === 'ext' || $config['build_mode'] === 'lib')) || !empty($config['shared'])) {
             $flags .= ' ' . $this->platform->getSharedLinkFlag();
 
             if ($this->platform instanceof \TypePhp\Platform\Macos && !empty($config['install_name'])) {

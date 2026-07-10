@@ -642,7 +642,7 @@ class Translator extends Preprocessor
         // shell_exec 和 define 已通过 php::fn:: 直接调用，无需动态符号表
 
         // 根据平台检查库文件（仅在构建二进制文件时需要）
-        if ($this->isBuildModeBin()) {
+        if ($this->isBuildModeEmbed()) {
             foreach ($this->getPlatform()->getBuildLibraryWarnings($this->getPhpDir(), $this->getPhpxDir(), $this->buildMode) as $message) {
                 $this->climate->warning($message['warning']);
                 if (!empty($message['info'])) {
@@ -1285,8 +1285,11 @@ CODE;
         $job = $this->maxJob;
 
         // embed 需要 main 函数，以及 cli 的内置函数定义
-        if ($this->isBuildModeBin()) {
+        if ($this->isBuildModeEmbed()) {
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/main.cc';
+        }
+
+        if ($this->isBuildModeBin()) {
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_cli_process_title.c';
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/ps_title.c';
         }
@@ -1575,6 +1578,11 @@ CODE;
             $includePaths = array_merge($includePaths, $this->userIncludePaths);
         }
 
+        $userDefines = $this->userDefines;
+        if ($this->isBuildModeLib()) {
+            $userDefines[] = 'PHPX_NO_MAIN=1';
+        }
+
         return [
             'include_paths' => $includePaths,
             'optimize' => $this->optimizeLevel,
@@ -1586,7 +1594,7 @@ CODE;
             'build_mode' => $this->buildMode,
             'enable_profiler' => $this->enableProfiler,
             'prof_output' => $this->targetName . '.prof',
-            'user_defines' => $this->userDefines,
+            'user_defines' => $userDefines,
             'lto' => $this->enableLto,
         ];
     }
@@ -2240,6 +2248,12 @@ CODE;
             $modeMap = [
                 'extension' => self::BUILD_MODE_EXT,
                 'ext' => self::BUILD_MODE_EXT,
+                'library' => self::BUILD_MODE_LIB,
+                'lib' => self::BUILD_MODE_LIB,
+                'shared' => self::BUILD_MODE_LIB,
+                'dll' => self::BUILD_MODE_LIB,
+                'dylib' => self::BUILD_MODE_LIB,
+                'so' => self::BUILD_MODE_LIB,
                 'binary' => self::BUILD_MODE_BIN,
                 'bin' => self::BUILD_MODE_BIN,
                 'cli' => self::BUILD_MODE_BIN,

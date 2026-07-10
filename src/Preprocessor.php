@@ -88,6 +88,17 @@ class Preprocessor extends CompilerBase
         $ext = $this->getPlatform()->getObjectExtension();
 
         // 保持与 cppFile 相同的路径分隔符
+        $normalizedFile = str_replace('\\', '/', $cppFile);
+        $normalizedMiscDir = str_replace('\\', '/', $this->getPhpxDir() . '/src/misc/');
+        if (str_starts_with($normalizedFile, $normalizedMiscDir)) {
+            $separator = $this->getPlatform()->getPathSeparator();
+            $objectDir = $this->buildDir . $separator . 'phpx-misc' . $separator . $this->targetName;
+            if (!is_dir($objectDir)) {
+                mkdir($objectDir, 0777, true);
+            }
+            return $objectDir . $separator . $info['filename'] . $ext;
+        }
+
         return $info['dirname'] . $this->getPlatform()->getPathSeparator() . $info['filename'] . $ext;
     }
 

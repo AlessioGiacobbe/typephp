@@ -105,7 +105,7 @@ class Windows extends PlatformBase
 
     public function getTargetExtension(string $buildMode): string
     {
-        return $buildMode === 'ext' ? '.dll' : '.exe';
+        return ($buildMode === 'ext' || $buildMode === 'lib') ? '.dll' : '.exe';
     }
 
     public function getDefaultCompiler(): string
@@ -177,7 +177,7 @@ class Windows extends PlatformBase
 
     public function getBuildLibraryWarnings(string $phpDir, string $phpxDir, string $buildMode): array
     {
-        if ($buildMode !== 'bin') {
+        if ($buildMode !== 'bin' && $buildMode !== 'lib') {
             return [];
         }
 
