@@ -2063,7 +2063,7 @@ CODE;
         if ($nativeConst and $expr->hasAttribute('nativeConst')) {
             $constDef = $expr->getAttribute('nativeConst');
             if ($constDef->valueExpr !== null) {
-                return $constDef->valueExpr->value;
+                return $this->evaluateClassConstValue($expr, $constDef, $class, $name);
             }
             // 内部类的常量没有 valueExpr（值来自 PHP 反射），用“定义该常量的类”
             // 通过反射取回标量值。继承自有内部父类（如 ArrayObject）的常量也走这里。
@@ -2083,8 +2083,8 @@ CODE;
         // findNativeClassConst 不会遍历到内部父类（如 \ArrayObject），
         // 因此继承自有内部父类的常量（例如 self::ARRAY_AS_PROPS，常量定义于
         // 内部父类）在此沿继承链解析（内部类在运行时已加载，可用反射取值）。
-        $inherited = $this->resolveInheritedClassConst($class, $name);
-        if ($inherited !== null) {
+        [$inheritedFound, $inherited] = $this->resolveInheritedClassConst($class, $name);
+        if ($inheritedFound) {
             return $inherited;
         }
         // Resolve enum case references. Enum cases are runtime objects; their
@@ -2106,9 +2106,9 @@ CODE;
      * （如 LazyArrayObject 继承自内部类 \ArrayObject，其常量 ARRAY_AS_PROPS
      * 定义于内部父类中；内部类在运行时已加载，可用 PHP 反射取值）。
      *
-     * @return mixed|null 解析到的值；未找到返回 null
+     * @return array{bool, mixed} [是否找到, 常量值]
      */
-    protected function resolveInheritedClassConst(string $class, string $name): mixed
+    protected function resolveInheritedClassConst(string $class, string $name): array
     {
         $current = ltrim($class, '\\');
         $visited = [];
@@ -2119,24 +2119,67 @@ CODE;
                 if ($classDef->hasConstant($name)) {
                     $constDef = $classDef->getConstant($name);
                     if ($constDef->valueExpr !== null) {
-                        return $constDef->valueExpr->value;
+                        return [true, $this->evaluateClassConstValue(null, $constDef, $current, $name)];
                     }
                     if ($constDef->class !== '' && defined($constDef->class . '::' . $name)) {
-                        return constant($constDef->class . '::' . $name);
+                        return [true, constant($constDef->class . '::' . $name)];
                     }
                 }
                 $current = $classDef->extends;
+            } elseif (($parent = $this->getParentClass($current)) !== '') {
+                // 生成 stub 时，当前文件的类尚未注册到 $this->classes，
+                // 但预处理阶段已经记录了其父类关系。
+                $current = $parent;
             } elseif (Reflection::isInternalClass($current)) {
                 $constName = $current . '::' . $name;
                 if (defined($constName)) {
-                    return constant($constName);
+                    return [true, constant($constName)];
                 }
                 break;
             } else {
                 break;
             }
         }
-        return null;
+        return [false, null];
+    }
+
+    /**
+     * Evaluates a parsed class-constant expression for arginfo generation.
+     * ConstantDef::value is C++ code, so it must not be used as the PHP value.
+     */
+    protected function evaluateClassConstValue(?NodeAbstract $origin, ConstantDef $constDef, string $class, string $name): mixed
+    {
+        $valueExpr = $constDef->valueExpr;
+        if (!$valueExpr instanceof Node\Expr) {
+            $this->fatalError($origin, "Class constant `{$class}::{$name}` has no constant expression");
+        }
+
+        $evaluator = new \PhpParser\ConstExprEvaluator(function (Node\Expr $expr) use ($origin, $class) {
+            if ($expr instanceof Node\Expr\ConstFetch) {
+                $constName = $expr->name->toString();
+                return match (strtolower($constName)) {
+                    'true' => true,
+                    'false' => false,
+                    'null' => null,
+                    default => defined($constName)
+                        ? constant($constName)
+                        : throw new \RuntimeException("Constant `{$constName}` not found"),
+                };
+            }
+            if ($expr instanceof Node\Expr\ClassConstFetch && $expr->class instanceof Node\Name) {
+                $constName = $expr->name->toString();
+                $className = $expr->class->toString();
+                if (strcasecmp($className, 'self') === 0) {
+                    $className = $class;
+                } elseif (strcasecmp($className, 'parent') === 0) {
+                    $className = $this->getParentClass($class);
+                }
+                return $this->getClassConstValue($origin ?? $expr, $className, $constName, $class);
+            }
+            throw new \RuntimeException('Unsupported class constant expression');
+        });
+
+        return $evaluator->evaluateDirectly($valueExpr);
     }
 
     public function getConstValue(string $name): mixed
