@@ -3532,7 +3532,7 @@ class CompilerBase implements PropertyAccessContext
             }
             $placeHolder = $this->identifierToStr($expr->name);
             $fn = $this->getFuncPtr($name);
-            $this->context->beforeStmtLines[] = '// Func Call: ' . $name . '()';
+            $this->context->beforeStmtLines[] = $this->formatCppLineComment('Func Call: ', $name . '()');
         } else {
             $tmpVar = $this->addTmpVar(self::TYPE_VAR);
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->name) . ';';
@@ -4654,7 +4654,7 @@ class CompilerBase implements PropertyAccessContext
 
         $tmpVar = $this->addTmpVar(self::TYPE_VAR);
         if ($rightBeforeStmts || $rightAfterStmts) {
-            $code = '// Expr: ' . $this->printer->prettyPrintExpr($expr) . PHP_EOL .
+            $code = $this->formatCppLineComment('Expr: ', $this->printer->prettyPrintExpr($expr)) . PHP_EOL .
                 'if (' . $condExpr . ') {' . PHP_EOL .
                 $this->getIndent() . $tmpVar . ' = ' . $leftExpr . ';' . PHP_EOL .
                 '} else {' . PHP_EOL;
@@ -4672,12 +4672,23 @@ class CompilerBase implements PropertyAccessContext
             $code .= '}';
             $this->context->beforeStmtLines[] = $code;
         } else {
-            $this->context->beforeStmtLines[] = '// Expr: ' . $this->printer->prettyPrintExpr($expr) . PHP_EOL .
+            $this->context->beforeStmtLines[] = $this->formatCppLineComment('Expr: ', $this->printer->prettyPrintExpr($expr)) . PHP_EOL .
                 $tmpVar . ' = ' . $condExpr . ' ? ' . $leftExpr . ' : ' . $rightExpr . ';';
         }
         $expr->setAttribute('replace', $tmpVar);
 
         return $tmpVar;
+    }
+
+    protected function formatCppLineComment(string $label, string $text): string
+    {
+        $lines = explode("\n", str_replace(["\r\n", "\r"], "\n", $text));
+        $padding = str_repeat(' ', strlen($label));
+        $comments = [];
+        foreach ($lines as $i => $line) {
+            $comments[] = '// ' . ($i === 0 ? $label : $padding) . $line;
+        }
+        return implode(PHP_EOL, $comments);
     }
 
     protected function packData(string $bytes): string
@@ -6612,7 +6623,10 @@ class CompilerBase implements PropertyAccessContext
                 }
                 $this->fatalError($expr, "Cannot call method `{$methodName}()` on variable of type {$type}");
             }
-            $this->context->beforeStmtLines[] = '// Method Call: ' . $object . '->' . $this->parseIdentifier($expr->name) . '()';
+            $this->context->beforeStmtLines[] = $this->formatCppLineComment(
+                'Method Call: ',
+                $object . '->' . $this->parseIdentifier($expr->name) . '()'
+            );
             try {
                 $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
                 if ($nativeFunc) {
@@ -6733,7 +6747,10 @@ class CompilerBase implements PropertyAccessContext
         } elseif ($this->isNameExpr($expr->class) and $class === 'static') {
             $methodPtr = $this->identifierToStr($expr->name, literal: true);
             $fn = Symbol::getCalledCe() . ', php::getMethod(' . Symbol::getCalledCe() . ', ' . $methodPtr . ')';
-            $this->context->beforeStmtLines[] = '// Static Method Call: static::' . $this->parseIdentifier($expr->name) . '()';
+            $this->context->beforeStmtLines[] = $this->formatCppLineComment(
+                'Static Method Call: ',
+                'static::' . $this->parseIdentifier($expr->name) . '()'
+            );
             $placeHolder = $this->genArray([Symbol::getCalledClass(), $methodPtr]);
         } elseif ($this->isNameExpr($expr->class)) {
             if ($class === 'self') {
@@ -6749,7 +6766,10 @@ class CompilerBase implements PropertyAccessContext
             _do_call:
             $method = $this->parseIdentifier($expr->name);
             $dynamicCall = false;
-            $this->context->beforeStmtLines[] = '// Static Method Call: ' . $class . '::' . $method . '()';
+            $this->context->beforeStmtLines[] = $this->formatCppLineComment(
+                'Static Method Call: ',
+                $class . '::' . $method . '()'
+            );
 
             if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
                 $callScope = [$this->genCharPtr($class, true), $this->genCharPtr($method)];
@@ -8001,7 +8021,7 @@ class CompilerBase implements PropertyAccessContext
     ): string
     {
         $list = [];
-        $comment = '// Nullsafe Operator: ' . $this->printer->prettyPrint([$expr]);
+        $comment = $this->formatCppLineComment('Nullsafe Operator: ', $this->printer->prettyPrint([$expr]));
 
         while (1) {
             if ($expr instanceof Expr\NullsafePropertyFetch) {
