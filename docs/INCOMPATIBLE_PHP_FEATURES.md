@@ -13,13 +13,13 @@
 
 ## 声明与类型
 
-- 不支持 `yield` / `yield from`。
 - 不支持可变变量 `$$var`。
 - 不支持 PHP 8.4 property hooks。
 - 不支持闭包或箭头函数按引用返回。
 - `__construct()` 不允许返回值。
 - 参数默认值不允许出现在必填参数之前（`PHP`允许，但会直接丢弃此默认参数）。
 - 不支持引用可变参数 `&...$args`。
+- 不支持在动态 PHP 脚本中使用 `foreach` 直接遍历 TypePHP Native generator 返回的 `TypePHP\FiberGenerator`。
 - 联合类型、交叉类型、`nullable` 类型在静态编译阶段按 `mixed/any` 处理，只保留运行时 type check。
 - 局部变量类型一旦被静态推断为具体 native 类型，不支持在同一作用域内重新赋值为不兼容类型。
 - attribute 参数不支持数组值和 `new` 表达式。

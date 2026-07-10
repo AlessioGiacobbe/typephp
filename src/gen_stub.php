@@ -3796,7 +3796,7 @@ class ClassInfo {
 
         $code .= "\n\tstatic zend_object_handlers class_object_handlers;";
         $code .= "\n\tmemcpy(&class_object_handlers, class_entry->default_object_handlers, sizeof(zend_object_handlers));";
-        $code .= "\n\tclass_object_handlers.unset_property = php_aot_unset_typed_property;";
+        $code .= "\n\tclass_object_handlers.unset_property = typephp_unset_typed_property;";
         $code .= "\n\tclass_entry->default_object_handlers = &class_object_handlers;";
         $code .= "\n";
 

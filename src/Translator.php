@@ -1015,6 +1015,7 @@ CODE;
         $code .= 'PHP_MINIT_FUNCTION(' . $this->getModuleName() . ') {' . PHP_EOL;
         $code .= 'zend_try {' . PHP_EOL;
         $code .= '// class/interface class entries' . PHP_EOL;
+        $code .= 'typephp_register_fiber_generator_class();' . PHP_EOL;
         $code .= $this->genClassPropertyInit() . PHP_EOL;
 
         $code .= '// register symbols' . PHP_EOL;
@@ -1344,9 +1345,11 @@ CODE;
     {
         $job = $this->maxJob;
 
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_fiber_generator.cc';
+
         // embed 需要 main 函数，以及 cli 的内置函数定义
         if ($this->isBuildModeEmbed()) {
-            $sourceFiles[] = $this->getPhpxDir() . '/src/misc/main.cc';
+            $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_main.cc';
         }
 
         if ($this->isBuildModeBin()) {
@@ -1640,7 +1643,7 @@ CODE;
 
         $userDefines = $this->userDefines;
         if ($this->isBuildModeLib()) {
-            $userDefines[] = 'PHPX_NO_MAIN=1';
+            $userDefines[] = 'TYPEPHP_NO_MAIN=1';
         }
 
         return [
@@ -1822,6 +1825,7 @@ CODE;
     public function genFunctionDeclaration(string $file): void
     {
         $code = '#include <phpx.h>' . PHP_EOL;
+        $code .= '#include <typephp_fiber_generator.h>' . PHP_EOL;
 
         // 函数的默认值可能会使用字符串字面量，需要提前声明
         if ($this->literalStrings) {
@@ -3412,6 +3416,12 @@ CODE;
             if (!$argInfo->variadic and $argInfo->declaredClass) {
                 $this->addObject($argInfo->name, $argInfo->declaredClass);
             }
+        }
+
+        if ($this->functionDef->generator) {
+            $code = $this->genFiberGeneratorFunction($v, $this->functionDef, $name);
+            $this->resetFunction();
+            return $code;
         }
 
         // Build SSA/e-SSA analysis for this function

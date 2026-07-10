@@ -443,6 +443,9 @@ class Preprocessor extends CompilerBase
         $functionDef->stub = $this->stubFile;
         $functionDef->returnTypeUndeclared = $v->returnType === null;
         $functionDef->returnsByRef = $v->byRef;
+        if ($this->containsYield($v)) {
+            $this->prepareGeneratorFunction($v, $functionDef);
+        }
 
         if ($v->returnType instanceof NullableType || $v->returnType instanceof UnionType || $v->returnType instanceof IntersectionType) {
             $typeInfo = $this->buildTypeCheckFromNode($v->returnType);

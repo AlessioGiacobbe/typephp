@@ -500,7 +500,7 @@ trait AssignOpTrait
 
         $var = $this->parseWritableIdentifier($node->var);
         if (!$this->isNativePropertyTypedValue($node->var)) {
-            $helper = $def->type === self::TYPE_FLOAT ? 'php_aot_static_float_ref' : 'php_aot_static_int_ref';
+            $helper = $def->type === self::TYPE_FLOAT ? 'typephp_static_float_ref' : 'typephp_static_int_ref';
             $var = $helper . '(' . $var . '.unwrap_ptr())';
         }
 

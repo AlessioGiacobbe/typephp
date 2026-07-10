@@ -1,9 +1,5 @@
 --TEST--
 Generators - Yield keyword and generator functions
---SKIPIF--
-<?php
-exit("skip: Generator syntax not supported in AOT");
-?>
 --FILE--
 <?php
 // Test basic generator
@@ -18,14 +14,6 @@ function keyed_generator() {
     yield 'a' => 1;
     yield 'b' => 2;
     yield 'c' => 3;
-}
-
-// Test generator sending values
-function echo_generator() {
-    while (true) {
-        $value = yield;
-        echo "Received: " . $value . "\n";
-    }
 }
 
 // Test infinite generator
@@ -88,5 +76,5 @@ int(4)
 int(5)
 bool(true)
 bool(true)
-int(1)
-int(2)
+int(10)
+int(11)

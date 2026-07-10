@@ -27,6 +27,7 @@ class FunctionDef
     public bool $stub = false;
     public bool $returnTypeUndeclared = false;
     public bool $returnsByRef = false;
+    public bool $generator = false;
 
     /**
      * @var string 必须是带有命名空间的完整类名

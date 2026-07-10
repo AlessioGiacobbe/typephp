@@ -1,9 +1,5 @@
 --TEST--
 Iterable and Iterator - Custom iteration with Traversable
---SKIPIF--
-<?php
-exit("skip: Generator syntax not supported in AOT");
-?>
 --FILE--
 <?php
 // Test implementing Iterator interface
@@ -70,7 +66,7 @@ class Range implements IteratorAggregate {
 }
 
 // Test filtering iterator
-class FilterIterator implements Iterator {
+class NumberFilterIterator implements Iterator {
     private Iterator $iterator;
     private mixed $filterValue;
     
@@ -137,7 +133,7 @@ function main() {
     // Test FilterIterator
     echo "\nFilterIterator:\n";
     $baseIterator = new NumberIterator(1, 10);
-    $filterIterator = new FilterIterator($baseIterator, 5);
+    $filterIterator = new NumberFilterIterator($baseIterator, 5);
     foreach ($filterIterator as $value) {
         echo "{$value}\n";
     }

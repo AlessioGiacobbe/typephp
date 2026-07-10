@@ -2,14 +2,14 @@
 #include "../include/typephp_lib_demo.h"
 #include <phpx.h>
 
-extern "C" int php_aot_runtime_init(int argc, char **argv);
+extern "C" int typephp_runtime_init(int argc, char **argv);
 extern php::Int php_demo_add(php::Int a, php::Int b);
 
 extern "C" TYPEPHP_LIB_DEMO_API int typephp_lib_demo_add(int a, int b)
 {
     char app_name[] = "typephp_lib_demo";
     char *argv[] = {app_name, nullptr};
-    if (php_aot_runtime_init(1, argv) != 0) {
+    if (typephp_runtime_init(1, argv) != 0) {
         return 0;
     }
     return static_cast<int>(php_demo_add(a, b));

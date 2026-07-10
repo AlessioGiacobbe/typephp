@@ -6,8 +6,8 @@
 #define TYPEPHP_OCEAN_API extern "C" __attribute__((visibility("default")))
 #endif
 
-extern "C" int php_aot_runtime_init(int argc, char **argv);
-extern "C" void php_aot_runtime_shutdown();
+extern "C" int typephp_runtime_init(int argc, char **argv);
+extern "C" void typephp_runtime_shutdown();
 
 static bool g_typephp_ocean_initialized = false;
 
@@ -19,7 +19,7 @@ static int typephp_ocean_ensure_runtime()
 
     char app_name[] = "typephp_ocean";
     char *argv[] = {app_name, nullptr};
-    if (php_aot_runtime_init(1, argv) != 0) {
+    if (typephp_runtime_init(1, argv) != 0) {
         return 0;
     }
 
@@ -37,7 +37,7 @@ TYPEPHP_OCEAN_API void typephp_ocean_shutdown()
     if (!g_typephp_ocean_initialized) {
         return;
     }
-    php_aot_runtime_shutdown();
+    typephp_runtime_shutdown();
     g_typephp_ocean_initialized = false;
 }
 

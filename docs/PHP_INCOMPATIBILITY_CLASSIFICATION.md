@@ -77,13 +77,13 @@ These items should be documented with the exact boundary.
 
 | Feature | Classification | Implementation Direction |
 |---|---|---|
-| `yield` / `yield from` | Pending | Lower generator functions to state machines and provide a Generator runtime object. |
 | Variable variables (`$$var`) | Pending | Add a function-local symbol table mirror for dynamic locals, and disable or synchronize native locals that escape into dynamic lookup. |
 | PHP 8.4 property hooks | Pending | Add parser and AST support, then lower property read/write paths to hook calls. |
 | Closure or arrow function returning by reference | Pending | Closure metadata and wrappers must preserve return-by-reference and emit `ReturnRef`. |
 | Closure and arrow function by-reference parameters | Pending | Closure arginfo must preserve by-reference parameters and call lowering must pass reference slots. |
 | By-reference variadic parameters (`&...$args`) | Pending | Variadic storage must preserve references instead of copying values. |
 | By-reference parameters with default values | Pending | Need PHP-compatible handling for omitted arguments using temporary default values while still binding references for passed arguments. |
+| Dynamic PHP `foreach` over TypePHP Native generator | Pending / Complex | Requires Zend iterator handler integration or a userland wrapper so ZendVM can drive `TypePHP\FiberGenerator` exactly like native `Generator`. |
 | Reference assignment from complex static property expressions | Pending | Static property reference targets need complete lowering and lifetime handling. |
 | Dynamic calls automatically converting by-reference arguments | Pending | Runtime callable metadata or reflection can identify by-reference parameters and build reference arguments dynamically. |
 | Calls with unpack plus trailing named arguments staying native | Pending | Normalize and reorder call arguments in IR before native-call selection. |

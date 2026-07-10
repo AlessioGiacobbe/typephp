@@ -25,6 +25,7 @@ use TypePhp\Exception\Skip;
 use TypePhp\Exception\TestError;
 use TypePhp\Generator\AnonClassGenerator;
 use TypePhp\Generator\ClosureGenerator;
+use TypePhp\Generator\FiberGenerator;
 use TypePhp\Generator\PlaceHolderGenerator;
 use TypePhp\Generator\PropertyPromotion;
 use TypePhp\Generator\Utils;
@@ -77,6 +78,7 @@ class CompilerBase implements PropertyAccessContext
     use FuncCallOptimizer;
     use AnonClassGenerator;
     use ClosureGenerator;
+    use FiberGenerator;
     use PlaceHolderGenerator;
     use PropertyPromotion;
     use MagicMethodDetector;
@@ -244,7 +246,8 @@ class CompilerBase implements PropertyAccessContext
         'phpx_big_int.h',
         'phpx_big_float.h',
         'phpx_decimal.h',
-        'php_aot_helper.h',
+        'typephp_helper.h',
+        'typephp_fiber_generator.h',
         'phpx_std.h',
     ];
     protected array $localHeaders = [];
@@ -352,6 +355,7 @@ class CompilerBase implements PropertyAccessContext
     protected ?ClassDef $classDef = null;
     protected ?MethodDef $methodDef = null;
     protected ?InterfaceDef $interfaceDef = null;
+    protected bool $inGeneratorBody = false;
     protected FunctionContext $context;
     protected array $superGlobalVars = [
         '_GET'     => self::TYPE_ARRAY,
@@ -789,9 +793,9 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_Exit':
                 return $this->parseExit($expr);
             case 'Expr_Yield':
+                return $this->parseYieldExpr($expr);
             case 'Expr_YieldFrom':
-                $this->fatalError($expr, 'The `' . $type . '` is not supported');
-                break;
+                return $this->parseYieldFromExpr($expr);
             default:
                 abort($expr);
                 break;
@@ -1599,7 +1603,13 @@ class CompilerBase implements PropertyAccessContext
             $lines[] = $this->getComment($v, $class);
             switch ($class) {
                 case 'Stmt_Expression':
-                    $result = $this->parseExpr($v->expr) . ';';
+                    if ($this->inGeneratorBody && $v->expr instanceof Expr\Yield_) {
+                        $result = $this->parseYieldStmt($v->expr);
+                    } elseif ($this->inGeneratorBody && $v->expr instanceof Expr\YieldFrom) {
+                        $result = $this->parseYieldFromStmt($v->expr);
+                    } else {
+                        $result = $this->parseExpr($v->expr) . ';';
+                    }
                     break;
                 case 'Stmt_Echo':
                     $result = $this->parseEcho($v);
@@ -7013,7 +7023,7 @@ class CompilerBase implements PropertyAccessContext
         $this->registerStaticPropertyRef($refVar, $class, $nativeProp, $info);
 
         if ($info['kind'] === 'zval') {
-            $helper = $def->type === self::TYPE_FLOAT ? 'php_aot_static_float_ref' : 'php_aot_static_int_ref';
+            $helper = $def->type === self::TYPE_FLOAT ? 'typephp_static_float_ref' : 'typephp_static_int_ref';
             return $helper . '(' . $refVar . ')';
         }
 
