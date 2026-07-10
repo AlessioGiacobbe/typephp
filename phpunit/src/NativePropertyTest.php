@@ -51,9 +51,9 @@ class NativePropertyTest extends \BaseTest
         }
 
         $code = file_get_contents($outputFile);
-        $this->assertStringContainsString('php_aot_static_int_ref(this_.attr(', $code);
-        $this->assertStringContainsString('php_aot_static_int_ref(box.attr(', $code);
-        $this->assertSame(2, substr_count($code, 'php_aot_static_int_ref('));
+        $this->assertStringContainsString('typephp_static_int_ref(this_.attr(', $code);
+        $this->assertStringContainsString('typephp_static_int_ref(box.attr(', $code);
+        $this->assertSame(2, substr_count($code, 'typephp_static_int_ref('));
         $this->assertStringNotContainsString('this_.attr(php_get_prop(0, _literal_strings[0], 0, _literal_strings[1]), true) +=', $code);
         $this->assertStringNotContainsString('box.attr(php_get_prop(0, _literal_strings[0], 0, _literal_strings[1]), true) +=', $code);
     }
@@ -67,7 +67,7 @@ class NativePropertyTest extends \BaseTest
         }
 
         $code = file_get_contents($outputFile);
-        $this->assertStringContainsString('php_aot_static_int_ref(this_.attr(', $code);
+        $this->assertStringContainsString('typephp_static_int_ref(this_.attr(', $code);
         $this->assertStringContainsString('&= (~php::toInt(php::constant(', $code);
     }
 

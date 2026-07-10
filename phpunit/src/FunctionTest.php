@@ -2,9 +2,9 @@
 
 class FunctionTest extends \BaseTest
 {
-    public function testReturnRef()
+    public function testReturnRef(): void
     {
-        $this->exec('The return type of the function `test` cannot be a reference type', 'function-return-ref.php');
+        $this->compile('function-return-ref.php');
     }
 
     public function testNativeCallUnknownNamedArgument()

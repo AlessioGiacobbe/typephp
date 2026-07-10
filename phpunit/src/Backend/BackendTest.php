@@ -10,6 +10,8 @@ use TypePhp\Backend\Msvc;
 use TypePhp\Backend\Gcc;
 use TypePhp\Backend\Clang;
 use TypePhp\Backend\CompilerFactory;
+use TypePhp\CompilerTest;
+use TypePhp\Exception\TestError;
 
 class BackendTest extends TestCase
 {
@@ -104,6 +106,7 @@ class BackendTest extends TestCase
         $this->assertStringContainsString('/OUT:', $cmd);
         $this->assertStringContainsString('output.exe', $cmd);
         $this->assertStringContainsString('/LIBPATH:', $cmd);
+        $compiler->cleanupResponseFile();
     }
 
     /**
@@ -183,6 +186,7 @@ class BackendTest extends TestCase
         $this->assertStringContainsString('/DEBUG', $cmd);
         $this->assertStringContainsString('/NODEFAULTLIB:LIBCMT', $cmd);
         $this->assertStringContainsString('/nologo', $cmd);
+        $compiler->cleanupResponseFile();
     }
 
     /**
@@ -352,6 +356,39 @@ class BackendTest extends TestCase
         $this->assertStringContainsString('-shared', $cmd);
         $this->assertStringContainsString('-lphpx', $cmd);
         $this->assertStringContainsString('-lphp', $cmd);
+        $compiler->cleanupResponseFile();
+    }
+
+    public function testBuildCleansResponseFileWhenLinkFails(): void
+    {
+        $dir = $this->createTemporaryDirectory('backend_link_failure');
+        $target = $dir . '/app';
+        $backend = new Gcc(new Linux(), 'false');
+        $compiler = new class(ROOT_PATH, $target, $backend) extends CompilerTest {
+            public function __construct(
+                string $rootPath,
+                private readonly string $testTarget,
+                \TypePhp\Backend\CompilerBackend $backend
+            ) {
+                parent::__construct($rootPath);
+                $this->forTest = true;
+                $this->compilerBackend = $backend;
+            }
+
+            protected function getTargetFileName(): string
+            {
+                return $this->testTarget;
+            }
+        };
+
+        try {
+            $compiler->build([$dir . '/missing.o']);
+            $this->fail('The failing linker command should abort the build');
+        } catch (TestError $e) {
+            $this->assertStringContainsString('link failed', $e->getMessage());
+        }
+
+        $this->assertFileDoesNotExist($target . '.rsp');
     }
 
     public function testResponseFileArgumentIsEscapedForPathsWithSpaces(): void

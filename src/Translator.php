@@ -1750,31 +1750,34 @@ CODE;
             }
         }
 
-        $linkCmd = $this->buildLinkCommand($objectFiles, $targetFile);
-        $this->climate->comment($linkCmd);
+        $backend = $this->getCompilerBackend();
+        $buildError = null;
+        try {
+            $linkCmd = $this->buildLinkCommand($objectFiles, $targetFile);
+            $this->climate->comment($linkCmd);
 
-        // 执行链接并捕获输出
-        exec($linkCmd . ' 2>&1', $output, $ret);
+            // 执行链接并捕获输出
+            exec($linkCmd . ' 2>&1', $output, $ret);
 
-        // 显示输出（如果有）
-        if (!empty($output)) {
-            foreach ($output as $line) {
-                $this->climate->out($line);
+            // 显示输出（如果有）
+            if (!empty($output)) {
+                foreach ($output as $line) {
+                    $this->climate->out($line);
+                }
             }
+
+            if ($ret !== 0) {
+                $buildError = 'link failed: ' . $targetFile;
+            } elseif (!file_exists($targetFile)) {
+                $buildError = 'target file not generated: ' . $targetFile;
+            }
+        } finally {
+            $backend->cleanupResponseFile();
         }
 
-        // 检查链接是否成功
-        if ($ret !== 0) {
-            $this->error('link failed: ' . $targetFile);
+        if ($buildError !== null) {
+            $this->error($buildError);
         }
-
-        // 验证目标文件是否生成
-        if (!file_exists($targetFile)) {
-            $this->error('target file not generated: ' . $targetFile);
-        }
-
-        // 删除 Response File 临时文件
-        $this->getCompilerBackend()->cleanupResponseFile();
 
         $this->climate->green('Build successful: ' . $targetFile);
 
