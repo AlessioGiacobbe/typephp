@@ -21,6 +21,7 @@ class PropertyDef
     public string $class = '';
     public array $typeCheck = [];
     public string $typeStr = '';
+    public bool $promoted = false;
 
     public function __construct(string $name, int $flags, string $type, ?string $default = null, bool $nullable = false)
     {

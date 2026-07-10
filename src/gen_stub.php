@@ -3202,6 +3202,7 @@ class PropertyInfo extends VariableLike
     private /* readonly */ ?string $defaultValueString;
     private /* readonly */ bool $isDocReadonly;
     private /* readonly */ bool $isVirtual;
+    private /* readonly */ bool $isPromoted;
 
     /**
      * @param AttributeInfo[] $attributes
@@ -3216,6 +3217,7 @@ class PropertyInfo extends VariableLike
         ?string $defaultValueString,
         bool $isDocReadonly,
         bool $isVirtual,
+        bool $isPromoted,
         ?string $link,
         ?int $phpVersionIdMinimumCompatibility,
         array $attributes,
@@ -3227,6 +3229,7 @@ class PropertyInfo extends VariableLike
         $this->defaultValueString = $defaultValueString;
         $this->isDocReadonly = $isDocReadonly;
         $this->isVirtual = $isVirtual;
+        $this->isPromoted = $isPromoted;
         parent::__construct($flags, $type, $phpDocType, $link, $phpVersionIdMinimumCompatibility, $attributes, $exposedDocComment);
     }
 
@@ -3362,6 +3365,10 @@ class PropertyInfo extends VariableLike
 
         if ($this->isVirtual) {
             $flags->addForVersionsAbove("ZEND_ACC_VIRTUAL", PHP_84_VERSION_ID);
+        }
+
+        if ($this->isPromoted) {
+            $flags->addForVersionsAbove("ZEND_ACC_PROMOTED", PHP_80_VERSION_ID);
         }
 
         return $flags;
@@ -4972,7 +4979,8 @@ function parseFunctionLike(
                     $property->getComments(),
                     $prettyPrinter,
                     $minimumPhpVersionIdCompatibility,
-                    AttributeInfo::createFromGroups($property->attrGroups)
+                    AttributeInfo::createFromGroups($property->attrGroups),
+                    true
                 );
             }
 
@@ -5186,7 +5194,8 @@ function parseProperty(
     array $comments,
     PrettyPrinterAbstract $prettyPrinter,
     ?int $phpVersionIdMinimumCompatibility,
-    array $attributes
+    array $attributes,
+    bool $isPromoted = false
 ): PropertyInfo {
     $phpDocType = null;
 
@@ -5228,6 +5237,7 @@ function parseProperty(
         $property->default ? $prettyPrinter->prettyPrintExpr($property->default) : null,
         $isDocReadonly,
         $isVirtual,
+        $isPromoted,
         $link,
         $phpVersionIdMinimumCompatibility,
         $attributes,

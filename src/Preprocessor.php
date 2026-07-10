@@ -324,7 +324,7 @@ class Preprocessor extends CompilerBase
                 // Promoted property defaults belong to the constructor parameter,
                 // not to the property default table. The property itself must stay
                 // uninitialized until __construct assigns it.
-                $this->addClassProperty($phpName, $param->flags, $param->type, null, $nullable, $param);
+                $this->addClassProperty($phpName, $param->flags, $param->type, null, $nullable, $param, true);
             }
             if ($param->variadic) {
                 if ($i !== $last) {
@@ -676,7 +676,7 @@ class Preprocessor extends CompilerBase
      * Create and register a class property with type normalization, shared by
      * regular property declarations and constructor property promotion.
      */
-    protected function addClassProperty(string $name, int $flags, ?NodeAbstract $typeNode, $defaultNode, bool $nullable, NodeAbstract $errorNode): PropertyDef
+    protected function addClassProperty(string $name, int $flags, ?NodeAbstract $typeNode, $defaultNode, bool $nullable, NodeAbstract $errorNode, bool $promoted = false): PropertyDef
     {
         $flags = $this->parseModifiers($flags);
         $class = '';
@@ -701,6 +701,7 @@ class Preprocessor extends CompilerBase
         $propDef = new PropertyDef($name, $flags, $type, $default, $nullable);
         $propDef->class = $class;
         $propDef->arrayInitPlan = $arrayInitPlan;
+        $propDef->promoted = $promoted;
         if ($typeNode instanceof NullableType || $typeNode instanceof UnionType || $typeNode instanceof IntersectionType) {
             $typeInfo = $this->buildTypeCheckFromNode($typeNode);
             $propDef->typeCheck = $typeInfo['check'];

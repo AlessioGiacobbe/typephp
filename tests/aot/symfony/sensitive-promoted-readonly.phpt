@@ -1,7 +1,5 @@
 --TEST--
 Symfony pattern: SensitiveParameter attribute on promoted readonly constructor parameter
---XFAIL--
-Known AOT bug: ReflectionProperty::isPromoted() is false for promoted constructor properties.
 --FILE--
 <?php
 
