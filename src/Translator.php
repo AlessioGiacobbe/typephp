@@ -2062,13 +2062,30 @@ CODE;
         $nativeConst = $this->findNativeClassConst($expr, $class, $name);
         if ($nativeConst and $expr->hasAttribute('nativeConst')) {
             $constDef = $expr->getAttribute('nativeConst');
-            return $constDef->valueExpr->value;
+            if ($constDef->valueExpr !== null) {
+                return $constDef->valueExpr->value;
+            }
+            // 内部类的常量没有 valueExpr（值来自 PHP 反射），用“定义该常量的类”
+            // 通过反射取回标量值。继承自有内部父类（如 ArrayObject）的常量也走这里。
+            if ($constDef->class !== '') {
+                $refConst = $constDef->class . '::' . $name;
+                if (defined($refConst)) {
+                    return constant($refConst);
+                }
+            }
         }
         if ($this->isInternalClass($class)) {
             $constName = $class . '::' . $name;
             if (defined($constName)) {
                 return constant($constName);
             }
+        }
+        // findNativeClassConst 不会遍历到内部父类（如 \ArrayObject），
+        // 因此继承自有内部父类的常量（例如 self::ARRAY_AS_PROPS，常量定义于
+        // 内部父类）在此沿继承链解析（内部类在运行时已加载，可用反射取值）。
+        $inherited = $this->resolveInheritedClassConst($class, $name);
+        if ($inherited !== null) {
+            return $inherited;
         }
         // Resolve enum case references. Enum cases are runtime objects; their
         // actual values in class constant arrays are set at runtime by
@@ -2082,6 +2099,44 @@ CODE;
             }
         }
         $this->fatalError($expr, "Class constant `{$class}::{$name}` not found");
+    }
+
+    /**
+     * 沿类继承链解析类常量，支持继承自自定义父类或内部父类
+     * （如 LazyArrayObject 继承自内部类 \ArrayObject，其常量 ARRAY_AS_PROPS
+     * 定义于内部父类中；内部类在运行时已加载，可用 PHP 反射取值）。
+     *
+     * @return mixed|null 解析到的值；未找到返回 null
+     */
+    protected function resolveInheritedClassConst(string $class, string $name): mixed
+    {
+        $current = ltrim($class, '\\');
+        $visited = [];
+        while ($current !== '' && $current !== '\\' && !isset($visited[strtolower($current)])) {
+            $visited[strtolower($current)] = true;
+            if ($this->hasClass($current)) {
+                $classDef = $this->getClass($current);
+                if ($classDef->hasConstant($name)) {
+                    $constDef = $classDef->getConstant($name);
+                    if ($constDef->valueExpr !== null) {
+                        return $constDef->valueExpr->value;
+                    }
+                    if ($constDef->class !== '' && defined($constDef->class . '::' . $name)) {
+                        return constant($constDef->class . '::' . $name);
+                    }
+                }
+                $current = $classDef->extends;
+            } elseif (Reflection::isInternalClass($current)) {
+                $constName = $current . '::' . $name;
+                if (defined($constName)) {
+                    return constant($constName);
+                }
+                break;
+            } else {
+                break;
+            }
+        }
+        return null;
     }
 
     public function getConstValue(string $name): mixed
