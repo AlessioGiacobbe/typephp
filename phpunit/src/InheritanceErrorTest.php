@@ -231,6 +231,12 @@ class InheritanceErrorTest extends TestCase
         $this->assertCompiles('abstract_method_byref_interface.php');
     }
 
+    public function testInterfaceTypedReceiverWithReferenceParameter()
+    {
+        // 接口类型接收者必须从接口及其父接口解析按引用参数签名。
+        $this->assertCompiles('abstract_method_byref_interface_typed.php');
+    }
+
     public function testAbstractMethodWithReferenceParameterMultilevel()
     {
         // 多级继承下，沿父类链查找抽象方法的按引用参数签名

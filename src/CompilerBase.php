@@ -3666,22 +3666,11 @@ class CompilerBase implements PropertyAccessContext
     protected function getAotCallArgInfo(string $funcName, string $className, int $argIndex): ?ArgInfo
     {
         if ($className !== '') {
-            if ($className === self::DYNAMIC_CALLED_CLASS || !$this->hasClass($className)) {
+            $functionDef = $this->findAotMethodFunctionDef($className, $funcName);
+            if ($functionDef === null) {
                 return null;
             }
-            $classDef = $this->getClass($className);
-            while (true) {
-                if ($classDef->hasMethod($funcName)) {
-                    return $this->getArgInfoByIndex($classDef->getMethod($funcName)->functionDef, $argIndex);
-                }
-                if ($classDef->hasAbstractMethod($funcName)) {
-                    return $this->getArgInfoByIndex($classDef->getAbstractMethod($funcName)->functionDef, $argIndex);
-                }
-                if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
-                    return null;
-                }
-                $classDef = $this->getClass($classDef->extends);
-            }
+            return $this->getArgInfoByIndex($functionDef, $argIndex);
         }
 
         if (!$this->hasFunction($funcName)) {
@@ -3694,24 +3683,7 @@ class CompilerBase implements PropertyAccessContext
     {
         $functionDef = null;
         if ($className !== '') {
-            if ($className === self::DYNAMIC_CALLED_CLASS || !$this->hasClass($className)) {
-                return null;
-            }
-            $classDef = $this->getClass($className);
-            while (true) {
-                if ($classDef->hasMethod($funcName)) {
-                    $functionDef = $classDef->getMethod($funcName)->functionDef;
-                    break;
-                }
-                if ($classDef->hasAbstractMethod($funcName)) {
-                    $functionDef = $classDef->getAbstractMethod($funcName)->functionDef;
-                    break;
-                }
-                if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
-                    return null;
-                }
-                $classDef = $this->getClass($classDef->extends);
-            }
+            $functionDef = $this->findAotMethodFunctionDef($className, $funcName);
         } elseif ($this->hasFunction($funcName)) {
             $functionDef = $this->getFunction($funcName);
         }
@@ -3730,6 +3702,68 @@ class CompilerBase implements PropertyAccessContext
             }
         }
         return $variadicArgInfo;
+    }
+
+    /** Resolve a project class or interface method declaration for AOT call arguments. */
+    protected function findAotMethodFunctionDef(string $className, string $funcName): ?FunctionDef
+    {
+        if ($className === self::DYNAMIC_CALLED_CLASS) {
+            return null;
+        }
+
+        if ($this->hasInterface($className)) {
+            return $this->findAotInterfaceMethodFunctionDef($className, $funcName);
+        }
+
+        if (!$this->hasClass($className)) {
+            return null;
+        }
+
+        $classDef = $this->getClass($className);
+        while (true) {
+            if ($classDef->hasMethod($funcName)) {
+                return $classDef->getMethod($funcName)->functionDef;
+            }
+            if ($classDef->hasAbstractMethod($funcName)) {
+                return $classDef->getAbstractMethod($funcName)->functionDef;
+            }
+            foreach ($classDef->implements as $interface) {
+                $functionDef = $this->findAotInterfaceMethodFunctionDef($interface, $funcName);
+                if ($functionDef !== null) {
+                    return $functionDef;
+                }
+            }
+            if (!$classDef->extends || !$this->hasClass($classDef->extends)) {
+                return null;
+            }
+            $classDef = $this->getClass($classDef->extends);
+        }
+    }
+
+    /** Resolve a method from an interface or one of its parent interfaces. */
+    protected function findAotInterfaceMethodFunctionDef(string $interfaceName, string $funcName): ?FunctionDef
+    {
+        $pending = [$interfaceName];
+        $visited = [];
+
+        while ($pending) {
+            $current = array_pop($pending);
+            $key = strtolower($current);
+            if (isset($visited[$key]) || !$this->hasInterface($current)) {
+                continue;
+            }
+            $visited[$key] = true;
+
+            $interfaceDef = $this->getInterface($current);
+            if ($interfaceDef->hasMethod($funcName)) {
+                return $interfaceDef->methods[strtolower($funcName)]->functionDef;
+            }
+            foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parent) {
+                $pending[] = $parent;
+            }
+        }
+
+        return null;
     }
 
     protected function getArgInfoByIndex(FunctionDef $functionDef, int $argIndex): ?ArgInfo
@@ -6478,6 +6512,9 @@ class CompilerBase implements PropertyAccessContext
             } elseif ($object === 'this_') {
                 // $this 在构造函数/方法中静态类型为当前类，便于解析抽象方法等按引用参数签名
                 $class = $this->classDef !== null ? $this->classDef->getNamespacedName(false) : $this->class;
+            } else {
+                // 接口和抽象类类型的变量没有具体对象类型，仍可从声明签名解析按引用参数。
+                $class = $this->getDeclaredObjectType($object);
             }
         }
 
