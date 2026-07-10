@@ -1312,10 +1312,21 @@ class CompilerBase implements PropertyAccessContext
     protected function getLiteralString(string $string): string
     {
         if ($this->noLiteralStrings) {
-            return '"' . $this->escapeString($string) . '"';
+            return $this->getInlineString($string);
         }
         $index = $this->literalStrings[$string] ?? $this->addLiteralString($string);
         return self::LITERAL_STRINGS . '[' . $index . ']';
+    }
+
+    /**
+     * Generates a PHP string value without adding it to the literal-string table.
+     *
+     * A C++ string literal may contain an embedded NUL, but passing it as a
+     * const char* would truncate it at that byte. ZEND_STRL preserves its length.
+     */
+    protected function getInlineString(string $string): string
+    {
+        return self::TYPE_STR . '{ZEND_STRL(' . $this->genCharPtr($string, true) . ')}';
     }
 
     protected function parseScalar(Node\Scalar $expr): string
@@ -1338,7 +1349,7 @@ class CompilerBase implements PropertyAccessContext
                 }
                 return $this->parseScalarFloat($expr);
             case 'Scalar_String':
-                return $expr->hasAttribute('noLiteralString') ? $this->genCharPtr($expr->value, true) : $this->getLiteralString($expr->value);
+                return $expr->hasAttribute('noLiteralString') ? $this->getInlineString($expr->value) : $this->getLiteralString($expr->value);
             default:
                 abort($expr);
                 break;

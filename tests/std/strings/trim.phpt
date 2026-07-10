@@ -2,7 +2,7 @@
 trim(), rtrim() and ltrim() functions
 --SKIPIF--
 <?php
-echo 'skip C++ string literals do not support embedded null bytes (\\0)';
+echo 'skip trim() does not yet handle form-feed whitespace';
 ?>
 --FILE--
 <?php
