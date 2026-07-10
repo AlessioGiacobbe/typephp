@@ -4070,7 +4070,8 @@ CODE;
         }
         $argv = implode(', ', $argList);
 
-        $code = $methodDef->getReturnType() . ' ' . self::PREFIX . $classMethodNativeName . '(';
+        $cppReturnType = $methodDef->functionDef->returnsByRef ? self::TYPE_REF : $methodDef->getReturnType();
+        $code = $cppReturnType . ' ' . self::PREFIX . $classMethodNativeName . '(';
         if ($this->class) {
             $code .= self::TYPE_OBJECT . ' &this_';
             if ($methodDef->functionDef->params) {
@@ -4084,7 +4085,7 @@ CODE;
         $code .= '{' . PHP_EOL;
         $this->indentLevel++;
         $methodCall = self::PREFIX . $traitMethodNativeName . '(' . $argv . ')';
-        if ($methodDef->getReturnType() !== self::TYPE_VOID) {
+        if ($cppReturnType !== self::TYPE_VOID) {
             $methodCall = 'return ' . $methodCall;
         }
         $code .= $this->getIndent() . $methodCall . ';' . PHP_EOL;
