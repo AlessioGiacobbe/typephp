@@ -660,6 +660,22 @@ trait AssignOpTrait
 
         if ($this->isVarExpr($expr->expr)) {
             $rightExpr = $tmpVar . ' = ' . $this->parseIdentifier($expr->expr) . '.toReference()';
+        } elseif ($expr->expr instanceof Expr\FuncCall && $this->isNameExpr($expr->expr->name)) {
+            $name = $this->parseIdentifier($expr->expr->name);
+            $function = $this->findNativeFunction($name);
+            if ($function) {
+                if (!$this->getFunction($function)->returnsByRef) {
+                    $this->fatalError($expr, 'Cannot assign reference to a function that does not return by reference');
+                }
+            } else {
+                $reflection = \TypePhp\Reflection::getFunction(ltrim($this->getNamespacedFuncName($name), '\\'));
+                if ($reflection === null || !$reflection->isInternal() || !$reflection->returnsReference()) {
+                    $this->fatalError($expr, 'Cannot assign reference to a function that does not return by reference');
+                }
+            }
+            $rightExpr = $tmpVar . ' = ' . $this->parseExpr($expr->expr);
+        } elseif ($expr->expr instanceof Expr\FuncCall) {
+            $this->fatalError($expr, 'Cannot assign reference from a dynamic function call');
         } elseif ($this->isPropertyFetch($expr->expr)) {
             $left = $this->parseIdentifier($expr->var);
             $rightExpr = $tmpVar . ' = ' . $this->emitDynamicPropertyFetchRef($expr->expr, $expr);

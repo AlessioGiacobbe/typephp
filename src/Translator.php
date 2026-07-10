@@ -1831,7 +1831,7 @@ CODE;
         $code .= $this->genDefaultArgumentHelpers();
 
         foreach ($this->functions as $name => $func) {
-            $code .= 'extern ' . $func->returnType . ' ' . self::PREFIX . $name . '(';
+            $code .= 'extern ' . ($func->returnsByRef ? self::TYPE_REF : $func->returnType) . ' ' . self::PREFIX . $name . '(';
             $list = [];
             if ($func->method) {
                 $list[] = self::TYPE_OBJECT . ' &this_';
@@ -3232,7 +3232,9 @@ CODE;
         if ($functionDef->returnType !== self::TYPE_VOID) {
             $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
             $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
-            $cppCode .= $this->getIndent() . 'php::deref(return_value);' . PHP_EOL;
+            if (!$functionDef->returnsByRef) {
+                $cppCode .= $this->getIndent() . 'php::deref(return_value);' . PHP_EOL;
+            }
         } else {
             $cppCode .= $this->getIndent() . $fn . '(' . $callParams . ');' . PHP_EOL;
         }
@@ -3448,7 +3450,8 @@ CODE;
             $stmts = $this->genReturnCode();
         }
 
-        $functionDeclCode = $this->getReturnType() . ' ' . self::PREFIX . $name . '(';
+        $cppReturnType = $this->functionDef->returnsByRef ? self::TYPE_REF : $this->getReturnType();
+        $functionDeclCode = $cppReturnType . ' ' . self::PREFIX . $name . '(';
         if ($this->class) {
             $functionDeclCode .= self::TYPE_OBJECT . ' &this_';
             if ($this->functionDef->params) {
@@ -3577,6 +3580,9 @@ CODE;
         }
 
         if (!$this->isReturnTypeOverrideCompatible($childFuncDef, $parentFuncDef)) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+        if ($childFuncDef->returnsByRef !== $parentFuncDef->returnsByRef) {
             $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
 

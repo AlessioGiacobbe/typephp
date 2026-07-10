@@ -419,10 +419,6 @@ class Preprocessor extends CompilerBase
                 $this->fatalError($v, 'The return type of the function `' . $name . '` must be specified');
             }
         }
-        // 返回值不能是引用类型
-        if ($v->byRef) {
-            $this->fatalError($v, 'The return type of the function `' . $v->name . '` cannot be a reference type');
-        }
         if ($this->method and $v->returnType !== null) {
             $methodName = $this->class . '::' . $this->method;
             if (in_array($this->method, ['__construct', '__destruct'], true)) {
@@ -446,6 +442,7 @@ class Preprocessor extends CompilerBase
         $functionDef->returnClass = $class;
         $functionDef->stub = $this->stubFile;
         $functionDef->returnTypeUndeclared = $v->returnType === null;
+        $functionDef->returnsByRef = $v->byRef;
 
         if ($v->returnType instanceof NullableType || $v->returnType instanceof UnionType || $v->returnType instanceof IntersectionType) {
             $typeInfo = $this->buildTypeCheckFromNode($v->returnType);

@@ -1914,6 +1914,34 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseReturn(Node\Stmt\Return_ $v): string
     {
+        if ($this->functionDef->returnsByRef) {
+            if ($v->expr === null) {
+                return 'return ' . self::TYPE_REF . '{};';
+            }
+            if (!$this->isVarExpr($v->expr)) {
+                $this->fatalError($v, 'A function returning by reference must return a variable');
+            }
+            $name = $this->parseIdentifier($v->expr);
+            if (!$this->hasVar($name)) {
+                $this->errorUndefinedVariable($v->expr);
+            }
+            if ($this->hasLocalVar($name) && $this->getVarType($name) !== self::TYPE_VAR && $this->getVarType($name) !== self::TYPE_REF) {
+                $isParameter = false;
+                foreach ($this->functionDef->argInfoList as $argInfo) {
+                    if ($argInfo->name === $name) {
+                        $isParameter = true;
+                        break;
+                    }
+                }
+                if ($isParameter) {
+                    $this->fatalError($v, 'A function returning by reference cannot return a native typed parameter');
+                }
+                // The declaration is emitted after parsing the body, so a local can
+                // be promoted to Variant before C++ is generated.
+                $this->context->localVars[$name] = self::TYPE_VAR;
+            }
+            return 'return ' . $name . '.toReference();';
+        }
         if ($v->expr === null) {
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {
                 return 'return;';
@@ -7874,6 +7902,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function genReturnCode(): string
     {
+        if ($this->functionDef->returnsByRef) {
+            return $this->getIndent() . 'return ' . self::TYPE_REF . '{};';
+        }
         if ($this->shouldCheckClosureReturnType()) {
             return $this->genClosureCheckedReturn(self::VALUE_NULL);
         }
