@@ -7045,6 +7045,10 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseClassConstFetch(Expr\ClassConstFetch $expr): string
     {
+        if (!$this->isNameExpr($expr->class)) {
+            return $this->parseDynamicClassConstFetch($expr);
+        }
+
         $class = $this->parseIdentifier($expr->class);
         $self = false;
         if ($class === 'self' or $class === 'this_') {
@@ -7076,10 +7080,6 @@ class CompilerBase implements PropertyAccessContext
             if ($self or $this->isNameExpr($expr->class)) {
                 return $this->getLiteralString($class);
             }
-            if ($this->isVarExpr($expr->class) and $this->isTypedObject($expr->class->name)) {
-                return $this->getLiteralString($this->getObjectType($expr->class->name));
-            }
-            return 'php::fn::get_class(' . $class . ')';
         }
         if (($self or $this->isNameExpr($expr->class)) and $this->isIdExpr($expr->name)) {
             if ($this->hasClass($class)) {
@@ -7099,6 +7099,30 @@ class CompilerBase implements PropertyAccessContext
         $name = $class . '::' . $const;
         $name = $this->getLiteralString($name);
         return Symbol::constant() . '(' . $name . ')';
+    }
+
+    protected function parseDynamicClassConstFetch(Expr\ClassConstFetch $expr): string
+    {
+        $const = $this->escapeString($this->parseIdentifier($expr->name));
+        $target = $this->materializeDynamicClassConstTarget($expr->class);
+
+        if ($const === 'class') {
+            return 'php::fn::get_class(' . $target . ')';
+        }
+
+        $className = '(' . $target . '.isObject() ? php::fn::get_class(' . $target . ') : ' . $target . ')';
+        return Symbol::constant() . '(php::concat({' . $className . ', "::", ' . $this->getLiteralString($const) . '}))';
+    }
+
+    protected function materializeDynamicClassConstTarget(NodeAbstract $expr): string
+    {
+        $this->assertExprCanBeUsedAsValue($expr, 'class constant target');
+        [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $this->appendCapturedStmtLinesToContext($beforeStmts);
+        $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
+        $this->appendCapturedStmtLinesToContext($afterStmts);
+        return $tmpVar;
     }
 
     protected function parseThrow(mixed $expr): string
