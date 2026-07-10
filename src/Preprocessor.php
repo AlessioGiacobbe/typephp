@@ -447,7 +447,10 @@ class Preprocessor extends CompilerBase
             $this->prepareGeneratorFunction($v, $functionDef);
         }
 
-        if ($v->returnType instanceof NullableType || $v->returnType instanceof UnionType || $v->returnType instanceof IntersectionType) {
+        if (!$functionDef->generator
+            && ($v->returnType instanceof NullableType
+                || $v->returnType instanceof UnionType
+                || $v->returnType instanceof IntersectionType)) {
             $typeInfo = $this->buildTypeCheckFromNode($v->returnType);
             if (!empty($typeInfo['check'])) {
                 $functionDef->returnTypeCheck = $typeInfo['check'];

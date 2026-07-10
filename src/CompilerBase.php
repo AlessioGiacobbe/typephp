@@ -7205,7 +7205,10 @@ class CompilerBase implements PropertyAccessContext
             $code .= $this->parseStmts($finally->stmts);
             $code .= PHP_EOL;
         }
-        $code .= 'if (' . $exVar . ') {' . PHP_EOL . $this->getIndent() . 'php::throwException(php::Object(' . $exVar . '));' . PHP_EOL . $this->getIndent() . '}';
+        $rethrow = $this->inGeneratorBody
+            ? 'typephp_fiber_rethrow(' . $exVar . ');'
+            : 'php::throwException(php::Object(' . $exVar . '));';
+        $code .= 'if (' . $exVar . ') {' . PHP_EOL . $this->getIndent() . $rethrow . PHP_EOL . $this->getIndent() . '}';
 
         return $code;
     }

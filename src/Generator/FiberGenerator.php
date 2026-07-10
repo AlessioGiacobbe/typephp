@@ -13,6 +13,9 @@ use PhpParser\Node\Expr\Yield_;
 use PhpParser\Node\Expr\YieldFrom;
 use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\Function_;
+use PhpParser\Node\IntersectionType;
+use PhpParser\Node\NullableType;
+use PhpParser\Node\UnionType;
 use TypePhp\Context\FunctionContext;
 use TypePhp\Entity\FunctionDef;
 
@@ -64,8 +67,8 @@ trait FiberGenerator
                 $this->fatalError($param, 'Generators with by-reference or variadic parameters are not supported yet');
             }
         }
-        if ($functionDef->returnClass === 'Generator') {
-            $this->fatalError($v, 'Generator return type is not supported by TypePHP Fiber generators yet; use Iterator, Traversable, iterable, mixed, or omit the return type');
+        if (!$this->generatorReturnTypeAcceptsFiber($v->returnType)) {
+            $this->fatalError($v, 'Generator return type must accept TypePHP\\FiberGenerator; use Iterator, Traversable, iterable, object, mixed, or omit the return type');
         }
         $functionDef->generator = true;
         $functionDef->returnType = self::TYPE_VAR;
@@ -73,6 +76,42 @@ trait FiberGenerator
         $functionDef->returnTypeCheck = null;
         $functionDef->returnTypeStr = '';
         $functionDef->returnTypeNode = null;
+    }
+
+    protected function generatorReturnTypeAcceptsFiber(?Node $type): bool
+    {
+        if ($type === null) {
+            return true;
+        }
+        if ($type instanceof NullableType) {
+            return $this->generatorReturnTypeAcceptsFiber($type->type);
+        }
+        if ($type instanceof UnionType) {
+            foreach ($type->types as $member) {
+                if ($this->generatorReturnTypeAcceptsFiber($member)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if ($type instanceof IntersectionType) {
+            foreach ($type->types as $member) {
+                if (!$this->generatorReturnTypeAcceptsFiber($member)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        $typeName = strtolower($this->parseIdentifier($type));
+        if (in_array($typeName, ['mixed', 'object', 'iterable'], true)) {
+            return true;
+        }
+
+        $class = '';
+        $this->parseTypeDecl($type, self::DECL_TYPE_OF_RETURN, $class);
+        $class = strtolower(ltrim($class, '\\'));
+        return in_array($class, ['iterator', 'traversable', 'typephp\\fibergenerator'], true);
     }
 
     protected function parseYieldExpr(Yield_ $expr): string
@@ -142,6 +181,17 @@ trait FiberGenerator
 
         $code = $functionDeclCode . ' {' . PHP_EOL;
         $this->indentLevel++;
+        foreach ($functionDef->argInfoList as $i => $argInfo) {
+            if (!empty($argInfo->typeCheck)) {
+                $code .= $this->genUnionParamCheck($argInfo, $i);
+            }
+        }
+        foreach ($functionDef->argInfoList as $argInfo) {
+            if ($argInfo->property) {
+                $code .= $this->getIndent() . $this->genPropertyPromotion($argInfo);
+            }
+        }
+
         $closureVar = $this->genTmpVarName();
         $code .= $this->getIndent() . 'php::ClosureFn ' . $closureVar . ' = []('
             . 'INTERNAL_FUNCTION_PARAMETERS, '
@@ -165,11 +215,21 @@ trait FiberGenerator
         }
 
         $body = '';
+        $this->indentLevel++;
+        if ($this->methodDef && $this->methodDef->hasDynamicCall) {
+            $body .= $this->genScopeSwitchCode();
+        }
         if ($v->stmts) {
-            $body = $this->parseStmts($v->stmts);
+            $body .= $this->parseStmts($v->stmts);
         }
         $body .= $this->getIndent() . 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
-        $code .= $this->genScopeVarDecl() . $body;
+        $this->indentLevel--;
+        $code .= $this->genScopeVarDecl();
+        $code .= $this->getIndent() . 'try {' . PHP_EOL;
+        $code .= $body;
+        $code .= $this->getIndent() . '} catch (zend_object *) {' . PHP_EOL;
+        $code .= $this->getIndent() . '    return ' . self::VALUE_NULL . ';' . PHP_EOL;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
 
         $this->indentLevel = $outerIndent;
         $this->inGeneratorBody = $outerInGeneratorBody;
