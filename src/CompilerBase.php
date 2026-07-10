@@ -1485,13 +1485,18 @@ class CompilerBase implements PropertyAccessContext
             return null;
         }
         /*
-         * 函数参数默认值只能为字面量，无法使用表达式获取值
+         * 函数参数默认值只能为字面量，无法使用表达式获取值。
+         * 但 PHP 自 5.6 起支持在默认参数值中使用常量表达式，包括
+         * 类常量（self::FOO、ClassName::BAR、\Full\Class::BAZ），
+         * 编译器需要在编译期将其折叠为对应的字面量。
          */
         if ($default instanceof Expr\ConstFetch) {
             return $this->parseConstFetch($default, true);
-        } else {
-            return $this->parseIdentifier($default);
         }
+        if ($default instanceof Expr\ClassConstFetch) {
+            return $this->parseClassConstFetch($default);
+        }
+        return $this->parseIdentifier($default);
     }
 
     protected function getComment(Node\Stmt $v, string $class): string

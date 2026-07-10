@@ -155,4 +155,11 @@ class ClassTest extends \BaseTest
     {
         $this->exec('Method MagicGetProtectedInvalid::__get() must have public visibility', 'magic-get-protected.php');
     }
+
+    public function testClassConstDefaultValue()
+    {
+        // 类常量（self:: / 类名:: / 完全限定名::，含继承自内部父类的常量）
+        // 作为函数/方法默认参数值应当能够在编译期正确解析。
+        $this->compile('class-const-default-value.php');
+    }
 }
