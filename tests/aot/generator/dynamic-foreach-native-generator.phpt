@@ -1,7 +1,5 @@
 --TEST--
 dynamic PHP foreach consumes native TypePHP generator
---XFAIL--
-Dynamic PHP foreach over TypePHP FiberGenerator requires Zend iterator handler integration.
 --FILE--
 <?php
 function native_values(): iterable
