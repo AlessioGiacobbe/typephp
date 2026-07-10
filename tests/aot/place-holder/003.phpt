@@ -2,7 +2,9 @@
 place-holder
 --FILE--
 <?php
-class Select {
+interface EventInterface {}
+
+class Select implements EventInterface {
     public function onReadable($stream, callable $func): void
     {
         $func($stream);
@@ -38,4 +40,3 @@ function main()
 --EXPECT--
 string(27) "Worker::acceptUdpConnection"
 string(10) "tcp-stream"
-

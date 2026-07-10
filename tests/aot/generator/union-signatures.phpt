@@ -16,7 +16,7 @@ function main(): void
     var_dump($generator->getReturn());
 
     try {
-        union_generator([]);
+        union_generator(any([]));
     } catch (Throwable $e) {
         echo get_class($e), "\n";
     }

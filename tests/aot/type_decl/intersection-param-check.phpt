@@ -13,17 +13,13 @@ function expect_both(IA&IB $value): void {
     var_dump(get_class($value));
 }
 
-function dynamic_value(mixed $value): mixed {
-    return $value;
-}
-
 function main() {
     expect_both(new Both());
 
     $errors = [];
 
     try {
-        expect_both(dynamic_value(new OnlyA()));
+        expect_both(any(new OnlyA()));
     } catch (\TypeError $e) {
         $errors[] = $e->getMessage();
     }

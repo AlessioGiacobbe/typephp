@@ -13,7 +13,7 @@ class Select {
 
 class Worker
 {
-    public static ?stdClass $globalEvent = null;
+    public static ?Select $globalEvent = null;
 
     public static function init() {
         self::$globalEvent = new Select;

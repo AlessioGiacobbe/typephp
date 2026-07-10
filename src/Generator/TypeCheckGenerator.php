@@ -184,6 +184,40 @@ trait TypeCheckGenerator
         return '(' . implode(' && ', $conditions) . ')';
     }
 
+    protected function compositeTypeNeedsIntToFloatCoercion(array $typeCheck): bool
+    {
+        return $this->compositeTypeContainsKind($typeCheck, 'isFloat')
+            && !$this->compositeTypeContainsKind($typeCheck, 'isInt');
+    }
+
+    private function compositeTypeContainsKind(array $typeCheck, string $kind): bool
+    {
+        foreach ($typeCheck as $entry) {
+            if (($entry['kind'] ?? '') === $kind) {
+                return true;
+            }
+            if (($entry['kind'] ?? '') === 'allOf'
+                && $this->compositeTypeContainsKind($entry['types'] ?? [], $kind)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function genCompositeIntToFloatCoercion(string $varName, array $typeCheck): string
+    {
+        if (!$this->compositeTypeNeedsIntToFloatCoercion($typeCheck)) {
+            return '';
+        }
+
+        $code = $this->getIndent() . 'if (' . $varName . '.isInt()) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $varName . ' = php::toFloat(' . $varName . ');' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        return $code;
+    }
+
     protected function getTypeCheckCallableName(): string
     {
         if ($this->classDef) {
@@ -218,7 +252,8 @@ trait TypeCheckGenerator
         $orExpr = implode(' || ', $conditions);
         $msgExpr = $this->genUnionParamTypeErrorExpr($argInfo, $varName, (string) ($argIndex + 1));
 
-        $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
+        $code = $this->genCompositeIntToFloatCoercion($varName, $argInfo->typeCheck);
+        $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
         $this->indentLevel--;
@@ -250,6 +285,14 @@ trait TypeCheckGenerator
         $code = $this->getIndent() . 'for (auto ' . $iterVar . ' = ' . $argInfo->name . '.begin(); ' . $iterVar . ' != ' . $argInfo->name . '.end(); ++' . $iterVar . ') {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = ' . $iterVar . '.value();' . PHP_EOL;
+        if ($this->compositeTypeNeedsIntToFloatCoercion($argInfo->typeCheck)) {
+            $code .= $this->getIndent() . 'if (' . $valueVar . '.isInt()) {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . $valueVar . ' = php::toFloat(' . $valueVar . ');' . PHP_EOL;
+            $code .= $this->getIndent() . $iterVar . '.valueRef() = ' . $valueVar . ';' . PHP_EOL;
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        }
         $code .= $this->getIndent() . self::TYPE_INT . ' ' . $argNoVar . ' = ' . ($argIndex + 1) . ' + ' . $iterVar . '.index();' . PHP_EOL;
         $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
@@ -302,7 +345,8 @@ trait TypeCheckGenerator
         $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($fnName, true) . ' "(): Return value must be of type " '
                  . $this->genCharPtr($typeStr, true) . ' ", "), ' . $varName . '.typeStr()), php::Str(" given"))';
 
-        $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
+        $code = $this->genCompositeIntToFloatCoercion($varName, $typeCheck);
+        $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
         $this->indentLevel--;
@@ -335,7 +379,8 @@ trait TypeCheckGenerator
         $orExpr = implode(' || ', $conditions);
         $msgExpr = $this->genClosureParamTypeErrorExpr($argInfo, $argInfo->name, (string) ($argIndex + 1));
 
-        $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
+        $code = $this->genCompositeIntToFloatCoercion($argInfo->name, $argInfo->typeCheck);
+        $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . 'return php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
         $this->indentLevel--;
@@ -367,6 +412,14 @@ trait TypeCheckGenerator
         $code = $this->getIndent() . 'for (auto ' . $iterVar . ' = ' . $argInfo->name . '.begin(); ' . $iterVar . ' != ' . $argInfo->name . '.end(); ++' . $iterVar . ') {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = ' . $iterVar . '.value();' . PHP_EOL;
+        if ($this->compositeTypeNeedsIntToFloatCoercion($argInfo->typeCheck)) {
+            $code .= $this->getIndent() . 'if (' . $valueVar . '.isInt()) {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . $valueVar . ' = php::toFloat(' . $valueVar . ');' . PHP_EOL;
+            $code .= $this->getIndent() . $iterVar . '.valueRef() = ' . $valueVar . ';' . PHP_EOL;
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        }
         $code .= $this->getIndent() . self::TYPE_INT . ' ' . $argNoVar . ' = ' . ($argIndex + 1) . ' + ' . $iterVar . '.index();' . PHP_EOL;
         $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
@@ -416,7 +469,8 @@ trait TypeCheckGenerator
         $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr('{closure}', true) . ' "(): Return value must be of type " '
                  . $this->genCharPtr($typeStr, true) . ' ", "), ' . $varName . '.typeStr()), php::Str(" given"))';
 
-        $code = $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
+        $code = $this->genCompositeIntToFloatCoercion($varName, $typeCheck);
+        $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . 'return php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
         $this->indentLevel--;

@@ -148,7 +148,6 @@ trait AssignOpTrait
         $type = $this->detectTypeOfExpr($right);
         $finalVarType = $this->getNormalAssignType($type);
         $runtimeObjectAssignClass = '';
-        $rightExprOverride = null;
         if ($type === self::TYPE_VOID) {
             $type = self::TYPE_VAR;
         }
@@ -204,18 +203,7 @@ trait AssignOpTrait
                     }
                 }
                 if ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
-                    $fn = $this->parseIdentifier($right->name);
-                    if (count($right->args) === 1 and $fn === 'any') {
-                        $type = self::TYPE_VAR;
-                        if (!$this->hasVar($var)) {
-                            $this->addLocalVar($var, $type);
-                            $finalVarType = $type;
-                            return $var . ' = ' . $this->parseIdentifier($right->args[0]->value);
-                        }
-                        $rightExprOverride = $this->parseIdentifier($right->args[0]->value);
-                    } else {
-                        $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
-                    }
+                    $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
                 } elseif ($this->isStaticCall($right) and $this->isNameExpr($right->class) and $this->isIdExpr($right->name)) {
                     $class = $this->parseIdentifier($right->class);
                     if ($class === 'std') {
@@ -299,7 +287,7 @@ trait AssignOpTrait
         }
 
         $var = $this->parseWritableIdentifier($left);
-        $rightExpr = $rightExprOverride ?? $this->parseAssignRightExpr($right);
+        $rightExpr = $this->parseAssignRightExpr($right);
         if ($propertyWriteTarget !== null) {
             $rightExpr = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $right, $rightExpr);
         }

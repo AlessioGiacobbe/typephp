@@ -158,6 +158,15 @@ trait ClosureGenerator
 
     protected function genArrowFunctionBody(Node\Expr\ArrowFunction $expr): string
     {
+        if (!empty($this->context->closureReturnTypeCheck)) {
+            $this->checkCompositeTypeAssignment(
+                $expr,
+                $this->context->closureReturnTypeCheck,
+                $this->context->closureReturnTypeStr,
+                $expr->expr,
+                'closure return value'
+            );
+        }
         $code = $this->parseExpr($expr->expr);
         if ($this->context->beforeStmtLines) {
             $beforeCode = implode(PHP_EOL, $this->context->beforeStmtLines);

@@ -19,12 +19,12 @@ function main(): void
 
     $errors = [];
     try {
-        collect_scalars(1, "two", []);
+        collect_scalars(1, "two", any([]));
     } catch (\TypeError $e) {
         $errors[] = $e->getMessage();
     }
     try {
-        collect_nullable(ok: 1, bad: "x");
+        collect_nullable(ok: 1, bad: any("x"));
     } catch (\TypeError $e) {
         $errors[] = $e->getMessage();
     }

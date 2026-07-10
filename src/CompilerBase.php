@@ -109,6 +109,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected const string NATIVE_PROPERTY_VALUE_VAR = 'var';
     protected const string NATIVE_PROPERTY_VALUE_DYNAMIC = 'dynamic';
+    protected const int COMPOSITE_TYPE_MISMATCH = -1;
+    protected const int COMPOSITE_TYPE_UNKNOWN = 0;
+    protected const int COMPOSITE_TYPE_MATCH = 1;
     protected const string ATTR_ARRAY_DIM_FETCH_UPDATE = 'aotArrayDimFetchUpdate';
     protected const string ATTR_PROPERTY_FETCH_UPDATE = 'aotPropertyFetchUpdate';
 
@@ -1962,6 +1965,24 @@ class CompilerBase implements PropertyAccessContext
             return 'return ' . $this->parseChainedExpr($v->expr, self::OP_REFVAL) . ';';
         }
         if ($v->expr === null) {
+            $nullExpr = new Expr\ConstFetch(new Node\Name('null'));
+            if ($this->shouldCheckClosureReturnType()) {
+                $this->checkCompositeTypeAssignment(
+                    $v,
+                    $this->context->closureReturnTypeCheck,
+                    $this->context->closureReturnTypeStr,
+                    $nullExpr,
+                    'closure return value'
+                );
+            } elseif ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
+                $this->checkCompositeTypeAssignment(
+                    $v,
+                    $this->functionDef->returnTypeCheck,
+                    $this->functionDef->returnTypeStr,
+                    $nullExpr,
+                    'return value'
+                );
+            }
             if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {
                 return 'return;';
             } elseif ($this->shouldCheckClosureReturnType()) {
@@ -1977,7 +1998,15 @@ class CompilerBase implements PropertyAccessContext
         if ($this->isCurrentConstructor() && !$this->context->inClosure) {
             $this->fatalError($v, 'Method `' . $this->getCurrentMethodDisplayName() . '()` cannot return a value');
         }
-        if (!$this->context->inClosure && !empty($this->functionDef->returnTypeCheck)) {
+        if ($this->shouldCheckClosureReturnType()) {
+            $this->checkCompositeTypeAssignment(
+                $v,
+                $this->context->closureReturnTypeCheck,
+                $this->context->closureReturnTypeStr,
+                $v->expr,
+                'closure return value'
+            );
+        } elseif (!$this->context->inClosure && !empty($this->functionDef->returnTypeCheck)) {
             $this->checkCompositeTypeAssignment(
                 $v,
                 $this->functionDef->returnTypeCheck,
@@ -3520,6 +3549,12 @@ class CompilerBase implements PropertyAccessContext
             $name = $this->parseIdentifier($expr->name);
             if (in_array($name, Constants::UNSUPPORTED_FUNCTIONS)) {
                 $this->fatalError($expr, 'Unsupported function: `' . $name . '`');
+            }
+            if ($name === 'any') {
+                if (count($expr->args) !== 1 || $expr->args[0]->unpack) {
+                    $this->fatalError($expr, 'The any function expects exactly one non-unpacked argument');
+                }
+                return $this->parseExprAsValue($expr->args[0]->value);
             }
             if ($name === 'objval') {
                 return $this->genObjvalCall($expr);
@@ -5343,13 +5378,17 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $rightType = $this->detectTypeOfExpr($right);
-        if (!empty($def->typeCheck) && $this->checkCompositeTypeAssignment(
+        $compositeRelation = null;
+        if (!empty($def->typeCheck)) {
+            $compositeRelation = $this->checkCompositeTypeAssignment(
                 $left,
                 $def->typeCheck,
                 $def->typeStr,
                 $right,
                 'property assignment'
-            ) && $rightType !== self::TYPE_VAR) {
+            );
+        }
+        if ($compositeRelation === self::COMPOSITE_TYPE_MATCH && $rightType !== self::TYPE_VAR) {
             // A statically known member of the composite type needs no
             // Variant runtime guard on this property write.
             return $rightExpr;
@@ -5363,7 +5402,7 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $rightClass = $this->detectClassOfExpr($right);
-        if ($rightClass !== '') {
+        if ($rightClass !== '' && $compositeRelation === null) {
             return $rightExpr;
         }
 
@@ -5390,8 +5429,13 @@ class CompilerBase implements PropertyAccessContext
                 . $this->genCharPtr($typeStr, true) . ' ", "), ' . $tmpVar . '.typeStr()), php::Str(" given"))';
         }
 
+        $coercion = $this->compositeTypeNeedsIntToFloatCoercion($typeCheck)
+            ? 'if (' . $tmpVar . '.isInt()) { ' . $tmpVar . ' = php::toFloat(' . $tmpVar . '); } '
+            : '';
+
         return '([&]() -> ' . self::TYPE_VAR . ' { '
             . $tmpVar . ' = ' . $rightExpr . '; '
+            . $coercion
             . 'if (UNEXPECTED(!(' . implode(' || ', $conditions) . '))) { '
             . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString()); '
             . '} '
@@ -7630,95 +7674,155 @@ class CompilerBase implements PropertyAccessContext
         string $typeStr,
         NodeAbstract $value,
         string $context
-    ): bool {
-        if ($this->compositeTypeMayMatch($value, $typeCheck)) {
-            return true;
+    ): int {
+        $relation = $this->compositeTypeRelation($value, $typeCheck);
+        if ($relation !== self::COMPOSITE_TYPE_MISMATCH) {
+            return $relation;
         }
 
         $valueType = $this->staticTypeNameOfExpr($value);
         $this->fatalError($errorNode, "Cannot assign {$valueType} to {$context} of type `{$typeStr}`");
     }
 
-    protected function compositeTypeMayMatch(NodeAbstract $value, array $clauses): bool
+    protected function compositeTypeRelation(NodeAbstract $value, array $clauses): int
     {
         // TYPE_VAR means that the expression is dynamic or its result cannot
-        // be represented by the current scalar type system. Do not reject it.
+        // be represented by the current scalar type system. It must retain the
+        // runtime type check.
         if ($this->detectTypeOfExpr($value) === self::TYPE_VAR && !$this->isNullExpr($value)) {
-            return true;
+            return self::COMPOSITE_TYPE_UNKNOWN;
         }
 
+        $hasUnknown = false;
         foreach ($clauses as $clause) {
-            if ($this->compositeTypeClauseMayMatch($value, $clause)) {
-                return true;
+            $relation = $this->compositeTypeClauseRelation($value, $clause);
+            if ($relation === self::COMPOSITE_TYPE_MATCH) {
+                return self::COMPOSITE_TYPE_MATCH;
+            }
+            if ($relation === self::COMPOSITE_TYPE_UNKNOWN) {
+                $hasUnknown = true;
             }
         }
-        return false;
+        return $hasUnknown ? self::COMPOSITE_TYPE_UNKNOWN : self::COMPOSITE_TYPE_MISMATCH;
     }
 
-    protected function compositeTypeClauseMayMatch(NodeAbstract $value, array $clause): bool
+    protected function compositeTypeClauseRelation(NodeAbstract $value, array $clause): int
     {
         if (($clause['kind'] ?? '') === 'allOf') {
+            $hasUnknown = false;
             foreach ($clause['types'] ?? [] as $entry) {
-                if (!$this->compositeTypeEntryMayMatch($value, $entry)) {
-                    return false;
+                $relation = $this->compositeTypeEntryRelation($value, $entry);
+                if ($relation === self::COMPOSITE_TYPE_MISMATCH) {
+                    return self::COMPOSITE_TYPE_MISMATCH;
+                }
+                if ($relation === self::COMPOSITE_TYPE_UNKNOWN) {
+                    $hasUnknown = true;
                 }
             }
-            return true;
+            return $hasUnknown ? self::COMPOSITE_TYPE_UNKNOWN : self::COMPOSITE_TYPE_MATCH;
         }
-        return $this->compositeTypeEntryMayMatch($value, $clause);
+        return $this->compositeTypeEntryRelation($value, $clause);
     }
 
-    protected function compositeTypeEntryMayMatch(NodeAbstract $value, array $entry): bool
+    protected function compositeTypeEntryRelation(NodeAbstract $value, array $entry): int
     {
         $kind = $entry['kind'] ?? '';
         if ($kind === 'isNull') {
-            return $this->isNullExpr($value);
+            return $this->isNullExpr($value) ? self::COMPOSITE_TYPE_MATCH : self::COMPOSITE_TYPE_MISMATCH;
         }
 
         $type = $this->detectTypeOfExpr($value);
         return match ($kind) {
-            'isInt' => $type === self::TYPE_INT,
-            'isFloat' => $type === self::TYPE_FLOAT,
-            'isBool' => $type === self::TYPE_BOOL,
-            'isString' => $type === self::TYPE_STR,
-            'isArray' => $type === self::TYPE_ARRAY,
-            'isObject' => $type === self::TYPE_OBJECT,
-            'isTrue', 'isFalse' => $type === self::TYPE_BOOL,
-            'isResource' => $type === self::TYPE_RESOURCE,
-            // These checks depend on runtime callable/traversable state unless
-            // a future value lattice adds those properties.
-            'callable', 'iterable' => true,
-            'instanceof' => $this->compositeObjectEntryMayMatch($value, $entry),
-            default => true,
+            'isInt' => $this->exactCompositeTypeRelation($type, self::TYPE_INT),
+            // PHP permits int -> float widening. It is compatible but still
+            // needs conversion, so retain the runtime normalization path.
+            'isFloat' => $type === self::TYPE_INT
+                ? self::COMPOSITE_TYPE_UNKNOWN
+                : $this->exactCompositeTypeRelation($type, self::TYPE_FLOAT),
+            'isBool' => $this->exactCompositeTypeRelation($type, self::TYPE_BOOL),
+            'isString' => $this->exactCompositeTypeRelation($type, self::TYPE_STR),
+            'isArray' => $this->exactCompositeTypeRelation($type, self::TYPE_ARRAY),
+            'isObject' => $this->exactCompositeTypeRelation($type, self::TYPE_OBJECT),
+            'isTrue' => $this->compositeLiteralBoolRelation($value, true),
+            'isFalse' => $this->compositeLiteralBoolRelation($value, false),
+            'isResource' => $this->exactCompositeTypeRelation($type, self::TYPE_RESOURCE),
+            'callable' => $this->compositeCallableRelation($value, $type),
+            'iterable' => $this->compositeIterableRelation($value, $type),
+            'instanceof' => $this->compositeObjectEntryRelation($value, $entry),
+            default => self::COMPOSITE_TYPE_UNKNOWN,
         };
     }
 
-    protected function compositeObjectEntryMayMatch(NodeAbstract $value, array $entry): bool
+    protected function exactCompositeTypeRelation(string $actual, string $expected): int
+    {
+        return $actual === $expected ? self::COMPOSITE_TYPE_MATCH : self::COMPOSITE_TYPE_MISMATCH;
+    }
+
+    protected function compositeLiteralBoolRelation(NodeAbstract $value, bool $expected): int
+    {
+        if ($this->isScalarBool($value)) {
+            $actual = strcasecmp($value->name->toString(), 'true') === 0;
+            return $actual === $expected ? self::COMPOSITE_TYPE_MATCH : self::COMPOSITE_TYPE_MISMATCH;
+        }
+        return $this->detectTypeOfExpr($value) === self::TYPE_BOOL
+            ? self::COMPOSITE_TYPE_UNKNOWN
+            : self::COMPOSITE_TYPE_MISMATCH;
+    }
+
+    protected function compositeCallableRelation(NodeAbstract $value, string $type): int
+    {
+        if ($type === self::TYPE_STR || $type === self::TYPE_ARRAY || $type === self::TYPE_OBJECT) {
+            return self::COMPOSITE_TYPE_UNKNOWN;
+        }
+        return self::COMPOSITE_TYPE_MISMATCH;
+    }
+
+    protected function compositeIterableRelation(NodeAbstract $value, string $type): int
+    {
+        if ($type === self::TYPE_ARRAY) {
+            return self::COMPOSITE_TYPE_MATCH;
+        }
+        if ($type !== self::TYPE_OBJECT) {
+            return self::COMPOSITE_TYPE_MISMATCH;
+        }
+        return $this->compositeObjectTypeRelation($value, 'Traversable');
+    }
+
+    protected function compositeObjectEntryRelation(NodeAbstract $value, array $entry): int
     {
         if ($this->detectTypeOfExpr($value) !== self::TYPE_OBJECT) {
-            return false;
+            return self::COMPOSITE_TYPE_MISMATCH;
         }
 
+        return $this->compositeObjectTypeRelation($value, $entry['class'] ?? '');
+    }
+
+    protected function compositeObjectTypeRelation(NodeAbstract $value, string $expected): int
+    {
         $class = $this->detectDeclaredClassOfExpr($value);
         if ($class === '') {
-            return true;
+            return self::COMPOSITE_TYPE_UNKNOWN;
         }
 
-        $expected = $entry['class'] ?? '';
-        // If the expected class/interface is outside the AOT class graph,
-        // static analysis cannot prove incompatibility. Keep the runtime
-        // instanceof check (this is common for extension-provided interfaces).
-        if ($expected === ''
-            || (!$this->hasClass($expected)
-                && !$this->hasInterface($expected)
-                && !$this->isInternalClass($expected)
-                && !$this->isInternalInterface($expected))) {
-            return true;
+        if ($expected === '' || $expected === 'static') {
+            return self::COMPOSITE_TYPE_UNKNOWN;
         }
 
-        return $expected === 'static'
-            ? true
-            : $this->isObjectClassStaticallyAssignableTo($class, $expected);
+        $actualKnown = $this->hasClass($class)
+            || $this->hasInterface($class)
+            || $this->isInternalClass($class)
+            || $this->isInternalInterface($class);
+        $expectedKnown = $this->hasClass($expected)
+            || $this->hasInterface($expected)
+            || $this->isInternalClass($expected)
+            || $this->isInternalInterface($expected);
+        if (!$actualKnown || !$expectedKnown) {
+            return self::COMPOSITE_TYPE_UNKNOWN;
+        }
+
+        return $this->isObjectClassStaticallyAssignableTo($class, $expected)
+            ? self::COMPOSITE_TYPE_MATCH
+            : self::COMPOSITE_TYPE_MISMATCH;
     }
 
     protected function isNullExpr(NodeAbstract $expr): bool

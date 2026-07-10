@@ -27,10 +27,6 @@ function expect_bool_or_array(bool|array $x): void {
     var_dump($x);
 }
 
-function dynamic_value(mixed $value): mixed {
-    return $value;
-}
-
 function main() {
     // Valid calls - should pass
     expect_int_or_string(42);
@@ -51,25 +47,25 @@ function main() {
     $errors = [];
 
     try {
-        expect_int_or_string(dynamic_value(3.14));
+        expect_int_or_string(any(3.14));
     } catch (\TypeError $e) {
         $errors[] = $e->getMessage();
     }
 
     try {
-        expect_int_or_string(dynamic_value([]));
+        expect_int_or_string(any([]));
     } catch (\TypeError $e) {
         $errors[] = $e->getMessage();
     }
 
     try {
-        expect_nullable_int(dynamic_value("hello"));
+        expect_nullable_int(any("hello"));
     } catch (\TypeError $e) {
         $errors[] = $e->getMessage();
     }
 
     try {
-        expect_bool_or_array(dynamic_value(42));
+        expect_bool_or_array(any(42));
     } catch (\TypeError $e) {
         $errors[] = $e->getMessage();
     }
