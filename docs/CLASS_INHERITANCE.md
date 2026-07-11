@@ -540,7 +540,7 @@ class EnhancedStorage {
 ## 📚 相关资源
 
 - **类型系统**: [NATIVE_TYPES.md](NATIVE_TYPES.md)
-- **语法限制**: [UNSUPPORTED_SYNTAX.md](UNSUPPORTED_SYNTAX.md)
+- **兼容性限制**: [INCOMPATIBLE_PHP_FEATURES.md](INCOMPATIBLE_PHP_FEATURES.md)
 - **编译模式**: [COMPILATION_MODES.md](COMPILATION_MODES.md)
 - **快速入门**: [QUICKSTART.md](QUICKSTART.md)
 

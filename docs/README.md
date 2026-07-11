@@ -1,230 +1,34 @@
-# PHP AOT 编译器文档索引
+# TypePHP 编译器内部文档
 
-## 📚 文档概览
+本目录包含编译器实现、兼容性、构建模式和专项设计文档。用户侧使用手册位于独立的 `aot/docs` 仓库；这里的研究报告和重构计划可能描述历史状态，当前行为应以代码、测试和兼容性清单为准。
 
-本文档集合为 PHP AOT (Ahead-Of-Time) 编译器提供完整的使用指南和技术参考。
+## 当前权威文档
 
----
+- [AOT 与 PHP 不兼容特性清单](INCOMPATIBLE_PHP_FEATURES.md)：当前限制的简明清单。
+- [不兼容性分类](PHP_INCOMPATIBILITY_CLASSIFICATION.md)：区分 Hard Limit、Intentional Rule、Pending 和 Partial。
+- [编译器命令行](COMPILER_CLI.md)：当前 CLI 参数和项目配置。
+- [编译模式](COMPILATION_MODES.md)：binary、extension、library 模式。
+- [快速入门](QUICKSTART.md)：最小编译流程。
+- [编译期函数](COMPILE_TIME_FUNCTIONS.md)：`any()`、`refval()`、`objval()` 和关键词方法。
+- [原生类型](NATIVE_TYPES.md)、[高精度类型](HIGH_PRECISION_TYPES.md)、[Std 容器](STD_CONTAINERS.md)。
+- [通用与扩展方法](UNIVERSAL_METHODS.md)、[Generator](YIELD_GENERATOR.md)。
+- [类继承](CLASS_INHERITANCE.md)、[混合 C++/PHP](MIXED_CPP_PHP.md)。
 
-## 📖 核心文档
+## 架构与维护
 
-### 1. [语法支持规范](UNSUPPORTED_SYNTAX.md)
-**必读指数**: ⭐⭐⭐⭐⭐
+- [后端中立 IR](BACKEND_NEUTRAL_IR.md)
+- [核心重构计划](REFACTORING_PLAN.md)
+- [构建速度研究](AOT_BUILD_SPEED_RESEARCH.md)
+- [优化优先级](aot-optimization-priority.md)
+- [GMP 差异](GMP_GAP.md)
 
-详细说明：
-- ✅ 已支持的 PHP 语法特性（50+ 个）
-- ❌ 不支持的语法（7 种）
-- ⏳ 计划支持的语法（2 种）
-- 📊 编译模式对比表
-- 💡 代码结构最佳实践
+## 研究与历史资料
 
-**适合人群**: 所有使用者
+`hhvm-review.md`、`kphp-review.md`、`peachpie-review.md`、`phpstan-design-analysis.md`、`php-src-optimizer-analysis.md` 以及专利草案用于记录调研时点的比较和设计背景，不作为当前功能清单。
 
----
+## 维护规则
 
-### 1.1 [AOT 与 PHP 不兼容特性清单](INCOMPATIBLE_PHP_FEATURES.md)
-**必读指数**: ⭐⭐⭐⭐⭐
-
-内容概要：
-- 当前 AOT 与标准 PHP 的关键不兼容点
-- 编译期限制、运行时动态能力限制、AOT 扩展类型限制
-- 仅保留简明列表，不包含示例和长篇解释
-
-**适合人群**: 所有使用者、框架适配者
-
----
-
-### 1.2 [AOT 编译期函数与关键词方法](COMPILE_TIME_FUNCTIONS.md)
-**必读指数**: ⭐⭐⭐⭐
-
-内容概要：
-- AOT 专用编译期函数清单
-- `any()`、`refval()`、`objval()` 的语义和限制
-- `toAny()`、`toRef()` 等关键词方法
-- 当前实现风险和后续统一方向
-
-**适合人群**: 所有使用者、贡献者、框架适配者
-
----
-
-### 2. [快速入门指南](QUICKSTART.md)
-**必读指数**: ⭐⭐⭐⭐⭐
-
-内容概要：
-- 🚀 5 分钟快速开始
-- 📦 安装和配置
-- 🔧 基本使用示例
-- 🎯 第一个 AOT 编译项目
-
-**适合人群**: 新手用户
-
----
-
-### 3. [编译模式详解](COMPILATION_MODES.md)
-**必读指数**: ⭐⭐⭐⭐
-
-内容概要：
-- 🔹 扩展模式（Extension Mode）
-  - 编译为 .so/.dll 文件
-  - 在 php-fpm 中加载
-  - Web 应用场景
-  
-- 🔸 二进制模式（Binary Mode）
-  - 编译为独立可执行文件
-  - main() 函数要求
-  - CLI 和服务端应用
-
-**适合人群**: 开发者、架构师
-
----
-
-### 4. [测试指南](TESTING_GUIDE.md)
-**必读指数**: ⭐⭐⭐⭐
-
-内容概要：
-- 🧪 运行测试的方法
-- 📝 编写 phpt 测试文件
-- ✅ 测试规范和最佳实践
-- 🔍 调试测试失败
-- 📊 测试覆盖率分析
-
-**适合人群**: 测试人员、贡献者
-
----
-
-### 5. [性能优化指南](PERFORMANCE.md)
-**必读指数**: ⭐⭐⭐
-
-内容概要：
-- ⚡ 编译优化选项
-- 🎯 运行时性能调优
-- 📈 基准测试方法
-- 💾 内存管理策略
-
-**适合人群**: 高级用户、性能工程师
-
----
-
-### 6. [故障排除](TROUBLESHOOTING.md)
-**必读指数**: ⭐⭐⭐⭐
-
-内容概要：
-- ❗ 常见错误和解决方案
-- 🔧 调试技巧
-- 💬 FAQ 常见问题
-- 🆘 获取帮助
-
-**适合人群**: 所有使用者
-
----
-
-### 7. [架构设计](ARCHITECTURE.md)
-**必读指数**: ⭐⭐⭐
-
-内容概要：
-- 🏗️ 编译器架构概述
-- 📐 设计理念和原则
-- 🔗 组件和模块说明
-- 📊 数据流和工作流程
-
-**适合人群**: 贡献者、研究者
-
----
-
-### 8. [贡献指南](CONTRIBUTING.md)
-**必读指数**: ⭐⭐⭐
-
-内容概要：
-- 🤝 如何贡献代码
-- 📝 提交 PR 的流程
-- 🎨 代码规范
-- 🧪 测试要求
-
-**适合人群**: 贡献者
-
----
-
-### 9. [核心重构计划](REFACTORING_PLAN.md)
-**必读指数**: ⭐⭐⭐⭐
-
-内容概要：
-- 核心类职责拆分方向
-- TypeSystem、SymbolResolver、PropertyAccessResolver、CallResolver 等模块规划
-- 渐进式重构阶段计划
-- 测试门禁和风险控制要求
-
-**适合人群**: 核心开发者、架构重构参与者
-
----
-
-## 🎯 快速导航
-
-### 按使用场景
-
-#### 我想开始使用 AOT 编译器
-1. 阅读 [快速入门指南](QUICKSTART.md)
-2. 查看 [语法支持规范](UNSUPPORTED_SYNTAX.md) 了解限制
-3. 参考 [编译模式详解](COMPILATION_MODES.md) 选择模式
-
-#### 我想运行测试
-1. 阅读 [测试指南](TESTING_GUIDE.md)
-2. 使用 `php run-tests.php --no-aot tests/aot/` 命令
-3. 遇到问题查看 [故障排除](TROUBLESHOOTING.md)
-
-#### 我想优化性能
-1. 阅读 [性能优化指南](PERFORMANCE.md)
-2. 查看基准测试结果
-3. 应用优化建议
-
-#### 我想贡献代码
-1. 阅读 [贡献指南](CONTRIBUTING.md)
-2. 了解 [架构设计](ARCHITECTURE.md)
-3. Fork 项目并提交 PR
-
----
-
-## 📋 文档维护
-
-### 文档位置
-- ✅ 所有 `.md` 文档必须放在 `docs/` 目录下
-- ❌ 不要在其他目录创建文档文件
-
-### 文档更新
-- 保持文档与代码同步
-- 重大变更需要更新相关文档
-- 添加更新日期和版本信息
-
-### 文档质量
-- 使用清晰的标题和结构
-- 包含代码示例
-- 提供实际可运行的示例
-- 使用中文编写（除非特殊需要）
-
----
-
-## 🔗 外部资源
-
-- **PHP 官方文档**: https://www.php.net/manual/en/
-- **GitHub 仓库**: [项目地址]
-- **问题追踪**: [Issue Tracker]
-- **社区论坛**: [Community Forum]
-
----
-
-## 📞 联系方式
-
-- 技术支持：[support@example.com]
-- 商务合作：[business@example.com]
-- 社区讨论：[Slack/Discord 链接]
-
----
-
-## 📜 许可证
-
-本文档遵循 [MIT License](LICENSE)
-
----
-
-**最后更新**: 2024 年 3 月 18 日  
-**文档版本**: v1.0  
-**适用版本**: PHP AOT Compiler v1.x
+1. 当前兼容性变化同时更新 `INCOMPATIBLE_PHP_FEATURES.md` 和分类文档。
+2. 所有语法和语义限制统一链接到当前兼容性清单，避免维护重复清单。
+3. 功能是否支持应以 PHPT/PHPUnit 回归测试为依据。
+4. 历史研究文档保留原始比较结论，并在需要时注明调研日期，不应悄然改写为当前状态。

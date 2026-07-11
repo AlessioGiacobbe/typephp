@@ -72,6 +72,9 @@ These items should be documented with the exact boundary.
 | Reassigning a statically inferred native local to an incompatible type | Intentional Rule | This is the cost of native type optimization. Use dynamic zval variables when PHP-style type changes are required. |
 | Native `std::int` overflow and integer division behavior | Intentional Rule | Native numeric types trade PHP compatibility for performance and C++ storage. |
 | `__CLASS__` outside class context and `__TRAIT__` outside trait context | Intentional Rule | PHP returns an empty string for legacy compatibility. TypePHP rejects this as a clearer rule. |
+| Strict function argument counts | Intentional Rule | Non-variadic functions reject extra arguments. `func_get_args()` does not implicitly make a function variadic. |
+| Reserved keyword methods such as `toArray()` | Intentional Rule | Conversion keywords are resolved before ordinary object methods to keep conversion lowering static and predictable. |
+| Zero-initialized fixed typed property slots | Intentional Rule / Partial | Native fixed-layout slots use their type's zero value instead of preserving every Zend uninitialized-property transition. |
 
 ## Implementable but Currently Unsupported
 
@@ -108,27 +111,6 @@ These items should be documented with the exact boundary.
 | Dynamic properties and dynamic property chains | Partial | Dynamic property reads and writes use the runtime property API; native property optimization is not guaranteed. |
 | Native typed properties | Partial / Intentional Rule | Fast native paths may not preserve every PHP dynamic state transition. Unknown or incompatible values can fall back to `setProperty()`. |
 | Reflection metadata | Partial | Runtime declarations exist, but some AOT-specific metadata such as promoted-property flags may be incomplete. |
-
-## Outdated or Ambiguous Items in `UNSUPPORTED_SYNTAX.md`
-
-`UNSUPPORTED_SYNTAX.md` contains historical material and should not be treated as
-the authoritative current compatibility list without verification.
-
-Items that need review:
-
-- Attributes are not necessarily wholly unsupported. The current limitation is
-  narrower: some attribute argument forms, such as arrays and `new`, are not
-  supported.
-- Traits may no longer be purely "planned support"; current implementation and
-  tests should be checked before documenting them as unsupported.
-- `foreach` by-reference support is partial, not absent.
-- `break N` and `continue N` should be rechecked against current compiler
-  behavior before keeping them in the unsupported list.
-- DOM or `innerHTML` is not PHP language syntax and should not be listed as a
-  core AOT syntax incompatibility.
-- Duplicate function or class names should be documented carefully. Some cases
-  are PHP fatal errors, while conditional declarations are a separate dynamic
-  declaration problem.
 
 ## Documentation Rule
 

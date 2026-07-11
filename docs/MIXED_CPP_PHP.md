@@ -911,10 +911,10 @@ function get_adult_users() {
 
 ```bash
 # 保留中间文件
-php bin/compiler.php project -o app --keep-all
+php bin/compiler.php project --dry --build-dir /tmp/typephp-build
 
 # 查看生成的 C++ 代码
-cat build/app.cpp
+find /tmp/typephp-build -name '*.cc' -o -name '*.cpp'
 ```
 
 ### 2. 类型检查
@@ -1007,7 +1007,7 @@ php::Int php_calculator_add(php::Object calc, php::Int a, php::Int b) {
 - **示例项目**: `examples/prime/`
 - **PHPX 框架文档**: [链接]
 - **C++ 类型系统**: 参见 [NATIVE_TYPES.md](NATIVE_TYPES.md)
-- **AOT 编译器架构**: 参见 [ARCHITECTURE.md](ARCHITECTURE.md)
+- **AOT 编译器架构**: 参见 [后端中立 IR](BACKEND_NEUTRAL_IR.md) 和 [核心重构计划](REFACTORING_PLAN.md)
 
 ---
 

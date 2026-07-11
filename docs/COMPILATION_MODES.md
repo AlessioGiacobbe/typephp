@@ -456,8 +456,8 @@ error while loading shared libraries
 # 设置库路径
 export LD_LIBRARY_PATH=/path/to/libs:$LD_LIBRARY_PATH
 
-# 或静态编译
-php bin/compiler.php src/ -o app --static
+# 检查实际链接路径和依赖
+ldd ./app
 ```
 
 ---
@@ -465,9 +465,9 @@ php bin/compiler.php src/ -o app --static
 ## 📚 相关文档
 
 - [快速入门指南](QUICKSTART.md) - 开始使用 AOT 编译器
-- [语法支持规范](UNSUPPORTED_SYNTAX.md) - 了解支持的语法
-- [性能优化指南](PERFORMANCE.md) - 提升编译和运行性能
-- [故障排除](TROUBLESHOOTING.md) - 解决常见问题
+- [兼容性清单](INCOMPATIBLE_PHP_FEATURES.md) - 了解当前限制
+- [构建速度研究](AOT_BUILD_SPEED_RESEARCH.md) - 优化编译流程
+- [兼容性分类](PHP_INCOMPATIBILITY_CLASSIFICATION.md) - 判断限制的性质和处理方向
 
 ---
 

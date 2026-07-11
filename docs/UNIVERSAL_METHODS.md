@@ -1103,7 +1103,7 @@ function main(): void {
 
 - **高精度类型教程**：[`docs/HIGH_PRECISION_TYPES.md`](HIGH_PRECISION_TYPES.md)
 - **类型系统规范**：[`docs/NATIVE_TYPES.md`](NATIVE_TYPES.md)
-- **通用方法实现**：[`src/Php/UniversalMethodCall.php`](../src/Php/UniversalMethodCall.php)
+- **通用方法实现**：[`src/UniversalMethodCall.php`](../src/UniversalMethodCall.php)
 - **集成测试**：
   - [`tests/aot/string_method/`](../tests/aot/string_method/) — String 通用方法测试
   - [`tests/aot/array_method/`](../tests/aot/array_method/) — Array 通用方法测试

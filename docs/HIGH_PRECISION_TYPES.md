@@ -748,8 +748,8 @@ pi × 2: 6.2831800000000000
 - **类型系统规范**：[`docs/NATIVE_TYPES.md`](NATIVE_TYPES.md) — 完整的类型提升规则、声明语法、C++ API 参考
 - **BigInt PHPT 测试**：[`tests/aot/bigint/`](../tests/aot/bigint/) — BigInt 各项功能的集成测试
 - **Decimal PHPT 测试**：[`tests/aot/decimal/`](../tests/aot/decimal/) — Decimal 各项功能的集成测试
-- **BigFloat 集成测试**：[`tests/aot/bigfloat_operators.phpt`](../tests/aot/bigfloat_operators.phpt) — BigFloat 运算符测试
+- **BigFloat 集成测试**：[`tests/aot/bignumber/bigfloat_operators.phpt`](../tests/aot/bignumber/bigfloat_operators.phpt) — BigFloat 运算符测试
 - **C++ 运行时头文件**：
-  - [`phpx/include/phpx_big_int.h`](../phpx/include/phpx_big_int.h) — BigInt C++ API
-  - [`phpx/include/phpx_decimal.h`](../phpx/include/phpx_decimal.h) — Decimal C++ API
-  - [`phpx/include/phpx_big_float.h`](../phpx/include/phpx_big_float.h) — BigFloat C++ API
+  - [`phpx/include/phpx_big_int.h`](../../phpx/include/phpx_big_int.h) — BigInt C++ API
+  - [`phpx/include/phpx_decimal.h`](../../phpx/include/phpx_decimal.h) — Decimal C++ API
+  - [`phpx/include/phpx_big_float.h`](../../phpx/include/phpx_big_float.h) — BigFloat C++ API

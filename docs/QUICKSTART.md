@@ -209,13 +209,13 @@ for ($i = 0; $i < 10; $i++) {  // 错误！
 ### 运行单个测试
 
 ```bash
-php run-tests.php --no-aot tests/aot/arrow-functions.phpt
+PHPT=1 php run-tests.php tests/aot/arrow_fn/001.phpt
 ```
 
 ### 运行所有测试
 
 ```bash
-php run-tests.php --no-aot tests/aot/
+PHPT=1 php run-tests.php tests/aot/
 ```
 
 ### 查看测试结果
@@ -263,13 +263,13 @@ project/
 ## 🔍 常见问题
 
 ### Q: 编译失败，提示 "Not implemented"
-**A**: 该语法特性暂不支持。查看 [语法支持规范](UNSUPPORTED_SYNTAX.md) 了解支持的语法。
+**A**: 先查看 [兼容性清单](INCOMPATIBLE_PHP_FEATURES.md) 判断它是 TypePHP 设计规则、部分支持还是当前尚未实现。
 
 ### Q: 如何调试编译后的程序？
-**A**: 使用 `--keep-all` 选项保留中间文件，查看生成的 C++ 代码。
+**A**: 使用 `--dry` 只生成中间代码，并通过 `--build-dir` 指定目录。
 
 ```bash
-php bin/compiler.php src/ -o app --keep-all
+php bin/compiler.php src/ --dry --build-dir /tmp/typephp-build
 ```
 
 ### Q: 编译速度慢怎么办？
@@ -285,9 +285,9 @@ php bin/compiler.php src/ -o app -j4  # 使用 4 个进程
 
 完成快速入门后，建议阅读：
 
-1. **[语法支持规范](UNSUPPORTED_SYNTAX.md)** - 详细了解支持的语法
+1. **[兼容性清单](INCOMPATIBLE_PHP_FEATURES.md)** - 了解当前限制
 2. **[编译模式详解](COMPILATION_MODES.md)** - 深入了解两种编译模式
-3. **[性能优化指南](PERFORMANCE.md)** - 提升程序性能
+3. **[构建速度研究](AOT_BUILD_SPEED_RESEARCH.md)** - 优化编译流程
 
 ---
 

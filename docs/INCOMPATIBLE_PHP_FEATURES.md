@@ -15,14 +15,14 @@
 
 - 不支持可变变量 `$$var`。
 - PHP 8.4 property hooks 会降级为 AOT getter/setter；直接属性读写和动态对象读写均受支持。当前不支持对 hook 属性取引用。
-- 支持 `private(set)` 与 `protected(set)` 非对称属性可见性；在 PHP 8.2/8.3 后端通过自定义属性写 handler 执行同等作用域检查。
+- 支持 `private(set)` 与 `protected(set)` 非对称属性可见性；在 PHP 8.2～8.4 后端通过自定义属性写 handler 执行同等作用域检查。
 - 不支持闭包或箭头函数按引用返回。
 - `__construct()` 不允许返回值。
 - 参数默认值不允许出现在必填参数之前（`PHP`允许，但会直接丢弃此默认参数）。
 - 不支持引用可变参数 `&...$args`。
 - 联合类型、交叉类型、`nullable` 类型仍以 `mixed/any` 作为 C++ 表示，但静态阶段会利用已知表达式类型提前拒绝确定不兼容的参数、返回值和属性赋值；动态值仍保留运行时 type check。
 - 局部变量类型一旦被静态推断为具体 native 类型，不支持在同一作用域内重新赋值为不兼容类型。
-- attribute 参数不支持数组值和 `new` 表达式。
+- attribute 参数不支持非空数组值和 `new` 表达式。
 
 ## declare
 
@@ -33,6 +33,7 @@
 
 ## 调用与引用
 
+- TypePHP 使用严格参数数量规则：非 variadic 函数不接受声明范围之外的额外参数；`func_get_args()` 不会隐式放宽签名。
 - 闭包和箭头函数不支持引用参数。
 - 引用赋值不支持从复杂静态属性表达式建立引用。
 - 动态调用、闭包调用等编译期无法确定参数签名的调用，不能自动转换引用参数；需要显式使用 `refval()` 或等价关键词方法 `toRef()`。
@@ -41,6 +42,8 @@
 
 ## 对象模型
 
+- `toInt()`、`toString()`、`toArray()` 等保留关键词方法先于普通对象方法解析；需要参数的同名业务方法不按普通对象方法语义调用。
+- 固定值类型属性未显式初始化时使用类型零值，不保留 ZendPHP 的完整 uninitialized 状态；因此 `??` 等依赖 uninitialized 状态的表达式可能不同。
 - 禁止子类用同名 `private` 属性隐藏父类私有属性；`public` / `protected` 同名声明视为同一个继承 property slot，仍须满足类型、可见性和 `readonly` 兼容性要求。
 - 为避免 typed property 写入路径引入额外动态检查，native typed property 在右值类型不确定或与属性类型不一致时会退化为 `setProperty()`；部分标量赋值可能遵循 Zend 弱类型转换，而不是 AOT 默认 strict 语义。
 - constructor property promotion 的运行时属性可用，但 `ReflectionProperty::isPromoted()` 目前不返回标准 PHP 结果。
