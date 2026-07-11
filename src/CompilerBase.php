@@ -100,7 +100,6 @@ use PhpParser\PrettyPrinter;
 
 class CompilerBase implements PropertyAccessContext
 {
-    public const string DEFAULT_PHP_VERSION = '8.5';
     use CompositeTypeCheckerTrait;
     use CompilerDiagnosticTrait;
     use CompilationStateTrait;
@@ -143,6 +142,7 @@ class CompilerBase implements PropertyAccessContext
     use LoopVarOptimizer;
     use SsaPropOptimizer;
 
+    public const string DEFAULT_PHP_VERSION = '8.5';
     protected const string NATIVE_PROPERTY_VALUE_VAR = 'var';
     protected const string NATIVE_PROPERTY_VALUE_DYNAMIC = 'dynamic';
     protected const int COMPOSITE_TYPE_MISMATCH = -1;
@@ -3814,8 +3814,4 @@ class CompilerBase implements PropertyAccessContext
     {
         return $expr->name;
     }
-
-    /**
-     * 混杂数组赋值，需要拆分为多行插入
-     */
 }

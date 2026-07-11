@@ -201,10 +201,6 @@ trait ArrayExpressionTrait
         }
     }
 
-    /**
-     * 查找原生函数.
-     */
-
     private function parseArrayMixed(Expr\Array_ $node): string
     {
         $tmpVar = $this->genTmpVarName();

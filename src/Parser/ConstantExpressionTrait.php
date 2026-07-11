@@ -112,6 +112,7 @@ trait ConstantExpressionTrait
                 return '"' . $this->escapeString($class) . '::' . $this->escapeString($this->method) . '"';
             default:
                 abort($expr);
+                break;
         }
     }
 
