@@ -37,8 +37,10 @@ use TypePhp\Optimizer\LoopVarOptimizer;
 use TypePhp\Parser\StdContainerTrait;
 use TypePhp\Parser\AssignOpTrait;
 use TypePhp\Parser\BinaryOpTrait;
+use TypePhp\Parser\ClassConstantFetchTrait;
 use TypePhp\Parser\ExceptionControlFlowTrait;
 use TypePhp\Parser\FunctionCallTrait;
+use TypePhp\Parser\NullsafeAccessTrait;
 use TypePhp\Parser\TypeConversionTrait;
 use TypePhp\Parser\TypeDetectionTrait;
 use TypePhp\Optimizer\FuncCallOptimizer;
@@ -89,8 +91,10 @@ class CompilerBase implements PropertyAccessContext
     use MagicMethodDetector;
     use StdContainerTrait;
     use BinaryOpTrait;
+    use ClassConstantFetchTrait;
     use ExceptionControlFlowTrait;
     use FunctionCallTrait;
+    use NullsafeAccessTrait;
     use TypeConversionTrait;
     use TypeDetectionTrait;
     use AssignOpTrait;
@@ -6533,88 +6537,6 @@ class CompilerBase implements PropertyAccessContext
         return $this->getLiteralString($this->getNamespacedClassName($name));
     }
 
-    protected function parseClassConstFetch(Expr\ClassConstFetch $expr): string
-    {
-        if (!$this->isNameExpr($expr->class)) {
-            return $this->parseDynamicClassConstFetch($expr);
-        }
-
-        $class = $this->parseIdentifier($expr->class);
-        $self = false;
-        if ($class === 'self' or $class === 'this_') {
-            // Trait 读取常量，必须动态获取类名
-            if ($this->classDef->trait) {
-                $class = 'static';
-            } else {
-                $self = true;
-                $class = $this->class;
-            }
-        }
-
-        $const = $this->escapeString($this->parseIdentifier($expr->name));
-        if ($class === 'static') {
-            if (!$this->methodDef) {
-                $this->fatalError($expr, "The 'static' keyword can only be used as the class name in class methods");
-            }
-            if ($const === 'class') {
-                return Symbol::getCalledClass();
-            } else {
-                return Symbol::constant() . '(' . Symbol::getCalledCe() . ', ' . $this->getLiteralString($const) . ')';
-            }
-        }
-
-        if ($self or $this->isNameExpr($expr->class)) {
-            $class = $this->getNamespacedClassName($class);
-        }
-        if ($const === 'class') {
-            if ($self or $this->isNameExpr($expr->class)) {
-                return $this->getLiteralString($class);
-            }
-        }
-        if (($self or $this->isNameExpr($expr->class)) and $this->isIdExpr($expr->name)) {
-            if ($this->hasClass($class)) {
-                $classDef = $this->getClass($class);
-                if ($classDef->enum) {
-                    $ce = $this->getClassEntryPtr($class);
-                    return 'php::getEnumCase(' . $ce . ', ' . $this->getLiteralString($const) . ')';
-                }
-                $nativeConst = $this->findNativeClassConst($expr, $class, $const);
-                if ($nativeConst) {
-                    return $nativeConst;
-                }
-            }
-            $ce = $this->getClassEntryPtr($class);
-            return Symbol::constant() . '(' . $ce . ', ' . $this->getLiteralString($const) . ')';
-        }
-        $name = $class . '::' . $const;
-        $name = $this->getLiteralString($name);
-        return Symbol::constant() . '(' . $name . ')';
-    }
-
-    protected function parseDynamicClassConstFetch(Expr\ClassConstFetch $expr): string
-    {
-        $const = $this->escapeString($this->parseIdentifier($expr->name));
-        $target = $this->materializeDynamicClassConstTarget($expr->class);
-
-        if ($const === 'class') {
-            return 'php::fn::get_class(' . $target . ')';
-        }
-
-        $className = '(' . $target . '.isObject() ? php::fn::get_class(' . $target . ') : ' . $target . ')';
-        return Symbol::constant() . '(php::concat({' . $className . ', "::", ' . $this->getLiteralString($const) . '}))';
-    }
-
-    protected function materializeDynamicClassConstTarget(NodeAbstract $expr): string
-    {
-        $this->assertExprCanBeUsedAsValue($expr, 'class constant target');
-        [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-        $this->appendCapturedStmtLinesToContext($beforeStmts);
-        $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
-        $this->appendCapturedStmtLinesToContext($afterStmts);
-        return $tmpVar;
-    }
-
     protected function parseShellExec(Expr\ShellExec $expr): string
     {
         $list = [];
@@ -7440,196 +7362,6 @@ class CompilerBase implements PropertyAccessContext
             return $this->getIndent() . 'return 0;';
         } else {
             return $this->getIndent() . 'return ' . self::VALUE_NULL . ';';
-        }
-    }
-
-    protected function parseArrowFunction(Expr\ArrowFunction $expr): string
-    {
-        $nodeFinder = new NodeFinder();
-        $vars = $nodeFinder->findInstanceOf($expr->expr, Variable::class);
-        $uses = [];
-        $params = [];
-
-        foreach ($expr->params as $i => $param) {
-            if ($param->byRef) {
-                $this->fatalError($expr, 'Closure cannot use reference parameter');
-            }
-            if ($param->var instanceof Variable) {
-                $params[$param->var->name] = $i;
-            }
-        }
-
-        foreach ($vars as $var) {
-            $varName = $this->escapeVarName($this->parseVariable($var));
-            if ($varName === 'this_'
-                or !$this->hasLocalVar($varName)
-                or isset($params[$var->name])
-                or isset($uses[$varName])) {
-                continue;
-            }
-            $uses[$varName] = new Node\ClosureUse($var);
-        }
-        $uses = array_values($uses);
-
-        return $this->genClosure($expr, $expr->params, $uses);
-    }
-
-    protected function parseClosure(Expr\Closure $expr): string
-    {
-        return $this->genClosure($expr, $expr->params, $expr->uses);
-    }
-
-    protected function isReturnStmtInLastLine(array $stmts): bool
-    {
-        if (count($stmts) === 0) {
-            return false;
-        }
-        return $stmts[array_key_last($stmts)] instanceof Node\Stmt\Return_;
-    }
-
-    protected function parseNullsafePropertyFetch(Expr\NullsafePropertyFetch $expr): string
-    {
-        return $this->parseNullsafeExpr($expr);
-    }
-
-    protected function parseNullsafePropertyFetchUpdate(Expr\NullsafePropertyFetch $expr): string
-    {
-        return $this->parseNodeWithUpdateAttribute(
-            $expr,
-            self::ATTR_PROPERTY_FETCH_UPDATE,
-            true,
-            fn() => $this->parseNullsafePropertyFetch($expr)
-        );
-    }
-
-    protected function parseNullsafeMethodCall(Expr\NullsafeMethodCall $expr): string
-    {
-        return $this->parseNullsafeExpr($expr);
-    }
-
-    protected function parseNullsafeExpr(
-        Expr\PropertyFetch|Expr\MethodCall|Expr\NullsafePropertyFetch|Expr\NullsafeMethodCall $expr
-    ): string
-    {
-        $list = [];
-        $comment = $this->formatCppLineComment('Nullsafe Operator: ', $this->printer->prettyPrint([$expr]));
-
-        while (1) {
-            if ($expr instanceof Expr\NullsafePropertyFetch) {
-                $list[] = ['property', $this->identifierToStr($expr->name, literal: true), $expr, true];
-                $expr = $expr->var;
-            } elseif ($expr instanceof Expr\NullsafeMethodCall) {
-                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, true];
-                $expr = $expr->var;
-            } elseif ($expr instanceof Expr\PropertyFetch) {
-                $list[] = ['property', $this->identifierToStr($expr->name, literal: true), $expr, false];
-                $expr = $expr->var;
-            } elseif ($expr instanceof Expr\MethodCall) {
-                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, false];
-                $expr = $expr->var;
-            } else {
-                if ($this->isVarExpr($expr)) {
-                    $object = $this->parseIdentifier($expr);
-                    if (!$this->hasVar($object)) {
-                        $this->errorUndefinedVariable($expr);
-                    }
-                    $type = $this->getVarType($object);
-                    if ($type === self::TYPE_OBJECT) {
-                        break;
-                    }
-                }
-                $object = $this->addTmpVar(self::TYPE_OBJECT);
-                $this->context->beforeStmtLines[] = $this->getIndent() . $object . ' = ' . $this->parseIdentifier($expr) . ';';
-                break;
-            }
-        }
-
-        $list = array_reverse($list);
-        $this->checkNullsafePropertyAccesses($expr, $list);
-        $last = array_key_last($list);
-        $tmpFn = $this->genTmpVarName();
-
-        $code = $comment . PHP_EOL . 'auto ' . $tmpFn . ' = [&]() -> ' . self::TYPE_VAR . '{' . PHP_EOL;
-
-        foreach ($list as $key => $item) {
-            $tmpVar = $this->addTmpVar($key !== $last ? self::TYPE_OBJECT : self::TYPE_VAR);
-            if ($item[3]) {
-                $code .= "if ({$object}.isNull()) { return " . self::VALUE_NULL . '; }';
-            }
-            if ($item[0] == 'property') {
-                $update = $this->escapeBool($this->isPropertyFetchUpdate($item[2]));
-                $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
-            } else {
-                $beforeStmtCount = count($this->context->beforeStmtLines);
-                $afterStmtCount = count($this->context->afterStmtLines);
-                $args = $this->parseCallArgs($item[2]);
-                $argBeforeStmts = array_slice($this->context->beforeStmtLines, $beforeStmtCount);
-                $argAfterStmts = array_slice($this->context->afterStmtLines, $afterStmtCount);
-                $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
-                $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
-                if ($argBeforeStmts) {
-                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argBeforeStmts) . PHP_EOL;
-                }
-                $code .= $this->getIndent() . "{$tmpVar} = {$object}.call({$item[1]}, {$args});";
-                if ($argAfterStmts) {
-                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argAfterStmts) . PHP_EOL;
-                }
-            }
-            $object = $tmpVar;
-        }
-        $code .= $this->getIndent() . "return {$object}; };";
-        $this->context->beforeStmtLines[] = $code;
-        return "{$tmpFn}()";
-    }
-
-    private function containsNullsafeChain(NodeAbstract $expr): bool
-    {
-        while ($expr instanceof Expr\PropertyFetch
-            || $expr instanceof Expr\MethodCall
-            || $expr instanceof Expr\NullsafePropertyFetch
-            || $expr instanceof Expr\NullsafeMethodCall) {
-            if ($expr instanceof Expr\NullsafePropertyFetch || $expr instanceof Expr\NullsafeMethodCall) {
-                return true;
-            }
-            $expr = $expr->var;
-        }
-
-        return false;
-    }
-
-    private function checkNullsafePropertyAccesses(NodeAbstract $baseExpr, array $list): void
-    {
-        $properties = [];
-        foreach ($list as $item) {
-            if ($item[0] !== 'property') {
-                break;
-            }
-
-            /** @var Expr\NullsafePropertyFetch $node */
-            $node = $item[2];
-            if (!$this->isIdExpr($node->name)) {
-                break;
-            }
-
-            $properties[] = [
-                'node' => $node,
-                'property' => $this->parseIdentifier($node->name),
-            ];
-        }
-
-        if (!$properties) {
-            return;
-        }
-
-        $scope = $this->class ? $this->getFullClassName() : '';
-        $results = $this->createPropertyAccessResolver()->resolveNullsafePropertyChain(
-            $this->detectClassOfExpr($baseExpr),
-            $properties,
-            $scope,
-            self::TYPE_OBJECT,
-        );
-        foreach ($results as $index => $result) {
-            $this->applyNativePropertyAccessResult($properties[$index]['node'], $result);
         }
     }
 

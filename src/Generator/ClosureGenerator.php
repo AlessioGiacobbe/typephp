@@ -16,9 +16,55 @@ use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
+use PhpParser\NodeFinder;
+use PhpParser\Node\Expr\Variable;
 
 trait ClosureGenerator
 {
+    protected function parseArrowFunction(Expr\ArrowFunction $expr): string
+    {
+        $nodeFinder = new NodeFinder();
+        $vars = $nodeFinder->findInstanceOf($expr->expr, Variable::class);
+        $uses = [];
+        $params = [];
+
+        foreach ($expr->params as $i => $param) {
+            if ($param->byRef) {
+                $this->fatalError($expr, 'Closure cannot use reference parameter');
+            }
+            if ($param->var instanceof Variable) {
+                $params[$param->var->name] = $i;
+            }
+        }
+
+        foreach ($vars as $var) {
+            $varName = $this->escapeVarName($this->parseVariable($var));
+            if ($varName === 'this_'
+                or !$this->hasLocalVar($varName)
+                or isset($params[$var->name])
+                or isset($uses[$varName])) {
+                continue;
+            }
+            $uses[$varName] = new Node\ClosureUse($var);
+        }
+        $uses = array_values($uses);
+
+        return $this->genClosure($expr, $expr->params, $uses);
+    }
+
+    protected function parseClosure(Expr\Closure $expr): string
+    {
+        return $this->genClosure($expr, $expr->params, $expr->uses);
+    }
+
+    protected function isReturnStmtInLastLine(array $stmts): bool
+    {
+        if (count($stmts) === 0) {
+            return false;
+        }
+        return $stmts[array_key_last($stmts)] instanceof Node\Stmt\Return_;
+    }
+
     protected function genScopeSwitchCode(): string
     {
         $tmpScope = $this->genTmpVarName();
