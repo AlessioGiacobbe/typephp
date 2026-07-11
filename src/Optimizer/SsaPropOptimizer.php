@@ -336,7 +336,7 @@ trait SsaPropOptimizer
      */
     protected function isClassSafeForPropHoisting(string $className): bool
     {
-        $classDef = $this->classes[$this->escapeClass($className)] ?? null;
+        $classDef = $this->symbols->findClass($this->escapeClass($className));
         if (!$classDef) {
             return false;
         }

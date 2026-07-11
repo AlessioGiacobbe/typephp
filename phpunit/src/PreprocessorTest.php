@@ -56,6 +56,17 @@ class PreprocessorTest extends TestCase
 
     private function setProperty(string $name, mixed $value): void
     {
+        if (in_array($name, ['classes', 'interfaces', 'functions', 'classExtends'], true)) {
+            $symbols = $this->getProperty('symbols');
+            $method = match ($name) {
+                'classes' => 'replaceClasses',
+                'interfaces' => 'replaceInterfaces',
+                'functions' => 'replaceFunctions',
+                'classExtends' => 'replaceParents',
+            };
+            $symbols->{$method}($value);
+            return;
+        }
         $prop = $this->ref->getProperty($name);
         $prop->setAccessible(true);
         $prop->setValue($this->compiler, $value);
@@ -63,6 +74,10 @@ class PreprocessorTest extends TestCase
 
     private function getProperty(string $name): mixed
     {
+        if (in_array($name, ['classes', 'interfaces', 'functions'], true)) {
+            $symbols = $this->getProperty('symbols');
+            return $symbols->{$name}();
+        }
         $prop = $this->ref->getProperty($name);
         $prop->setAccessible(true);
         return $prop->getValue($this->compiler);

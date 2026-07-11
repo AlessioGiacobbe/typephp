@@ -16,6 +16,9 @@ use TypePhp\Entity\ArgInfo;
 use TypePhp\Context\FunctionContext;
 use TypePhp\Context\CompilationStateTrait;
 use TypePhp\Diagnostics\CompilerDiagnosticTrait;
+use TypePhp\Diagnostics\CliDiagnosticReporter;
+use TypePhp\Diagnostics\DiagnosticReporter;
+use TypePhp\Diagnostics\ThrowingDiagnosticReporter;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ConstantDef;
 use TypePhp\Entity\FunctionDef;
@@ -77,6 +80,7 @@ use TypePhp\Resolver\PropertyWriteTarget;
 use TypePhp\Resolver\Reflection;
 use TypePhp\Resolver\StaticPropertyFetchResolution;
 use TypePhp\Resolver\StaticPropertyFetchTarget;
+use TypePhp\Symbol\SymbolRepository;
 use TypePhp\TypeSystem\CompositeTypeCheckerTrait;
 use TypePhp\TypeSystem\NativeTypeCompatibilityTrait;
 use PhpParser\Modifiers;
@@ -360,19 +364,16 @@ class CompilerBase implements PropertyAccessContext
     /**
      * @var array<string, InterfaceDef>
      */
-    protected array $interfaces = [];
 
     /**
      * 存储所有函数、类方法的定义，key 是 native name，命名空间需要转为 `_`，并且必须为小写
      * @var array<string, FunctionDef>
      */
-    protected array $functions = [];
 
     /**
      * key 类名，包含命名空间
      * @var array<string, ClassDef>
      */
-    protected array $classes = [];
 
     /**
      * @var array<string, ConstantDef>
@@ -404,6 +405,7 @@ class CompilerBase implements PropertyAccessContext
     protected ?MethodDef $methodDef = null;
     protected ?InterfaceDef $interfaceDef = null;
     protected bool $inGeneratorBody = false;
+    private ?DiagnosticReporter $diagnosticReporter = null;
     protected FunctionContext $context;
     protected array $superGlobalVars = [
         '_GET'     => self::TYPE_ARRAY,
@@ -454,7 +456,7 @@ class CompilerBase implements PropertyAccessContext
      * 存储所有类继承关系，类名必须全部为小写
      * @var array<string, string>
      */
-    protected array $classExtends = [];
+    protected SymbolRepository $symbols;
 
     /**
      * Reverse class hierarchy: parent class (lowercase) => list of child classes (lowercase)
@@ -472,11 +474,27 @@ class CompilerBase implements PropertyAccessContext
             $this->error('PHP 8.6.0 or later is not supported');
         }
         $this->rootPath = $rootPath;
+        $this->symbols = new SymbolRepository();
         $this->setPhpVersion(self::DEFAULT_PHP_VERSION);
         $this->printer = new PrettyPrinter\Standard();
         $this->setBuildDir($rootPath . '/build');
         $climate = new CLImate();
         $this->climate = $climate;
+    }
+
+    public function setDiagnosticReporter(DiagnosticReporter $reporter): void
+    {
+        $this->diagnosticReporter = $reporter;
+    }
+
+    protected function getDiagnosticReporter(): DiagnosticReporter
+    {
+        if ($this->diagnosticReporter !== null) {
+            return $this->diagnosticReporter;
+        }
+        return $this->forTest
+            ? new ThrowingDiagnosticReporter()
+            : new CliDiagnosticReporter($this->climate, $this->printBacktraceOnError);
     }
 
     public function setMode($mode): void

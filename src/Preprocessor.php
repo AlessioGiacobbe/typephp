@@ -532,7 +532,7 @@ class Preprocessor extends CompilerBase
             if ($parentClassLower === $fullClassNameLower) {
                 $this->fatalError($class, "Class {$fullClassName} cannot extend itself");
             }
-            $this->classExtends[$fullClassNameLower] = $parentClassLower;
+            $this->symbols->setParent($fullClassNameLower, $parentClassLower);
             $this->classSubClasses[$parentClassLower][] = $fullClassNameLower;
             if (!$this->isInternalClass($parentClassLower)) {
                 $this->symbolCallInFile[$this->file][] = $parentClassLower;
@@ -792,8 +792,7 @@ class Preprocessor extends CompilerBase
         $this->classMethodOverride[$fullMethodNameLower] = $isOverridden;
 
         // 查找父类是否有同名方法，递归向上标记父类方法已被覆盖
-        while (isset($this->classExtends[$fullClassNameLower])) {
-            $parentClass = $this->classExtends[$fullClassNameLower];
+        while (($parentClass = $this->symbols->parent($fullClassNameLower)) !== '') {
             $parentMethodLower = strtolower($parentClass . '::' . $this->method);
             if (isset($this->classMethodOverride[$parentMethodLower])) {
                 $this->classMethodOverride[$parentMethodLower] = true;
@@ -855,7 +854,7 @@ class Preprocessor extends CompilerBase
         }
 
         $this->symbolDeclInFile[$interfaceNameLower] = $this->file;
-        $this->interfaces[$this->escapeClass($interfaceName)] = $this->interfaceDef;
+        $this->symbols->putInterface($this->escapeClass($interfaceName), $this->interfaceDef);
         $this->interfacesDefineInFile[$interfaceName] = $this->interfaceDef;
 
         foreach ($v->stmts as $stmt) {

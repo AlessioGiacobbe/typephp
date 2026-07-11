@@ -69,6 +69,12 @@ class SsaAnalysisTest extends TestCase
 
     private function setProperty(string $name, mixed $value): void
     {
+        if ($name === 'classes') {
+            $prop = $this->ref->getProperty('symbols');
+            $prop->setAccessible(true);
+            $prop->getValue($this->compiler)->replaceClasses($value);
+            return;
+        }
         $prop = $this->ref->getProperty($name);
         $prop->setAccessible(true);
         $prop->setValue($this->compiler, $value);

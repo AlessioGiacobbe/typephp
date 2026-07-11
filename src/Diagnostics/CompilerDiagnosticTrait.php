@@ -11,7 +11,6 @@ namespace TypePhp\Diagnostics;
 use PhpParser\Node;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\NodeAbstract;
-use TypePhp\Exception\TestError;
 
 trait CompilerDiagnosticTrait
 {
@@ -20,15 +19,7 @@ trait CompilerDiagnosticTrait
      */
     public function error(string $msg): never
     {
-        if ($this->forTest) {
-            throw new TestError($msg);
-        }
-
-        $this->climate->red("Fatal error: {$msg}");
-        if ($this->printBacktraceOnError) {
-            debug_print_backtrace();
-        }
-        exit(255);
+        $this->getDiagnosticReporter()->fatal($msg);
     }
 
     public function fatalError(NodeAbstract $node, string $msg): never
@@ -38,7 +29,7 @@ trait CompilerDiagnosticTrait
 
     protected function warning(Node $node, string $msg): void
     {
-        $this->climate->magenta("{$msg} in {$this->file}:{$node->getStartLine()}");
+        $this->getDiagnosticReporter()->warning($node, $this->file, $msg);
     }
 
     protected function errorUndefinedVariable(Variable $node): never

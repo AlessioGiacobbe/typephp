@@ -44,7 +44,7 @@ trait DefaultArgumentGenerator
     protected function genDefaultArgumentHelpers(): string
     {
         $code = '';
-        foreach ($this->functions as $func) {
+        foreach ($this->symbols->functions() as $func) {
             foreach ($func->argInfoList as $argInfo) {
                 $plan = $argInfo->arrayInitPlan;
                 if (!$plan || !$plan->requiresRuntimeInit()) {
@@ -69,4 +69,3 @@ trait DefaultArgumentGenerator
         return $code ? $code . PHP_EOL : '';
     }
 }
-

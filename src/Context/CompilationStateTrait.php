@@ -106,7 +106,7 @@ trait CompilationStateTrait
 
     protected function addFunction(string $name, FunctionDef $functionDef): void
     {
-        $this->functions[$this->escapeFunction($name)] = $functionDef;
+        $this->symbols->putFunction($this->escapeFunction($name), $functionDef);
     }
 
     /**
@@ -114,47 +114,47 @@ trait CompilationStateTrait
      */
     protected function hasFunction(string $name): bool
     {
-        return array_key_exists($this->escapeFunction($name), $this->functions);
+        return $this->symbols->hasFunction($this->escapeFunction($name));
     }
 
     protected function getFunction(string $name): FunctionDef
     {
-        return $this->functions[$this->escapeFunction($name)];
+        return $this->symbols->function($this->escapeFunction($name));
     }
 
     protected function addClass(string $name, ClassDef $classDef): void
     {
-        $this->classes[$this->escapeClass($name)] = $classDef;
+        $this->symbols->putClass($this->escapeClass($name), $classDef);
     }
 
     protected function getClass(string $name): ClassDef
     {
-        return $this->classes[$this->escapeClass($name)];
+        return $this->symbols->class($this->escapeClass($name));
     }
 
     public function getClassDef(string $name): ?ClassDef
     {
-        return $this->classes[$this->escapeClass($name)] ?? null;
+        return $this->symbols->findClass($this->escapeClass($name));
     }
 
     public function getParentClass(string $class): string
     {
-        return $this->classExtends[strtolower(ltrim($class, '\\'))] ?? '';
+        return $this->symbols->parent(strtolower(ltrim($class, '\\')));
     }
 
     protected function hasClass(string $name): bool
     {
-        return array_key_exists($this->escapeClass($name), $this->classes);
+        return $this->symbols->hasClass($this->escapeClass($name));
     }
 
     protected function hasInterface(string $name): bool
     {
-        return array_key_exists($this->escapeClass($name), $this->interfaces);
+        return $this->symbols->hasInterface($this->escapeClass($name));
     }
 
     protected function getInterface(string $name): InterfaceDef
     {
-        return $this->interfaces[$this->escapeClass($name)];
+        return $this->symbols->interface($this->escapeClass($name));
     }
 
     protected function checkFunction(string $name): void

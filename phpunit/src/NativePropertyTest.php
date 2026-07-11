@@ -38,8 +38,10 @@ class NativePropertyTest extends \BaseTest
         }
 
         $code = file_get_contents($outputFile);
-        $this->assertStringContainsString('php::getStaticProperty(php_get_called_class(this_), "count")', $code);
-        $this->assertStringContainsString('php::getStaticProperty(php_get_called_class(this_), "count") = php::toInt(value)', $code);
+        $this->assertStringContainsString('tmp_var_0 = php_get_called_class(this_);', $code);
+        $this->assertStringContainsString('php::getStaticProperty((tmp_var_0.isObject()', $code);
+        $this->assertStringContainsString('php::getStaticProperty((tmp_var_0.isObject() ? php::fn::get_class(tmp_var_0)', $code);
+        $this->assertStringContainsString('= php::toInt(value);', $code);
     }
 
     public function testNativeIntPropertyAssignOpUsesNativeReference(): void

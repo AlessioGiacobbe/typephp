@@ -12,7 +12,7 @@ use TypePhp\Metadata\Constants;
 
 trait NativeCommandOptionsTrait
 {
-    protected function getCommonCompileCommandOptions(): array
+    protected function getCommonCompileCommandOptions(): CompileOptions
     {
         $includePaths = $this->getIncludePaths();
         if (!empty($this->userIncludePaths)) {
@@ -24,7 +24,7 @@ trait NativeCommandOptionsTrait
             $userDefines[] = 'TYPEPHP_NO_MAIN=1';
         }
 
-        return [
+        return new CompileOptions([
             'include_paths' => $includePaths,
             'optimize' => $this->optimizeLevel,
             'debug' => $this->debug,
@@ -37,39 +37,37 @@ trait NativeCommandOptionsTrait
             'prof_output' => $this->targetName . '.prof',
             'user_defines' => $userDefines,
             'lto' => $this->enableLto,
-        ];
+        ]);
     }
 
-    protected function getCompileCommandOptions(): array
+    protected function getCompileCommandOptions(): CompileOptions
     {
         $options = $this->getCommonCompileCommandOptions();
-        $options['cpp_std'] = $this->cxxStd;
-        $options['cxxflags'] = $this->cxxFlags;
-        $options['suppressed_warnings'] = Constants::MSVC_SUPPRESSED_WARNINGS ?? [];
-        return $options;
+        return $options
+            ->with('cpp_std', $this->cxxStd)
+            ->with('cxxflags', $this->cxxFlags)
+            ->with('suppressed_warnings', Constants::MSVC_SUPPRESSED_WARNINGS ?? []);
     }
 
-    protected function getCCompileCommandOptions(): array
+    protected function getCCompileCommandOptions(): CompileOptions
     {
         $options = $this->getCommonCompileCommandOptions();
-        $options['suppressed_warnings'] = ['4244', '4146'];
-        return $options;
+        return $options->with('suppressed_warnings', ['4244', '4146']);
     }
 
-    protected function getNativeCompileCommandOptions(string $language = ''): array
+    protected function getNativeCompileCommandOptions(string $language = ''): CompileOptions
     {
         $options = $this->getCommonCompileCommandOptions();
-        $options['suppressed_warnings'] = Constants::MSVC_SUPPRESSED_WARNINGS ?? [];
+        $options = $options->with('suppressed_warnings', Constants::MSVC_SUPPRESSED_WARNINGS ?? []);
 
         if ($language === 'objective-c++') {
-            $options['cpp_std'] = $this->cxxStd;
-            $options['cxxflags'] = $this->cxxFlags;
+            $options = $options->with('cpp_std', $this->cxxStd)->with('cxxflags', $this->cxxFlags);
         }
 
         return $options;
     }
 
-    protected function getLinkCommandOptions(): array
+    protected function getLinkCommandOptions(): LinkOptions
     {
         $libraryPaths = array_merge($this->getLibraryPaths(), $this->linkPaths);
         $libraries = $this->getLibraries();
@@ -95,6 +93,6 @@ trait NativeCommandOptionsTrait
             $options['rpath'] = $rpaths;
         }
 
-        return $options;
+        return new LinkOptions($options);
     }
 }

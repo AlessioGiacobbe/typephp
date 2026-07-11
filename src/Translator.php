@@ -13,7 +13,9 @@ use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Backend\CompilerFactory;
 use TypePhp\Build\FileScanner;
 use TypePhp\Build\NativeCommandOptionsTrait;
+use TypePhp\Build\NativeBuilder;
 use TypePhp\Build\SourcePipelineTrait;
+use TypePhp\Config\ProjectYamlLoader;
 use TypePhp\Build\ResourceCompilationTrait;
 use TypePhp\Entity\ArgInfo;
 use TypePhp\Entity\ClassDef;
@@ -41,9 +43,6 @@ use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
-use Ajaxray\AnsiKit\AnsiTerminal;
-use Ajaxray\AnsiKit\Components\Progressbar;
-use Symfony\Component\Yaml\Yaml;
 
 class Translator extends Preprocessor
 {
@@ -59,6 +58,8 @@ class Translator extends Preprocessor
     protected bool $hasExplicitOutput = false;
     protected ?string $explicitOutputExtension = null;
     protected array $sourceDirs = [];
+    private ?ProjectYamlLoader $projectYamlLoader = null;
+    private ?NativeBuilder $nativeBuilder = null;
     protected bool $verbose = false;
     protected array $phpSrcFiles = [];
     protected array $ignorePaths = [];
@@ -801,7 +802,7 @@ CODE;
             $code .= $this->getIndent() . "PHP_FE(cli_get_process_title,        arginfo_cli_get_process_title)\n";
         }
 
-        foreach ($this->functions as $functionDef) {
+        foreach ($this->symbols->functions() as $functionDef) {
             if ($this->isBuildModeExt() and $functionDef->name === self::ENTRY_FUNCTION) {
                 continue;
             }
@@ -852,7 +853,7 @@ CODE;
         }
 
         $code .= '// static property ' . PHP_EOL;
-        foreach ($this->classes as $classDef) {
+        foreach ($this->symbols->classes() as $classDef) {
             foreach ($classDef->properties as $property) {
                 if (!$property->isStatic() || !$property->arrayInitPlan || !$property->default) {
                     continue;
@@ -900,7 +901,7 @@ CODE;
         }
 
         // Clean up inherited array constants from child classes
-        foreach ($this->classes as $className => $classDef) {
+        foreach ($this->symbols->classes() as $className => $classDef) {
             $ownConstNames = [];
             foreach ($classDef->constants as $constant) {
                 if ($constant->type === self::TYPE_ARRAY) {
@@ -909,8 +910,8 @@ CODE;
             }
 
             $parentName = $this->escapeClass($classDef->extends);
-            while ($parentName && isset($this->classes[$parentName])) {
-                $parentDef = $this->classes[$parentName];
+            while ($parentName && $this->symbols->hasClass($parentName)) {
+                $parentDef = $this->symbols->class($parentName);
                 foreach ($parentDef->constants as $constant) {
                     if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
                         $ownConstNames[$constant->name] = true;
@@ -955,7 +956,7 @@ CODE;
         $code .= 'php_app_init();' . PHP_EOL;
 
         if ($this->isBuildModeBin()) {
-            $entryFunction = $this->functions[self::ENTRY_FUNCTION];
+            $entryFunction = $this->symbols->function(self::ENTRY_FUNCTION);
             $entryFile = $entryFunction->sourceFile;
             $entryFileArg = $this->genCharPtr($entryFile, true);
             $entryPrefix = str_repeat("\n", max(0, $entryFunction->startLine - 1));
@@ -1155,19 +1156,19 @@ CODE;
             $this->invalidateMiscObjectCache($objectFile);
         }
 
-        $cmd = $this->buildCompileFileCommand($cppFile, $objectFile);
+        $language = $this->getLanguageFromExtension($cppFile);
+        $options = match ($language) {
+            null => $this->getCompileCommandOptions(),
+            'c' => $this->getCCompileCommandOptions(),
+            default => $this->getNativeCompileCommandOptions($language),
+        };
+        $result = $this->getNativeBuilder()->compile($cppFile, $objectFile, $options, $language, $parallel);
         if (!$parallel) {
-            $this->climate->comment($cmd);
+            $this->climate->comment($result['command']);
         }
-        // 在并行模式下，抑制 passthru 的输出
-        if ($parallel) {
-            exec($cmd . ' 2>&1', $output, $ret);
-        } else {
-            passthru($cmd, $ret);
-        }
-        if ($ret !== 0) {
-            if ($parallel && !empty($output)) {
-                foreach ($output as $line) {
+        if ($result['status'] !== 0) {
+            if ($parallel && !empty($result['output'])) {
+                foreach ($result['output'] as $line) {
                     $this->climate->red($line);
                 }
             }
@@ -1182,27 +1183,12 @@ CODE;
     protected function buildCompileFileCommand(string $sourceFile, string $objectFile): string
     {
         $language = $this->getLanguageFromExtension($sourceFile);
-        if ($language === null) {
-            return $this->getCompilerBackend()->buildCompileCommand(
-                $sourceFile,
-                $objectFile,
-                $this->getCompileCommandOptions()
-            );
-        }
-        if ($language === 'c') {
-            return $this->getCompilerBackend()->buildCCompileCommand(
-                $sourceFile,
-                $objectFile,
-                $this->getCCompileCommandOptions()
-            );
-        }
-
-        return $this->getCompilerBackend()->buildNativeCompileCommand(
-            $sourceFile,
-            $objectFile,
-            $this->getNativeCompileCommandOptions($language),
-            $language
-        );
+        $options = match ($language) {
+            null => $this->getCompileCommandOptions(),
+            'c' => $this->getCCompileCommandOptions(),
+            default => $this->getNativeCompileCommandOptions($language),
+        };
+        return $this->getNativeBuilder()->compileCommand($sourceFile, $objectFile, $options, $language);
     }
 
     public function compile(array $sourceFiles): array
@@ -1316,137 +1302,32 @@ CODE;
         return pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0;
     }
 
-    protected function getCompileChildFailureReason(int $status): string
-    {
-        if (pcntl_wifsignaled($status)) {
-            return 'terminated by signal ' . pcntl_wtermsig($status);
-        }
-        if (pcntl_wifexited($status)) {
-            return 'exited with status ' . pcntl_wexitstatus($status);
-        }
-        return 'terminated abnormally';
-    }
-
     protected function compileWithPcntl(array $sourceFiles, int $job): array
     {
-        // 检查 pcntl 扩展是否可用
         if (!function_exists('pcntl_fork')) {
             $this->climate->warning('pcntl extension not available, using sequential compilation');
             return $this->compileSourceFile($sourceFiles);
         }
 
-        $objectFiles = [];
         $totalFiles = count($sourceFiles);
-        $runningProcesses = 0;
-        $processPipes = [];
-        $fileQueue = $sourceFiles;
-        $compiledCount = 0;
-        $failedFiles = [];
-
         $this->climate->lightBlue("Starting parallel compilation with {$job} jobs for {$totalFiles} files");
+        $result = $this->getNativeBuilder()->dispatchParallel(
+            $sourceFiles,
+            $job,
+            fn(string $source): string => $this->getObjectFile($source),
+            function (string $source, string $object): void {
+                $this->compileFile($source, $object, true);
+            },
+            fn(): int => $this->pcntlFork(),
+            fn(): array => $this->waitForCompileChild(),
+            fn(int $status): bool => $this->compileChildSucceeded($status),
+        );
 
-        if (!$this->noProgress) {
-            $progress = new Progressbar();
-            $progress->barStyle([AnsiTerminal::FG_GREEN])
-                ->percentageStyle([AnsiTerminal::TEXT_BOLD])
-                ->labelStyle([AnsiTerminal::FG_CYAN]);
-            $progress->renderInPlace(0, $totalFiles, 'Compiling');
+        if ($result['failures'] !== []) {
+            throw new \Exception('Compilation failed for: ' . implode(', ', $result['failures']));
         }
-
-        while ($compiledCount < $totalFiles) {
-            // 启动新进程，直到达到最大并发数
-            while ($runningProcesses < $job && !empty($fileQueue)) {
-                $cppFile = array_shift($fileQueue);
-                $objectFile = $this->getObjectFile($cppFile);
-
-                $pid = $this->pcntlFork();
-                if ($pid == -1) {
-                    $failedFiles[] = $cppFile;
-                    foreach ($fileQueue as $queuedFile) {
-                        $failedFiles[] = $queuedFile;
-                    }
-                    $compiledCount += count($fileQueue) + 1;
-                    $fileQueue = [];
-                    $this->climate->red('Failed to fork compiler process; no additional files will be scheduled');
-                    break;
-                }
-                if ($pid === 0) {
-                    // 子进程：执行编译
-                    try {
-                        $this->compileFile($cppFile, $objectFile, true);
-                        if (!is_file($objectFile)) {
-                            exit(1);
-                        }
-                        exit(0);
-                    } catch (\Throwable $e) {
-                        // 在子进程中不抛出异常，直接退出
-                        exit(1);
-                    }
-                } else {
-                    // 父进程：记录子进程
-                    $processPipes[$pid] = ['file' => $cppFile, 'object' => $objectFile];
-                    $runningProcesses++;
-                }
-            }
-
-            // 等待任意一个子进程完成
-            if ($runningProcesses > 0) {
-                [$pid, $status] = $this->waitForCompileChild();
-                $processInfo = $processPipes[$pid] ?? null;
-                unset($processPipes[$pid]);
-                $runningProcesses--;
-
-                if (!$this->compileChildSucceeded($status)) {
-                    $failedFile = $processInfo['file'] ?? 'unknown';
-                    $failedFiles[] = $failedFile;
-                    echo PHP_EOL;
-                    $reason = $this->getCompileChildFailureReason($status);
-                    $this->climate->red("Compilation failed: {$failedFile} ({$reason})");
-                    echo PHP_EOL;
-                } elseif ($processInfo) {
-                    $objectFiles[] = $processInfo['object'];
-                }
-                $compiledCount++;
-                if ($this->noProgress) {
-                    $percent = intval($compiledCount / $totalFiles * 100);
-                    $file = $processInfo['file'] ?? 'unknown';
-                    $fileShorted = $this->removeCommonPrefix($this->buildDir, $file);
-                    $this->climate->white("[{$compiledCount}/{$totalFiles}] {$percent}% {$fileShorted}");
-                } else {
-                    $progress->renderInPlace($compiledCount, $totalFiles, 'Compiling');
-                }
-            }
-        }
-
-        // 确保所有子进程都已结束
-        while ($runningProcesses > 0) {
-            [$pid, $status] = $this->waitForCompileChild();
-            $processInfo = $processPipes[$pid] ?? null;
-            unset($processPipes[$pid]);
-            $runningProcesses--;
-            $compiledCount++;
-            if (!$this->compileChildSucceeded($status)) {
-                $failedFile = $processInfo['file'] ?? 'unknown';
-                $failedFiles[] = $failedFile;
-                $reason = $this->getCompileChildFailureReason($status);
-                $this->climate->red("Compilation failed: {$failedFile} ({$reason})");
-            } elseif ($processInfo) {
-                $objectFiles[] = $processInfo['object'];
-            }
-            if ($this->noProgress && $processInfo) {
-                $percent = intval($compiledCount / $totalFiles * 100);
-                $this->climate->darkGray("[{$compiledCount}/{$totalFiles}] {$percent}% {$processInfo['file']}");
-            }
-        }
-
-        echo PHP_EOL;
-
-        if (!empty($failedFiles)) {
-            throw new \Exception('Compilation failed for: ' . implode(', ', $failedFiles));
-        }
-
         $this->climate->green("Successfully compiled {$totalFiles} files");
-        return $objectFiles;
+        return $result['objects'];
     }
 
     public function output(string $message, string $style = 'out'): void
@@ -1456,11 +1337,7 @@ CODE;
 
     protected function buildLinkCommand(array $objectFiles, string $targetFile): string
     {
-        return $this->getCompilerBackend()->buildLinkCommand(
-            $objectFiles,
-            $targetFile,
-            $this->getLinkCommandOptions()
-        );
+        return $this->getNativeBuilder()->linkCommand($objectFiles, $targetFile, $this->getLinkCommandOptions());
     }
 
     public function build(array $objectFiles): string
@@ -1475,29 +1352,16 @@ CODE;
             }
         }
 
-        $backend = $this->getCompilerBackend();
         $buildError = null;
-        try {
-            $linkCmd = $this->buildLinkCommand($objectFiles, $targetFile);
-            $this->climate->comment($linkCmd);
-
-            // 执行链接并捕获输出
-            exec($linkCmd . ' 2>&1', $output, $ret);
-
-            // 显示输出（如果有）
-            if (!empty($output)) {
-                foreach ($output as $line) {
-                    $this->climate->out($line);
-                }
-            }
-
-            if ($ret !== 0) {
-                $buildError = 'link failed: ' . $targetFile;
-            } elseif (!file_exists($targetFile)) {
-                $buildError = 'target file not generated: ' . $targetFile;
-            }
-        } finally {
-            $backend->cleanupResponseFile();
+        $result = $this->getNativeBuilder()->link($objectFiles, $targetFile, $this->getLinkCommandOptions());
+        $this->climate->comment($result['command']);
+        foreach ($result['output'] as $line) {
+            $this->climate->out($line);
+        }
+        if ($result['status'] !== 0) {
+            $buildError = 'link failed: ' . $targetFile;
+        } elseif (!$result['generated']) {
+            $buildError = 'target file not generated: ' . $targetFile;
         }
 
         if ($buildError !== null) {
@@ -1507,6 +1371,11 @@ CODE;
         $this->climate->green('Build successful: ' . $targetFile);
 
         return $targetFile;
+    }
+
+    protected function getNativeBuilder(): NativeBuilder
+    {
+        return $this->nativeBuilder ??= new NativeBuilder($this->getCompilerBackend());
     }
 
     public function isRunRequested(): bool
@@ -1562,7 +1431,7 @@ CODE;
         }
         $code .= $this->genDefaultArgumentHelpers();
 
-        foreach ($this->functions as $name => $func) {
+        foreach ($this->symbols->functions() as $name => $func) {
             $code .= 'extern ' . ($func->returnsByRef ? self::TYPE_REF : $func->returnType) . ' ' . self::PREFIX . $name . '(';
             $list = [];
             if ($func->method) {
@@ -1715,7 +1584,7 @@ CODE;
      */
     private function getClassLikesWithConstants(): array
     {
-        return array_merge($this->classes, $this->interfaces);
+        return array_merge($this->symbols->classes(), $this->symbols->interfaces());
     }
 
     protected function getFilesFromDir(string $path): array
@@ -1744,7 +1613,7 @@ CODE;
         }
 
         // Propagate array constants to child classes that don't override them
-        foreach ($this->classes as $className => $classDef) {
+        foreach ($this->symbols->classes() as $className => $classDef) {
             $ownConstNames = [];
             foreach ($classDef->constants as $constant) {
                 if ($constant->type === self::TYPE_ARRAY) {
@@ -1753,8 +1622,8 @@ CODE;
             }
 
             $parentName = $this->escapeClass($classDef->extends);
-            while ($parentName && isset($this->classes[$parentName])) {
-                $parentDef = $this->classes[$parentName];
+            while ($parentName && $this->symbols->hasClass($parentName)) {
+                $parentDef = $this->symbols->class($parentName);
                 foreach ($parentDef->constants as $constant) {
                     if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
                         $ownConstNames[$constant->name] = true;
@@ -1819,7 +1688,7 @@ CODE;
 
     protected function parseProjectYaml(string $path): array
     {
-        $cfg = Yaml::parseFile($path);
+        $cfg = $this->getProjectYamlLoader()->load($path);
         $projectDir = dirname($path);
 
         if (array_key_exists('php-version', $cfg) && !$this->climate->arguments->defined('php-version')) {
@@ -2067,187 +1936,19 @@ CODE;
      */
     protected function parseProjectYamlSourceEntry(mixed $entry): array
     {
-        if (is_string($entry)) {
-            return [$entry, null];
-        }
-        if (!is_array($entry)) {
-            $this->error('Each `sources` entry must be a string or map');
-        }
-
-        $path = $entry['path'] ?? $entry['source'] ?? $entry['file'] ?? null;
-        if (!is_string($path) || trim($path) === '') {
-            $this->error('Conditional `sources` entries must include a non-empty `path`');
-        }
-
-        $condition = $entry['if'] ?? $entry['when'] ?? null;
-        if ($condition !== null && !is_string($condition)) {
-            $this->error('Source condition must be a string');
-        }
-
-        return [$path, $condition];
+        return $this->getProjectYamlLoader()->parseSourceEntry($entry);
     }
 
     protected function evaluateProjectYamlCondition(string $condition): bool
     {
-        $condition = trim($condition);
-        if ($condition === '') {
-            $this->error('Source condition must not be empty');
-        }
-
-        $expr = $this->replaceProjectYamlPhpVersionComparisons($condition);
-        $expr = $this->replaceProjectYamlPhpOsFamilyComparisons($expr, $condition);
-        if (preg_match('/[A-Za-z_]/', $expr)) {
-            $this->error('Unsupported source condition: `' . $condition . '`');
-        }
-        if (!preg_match('/^[0-9\s<>=!&|().+-]+$/', $expr)) {
-            $this->error('Unsupported source condition: `' . $condition . '`');
-        }
-        if (preg_match('/(?<![&])&(?!&)|(?<![|])\|(?!\|)/', $expr)) {
-            $this->error('Unsupported source condition: `' . $condition . '`');
-        }
-
-        try {
-            /** @phpstan-ignore-next-line */
-            return (bool) eval('return (' . $expr . ');');
-        } catch (\ParseError|\Throwable) {
-            $this->error('Invalid source condition: `' . $condition . '`');
-        }
+        return $this->getProjectYamlLoader()->evaluateCondition($condition);
     }
 
-    protected function replaceProjectYamlPhpVersionComparisons(string $condition): string
+    protected function getProjectYamlLoader(): ProjectYamlLoader
     {
-        $versionLiteral = '"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"|\'([^\'\\\\]*(?:\\\\.[^\'\\\\]*)*)\'';
-        $operator = '(>=|<=|==|!=|<>|=|>|<|lt|le|gt|ge|eq|ne)';
-
-        $expr = preg_replace_callback(
-            '/\bPHP_VERSION_ID\b\s*' . $operator . '\s*([0-9]+)/i',
-            function (array $matches): string {
-                return version_compare($this->phpVersion, $this->phpVersionIdToString((int) $matches[2]), $this->normalizeProjectYamlVersionOperator($matches[1])) ? '1' : '0';
-            },
-            $condition
-        );
-        if ($expr === null) {
-            $this->error('Invalid source condition: `' . $condition . '`');
-        }
-
-        $expr = preg_replace_callback(
-            '/([0-9]+)\s*' . $operator . '\s*\bPHP_VERSION_ID\b/i',
-            function (array $matches): string {
-                return version_compare($this->phpVersionIdToString((int) $matches[1]), $this->phpVersion, $this->normalizeProjectYamlVersionOperator($matches[2])) ? '1' : '0';
-            },
-            $expr
-        );
-        if ($expr === null) {
-            $this->error('Invalid source condition: `' . $condition . '`');
-        }
-
-        $expr = preg_replace_callback(
-            '/\bPHP_VERSION\b\s*' . $operator . '\s*(' . $versionLiteral . ')/i',
-            function (array $matches): string {
-                $version = stripcslashes(($matches[3] ?? '') !== '' ? $matches[3] : $matches[4]);
-                $this->assertProjectYamlVersionLiteral($version);
-                return version_compare($this->phpVersion, $version, $this->normalizeProjectYamlVersionOperator($matches[1])) ? '1' : '0';
-            },
-            $expr
-        );
-        if ($expr === null) {
-            $this->error('Invalid source condition: `' . $condition . '`');
-        }
-
-        $expr = preg_replace_callback(
-            '/(' . $versionLiteral . ')\s*' . $operator . '\s*\bPHP_VERSION\b/i',
-            function (array $matches): string {
-                $version = stripcslashes($matches[2] !== '' ? $matches[2] : $matches[3]);
-                $this->assertProjectYamlVersionLiteral($version);
-                return version_compare($version, $this->phpVersion, $this->normalizeProjectYamlVersionOperator($matches[4])) ? '1' : '0';
-            },
-            $expr
-        );
-        if ($expr === null) {
-            $this->error('Invalid source condition: `' . $condition . '`');
-        }
-
-        if (preg_match('/\bPHP_VERSION(?:_ID)?\b/', $expr)) {
-            $this->error('Unsupported source condition: `' . $condition . '`');
-        }
-
-        return $expr;
-    }
-
-    protected function replaceProjectYamlPhpOsFamilyComparisons(string $expr, string $condition): string
-    {
-        $stringLiteral = '"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"|\'([^\'\\\\]*(?:\\\\.[^\'\\\\]*)*)\'';
-        $operator = '(==|!=)';
-
-        $expr = preg_replace_callback(
-            '/\bPHP_OS_FAMILY\b\s*' . $operator . '\s*(' . $stringLiteral . ')/i',
-            function (array $matches): string {
-                $expected = stripcslashes(($matches[3] ?? '') !== '' ? $matches[3] : $matches[4]);
-                $this->assertProjectYamlOsFamilyLiteral($expected);
-                $result = PHP_OS_FAMILY === $expected;
-                if ($matches[1] === '!=') {
-                    $result = !$result;
-                }
-                return $result ? '1' : '0';
-            },
-            $expr
-        );
-        if ($expr === null) {
-            $this->error('Invalid source condition: `' . $condition . '`');
-        }
-
-        $expr = preg_replace_callback(
-            '/(' . $stringLiteral . ')\s*' . $operator . '\s*\bPHP_OS_FAMILY\b/i',
-            function (array $matches): string {
-                $expected = stripcslashes(($matches[2] ?? '') !== '' ? $matches[2] : $matches[3]);
-                $this->assertProjectYamlOsFamilyLiteral($expected);
-                $result = $expected === PHP_OS_FAMILY;
-                if ($matches[4] === '!=') {
-                    $result = !$result;
-                }
-                return $result ? '1' : '0';
-            },
-            $expr
-        );
-        if ($expr === null) {
-            $this->error('Invalid source condition: `' . $condition . '`');
-        }
-
-        if (preg_match('/\bPHP_OS_FAMILY\b/', $expr)) {
-            $this->error('Unsupported source condition: `' . $condition . '`');
-        }
-
-        return $expr;
-    }
-
-    protected function normalizeProjectYamlVersionOperator(string $operator): string
-    {
-        return strtolower($operator);
-    }
-
-    protected function assertProjectYamlVersionLiteral(string $version): void
-    {
-        if ($version === '' || !preg_match('/^[0-9A-Za-z_.+\-]+$/', $version)) {
-            $this->error('Invalid PHP_VERSION literal: `' . $version . '`');
-        }
-    }
-
-    protected function assertProjectYamlOsFamilyLiteral(string $osFamily): void
-    {
-        if (!in_array($osFamily, ['Windows', 'BSD', 'Darwin', 'Solaris', 'Linux', 'Unknown'], true)) {
-            $this->error('Invalid PHP_OS_FAMILY literal: `' . $osFamily . '`');
-        }
-    }
-
-    protected function phpVersionIdToString(int $versionId): string
-    {
-        if ($versionId < 0) {
-            $this->error('Invalid PHP_VERSION_ID literal: `' . $versionId . '`');
-        }
-        $major = intdiv($versionId, 10000);
-        $minor = intdiv($versionId % 10000, 100);
-        $patch = $versionId % 100;
-        return $major . '.' . $minor . '.' . $patch;
+        $this->projectYamlLoader ??= new ProjectYamlLoader($this->phpVersion, fn(string $message): never => $this->error($message));
+        $this->projectYamlLoader->setPhpVersion($this->phpVersion);
+        return $this->projectYamlLoader;
     }
 
     protected function getInternalCeInfo(string $ce): array
@@ -2343,13 +2044,13 @@ CODE;
 
     protected function genClassCeList(): void
     {
-        if (empty($this->interfaces) and empty($this->classes)) {
+        if (empty($this->symbols->interfaces()) and empty($this->symbols->classes())) {
             return;
         }
 
         $sorter = new StringSort();
 
-        foreach ($this->interfaces as $interfaceDef) {
+        foreach ($this->symbols->interfaces() as $interfaceDef) {
             $ce = $this->getClassCe($interfaceDef);
             $deps = [];
 
@@ -2371,14 +2072,14 @@ CODE;
             $sorter->add($ce, $deps);
         }
 
-        foreach ($this->classes as $classDef) {
+        foreach ($this->symbols->classes() as $classDef) {
             $ce = $this->getClassCe($classDef);
             $deps = [];
             $parent = $classDef->extends;
             if ($parent) {
                 // 不存在的父类，说明可能是内置类
                 $tmpCe = $this->getParentClassCe($classDef);
-                if (!isset($this->classes[$parent])) {
+                if (!$this->symbols->hasClass($parent)) {
                     $sorter->add($tmpCe);
                 }
                 $deps[] = $tmpCe;
@@ -2388,7 +2089,7 @@ CODE;
             if ($implements) {
                 foreach ($implements as $interface) {
                     $tmpCe = self::PREFIX . 'class_entry_' . $this->escapeCeName($interface);
-                    if (!isset($this->interfaces[$interface])) {
+                    if (!$this->symbols->hasInterface($interface)) {
                         $sorter->add($tmpCe);
                     }
                     $deps[] = $tmpCe;
