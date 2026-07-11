@@ -8,6 +8,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use TypePhp\Resolver\Reflection;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -76,7 +78,7 @@ trait TypeDetectionTrait
 
     protected function isNativeType(string $type): bool
     {
-        return in_array($type, [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL]);
+        return in_array($type, [Type::INT, Type::FLOAT, Type::BOOL]);
     }
 
     protected function isNativeTypeVar(string $var): bool
@@ -140,7 +142,7 @@ trait TypeDetectionTrait
 
     protected function isArrayVar($var): bool
     {
-        return $this->isVarExpr($var) and $this->hasVar($var->name) and $this->getVarType($var->name) === self::TYPE_ARRAY;
+        return $this->isVarExpr($var) and $this->hasVar($var->name) and $this->getVarType($var->name) === Type::ARRAY;
     }
 
 }

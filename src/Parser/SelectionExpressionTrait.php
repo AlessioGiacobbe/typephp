@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 
@@ -44,10 +46,10 @@ trait SelectionExpressionTrait
             $else = 'php::Var(' . $else . ')';
         }
         if ($hasBranchStmts) {
-            $code = '[&]() -> ' . self::TYPE_VAR . '{';
+            $code = '[&]() -> ' . Type::VAR . '{';
             $code .= $this->formatCapturedStmtLines($condBeforeStmts);
             if ($condAfterStmts) {
-                $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $condTmpVar = $this->addTmpVar(Type::VAR);
                 $code .= $this->getIndent() . "{$condTmpVar} = {$cond};";
                 $code .= $this->formatCapturedStmtLines($condAfterStmts);
                 $cond = $condTmpVar;
@@ -67,7 +69,7 @@ trait SelectionExpressionTrait
     {
         $code = $this->formatCapturedStmtLines($beforeStmts);
         if ($afterStmts) {
-            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $tmpVar = $this->addTmpVar(Type::VAR);
             $code .= $this->getIndent() . "{$tmpVar} = {$value};";
             $code .= $this->formatCapturedStmtLines($afterStmts);
             $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
@@ -86,12 +88,12 @@ trait SelectionExpressionTrait
                 $this->errorUndefinedVariable($expr->cond);
             }
         } else {
-            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $tmpVar = $this->addTmpVar(Type::VAR);
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $var . ';';
             $var = $tmpVar;
         }
 
-        $code = '[&]() -> ' . self::TYPE_VAR . '{';
+        $code = '[&]() -> ' . Type::VAR . '{';
         $default = null;
         foreach ($expr->arms as $arm) {
             if ($arm->conds === null) {
@@ -109,7 +111,7 @@ trait SelectionExpressionTrait
                 $code .= $this->getIndent() . 'if (!' . $matched . ') {';
                 $code .= $this->formatCapturedStmtLines($beforeStmts);
                 if ($afterStmts) {
-                    $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                    $condTmpVar = $this->addTmpVar(Type::VAR);
                     $code .= $this->getIndent() . "{$condTmpVar} = {$condValue};";
                     $code .= $this->formatCapturedStmtLines($afterStmts);
                     $condValue = $condTmpVar;
@@ -140,7 +142,7 @@ trait SelectionExpressionTrait
         [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($body);
         $code = $this->formatCapturedStmtLines($beforeStmts);
         if ($afterStmts) {
-            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $tmpVar = $this->addTmpVar(Type::VAR);
             $code .= $this->getIndent() . "{$tmpVar} = {$value};";
             $code .= $this->formatCapturedStmtLines($afterStmts);
             $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
@@ -175,7 +177,7 @@ trait SelectionExpressionTrait
         $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $rightAfterStmtCount);
         $this->checkVarMustExist($right, $rightExpr);
 
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $tmpVar = $this->addTmpVar(Type::VAR);
         if ($rightBeforeStmts || $rightAfterStmts) {
             $code = $this->formatCppLineComment('Expr: ', $this->printer->prettyPrintExpr($expr)) . PHP_EOL .
                 'if (' . $condExpr . ') {' . PHP_EOL .
@@ -185,7 +187,7 @@ trait SelectionExpressionTrait
                 $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $rightBeforeStmts) . PHP_EOL;
             }
             if ($rightAfterStmts) {
-                $rightTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $rightTmpVar = $this->addTmpVar(Type::VAR);
                 $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';' . PHP_EOL;
                 $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $rightAfterStmts) . PHP_EOL;
                 $code .= $this->getIndent() . $tmpVar . ' = ' . $rightTmpVar . ';' . PHP_EOL;

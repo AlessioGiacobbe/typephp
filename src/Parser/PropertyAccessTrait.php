@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
@@ -286,7 +288,7 @@ trait PropertyAccessTrait
         $this->registerStaticPropertyRef($refVar, $class, $nativeProp, $info);
 
         if ($info['kind'] === 'zval') {
-            $helper = $def->type === self::TYPE_FLOAT ? 'typephp_static_float_ref' : 'typephp_static_int_ref';
+            $helper = $def->type === Type::FLOAT ? 'typephp_static_float_ref' : 'typephp_static_int_ref';
             return $helper . '(' . $refVar . ')';
         }
 
@@ -329,8 +331,8 @@ trait PropertyAccessTrait
         $classValue = $this->getDynamicStaticClassValue($expr->class);
         $propertyValue = $this->identifierToStr($expr->name, literal: true);
 
-        $classVar = $this->addTmpVar(self::TYPE_VAR);
-        $propertyVar = $this->addTmpVar(self::TYPE_VAR);
+        $classVar = $this->addTmpVar(Type::VAR);
+        $propertyVar = $this->addTmpVar(Type::VAR);
         $this->context->beforeStmtLines[] = $classVar . ' = ' . $classValue . ';';
         $this->context->beforeStmtLines[] = $propertyVar . ' = ' . $propertyValue . ';';
 
@@ -456,7 +458,7 @@ trait PropertyAccessTrait
             // Untyped properties retain normal PHP mixed semantics: assigning
             // null is valid. Only an explicitly typed non-nullable property
             // can be rejected at compile time.
-            if ($def->type !== self::TYPE_VAR && !$def->nullable) {
+            if ($def->type !== Type::VAR && !$def->nullable) {
                 $typeStr = $this->getObjectPropertyTypeCheckTypeString($def);
                 $this->fatalError(
                     $left,
@@ -467,7 +469,7 @@ trait PropertyAccessTrait
         }
 
         $rightType = $this->detectTypeOfExpr($right);
-        if ($this->isFixedObjectProp($def) && $rightType !== self::TYPE_VAR) {
+        if ($this->isFixedObjectProp($def) && $rightType !== Type::VAR) {
             if (!$this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
                 $this->fatalError(
                     $left,
@@ -479,11 +481,11 @@ trait PropertyAccessTrait
             return;
         }
 
-        if ($def->type !== self::TYPE_OBJECT) {
+        if ($def->type !== Type::OBJECT) {
             return;
         }
 
-        if ($rightType !== self::TYPE_VAR && $rightType !== self::TYPE_OBJECT) {
+        if ($rightType !== Type::VAR && $rightType !== Type::OBJECT) {
             $this->fatalError(
                 $left,
                 "Cannot assign value of type `{$rightType}` to {$label} `{$propName}` of type `{$def->type}`"
@@ -532,16 +534,16 @@ trait PropertyAccessTrait
                 'property assignment'
             );
         }
-        if ($compositeRelation === self::COMPOSITE_TYPE_MATCH && $rightType !== self::TYPE_VAR) {
+        if ($compositeRelation === self::COMPOSITE_TYPE_MATCH && $rightType !== Type::VAR) {
             // A statically known member of the composite type needs no
             // Variant runtime guard on this property write.
             return $rightExpr;
         }
 
-        if ($rightType !== self::TYPE_VAR && $this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
+        if ($rightType !== Type::VAR && $this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
             return $rightExpr;
         }
-        if ($rightType === self::TYPE_VAR && ($helper = $this->getNativeScalarPropertyTypeCheckHelper($def)) !== null) {
+        if ($rightType === Type::VAR && ($helper = $this->getNativeScalarPropertyTypeCheckHelper($def)) !== null) {
             return $helper . '(' . $rightExpr . ', ' . $this->genCharPtr($this->getObjectPropertyTypeCheckDisplayName($left)) . ')';
         }
 
@@ -550,7 +552,7 @@ trait PropertyAccessTrait
             return $rightExpr;
         }
 
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $tmpVar = $this->addTmpVar(Type::VAR);
         $conditions = [];
         foreach ($typeCheck as $entry) {
             $cond = $this->genSingleTypeCondition($tmpVar, $entry);
@@ -577,7 +579,7 @@ trait PropertyAccessTrait
             ? 'if (' . $tmpVar . '.isInt()) { ' . $tmpVar . ' = php::toFloat(' . $tmpVar . '); } '
             : '';
 
-        return '([&]() -> ' . self::TYPE_VAR . ' { '
+        return '([&]() -> ' . Type::VAR . ' { '
             . $tmpVar . ' = ' . $rightExpr . '; '
             . $coercion
             . 'if (UNEXPECTED(!(' . implode(' || ', $conditions) . '))) { '
@@ -616,11 +618,11 @@ trait PropertyAccessTrait
     private function usesPhpStylePropertyAssignTypeError(PropertyDef $def): bool
     {
         return empty($def->typeCheck) && $def->class === '' && in_array($def->type, [
-            self::TYPE_INT,
-            self::TYPE_FLOAT,
-            self::TYPE_BOOL,
-            self::TYPE_STR,
-            self::TYPE_ARRAY,
+            Type::INT,
+            Type::FLOAT,
+            Type::BOOL,
+            Type::STR,
+            Type::ARRAY,
         ], true);
     }
 
@@ -631,9 +633,9 @@ trait PropertyAccessTrait
         }
 
         return match ($def->type) {
-            self::TYPE_INT => 'php::toIntExact',
-            self::TYPE_FLOAT => 'php::toFloatExact',
-            self::TYPE_BOOL => 'php::toBoolExact',
+            Type::INT => 'php::toIntExact',
+            Type::FLOAT => 'php::toFloatExact',
+            Type::BOOL => 'php::toBoolExact',
             default => null,
         };
     }
@@ -641,7 +643,7 @@ trait PropertyAccessTrait
     protected function canAssignStaticTypeToObjectProperty(PropertyDef $def, string $rightType): bool
     {
         return match ($def->type) {
-            self::TYPE_FLOAT => $rightType === self::TYPE_FLOAT || $rightType === self::TYPE_INT,
+            Type::FLOAT => $rightType === Type::FLOAT || $rightType === Type::INT,
             default => $rightType === $def->type,
         };
     }
@@ -649,12 +651,12 @@ trait PropertyAccessTrait
     protected function getPropertyAssignmentTypeName(string $type): string
     {
         return match ($type) {
-            self::TYPE_INT => 'int',
-            self::TYPE_FLOAT => 'float',
-            self::TYPE_BOOL => 'bool',
-            self::TYPE_STR => 'string',
-            self::TYPE_ARRAY => 'array',
-            self::TYPE_OBJECT => 'object',
+            Type::INT => 'int',
+            Type::FLOAT => 'float',
+            Type::BOOL => 'bool',
+            Type::STR => 'string',
+            Type::ARRAY => 'array',
+            Type::OBJECT => 'object',
             default => 'value',
         };
     }
@@ -692,7 +694,7 @@ trait PropertyAccessTrait
                         // properties, so PHP can represent their uninitialized
                         // state after unset(). Keep that behavior instead of
                         // restoring a fixed default value.
-                        if ($this->isFixedObjectProp($def) && $def->type !== self::TYPE_OBJECT) {
+                        if ($this->isFixedObjectProp($def) && $def->type !== Type::OBJECT) {
                             $restoreDefault = $this->getFixedObjectPropDefaultValue($def);
                             if ($restoreDefault === null) {
                                 $this->fatalError($var, "Cannot unset object property `{$this->parseIdentifier($var->name)}` of fixed type `{$def->type}` without default value");
@@ -885,11 +887,11 @@ trait PropertyAccessTrait
         PropertyDef $def,
         string $getter,
     ): ?string {
-        if ($this->isPropertyFetchUpdate($expr) && !in_array($def->type, [self::TYPE_INT, self::TYPE_FLOAT], true)) {
+        if ($this->isPropertyFetchUpdate($expr) && !in_array($def->type, [Type::INT, Type::FLOAT], true)) {
             return null;
         }
 
-        if ($def->type === self::TYPE_BOOL) {
+        if ($def->type === Type::BOOL) {
             $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
             return $this->convertBoolExpr($getter);
         }

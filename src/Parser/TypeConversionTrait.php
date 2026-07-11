@@ -8,6 +8,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
 
@@ -15,13 +17,13 @@ trait TypeConversionTrait
 {
     protected function convertExprToStringByType(string $expr, $type): string
     {
-        if ($type === self::TYPE_BIGINT) {
+        if ($type === Type::BIGINT) {
             return 'php::BigInt::toString(' . $expr . ')';
         }
-        if ($type === self::TYPE_BIGFLOAT) {
+        if ($type === Type::BIGFLOAT) {
             return 'php::BigFloat::toString(' . $expr . ')';
         }
-        if ($type === self::TYPE_DECIMAL) {
+        if ($type === Type::DECIMAL) {
             return 'php::Decimal::toString(' . $expr . ')';
         }
         return $this->convertStringExpr($expr);
@@ -47,7 +49,7 @@ trait TypeConversionTrait
 
     protected function convertDecimalExpr(string $expr, string $fromType = '', ?NodeAbstract $node = null): string
     {
-        if ($fromType === self::TYPE_FLOAT) {
+        if ($fromType === Type::FLOAT) {
             if ($node instanceof Node\Scalar\Float_) {
                 $rawValue = $node->getAttribute('rawValue');
                 $clean = $rawValue !== null ? $this->stripNumericUnderscores($rawValue) : (string) $node->value;
@@ -55,16 +57,16 @@ trait TypeConversionTrait
             }
             $this->fatalError($node, 'Cannot convert float expression to Decimal, use a literal value or string instead');
         }
-        if ($fromType === self::TYPE_STR) {
+        if ($fromType === Type::STR) {
             if ($node instanceof Node\Scalar\String_) {
                 return 'php::toDecimal(' . $this->getLiteralString($node->value) . ')';
             }
             return 'php::toDecimal(php::toString(' . $expr . '))';
         }
-        if ($fromType === self::TYPE_INT) {
+        if ($fromType === Type::INT) {
             return 'php::toDecimal(php::toString(' . $expr . '))';
         }
-        if ($fromType === self::TYPE_BIGINT) {
+        if ($fromType === Type::BIGINT) {
             return 'php::toDecimal(php::BigInt::toString(' . $expr . '))';
         }
         return $expr;
@@ -72,13 +74,13 @@ trait TypeConversionTrait
 
     protected function convertBigIntExpr(string $expr, string $fromType = ''): string
     {
-        if ($fromType === self::TYPE_INT) {
+        if ($fromType === Type::INT) {
             return 'php::toBigInt(' . $expr . ')';
         }
-        if ($fromType === self::TYPE_FLOAT) {
+        if ($fromType === Type::FLOAT) {
             $this->error('Cannot convert float to BigInt, use string or int instead');
         }
-        if ($fromType === self::TYPE_STR) {
+        if ($fromType === Type::STR) {
             return 'php::toBigInt(php::toString(' . $expr . '))';
         }
         return $expr;
@@ -86,19 +88,19 @@ trait TypeConversionTrait
 
     protected function convertBigFloatExpr(string $expr, string $fromType = ''): string
     {
-        if ($fromType === self::TYPE_INT) {
+        if ($fromType === Type::INT) {
             return 'php::toBigFloat(' . $expr . ')';
         }
-        if ($fromType === self::TYPE_FLOAT) {
+        if ($fromType === Type::FLOAT) {
             return 'php::toBigFloat(' . $expr . ')';
         }
-        if ($fromType === self::TYPE_STR) {
+        if ($fromType === Type::STR) {
             return 'php::toBigFloat(php::toString(' . $expr . '))';
         }
-        if ($fromType === self::TYPE_BIGINT) {
+        if ($fromType === Type::BIGINT) {
             return 'php::BigFloat::newInstance(php::BigInt::toString(' . $expr . '))';
         }
-        if ($fromType === self::TYPE_DECIMAL) {
+        if ($fromType === Type::DECIMAL) {
             return 'php::BigFloat::newInstance(php::Decimal::toString(' . $expr . '))';
         }
         return $expr;
@@ -145,13 +147,13 @@ trait TypeConversionTrait
 
     protected function convertExprType(string $expr, $leftType, $rightType): string
     {
-        if ($leftType === self::TYPE_FLOAT or $rightType === self::TYPE_FLOAT) {
+        if ($leftType === Type::FLOAT or $rightType === Type::FLOAT) {
             return $this->convertFloatExpr($expr);
         }
-        if ($leftType === self::TYPE_INT or $rightType === self::TYPE_INT) {
+        if ($leftType === Type::INT or $rightType === Type::INT) {
             return $this->convertIntExpr($expr);
         }
-        if ($leftType === self::TYPE_BOOL or $rightType === self::TYPE_BOOL) {
+        if ($leftType === Type::BOOL or $rightType === Type::BOOL) {
             return $this->convertBoolExpr($expr);
         }
 
@@ -160,33 +162,33 @@ trait TypeConversionTrait
 
     protected function getNativeType(string $type): string
     {
-        if ($type === self::TYPE_INT && $this->bigintTypes) {
-            return self::TYPE_BIGINT;
+        if ($type === Type::INT && $this->bigintTypes) {
+            return Type::BIGINT;
         }
-        if ($type === self::TYPE_FLOAT && $this->decimalTypes) {
-            return self::TYPE_DECIMAL;
+        if ($type === Type::FLOAT && $this->decimalTypes) {
+            return Type::DECIMAL;
         }
-        return $this->nativeTypes ? $type : self::TYPE_VAR;
+        return $this->nativeTypes ? $type : Type::VAR;
     }
 
     protected function convertExprFromType(string $type, string $expr): string
     {
-        if ($type === self::TYPE_FLOAT) {
+        if ($type === Type::FLOAT) {
             return $this->convertFloatExpr($expr);
         }
-        if ($type === self::TYPE_INT) {
+        if ($type === Type::INT) {
             return $this->convertIntExpr($expr);
         }
-        if ($type === self::TYPE_BOOL) {
+        if ($type === Type::BOOL) {
             return $this->convertBoolExpr($expr);
         }
-        if ($type === self::TYPE_STR) {
+        if ($type === Type::STR) {
             return $this->convertStringExpr($expr);
         }
-        if ($type === self::TYPE_ARRAY) {
+        if ($type === Type::ARRAY) {
             return $this->convertArrayExpr($expr);
         }
-        if ($type === self::TYPE_OBJECT) {
+        if ($type === Type::OBJECT) {
             return $this->convertObjectExpr($expr);
         }
 
@@ -207,7 +209,7 @@ trait TypeConversionTrait
         $this->checkLeftValue($expr);
         $var = $this->parseIdentifier($expr);
         if ($this->isVarExpr($expr) and $this->isNativeTypeVar($var)) {
-            $this->context->localVars[$var] = self::TYPE_VAR;
+            $this->context->localVars[$var] = Type::VAR;
         }
         return $this->parseIdentifier($expr) . '.toReference()';
     }

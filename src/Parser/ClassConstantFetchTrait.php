@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 use TypePhp\Generator\Symbol;
@@ -88,7 +90,7 @@ trait ClassConstantFetchTrait
     {
         $this->assertExprCanBeUsedAsValue($expr, 'class constant target');
         [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $tmpVar = $this->addTmpVar(Type::VAR);
         $this->appendCapturedStmtLinesToContext($beforeStmts);
         $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
         $this->appendCapturedStmtLinesToContext($afterStmts);

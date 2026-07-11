@@ -8,6 +8,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use TypePhp\Resolver\PropertyWriteTarget;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -26,19 +28,19 @@ trait AssignOpTrait
             $target = $this->parseGlobalsArrayDimFetch($left);
             $value = $this->parseExprAsValue($right);
             $tmp = $this->genTmpVarName();
-            $this->addLocalVar($tmp, self::TYPE_VAR);
+            $this->addLocalVar($tmp, Type::VAR);
             return '((' . $tmp . ' = ' . $value . ', ' . $target . ' = ' . $tmp . '), ' . $tmp . ')';
         }
         $array              = $this->parseWritableIdentifier($left->var);
         $code               = '';
         if (!$this->hasVar($array) and $this->isVarExpr($left->var)) {
-            $this->addLocalVar($array, self::TYPE_ARRAY);
+            $this->addLocalVar($array, Type::ARRAY);
         }
 
         $value = $this->parseExprAsValue($right);
 
         $tmp = $this->genTmpVarName();
-        $this->addLocalVar($tmp, self::TYPE_VAR);
+        $this->addLocalVar($tmp, Type::VAR);
 
         if ($left->dim === null) {
             return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet(" . self::VALUE_NULL . ", {$tmp})" . '), ' . $tmp . ')';
@@ -62,7 +64,7 @@ trait AssignOpTrait
         }
 
         $tmp = $this->genTmpVarName();
-        $this->addLocalVar($tmp, self::TYPE_VAR);
+        $this->addLocalVar($tmp, Type::VAR);
         // Comma expression: store RHS → execute side effect → evaluate to stored value
         return '((' . $tmp . ' = ' . $rightExpr . ', ' . $this->emitDynamicPropertyFetchWrite($left, $tmp, $target) . '), ' . $tmp . ')';
     }
@@ -77,7 +79,7 @@ trait AssignOpTrait
             $next    = $next->expr;
         }
         $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+        $this->addLocalVar($tmpVar, Type::VAR);
 
         // 翻转赋值链
         $chain = array_reverse($chain);
@@ -108,7 +110,7 @@ trait AssignOpTrait
         $code  = '{';
         $this->indentLevel++;
         $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+        $this->addLocalVar($tmpVar, Type::VAR);
         $code .= $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($right) . '; ';
         foreach ($items as $k => $item) {
             if (!$item) {
@@ -118,13 +120,13 @@ trait AssignOpTrait
                 $key = $item->key ? $this->parseArrayKey($item->key) : (string) $k;
                 if ($item->value instanceof Expr\List_) {
                     $nestedTmp = $this->genTmpVarName();
-                    $this->addLocalVar($nestedTmp, self::TYPE_ARRAY);
+                    $this->addLocalVar($nestedTmp, Type::ARRAY);
                     $code .= "{$nestedTmp} = {$tmpVar}.item({$key}); ";
                     $code .= $this->parseAssignToList($item->value, new Variable($nestedTmp));
                 } else {
                     $var = $this->parseWritableIdentifier($item->value);
                     if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
-                        $this->addLocalVar($var, self::TYPE_VAR);
+                        $this->addLocalVar($var, Type::VAR);
                     }
                     $code .= "{$var} = {$tmpVar}.item({$key}); ";
                 }
@@ -148,8 +150,8 @@ trait AssignOpTrait
         $type = $this->detectTypeOfExpr($right);
         $finalVarType = $this->getNormalAssignType($type);
         $runtimeObjectAssignClass = '';
-        if ($type === self::TYPE_VOID) {
-            $type = self::TYPE_VAR;
+        if ($type === Type::VOID) {
+            $type = Type::VAR;
         }
 
         if ($left instanceof Expr\PropertyFetch && ($setter = $this->getPropertyHookSetter($left)) !== null) {
@@ -179,7 +181,7 @@ trait AssignOpTrait
             // 右值是一个对象，已获得类的名称，左值必须与右值的类一致
             if ($rightClass) {
                 if (!$this->hasVar($var)) {
-                    $this->addLocalVar($var, self::TYPE_OBJECT);
+                    $this->addLocalVar($var, Type::OBJECT);
                     $this->addObject($var, $rightClass);
                 } elseif (($leftClass = $this->getDeclaredObjectType($var)) !== '') {
                     if ($this->isObjectClassStaticallyAssignableTo($rightClass, $leftClass)) {
@@ -194,7 +196,7 @@ trait AssignOpTrait
                         $this->fatalError($left, "Cannot re-assign typed object `\${$var}` from `{$leftClass}` to `{$rightClass}`");
                     }
                 } else {
-                    $this->checkVarAssignExpr($left, $this->getVarType($var), self::TYPE_OBJECT);
+                    $this->checkVarAssignExpr($left, $this->getVarType($var), Type::OBJECT);
                 }
             } else {
                 if ($this->isMethodCall($right) and $this->isNamedMethod($right->name)) {
@@ -210,7 +212,7 @@ trait AssignOpTrait
                     }
                 }
                 if ($this->isFuncCallExpr($right) and $this->isNameExpr($right->name)) {
-                    $type = $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
+                    $type = $type === Type::VOID ? Type::VAR : $type;
                 } elseif ($this->isStaticCall($right) and $this->isNameExpr($right->class) and $this->isIdExpr($right->name)) {
                     $class = $this->parseIdentifier($right->class);
                     if ($class === 'std') {
@@ -222,18 +224,18 @@ trait AssignOpTrait
                                 $this->fatalError($left, "Must create std::{$right->name->toString()} in the top-level scope of the function");
                             }
                             if ($right->name->toString() === 'array') {
-                                $this->addLocalVar($var, self::TYPE_STD_ARRAY);
+                                $this->addLocalVar($var, Type::STD_ARRAY);
                                 return $this->parseStdArray($var, $right);
                             }
                             if ($right->name->toString() === 'vector') {
-                                $this->addLocalVar($var, self::TYPE_STD_VECTOR);
+                                $this->addLocalVar($var, Type::STD_VECTOR);
                                 return $this->parseStdVector($var, $right);
                             }
                             if ($right->name->toString() === 'map') {
-                                $this->addLocalVar($var, self::TYPE_STD_MAP);
+                                $this->addLocalVar($var, Type::STD_MAP);
                                 return $this->parseStdMap($var, $right);
                             }
-                            $this->addLocalVar($var, self::TYPE_STD_ORDERED_MAP);
+                            $this->addLocalVar($var, Type::STD_ORDERED_MAP);
                             return $this->parseStdOrderedMap($var, $right);
                         } else {
                             $valueExpr = $this->parseStdCall($right);
@@ -246,7 +248,7 @@ trait AssignOpTrait
                     }
                 } elseif ($this->isVarExpr($right)) {
                     $rightVar = $this->parseIdentifier($right);
-                    $type = $this->isStdContainer($rightVar) ? self::TYPE_ARRAY : $this->getVarType($rightVar);
+                    $type = $this->isStdContainer($rightVar) ? Type::ARRAY : $this->getVarType($rightVar);
                     $finalVarType = $this->getNormalAssignType($type);
                     $leftClass = $this->getDeclaredObjectType($var);
                     $rightClass = $this->getDeclaredObjectType($rightVar);
@@ -269,7 +271,7 @@ trait AssignOpTrait
                     $finalVarType = $this->getVarType($var);
                     $this->checkVarAssignExpr($left, $finalVarType, $type);
                     $declaredObjectClass = $this->getDeclaredObjectType($var);
-                    if ($finalVarType === self::TYPE_OBJECT && $declaredObjectClass !== '' && ($type === self::TYPE_VAR || $type === self::TYPE_OBJECT)) {
+                    if ($finalVarType === Type::OBJECT && $declaredObjectClass !== '' && ($type === Type::VAR || $type === Type::OBJECT)) {
                         $runtimeObjectAssignClass = $declaredObjectClass;
                     }
                 }
@@ -278,7 +280,7 @@ trait AssignOpTrait
             return $this->parseAssignPropertyFetch($left, $right, $propertyWriteTarget);
         } elseif ($this->isArrayDimFetch($left) and $this->isVarExpr($left->var)) {
             $tmp = $this->parseIdentifier($left->var);
-            if ($this->getVarType($tmp) === self::TYPE_STR and $left->dim === null) {
+            if ($this->getVarType($tmp) === Type::STR and $left->dim === null) {
                 $this->fatalError($left, 'Cannot use [] for strings');
             }
             if ($this->isStdContainerExpr($left)) {
@@ -304,12 +306,12 @@ trait AssignOpTrait
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
         if ($propertyWriteTarget !== null && ($propertyDef = $this->getNativePropertyDef($left)) !== null) {
-            $effectiveRightType = $rightExprType === self::TYPE_VAR && $this->getNativeScalarPropertyTypeCheckHelper($propertyDef) !== null
+            $effectiveRightType = $rightExprType === Type::VAR && $this->getNativeScalarPropertyTypeCheckHelper($propertyDef) !== null
                 ? $propertyDef->type
                 : $rightExprType;
             return $var . ' = ' . $this->convertNativePropertyWriteExpr($propertyDef->type, $effectiveRightType, $rightExpr);
         }
-        if ($finalVarType === self::TYPE_VAR) {
+        if ($finalVarType === Type::VAR) {
             return $var . ' = ' . $rightExpr;
         } else {
             return $var . ' = ' . $this->convertExprType($rightExpr, $leftExprType, $rightExprType);
@@ -330,7 +332,7 @@ trait AssignOpTrait
             $rightExpr = $this->wrapPropertyWriteTypeCheck($target, $right, $rightExpr);
         }
         $tmp = $this->genTmpVarName();
-        $this->addLocalVar($tmp, self::TYPE_VAR);
+        $this->addLocalVar($tmp, Type::VAR);
         $call = $this->emitPropertyHookSetterCall($left, $setter, new Expr\Variable($tmp));
         return '((' . $tmp . ' = ' . $rightExpr . ', ' . $call . '), ' . $tmp . ')';
     }
@@ -346,8 +348,8 @@ trait AssignOpTrait
             return false;
         }
 
-        return !in_array($def->type, [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL, self::TYPE_STR, self::TYPE_ARRAY], true)
-            && $rightType === self::TYPE_VAR;
+        return !in_array($def->type, [Type::INT, Type::FLOAT, Type::BOOL, Type::STR, Type::ARRAY], true)
+            && $rightType === Type::VAR;
     }
 
     protected function parseStdContainerCopyAssign(string $leftVar, Expr $right): ?string
@@ -398,7 +400,7 @@ trait AssignOpTrait
             $right = $this->parseExprAsValue($node->expr);
             $read = $this->emitPropertyHookGetterCall($node->var, $getter);
             $tmp = $this->genTmpVarName();
-            $this->addLocalVar($tmp, self::TYPE_VAR);
+            $this->addLocalVar($tmp, Type::VAR);
             $binaryOp = $this->removeAssignOp($op);
             $value = match ($binaryOp) {
                 '.' => 'php::concat(' . $read . ', ' . $right . ')',
@@ -428,7 +430,7 @@ trait AssignOpTrait
             // BigInt/BigDecimal/BigFloat are immutable Box types stored inside
             // php::Var — Variant::operator+= calls ZendVM add_function which
             // cannot handle them.  We must generate `$v = Type::add($v, $x)`.
-            if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+            if ($type === Type::BIGINT || $type === Type::DECIMAL || $type === Type::BIGFLOAT) {
                 return $this->parseBigAssignOp($node, $var, $type, $expr, $rightType, $op);
             }
 
@@ -468,7 +470,7 @@ trait AssignOpTrait
                 $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat(" .
                     $this->convertVarType($tmpVar, $readVar) . ', ' .
                     $this->convertExprType($expr, $type, $rightType) . ');';
-            } elseif ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+            } elseif ($type === Type::BIGINT || $type === Type::DECIMAL || $type === Type::BIGFLOAT) {
                 $bigAssign = $this->parseBigAssignOpExpr($readVar, $type, $expr, $rightType, $binaryOp, $node->var, $node->expr);
                 $this->context->beforeStmtLines[] = "{$tmpVar} = {$bigAssign};";
             } else {
@@ -490,7 +492,7 @@ trait AssignOpTrait
             }
             $binaryOp = $this->removeAssignOp($op);
             $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $this->addLocalVar($tmpVar, Type::VAR);
             $readProperty = $this->emitDynamicPropertyFetchRead($node->var, $propertyWriteTarget);
             if ($this->isAssignOpConcat($op)) {
                 $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat({$readProperty}, {$expr});";
@@ -521,7 +523,7 @@ trait AssignOpTrait
         }
 
         $rightType = $this->detectTypeOfExpr($node->expr);
-        if ($this->isFixedObjectProp($def) && $rightType !== self::TYPE_VAR && !$this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
+        if ($this->isFixedObjectProp($def) && $rightType !== Type::VAR && !$this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
             $this->fatalError(
                 $node->var,
                 'Cannot assign ' . $this->getPropertyAssignmentTypeName($rightType)
@@ -535,15 +537,15 @@ trait AssignOpTrait
 
         $var = $this->parseWritableIdentifier($node->var);
         if (!$this->isNativePropertyTypedValue($node->var)) {
-            $helper = $def->type === self::TYPE_FLOAT ? 'typephp_static_float_ref' : 'typephp_static_int_ref';
+            $helper = $def->type === Type::FLOAT ? 'typephp_static_float_ref' : 'typephp_static_int_ref';
             $var = $helper . '(' . $var . '.unwrap_ptr())';
         }
 
         $rightExpr = $this->parseIdentifier($node->expr);
-        if ($rightType === self::TYPE_VAR) {
+        if ($rightType === Type::VAR) {
             $rightExpr = $this->wrapObjectPropertyAssignTypeCheck($node->var, $node->expr, $rightExpr);
         }
-        $effectiveRightType = $rightType === self::TYPE_VAR && $this->getNativeScalarPropertyTypeCheckHelper($def) !== null
+        $effectiveRightType = $rightType === Type::VAR && $this->getNativeScalarPropertyTypeCheckHelper($def) !== null
             ? $def->type
             : $rightType;
 
@@ -561,13 +563,13 @@ trait AssignOpTrait
 
     protected function canUseNativePropertyAssignOp(string $propertyType, string $rightType, string $op): bool
     {
-        if ($rightType !== self::TYPE_VAR && !($propertyType === $rightType || ($propertyType === self::TYPE_FLOAT && $rightType === self::TYPE_INT))) {
+        if ($rightType !== Type::VAR && !($propertyType === $rightType || ($propertyType === Type::FLOAT && $rightType === Type::INT))) {
             return false;
         }
 
         return match ($propertyType) {
-            self::TYPE_INT => in_array($op, ['+=', '-=', '*=', '%=', '<<=', '>>=', '&=', '|=', '^='], true),
-            self::TYPE_FLOAT => in_array($op, ['+=', '-=', '*=', '/='], true),
+            Type::INT => in_array($op, ['+=', '-=', '*=', '%=', '<<=', '>>=', '&=', '|=', '^='], true),
+            Type::FLOAT => in_array($op, ['+=', '-=', '*=', '/='], true),
             default => false,
         };
     }
@@ -582,9 +584,9 @@ trait AssignOpTrait
     protected function parseBigAssignOpExpr(string $leftExpr, string $leftType, string $rightExpr, string $rightType, string $binaryOp, NodeAbstract $errorNode, ?NodeAbstract $rightNode = null): string
     {
         [$class, $opMap] = match ($leftType) {
-            self::TYPE_BIGINT   => ['BigInt',   ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod', '&' => 'bitAnd', '|' => 'bitOr', '^' => 'bitXor', '<<' => 'bitShiftLeft', '>>' => 'bitShiftRight']],
-            self::TYPE_DECIMAL  => ['Decimal',  ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod']],
-            self::TYPE_BIGFLOAT => ['BigFloat', ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div']],
+            Type::BIGINT   => ['BigInt',   ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod', '&' => 'bitAnd', '|' => 'bitOr', '^' => 'bitXor', '<<' => 'bitShiftLeft', '>>' => 'bitShiftRight']],
+            Type::DECIMAL  => ['Decimal',  ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod']],
+            Type::BIGFLOAT => ['BigFloat', ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div']],
         };
 
         $method = $opMap[$binaryOp] ?? null;
@@ -595,9 +597,9 @@ trait AssignOpTrait
         // For bitwise shifts, the right operand is a shift amount (Int), not BigInt
         $isShift = ($binaryOp === '<<' || $binaryOp === '>>');
         $convertedRight = match ($leftType) {
-            self::TYPE_BIGINT   => $isShift ? $rightExpr : $this->convertBigIntExpr($rightExpr, $rightType),
-            self::TYPE_DECIMAL  => $this->convertDecimalExpr($rightExpr, $rightType, $rightNode),
-            self::TYPE_BIGFLOAT => $this->convertBigFloatExpr($rightExpr, $rightType),
+            Type::BIGINT   => $isShift ? $rightExpr : $this->convertBigIntExpr($rightExpr, $rightType),
+            Type::DECIMAL  => $this->convertDecimalExpr($rightExpr, $rightType, $rightNode),
+            Type::BIGFLOAT => $this->convertBigFloatExpr($rightExpr, $rightType),
         };
 
         return 'php::' . $class . '::' . $method . '(' . $leftExpr . ', ' . $convertedRight . ')';
@@ -681,16 +683,16 @@ trait AssignOpTrait
 
         if ($this->isVarExpr($expr->var)) {
             if (!$this->hasVar($left)) {
-                $this->addLocalVar($left, self::TYPE_REF);
+                $this->addLocalVar($left, Type::REF);
             } else {
                 $type = $this->getVarType($left);
-                if ($type !== self::TYPE_REF) {
+                if ($type !== Type::REF) {
                     $this->fatalError($expr, 'Cannot assign reference to variable of type ' . $type);
                 }
             }
         }
 
-        $tmpVar = $this->addTmpVar(self::TYPE_REF);
+        $tmpVar = $this->addTmpVar(Type::REF);
         $rightExpr = '';
 
         if ($this->isVarExpr($expr->expr)) {
@@ -778,7 +780,7 @@ trait AssignOpTrait
         $value    = $this->parseExprAsValue($right);
 
         $tmp = $this->genTmpVarName();
-        $this->addLocalVar($tmp, self::TYPE_VAR);
+        $this->addLocalVar($tmp, Type::VAR);
 
         if ($left->dim === null) {
             return $code . '((' . $tmp . ' = ' . $value . ', ' . $this->emitDynamicPropertyFetchAppendArray($left->var, $tmp, $propertyWriteTarget) . '), ' . $tmp . ')';
@@ -815,7 +817,7 @@ trait AssignOpTrait
 
     protected function getNormalAssignType(string $type): string
     {
-        return $type === self::TYPE_REF || $type === self::TYPE_VOID ? self::TYPE_VAR : $type;
+        return $type === Type::REF || $type === Type::VOID ? Type::VAR : $type;
     }
 
 }

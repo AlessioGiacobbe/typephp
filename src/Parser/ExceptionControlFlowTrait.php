@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\Variable;
@@ -26,13 +28,13 @@ trait ExceptionControlFlowTrait
             return 'php::throwException(' . $ex . ')';
         } elseif ($this->isVarExpr($expr->expr)) {
             $ex = $this->parseIdentifier($expr->expr);
-            if ($type == self::TYPE_OBJECT) {
+            if ($type == Type::OBJECT) {
                 return 'php::throwException(' . $ex . ')';
             }
         } else {
             $ex = $this->parseExpr($expr->expr);
         }
-        if ($type != self::TYPE_VAR) {
+        if ($type != Type::VAR) {
             $this->fatalError($expr, 'Can only throw objects');
         }
         return 'php::throwValue(' . $ex . ')';
@@ -55,7 +57,7 @@ trait ExceptionControlFlowTrait
                 if ($catch->var) {
                     $varName = $this->parseIdentifier($catch->var);
                     if (!$this->hasVar($varName) && $this->stmtListUsesVariable($finally->stmts, $varName)) {
-                        $this->addLocalVar($varName, self::TYPE_OBJECT);
+                        $this->addLocalVar($varName, Type::OBJECT);
                     }
                 }
             }
@@ -66,7 +68,7 @@ trait ExceptionControlFlowTrait
         $code .= $this->getIndent() . '}' . PHP_EOL;
 
         $exVar = $this->genTmpVarName();
-        $this->addLocalVar($exVar, self::TYPE_VAR);
+        $this->addLocalVar($exVar, Type::VAR);
 
         $code .= 'catch(zend_object *_ex) {' . PHP_EOL;
         $code .= $this->getIndent() . $exVar . ' = php::catchException();' . PHP_EOL;
@@ -99,7 +101,7 @@ trait ExceptionControlFlowTrait
         foreach ($stmts as $stmt) {
             if ($stmt instanceof Node\Stmt\Return_) {
                 if ($stmt->expr) {
-                    $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                    $tmpVar = $this->addTmpVar(Type::VAR);
                     $result[] = new Node\Stmt\Expression(new Expr\Assign(new Variable($tmpVar), $stmt->expr));
                     array_push($result, ...$this->cloneStmtList($finallyStmts));
                     $result[] = new Node\Stmt\Return_(new Variable($tmpVar));
@@ -191,7 +193,7 @@ trait ExceptionControlFlowTrait
         $types = $catch->types;
         $var = $catch->var ? $this->parseIdentifier($catch->var) : '';
         if ($var !== '' && !$this->hasVar($var)) {
-            $this->addLocalVar($var, self::TYPE_OBJECT);
+            $this->addLocalVar($var, Type::OBJECT);
         }
 
         $code = $this->parseBeforeStmtLines() . PHP_EOL;

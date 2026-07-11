@@ -2,9 +2,10 @@
 
 namespace TypePhp\Tests;
 
+use TypePhp\Type;
+
 use PHPUnit\Framework\TestCase;
 use TypePhp\CompilerTest;
-use TypePhp\CompilerBase;
 use TypePhp\Entity\ArgInfo;
 
 class TraitsTest extends TestCase
@@ -123,18 +124,18 @@ class TraitsTest extends TestCase
 
     public function testIsStdContainerTypeTrue(): void
     {
-        $this->assertTrue($this->invoke('isStdContainerType', CompilerBase::TYPE_STD_ARRAY));
-        $this->assertTrue($this->invoke('isStdContainerType', CompilerBase::TYPE_STD_VECTOR));
-        $this->assertTrue($this->invoke('isStdContainerType', CompilerBase::TYPE_STD_MAP));
-        $this->assertTrue($this->invoke('isStdContainerType', CompilerBase::TYPE_STD_ORDERED_MAP));
+        $this->assertTrue($this->invoke('isStdContainerType', Type::STD_ARRAY));
+        $this->assertTrue($this->invoke('isStdContainerType', Type::STD_VECTOR));
+        $this->assertTrue($this->invoke('isStdContainerType', Type::STD_MAP));
+        $this->assertTrue($this->invoke('isStdContainerType', Type::STD_ORDERED_MAP));
     }
 
     public function testIsStdContainerTypeFalse(): void
     {
-        $this->assertFalse($this->invoke('isStdContainerType', CompilerBase::TYPE_ARRAY));
-        $this->assertFalse($this->invoke('isStdContainerType', CompilerBase::TYPE_INT));
-        $this->assertFalse($this->invoke('isStdContainerType', CompilerBase::TYPE_VAR));
-        $this->assertFalse($this->invoke('isStdContainerType', CompilerBase::TYPE_OBJECT));
+        $this->assertFalse($this->invoke('isStdContainerType', Type::ARRAY));
+        $this->assertFalse($this->invoke('isStdContainerType', Type::INT));
+        $this->assertFalse($this->invoke('isStdContainerType', Type::VAR));
+        $this->assertFalse($this->invoke('isStdContainerType', Type::OBJECT));
     }
 
     // ========================================================================
@@ -304,8 +305,8 @@ class TraitsTest extends TestCase
 
     public function testGetStdValueTypeBytes(): void
     {
-        $this->assertGreaterThan(0, $this->invoke('getStdValueTypeBytes', CompilerBase::TYPE_INT));
-        $this->assertGreaterThan(0, $this->invoke('getStdValueTypeBytes', CompilerBase::TYPE_FLOAT));
-        $this->assertGreaterThan(0, $this->invoke('getStdValueTypeBytes', CompilerBase::TYPE_BOOL));
+        $this->assertGreaterThan(0, $this->invoke('getStdValueTypeBytes', Type::INT));
+        $this->assertGreaterThan(0, $this->invoke('getStdValueTypeBytes', Type::FLOAT));
+        $this->assertGreaterThan(0, $this->invoke('getStdValueTypeBytes', Type::BOOL));
     }
 }

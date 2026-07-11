@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 
 trait SwitchTrait
@@ -30,7 +32,7 @@ trait SwitchTrait
         $localVars = $this->context->localVars;
         $code      = $this->parseBeforeStmtLines() . PHP_EOL;
 
-        if ($type === self::TYPE_INT or $type === self::TYPE_BOOL) {
+        if ($type === Type::INT or $type === Type::BOOL) {
             $code .= 'do {' . PHP_EOL;
             $this->indentLevel++;
             $code .= $this->getIndent() . 'switch (' . $tmp_var . ') {' . PHP_EOL;
@@ -118,7 +120,7 @@ trait SwitchTrait
                     $code .= $this->getIndent() . 'if (!' . $switchMatched . ' && !' . $groupMatched . ') {' . PHP_EOL;
                     $this->appendCapturedStmtLines($code, $caseBeforeStmts);
                     if ($caseAfterStmts) {
-                        $caseTmpVar = $this->addTmpVar(self::TYPE_VAR);
+                        $caseTmpVar = $this->addTmpVar(Type::VAR);
                         $code .= $this->getIndent() . $caseTmpVar . ' = ' . $caseCondExpr . ';' . PHP_EOL;
                         $this->appendCapturedStmtLines($code, $caseAfterStmts);
                         $caseCondExpr = $caseTmpVar;

@@ -8,6 +8,8 @@
 
 namespace TypePhp\Generator;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
 use PhpParser\Node\Identifier;
@@ -175,7 +177,7 @@ trait AnonClassGenerator
                 if ($classDef->hasMethod($methodName)) {
                     $functionDef = $classDef->getMethod($methodName)->functionDef;
                     return $functionDef !== null
-                        && ($functionDef->returnTypeUndeclared || $functionDef->returnType === self::TYPE_VAR);
+                        && ($functionDef->returnTypeUndeclared || $functionDef->returnType === Type::VAR);
                 }
                 $className = $classDef->extends;
                 continue;

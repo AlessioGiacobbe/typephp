@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt\Foreach_;
@@ -24,14 +26,14 @@ trait ForeachTrait
                 $key = $item->key ? $this->parseArrayKey($item->key) : (string) $k;
                 if ($item->value instanceof Expr\List_) {
                     $nestedTmpVar = $this->genTmpVarName();
-                    $this->addLocalVar($nestedTmpVar, self::TYPE_VAR);
+                    $this->addLocalVar($nestedTmpVar, Type::VAR);
                     $code .= $this->getIndent() . ' ' . $nestedTmpVar . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
                     $code .= $this->parseForeachItemAsList($nestedTmpVar, $item->value->items);
                     continue;
                 }
                 $var = $this->parseWritableIdentifier($item->value);
                 if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
-                    $this->addLocalVar($var, self::TYPE_VAR);
+                    $this->addLocalVar($var, Type::VAR);
                 }
                 $code .= $this->getIndent() . ' ' . $var . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
             } else {
@@ -46,7 +48,7 @@ trait ForeachTrait
         return $this->parseStmts($node->stmts) . $this->genLoopEndFlagCheck();
     }
 
-    protected function parseForeachKeyAssignment(Foreach_ $node, string $keyExpr, string $defaultType = self::TYPE_VAR): string
+    protected function parseForeachKeyAssignment(Foreach_ $node, string $keyExpr, string $defaultType = Type::VAR): string
     {
         if (!$node->keyVar) {
             return '';
@@ -72,7 +74,7 @@ trait ForeachTrait
                 $this->fatalError($node, 'Foreach by reference cannot use list destructuring');
             }
             $listTmpVar = $this->genTmpVarName();
-            $this->addLocalVar($listTmpVar, self::TYPE_VAR);
+            $this->addLocalVar($listTmpVar, Type::VAR);
             return $this->getIndent() . ' ' . $listTmpVar . ' = ' . $valueExpr . ';' . PHP_EOL
                 . $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
         }
@@ -92,8 +94,8 @@ trait ForeachTrait
         $valueVar = $this->parseIdentifier($node->valueVar);
         if ($node->byRef) {
             if (!$this->hasVar($valueVar)) {
-                $this->addLocalVar($valueVar, self::TYPE_REF);
-            } elseif ($this->getVarType($valueVar) !== self::TYPE_REF) {
+                $this->addLocalVar($valueVar, Type::REF);
+            } elseif ($this->getVarType($valueVar) !== Type::REF) {
                 $this->fatalError($node, 'Cannot assign value to reference of type');
             }
             return $this->getIndent() . ' ' . $valueVar . ' = ' . $valueRefExpr . ';' . PHP_EOL;
@@ -130,7 +132,7 @@ trait ForeachTrait
             $name = $this->parseIdentifier($node->expr);
             if ($this->hasVar($name)) {
                 $type = $this->getVarType($name);
-                if ($type === self::TYPE_OBJECT) {
+                if ($type === Type::OBJECT) {
                     if ($node->byRef) {
                         $this->fatalError($node, 'Cannot use & with foreach');
                     }
@@ -148,9 +150,9 @@ trait ForeachTrait
         $iterableVar = $this->genTmpVarName();
         $arrayVar = $this->genTmpVarName();
         $objectVar = $this->genTmpVarName();
-        $this->addLocalVar($iterableVar, self::TYPE_VAR);
-        $this->addLocalVar($arrayVar, self::TYPE_ARRAY);
-        $this->addLocalVar($objectVar, self::TYPE_OBJECT);
+        $this->addLocalVar($iterableVar, Type::VAR);
+        $this->addLocalVar($arrayVar, Type::ARRAY);
+        $this->addLocalVar($objectVar, Type::OBJECT);
 
         $code .= $iterableVar . ' = ' . $expr . ';' . PHP_EOL;
         $code .= 'if (' . $iterableVar . '.isArray()) {' . PHP_EOL;

@@ -8,6 +8,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use TypePhp\Generator\Symbol;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\StaticCall;
@@ -26,31 +28,31 @@ trait StdContainerTrait
     protected function isStdContainerType(string $type): bool
     {
         return in_array($type, [
-            self::TYPE_STD_ARRAY,
-            self::TYPE_STD_VECTOR,
-            self::TYPE_STD_MAP,
-            self::TYPE_STD_ORDERED_MAP,
+            Type::STD_ARRAY,
+            Type::STD_VECTOR,
+            Type::STD_MAP,
+            Type::STD_ORDERED_MAP,
         ], true);
     }
 
     protected function isStdArray(string $var): bool
     {
-        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_ARRAY;
+        return $this->hasLocalVar($var) and $this->getVarType($var) === Type::STD_ARRAY;
     }
 
     protected function isStdVector(string $var): bool
     {
-        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_VECTOR;
+        return $this->hasLocalVar($var) and $this->getVarType($var) === Type::STD_VECTOR;
     }
 
     protected function isStdMap(string $var): bool
     {
-        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_MAP;
+        return $this->hasLocalVar($var) and $this->getVarType($var) === Type::STD_MAP;
     }
 
     protected function isStdOrderedMap(string $var): bool
     {
-        return $this->hasLocalVar($var) and $this->getVarType($var) === self::TYPE_STD_ORDERED_MAP;
+        return $this->hasLocalVar($var) and $this->getVarType($var) === Type::STD_ORDERED_MAP;
     }
 
     protected function getStdTypeKey(array $info): string
@@ -84,7 +86,7 @@ trait StdContainerTrait
     protected function getStdContainerKeyType(string $var): string
     {
         if ($this->isStdVector($var) or $this->isStdArray($var)) {
-            return self::TYPE_INT;
+            return Type::INT;
         }
         return $this->getStdContainerVarInfo($var)['keyType'];
     }
@@ -93,9 +95,9 @@ trait StdContainerTrait
     {
         $info = $this->getStdContainerVarInfo($var);
         if ($this->isStdArray($var)) {
-            return count($info['sizes']) > 1 ? self::TYPE_ARRAY : $info['type'];
+            return count($info['sizes']) > 1 ? Type::ARRAY : $info['type'];
         }
-        if ($info['type'] === self::TYPE_OBJECT and $info['class']) {
+        if ($info['type'] === Type::OBJECT and $info['class']) {
             $this->addObject($valueVar, $info['class']);
         } else {
             unset($this->context->objects[$valueVar]);
@@ -105,7 +107,7 @@ trait StdContainerTrait
 
     protected function getStdArrayDecl(string $type, array $sizes): string
     {
-        $decl = str_repeat(self::TYPE_STD_ARRAY . '<', count($sizes));
+        $decl = str_repeat(Type::STD_ARRAY . '<', count($sizes));
         $decl .= $this->getStdContainerElementType($type);
         for ($i = count($sizes) - 1; $i >= 0; $i--) {
             $decl .= ', ' . $sizes[$i] . '>';
@@ -116,8 +118,8 @@ trait StdContainerTrait
     protected function getStdValueTypeBytes(string $type): int
     {
         return match ($type) {
-            self::TYPE_BOOL => 1,
-            self::TYPE_INT, self::TYPE_FLOAT => 8,
+            Type::BOOL => 1,
+            Type::INT, Type::FLOAT => 8,
             default => 16,
         };
     }
@@ -451,7 +453,7 @@ trait StdContainerTrait
 
     protected function convertStdContainerKey(array $info, string $index): string
     {
-        if ($info['keyType'] === self::TYPE_STR) {
+        if ($info['keyType'] === Type::STR) {
             return $this->convertStringExpr($index);
         }
         return $this->convertIntExpr($index);
@@ -460,7 +462,7 @@ trait StdContainerTrait
     protected function getStdContainerElementType(string $type): string
     {
         return match ($type) {
-            self::TYPE_BIGINT, self::TYPE_BIGFLOAT, self::TYPE_DECIMAL, self::TYPE_STREAM, self::TYPE_BOX => self::TYPE_VAR,
+            Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL, Type::STREAM, Type::BOX => Type::VAR,
             default => $type,
         };
     }
@@ -474,12 +476,12 @@ trait StdContainerTrait
             $this->fatalError($expr, "An incorrect `{$owner}` definition");
         }
         return match (strtolower($expr->name->name)) {
-            'type_int' => self::TYPE_INT,
-            'type_float' => self::TYPE_FLOAT,
-            'type_bool' => self::TYPE_BOOL,
-            'type_bigint' => self::TYPE_BIGINT,
-            'type_bigfloat' => self::TYPE_BIGFLOAT,
-            'type_decimal' => self::TYPE_DECIMAL,
+            'type_int' => Type::INT,
+            'type_float' => Type::FLOAT,
+            'type_bool' => Type::BOOL,
+            'type_bigint' => Type::BIGINT,
+            'type_bigfloat' => Type::BIGFLOAT,
+            'type_decimal' => Type::DECIMAL,
             default => $this->fatalError($expr, "An incorrect `{$owner}` definition"),
         };
     }
@@ -499,12 +501,12 @@ trait StdContainerTrait
         if ($className === 'complex_types') {
             return [
                 'type' => match (strtolower($expr->name->name)) {
-                    'type_str', 'type_string' => self::TYPE_STR,
-                    'type_array' => self::TYPE_ARRAY,
-                    'type_object' => self::TYPE_OBJECT,
-                    'type_any', 'type_var', 'type_variant' => self::TYPE_VAR,
-                    'type_stream' => self::TYPE_STREAM,
-                    'type_box' => self::TYPE_BOX,
+                    'type_str', 'type_string' => Type::STR,
+                    'type_array' => Type::ARRAY,
+                    'type_object' => Type::OBJECT,
+                    'type_any', 'type_var', 'type_variant' => Type::VAR,
+                    'type_stream' => Type::STREAM,
+                    'type_box' => Type::BOX,
                     default => $this->fatalError($expr, "An incorrect `{$owner}` definition"),
                 },
                 'class' => null,
@@ -514,7 +516,7 @@ trait StdContainerTrait
             $this->fatalError($expr, "{$owner} class value only supports ClassName::class");
         }
         $class = $this->parseStdClassValueType($expr, $owner);
-        return ['type' => self::TYPE_OBJECT, 'class' => $class];
+        return ['type' => Type::OBJECT, 'class' => $class];
     }
 
     protected function parseStdValueType(NodeAbstract $expr, string $owner): string
@@ -550,7 +552,7 @@ trait StdContainerTrait
         $class = $info['class'] ?? null;
         if ($class === null) {
             $targetType = $info['type'];
-            if ($targetType === self::TYPE_BIGINT || $targetType === self::TYPE_BIGFLOAT || $targetType === self::TYPE_DECIMAL || $targetType === self::TYPE_STREAM || $targetType === self::TYPE_BOX) {
+            if ($targetType === Type::BIGINT || $targetType === Type::BIGFLOAT || $targetType === Type::DECIMAL || $targetType === Type::STREAM || $targetType === Type::BOX) {
                 return $this->convertStdVarBackedExpr($targetType, $valueExpr, $expr);
             }
             return $this->convertExprFromType($targetType, $valueExpr);
@@ -571,16 +573,16 @@ trait StdContainerTrait
         if ($sourceType === $targetType) {
             return $valueExpr;
         }
-        if ($targetType === self::TYPE_STREAM || $targetType === self::TYPE_BOX) {
+        if ($targetType === Type::STREAM || $targetType === Type::BOX) {
             return $valueExpr;
         }
-        if ($targetType === self::TYPE_BIGINT) {
+        if ($targetType === Type::BIGINT) {
             return $this->convertBigIntExpr($valueExpr, $sourceType);
         }
-        if ($targetType === self::TYPE_BIGFLOAT) {
+        if ($targetType === Type::BIGFLOAT) {
             return $this->convertBigFloatExpr($valueExpr, $sourceType);
         }
-        if ($targetType === self::TYPE_DECIMAL) {
+        if ($targetType === Type::DECIMAL) {
             return $this->convertDecimalExpr($valueExpr, $sourceType, $expr);
         }
         return $valueExpr;
@@ -609,20 +611,20 @@ trait StdContainerTrait
         $fakeCall = new StaticCall($name, $method, $expr->args);
 
         if ($containerType === 'array') {
-            $this->addLocalVar($var, self::TYPE_STD_ARRAY);
+            $this->addLocalVar($var, Type::STD_ARRAY);
             $this->parseStdArray($var, $fakeCall);
             $this->context->stdArrays[$var]['boxExpr'] = $sourceVar;
             return '// StdContainer<' . $this->context->stdArrays[$var]['decl'] . '>(' . $sourceVar . ')';
         }
 
         if ($containerType === 'vector') {
-            $this->addLocalVar($var, self::TYPE_STD_VECTOR);
+            $this->addLocalVar($var, Type::STD_VECTOR);
             $this->parseStdVector($var, $fakeCall);
         } elseif ($containerType === 'map') {
-            $this->addLocalVar($var, self::TYPE_STD_MAP);
+            $this->addLocalVar($var, Type::STD_MAP);
             $this->parseStdMap($var, $fakeCall);
         } else {
-            $this->addLocalVar($var, self::TYPE_STD_ORDERED_MAP);
+            $this->addLocalVar($var, Type::STD_ORDERED_MAP);
             $this->parseStdOrderedMap($var, $fakeCall);
         }
         $this->context->stdContainers[$var]['boxExpr'] = $sourceVar;
@@ -637,10 +639,10 @@ trait StdContainerTrait
         $className = strtolower($expr->class->toString());
         $constName = strtolower($expr->name->name);
         if ($className === 'native_types' && $constName === 'type_int') {
-            return self::TYPE_INT;
+            return Type::INT;
         }
         if ($className === 'complex_types' && in_array($constName, ['type_string', 'type_str'], true)) {
-            return self::TYPE_STR;
+            return Type::STR;
         }
         $this->fatalError($expr, "{$owner} key only supports native_types::type_int, complex_types::type_string or complex_types::type_str");
     }
@@ -710,7 +712,7 @@ trait StdContainerTrait
             }
             $size = $expr->args[1]->value->value;
         }
-        $decl = self::TYPE_STD_VECTOR . '<' . $this->getStdContainerElementType($type) . '>';
+        $decl = Type::STD_VECTOR . '<' . $this->getStdContainerElementType($type) . '>';
         $this->context->stdContainers[$var] = $this->addStdTypeId([
             'kind' => 'vector',
             'decl' => $decl,
@@ -723,12 +725,12 @@ trait StdContainerTrait
 
     protected function parseStdMap(string $var, Expr\StaticCall $expr): string
     {
-        return $this->parseStdMapBase($var, $expr, 'std::map', self::TYPE_STD_MAP, 'map');
+        return $this->parseStdMapBase($var, $expr, 'std::map', Type::STD_MAP, 'map');
     }
 
     protected function parseStdOrderedMap(string $var, Expr\StaticCall $expr): string
     {
-        return $this->parseStdMapBase($var, $expr, 'std::ordered_map', self::TYPE_STD_ORDERED_MAP, 'ordered_map');
+        return $this->parseStdMapBase($var, $expr, 'std::ordered_map', Type::STD_ORDERED_MAP, 'ordered_map');
     }
 
     private function parseStdMapBase(string $var, Expr\StaticCall $expr, string $funcName, string $containerType, string $kind): string

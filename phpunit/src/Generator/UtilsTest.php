@@ -2,9 +2,10 @@
 
 namespace TypePhp\Tests\Generator;
 
+use TypePhp\Type;
+
 use PHPUnit\Framework\TestCase;
 use TypePhp\CompilerTest;
-use TypePhp\CompilerBase;
 
 class UtilsTest extends TestCase
 {
@@ -97,14 +98,14 @@ class UtilsTest extends TestCase
     public function testGenArray(): void
     {
         $result = $this->invokeMethod('genArray', ['1', '2', '3']);
-        $this->assertStringStartsWith(CompilerBase::TYPE_ARRAY . '{', $result);
+        $this->assertStringStartsWith(Type::ARRAY . '{', $result);
         $this->assertStringContainsString('1, 2, 3', $result);
     }
 
     public function testGenArrayEmpty(): void
     {
         $result = $this->invokeMethod('genArray', []);
-        $this->assertStringStartsWith(CompilerBase::TYPE_ARRAY . '{', $result);
+        $this->assertStringStartsWith(Type::ARRAY . '{', $result);
     }
 
     // ========================================================================

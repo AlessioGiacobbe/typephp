@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\CallLike;
@@ -24,7 +26,7 @@ trait FunctionCallTrait
 
         [$leftExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr->left);
         $this->appendCapturedStmtLinesToContext($beforeStmts);
-        $value = $this->addTmpVar(self::TYPE_VAR);
+        $value = $this->addTmpVar(Type::VAR);
         $this->context->beforeStmtLines[] = $value . ' = ' . $leftExpr . ';';
         $this->appendCapturedStmtLinesToContext($afterStmts);
 
@@ -116,7 +118,7 @@ trait FunctionCallTrait
             $fn = $this->getFuncPtr($name);
             $this->context->beforeStmtLines[] = $this->formatCppLineComment('Func Call: ', $name . '()');
         } else {
-            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $tmpVar = $this->addTmpVar(Type::VAR);
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->name) . ';';
             $placeHolder = $fn = $tmpVar;
             $name = '';

@@ -8,6 +8,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node\Expr;
 
 trait UnaryExpressionTrait
@@ -16,7 +18,7 @@ trait UnaryExpressionTrait
     {
         $type = $this->detectTypeOfExpr($expr->expr);
         $this->assertExprCanBeUsedAsValue($expr->expr, 'bitwise operand');
-        if ($type === self::TYPE_BIGINT) {
+        if ($type === Type::BIGINT) {
             return 'php::BigInt::bitNot(' . $this->parseExpr($expr->expr) . ')';
         }
         $var = $this->parseIdentifier($expr->expr);
@@ -60,13 +62,13 @@ trait UnaryExpressionTrait
     {
         $type = $this->detectTypeOfExpr($expr->expr);
         $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
-        if ($type === self::TYPE_BIGFLOAT) {
+        if ($type === Type::BIGFLOAT) {
             return 'php::BigFloat::neg(' . $this->parseExprAsValue($expr->expr) . ')';
         }
-        if ($type === self::TYPE_BIGINT) {
+        if ($type === Type::BIGINT) {
             return 'php::BigInt::neg(' . $this->parseExprAsValue($expr->expr) . ')';
         }
-        if ($type === self::TYPE_DECIMAL) {
+        if ($type === Type::DECIMAL) {
             return 'php::Decimal::neg(' . $this->parseExprAsValue($expr->expr) . ')';
         }
         $code = $this->parseExprAsValue($expr->expr);

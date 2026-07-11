@@ -2,6 +2,8 @@
 
 namespace TypePhp\Tests;
 
+use TypePhp\Type;
+
 use PHPUnit\Framework\TestCase;
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Analysis\SsaFlags;
@@ -9,7 +11,6 @@ use TypePhp\Analysis\SsaVar;
 use TypePhp\Analysis\SsaBlock;
 use TypePhp\Analysis\VarState;
 use TypePhp\Analysis\PiConstraint;
-use TypePhp\CompilerBase;
 use TypePhp\CompilerTest;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\MethodDef;
@@ -1075,7 +1076,7 @@ class SsaAnalysisTest extends TestCase
             }
         ');
 
-        $this->assertSame(CompilerBase::TYPE_INT, $locals['n'] ?? null);
+        $this->assertSame(Type::INT, $locals['n'] ?? null);
     }
 
     public function testLoopVarOptimizerNarrowsForCounterAndConstantBoundVar(): void
@@ -1087,8 +1088,8 @@ class SsaAnalysisTest extends TestCase
             }
         ');
 
-        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
-        $this->assertSame(CompilerBase::TYPE_INT, $locals['n'] ?? null);
+        $this->assertSame(Type::INT, $locals['i'] ?? null);
+        $this->assertSame(Type::INT, $locals['n'] ?? null);
     }
 
     public function testLoopVarOptimizerNarrowsForCounterWithStrlenBound(): void
@@ -1099,7 +1100,7 @@ class SsaAnalysisTest extends TestCase
             }
         ');
 
-        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
+        $this->assertSame(Type::INT, $locals['i'] ?? null);
     }
 
     public function testLoopVarOptimizerNarrowsForCounterWithGenericIntFunctionBound(): void
@@ -1110,7 +1111,7 @@ class SsaAnalysisTest extends TestCase
             }
         ');
 
-        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
+        $this->assertSame(Type::INT, $locals['i'] ?? null);
     }
 
     public function testLoopVarOptimizerRejectsInclusiveGenericIntFunctionBound(): void
@@ -1132,7 +1133,7 @@ class SsaAnalysisTest extends TestCase
             }
         ');
 
-        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
+        $this->assertSame(Type::INT, $locals['i'] ?? null);
     }
 
     public function testLoopVarOptimizerNarrowsDescendingCounterFromIntMethod(): void
@@ -1143,7 +1144,7 @@ class SsaAnalysisTest extends TestCase
             }
         ');
 
-        $this->assertSame(CompilerBase::TYPE_INT, $locals['i'] ?? null);
+        $this->assertSame(Type::INT, $locals['i'] ?? null);
     }
 
     public function testLoopVarOptimizerRejectsBodyCounterMutation(): void
@@ -1210,7 +1211,7 @@ class SsaAnalysisTest extends TestCase
         $ssaVar->definition = new Stmt\Expression($assign);
 
         $result = $this->invoke('detectSsaDefType', $ssaVar);
-        $this->assertEquals(CompilerBase::TYPE_INT, $result);
+        $this->assertEquals(Type::INT, $result);
     }
 
     public function testDetectSsaDefTypeFloatLiteral(): void
@@ -1220,7 +1221,7 @@ class SsaAnalysisTest extends TestCase
         $ssaVar->definition = new Stmt\Expression($assign);
 
         $result = $this->invoke('detectSsaDefType', $ssaVar);
-        $this->assertEquals(CompilerBase::TYPE_FLOAT, $result);
+        $this->assertEquals(Type::FLOAT, $result);
     }
 
     public function testDetectSsaDefTypeStringLiteral(): void
@@ -1230,7 +1231,7 @@ class SsaAnalysisTest extends TestCase
         $ssaVar->definition = new Stmt\Expression($assign);
 
         $result = $this->invoke('detectSsaDefType', $ssaVar);
-        $this->assertEquals(CompilerBase::TYPE_STR, $result);
+        $this->assertEquals(Type::STR, $result);
     }
 
     public function testDetectSsaDefTypeBoolLiteral(): void
@@ -1240,15 +1241,15 @@ class SsaAnalysisTest extends TestCase
         $ssaVar->definition = new Stmt\Expression($assign);
 
         $result = $this->invoke('detectSsaDefType', $ssaVar);
-        $this->assertEquals(CompilerBase::TYPE_BOOL, $result);
+        $this->assertEquals(Type::BOOL, $result);
     }
 
     public function testDetectTypeOfExplicitStdNativeCalls(): void
     {
         $cases = [
-            'int' => CompilerBase::TYPE_INT,
-            'float' => CompilerBase::TYPE_FLOAT,
-            'bool' => CompilerBase::TYPE_BOOL,
+            'int' => Type::INT,
+            'float' => Type::FLOAT,
+            'bool' => Type::BOOL,
         ];
 
         foreach ($cases as $method => $expectedType) {
@@ -1298,7 +1299,7 @@ class SsaAnalysisTest extends TestCase
         $ssaVar->definition = new Stmt\Expression($assignOp);
 
         $result = $this->invoke('detectSsaDefType', $ssaVar);
-        $this->assertEquals(CompilerBase::TYPE_FLOAT, $result);
+        $this->assertEquals(Type::FLOAT, $result);
     }
 
     public function testDetectSsaDefTypeAssignOpPlusIsUnknownForIntRhs(): void
@@ -1330,7 +1331,7 @@ class SsaAnalysisTest extends TestCase
         $ssaVar->definition = new Stmt\Expression($assign);
 
         $result = $this->invoke('detectSsaDefType', $ssaVar);
-        $this->assertEquals(CompilerBase::TYPE_INT, $result);
+        $this->assertEquals(Type::INT, $result);
     }
 
     // ========================================================================

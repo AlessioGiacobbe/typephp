@@ -8,6 +8,8 @@
 
 namespace TypePhp\Generator;
 
+use TypePhp\Type;
+
 use TypePhp\Entity\ArgInfo;
 use PhpParser\Node;
 use PhpParser\Node\IntersectionType;
@@ -284,7 +286,7 @@ trait TypeCheckGenerator
 
         $code = $this->getIndent() . 'for (auto ' . $iterVar . ' = ' . $argInfo->name . '.begin(); ' . $iterVar . ' != ' . $argInfo->name . '.end(); ++' . $iterVar . ') {' . PHP_EOL;
         $this->indentLevel++;
-        $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = ' . $iterVar . '.value();' . PHP_EOL;
+        $code .= $this->getIndent() . Type::VAR . ' ' . $valueVar . ' = ' . $iterVar . '.value();' . PHP_EOL;
         if ($this->compositeTypeNeedsIntToFloatCoercion($argInfo->typeCheck)) {
             $code .= $this->getIndent() . 'if (' . $valueVar . '.isInt()) {' . PHP_EOL;
             $this->indentLevel++;
@@ -293,7 +295,7 @@ trait TypeCheckGenerator
             $this->indentLevel--;
             $code .= $this->getIndent() . '}' . PHP_EOL;
         }
-        $code .= $this->getIndent() . self::TYPE_INT . ' ' . $argNoVar . ' = ' . ($argIndex + 1) . ' + ' . $iterVar . '.index();' . PHP_EOL;
+        $code .= $this->getIndent() . Type::INT . ' ' . $argNoVar . ' = ' . ($argIndex + 1) . ' + ' . $iterVar . '.index();' . PHP_EOL;
         $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;
@@ -411,7 +413,7 @@ trait TypeCheckGenerator
 
         $code = $this->getIndent() . 'for (auto ' . $iterVar . ' = ' . $argInfo->name . '.begin(); ' . $iterVar . ' != ' . $argInfo->name . '.end(); ++' . $iterVar . ') {' . PHP_EOL;
         $this->indentLevel++;
-        $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $valueVar . ' = ' . $iterVar . '.value();' . PHP_EOL;
+        $code .= $this->getIndent() . Type::VAR . ' ' . $valueVar . ' = ' . $iterVar . '.value();' . PHP_EOL;
         if ($this->compositeTypeNeedsIntToFloatCoercion($argInfo->typeCheck)) {
             $code .= $this->getIndent() . 'if (' . $valueVar . '.isInt()) {' . PHP_EOL;
             $this->indentLevel++;
@@ -420,7 +422,7 @@ trait TypeCheckGenerator
             $this->indentLevel--;
             $code .= $this->getIndent() . '}' . PHP_EOL;
         }
-        $code .= $this->getIndent() . self::TYPE_INT . ' ' . $argNoVar . ' = ' . ($argIndex + 1) . ' + ' . $iterVar . '.index();' . PHP_EOL;
+        $code .= $this->getIndent() . Type::INT . ' ' . $argNoVar . ' = ' . ($argIndex + 1) . ' + ' . $iterVar . '.index();' . PHP_EOL;
         $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . 'return php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString());' . PHP_EOL;

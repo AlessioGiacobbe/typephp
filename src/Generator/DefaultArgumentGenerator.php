@@ -7,6 +7,8 @@
 
 namespace TypePhp\Generator;
 
+use TypePhp\Type;
+
 use TypePhp\Entity\ArgInfo;
 use TypePhp\Entity\ArrayInitPlan;
 use TypePhp\Entity\FunctionDef;
@@ -16,8 +18,8 @@ trait DefaultArgumentGenerator
     protected function getDefaultArgumentType(ArgInfo $argInfo): string
     {
         $type = $argInfo->type;
-        if ($type === self::TYPE_STREAM || $type === self::TYPE_BOX) {
-            return self::TYPE_VAR;
+        if ($type === Type::STREAM || $type === Type::BOX) {
+            return Type::VAR;
         }
         return $type;
     }

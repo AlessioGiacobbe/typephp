@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -166,9 +168,9 @@ trait MethodCallTrait
 
     protected function parseNativeMethodCall(string $object, string $nativeFunc, array $args): string
     {
-        if ($this->getVarType($object) != self::TYPE_OBJECT) {
+        if ($this->getVarType($object) != Type::OBJECT) {
             $tmpVar = $this->genTmpVarName();
-            $this->context->beforeStmtLines[] = self::TYPE_OBJECT . ' ' . $tmpVar . ' = ' . $object . ';';
+            $this->context->beforeStmtLines[] = Type::OBJECT . ' ' . $tmpVar . ' = ' . $object . ';';
             $object = $tmpVar;
         }
         if (count($args) === 0) {
@@ -181,35 +183,35 @@ trait MethodCallTrait
     {
         $func = strtolower($this->parseIdentifier($expr->name));
         $type = match ($func) {
-            'int' => self::TYPE_INT,
-            'float' => self::TYPE_FLOAT,
-            'bool' => self::TYPE_BOOL,
-            'bigint' => self::TYPE_BIGINT,
-            'decimal' => self::TYPE_DECIMAL,
-            'bigfloat' => self::TYPE_BIGFLOAT,
+            'int' => Type::INT,
+            'float' => Type::FLOAT,
+            'bool' => Type::BOOL,
+            'bigint' => Type::BIGINT,
+            'decimal' => Type::DECIMAL,
+            'bigfloat' => Type::BIGFLOAT,
             default => '',
         };
         if ($type) {
             $expr->setAttribute('nativeType', $type);
             $valueExpr = $this->parseExpr($expr->args[0]->value);
-            if (in_array($type, [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL])) {
+            if (in_array($type, [Type::INT, Type::FLOAT, Type::BOOL])) {
                 return $this->convertExprFromType($type, $valueExpr);
             }
             $argType = $this->detectTypeOfExpr($expr->args[0]->value);
             if ($argType === $type) {
                 return $valueExpr;
             }
-            if ($type === self::TYPE_BIGINT) {
-                if ($argType === self::TYPE_FLOAT) {
+            if ($type === Type::BIGINT) {
+                if ($argType === Type::FLOAT) {
                     $this->fatalError($expr, 'Cannot construct BigInt from float, use string or int instead');
                 }
-                                if ($argType === self::TYPE_INT) {
+                                if ($argType === Type::INT) {
                     return 'php::toBigInt(' . $valueExpr . ')';
                 }
                 return 'php::BigInt::newInstance(' . $valueExpr . ')';
             }
-            if ($type === self::TYPE_DECIMAL) {
-                if ($argType === self::TYPE_FLOAT) {
+            if ($type === Type::DECIMAL) {
+                if ($argType === Type::FLOAT) {
                     $argNode = $expr->args[0]->value;
                     if ($argNode instanceof Node\Scalar\Float_) {
                         $rawValue = $argNode->getAttribute('rawValue');
@@ -218,16 +220,16 @@ trait MethodCallTrait
                     }
                     $this->fatalError($expr, 'Cannot construct Decimal from float variable, use string or int instead');
                 }
-                                if ($argType === self::TYPE_INT) {
+                                if ($argType === Type::INT) {
                     return 'php::toDecimal(' . $valueExpr . ')';
                 }
                 return 'php::Decimal::newInstance(' . $valueExpr . ')';
             }
-            if ($type === self::TYPE_BIGFLOAT) {
-                                if ($argType === self::TYPE_INT) {
+            if ($type === Type::BIGFLOAT) {
+                                if ($argType === Type::INT) {
                     return 'php::toBigFloat(' . $valueExpr . ')';
                 }
-                if ($argType === self::TYPE_FLOAT) {
+                if ($argType === Type::FLOAT) {
                     return 'php::toBigFloat(' . $valueExpr . ')';
                 }
                 return 'php::BigFloat::newInstance(' . $valueExpr . ')';
@@ -310,8 +312,8 @@ trait MethodCallTrait
         if ($this->isNamedMethod($expr->name)) {
             $methodName = $expr->name->toString();
             $receiverType = $this->isVarExpr($expr->var) ? $this->getVarType($object) : $this->detectTypeOfExpr($expr->var);
-            if ($receiverType === self::TYPE_VOID) {
-                $receiverType = self::TYPE_VAR;
+            if ($receiverType === Type::VOID) {
+                $receiverType = Type::VAR;
             }
             // to* builtins
             if (isset(self::KEYWORD_METHOD_MAP[$methodName])) {
@@ -337,12 +339,12 @@ trait MethodCallTrait
         if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
             $type = $this->getVarType($object);
             // 引用参数允许方法调用：有class信息走原生调用，无class信息走动态调用
-            if (!$this->checkArgType($type, self::TYPE_OBJECT) and $type !== self::TYPE_REF) {
+            if (!$this->checkArgType($type, Type::OBJECT) and $type !== Type::REF) {
                 $methodName = $expr->name->toString();
                 // 非对象类型可使用内置方法
                 $fn = $this->findUniversalMethodAnyType($type, $methodName);
                 if ($fn) {
-                    if ($type === self::TYPE_STREAM) {
+                    if ($type === Type::STREAM) {
                         return $this->genStreamNullGuard($expr, $object, $methodName, $fn);
                     }
                     return $this->parseUniversalMethodCall($expr, $object, $methodName, $fn);
@@ -384,10 +386,10 @@ trait MethodCallTrait
         // 表达式返回值也可使用内置方法：fn()->method(), $obj->fn()->method(), Foo::fn()->method(), $obj->prop->method()
         if (!$this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
             $type = $this->detectTypeOfExpr($expr->var);
-            if ($type === self::TYPE_VOID) {
-                $type = self::TYPE_VAR;
+            if ($type === Type::VOID) {
+                $type = Type::VAR;
             }
-            if ($type !== self::TYPE_VAR && !$this->checkArgType($type, self::TYPE_OBJECT)) {
+            if ($type !== Type::VAR && !$this->checkArgType($type, Type::OBJECT)) {
                 $methodName = $expr->name->toString();
                 $fn = $this->findUniversalMethodAnyType($type, $methodName);
                 if ($fn) {
@@ -397,7 +399,7 @@ trait MethodCallTrait
                     if ($fn['handler'] === 'direct_method') {
                         $receiver = $this->wrapUniversalReceiver($type, $object);
                     }
-                    if ($type === self::TYPE_STREAM) {
+                    if ($type === Type::STREAM) {
                         return $this->genStreamNullGuard($expr, $receiver, $methodName, $fn);
                     }
                     return $this->parseUniversalMethodCall($expr, $receiver, $methodName, $fn, false);
@@ -458,7 +460,7 @@ trait MethodCallTrait
                 $class = $this->getObjectType($var);
                 goto _do_call;
             }
-            if ($this->getVarType($var) == self::TYPE_OBJECT) {
+            if ($this->getVarType($var) == Type::OBJECT) {
                 $fn = 'php::concat({' . $var . '.getClassName(), "::", ' . $this->identifierToStr($expr->name) . '})';
             } else {
                 $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';

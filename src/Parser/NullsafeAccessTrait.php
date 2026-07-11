@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 
@@ -59,11 +61,11 @@ trait NullsafeAccessTrait
                         $this->errorUndefinedVariable($expr);
                     }
                     $type = $this->getVarType($object);
-                    if ($type === self::TYPE_OBJECT) {
+                    if ($type === Type::OBJECT) {
                         break;
                     }
                 }
-                $object = $this->addTmpVar(self::TYPE_OBJECT);
+                $object = $this->addTmpVar(Type::OBJECT);
                 $this->context->beforeStmtLines[] = $this->getIndent() . $object . ' = ' . $this->parseIdentifier($expr) . ';';
                 break;
             }
@@ -74,10 +76,10 @@ trait NullsafeAccessTrait
         $last = array_key_last($list);
         $tmpFn = $this->genTmpVarName();
 
-        $code = $comment . PHP_EOL . 'auto ' . $tmpFn . ' = [&]() -> ' . self::TYPE_VAR . '{' . PHP_EOL;
+        $code = $comment . PHP_EOL . 'auto ' . $tmpFn . ' = [&]() -> ' . Type::VAR . '{' . PHP_EOL;
 
         foreach ($list as $key => $item) {
-            $tmpVar = $this->addTmpVar($key !== $last ? self::TYPE_OBJECT : self::TYPE_VAR);
+            $tmpVar = $this->addTmpVar($key !== $last ? Type::OBJECT : Type::VAR);
             if ($item[3]) {
                 $code .= "if ({$object}.isNull()) { return " . self::VALUE_NULL . '; }';
             }
@@ -151,7 +153,7 @@ trait NullsafeAccessTrait
             $this->detectClassOfExpr($baseExpr),
             $properties,
             $scope,
-            self::TYPE_OBJECT,
+            Type::OBJECT,
         );
         foreach ($results as $index => $result) {
             $this->applyNativePropertyAccessResult($properties[$index]['node'], $result);

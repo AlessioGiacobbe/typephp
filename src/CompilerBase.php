@@ -143,19 +143,6 @@ class CompilerBase implements PropertyAccessContext
     use LoopVarOptimizer;
     use SsaPropOptimizer;
 
-    public const string TYPE_VAR = 'php::Var';
-    public const string TYPE_BOOL = 'php::Bool';
-    public const string TYPE_INT = 'php::Int';
-    public const string TYPE_FLOAT = 'php::Float';
-    public const string TYPE_OBJECT = 'php::Object';
-    public const string TYPE_ARRAY = 'php::Array';
-    public const string TYPE_RESOURCE = 'php::Resource';
-    public const string TYPE_STREAM = 'php::Stream';
-    public const string TYPE_BIGINT = 'php::BigInt';
-    public const string TYPE_DECIMAL = 'php::Decimal';
-    public const string TYPE_BIGFLOAT = 'php::BigFloat';
-    public const string TYPE_BOX = 'php::Box';
-
     protected const string NATIVE_PROPERTY_VALUE_VAR = 'var';
     protected const string NATIVE_PROPERTY_VALUE_DYNAMIC = 'dynamic';
     protected const int COMPOSITE_TYPE_MISMATCH = -1;
@@ -169,18 +156,18 @@ class CompilerBase implements PropertyAccessContext
      * Use findKeywordMethod() for unified lookup including keyword extension methods.
      */
     public const array KEYWORD_METHOD_MAP = [
-        'toInt'      => self::TYPE_INT,
-        'toFloat'    => self::TYPE_FLOAT,
-        'toString'   => self::TYPE_STR,
-        'toBool'     => self::TYPE_BOOL,
-        'toArray'    => self::TYPE_ARRAY,
-        'toStream'   => self::TYPE_STREAM,
-        'toBigInt'   => self::TYPE_BIGINT,
-        'toBigFloat' => self::TYPE_BIGFLOAT,
-        'toDecimal'  => self::TYPE_DECIMAL,
-        'toObject'   => self::TYPE_OBJECT,
-        'toAny'      => self::TYPE_VAR,
-        'toRef'      => self::TYPE_REF,
+        'toInt'      => Type::INT,
+        'toFloat'    => Type::FLOAT,
+        'toString'   => Type::STR,
+        'toBool'     => Type::BOOL,
+        'toArray'    => Type::ARRAY,
+        'toStream'   => Type::STREAM,
+        'toBigInt'   => Type::BIGINT,
+        'toBigFloat' => Type::BIGFLOAT,
+        'toDecimal'  => Type::DECIMAL,
+        'toObject'   => Type::OBJECT,
+        'toAny'      => Type::VAR,
+        'toRef'      => Type::REF,
     ];
 
     private const array STREAM_FUNCTIONS = [
@@ -191,15 +178,6 @@ class CompilerBase implements PropertyAccessContext
         'stream_socket_accept',
         'popen',
     ];
-    public const string TYPE_STD_ARRAY = 'php::StdArray';
-    public const string TYPE_STD_VECTOR = 'php::StdVector';
-    public const string TYPE_STD_MAP = 'php::StdMap';
-    public const string TYPE_STD_ORDERED_MAP = 'php::StdOrderedMap';
-    public const string TYPE_ARGS = 'php::Args';
-    public const string TYPE_STR = 'php::Str';
-    public const string TYPE_REF = 'php::Ref';
-    public const string TYPE_VOID = 'void';
-
     public const int DECL_TYPE_OF_RETURN = 1;
     public const int DECL_TYPE_OF_PROPERTY = 2;
     public const int DECL_TYPE_OF_CONST = 3;
@@ -267,30 +245,30 @@ class CompilerBase implements PropertyAccessContext
     protected int $propIndex = 0;
     protected array $propMap = [];
     protected array $zendTypeMap = [
-        'int' => self::TYPE_INT,
-        'float' => self::TYPE_FLOAT,
-        'double' => self::TYPE_FLOAT,
-        'bool' => self::TYPE_BOOL,
-        'false' => self::TYPE_BOOL,
-        'true' => self::TYPE_BOOL,
-        'void' => self::TYPE_VOID,
-        'never' => self::TYPE_VOID,
-        'string' => self::TYPE_STR,
-        'array' => self::TYPE_ARRAY,
-        'object' => self::TYPE_OBJECT,
-        'mixed' => self::TYPE_VAR,
-        'null' => self::TYPE_VAR,
-        'any' => self::TYPE_VAR,
+        'int' => Type::INT,
+        'float' => Type::FLOAT,
+        'double' => Type::FLOAT,
+        'bool' => Type::BOOL,
+        'false' => Type::BOOL,
+        'true' => Type::BOOL,
+        'void' => Type::VOID,
+        'never' => Type::VOID,
+        'string' => Type::STR,
+        'array' => Type::ARRAY,
+        'object' => Type::OBJECT,
+        'mixed' => Type::VAR,
+        'null' => Type::VAR,
+        'any' => Type::VAR,
         // callable 类型，可以是字符串、数组、对象
         // 1) 'foo' 函数名称字符串, 2) [ $obj, 'bar' ] 对象方法数组, 3) Closure 对象， 4) [ 'class', 'staticMethod'] 类名+静态方法数组
-        'callable' => self::TYPE_VAR,
+        'callable' => Type::VAR,
         // iterable 类型，可以是数组或者对象
-        'iterable' => self::TYPE_VAR,
-        'stream' => self::TYPE_STREAM,
-        'bigint' => self::TYPE_BIGINT,
-        'bigfloat' => self::TYPE_BIGFLOAT,
-        'decimal' => self::TYPE_DECIMAL,
-        'box' => self::TYPE_BOX,
+        'iterable' => Type::VAR,
+        'stream' => Type::STREAM,
+        'bigint' => Type::BIGINT,
+        'bigfloat' => Type::BIGFLOAT,
+        'decimal' => Type::DECIMAL,
+        'box' => Type::BOX,
     ];
     protected array $globalHeaders = [
         'phpx.h',
@@ -408,15 +386,15 @@ class CompilerBase implements PropertyAccessContext
     private ?DiagnosticReporter $diagnosticReporter = null;
     protected FunctionContext $context;
     protected array $superGlobalVars = [
-        '_GET'     => self::TYPE_ARRAY,
-        '_POST'    => self::TYPE_ARRAY,
-        '_COOKIE'  => self::TYPE_ARRAY,
-        '_SERVER'  => self::TYPE_ARRAY,
-        '_FILES'   => self::TYPE_ARRAY,
-        '_SESSION' => self::TYPE_ARRAY,
-        '_REQUEST' => self::TYPE_ARRAY,
-        '_ENV'     => self::TYPE_ARRAY,
-        'GLOBALS'  => self::TYPE_ARRAY,
+        '_GET'     => Type::ARRAY,
+        '_POST'    => Type::ARRAY,
+        '_COOKIE'  => Type::ARRAY,
+        '_SERVER'  => Type::ARRAY,
+        '_FILES'   => Type::ARRAY,
+        '_SESSION' => Type::ARRAY,
+        '_REQUEST' => Type::ARRAY,
+        '_ENV'     => Type::ARRAY,
+        'GLOBALS'  => Type::ARRAY,
     ];
     protected array $globalVars = [];
     protected bool $nativeTypes = false;
@@ -649,7 +627,7 @@ class CompilerBase implements PropertyAccessContext
 
     public function getTypeFromZendType(string $type): string
     {
-        return $this->zendTypeMap[$type] ?? self::TYPE_VAR;
+        return $this->zendTypeMap[$type] ?? Type::VAR;
     }
 
     public function getObjectType(string $object): string
@@ -976,7 +954,7 @@ class CompilerBase implements PropertyAccessContext
             return $this->context->globalVars[$name];
         }
 
-        return self::TYPE_VAR;
+        return Type::VAR;
     }
 
     /**
@@ -1097,7 +1075,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function isVoidValueExpr(NodeAbstract $expr): bool
     {
-        return $this->detectTypeOfExpr($expr) === self::TYPE_VOID;
+        return $this->detectTypeOfExpr($expr) === Type::VOID;
     }
 
     protected function wrapVoidExprAsNull(NodeAbstract $expr, string $exprCode): string
@@ -1210,7 +1188,7 @@ class CompilerBase implements PropertyAccessContext
         if (isset($this->context->ceWrappers[$className])) {
             return $this->context->ceWrappers[$className];
         }
-        $object = $this->addTmpVar(self::TYPE_OBJECT);
+        $object = $this->addTmpVar(Type::OBJECT);
         $this->context->beforeStmtLines[] = 'Z_PTR_P(' . $object . '.ptr()) = ' . $this->getClassEntryPtr($className) . ';';
         $this->context->ceWrappers[$className] = $object;
         return $object;
@@ -1259,7 +1237,7 @@ class CompilerBase implements PropertyAccessContext
      */
     protected function getInlineString(string $string): string
     {
-        return self::TYPE_STR . '{ZEND_STRL(' . $this->genCharPtr($string, true) . ')}';
+        return Type::STR . '{ZEND_STRL(' . $this->genCharPtr($string, true) . ')}';
     }
 
     protected function parseScalar(Node\Scalar $expr): string
@@ -1518,7 +1496,7 @@ class CompilerBase implements PropertyAccessContext
         $code = '';
         $this->appendCapturedStmtLines($code, $beforeStmts);
         if ($afterStmts) {
-            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $tmpVar = $this->addTmpVar(Type::VAR);
             $code .= $this->getIndent() . $tmpVar . ' = ' . $condExpr . ';' . PHP_EOL;
             $this->appendCapturedStmtLines($code, $afterStmts);
             $condExpr = $tmpVar;
@@ -1874,7 +1852,7 @@ class CompilerBase implements PropertyAccessContext
     {
         if ($this->functionDef->returnsByRef) {
             if ($v->expr === null) {
-                return 'return ' . self::TYPE_REF . '{};';
+                return 'return ' . Type::REF . '{};';
             }
             if (!$this->isVarExpr($v->expr)
                 && !$this->isPropertyFetch($v->expr)
@@ -1887,7 +1865,7 @@ class CompilerBase implements PropertyAccessContext
                 if (!$this->hasVar($name)) {
                     $this->errorUndefinedVariable($v->expr);
                 }
-                if ($this->hasLocalVar($name) && $this->getVarType($name) !== self::TYPE_VAR && $this->getVarType($name) !== self::TYPE_REF) {
+                if ($this->hasLocalVar($name) && $this->getVarType($name) !== Type::VAR && $this->getVarType($name) !== Type::REF) {
                     $isParameter = false;
                     foreach ($this->functionDef->argInfoList as $argInfo) {
                         if ($argInfo->name === $name) {
@@ -1900,7 +1878,7 @@ class CompilerBase implements PropertyAccessContext
                     }
                     // The declaration is emitted after parsing the body, so a local can
                     // be promoted to Variant before C++ is generated.
-                    $this->context->localVars[$name] = self::TYPE_VAR;
+                    $this->context->localVars[$name] = Type::VAR;
                 }
                 return 'return ' . $name . '.toReference();';
             }
@@ -1928,7 +1906,7 @@ class CompilerBase implements PropertyAccessContext
                     'return value'
                 );
             }
-            if ($this->functionDef->returnType === self::TYPE_VOID and !$this->context->inClosure) {
+            if ($this->functionDef->returnType === Type::VOID and !$this->context->inClosure) {
                 return 'return;';
             } elseif ($this->shouldCheckClosureReturnType()) {
                 return $this->genClosureCheckedReturn(self::VALUE_NULL);
@@ -1965,11 +1943,11 @@ class CompilerBase implements PropertyAccessContext
 
         // 匿名函数的返回值一定是 var
         if (!$this->context->inClosure) {
-            if ($returnType === 'void') {
+            if ($returnType === Type::VOID) {
                 $this->fatalError($v, 'The return type is void, cannot return any value');
             }
         } else {
-            $returnType = self::TYPE_VAR;
+            $returnType = Type::VAR;
         }
 
         $returnObjectCheckClass = '';
@@ -2053,7 +2031,7 @@ class CompilerBase implements PropertyAccessContext
     protected function genCheckedReturnAssignment(string $exprCode, bool $closure): array
     {
         $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+        $this->addLocalVar($tmpVar, Type::VAR);
         $code = $tmpVar . ' = ' . $exprCode . ';' . PHP_EOL;
         $code .= $closure ? $this->genClosureReturnCheck($tmpVar) : $this->genUnionReturnCheck($tmpVar);
 
@@ -2244,7 +2222,7 @@ class CompilerBase implements PropertyAccessContext
                     continue;
                 }
                 $interfaceConstDef = $interfaceDef->constants[$const];
-                if ($interfaceConstDef->type === self::TYPE_ARRAY) {
+                if ($interfaceConstDef->type === Type::ARRAY) {
                     return self::PREFIX . $this->getNativeName($interfaceConstDef->name, $interfaceDef->namespace, $interfaceDef->name);
                 }
                 $expr->setAttribute('nativeConst', $interfaceConstDef);
@@ -2257,7 +2235,7 @@ class CompilerBase implements PropertyAccessContext
         if ($classDef instanceof ClassDef && !$this->checkAccessible($classDef, $constDef->flags)) {
             $this->fatalError($expr, 'Constant `' . $classDef->getNamespacedName() . '::' . $const . '` is not accessible');
         }
-        if ($constDef->type === self::TYPE_ARRAY) {
+        if ($constDef->type === Type::ARRAY) {
             return self::PREFIX . $this->getNativeName($constDef->name, $classDef->namespace, $classDef->name);
         } else {
             $expr->setAttribute('nativeConst', $constDef);
@@ -2321,7 +2299,7 @@ class CompilerBase implements PropertyAccessContext
         }
         $name = $this->parseIdentifier($var);
         if ($this->isStdContainer($name)) {
-            return self::TYPE_ARRAY;
+            return Type::ARRAY;
         }
         return $this->getVarType($name);
     }
@@ -2334,29 +2312,29 @@ class CompilerBase implements PropertyAccessContext
                 return $this->detectTypeOfExpr($expr->expr);
             case 'Expr_BitwiseNot':
                 $inner = $this->detectTypeOfExpr($expr->expr);
-                return $inner === self::TYPE_BIGINT ? self::TYPE_BIGINT : self::TYPE_INT;
+                return $inner === Type::BIGINT ? Type::BIGINT : Type::INT;
             case 'Expr_Print':
             case 'Expr_Cast_Int':
-                return self::TYPE_INT;
+                return Type::INT;
             case 'Scalar_Int':
-                return $this->bigintTypes ? self::TYPE_BIGINT : self::TYPE_INT;
+                return $this->bigintTypes ? Type::BIGINT : Type::INT;
             case 'Expr_Cast_Float':
             case 'Expr_Cast_Double':
-                return self::TYPE_FLOAT;
+                return Type::FLOAT;
             case 'Scalar_Float':
                 if ($this->isBigIntLiteral($expr)) {
-                    return self::TYPE_BIGINT;
+                    return Type::BIGINT;
                 }
                 if ($this->isDecimalLiteral($expr) || $this->decimalTypes) {
-                    return self::TYPE_DECIMAL;
+                    return Type::DECIMAL;
                 }
-                return self::TYPE_FLOAT;
+                return Type::FLOAT;
             case 'Expr_Cast_Bool':
             case 'Scalar_Bool':
-                return self::TYPE_BOOL;
+                return Type::BOOL;
             case 'Expr_Array':
             case 'Expr_Cast_Array':
-                return self::TYPE_ARRAY;
+                return Type::ARRAY;
             case 'Expr_BinaryOp_Plus':
             case 'Expr_BinaryOp_Minus':
             case 'Expr_BinaryOp_Mul':
@@ -2371,24 +2349,24 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_BinaryOp_BooleanAnd':
                 $leftType  = $this->detectTypeOfExpr($expr->left);
                 $rightType = $this->detectTypeOfExpr($expr->right);
-                if ($leftType === self::TYPE_BIGFLOAT || $rightType === self::TYPE_BIGFLOAT) {
-                    return self::TYPE_BIGFLOAT;
+                if ($leftType === Type::BIGFLOAT || $rightType === Type::BIGFLOAT) {
+                    return Type::BIGFLOAT;
                 }
-                if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
-                    return self::TYPE_DECIMAL;
+                if ($leftType === Type::DECIMAL || $rightType === Type::DECIMAL) {
+                    return Type::DECIMAL;
                 }
-                if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
+                if ($leftType === Type::BIGINT || $rightType === Type::BIGINT) {
                     if ($exprType === 'Expr_BinaryOp_Div') {
                         // BigInt division produces BigInt (integer division); BigDecimal in future
-                        return self::TYPE_BIGINT;
+                        return Type::BIGINT;
                     }
-                    return self::TYPE_BIGINT;
+                    return Type::BIGINT;
                 }
-                if ($leftType === self::TYPE_FLOAT || $rightType === self::TYPE_FLOAT) {
-                    return self::TYPE_FLOAT;
+                if ($leftType === Type::FLOAT || $rightType === Type::FLOAT) {
+                    return Type::FLOAT;
                 }
-                if ($leftType === self::TYPE_INT || $rightType === self::TYPE_INT) {
-                    return self::TYPE_INT;
+                if ($leftType === Type::INT || $rightType === Type::INT) {
+                    return Type::INT;
                 }
                 break;
             case 'Expr_FuncCall':
@@ -2398,29 +2376,29 @@ class CompilerBase implements PropertyAccessContext
                     if (in_array($name, ['abs', 'pow', 'sqrt', 'floor', 'ceil', 'round'], true) && !empty($expr->args)) {
                         $argType = $this->detectTypeOfExpr($expr->args[0]->value);
                         if (
-                            $argType === self::TYPE_BIGINT
+                            $argType === Type::BIGINT
                             && in_array($name, ['abs', 'pow', 'sqrt'], true)
                         ) {
-                            return self::TYPE_BIGINT;
+                            return Type::BIGINT;
                         }
                         if (
-                            $argType === self::TYPE_DECIMAL
+                            $argType === Type::DECIMAL
                             && in_array($name, ['abs', 'pow', 'sqrt', 'floor', 'ceil', 'round'], true)
                         ) {
-                            return self::TYPE_DECIMAL;
+                            return Type::DECIMAL;
                         }
                         if (
-                            $argType === self::TYPE_BIGFLOAT
+                            $argType === Type::BIGFLOAT
                             && in_array($name, ['abs', 'sqrt'], true)
                         ) {
-                            return self::TYPE_BIGFLOAT;
+                            return Type::BIGFLOAT;
                         }
                     }
                     if (in_array($name, self::STREAM_FUNCTIONS)) {
-                        return self::TYPE_STREAM;
+                        return Type::STREAM;
                     }
                     if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
-                        return self::TYPE_OBJECT;
+                        return Type::OBJECT;
                     }
                     if ($this->hasFunction($name)) {
                         return $this->getFunction($name)->returnType;
@@ -2440,7 +2418,7 @@ class CompilerBase implements PropertyAccessContext
                     $classDef = $this->resolveObjectClassDef($expr->var);
                     if ($classDef !== null && $classDef->hasMethod($method)) {
                         if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
-                            return self::TYPE_OBJECT;
+                            return Type::OBJECT;
                         }
                         return $classDef->getMethod($method)->getReturnType();
                     }
@@ -2462,7 +2440,7 @@ class CompilerBase implements PropertyAccessContext
                     } else {
                         $type = $this->detectTypeOfExpr($expr->var);
                     }
-                    if ($type !== self::TYPE_VAR && !$this->checkArgType($type, self::TYPE_OBJECT)) {
+                    if ($type !== Type::VAR && !$this->checkArgType($type, Type::OBJECT)) {
                         $retType = $this->detectUniversalMethodReturnType($type, $method);
                         if ($retType !== null) {
                             return $retType;
@@ -2474,19 +2452,19 @@ class CompilerBase implements PropertyAccessContext
                 if ($this->isNameExpr($expr->class) && $this->isIdExpr($expr->name)) {
                     // First-class callable syntax creates a Closure, not a method return value
                     if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
-                        return self::TYPE_OBJECT;
+                        return Type::OBJECT;
                     }
                     $className = $this->parseIdentifier($expr->class);
                     if (strtolower($className) === 'std') {
                         $method = strtolower($this->parseIdentifier($expr->name));
                         return match ($method) {
-                            'int' => self::TYPE_INT,
-                            'float' => self::TYPE_FLOAT,
-                            'bool' => self::TYPE_BOOL,
-                            'bigint' => self::TYPE_BIGINT,
-                            'decimal' => self::TYPE_DECIMAL,
-                            'bigfloat' => self::TYPE_BIGFLOAT,
-                            default => self::TYPE_VAR,
+                            'int' => Type::INT,
+                            'float' => Type::FLOAT,
+                            'bool' => Type::BOOL,
+                            'bigint' => Type::BIGINT,
+                            'decimal' => Type::DECIMAL,
+                            'bigfloat' => Type::BIGFLOAT,
+                            default => Type::VAR,
                         };
                     }
                     if ($className === 'self') {
@@ -2552,7 +2530,7 @@ class CompilerBase implements PropertyAccessContext
                     if ($attr['accessLevel'] === $attr['totalLevel']) {
                         return $this->context->stdArrays[$attr['var']]['type'];
                     } else {
-                        return self::TYPE_ARRAY;
+                        return Type::ARRAY;
                     }
                 }
                 if ($this->isStdContainerExpr($expr)) {
@@ -2564,7 +2542,7 @@ class CompilerBase implements PropertyAccessContext
                 }
                 break;
             case 'Expr_New':
-                return self::TYPE_OBJECT;
+                return Type::OBJECT;
             case 'Expr_Assign':
             case 'Expr_AssignOp_BitwiseAnd':
             case 'Expr_AssignOp_BitwiseOr':
@@ -2575,12 +2553,12 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_ConstFetch':
                 return $this->detectConstType($expr);
             case 'Scalar_String':
-                return self::TYPE_STR;
+                return Type::STR;
             default:
                 break;
         }
 
-        return self::TYPE_VAR;
+        return Type::VAR;
     }
 
     protected function genDynamicPropIncDec($var, string $op, bool $isPre): ?string
@@ -2597,14 +2575,14 @@ class CompilerBase implements PropertyAccessContext
         }
         if ($getter !== null && $setter !== null) {
             $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $this->addLocalVar($tmpVar, Type::VAR);
             $read = $this->emitPropertyHookGetterCall($var, $getter);
             if ($isPre) {
                 $set = $this->emitPropertyHookSetterCall($var, $setter, new Expr\Variable($tmpVar));
                 $this->context->beforeStmtLines[] = "{$tmpVar} = {$read} {$op} 1; {$set};";
             } else {
                 $nextVar = $this->genTmpVarName();
-                $this->addLocalVar($nextVar, self::TYPE_VAR);
+                $this->addLocalVar($nextVar, Type::VAR);
                 $set = $this->emitPropertyHookSetterCall($var, $setter, new Expr\Variable($nextVar));
                 $this->context->beforeStmtLines[] = "{$tmpVar} = {$read};";
                 $this->context->afterStmtLines[] = "{$nextVar} = {$tmpVar} {$op} 1; {$set};";
@@ -2616,7 +2594,7 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_VAR);
+        $this->addLocalVar($tmpVar, Type::VAR);
         if ($isPre) {
             $this->context->beforeStmtLines[] = "{$tmpVar} = " . $this->emitDynamicPropertyFetchRead($var, $target) . " {$op} 1; " . $this->emitDynamicPropertyFetchWrite($var, $tmpVar, $target) . ';';
         } else {
@@ -2636,7 +2614,7 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $type = $this->detectVarType($expr->var);
-        if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+        if ($type === Type::BIGINT || $type === Type::DECIMAL || $type === Type::BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use ++ on ' . $type . '. Use += 1 instead (Big* types are immutable).');
         }
         $result = '++' . $this->parseWritableIdentifier($expr->var);
@@ -2884,7 +2862,7 @@ class CompilerBase implements PropertyAccessContext
                 $this->errorUndefinedVariable($expr->var);
             }
             $type = $this->detectVarType($expr->var);
-            if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+            if ($type === Type::BIGINT || $type === Type::DECIMAL || $type === Type::BIGFLOAT) {
                 $opName = $op === '+' ? '++' : '--';
                 $this->fatalError($expr, "Cannot use {$opName} on {$type}. Use " . ($op === '+' ? '+= 1' : '-= 1') . ' instead (Big* types are immutable).');
             }
@@ -2899,7 +2877,7 @@ class CompilerBase implements PropertyAccessContext
             $class = $this->identifierToStr($expr->var->class);
             $prop = $this->identifierToStr($expr->var->name);
             $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $this->addLocalVar($tmpVar, Type::VAR);
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . Symbol::getStaticProperty() . '(' . $class . ', ' . $prop . ');';
             $this->context->afterStmtLines[] = Symbol::setStaticProperty() . '(' . $class . ', ' . $prop . ', ' . $tmpVar . ' ' . $op . ' 1);';
 
@@ -2927,7 +2905,7 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $type = $this->detectVarType($expr->var);
-        if ($type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
+        if ($type === Type::BIGINT || $type === Type::DECIMAL || $type === Type::BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use -- on ' . $type . '. Use -= 1 instead (Big* types are immutable).');
         }
         $result = '--' . $this->parseWritableIdentifier($expr->var);
@@ -3054,7 +3032,7 @@ class CompilerBase implements PropertyAccessContext
             return 'php::instanceOf(' . $value . ', ' . $classPtr . ')';
         } else {
             [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr->expr);
-            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $tmpVar = $this->addTmpVar(Type::VAR);
             $this->appendCapturedStmtLinesToContext($beforeStmts);
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
             $this->appendCapturedStmtLinesToContext($afterStmts);
@@ -3107,10 +3085,10 @@ class CompilerBase implements PropertyAccessContext
         foreach ($expr->vars as $v) {
             $name = $this->parseVariable($v);
             if (!$this->hasGlobalVar($name)) {
-                $this->addGlobalVar($name, self::TYPE_VAR);
+                $this->addGlobalVar($name, Type::VAR);
             }
             if (!$this->hasScopeGlobalVar($name)) {
-                $this->addScopeGlobalVar($name, self::TYPE_VAR);
+                $this->addScopeGlobalVar($name, Type::VAR);
             }
         }
         return '';
@@ -3143,13 +3121,13 @@ class CompilerBase implements PropertyAccessContext
         $list = [];
         foreach ($v->vars as $var) {
             $varName = $this->escapeVarName($var->var->name);
-            $type = $var->default ? $this->detectTypeOfExpr($var->default) : self::TYPE_VAR;
+            $type = $var->default ? $this->detectTypeOfExpr($var->default) : Type::VAR;
             if ($var->default) {
                 $this->assertExprCanBeUsedAsValue($var->default, 'static variable default value');
             }
             $globalVar = $this->addStaticVar($var->var, $varName, $type);
 
-            $list[] = self::TYPE_VAR . ' &' . $varName . ' = ' . $this->escapeGlobalVar($globalVar) . ';';
+            $list[] = Type::VAR . ' &' . $varName . ' = ' . $this->escapeGlobalVar($globalVar) . ';';
             if ($var->default) {
                 $initState = self::STATIC_VAR . $varName . '_initialized';
                 $initCode = $this->getIndent() . 'static bool ' . $initState . ' = false;';
@@ -3324,16 +3302,16 @@ class CompilerBase implements PropertyAccessContext
                     $this->fatalError($expr, 'Cannot use [] for reading');
                 }
                 $dim = $this->parseIdentifier($expr->dim);
-                $list[] = '{php::ArrayDimFetch, ' . self::TYPE_VAR . '(' . $dim . ')}';
+                $list[] = '{php::ArrayDimFetch, ' . Type::VAR . '(' . $dim . ')}';
             } elseif ($this->isPropertyFetch($expr)) {
                 $name = $this->identifierToStr($expr->name, literal: true);
-                $list[] = '{php::PropertyFetch, ' . self::TYPE_VAR . '(' . $name . ')}';
+                $list[] = '{php::PropertyFetch, ' . Type::VAR . '(' . $name . ')}';
             } elseif ($this->isVarExpr($expr)) {
                 $var = $this->parseIdentifier($expr);
                 break;
             } else {
                 $var = $this->genTmpVarName();
-                $this->addLocalVar($var, self::TYPE_VAR);
+                $this->addLocalVar($var, Type::VAR);
                 $this->context->beforeStmtLines[] = $var . '=' . $this->parseExpr($expr) . ';';
                 break;
             }
@@ -3343,7 +3321,7 @@ class CompilerBase implements PropertyAccessContext
         $list = array_reverse($list);
 
         if ($getValue) {
-            $result = $this->addTmpVar(self::TYPE_VAR);
+            $result = $this->addTmpVar(Type::VAR);
             $node->setAttribute('chainOpResult', $result);
             return $fn . '(' . $var . ', {' . implode(', ', $list) . '}, ' . $result . ')';
         } else {
@@ -3390,7 +3368,7 @@ class CompilerBase implements PropertyAccessContext
             return $this->getTypeFromZendType($returnType);
         }
 
-        return self::TYPE_VAR;
+        return Type::VAR;
     }
 
     protected function detectMethodCallReturnType(string $class, string $method): string
@@ -3399,7 +3377,7 @@ class CompilerBase implements PropertyAccessContext
         if ($returnType) {
             return $this->getTypeFromZendType($returnType);
         }
-        return self::TYPE_VAR;
+        return Type::VAR;
     }
 
     protected function genObjvalCall(Expr\FuncCall $expr): string
@@ -3612,7 +3590,7 @@ class CompilerBase implements PropertyAccessContext
         return $code;
     }
 
-    protected function checkVar(NodeAbstract $node, string $name, string $defaultType = self::TYPE_VAR): void
+    protected function checkVar(NodeAbstract $node, string $name, string $defaultType = Type::VAR): void
     {
         if (!$this->hasVar($name)) {
             $this->addLocalVar($name, $defaultType);
@@ -3632,11 +3610,11 @@ class CompilerBase implements PropertyAccessContext
 
     protected function checkVarAssignExpr(NodeAbstract $left, string $toType, string $fromType): bool
     {
-        if ($toType === self::TYPE_VAR or $fromType === self::TYPE_VAR) {
+        if ($toType === Type::VAR or $fromType === Type::VAR) {
             return true;
         }
         // 引用当前没有类型信息，按照 var 处理
-        if ($toType === self::TYPE_REF or $fromType === self::TYPE_REF) {
+        if ($toType === Type::REF or $fromType === Type::REF) {
             return true;
         }
         // 类型一致，可以互相赋值
@@ -3648,7 +3626,7 @@ class CompilerBase implements PropertyAccessContext
             return true;
         }
         // BigInt/BigFloat/Decimal 与原生类型之间可能发生隐式转换，允许重新赋值
-        $bigTypes = [self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT];
+        $bigTypes = [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT];
         if (in_array($toType, $bigTypes, true) or in_array($fromType, $bigTypes, true)) {
             return true;
         }
@@ -3727,7 +3705,7 @@ class CompilerBase implements PropertyAccessContext
                 continue;
             }
             $code .= $this->getIndent();
-            if ($type === self::TYPE_STD_ARRAY) {
+            if ($type === Type::STD_ARRAY) {
                 $info = $this->context->stdArrays[$name];
                 if (isset($info['boxExpr'])) {
                     $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';
@@ -3736,7 +3714,7 @@ class CompilerBase implements PropertyAccessContext
                     $code .= 'php::Var ' . $name . ' = php::Var(new ' . $containerType . '(' . $info['typeId'] . '));' . PHP_EOL;
                     $code .= $this->getIndent() . 'auto &' . $name . '_ref = ' . $name . '.toBox<' . $containerType . '>()->container;';
                 }
-            } elseif ($type === self::TYPE_STD_VECTOR) {
+            } elseif ($type === Type::STD_VECTOR) {
                 $info = $this->context->stdContainers[$name];
                 if (isset($info['boxExpr'])) {
                     $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';
@@ -3750,7 +3728,7 @@ class CompilerBase implements PropertyAccessContext
                     $code .= 'php::Var ' . $name . ' = php::Var(' . $boxCtor . ');' . PHP_EOL;
                     $code .= $this->getIndent() . 'auto &' . $name . '_ref = ' . $name . '.toBox<' . $containerType . '>()->container;';
                 }
-            } elseif ($type === self::TYPE_STD_MAP || $type === self::TYPE_STD_ORDERED_MAP) {
+            } elseif ($type === Type::STD_MAP || $type === Type::STD_ORDERED_MAP) {
                 $info = $this->context->stdContainers[$name];
                 if (isset($info['boxExpr'])) {
                     $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';
@@ -3759,11 +3737,11 @@ class CompilerBase implements PropertyAccessContext
                     $code .= 'php::Var ' . $name . ' = php::Var(new ' . $containerType . '(' . $info['typeId'] . '));' . PHP_EOL;
                     $code .= $this->getIndent() . 'auto &' . $name . '_ref = ' . $name . '.toBox<' . $containerType . '>()->container;';
                 }
-            } elseif ($type === self::TYPE_STREAM || $type === self::TYPE_BIGINT || $type === self::TYPE_DECIMAL || $type === self::TYPE_BIGFLOAT) {
-                $code .= self::TYPE_VAR . ' ' . $name . ';';
+            } elseif ($type === Type::STREAM || $type === Type::BIGINT || $type === Type::DECIMAL || $type === Type::BIGFLOAT) {
+                $code .= Type::VAR . ' ' . $name . ';';
             } else {
                 $code .= $type . ' ' . $name;
-                if ($type === self::TYPE_INT or $type === self::TYPE_FLOAT or $type === self::TYPE_BOOL) {
+                if ($type === Type::INT or $type === Type::FLOAT or $type === Type::BOOL) {
                     $code .= ' = 0';
                 }
                 $code .= ';';
@@ -3788,20 +3766,20 @@ class CompilerBase implements PropertyAccessContext
             if ($name === 'GLOBALS') {
                 continue;
             }
-            $code .= $this->getIndent() . self::TYPE_VAR . ' &' . $name . ' = ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
+            $code .= $this->getIndent() . Type::VAR . ' &' . $name . ' = ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
         }
         foreach ($this->context->objectProps as $name => $info) {
             if (($info['kind'] ?? 'zval') === 'var') {
-                $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $name . ' = ' . $info['getter'] . ';' . PHP_EOL;
+                $code .= $this->getIndent() . Type::VAR . ' ' . $name . ' = ' . $info['getter'] . ';' . PHP_EOL;
             } else {
-                $zvalMacro = ($info['type'] === self::TYPE_FLOAT) ? 'Z_DVAL_P' : 'Z_LVAL_P';
+                $zvalMacro = ($info['type'] === Type::FLOAT) ? 'Z_DVAL_P' : 'Z_LVAL_P';
                 $code .= $this->getIndent() . $info['type'] . ' &' . $name . ' = ' . $zvalMacro . '(' . $info['getter'] . '.unwrap_ptr());' . PHP_EOL;
             }
         }
         foreach ($this->context->staticPropRefs as $name => $info) {
             $getter = Symbol::getStaticProperty() . '(' . $info['classPtr'] . ', ' . $info['offsetExpr'] . ')';
             if (($info['kind'] ?? 'zval') === 'var') {
-                $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $name . ' = ' . $getter . ';' . PHP_EOL;
+                $code .= $this->getIndent() . Type::VAR . ' ' . $name . ' = ' . $getter . ';' . PHP_EOL;
             } else {
                 $code .= $this->getIndent() . 'zval *' . $name . ' = ' . $getter . '.unwrap_ptr();' . PHP_EOL;
             }
@@ -3812,20 +3790,20 @@ class CompilerBase implements PropertyAccessContext
     protected function genReturnCode(): string
     {
         if ($this->functionDef->returnsByRef) {
-            return $this->getIndent() . 'return ' . self::TYPE_REF . '{};';
+            return $this->getIndent() . 'return ' . Type::REF . '{};';
         }
         if ($this->shouldCheckClosureReturnType()) {
             return $this->genClosureCheckedReturn(self::VALUE_NULL);
         }
-        if ($this->functionDef->returnType === self::TYPE_VOID) {
+        if ($this->functionDef->returnType === Type::VOID) {
             return '';
         }
         if ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
             return $this->genUnionCheckedReturn(self::VALUE_NULL);
         }
-        if ($this->functionDef->returnType === self::TYPE_INT
-            or $this->functionDef->returnType === self::TYPE_FLOAT
-            or $this->functionDef->returnType === self::TYPE_BOOL) {
+        if ($this->functionDef->returnType === Type::INT
+            or $this->functionDef->returnType === Type::FLOAT
+            or $this->functionDef->returnType === Type::BOOL) {
             return $this->getIndent() . 'return 0;';
         } else {
             return $this->getIndent() . 'return ' . self::VALUE_NULL . ';';

@@ -649,12 +649,12 @@ class Translator extends Preprocessor
         $lines[] = '#include <phpx.h>';
         $lines[] = PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
-            $lines[] = 'extern THREAD_LOCAL ' . self::TYPE_VAR . ' ' . $this->escapeGlobalVar($name) . ';';
+            $lines[] = 'extern THREAD_LOCAL ' . Type::VAR . ' ' . $this->escapeGlobalVar($name) . ';';
         }
 
         if ($this->literalStrings) {
             $literalStringsCount = count($this->literalStrings);
-            $lines[] = 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+            $lines[] = 'extern ' . Type::STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
         }
 
         // 确保数组大小至少为 1，避免 C/C++ 编译错误
@@ -669,9 +669,9 @@ class Translator extends Preprocessor
 
         foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
-                if ($constant->type === self::TYPE_ARRAY) {
+                if ($constant->type === Type::ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
-                    $lines[] = 'extern ' . self::TYPE_VAR . ' ' . $constName . ';' . PHP_EOL;
+                    $lines[] = 'extern ' . Type::VAR . ' ' . $constName . ';' . PHP_EOL;
                 }
             }
         }
@@ -713,7 +713,7 @@ class Translator extends Preprocessor
 
         $code .= "// global vars \n";
         foreach ($this->globalVars as $name => $type) {
-            $code .= 'THREAD_LOCAL ' . self::TYPE_VAR . ' ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
+            $code .= 'THREAD_LOCAL ' . Type::VAR . ' ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
         }
 
         $code .= "// class register functions \n";
@@ -767,9 +767,9 @@ CODE;
 
         $code .= "// literal strings \n";
         if ($this->literalStrings) {
-            $code .= self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[] = {' . PHP_EOL;
+            $code .= Type::STR . ' ' . self::LITERAL_STRINGS . '[] = {' . PHP_EOL;
             foreach ($this->literalStrings as $str => $index) {
-                $code .= self::TYPE_STR . '{ZEND_STRL("' . $this->escapeString($str) . '"), true}, // [' . $index . ']' . PHP_EOL;
+                $code .= Type::STR . '{ZEND_STRL("' . $this->escapeString($str) . '"), true}, // [' . $index . ']' . PHP_EOL;
             }
             $code .= '};' . PHP_EOL . PHP_EOL;
         } else {
@@ -788,9 +788,9 @@ CODE;
                 $code .= 'static zend_object_handlers property_handlers_' . $classDef->getNamespacedName() . ";\n";
             }
             foreach ($classDef->constants as $constant) {
-                if ($constant->type === self::TYPE_ARRAY) {
+                if ($constant->type === Type::ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
-                    $code .= self::TYPE_VAR . ' ' . $constName . ";\n";
+                    $code .= Type::VAR . ' ' . $constName . ";\n";
                 }
             }
         }
@@ -880,7 +880,7 @@ CODE;
             }
         }
         foreach ($this->constants as $name => $const) {
-            if ($const->type !== self::TYPE_VAR) {
+            if ($const->type !== Type::VAR) {
                 continue;
             }
             $code .= $name . '.unset();' . PHP_EOL;
@@ -889,7 +889,7 @@ CODE;
         $code .= '// class array constants' . PHP_EOL;
         foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
-                if ($constant->type === self::TYPE_ARRAY) {
+                if ($constant->type === Type::ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
                     $code .= $constName . ".unset();\n";
 
@@ -904,7 +904,7 @@ CODE;
         foreach ($this->symbols->classes() as $className => $classDef) {
             $ownConstNames = [];
             foreach ($classDef->constants as $constant) {
-                if ($constant->type === self::TYPE_ARRAY) {
+                if ($constant->type === Type::ARRAY) {
                     $ownConstNames[$constant->name] = true;
                 }
             }
@@ -913,7 +913,7 @@ CODE;
             while ($parentName && $this->symbols->hasClass($parentName)) {
                 $parentDef = $this->symbols->class($parentName);
                 foreach ($parentDef->constants as $constant) {
-                    if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
+                    if ($constant->type === Type::ARRAY && !isset($ownConstNames[$constant->name])) {
                         $ownConstNames[$constant->name] = true;
                         $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
                         $classConstStr = $this->genCharPtr($constant->name);
@@ -929,7 +929,7 @@ CODE;
                 }
                 $interfaceDef = $this->getInterface($interfaceName);
                 foreach ($interfaceDef->constants as $constant) {
-                    if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
+                    if ($constant->type === Type::ARRAY && !isset($ownConstNames[$constant->name])) {
                         $ownConstNames[$constant->name] = true;
                         $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
                         $classConstStr = $this->genCharPtr($constant->name);
@@ -1427,21 +1427,21 @@ CODE;
         // 函数的默认值可能会使用字符串字面量，需要提前声明
         if ($this->literalStrings) {
             $literalStringsCount = count($this->literalStrings);
-            $code .= 'extern ' . self::TYPE_STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+            $code .= 'extern ' . Type::STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
         }
         $code .= $this->genDefaultArgumentHelpers();
 
         foreach ($this->symbols->functions() as $name => $func) {
-            $code .= 'extern ' . ($func->returnsByRef ? self::TYPE_REF : $func->returnType) . ' ' . self::PREFIX . $name . '(';
+            $code .= 'extern ' . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(';
             $list = [];
             if ($func->method) {
-                $list[] = self::TYPE_OBJECT . ' &this_';
+                $list[] = Type::OBJECT . ' &this_';
             }
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
                 foreach ($argInfoList as $argInfo) {
                     if ($argInfo->variadic) {
-                        $arg = self::TYPE_ARRAY . ' ' . $argInfo->name . ' = {}';
+                        $arg = Type::ARRAY . ' ' . $argInfo->name . ' = {}';
                     } else {
                         $arg = $this->genArgumentDeclaration($argInfo);
                         if ($argInfo->default && !$this->isConstructorNativeFunction($func)) {
@@ -1599,7 +1599,7 @@ CODE;
         $code = '';
         foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
-                if ($constant->type === self::TYPE_ARRAY) {
+                if ($constant->type === Type::ARRAY) {
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
                     $code .= "do {\n";
                     $code .= $constant->arrayExpr;
@@ -1616,7 +1616,7 @@ CODE;
         foreach ($this->symbols->classes() as $className => $classDef) {
             $ownConstNames = [];
             foreach ($classDef->constants as $constant) {
-                if ($constant->type === self::TYPE_ARRAY) {
+                if ($constant->type === Type::ARRAY) {
                     $ownConstNames[$constant->name] = true;
                 }
             }
@@ -1625,7 +1625,7 @@ CODE;
             while ($parentName && $this->symbols->hasClass($parentName)) {
                 $parentDef = $this->symbols->class($parentName);
                 foreach ($parentDef->constants as $constant) {
-                    if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
+                    if ($constant->type === Type::ARRAY && !isset($ownConstNames[$constant->name])) {
                         $ownConstNames[$constant->name] = true;
                         $constName = self::PREFIX . $this->getNativeName($constant->name, $parentDef->namespace, $parentDef->name);
                         $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
@@ -1642,7 +1642,7 @@ CODE;
                 }
                 $interfaceDef = $this->getInterface($interfaceName);
                 foreach ($interfaceDef->constants as $constant) {
-                    if ($constant->type === self::TYPE_ARRAY && !isset($ownConstNames[$constant->name])) {
+                    if ($constant->type === Type::ARRAY && !isset($ownConstNames[$constant->name])) {
                         $ownConstNames[$constant->name] = true;
                         $constName = self::PREFIX . $this->getNativeName($constant->name, $interfaceDef->namespace, $interfaceDef->name);
                         $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
@@ -2584,7 +2584,7 @@ CODE;
         foreach ($functionDef->argInfoList as $k => $argInfo) {
             $var = 'arg_' . $argInfo->name;
             if ($argInfo->variadic) {
-                $cppCode .= $this->getIndent() . self::TYPE_ARRAY . ' ' . $var . ';' . PHP_EOL;
+                $cppCode .= $this->getIndent() . Type::ARRAY . ' ' . $var . ';' . PHP_EOL;
                 $cppCode .= $this->getIndent() . 'for (uint32_t i = ' . $k . '; i < php::getCallArgNum(); i++) {' . PHP_EOL;
                 $this->indentLevel++;
                 $cppCode .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
@@ -2608,7 +2608,7 @@ CODE;
                 }
                 $cppType = $this->getDefaultArgumentType($argInfo);
                 $declaredClass = $argInfo->declaredClass ?: $argInfo->class;
-                if ($argInfo->type === self::TYPE_OBJECT && $declaredClass !== '') {
+                if ($argInfo->type === Type::OBJECT && $declaredClass !== '') {
                     $expr = $this->convertObjectExpr($argExpr, $this->getClassEntryPtr($declaredClass));
                 } else {
                     $expr = $this->convertExprFromType($argInfo->type, $argExpr);
@@ -2624,7 +2624,7 @@ CODE;
             $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
         }
 
-        if ($functionDef->returnType !== self::TYPE_VOID) {
+        if ($functionDef->returnType !== Type::VOID) {
             $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
             $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
             if (!$functionDef->returnsByRef) {
@@ -2662,7 +2662,7 @@ CODE;
     {
         $name = $classDef->getNamespacedName();
         $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
-        $cppCode .= $this->getIndent() . self::TYPE_OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
+        $cppCode .= $this->getIndent() . Type::OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
         $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
         $cppCode .= $this->genWrapperFunctionArgs($fn, $methodDef->functionDef, $classDef->getNamespacedName(false) . '::' . $methodDef->name);
 
@@ -2690,7 +2690,7 @@ CODE;
         if ($classDef instanceof ClassDef) {
             $arrayPropCount = 0;
             foreach ($classDef->properties as $property) {
-                if ($property->type === self::TYPE_ARRAY && $property->arrayInitPlan && $property->default && !$property->isStatic()) {
+                if ($property->type === Type::ARRAY && $property->arrayInitPlan && $property->default && !$property->isStatic()) {
                     $arrayPropCount++;
                 }
             }
@@ -2800,10 +2800,10 @@ CODE;
         }
 
         if ($this->class) {
-            $this->addArgument('this_', self::TYPE_OBJECT);
+            $this->addArgument('this_', Type::OBJECT);
         }
         foreach ($this->functionDef->argInfoList as $argInfo) {
-            $this->addArgument($argInfo->name, $argInfo->variadic ? self::TYPE_ARRAY : $argInfo->type);
+            $this->addArgument($argInfo->name, $argInfo->variadic ? Type::ARRAY : $argInfo->type);
             if (!$argInfo->variadic and $argInfo->declaredClass) {
                 $this->addObject($argInfo->name, $argInfo->declaredClass);
             }
@@ -2853,10 +2853,10 @@ CODE;
             $stmts = $this->genReturnCode();
         }
 
-        $cppReturnType = $this->functionDef->returnsByRef ? self::TYPE_REF : $this->getReturnType();
+        $cppReturnType = $this->functionDef->returnsByRef ? Type::REF : $this->getReturnType();
         $functionDeclCode = $cppReturnType . ' ' . self::PREFIX . $name . '(';
         if ($this->class) {
-            $functionDeclCode .= self::TYPE_OBJECT . ' &this_';
+            $functionDeclCode .= Type::OBJECT . ' &this_';
             if ($this->functionDef->params) {
                 $functionDeclCode .= ', ';
             }
@@ -3043,13 +3043,13 @@ CODE;
         if ($parentFuncDef->returnTypeCheck || $childFuncDef->returnTypeCheck) {
             return $parentFuncDef->returnTypeStr === $childFuncDef->returnTypeStr;
         }
-        if ($parentFuncDef->returnType === self::TYPE_VAR) {
+        if ($parentFuncDef->returnType === Type::VAR) {
             return true;
         }
         if ($childFuncDef->returnType !== $parentFuncDef->returnType) {
             return false;
         }
-        if ($parentFuncDef->returnType !== self::TYPE_OBJECT) {
+        if ($parentFuncDef->returnType !== Type::OBJECT) {
             return true;
         }
         if ($childFuncDef->returnClass === $parentFuncDef->returnClass) {
@@ -3084,7 +3084,7 @@ CODE;
         if ($childArg->type !== $parentArg->type) {
             return false;
         }
-        if ($parentArg->type !== self::TYPE_OBJECT) {
+        if ($parentArg->type !== Type::OBJECT) {
             return true;
         }
         if ($childArg->class === $parentArg->class) {
@@ -3108,13 +3108,13 @@ CODE;
         }
 
         return match ($arg->type) {
-            self::TYPE_INT => [['kind' => 'isInt']],
-            self::TYPE_FLOAT => [['kind' => 'isFloat']],
-            self::TYPE_BOOL => [['kind' => 'isBool']],
-            self::TYPE_STR => [['kind' => 'isString']],
-            self::TYPE_ARRAY => [['kind' => 'isArray']],
-            self::TYPE_RESOURCE => [['kind' => 'isResource']],
-            self::TYPE_OBJECT => $arg->class
+            Type::INT => [['kind' => 'isInt']],
+            Type::FLOAT => [['kind' => 'isFloat']],
+            Type::BOOL => [['kind' => 'isBool']],
+            Type::STR => [['kind' => 'isString']],
+            Type::ARRAY => [['kind' => 'isArray']],
+            Type::RESOURCE => [['kind' => 'isResource']],
+            Type::OBJECT => $arg->class
                 ? [['kind' => 'instanceof', 'class' => $arg->class]]
                 : [['kind' => 'isObject']],
             default => null,
@@ -3484,10 +3484,10 @@ CODE;
         }
         $argv = implode(', ', $argList);
 
-        $cppReturnType = $methodDef->functionDef->returnsByRef ? self::TYPE_REF : $methodDef->getReturnType();
+        $cppReturnType = $methodDef->functionDef->returnsByRef ? Type::REF : $methodDef->getReturnType();
         $code = $cppReturnType . ' ' . self::PREFIX . $classMethodNativeName . '(';
         if ($this->class) {
-            $code .= self::TYPE_OBJECT . ' &this_';
+            $code .= Type::OBJECT . ' &this_';
             if ($methodDef->functionDef->params) {
                 $code .= ', ';
             }
@@ -3499,7 +3499,7 @@ CODE;
         $code .= '{' . PHP_EOL;
         $this->indentLevel++;
         $methodCall = self::PREFIX . $traitMethodNativeName . '(' . $argv . ')';
-        if ($cppReturnType !== self::TYPE_VOID) {
+        if ($cppReturnType !== Type::VOID) {
             $methodCall = 'return ' . $methodCall;
         }
         $code .= $this->getIndent() . $methodCall . ';' . PHP_EOL;
@@ -3529,16 +3529,16 @@ CODE;
     {
         $obj = $objectExpr ?? $this->parseIdentifier($node->expr);
         $iterableVar = $this->genTmpVarName();
-        $this->addLocalVar($iterableVar, self::TYPE_VAR);
+        $this->addLocalVar($iterableVar, Type::VAR);
 
         $iteratorObj = $this->genTmpVarName();
-        $this->addLocalVar($iteratorObj, self::TYPE_OBJECT);
+        $this->addLocalVar($iteratorObj, Type::OBJECT);
 
         $aggregateObj = $this->genTmpVarName();
-        $this->addLocalVar($aggregateObj, self::TYPE_OBJECT);
+        $this->addLocalVar($aggregateObj, Type::OBJECT);
 
         $tmpArrayVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpArrayVar, self::TYPE_ARRAY);
+        $this->addLocalVar($tmpArrayVar, Type::ARRAY);
 
         $IteratorAggregateCe = $this->getClassEntryPtr('IteratorAggregate');
         $IteratorCe = $this->getClassEntryPtr('Iterator');

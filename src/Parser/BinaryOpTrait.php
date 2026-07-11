@@ -8,6 +8,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use TypePhp\Generator\Symbol;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -31,18 +33,18 @@ trait BinaryOpTrait
         $leftType  = $this->detectTypeOfExpr($left);
         $rightType = $this->detectTypeOfExpr($right);
 
-        if ($leftType === self::TYPE_BIGFLOAT || $rightType === self::TYPE_BIGFLOAT) {
+        if ($leftType === Type::BIGFLOAT || $rightType === Type::BIGFLOAT) {
             // BigFloat cannot implicitly mix with BigInt or Decimal — risk of precision loss
-            if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
+            if ($leftType === Type::BIGINT || $rightType === Type::BIGINT) {
                 $this->fatalError($left, 'Cannot mix BigFloat and BigInt implicitly. Use std::bigFloat() to convert explicitly.');
             }
-            if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
+            if ($leftType === Type::DECIMAL || $rightType === Type::DECIMAL) {
                 $this->fatalError($left, 'Cannot mix BigFloat and Decimal implicitly. Use std::bigFloat() to convert explicitly.');
             }
-            if ($leftType !== self::TYPE_BIGFLOAT) {
+            if ($leftType !== Type::BIGFLOAT) {
                 $leftExpr = $this->convertBigFloatExpr($leftExpr, $leftType);
             }
-            if ($rightType !== self::TYPE_BIGFLOAT) {
+            if ($rightType !== Type::BIGFLOAT) {
                 $rightExpr = $this->convertBigFloatExpr($rightExpr, $rightType);
             }
             $arithOpMap = ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div'];
@@ -56,15 +58,15 @@ trait BinaryOpTrait
             }
         }
 
-        if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
+        if ($leftType === Type::DECIMAL || $rightType === Type::DECIMAL) {
             // BigInt and Decimal cannot implicitly mix — risk of precision loss
-            if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
+            if ($leftType === Type::BIGINT || $rightType === Type::BIGINT) {
                 $this->fatalError($left, 'Cannot mix BigInt and Decimal implicitly. Use std::decimal() or std::bigInt() to convert explicitly.');
             }
-            if ($leftType !== self::TYPE_DECIMAL) {
+            if ($leftType !== Type::DECIMAL) {
                 $leftExpr = $this->convertDecimalExpr($leftExpr, $leftType, $left);
             }
-            if ($rightType !== self::TYPE_DECIMAL) {
+            if ($rightType !== Type::DECIMAL) {
                 $rightExpr = $this->convertDecimalExpr($rightExpr, $rightType, $right);
             }
             $arithOpMap = ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod'];
@@ -78,24 +80,24 @@ trait BinaryOpTrait
             }
         }
 
-        if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
+        if ($leftType === Type::BIGINT || $rightType === Type::BIGINT) {
             // Bitwise shifts: right operand is shift amount, must stay as Int
             if ($op === '<<' || $op === '>>') {
-                if ($leftType !== self::TYPE_BIGINT) {
+                if ($leftType !== Type::BIGINT) {
                     $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
                 }
-                if ($rightType === self::TYPE_BIGINT) {
+                if ($rightType === Type::BIGINT) {
                     $rightExpr = 'php::BigInt::toInt(' . $rightExpr . ')';
-                } elseif ($rightType !== self::TYPE_INT) {
-                    $rightExpr = $this->convertExprType($rightExpr, $rightType, self::TYPE_INT);
+                } elseif ($rightType !== Type::INT) {
+                    $rightExpr = $this->convertExprType($rightExpr, $rightType, Type::INT);
                 }
                 $method = ($op === '<<') ? 'bitShiftLeft' : 'bitShiftRight';
                 return 'php::BigInt::' . $method . '(' . $leftExpr . ', ' . $rightExpr . ')';
             }
-            if ($leftType !== self::TYPE_BIGINT) {
+            if ($leftType !== Type::BIGINT) {
                 $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
             }
-            if ($rightType !== self::TYPE_BIGINT) {
+            if ($rightType !== Type::BIGINT) {
                 $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
             }
             $arithOpMap = ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod', '&' => 'bitAnd', '|' => 'bitOr', '^' => 'bitXor'];
@@ -110,7 +112,7 @@ trait BinaryOpTrait
         }
 
         // Any Big*-typed operand reaching here means no Big* block handled the operator
-        $bigTypes = [self::TYPE_BIGFLOAT, self::TYPE_DECIMAL, self::TYPE_BIGINT];
+        $bigTypes = [Type::BIGFLOAT, Type::DECIMAL, Type::BIGINT];
         if (in_array($leftType, $bigTypes, true) || in_array($rightType, $bigTypes, true)) {
             $this->fatalError($left, "Operator '{$op}' is not supported for Big* numeric types");
         }
@@ -118,15 +120,15 @@ trait BinaryOpTrait
         // Only promote between native types (Int ↔ Float).  When one side is
         // php::Var, let the Variant operator handle type coercion so that
         // run-time PHP type-juggling rules are followed correctly.
-        if ($leftType === self::TYPE_FLOAT && $rightType === self::TYPE_INT) {
-            $rightExpr = $this->convertExprType($rightExpr, self::TYPE_FLOAT, $rightType);
-        } elseif ($rightType === self::TYPE_FLOAT && $leftType === self::TYPE_INT) {
-            $leftExpr = $this->convertExprType($leftExpr, $leftType, self::TYPE_FLOAT);
+        if ($leftType === Type::FLOAT && $rightType === Type::INT) {
+            $rightExpr = $this->convertExprType($rightExpr, Type::FLOAT, $rightType);
+        } elseif ($rightType === Type::FLOAT && $leftType === Type::INT) {
+            $leftExpr = $this->convertExprType($leftExpr, $leftType, Type::FLOAT);
         }
 
         $this->guardLiteralDivisionByZero($right, $op);
 
-        if ($op === '%' and !($leftType === self::TYPE_INT and $rightType === self::TYPE_INT)) {
+        if ($op === '%' and !($leftType === Type::INT and $rightType === Type::INT)) {
             return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
         }
 
@@ -191,7 +193,7 @@ trait BinaryOpTrait
     {
         if ($expr instanceof Expr\BinaryOp) {
             $type = $this->detectTypeOfExpr($expr);
-            return in_array($type, [self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT], true) ? $type : self::TYPE_VAR;
+            return in_array($type, [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT], true) ? $type : Type::VAR;
         }
 
         if (
@@ -200,7 +202,7 @@ trait BinaryOpTrait
             || $expr instanceof Expr\StaticCall
         ) {
             $type = $this->detectTypeOfExpr($expr);
-            return in_array($type, [self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT], true) ? $type : self::TYPE_VAR;
+            return in_array($type, [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT], true) ? $type : Type::VAR;
         }
 
         if ($expr instanceof Expr\PropertyFetch) {
@@ -215,7 +217,7 @@ trait BinaryOpTrait
                     return $def->type;
                 }
             }
-            return self::TYPE_VAR;
+            return Type::VAR;
         }
 
         if ($expr instanceof Expr\StaticPropertyFetch) {
@@ -223,11 +225,11 @@ trait BinaryOpTrait
             if ($def && $this->isNativePropertyTypedValue($expr)) {
                 return $def->type;
             }
-            return self::TYPE_VAR;
+            return Type::VAR;
         }
 
         if ($expr instanceof Expr\ArrayDimFetch) {
-            return self::TYPE_VAR;
+            return Type::VAR;
         }
 
         $type = $this->detectTypeOfExpr($expr);
@@ -305,11 +307,11 @@ trait BinaryOpTrait
         $this->assertExprCanBeUsedAsValue($expr->left, 'binary operand');
         $this->assertExprCanBeUsedAsValue($expr->right, 'binary operand');
         $leftType = $this->detectTypeOfExpr($expr->left);
-        if ($leftType === self::TYPE_BIGINT) {
+        if ($leftType === Type::BIGINT) {
             $leftExpr = $this->parseOrderedOperand($expr->left, false);
             $rightExpr = $this->parseOrderedOperand($expr->right, false);
             $rightType = $this->detectTypeOfExpr($expr->right);
-            if ($rightType !== self::TYPE_BIGINT) {
+            if ($rightType !== Type::BIGINT) {
                 $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
             }
             return 'php::BigInt::pow(' . $leftExpr . ', ' . $rightExpr . ')';
@@ -376,7 +378,7 @@ trait BinaryOpTrait
      */
     private function optimizeIdenticalOp(NodeAbstract $astLeft, NodeAbstract $astRight, string $cppLeft, string $cppRight): ?string
     {
-        $primitiveTypes = [self::TYPE_INT, self::TYPE_FLOAT, self::TYPE_BOOL];
+        $primitiveTypes = [Type::INT, Type::FLOAT, Type::BOOL];
         $leftType  = $this->detectTypeOfExpr($astLeft);
         $rightType = $this->detectTypeOfExpr($astRight);
 
@@ -431,7 +433,7 @@ trait BinaryOpTrait
         $code .= $this->getIndent() . 'if (' . $rightCondition . ') {';
         $code .= $this->formatCapturedStmtLines($rightBeforeStmts);
         if ($rightAfterStmts) {
-            $rightTmpVar = $this->addTmpVar(self::TYPE_VAR);
+            $rightTmpVar = $this->addTmpVar(Type::VAR);
             $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';';
             $code .= $this->formatCapturedStmtLines($rightAfterStmts);
             $rightExpr = $rightTmpVar;
@@ -470,35 +472,35 @@ trait BinaryOpTrait
         $leftType = $this->detectTypeOfExpr($expr->left);
         $rightType = $this->detectTypeOfExpr($expr->right);
 
-        if ($leftType === self::TYPE_BIGFLOAT || $rightType === self::TYPE_BIGFLOAT) {
+        if ($leftType === Type::BIGFLOAT || $rightType === Type::BIGFLOAT) {
             $leftExpr = $this->parseOrderedOperand($expr->left, false);
             $rightExpr = $this->parseOrderedOperand($expr->right, false);
-            if ($leftType !== self::TYPE_BIGFLOAT) {
+            if ($leftType !== Type::BIGFLOAT) {
                 $leftExpr = $this->convertBigFloatExpr($leftExpr, $leftType);
             }
-            if ($rightType !== self::TYPE_BIGFLOAT) {
+            if ($rightType !== Type::BIGFLOAT) {
                 $rightExpr = $this->convertBigFloatExpr($rightExpr, $rightType);
             }
             return 'php::BigFloat::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
         }
-        if ($leftType === self::TYPE_BIGINT || $rightType === self::TYPE_BIGINT) {
+        if ($leftType === Type::BIGINT || $rightType === Type::BIGINT) {
             $leftExpr = $this->parseOrderedOperand($expr->left, false);
             $rightExpr = $this->parseOrderedOperand($expr->right, false);
-            if ($leftType !== self::TYPE_BIGINT) {
+            if ($leftType !== Type::BIGINT) {
                 $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
             }
-            if ($rightType !== self::TYPE_BIGINT) {
+            if ($rightType !== Type::BIGINT) {
                 $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
             }
             return 'php::BigInt::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;
         }
-        if ($leftType === self::TYPE_DECIMAL || $rightType === self::TYPE_DECIMAL) {
+        if ($leftType === Type::DECIMAL || $rightType === Type::DECIMAL) {
             $leftExpr = $this->parseOrderedOperand($expr->left, false);
             $rightExpr = $this->parseOrderedOperand($expr->right, false);
-            if ($leftType !== self::TYPE_DECIMAL) {
+            if ($leftType !== Type::DECIMAL) {
                 $leftExpr = $this->convertDecimalExpr($leftExpr, $leftType, $expr->left);
             }
-            if ($rightType !== self::TYPE_DECIMAL) {
+            if ($rightType !== Type::DECIMAL) {
                 $rightExpr = $this->convertDecimalExpr($rightExpr, $rightType, $expr->right);
             }
             return 'php::Decimal::cmp(' . $leftExpr . ', ' . $rightExpr . ')' . $suffix;

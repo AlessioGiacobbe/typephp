@@ -5,6 +5,7 @@ namespace TypePhp\Tests;
 use PHPUnit\Framework\TestCase;
 use TypePhp\CompilerTest;
 use TypePhp\CompilerBase;
+use TypePhp\Type;
 use TypePhp\Exception\TestError;
 use TypePhp\Platform\Windows;
 
@@ -159,26 +160,26 @@ class CompilerBaseApiTest extends TestCase
 
     public function testGetTypeFromZendTypeKnown(): void
     {
-        $this->assertEquals(CompilerBase::TYPE_INT, $this->compiler->getTypeFromZendType('int'));
-        $this->assertEquals(CompilerBase::TYPE_FLOAT, $this->compiler->getTypeFromZendType('float'));
-        $this->assertEquals(CompilerBase::TYPE_BOOL, $this->compiler->getTypeFromZendType('bool'));
-        $this->assertEquals(CompilerBase::TYPE_BOOL, $this->compiler->getTypeFromZendType('true'));
-        $this->assertEquals(CompilerBase::TYPE_BOOL, $this->compiler->getTypeFromZendType('false'));
-        $this->assertEquals(CompilerBase::TYPE_VOID, $this->compiler->getTypeFromZendType('void'));
-        $this->assertEquals(CompilerBase::TYPE_VOID, $this->compiler->getTypeFromZendType('never'));
-        $this->assertEquals(CompilerBase::TYPE_STR, $this->compiler->getTypeFromZendType('string'));
-        $this->assertEquals(CompilerBase::TYPE_ARRAY, $this->compiler->getTypeFromZendType('array'));
-        $this->assertEquals(CompilerBase::TYPE_OBJECT, $this->compiler->getTypeFromZendType('object'));
-        $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('mixed'));
-        $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('null'));
-        $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('callable'));
-        $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('iterable'));
+        $this->assertEquals(Type::INT, $this->compiler->getTypeFromZendType('int'));
+        $this->assertEquals(Type::FLOAT, $this->compiler->getTypeFromZendType('float'));
+        $this->assertEquals(Type::BOOL, $this->compiler->getTypeFromZendType('bool'));
+        $this->assertEquals(Type::BOOL, $this->compiler->getTypeFromZendType('true'));
+        $this->assertEquals(Type::BOOL, $this->compiler->getTypeFromZendType('false'));
+        $this->assertEquals(Type::VOID, $this->compiler->getTypeFromZendType('void'));
+        $this->assertEquals(Type::VOID, $this->compiler->getTypeFromZendType('never'));
+        $this->assertEquals(Type::STR, $this->compiler->getTypeFromZendType('string'));
+        $this->assertEquals(Type::ARRAY, $this->compiler->getTypeFromZendType('array'));
+        $this->assertEquals(Type::OBJECT, $this->compiler->getTypeFromZendType('object'));
+        $this->assertEquals(Type::VAR, $this->compiler->getTypeFromZendType('mixed'));
+        $this->assertEquals(Type::VAR, $this->compiler->getTypeFromZendType('null'));
+        $this->assertEquals(Type::VAR, $this->compiler->getTypeFromZendType('callable'));
+        $this->assertEquals(Type::VAR, $this->compiler->getTypeFromZendType('iterable'));
     }
 
     public function testGetTypeFromZendTypeUnknown(): void
     {
-        $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('unknown_type'));
-        $this->assertEquals(CompilerBase::TYPE_VAR, $this->compiler->getTypeFromZendType('SomeClass'));
+        $this->assertEquals(Type::VAR, $this->compiler->getTypeFromZendType('unknown_type'));
+        $this->assertEquals(Type::VAR, $this->compiler->getTypeFromZendType('SomeClass'));
     }
 
     // ========================================================================

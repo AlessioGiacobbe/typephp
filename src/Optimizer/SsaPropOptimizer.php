@@ -24,6 +24,8 @@
 
 namespace TypePhp\Optimizer;
 
+use TypePhp\Type;
+
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Analysis\SsaFlags;
 use TypePhp\Resolver\Reflection;
@@ -779,18 +781,18 @@ trait SsaPropOptimizer
      */
     protected function getHoistedObjectPropInfo(string $declaredType): array
     {
-        if ($declaredType === self::TYPE_INT || $declaredType === self::TYPE_FLOAT) {
+        if ($declaredType === Type::INT || $declaredType === Type::FLOAT) {
             return ['type' => $declaredType, 'kind' => 'zval'];
         }
 
-        return ['type' => self::TYPE_VAR, 'kind' => 'var'];
+        return ['type' => Type::VAR, 'kind' => 'var'];
     }
 
     protected function getZvalValueMacroForPropType(string $type): ?string
     {
         return match ($type) {
-            self::TYPE_INT => 'Z_LVAL_P',
-            self::TYPE_FLOAT => 'Z_DVAL_P',
+            Type::INT => 'Z_LVAL_P',
+            Type::FLOAT => 'Z_DVAL_P',
             default => null,
         };
     }
@@ -825,7 +827,7 @@ trait SsaPropOptimizer
         if ($zvalMacro !== null) {
             $this->context->beforeStmtLines[] = $cType . ' &' . $propVar . ' = ' . $zvalMacro . '(' . $refGetter . '.unwrap_ptr());';
         } else {
-            $this->context->beforeStmtLines[] = self::TYPE_VAR . ' ' . $propVar . ' = ' . $refGetter . ';';
+            $this->context->beforeStmtLines[] = Type::VAR . ' ' . $propVar . ' = ' . $refGetter . ';';
         }
         $this->context->hoistedProps[$objName][$propName] = true;
 

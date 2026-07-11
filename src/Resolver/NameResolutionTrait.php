@@ -8,6 +8,8 @@
 
 namespace TypePhp\Resolver;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
@@ -131,11 +133,11 @@ trait NameResolutionTrait
     {
         // 未定义类型视为 var (mixed, any)
         if ($type === null) {
-            return self::TYPE_VAR;
+            return Type::VAR;
         }
         if ($type instanceof UnionType || $type instanceof NullableType || $type instanceof IntersectionType) {
             // 复杂类型静态阶段统一按 mixed/var 处理，运行时再由 typeCheck 兜底。
-            return self::TYPE_VAR;
+            return Type::VAR;
         } else {
             $typeName = $this->parseIdentifier($type);
             $typeNameLower = strtolower($typeName);
@@ -162,7 +164,7 @@ trait NameResolutionTrait
                 if ($class and $this->classDef and $this->classDef->trait) {
                     $type->name = $class;
                 }
-                return self::TYPE_OBJECT;
+                return Type::OBJECT;
             }
         }
     }

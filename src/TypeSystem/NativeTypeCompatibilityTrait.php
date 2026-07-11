@@ -7,6 +7,8 @@
 
 namespace TypePhp\TypeSystem;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use TypePhp\Entity\ArgInfo;
 
@@ -15,8 +17,8 @@ trait NativeTypeCompatibilityTrait
     protected function getReturnType(): string
     {
         $type = $this->functionDef->returnType;
-        if ($type === self::TYPE_STREAM) {
-            return self::TYPE_VAR;
+        if ($type === Type::STREAM) {
+            return Type::VAR;
         }
         return $type;
     }
@@ -169,7 +171,7 @@ trait NativeTypeCompatibilityTrait
                 $var = $this->parseVariable($arg->value);
                 // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
                 if (!$this->hasLocalVar($var)) {
-                    $this->addLocalVar($var, self::TYPE_VAR);
+                    $this->addLocalVar($var, Type::VAR);
                 }
             }
             return $this->convertToRef($arg->value);
@@ -180,14 +182,14 @@ trait NativeTypeCompatibilityTrait
 
         $this->checkVarAssignExpr($arg, $argInfo->type, $type);
 
-        if ($argInfo->type === self::TYPE_VAR && $this->isVarExpr($arg->value)) {
+        if ($argInfo->type === Type::VAR && $this->isVarExpr($arg->value)) {
             $varName = $this->parseIdentifier($arg->value);
             if ($this->isStdContainer($varName)) {
                 return $varName;
             }
         }
 
-        if ($argInfo->type === self::TYPE_OBJECT) {
+        if ($argInfo->type === Type::OBJECT) {
             $declaredClass = $argInfo->declaredClass ?: $argInfo->class;
             if ($declaredClass !== '') {
                 $class = $this->detectDeclaredClassOfExpr($arg->value);
@@ -197,7 +199,7 @@ trait NativeTypeCompatibilityTrait
                     // 如果无法证明，但右值是已知 concrete object，说明一定不兼容，直接编译期 fatal；
                     // 其他动态/外部库/any 场景保留 php::toObject() 作为运行时兜底。
                     if ($this->isObjectClassStaticallyAssignableTo($class, $declaredClass)) {
-                        return $type === self::TYPE_OBJECT ? $expr : $this->convertObjectExpr($expr);
+                        return $type === Type::OBJECT ? $expr : $this->convertObjectExpr($expr);
                     }
                     if ($this->isKnownConcreteObjectExpr($arg->value, $class)) {
                         $argName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
@@ -206,7 +208,7 @@ trait NativeTypeCompatibilityTrait
                 }
                 return $this->convertObjectExpr($expr, $this->getClassEntryPtr($declaredClass));
             }
-            return $type === self::TYPE_OBJECT ? $expr : $this->convertObjectExpr($expr);
+            return $type === Type::OBJECT ? $expr : $this->convertObjectExpr($expr);
         }
 
         return $this->convertExprType($expr, $argInfo->type, $type);

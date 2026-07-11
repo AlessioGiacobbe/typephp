@@ -8,6 +8,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Scalar\MagicConst;
@@ -123,15 +125,15 @@ trait ConstantExpressionTrait
             return $this->getTypeFromZendType(gettype($this->internalConstants[$name]));
         }
         if (strcasecmp($name, 'true') === 0) {
-            return self::TYPE_BOOL;
+            return Type::BOOL;
         }
         if (strcasecmp($name, 'false') === 0) {
-            return self::TYPE_BOOL;
+            return Type::BOOL;
         }
         if ($name === 'NAN' or $name === 'INF') {
-            return self::TYPE_FLOAT;
+            return Type::FLOAT;
         }
-        return self::TYPE_VAR;
+        return Type::VAR;
     }
 
     protected function isInternalScalarConstant(string $name): bool

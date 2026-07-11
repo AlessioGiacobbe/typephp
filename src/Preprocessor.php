@@ -69,8 +69,8 @@ class Preprocessor extends CompilerBase
     protected function genArgumentDeclaration(ArgInfo $argInfo): string
     {
         $type = $argInfo->type;
-        if ($type === self::TYPE_STREAM || $type === self::TYPE_BOX) {
-            $type = self::TYPE_VAR;
+        if ($type === Type::STREAM || $type === Type::BOX) {
+            $type = Type::VAR;
         }
         return $type . ' ' . $argInfo->name;
     }
@@ -267,7 +267,7 @@ class Preprocessor extends CompilerBase
     protected function parseParameterType(Node\Param $param, ArgInfo $argInfo, string $var): string
     {
         if ($param->byRef) {
-            return self::TYPE_REF;
+            return Type::REF;
         }
         $class = '';
         $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
@@ -367,7 +367,7 @@ class Preprocessor extends CompilerBase
                 }
             }
             if ($param->variadic) {
-                $list[] = self::TYPE_ARRAY . ' ' . $name;
+                $list[] = Type::ARRAY . ' ' . $name;
             } else {
                 $list[] = $this->genArgumentDeclaration($argInfo);
             }
@@ -438,7 +438,7 @@ class Preprocessor extends CompilerBase
         $returnType = $this->parseTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN, $class);
         // 构造、析构、克隆方法不能有返回值
         if ($this->method and in_array($this->method, ['__construct', '__destruct', '__clone'])) {
-            $returnType = self::TYPE_VOID;
+            $returnType = Type::VOID;
         }
 
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
@@ -470,13 +470,13 @@ class Preprocessor extends CompilerBase
                 if (count($v->params) != 2) {
                     $this->fatalError($v, 'The parameters of the main function must be `(int $argc, array $argv)`.');
                 }
-                if ($returnType !== self::TYPE_VOID) {
+                if ($returnType !== Type::VOID) {
                     $this->fatalError($v, 'main function must return void');
                 }
-                if (!$this->checkArgType($functionDef->argInfoList[0]->type, self::TYPE_INT)) {
+                if (!$this->checkArgType($functionDef->argInfoList[0]->type, Type::INT)) {
                     $this->fatalError($v, 'The first parameter of the main function must be of type `int`.');
                 }
-                if (!$this->checkArgType($functionDef->argInfoList[1]->type, self::TYPE_ARRAY)) {
+                if (!$this->checkArgType($functionDef->argInfoList[1]->type, Type::ARRAY)) {
                     $this->fatalError($v, 'The second parameter of the main function must be of type `array`.');
                 }
             }
@@ -648,9 +648,9 @@ class Preprocessor extends CompilerBase
             $type = $declaredType;
             if ($type === null) {
                 $type = match ($const->value->getType()) {
-                    'Expr_Array' => self::TYPE_ARRAY,
-                    'Scalar_String' => self::TYPE_STR,
-                    default => self::TYPE_VAR,
+                    'Expr_Array' => Type::ARRAY,
+                    'Scalar_String' => Type::STR,
+                    default => Type::VAR,
                 };
             }
             $constName = $this->parseIdentifier($const->name);
@@ -697,7 +697,7 @@ class Preprocessor extends CompilerBase
         $arrayInitPlan = null;
         if ($defaultNode !== null) {
             if ($defaultNode instanceof Node\Expr\Array_) {
-                $type = self::TYPE_ARRAY;
+                $type = Type::ARRAY;
                 $arrayInitPlan = $this->buildLiteralArrayInitPlan($defaultNode);
                 $default = $arrayInitPlan->expr;
             } else {
@@ -868,9 +868,9 @@ class Preprocessor extends CompilerBase
                     $type = $stmt->type
                         ? $this->parseTypeDecl($stmt->type, self::DECL_TYPE_OF_CONST, $class)
                         : match ($const->value->getType()) {
-                            'Expr_Array' => self::TYPE_ARRAY,
-                            'Scalar_String' => self::TYPE_STR,
-                            default => self::TYPE_VAR,
+                            'Expr_Array' => Type::ARRAY,
+                            'Scalar_String' => Type::STR,
+                            default => Type::VAR,
                         };
                     $constInfo = $this->parseClassLikeConstant($const, $this->parseModifiers($stmt->flags), $type, $class);
                     $this->interfaceDef->constants[$constName] = $constInfo;

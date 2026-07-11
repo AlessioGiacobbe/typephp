@@ -9,6 +9,8 @@
 
 namespace TypePhp\Optimizer;
 
+use TypePhp\Type;
+
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Analysis\SsaFlags;
 use TypePhp\Analysis\SsaVar;
@@ -78,8 +80,8 @@ trait SsaTypeOptimizer
         }
 
         $narrowableTypes = [
-            self::TYPE_INT => true,
-            self::TYPE_FLOAT => true,
+            Type::INT => true,
+            Type::FLOAT => true,
         ];
 
         // Group SSA vars by original variable name
@@ -100,7 +102,7 @@ trait SsaTypeOptimizer
         foreach (array_keys($groups) as $name) {
             $varName = $this->escapeVarName($name);
             if (!isset($this->context->arguments[$varName]) && !$this->hasVar($varName)) {
-                $this->context->localVars[$varName] = self::TYPE_VAR;
+                $this->context->localVars[$varName] = Type::VAR;
             }
         }
 
@@ -141,7 +143,7 @@ trait SsaTypeOptimizer
                         $nonNarrowableType = $defType;
                     } elseif ($nonNarrowableType !== $defType) {
                         // Mixed non-narrowable types — can't determine a single type
-                        $nonNarrowableType = self::TYPE_VAR;
+                        $nonNarrowableType = Type::VAR;
                     }
                     continue;
                 }
@@ -160,7 +162,7 @@ trait SsaTypeOptimizer
 
             // Mixed narrowable and non-narrowable types (e.g. $x = [1,2] then $x = 42)
             // — can't safely narrow.
-            if ($narrowedType !== null && $nonNarrowableType !== null && $nonNarrowableType !== self::TYPE_VAR) {
+            if ($narrowedType !== null && $nonNarrowableType !== null && $nonNarrowableType !== Type::VAR) {
                 continue;
             }
 
@@ -169,7 +171,7 @@ trait SsaTypeOptimizer
                 // SSA variables can resolve them (these types have no extra metadata).
                 if (
                     $nonNarrowableType !== null
-                    && in_array($nonNarrowableType, [self::TYPE_BIGINT, self::TYPE_DECIMAL, self::TYPE_BIGFLOAT, self::TYPE_STREAM], true)
+                    && in_array($nonNarrowableType, [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT, Type::STREAM], true)
                 ) {
                     $this->context->localVars[$varName] = $nonNarrowableType;
                 }
@@ -179,10 +181,10 @@ trait SsaTypeOptimizer
             // Scan for operations that SSA definition types alone can't detect
             $functionStmts = $ssa->getStmts();
             if ($functionStmts) {
-                if ($narrowedType === self::TYPE_INT && $this->hasDangerousIntOps($varName, $functionStmts)) {
+                if ($narrowedType === Type::INT && $this->hasDangerousIntOps($varName, $functionStmts)) {
                     continue;
                 }
-                if ($narrowedType === self::TYPE_FLOAT && $this->hasDangerousFloatOps($varName, $functionStmts)) {
+                if ($narrowedType === Type::FLOAT && $this->hasDangerousFloatOps($varName, $functionStmts)) {
                     continue;
                 }
             }
@@ -211,7 +213,7 @@ trait SsaTypeOptimizer
         if ($def instanceof Node\Stmt\Expression && $def->expr instanceof Node\Expr\Assign) {
             $expr = $def->expr->expr;
             $type = $this->detectTypeOfExpr($expr);
-            if ($type === self::TYPE_INT && !$this->isSafeSsaIntExpr($expr)) {
+            if ($type === Type::INT && !$this->isSafeSsaIntExpr($expr)) {
                 return null;
             }
             return $type;
@@ -232,7 +234,7 @@ trait SsaTypeOptimizer
         }
 
         if ($def instanceof Node\Stmt\Catch_) {
-            return self::TYPE_OBJECT;
+            return Type::OBJECT;
         }
 
         if ($def instanceof Node\Stmt\Static_) {
@@ -250,11 +252,11 @@ trait SsaTypeOptimizer
     protected function detectAssignOpDefType(Node\Expr\AssignOp $expr): ?string
     {
         if ($expr instanceof Node\Expr\AssignOp\Div) {
-            return self::TYPE_FLOAT;
+            return Type::FLOAT;
         }
 
         if ($expr instanceof Node\Expr\AssignOp\Concat) {
-            return self::TYPE_STR;
+            return Type::STR;
         }
 
         if ($expr instanceof Node\Expr\AssignOp\Pow) {
@@ -265,10 +267,10 @@ trait SsaTypeOptimizer
             || $expr instanceof Node\Expr\AssignOp\Minus
             || $expr instanceof Node\Expr\AssignOp\Mul) {
             $rhsType = $this->detectTypeOfExpr($expr->expr);
-            if ($rhsType === self::TYPE_FLOAT) {
-                return self::TYPE_FLOAT;
+            if ($rhsType === Type::FLOAT) {
+                return Type::FLOAT;
             }
-            if ($rhsType === self::TYPE_INT) {
+            if ($rhsType === Type::INT) {
                 return null;
             }
             return $rhsType;
@@ -292,7 +294,7 @@ trait SsaTypeOptimizer
         }
 
         if ($expr instanceof Node\Expr\ConstFetch) {
-            return $this->detectConstType($expr) === self::TYPE_INT;
+            return $this->detectConstType($expr) === Type::INT;
         }
 
         if ($expr instanceof Node\Expr\BitwiseNot) {

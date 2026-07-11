@@ -8,6 +8,8 @@
 
 namespace TypePhp\Generator;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use PhpParser\Node\Expr\Yield_;
 use PhpParser\Node\Expr\YieldFrom;
@@ -71,7 +73,7 @@ trait FiberGenerator
             $this->fatalError($v, 'Generator return type must accept TypePHP\\FiberGenerator; use Iterator, Traversable, iterable, object, mixed, or omit the return type');
         }
         $functionDef->generator = true;
-        $functionDef->returnType = self::TYPE_VAR;
+        $functionDef->returnType = Type::VAR;
         $functionDef->returnClass = '';
         $functionDef->returnTypeCheck = null;
         $functionDef->returnTypeStr = '';
@@ -126,7 +128,7 @@ trait FiberGenerator
     {
         $payload = $this->genYieldPayload($expr);
         $closed = $this->genTmpVarName();
-        $this->addLocalVar($closed, self::TYPE_BOOL);
+        $this->addLocalVar($closed, Type::BOOL);
         return $closed . ' = false;' . PHP_EOL
             . $this->getIndent() . $closed . ' = typephp_fiber_yield(' . $payload . ');' . PHP_EOL
             . $this->getIndent() . 'if (' . $closed . ') {' . PHP_EOL
@@ -137,7 +139,7 @@ trait FiberGenerator
     protected function parseYieldFromStmt(YieldFrom $expr): string
     {
         $closed = $this->genTmpVarName();
-        $this->addLocalVar($closed, self::TYPE_BOOL);
+        $this->addLocalVar($closed, Type::BOOL);
         return $closed . ' = false;' . PHP_EOL
             . $this->getIndent() . 'typephp_fiber_yield_from(' . $this->parseExprAsValue($expr->expr) . ', &' . $closed . ');' . PHP_EOL
             . $this->getIndent() . 'if (' . $closed . ') {' . PHP_EOL
@@ -180,9 +182,9 @@ trait FiberGenerator
 
     private function doGenFiberGeneratorFunction(Function_|ClassMethod $v, FunctionDef $functionDef, string $nativeName): string
     {
-        $functionDeclCode = self::TYPE_VAR . ' ' . self::PREFIX . $nativeName . '(';
+        $functionDeclCode = Type::VAR . ' ' . self::PREFIX . $nativeName . '(';
         if ($this->class) {
-            $functionDeclCode .= self::TYPE_OBJECT . ' &this_';
+            $functionDeclCode .= Type::OBJECT . ' &this_';
             if ($functionDef->params) {
                 $functionDeclCode .= ', ';
             }
@@ -210,8 +212,8 @@ trait FiberGenerator
         $closureVar = $this->genTmpVarName();
         $code .= $this->getIndent() . 'php::ClosureFn ' . $closureVar . ' = []('
             . 'INTERNAL_FUNCTION_PARAMETERS, '
-            . self::TYPE_OBJECT . ' &this_, '
-            . self::TYPE_ARGS . ' &vars_) -> ' . self::TYPE_VAR . ' {' . PHP_EOL;
+            . Type::OBJECT . ' &this_, '
+            . Type::ARGS . ' &vars_) -> ' . Type::VAR . ' {' . PHP_EOL;
 
         $outerContext = $this->context;
         $outerIndent = $this->indentLevel;
@@ -222,11 +224,11 @@ trait FiberGenerator
         $this->indentLevel++;
 
         foreach ($functionDef->argInfoList as $i => $argInfo) {
-            $code .= $this->getIndent() . self::TYPE_VAR . ' ' . $argInfo->name . ' = vars_.get(' . $i . ');' . PHP_EOL;
-            $this->addArgument($argInfo->name, self::TYPE_VAR);
+            $code .= $this->getIndent() . Type::VAR . ' ' . $argInfo->name . ' = vars_.get(' . $i . ');' . PHP_EOL;
+            $this->addArgument($argInfo->name, Type::VAR);
         }
         if ($this->class) {
-            $this->addArgument('this_', self::TYPE_OBJECT);
+            $this->addArgument('this_', Type::OBJECT);
         }
 
         $body = '';

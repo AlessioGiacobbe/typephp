@@ -7,6 +7,8 @@
 
 namespace TypePhp\Generator;
 
+use TypePhp\Type;
+
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -110,14 +112,14 @@ trait CallArgumentGenerator
             $arg = $variadicArgs[0][1];
             if ($this->isVarExpr($arg->value)) {
                 $var = $this->parseIdentifier($arg->value);
-                if ($this->getVarType($var) === self::TYPE_ARRAY) {
+                if ($this->getVarType($var) === Type::ARRAY) {
                     return $var;
                 }
             }
             return $this->convertArrayExpr($this->parseExpr($arg->value));
         }
 
-        $tmpVar = $this->addTmpVar(self::TYPE_ARRAY);
+        $tmpVar = $this->addTmpVar(Type::ARRAY);
         foreach ($variadicArgs as [$name, $arg]) {
             if ($arg->unpack) {
                 $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
@@ -151,7 +153,7 @@ trait CallArgumentGenerator
 
         $tmpVar = $this->genTmpVarName();
 
-        $array = self::TYPE_ARRAY . ' ' . $tmpVar . ';';
+        $array = Type::ARRAY . ' ' . $tmpVar . ';';
         foreach ($namedArgs as $k => $v) {
             $array .= $tmpVar . '.set(' . $this->getLiteralString($k) . ', ' . $v . ');' . PHP_EOL;
         }
@@ -439,7 +441,7 @@ trait CallArgumentGenerator
                     $globalVar = $this->parseGlobalsArrayDimFetch($arg->value);
                     // 全局变量作为引用参数
                     if ($byRef) {
-                        $ref = $this->addTmpVar(self::TYPE_REF);
+                        $ref = $this->addTmpVar(Type::REF);
                         $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
                         $this->addPositionalCallArg('&' . $ref, $arrayArgsVar, $list_args);
                     } else {
@@ -477,7 +479,7 @@ trait CallArgumentGenerator
                         $this->fatalError($arg, 'The constants cannot be used as an argument for a reference-type parameter');
                     }
                     $tmpRef = $this->genTmpVarName();
-                    $this->addLocalVar($tmpRef, self::TYPE_REF);
+                    $this->addLocalVar($tmpRef, Type::REF);
                     $this->context->beforeStmtLines[] = $tmpRef . ' = ' . $this->parseChainedExpr($arg->value, self::OP_REFVAL) . ';';
                     $this->addPositionalCallArg('&' . $tmpRef, $arrayArgsVar, $list_args);
                     continue;
@@ -541,7 +543,7 @@ trait CallArgumentGenerator
     {
         if ($argsVar === null) {
             $argsVar = $this->genTmpVarName();
-            $this->context->beforeStmtLines[] = self::TYPE_ARGS . ' ' . $argsVar . '{' . Symbol::argList() . '{' . implode(', ', $listArgs) . '}};';
+            $this->context->beforeStmtLines[] = Type::ARGS . ' ' . $argsVar . '{' . Symbol::argList() . '{' . implode(', ', $listArgs) . '}};';
             $listArgs = [];
         }
         return $argsVar;
@@ -551,7 +553,7 @@ trait CallArgumentGenerator
     {
         if ($arrayArgsVar === null) {
             $arrayArgsVar = $this->genTmpVarName();
-            $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $arrayArgsVar . '{' . implode(', ', $listArgs) . '};';
+            $this->context->beforeStmtLines[] = Type::ARRAY . ' ' . $arrayArgsVar . '{' . implode(', ', $listArgs) . '};';
             $listArgs = [];
         }
         return $arrayArgsVar;
@@ -561,7 +563,7 @@ trait CallArgumentGenerator
     {
         if ($namedArgsVar === null) {
             $namedArgsVar = $this->genTmpVarName();
-            $this->context->beforeStmtLines[] = self::TYPE_ARRAY . ' ' . $namedArgsVar . ';';
+            $this->context->beforeStmtLines[] = Type::ARRAY . ' ' . $namedArgsVar . ';';
             $this->context->afterStmtLines[] = $namedArgsVar . '.unset();';
         }
         return $namedArgsVar;
@@ -617,7 +619,7 @@ trait CallArgumentGenerator
             $array = $this->parseIdentifier($arg->value->var);
             if ($array === 'GLOBALS') {
                 $globalVar = $this->parseGlobalsArrayDimFetch($arg->value);
-                $ref = $this->addTmpVar(self::TYPE_REF);
+                $ref = $this->addTmpVar(Type::REF);
                 $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
                 return '&' . $ref;
             }
@@ -635,7 +637,7 @@ trait CallArgumentGenerator
         }
 
         $tmpRef = $this->genTmpVarName();
-        $this->addLocalVar($tmpRef, self::TYPE_REF);
+        $this->addLocalVar($tmpRef, Type::REF);
         $this->context->beforeStmtLines[] = $tmpRef . ' = ' . $this->parseChainedExpr($arg->value, self::OP_REFVAL) . ';';
         return '&' . $tmpRef;
     }
@@ -684,7 +686,7 @@ trait CallArgumentGenerator
             $array = $this->parseIdentifier($inner->var);
             if ($array === 'GLOBALS') {
                 $globalVar = $this->parseGlobalsArrayDimFetch($inner);
-                $ref = $this->addTmpVar(self::TYPE_REF);
+                $ref = $this->addTmpVar(Type::REF);
                 $this->context->beforeStmtLines[] = $ref . ' = ' . $globalVar . '.toReference();';
                 return '&' . $ref;
             }
@@ -706,15 +708,15 @@ trait CallArgumentGenerator
     {
         if (!$this->hasVar($name)) {
             // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
-            $this->addLocalVar($name, self::TYPE_REF);
+            $this->addLocalVar($name, Type::REF);
         } else {
             // 本地变量，且是原生类型，则转为普通变量
             if ($this->hasLocalVar($name) and $this->isNativeType($this->getVarType($name))) {
-                $this->context->localVars[$name] = self::TYPE_VAR;
+                $this->context->localVars[$name] = Type::VAR;
             }
             // 需要引用类型的参数，使用临时变量作为引用，并替换掉实际的参数
             $tmpVar = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, self::TYPE_REF);
+            $this->addLocalVar($tmpVar, Type::REF);
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($arg->value) . '.toReference();';
             $name = $tmpVar;
         }
@@ -771,7 +773,7 @@ trait CallArgumentGenerator
             if (!$this->hasVar($var)) {
                 $this->errorUndefinedVariable($value);
             }
-            if ($this->getVarType($var) === self::TYPE_ARRAY) {
+            if ($this->getVarType($var) === Type::ARRAY) {
                 return $var;
             }
         }

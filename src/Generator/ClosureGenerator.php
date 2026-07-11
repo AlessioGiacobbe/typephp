@@ -8,6 +8,8 @@
 
 namespace TypePhp\Generator;
 
+use TypePhp\Type;
+
 use TypePhp\Entity\ArgInfo;
 use TypePhp\Context\FunctionContext;
 use PhpParser\Node;
@@ -80,9 +82,9 @@ trait ClosureGenerator
         $code = $this->getIndent() .
             'php::ClosureFn ' . $tmpVar . ' = []('
             . 'INTERNAL_FUNCTION_PARAMETERS, '
-            . self::TYPE_OBJECT . ' &this_, '
-            . self::TYPE_ARGS . ' &vars_) ' .
-            '-> ' . self::TYPE_VAR . ' {' . PHP_EOL;
+            . Type::OBJECT . ' &this_, '
+            . Type::ARGS . ' &vars_) ' .
+            '-> ' . Type::VAR . ' {' . PHP_EOL;
 
         $oriContext = $this->context;
         $this->context = new FunctionContext();
@@ -125,14 +127,14 @@ trait ClosureGenerator
             $var = $this->parseIdentifier($param->var);
             $phpName = is_string($param->var->name) ? $param->var->name : $this->unescapeVarName($var);
             if ($param->variadic) {
-                $code .= $this->getIndent() . self::TYPE_ARRAY . ' ' . $var . ';' . PHP_EOL;
+                $code .= $this->getIndent() . Type::ARRAY . ' ' . $var . ';' . PHP_EOL;
                 $code .= $this->getIndent() . 'for (uint32_t i = ' . $i . '; i < php::getCallArgNum(); i++) {' . PHP_EOL;
                 $this->indentLevel++;
                 $code .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
                 $this->indentLevel--;
                 $code .= $this->getIndent() . '}' . PHP_EOL;
                 $code .= $this->genExtraNamedVariadicArgs($var);
-                $this->addArgument($var, self::TYPE_ARRAY);
+                $this->addArgument($var, Type::ARRAY);
                 $code .= $this->genClosureParamTypeCheck($param, $var, $phpName, $i, true);
                 continue;
             }
@@ -140,18 +142,18 @@ trait ClosureGenerator
                 ? 'php::getCallArg(' . $i . ')'
                 : 'php::getCallArg(' . $i . ', ' . $this->parseParamDefaultValue($param->default) . ')';
             $code .= $this->getIndent() . 'auto ' . $var . ' = ' . $argExpr . ';' . PHP_EOL;
-            $this->addArgument($var, self::TYPE_VAR);
+            $this->addArgument($var, Type::VAR);
             $code .= $this->genClosureParamTypeCheck($param, $var, $phpName, $i, false);
         }
 
         foreach ($uses as $i => $useItem) {
             $var = $this->parseIdentifier($useItem->var);
             $code .= 'auto ' . $var . ' = vars_.get(' . $i . ');' . PHP_EOL;
-            $this->addArgument($var, self::TYPE_VAR);
+            $this->addArgument($var, Type::VAR);
         }
 
         if ($this->methodDef) {
-            $this->addArgument('this_', self::TYPE_OBJECT);
+            $this->addArgument('this_', Type::OBJECT);
         }
 
         $body = $this->genClosureBody($expr);
@@ -171,7 +173,7 @@ trait ClosureGenerator
                 if ($useItem->byRef) {
                     // 闭包的 use 语法，若为引用类型，可以就地创建变量
                     if (!isset($oriContext->localVars[$var])) {
-                        $oriContext->localVars[$var] = self::TYPE_REF;
+                        $oriContext->localVars[$var] = Type::REF;
                     }
                     $useVars[] = $this->convertToRef($useItem->var);
                 } else {
@@ -221,11 +223,11 @@ trait ClosureGenerator
         }
         if ($this->isCallExpr($expr->expr)) {
             $nativeCall = $expr->expr->getAttribute('nativeCall');
-            if ($nativeCall and $this->getFunction($nativeCall)->returnType === self::TYPE_VOID) {
+            if ($nativeCall and $this->getFunction($nativeCall)->returnType === Type::VOID) {
                 return $this->genArrowFunctionVoidReturn($beforeCode, $code);
             }
         }
-        if ($this->detectTypeOfExpr($expr->expr) === self::TYPE_VOID) {
+        if ($this->detectTypeOfExpr($expr->expr) === Type::VOID) {
             return $this->genArrowFunctionVoidReturn($beforeCode, $code);
         }
         return $beforeCode . PHP_EOL . $this->genClosureReturnValue($code);
@@ -260,7 +262,7 @@ trait ClosureGenerator
         $argInfo = new ArgInfo();
         $argInfo->name = $var;
         $argInfo->phpName = $phpName;
-        $argInfo->type = self::TYPE_VAR;
+        $argInfo->type = Type::VAR;
         $argInfo->variadic = $variadic;
         $argInfo->typeCheck = $typeInfo['check'];
         $argInfo->typeStr = $typeInfo['typeStr'];

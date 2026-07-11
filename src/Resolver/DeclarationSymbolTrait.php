@@ -7,6 +7,8 @@
 
 namespace TypePhp\Resolver;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 
 trait DeclarationSymbolTrait
@@ -51,16 +53,16 @@ trait DeclarationSymbolTrait
     protected function detectStrValueType(mixed $constant): string
     {
         if ($this->isIntStr($constant)) {
-            return self::TYPE_INT;
+            return Type::INT;
         }
         if ($this->isFloatStr($constant)) {
-            return self::TYPE_FLOAT;
+            return Type::FLOAT;
         }
         if ($this->isBoolStr($constant)) {
-            return self::TYPE_BOOL;
+            return Type::BOOL;
         }
 
-        return self::TYPE_VAR;
+        return Type::VAR;
     }
 
 

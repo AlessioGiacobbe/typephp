@@ -10,6 +10,8 @@
 
 namespace TypePhp\Optimizer;
 
+use TypePhp\Type;
+
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Analysis\SsaFlags;
 use PhpParser\Node;
@@ -62,7 +64,7 @@ trait LoopVarOptimizer
             if ($depFailed) {
                 continue;
             }
-            $this->context->localVars[$escapedName] = self::TYPE_INT;
+            $this->context->localVars[$escapedName] = Type::INT;
         }
     }
 
@@ -386,7 +388,7 @@ trait LoopVarOptimizer
             return false;
         }
 
-        return $this->detectTypeOfExpr($expr) === self::TYPE_INT;
+        return $this->detectTypeOfExpr($expr) === Type::INT;
     }
 
     protected function isLoopKnownNonNegativeIntCall(NodeAbstract $expr): bool

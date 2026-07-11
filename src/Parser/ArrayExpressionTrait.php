@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
@@ -18,7 +20,7 @@ trait ArrayExpressionTrait
         $items = $node->items;
         // 优化代码风格，空数组直接返回{}，否则会产生一些空洞内容
         if (count($items) === 0) {
-            return self::TYPE_ARRAY . '{}';
+            return Type::ARRAY . '{}';
         }
 
         $hasKey = false;
@@ -58,14 +60,14 @@ trait ArrayExpressionTrait
             if ($item->key) {
                 $this->assertExprCanBeUsedAsValue($item->key, 'array key');
                 $key = $this->parseArrayKey($item->key);
-                $list[] = $this->getIndent() . '{ ' . $key . ', ' . self::TYPE_VAR . '(' . $value . ') }';
+                $list[] = $this->getIndent() . '{ ' . $key . ', ' . Type::VAR . '(' . $value . ') }';
             } else {
-                $list[] = $this->getIndent() . self::TYPE_VAR . '(' . $value . ')';
+                $list[] = $this->getIndent() . Type::VAR . '(' . $value . ')';
             }
         }
         $this->indentLevel--;
 
-        return self::TYPE_ARRAY . '{' . PHP_EOL .
+        return Type::ARRAY . '{' . PHP_EOL .
             implode(', ' . PHP_EOL, $list) . PHP_EOL .
             $this->getIndent() .
             '}';
@@ -83,10 +85,10 @@ trait ArrayExpressionTrait
         if ($this->isScalarString($node->dim)) {
             $name = $node->dim->value;
             if (!$this->hasGlobalVar($name)) {
-                $this->addGlobalVar($name, self::TYPE_VAR);
+                $this->addGlobalVar($name, Type::VAR);
             }
             if (!$this->hasScopeGlobalVar($name)) {
-                $this->addScopeGlobalVar($name, self::TYPE_VAR);
+                $this->addScopeGlobalVar($name, Type::VAR);
             }
             return $name;
         }
@@ -170,17 +172,17 @@ trait ArrayExpressionTrait
             }
             if (!$this->hasVar($var)) {
                 if ($write) {
-                    $this->addLocalVar($var, self::TYPE_ARRAY);
+                    $this->addLocalVar($var, Type::ARRAY);
                 } else {
                     $this->errorUndefinedVariable($node->var);
                 }
             } else {
                 $type = $this->getVarType($var);
-                if ($type === self::TYPE_BOOL || $type === self::TYPE_INT || $type === self::TYPE_FLOAT) {
+                if ($type === Type::BOOL || $type === Type::INT || $type === Type::FLOAT) {
                     $this->fatalError($node, 'Cannot use [] for numbers');
                 }
             }
-            if ($this->getVarType($var) === self::TYPE_STR) {
+            if ($this->getVarType($var) === Type::STR) {
                 if ($node->dim === null) {
                     $this->fatalError($node, 'Cannot use [] for strings');
                 }
@@ -206,7 +208,7 @@ trait ArrayExpressionTrait
     private function parseArrayMixed(Expr\Array_ $node): string
     {
         $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, self::TYPE_ARRAY);
+        $this->addLocalVar($tmpVar, Type::ARRAY);
         // 释放临时变量，避免修改数组产生数组复制操作
         $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.clean();';
 

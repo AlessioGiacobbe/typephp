@@ -8,6 +8,8 @@
 
 namespace TypePhp\Resolver;
 
+use TypePhp\Type;
+
 use TypePhp\Entity\MethodDef;
 use PhpParser\NodeAbstract;
 
@@ -91,110 +93,110 @@ trait MagicMethodDetector
 
         if ($nameLower == '__call' or $nameLower == '__callstatic') {
             if ($argInfoList[0]->undeclared) {
-                $argInfoList[0]->type = self::TYPE_STR;
-            } elseif ($argInfoList[0]->type !== self::TYPE_STR) {
+                $argInfoList[0]->type = Type::STR;
+            } elseif ($argInfoList[0]->type !== Type::STR) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must take string as first argument');
             }
             if ($argInfoList[1]->undeclared) {
-                $argInfoList[1]->type = self::TYPE_ARRAY;
-            } elseif ($argInfoList[1]->type !== self::TYPE_ARRAY) {
+                $argInfoList[1]->type = Type::ARRAY;
+            } elseif ($argInfoList[1]->type !== Type::ARRAY) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must take array as second argument');
             }
         } elseif ($nameLower == '__set') {
             if ($argInfoList[0]->undeclared) {
-                $argInfoList[0]->type = self::TYPE_STR;
-            } elseif ($argInfoList[0]->type !== self::TYPE_STR) {
+                $argInfoList[0]->type = Type::STR;
+            } elseif ($argInfoList[0]->type !== Type::STR) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must take string as first argument');
             }
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_VOID;
-            } elseif ($fnDef->returnType !== self::TYPE_VOID) {
+                $fnDef->returnType = Type::VOID;
+            } elseif ($fnDef->returnType !== Type::VOID) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return void');
             }
         } elseif ($nameLower == '__get') {
             if ($argInfoList[0]->undeclared) {
-                $argInfoList[0]->type = self::TYPE_STR;
-            } elseif ($argInfoList[0]->type !== self::TYPE_STR) {
+                $argInfoList[0]->type = Type::STR;
+            } elseif ($argInfoList[0]->type !== Type::STR) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must take string as argument');
             }
         } elseif ($nameLower == '__tostring') {
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_STR;
-            } elseif ($fnDef->returnType !== self::TYPE_STR) {
+                $fnDef->returnType = Type::STR;
+            } elseif ($fnDef->returnType !== Type::STR) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return string');
             }
         } elseif ($nameLower == '__serialize') {
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_ARRAY;
-            } elseif ($fnDef->returnType !== self::TYPE_ARRAY) {
+                $fnDef->returnType = Type::ARRAY;
+            } elseif ($fnDef->returnType !== Type::ARRAY) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return array');
             }
         } elseif ($nameLower == '__unserialize') {
             if ($argInfoList[0]->undeclared) {
-                $argInfoList[0]->type = self::TYPE_ARRAY;
-            } elseif ($argInfoList[0]->type !== self::TYPE_ARRAY) {
+                $argInfoList[0]->type = Type::ARRAY;
+            } elseif ($argInfoList[0]->type !== Type::ARRAY) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must take array as argument');
             }
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_VOID;
-            } elseif ($fnDef->returnType !== self::TYPE_VOID) {
+                $fnDef->returnType = Type::VOID;
+            } elseif ($fnDef->returnType !== Type::VOID) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return void');
             }
         } elseif ($nameLower == '__isset') {
             if ($argInfoList[0]->undeclared) {
-                $argInfoList[0]->type = self::TYPE_STR;
-            } elseif ($argInfoList[0]->type !== self::TYPE_STR) {
+                $argInfoList[0]->type = Type::STR;
+            } elseif ($argInfoList[0]->type !== Type::STR) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must take string as argument');
             }
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_BOOL;
-            } elseif ($fnDef->returnType !== self::TYPE_BOOL) {
+                $fnDef->returnType = Type::BOOL;
+            } elseif ($fnDef->returnType !== Type::BOOL) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return bool');
             }
         } elseif ($nameLower == '__unset') {
             if ($argInfoList[0]->undeclared) {
-                $argInfoList[0]->type = self::TYPE_STR;
-            } elseif ($argInfoList[0]->type !== self::TYPE_STR) {
+                $argInfoList[0]->type = Type::STR;
+            } elseif ($argInfoList[0]->type !== Type::STR) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must take string as argument');
             }
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_VOID;
-            } elseif ($fnDef->returnType !== self::TYPE_VOID) {
+                $fnDef->returnType = Type::VOID;
+            } elseif ($fnDef->returnType !== Type::VOID) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return void');
             }
         } elseif ($nameLower == '__set_state') {
             if ($argInfoList[0]->undeclared) {
-                $argInfoList[0]->type = self::TYPE_ARRAY;
-            } elseif ($argInfoList[0]->type !== self::TYPE_ARRAY) {
+                $argInfoList[0]->type = Type::ARRAY;
+            } elseif ($argInfoList[0]->type !== Type::ARRAY) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must take array as argument');
             }
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_OBJECT;
-            } elseif ($fnDef->returnType !== self::TYPE_OBJECT) {
+                $fnDef->returnType = Type::OBJECT;
+            } elseif ($fnDef->returnType !== Type::OBJECT) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return object');
             }
         } elseif ($nameLower == '__debuginfo') {
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_ARRAY;
-            } elseif ($fnDef->returnType !== self::TYPE_ARRAY) {
+                $fnDef->returnType = Type::ARRAY;
+            } elseif ($fnDef->returnType !== Type::ARRAY) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return array');
             }
         } elseif ($nameLower == '__sleep') {
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_ARRAY;
-            } elseif ($fnDef->returnType !== self::TYPE_ARRAY) {
+                $fnDef->returnType = Type::ARRAY;
+            } elseif ($fnDef->returnType !== Type::ARRAY) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return array');
             }
         } elseif ($nameLower == '__wakeup') {
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_VOID;
-            } elseif ($fnDef->returnType !== self::TYPE_VOID) {
+                $fnDef->returnType = Type::VOID;
+            } elseif ($fnDef->returnType !== Type::VOID) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return void');
             }
         } elseif ($nameLower == '__clone') {
             if ($returnTypeUndeclared) {
-                $fnDef->returnType = self::TYPE_VOID;
-            } elseif ($fnDef->returnType !== self::TYPE_VOID) {
+                $fnDef->returnType = Type::VOID;
+            } elseif ($fnDef->returnType !== Type::VOID) {
                 $this->fatalError($v, 'Method ' . $methodName . '() must return void');
             }
         }
@@ -203,11 +205,11 @@ trait MagicMethodDetector
         $list = [];
         foreach ($fnDef->argInfoList as $argInfo) {
             if ($argInfo->variadic) {
-                $list[] = self::TYPE_ARRAY . ' ' . $argInfo->name;
+                $list[] = Type::ARRAY . ' ' . $argInfo->name;
             } else {
                 $type = $argInfo->type;
-                if ($type === self::TYPE_STREAM || $type === self::TYPE_BOX) {
-                    $type = self::TYPE_VAR;
+                if ($type === Type::STREAM || $type === Type::BOX) {
+                    $type = Type::VAR;
                 }
                 $list[] = $type . ' ' . $argInfo->name;
             }
@@ -217,7 +219,7 @@ trait MagicMethodDetector
 
     protected function checkArgType(string $givenType, string $expectType, bool $canBeVar = true): bool
     {
-        if ($canBeVar and $givenType == self::TYPE_VAR) {
+        if ($canBeVar and $givenType == Type::VAR) {
             return true;
         }
         return $givenType == $expectType;

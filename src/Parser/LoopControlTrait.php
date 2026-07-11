@@ -7,6 +7,8 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\Type;
+
 use PhpParser\Node;
 
 trait LoopControlTrait
@@ -56,7 +58,7 @@ trait LoopControlTrait
                 foreach ($list_cond as [$condExpr, $beforeStmts, $afterStmts]) {
                     $this->appendCapturedStmtLines($condCode, $beforeStmts);
                     if ($afterStmts) {
-                        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                        $tmpVar = $this->addTmpVar(Type::VAR);
                         $condCode .= $this->getIndent() . $tmpVar . ' = ' . $condExpr . ';' . PHP_EOL;
                         $this->appendCapturedStmtLines($condCode, $afterStmts);
                         $condExpr = $tmpVar;
@@ -115,7 +117,7 @@ trait LoopControlTrait
             $code .= 'while (true) {' . PHP_EOL;
             $this->appendCapturedStmtLines($code, $beforeStmts);
             if ($afterStmts) {
-                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $tmpVar = $this->addTmpVar(Type::VAR);
                 $code .= $this->getIndent() . $tmpVar . ' = ' . $cond . ';' . PHP_EOL;
                 $this->appendCapturedStmtLines($code, $afterStmts);
                 $cond = $tmpVar;
@@ -141,7 +143,7 @@ trait LoopControlTrait
             $condCode = '[&]() -> bool {';
             $this->appendCapturedStmtLines($condCode, $beforeStmts);
             if ($afterStmts) {
-                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+                $tmpVar = $this->addTmpVar(Type::VAR);
                 $condCode .= $this->getIndent() . $tmpVar . ' = ' . $cond . ';' . PHP_EOL;
                 $this->appendCapturedStmtLines($condCode, $afterStmts);
                 $cond = $tmpVar;

@@ -8,7 +8,8 @@
 
 namespace TypePhp\Generator;
 
-use TypePhp\CompilerBase;
+use TypePhp\Type;
+
 use TypePhp\Metadata\Constants;
 
 trait Utils
@@ -54,7 +55,7 @@ trait Utils
 
     protected function genArray(array $elements): string
     {
-        return CompilerBase::TYPE_ARRAY . '{' . implode(', ', $elements) . ' }';
+        return Type::ARRAY . '{' . implode(', ', $elements) . ' }';
     }
 
     protected function genRawStr(string $str): string

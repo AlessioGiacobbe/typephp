@@ -1,5 +1,7 @@
 # AOT 编译器核心重构计划
 
+> 针对 `Translator`、`CompilerBase`、`Preprocessor` 的下一阶段 OOA/OOD/OOP 重构，请以 [CORE_OOA_OOD_OOP_REFACTORING_PLAN.md](CORE_OOA_OOD_OOP_REFACTORING_PLAN.md) 为实施基线。本文档保留此前模块化重构的历史计划。
+
 ## 背景
 
 当前 AOT 编译器核心类承担了过多职责，尤其是 `CompilerBase`、`Translator` 等类同时包含 AST 分发、类型推导、属性访问解析、调用解析、代码生成、诊断信息、上下文状态维护等逻辑。随着功能持续增加，这种结构会带来以下问题：

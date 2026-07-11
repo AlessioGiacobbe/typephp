@@ -8,6 +8,8 @@
 
 namespace TypePhp\Optimizer;
 
+use TypePhp\Type;
+
 use TypePhp\Resolver\Reflection;
 use PhpParser\Node;
 
@@ -126,28 +128,28 @@ trait FuncCallOptimizer
 
             // Big* dispatch
             'abs' => ['bigDispatch' => [
-                self::TYPE_BIGINT => 'php::BigInt::abs',
-                self::TYPE_BIGFLOAT => 'php::BigFloat::abs',
-                self::TYPE_DECIMAL => 'php::Decimal::abs',
+                Type::BIGINT => 'php::BigInt::abs',
+                Type::BIGFLOAT => 'php::BigFloat::abs',
+                Type::DECIMAL => 'php::Decimal::abs',
                 'fallback' => 'php::fn::abs',
             ]],
             'pow' => ['bigDispatch' => [
-                self::TYPE_BIGINT => 'php::BigInt::pow',
-                self::TYPE_DECIMAL => 'php::Decimal::pow',
+                Type::BIGINT => 'php::BigInt::pow',
+                Type::DECIMAL => 'php::Decimal::pow',
                 'fallback' => 'php::fn::pow',
             ]],
             'sqrt' => ['bigDispatch' => [
-                self::TYPE_BIGINT => 'php::BigInt::sqrt',
-                self::TYPE_DECIMAL => 'php::Decimal::sqrt',
-                self::TYPE_BIGFLOAT => 'php::BigFloat::sqrt',
+                Type::BIGINT => 'php::BigInt::sqrt',
+                Type::DECIMAL => 'php::Decimal::sqrt',
+                Type::BIGFLOAT => 'php::BigFloat::sqrt',
                 'fallback' => 'php::fn::sqrt',
             ]],
             'floor' => ['bigDispatch' => [
-                self::TYPE_DECIMAL => 'php::Decimal::floor',
+                Type::DECIMAL => 'php::Decimal::floor',
                 'fallback' => 'php::fn::floor',
             ]],
             'ceil' => ['bigDispatch' => [
-                self::TYPE_DECIMAL => 'php::Decimal::ceil',
+                Type::DECIMAL => 'php::Decimal::ceil',
                 'fallback' => 'php::fn::ceil',
             ]],
 
@@ -158,9 +160,9 @@ trait FuncCallOptimizer
             'boolval'  => ['conversion' => self::ARG_TYPE_BOOL],
 
             // SSA compile-time type checks
-            'is_int'    => ['constFold' => self::FOLD_SSA_TYPE, 'constFoldExtra' => self::TYPE_INT],
-            'is_float'  => ['constFold' => self::FOLD_SSA_TYPE, 'constFoldExtra' => self::TYPE_FLOAT],
-            'is_bool'   => ['constFold' => self::FOLD_SSA_TYPE, 'constFoldExtra' => self::TYPE_BOOL],
+            'is_int'    => ['constFold' => self::FOLD_SSA_TYPE, 'constFoldExtra' => Type::INT],
+            'is_float'  => ['constFold' => self::FOLD_SSA_TYPE, 'constFoldExtra' => Type::FLOAT],
+            'is_bool'   => ['constFold' => self::FOLD_SSA_TYPE, 'constFoldExtra' => Type::BOOL],
 
             // Custom handlers
             'is_null'            => ['handler' => 'genIsNull'],
@@ -474,9 +476,9 @@ trait FuncCallOptimizer
 
         if ($convType === self::ARG_TYPE_STR) {
             return match ($type) {
-                self::TYPE_BIGINT => 'php::BigInt::toString(' . $parsed . ')',
-                self::TYPE_BIGFLOAT => 'php::BigFloat::toString(' . $parsed . ')',
-                self::TYPE_DECIMAL => 'php::Decimal::toString(' . $parsed . ')',
+                Type::BIGINT => 'php::BigInt::toString(' . $parsed . ')',
+                Type::BIGFLOAT => 'php::BigFloat::toString(' . $parsed . ')',
+                Type::DECIMAL => 'php::Decimal::toString(' . $parsed . ')',
                 default => $this->convertStringExpr($parsed),
             };
         }
@@ -692,7 +694,7 @@ trait FuncCallOptimizer
     protected function genRound(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         $type = $this->detectTypeOfExpr($e->args[0]->value);
-        if ($type === self::TYPE_DECIMAL) {
+        if ($type === Type::DECIMAL) {
             $a0 = $this->parseExpr($e->args[0]->value);
             if (count($e->args) >= 2) {
                 return 'php::Decimal::round(' . $a0 . ', ' . $this->parseExpr($e->args[1]->value) . ')';
@@ -743,7 +745,7 @@ trait FuncCallOptimizer
         $list = [];
         foreach ($funcDef->argInfoList as $i => $argInfo) {
             if ($argInfo->variadic) {
-                $tmpVar = $this->addTmpVar(self::TYPE_ARRAY);
+                $tmpVar = $this->addTmpVar(Type::ARRAY);
                 $this->context->beforeStmtLines[] = $this->genArray($list) . ';';
                 $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $argInfo->name . ');';
                 return $tmpVar;

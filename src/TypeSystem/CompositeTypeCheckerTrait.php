@@ -7,6 +7,8 @@
 
 namespace TypePhp\TypeSystem;
 
+use TypePhp\Type;
+
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 
@@ -33,7 +35,7 @@ trait CompositeTypeCheckerTrait
         // TYPE_VAR means that the expression is dynamic or its result cannot
         // be represented by the current scalar type system. It must retain the
         // runtime type check.
-        if ($this->detectTypeOfExpr($value) === self::TYPE_VAR && !$this->isNullExpr($value)) {
+        if ($this->detectTypeOfExpr($value) === Type::VAR && !$this->isNullExpr($value)) {
             return self::COMPOSITE_TYPE_UNKNOWN;
         }
 
@@ -77,19 +79,19 @@ trait CompositeTypeCheckerTrait
 
         $type = $this->detectTypeOfExpr($value);
         return match ($kind) {
-            'isInt' => $this->exactCompositeTypeRelation($type, self::TYPE_INT),
+            'isInt' => $this->exactCompositeTypeRelation($type, Type::INT),
             // PHP permits int -> float widening. It is compatible but still
             // needs conversion, so retain the runtime normalization path.
-            'isFloat' => $type === self::TYPE_INT
+            'isFloat' => $type === Type::INT
                 ? self::COMPOSITE_TYPE_UNKNOWN
-                : $this->exactCompositeTypeRelation($type, self::TYPE_FLOAT),
-            'isBool' => $this->exactCompositeTypeRelation($type, self::TYPE_BOOL),
-            'isString' => $this->exactCompositeTypeRelation($type, self::TYPE_STR),
-            'isArray' => $this->exactCompositeTypeRelation($type, self::TYPE_ARRAY),
-            'isObject' => $this->exactCompositeTypeRelation($type, self::TYPE_OBJECT),
+                : $this->exactCompositeTypeRelation($type, Type::FLOAT),
+            'isBool' => $this->exactCompositeTypeRelation($type, Type::BOOL),
+            'isString' => $this->exactCompositeTypeRelation($type, Type::STR),
+            'isArray' => $this->exactCompositeTypeRelation($type, Type::ARRAY),
+            'isObject' => $this->exactCompositeTypeRelation($type, Type::OBJECT),
             'isTrue' => $this->compositeLiteralBoolRelation($value, true),
             'isFalse' => $this->compositeLiteralBoolRelation($value, false),
-            'isResource' => $this->exactCompositeTypeRelation($type, self::TYPE_RESOURCE),
+            'isResource' => $this->exactCompositeTypeRelation($type, Type::RESOURCE),
             'callable' => $this->compositeCallableRelation($value, $type),
             'iterable' => $this->compositeIterableRelation($value, $type),
             'instanceof' => $this->compositeObjectEntryRelation($value, $entry),
@@ -108,14 +110,14 @@ trait CompositeTypeCheckerTrait
             $actual = strcasecmp($value->name->toString(), 'true') === 0;
             return $actual === $expected ? self::COMPOSITE_TYPE_MATCH : self::COMPOSITE_TYPE_MISMATCH;
         }
-        return $this->detectTypeOfExpr($value) === self::TYPE_BOOL
+        return $this->detectTypeOfExpr($value) === Type::BOOL
             ? self::COMPOSITE_TYPE_UNKNOWN
             : self::COMPOSITE_TYPE_MISMATCH;
     }
 
     protected function compositeCallableRelation(NodeAbstract $value, string $type): int
     {
-        if ($type === self::TYPE_STR || $type === self::TYPE_ARRAY || $type === self::TYPE_OBJECT) {
+        if ($type === Type::STR || $type === Type::ARRAY || $type === Type::OBJECT) {
             return self::COMPOSITE_TYPE_UNKNOWN;
         }
         return self::COMPOSITE_TYPE_MISMATCH;
@@ -123,10 +125,10 @@ trait CompositeTypeCheckerTrait
 
     protected function compositeIterableRelation(NodeAbstract $value, string $type): int
     {
-        if ($type === self::TYPE_ARRAY) {
+        if ($type === Type::ARRAY) {
             return self::COMPOSITE_TYPE_MATCH;
         }
-        if ($type !== self::TYPE_OBJECT) {
+        if ($type !== Type::OBJECT) {
             return self::COMPOSITE_TYPE_MISMATCH;
         }
         return $this->compositeObjectTypeRelation($value, 'Traversable');
@@ -134,7 +136,7 @@ trait CompositeTypeCheckerTrait
 
     protected function compositeObjectEntryRelation(NodeAbstract $value, array $entry): int
     {
-        if ($this->detectTypeOfExpr($value) !== self::TYPE_OBJECT) {
+        if ($this->detectTypeOfExpr($value) !== Type::OBJECT) {
             return self::COMPOSITE_TYPE_MISMATCH;
         }
 
@@ -182,12 +184,12 @@ trait CompositeTypeCheckerTrait
         }
         $type = $this->detectTypeOfExpr($expr);
         return match ($type) {
-            self::TYPE_INT => 'int',
-            self::TYPE_FLOAT => 'float',
-            self::TYPE_BOOL => 'bool',
-            self::TYPE_STR => 'string',
-            self::TYPE_ARRAY => 'array',
-            self::TYPE_OBJECT => 'object',
+            Type::INT => 'int',
+            Type::FLOAT => 'float',
+            Type::BOOL => 'bool',
+            Type::STR => 'string',
+            Type::ARRAY => 'array',
+            Type::OBJECT => 'object',
             default => 'mixed',
         };
     }
