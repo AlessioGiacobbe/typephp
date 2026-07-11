@@ -15,6 +15,7 @@ use TypePhp\Build\NativeBuildConfigurationTrait;
 use TypePhp\Entity\ArgInfo;
 use TypePhp\Context\FunctionContext;
 use TypePhp\Context\CompilationStateTrait;
+use TypePhp\Diagnostics\CompilerDiagnosticTrait;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ConstantDef;
 use TypePhp\Entity\FunctionDef;
@@ -24,7 +25,6 @@ use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\DynamicCall;
 use TypePhp\Exception\PlaceHolder;
 use TypePhp\Exception\Redo;
-use TypePhp\Exception\TestError;
 use TypePhp\Generator\AnonClassGenerator;
 use TypePhp\Generator\CallArgumentGenerator;
 use TypePhp\Generator\ClosureGenerator;
@@ -56,6 +56,7 @@ use TypePhp\Parser\SelectionExpressionTrait;
 use TypePhp\Parser\SwitchTrait;
 use TypePhp\Parser\TypeConversionTrait;
 use TypePhp\Parser\TypeDetectionTrait;
+use TypePhp\Parser\UnaryExpressionTrait;
 use TypePhp\Parser\UniversalMethodCall;
 use TypePhp\Optimizer\FuncCallOptimizer;
 use TypePhp\Platform\Linux;
@@ -97,6 +98,7 @@ class CompilerBase implements PropertyAccessContext
 {
     public const string DEFAULT_PHP_VERSION = '8.5';
     use CompositeTypeCheckerTrait;
+    use CompilerDiagnosticTrait;
     use CompilationStateTrait;
     use NativeTypeCompatibilityTrait;
     use NativeBuildConfigurationTrait;
@@ -127,6 +129,7 @@ class CompilerBase implements PropertyAccessContext
     use SwitchTrait;
     use TypeConversionTrait;
     use TypeDetectionTrait;
+    use UnaryExpressionTrait;
     use AssignOpTrait;
     use ArrayExpressionTrait;
     use UniversalMethodCall;
@@ -2623,49 +2626,6 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * Report a compiler fatal error.
-     */
-    public function error(string $msg): never
-    {
-        if ($this->forTest) {
-            throw new TestError($msg);
-        } else {
-            $this->climate->red("Fatal error: {$msg}");
-            if ($this->printBacktraceOnError) {
-                debug_print_backtrace();
-            }
-            exit(255);
-        }
-    }
-
-    public function fatalError(NodeAbstract $node, string $msg): never
-    {
-        $this->error("{$msg} in {$this->file}:{$node->getStartLine()}");
-    }
-
-    protected function warning(Node $node, string $msg): void
-    {
-        $this->climate->magenta("{$msg} in {$this->file}:{$node->getStartLine()}");
-    }
-
-    protected function errorUndefinedVariable(Variable $node): never
-    {
-        $this->fatalError($node, "The variable `\${$node->name}` is undefined");
-    }
-
-    protected function warningUndefinedBehavior(NodeAbstract $expr): void
-    {
-        $this->warning($expr, 'Use this expression carefully, which may be inconsistent with the dynamic execution behavior');
-    }
-
-    protected function dump(NodeAbstract $v): void
-    {
-        if ($this->debugLine == $v->getStartLine()) {
-            var_dump($v);
-        }
-    }
-
-    /**
      * $GLOBALS['var'] 等价于 global $var; $var ，将字符串常量转为变量名称即可
      * 仅限于字面量字符串可以转为变量名称，其他则使用 php::global() 函数获取
      */
@@ -2711,11 +2671,6 @@ class CompilerBase implements PropertyAccessContext
         }
 
         return false;
-    }
-
-    protected function foundStrayCode(Node $node): never
-    {
-        $this->fatalError($node, 'All execution code must be within a function, found stray code');
     }
 
     protected function checkInternalFunctionArgCount(string $funcName, Node\Expr\FuncCall $expr): void
@@ -2961,23 +2916,6 @@ class CompilerBase implements PropertyAccessContext
         return $result;
     }
 
-    protected function parseBitwiseNot(Expr\BitwiseNot $expr): string
-    {
-        $type = $this->detectTypeOfExpr($expr->expr);
-        $this->assertExprCanBeUsedAsValue($expr->expr, 'bitwise operand');
-        if ($type === self::TYPE_BIGINT) {
-            return 'php::BigInt::bitNot(' . $this->parseExpr($expr->expr) . ')';
-        }
-        $var = $this->parseIdentifier($expr->expr);
-        return '~' . $this->convertIntExpr($var);
-    }
-
-    protected function parseBooleanNot(Expr\BooleanNot $expr): string
-    {
-        $this->assertExprCanBeUsedAsCondition($expr->expr, 'boolean operand');
-        return '!(' . $this->parseExprAsValue($expr->expr) . ')';
-    }
-
     protected function parsePrint(Expr\Print_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'print operand');
@@ -3125,57 +3063,6 @@ class CompilerBase implements PropertyAccessContext
             $className = $this->getNamespacedClassName($className);
         }
         return $this->getClassEntryPtr($className);
-    }
-
-    protected function parseCastInt(Expr\Cast\Int_ $node): string
-    {
-        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
-        return $this->convertIntExpr($this->parseExprAsValue($node->expr));
-    }
-
-    protected function parseCastString(Expr\Cast\String_ $node): string
-    {
-        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
-        return $this->convertExprToStringByType(
-            $this->parseExprAsValue($node->expr),
-            $this->detectTypeOfExpr($node->expr)
-        );
-    }
-
-    protected function parseCastBool(Expr\Cast\Bool_ $node): string
-    {
-        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
-        return $this->convertBoolExpr($this->parseExprAsValue($node->expr));
-    }
-
-    protected function parseCastObject(Expr\Cast\Object_ $node): string
-    {
-        $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
-        return $this->convertObjectExpr($this->parseExprAsValue($node->expr));
-    }
-
-    protected function parseUnaryMinus(Expr\UnaryMinus $expr): string
-    {
-        $type = $this->detectTypeOfExpr($expr->expr);
-        $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
-        if ($type === self::TYPE_BIGFLOAT) {
-                        return 'php::BigFloat::neg(' . $this->parseExprAsValue($expr->expr) . ')';
-        }
-        if ($type === self::TYPE_BIGINT) {
-                        return 'php::BigInt::neg(' . $this->parseExprAsValue($expr->expr) . ')';
-        }
-        if ($type === self::TYPE_DECIMAL) {
-                        return 'php::Decimal::neg(' . $this->parseExprAsValue($expr->expr) . ')';
-        }
-        $code = $this->parseExprAsValue($expr->expr);
-
-        return '-' . $code;
-    }
-
-    protected function parseUnaryPlus(Expr\UnaryPlus $expr): string
-    {
-        $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
-        return $this->parseExprAsValue($expr->expr);
     }
 
     protected function parseInterpolatedString(Node\Scalar\InterpolatedString $expr): string

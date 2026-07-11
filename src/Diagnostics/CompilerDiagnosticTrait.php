@@ -1,0 +1,65 @@
+<?php
+/**
+ * This file is part of TypePHP.
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+namespace TypePhp\Diagnostics;
+
+use PhpParser\Node;
+use PhpParser\Node\Expr\Variable;
+use PhpParser\NodeAbstract;
+use TypePhp\Exception\TestError;
+
+trait CompilerDiagnosticTrait
+{
+    /**
+     * Report a compiler fatal error.
+     */
+    public function error(string $msg): never
+    {
+        if ($this->forTest) {
+            throw new TestError($msg);
+        }
+
+        $this->climate->red("Fatal error: {$msg}");
+        if ($this->printBacktraceOnError) {
+            debug_print_backtrace();
+        }
+        exit(255);
+    }
+
+    public function fatalError(NodeAbstract $node, string $msg): never
+    {
+        $this->error("{$msg} in {$this->file}:{$node->getStartLine()}");
+    }
+
+    protected function warning(Node $node, string $msg): void
+    {
+        $this->climate->magenta("{$msg} in {$this->file}:{$node->getStartLine()}");
+    }
+
+    protected function errorUndefinedVariable(Variable $node): never
+    {
+        $this->fatalError($node, "The variable `\${$node->name}` is undefined");
+    }
+
+    protected function warningUndefinedBehavior(NodeAbstract $expr): void
+    {
+        $this->warning($expr, 'Use this expression carefully, which may be inconsistent with the dynamic execution behavior');
+    }
+
+    protected function dump(NodeAbstract $node): void
+    {
+        if ($this->debugLine == $node->getStartLine()) {
+            var_dump($node);
+        }
+    }
+
+    protected function foundStrayCode(Node $node): never
+    {
+        $this->fatalError($node, 'All execution code must be within a function, found stray code');
+    }
+}
