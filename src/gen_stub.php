@@ -104,7 +104,7 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
         if (!$fileInfo = $context->parsedFiles[$stubFile] ?? null) {
             initPhpParser();
             $stubContent = $stubCode ?? file_get_contents($stubFile);
-            $fileInfo = FileInfo::parseStubFile($stubContent);
+            $fileInfo = FileInfo::parseStubFile($stubContent, $context->phpVersion);
             $context->parsedFiles[$stubFile] = $fileInfo;
 
             foreach ($fileInfo->dependencies as $dependency) {
@@ -182,6 +182,7 @@ class Context {
     /** @var FileInfo[] */
     public array $parsedFiles = [];
     public string $objectFile = '';
+    public string $phpVersion = '8.5';
 }
 
 class ArrayType extends SimpleType {
@@ -4457,8 +4458,8 @@ class FileInfo {
         return $legacyFileInfo;
     }
 
-    public static function parseStubFile(string $code): FileInfo {
-        $parser = new PhpParser\Parser\Php7(new PhpParser\Lexer\Emulative());
+    public static function parseStubFile(string $code, string $phpVersion = '8.5'): FileInfo {
+        $parser = (new PhpParser\ParserFactory())->createForVersion(PhpParser\PhpVersion::fromString($phpVersion));
         $nodeTraverser = new PhpParser\NodeTraverser;
         $nodeTraverser->addVisitor(new PhpParser\NodeVisitor\NameResolver);
         $prettyPrinter = new class extends Standard {
@@ -6353,7 +6354,7 @@ function getTranslator(): Translator
 /**
  * @throws Exception
  */
-function generateStubFile(string $stubFile, string $objectFile, bool $forceRegeneration): void
+function generateStubFile(string $stubFile, string $objectFile, bool $forceRegeneration, string $phpVersion = '8.5'): void
 {
     $opt_index = 0;
     $options = getopt(
@@ -6367,6 +6368,7 @@ function generateStubFile(string $stubFile, string $objectFile, bool $forceRegen
     );
 
     $context = new Context;
+    $context->phpVersion = $phpVersion;
     $printParameterStats = isset($options["parameter-stats"]);
     $verify = isset($options["verify"]);
     $verifyManual = isset($options["verify-manual"]);

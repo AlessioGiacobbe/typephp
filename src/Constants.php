@@ -155,6 +155,11 @@ class Constants
             'required' => false,
             'noValue' => true,
         ],
+        'php-version' => [
+            'longPrefix' => 'php-version',
+            'description' => 'PHP language version to accept (8.2, 8.3, 8.4, or 8.5; default: 8.5)',
+            'required' => false,
+        ],
         'force' => [
             'prefix' => 'f',
             'longPrefix' => 'force',

@@ -46,7 +46,6 @@
 
 ## 表达式与控制流
 
-- `echo` 不允许直接使用赋值表达式。
 - `match` 的 arm condition 不能是 `match` 表达式。
 - `foreach` by reference 的 value 只能是变量。
 - `foreach` by reference 不支持 list destructuring。

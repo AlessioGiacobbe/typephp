@@ -74,6 +74,7 @@ use PhpParser\PrettyPrinter;
 
 class CompilerBase implements PropertyAccessContext
 {
+    public const string DEFAULT_PHP_VERSION = '8.5';
     use AstNodeType;
     use FuncCallOptimizer;
     use AnonClassGenerator;
@@ -385,6 +386,7 @@ class CompilerBase implements PropertyAccessContext
     protected bool $noProgress = false;
     protected bool $forTest = false;
     protected Parser $parser;
+    protected string $phpVersion = self::DEFAULT_PHP_VERSION;
     protected PrettyPrinter $printer;
     protected bool $isPhpZts = false;  // PHP 是否为线程安全版本
 
@@ -426,7 +428,7 @@ class CompilerBase implements PropertyAccessContext
             $this->error('PHP 8.6.0 or later is not supported');
         }
         $this->rootPath = $rootPath;
-        $this->parser = (new ParserFactory())->createForVersion(PhpVersion::fromString(PHP_VERSION));
+        $this->setPhpVersion(self::DEFAULT_PHP_VERSION);
         $this->printer = new PrettyPrinter\Standard();
         $this->setBuildDir($rootPath . '/build');
         $climate = new CLImate();
@@ -436,6 +438,24 @@ class CompilerBase implements PropertyAccessContext
     public function setMode($mode): void
     {
         $this->mode = $mode;
+    }
+
+    /** Set the PHP language version accepted by the parser. */
+    public function setPhpVersion(string $version): void
+    {
+        if (!preg_match('/^8\.(2|3|4|5)(?:\.0)?$/', $version, $matches)) {
+            $this->error('Unsupported PHP language version: `' . $version . '`. Supported versions: 8.2, 8.3, 8.4, 8.5');
+        }
+
+        $this->phpVersion = '8.' . $matches[1] . '.0';
+        // php-parser's emulative lexer permits the compiler runtime to be
+        // older than the selected PHP language version.
+        $this->parser = (new ParserFactory())->createForVersion(PhpVersion::fromString($this->phpVersion));
+    }
+
+    public function getPhpVersion(): string
+    {
+        return $this->phpVersion;
     }
 
     public function setIndent(string $indent): void
@@ -704,6 +724,8 @@ class CompilerBase implements PropertyAccessContext
                 return $this->parseBinaryOpBitwiseOr($expr);
             case 'Expr_BinaryOp_BitwiseXor':
                 return $this->parseBinaryOpBitwiseXor($expr);
+            case 'Expr_BinaryOp_Pipe':
+                return $this->parsePipeOperator($expr);
             case 'Expr_BitwiseNot':
                 return $this->parseBitwiseNot($expr);
             case 'Expr_BinaryOp_Mod':
@@ -3549,6 +3571,63 @@ class CompilerBase implements PropertyAccessContext
                 }
             }
         }
+    }
+
+    /**
+     * PHP 8.5 pipe operator: $value |> $callable.
+     *
+     * The left operand is evaluated first and passed as the single value
+     * argument to the callable on the right. Materialising the left operand
+     * also avoids relying on C++ argument-evaluation order.
+     */
+    protected function parsePipeOperator(Expr\BinaryOp\Pipe $expr): string
+    {
+        $this->assertExprCanBeUsedAsValue($expr->left, 'pipe left operand');
+        $this->assertExprCanBeUsedAsValue($expr->right, 'pipe callable');
+
+        [$leftExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr->left);
+        $this->appendCapturedStmtLinesToContext($beforeStmts);
+        $value = $this->addTmpVar(self::TYPE_VAR);
+        $this->context->beforeStmtLines[] = $value . ' = ' . $leftExpr . ';';
+        $this->appendCapturedStmtLinesToContext($afterStmts);
+
+        $directCall = $this->parsePipeFirstClassCallable($expr->right, $value);
+        if ($directCall !== null) {
+            return $directCall;
+        }
+
+        $callable = $this->parseExprAsValue($expr->right);
+        return 'php::call(' . $callable . ', {' . $value . '})';
+    }
+
+    /**
+     * Lower a first-class callable used as a pipe target to its direct call.
+     *
+     * `trim(...)`, `ClassName::method(...)`, and `$object->method(...)` do
+     * not need a Closure when the pipe immediately invokes them. Reusing the
+     * ordinary call parsers preserves native-call optimization, argument
+     * validation, visibility checks, and the left-to-right evaluation order.
+     */
+    protected function parsePipeFirstClassCallable(NodeAbstract $callable, string $value): ?string
+    {
+        if (!$callable instanceof CallLike || !$callable->isFirstClassCallable()) {
+            return null;
+        }
+
+        $directCall = clone $callable;
+        $directCall->args = [new Node\Arg(new Variable($value))];
+
+        if ($directCall instanceof Expr\FuncCall) {
+            return $this->parseFuncCall($directCall);
+        }
+        if ($directCall instanceof Expr\StaticCall) {
+            return $this->parseStaticCall($directCall);
+        }
+        if ($directCall instanceof Expr\MethodCall) {
+            return $this->parseMethodCall($directCall);
+        }
+
+        return null;
     }
 
     protected function parseFuncCall(Expr\FuncCall $expr): string

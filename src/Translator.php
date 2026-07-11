@@ -258,6 +258,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('--target-platform <triple> Cross-compilation target triple (e.g. aarch64-linux-gnu)');
         $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
+        $climate->tab()->out('--php-version <ver>  PHP language version to accept (8.2-8.5, default: 8.5)');
         $climate->tab()->out('--no-progress        Disable progress bar, output per-file compilation progress line by line');
         $climate->tab()->out('--no-console         Hide console window (Windows only, GUI application)');
         $climate->tab()->out('--no-color           Disable ANSI color output');
@@ -277,6 +278,8 @@ class Translator extends Preprocessor
      */
     protected function applyCommandLineArguments(): void
     {
+        $this->applyPhpVersionCommandLineArgument();
+
         // 优化级别
         if ($this->climate->arguments->defined('optimize')) {
             $this->optimizeLevel = $this->climate->arguments->get('optimize');
@@ -390,6 +393,14 @@ class Translator extends Preprocessor
         // 用户自定义库搜索路径（直接从 argv 解析以支持多值）
         if ($this->hasRepeatableArgvFlag(['-L', '--link-path'])) {
             $this->linkPaths = $this->parseRepeatableArgv(['-L', '--link-path']);
+        }
+    }
+
+    /** Apply this option early because YAML source conditions depend on it. */
+    protected function applyPhpVersionCommandLineArgument(): void
+    {
+        if ($this->climate->arguments->defined('php-version')) {
+            $this->setPhpVersion((string) $this->climate->arguments->get('php-version'));
         }
     }
 
@@ -655,6 +666,7 @@ class Translator extends Preprocessor
 
     public function getFiles(string $path): array
     {
+        $this->applyPhpVersionCommandLineArgument();
         $realpath = realpath($path);
         if ($realpath === false) {
             $this->error("path not exists: {$path}");
@@ -2343,6 +2355,10 @@ CODE;
         $cfg = Yaml::parseFile($path);
         $projectDir = dirname($path);
 
+        if (array_key_exists('php-version', $cfg) && !$this->climate->arguments->defined('php-version')) {
+            $this->setPhpVersion((string) $cfg['php-version']);
+        }
+
         if (!empty($cfg['sources'])) {
             $sources = $cfg['sources'];
             if (!is_array($sources)) {
@@ -2639,7 +2655,7 @@ CODE;
         $expr = preg_replace_callback(
             '/\bPHP_VERSION_ID\b\s*' . $operator . '\s*([0-9]+)/i',
             function (array $matches): string {
-                return version_compare(PHP_VERSION, $this->phpVersionIdToString((int) $matches[2]), $this->normalizeProjectYamlVersionOperator($matches[1])) ? '1' : '0';
+                return version_compare($this->phpVersion, $this->phpVersionIdToString((int) $matches[2]), $this->normalizeProjectYamlVersionOperator($matches[1])) ? '1' : '0';
             },
             $condition
         );
@@ -2650,7 +2666,7 @@ CODE;
         $expr = preg_replace_callback(
             '/([0-9]+)\s*' . $operator . '\s*\bPHP_VERSION_ID\b/i',
             function (array $matches): string {
-                return version_compare($this->phpVersionIdToString((int) $matches[1]), PHP_VERSION, $this->normalizeProjectYamlVersionOperator($matches[2])) ? '1' : '0';
+                return version_compare($this->phpVersionIdToString((int) $matches[1]), $this->phpVersion, $this->normalizeProjectYamlVersionOperator($matches[2])) ? '1' : '0';
             },
             $expr
         );
@@ -2663,7 +2679,7 @@ CODE;
             function (array $matches): string {
                 $version = stripcslashes(($matches[3] ?? '') !== '' ? $matches[3] : $matches[4]);
                 $this->assertProjectYamlVersionLiteral($version);
-                return version_compare(PHP_VERSION, $version, $this->normalizeProjectYamlVersionOperator($matches[1])) ? '1' : '0';
+                return version_compare($this->phpVersion, $version, $this->normalizeProjectYamlVersionOperator($matches[1])) ? '1' : '0';
             },
             $expr
         );
@@ -2676,7 +2692,7 @@ CODE;
             function (array $matches): string {
                 $version = stripcslashes($matches[2] !== '' ? $matches[2] : $matches[3]);
                 $this->assertProjectYamlVersionLiteral($version);
-                return version_compare($version, PHP_VERSION, $this->normalizeProjectYamlVersionOperator($matches[4])) ? '1' : '0';
+                return version_compare($version, $this->phpVersion, $this->normalizeProjectYamlVersionOperator($matches[4])) ? '1' : '0';
             },
             $expr
         );
@@ -3007,7 +3023,7 @@ CODE;
         $headerFile = $this->getArgInfoHeaderFile($file, true);
 
         $this->climate->info('generate arginfo file: ' . $this->getRelativePath($file));
-        generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true);
+        generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true, $this->getPhpVersion());
 
         $headerCode = file_get_contents($this->getBuildDir() . '/include/' . $headerFile);
         $needsAttributeSymbols = str_contains($headerCode, 'zend_add_function_attribute(')

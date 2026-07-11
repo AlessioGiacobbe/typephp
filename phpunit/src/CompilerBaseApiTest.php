@@ -5,6 +5,7 @@ namespace TypePhp\Tests;
 use PHPUnit\Framework\TestCase;
 use TypePhp\CompilerTest;
 use TypePhp\CompilerBase;
+use TypePhp\Exception\TestError;
 use TypePhp\Platform\Windows;
 
 class CompilerBaseApiTest extends TestCase
@@ -113,6 +114,27 @@ class CompilerBaseApiTest extends TestCase
 
         $this->compiler->setBuildMode('cli');
         $this->assertSame(CompilerBase::BUILD_MODE_BIN, $this->compiler->getBuildMode());
+    }
+
+    public function testPhpLanguageVersionControlsParser(): void
+    {
+        $this->assertSame('8.5.0', $this->compiler->getPhpVersion());
+
+        $this->compiler->setPhpVersion('8.4');
+        $this->assertSame('8.4.0', $this->compiler->getPhpVersion());
+        $parser = $this->getPropertyValue('parser');
+        $this->expectException(\PhpParser\Error::class);
+        $parser->parse('<?php $value = "hello" |> trim(...);');
+    }
+
+    public function testPhpLanguageVersionAcceptsPipeAt85AndRejectsInvalidValue(): void
+    {
+        $this->compiler->setPhpVersion('8.5');
+        $parser = $this->getPropertyValue('parser');
+        $this->assertNotEmpty($parser->parse('<?php $value = "hello" |> trim(...);'));
+
+        $this->expectException(TestError::class);
+        $this->compiler->setPhpVersion('8.1');
     }
 
     public function testMiscObjectCacheIsInvalidatedWhenCompileOptionsChange(): void
@@ -596,9 +618,29 @@ YAML);
         );
     }
 
+    public function testProjectPhpVersionControlsConditionalSources(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+php-version: '8.4'
+sources:
+  - path: php84.php
+    if: PHP_VERSION_ID == 80400
+  - path: php85.php
+    if: PHP_VERSION >= '8.5'
+YAML);
+        $projectDir = dirname($projectFile);
+        file_put_contents($projectDir . '/php84.php', "<?php\nfunction php84_source(): void {}\n");
+        file_put_contents($projectDir . '/php85.php', "<?php\nfunction php85_source(): void {}\n");
+
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame('8.4.0', $this->compiler->getPhpVersion());
+        $this->assertSame([realpath($projectDir . '/php84.php')], $files);
+    }
+
     public function testParseProjectYamlSupportsAllVersionCompareOperators(): void
     {
-        $current = PHP_VERSION;
+        $current = $this->compiler->getPhpVersion();
         $projectFile = $this->createProjectFile(<<<YAML
 sources:
   - path: op-lt.php

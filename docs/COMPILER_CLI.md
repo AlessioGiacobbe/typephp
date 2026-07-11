@@ -260,7 +260,30 @@ cat benchmark.prof
 
 ---
 
-### 9. `--debug-line` - 启用调试行
+### 9. `--php-version <version>` - 限制 PHP 语言版本
+
+**默认值**: `8.5`
+
+指定编译器接受的 PHP 语法版本。可选值为 `8.2`、`8.3`、`8.4` 和 `8.5`。选择较低版本时，较新版本的语法会在编译阶段直接报错。
+
+该选项也会影响 `project.yml` 的 `PHP_VERSION` 与 `PHP_VERSION_ID` 源文件条件。命令行参数优先于 YAML 配置。
+
+```bash
+# 按 PHP 8.4 语法编译；PHP 8.5 的 Pipe Operator 将被拒绝
+./bin/compiler.php app.php --php-version 8.4
+```
+
+也可以在 `project.yml` 中设置：
+
+```yaml
+php-version: '8.4'
+sources:
+  - main.php
+```
+
+---
+
+### 10. `--debug-line` - 启用调试行
 
 **默认值**: `0`
 
