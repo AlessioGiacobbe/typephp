@@ -13,6 +13,7 @@ use TypePhp\Backend\CompilerBackend;
 use TypePhp\Backend\CompilerFactory;
 use TypePhp\Build\NativeBuildConfigurationTrait;
 use TypePhp\Context\FunctionContext;
+use TypePhp\Context\CompilationStateTrait;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ConstantDef;
 use TypePhp\Entity\FunctionDef;
@@ -22,7 +23,6 @@ use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\DynamicCall;
 use TypePhp\Exception\PlaceHolder;
 use TypePhp\Exception\Redo;
-use TypePhp\Exception\Skip;
 use TypePhp\Exception\TestError;
 use TypePhp\Generator\AnonClassGenerator;
 use TypePhp\Generator\CallArgumentGenerator;
@@ -93,6 +93,7 @@ class CompilerBase implements PropertyAccessContext
 {
     public const string DEFAULT_PHP_VERSION = '8.5';
     use CompositeTypeCheckerTrait;
+    use CompilationStateTrait;
     use NativeTypeCompatibilityTrait;
     use NativeBuildConfigurationTrait;
     use DeclarationSymbolTrait;
@@ -2187,159 +2188,6 @@ class CompilerBase implements PropertyAccessContext
     protected function shouldCheckClosureReturnType(): bool
     {
         return $this->context->inClosure && $this->context->closureReturnTypeCheck;
-    }
-
-    protected function addLocalVar(string $name, string $type): void
-    {
-        $this->context->localVars[$name] = $type;
-    }
-
-    protected function registerStdType(string $key): int
-    {
-        if (isset($this->stdTypeMap[$key])) {
-            return $this->stdTypeMap[$key];
-        }
-        $typeId = count($this->stdTypeMap) + 1;
-        $this->stdTypeMap[$key] = $typeId;
-        return $typeId;
-    }
-
-    protected function addTmpVar(string $type): string
-    {
-        $var = $this->genTmpVarName();
-        $this->addLocalVar($var, $type);
-        return $var;
-    }
-
-    protected function addStaticVar(Variable $var, string $name, string $type): string
-    {
-        if ($this->hasVar($name)) {
-            $this->fatalError($var, 'Duplicate variable `$' . $var->name . '`');
-        }
-        $this->context->staticVars[$name] = $type;
-        // 静态变量实际上是一个全局变量的引用
-        $globalVar = $this->escapeStaticVar($name);
-        $this->addGlobalVar($globalVar, $type);
-        return $globalVar;
-    }
-
-    protected function hasArgument(string $name): bool
-    {
-        return isset($this->context->arguments[$name]);
-    }
-
-    protected function addArgument(string $name, string $type): void
-    {
-        $this->context->arguments[$name] = $type;
-        $this->addLocalVar($name, $type);
-    }
-
-    protected function addLiteralString(string $value): int
-    {
-        $index                        = $this->literalStringIndex++;
-        $this->literalStrings[$value] = $index;
-
-        return $index;
-    }
-
-    protected function addGlobalVar(string $name, string $type): void
-    {
-        $this->globalVars[$name] = $type;
-    }
-
-    protected function addScopeGlobalVar(string $name, string $type): void
-    {
-        $this->context->globalVars[$name] = $type;
-    }
-
-    protected function addObject(string $name, string $class): void
-    {
-        // Interfaces have no concrete method body for native calls. Abstract classes may have concrete methods.
-        if ($this->isInterface($class)) {
-            $this->context->declaredObjects[$name] = $class;
-        } elseif ($this->isNativeClass($class) or $this->isInternalClass($class)) {
-            $this->context->objects[$name] = $class;
-        }
-    }
-
-    protected function hasVar(string $name): bool
-    {
-        return $this->hasLocalVar($name) || $this->hasStaticVar($name) || $this->hasScopeGlobalVar($name) || $this->isSuperGlobal($name);
-    }
-
-    protected function hasLocalVar(string $name): bool
-    {
-        return isset($this->context->localVars[$name]);
-    }
-
-    protected function hasObjectPropVar(string $name): bool
-    {
-        return isset($this->context->objectProps[$name]);
-    }
-
-    protected function addFunction(string $name, FunctionDef $functionDef): void
-    {
-        $this->functions[$this->escapeFunction($name)] = $functionDef;
-    }
-
-    /**
-     * @param string $name 必须传入带有完整命名空间的类名，将会自动转义为 native name
-     */
-    protected function hasFunction(string $name): bool
-    {
-        return array_key_exists($this->escapeFunction($name), $this->functions);
-    }
-
-    protected function getFunction(string $name): FunctionDef
-    {
-        return $this->functions[$this->escapeFunction($name)];
-    }
-
-    protected function addClass(string $name, ClassDef $classDef): void
-    {
-        $this->classes[$this->escapeClass($name)] = $classDef;
-    }
-
-    protected function getClass(string $name): ClassDef
-    {
-        return $this->classes[$this->escapeClass($name)];
-    }
-
-    public function getClassDef(string $name): ?ClassDef
-    {
-        return $this->classes[$this->escapeClass($name)] ?? null;
-    }
-
-    public function getParentClass(string $class): string
-    {
-        return $this->classExtends[strtolower(ltrim($class, '\\'))] ?? '';
-    }
-
-    protected function hasClass(string $name): bool
-    {
-        return array_key_exists($this->escapeClass($name), $this->classes);
-    }
-
-    protected function hasInterface(string $name): bool
-    {
-        return array_key_exists($this->escapeClass($name), $this->interfaces);
-    }
-
-    protected function getInterface(string $name): InterfaceDef
-    {
-        return $this->interfaces[$this->escapeClass($name)];
-    }
-
-    protected function checkFunction(string $name): void
-    {
-        // 在预处理阶段检测到函数声明，但是未定义，说明在当前文件，但是顺序错误
-        // 跳过，稍后再处理
-        if (isset($this->symbolDeclInFile[$name])
-            and $this->symbolDeclInFile[$name] === $this->file
-            and !$this->hasFunction($name)) {
-            $this->redoAfterDeclare[$name] = true;
-            throw new Skip();
-        }
     }
 
     protected function checkNativeCallArgs(CallLike $expr, FunctionDef $funcDef, array $args, string $name): void
