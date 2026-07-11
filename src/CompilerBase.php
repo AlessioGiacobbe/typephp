@@ -7150,7 +7150,55 @@ class CompilerBase implements PropertyAccessContext
         if ($native !== null) {
             return $native;
         }
-        return Symbol::getStaticProperty() . '(' . $this->identifierToStr($expr->class) . ', ' . $this->identifierToStr($expr->name) . ')';
+
+        return $this->parseDynamicStaticPropertyFetch($expr);
+    }
+
+    /**
+     * Resolve a static-property target through the runtime path.
+     *
+     * PHP permits the class operand to be either a class-name string or an
+     * object. Materialising both operands preserves PHP's left-to-right
+     * evaluation order and avoids ambiguous C++ overload resolution for Var.
+     */
+    private function parseDynamicStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string
+    {
+        $classValue = $this->getDynamicStaticClassValue($expr->class);
+        $propertyValue = $this->identifierToStr($expr->name, literal: true);
+
+        $classVar = $this->addTmpVar(self::TYPE_VAR);
+        $propertyVar = $this->addTmpVar(self::TYPE_VAR);
+        $this->context->beforeStmtLines[] = $classVar . ' = ' . $classValue . ';';
+        $this->context->beforeStmtLines[] = $propertyVar . ' = ' . $propertyValue . ';';
+
+        $className = '(' . $classVar . '.isObject() ? php::fn::get_class(' . $classVar . ') : php::toString(' . $classVar . '))';
+        return Symbol::getStaticProperty() . '(' . $className . ', php::toString(' . $propertyVar . '))';
+    }
+
+    private function getDynamicStaticClassValue(NodeAbstract $class): string
+    {
+        if (!$this->isNameExpr($class)) {
+            return $this->parseExprAsValue($class);
+        }
+
+        $name = $this->parseIdentifier($class);
+        if ($name === 'self') {
+            return $this->getLiteralString($this->getFullClassName());
+        }
+        if ($name === 'parent') {
+            if (!$this->classDef || !$this->classDef->extends) {
+                $this->fatalError($class, 'Cannot access parent:: when current class does not extend any class');
+            }
+            return $this->getLiteralString($this->classDef->extends);
+        }
+        if ($name === 'static') {
+            if (!$this->methodDef) {
+                $this->fatalError($class, "The 'static' keyword can only be used as the class name in class methods");
+            }
+            return Symbol::getCalledClass();
+        }
+
+        return $this->getLiteralString($this->getNamespacedClassName($name));
     }
 
     protected function parseClassConstFetch(Expr\ClassConstFetch $expr): string

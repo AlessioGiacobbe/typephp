@@ -59,7 +59,7 @@
 - `static::class` 在需要编译期常量类名的位置不支持。
 - `__CLASS__` 只允许在 `class` 定义的代码段中使用（`PHP`允许，返回空字符串）。
 - `__TRAIT__` 只允许在 `trait` 定义的代码段中使用（`PHP`允许，返回空字符串）。
-- 动态属性链、动态类名、动态函数名、动态回调在部分 native 优化路径上会退化或被拒绝。
+- 动态属性链、动态类名、动态函数名和动态回调会统一走 Zend runtime fallback，不保证 native 优化；动态调用的引用参数仍需显式使用 `refval()` 或 `toRef()`。
 - `Closure::bind()` 绑定静态闭包访问私有成员时，当前行为与标准 PHP 不完全一致。
 - first-class callable 存入 typed nullable `Closure` 属性后，当前存在运行时稳定性限制。
 - 所有源文件必须是 `UTF-8` 编码。

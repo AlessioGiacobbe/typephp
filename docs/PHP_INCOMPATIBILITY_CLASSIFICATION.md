@@ -95,7 +95,7 @@ These items should be documented with the exact boundary.
 | `foreach` by-reference with list destructuring | Pending | Requires by-reference foreach value lowering followed by destructuring assignment. |
 | Dynamic `ClassName::class` | Pending | Runtime class-name resolution can be used when the class expression is dynamic. |
 | `static::class` in runtime contexts | Pending / Partial | Runtime contexts can use called-class lookup. True compile-time constant contexts should remain unsupported. |
-| Dynamic property chains, class names, function names and callbacks in native-optimized paths | Pending | A unified dynamic runtime path should handle these cases; native paths should be optimization only. |
+| Dynamic property chains, class names, function names and callbacks in native-optimized paths | Partial | Supported through a Zend runtime fallback. Native dispatch is only an optimization; automatic by-reference argument conversion remains unsupported. |
 | First-class callable stored in nullable `Closure` typed property | Pending / Partial | Requires stable runtime lifetime, refcount and typed-property write handling. |
 | Attribute arguments containing arrays or `new` expressions | Pending | Requires full constant-expression and attribute metadata generation support. |
 | Static analysis of union, intersection and nullable types | Pending optimization | Requires a real union/intersection type lattice instead of treating these as `mixed/any` during static analysis. |
@@ -105,8 +105,8 @@ These items should be documented with the exact boundary.
 | Feature | Classification | Boundary |
 |---|---|---|
 | `eval()` | Partial / Hard Limit | `eval()` can execute PHP code through Zend VM, but it cannot access compiled local variables. Use return values or `$GLOBALS` for data exchange. |
-| Dynamic calls and callbacks | Partial | Many cases can fall back to Zend dynamic calls, but by-reference argument conversion and native-call optimization are limited. |
-| Dynamic properties and dynamic property chains | Partial | Simple dynamic property paths may work; complex chains may be rejected or fall back to slower runtime paths. |
+| Dynamic calls and callbacks | Partial | Zend runtime fallback handles dynamic calls and callbacks. By-reference arguments still need explicit `refval()` / `toRef()`, and native-call optimization is not guaranteed. |
+| Dynamic properties and dynamic property chains | Partial | Dynamic property reads and writes use the runtime property API; native property optimization is not guaranteed. |
 | Native typed properties | Partial / Intentional Rule | Fast native paths may not preserve every PHP dynamic state transition. Unknown or incompatible values can fall back to `setProperty()`. |
 | Reflection metadata | Partial | Runtime declarations exist, but some AOT-specific metadata such as promoted-property flags may be incomplete. |
 
