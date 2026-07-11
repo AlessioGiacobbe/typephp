@@ -12,7 +12,9 @@ use MJS\TopSort\Implementations\StringSort;
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Backend\CompilerFactory;
 use TypePhp\Build\FileScanner;
+use TypePhp\Build\NativeCommandOptionsTrait;
 use TypePhp\Build\SourcePipelineTrait;
+use TypePhp\Build\ResourceCompilationTrait;
 use TypePhp\Entity\ArgInfo;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ClassLikeDef;
@@ -25,7 +27,6 @@ use TypePhp\Exception\Redo;
 use TypePhp\Exception\Skip;
 use TypePhp\Exception\SyntaxError;
 use TypePhp\Exception\Unsupported;
-use TypePhp\Generator\ResourceFileGenerator;
 use TypePhp\Generator\DefaultArgumentGenerator;
 use TypePhp\Generator\Symbol;
 use TypePhp\Metadata\Constants;
@@ -46,7 +47,9 @@ use Symfony\Component\Yaml\Yaml;
 class Translator extends Preprocessor
 {
     use DefaultArgumentGenerator;
+    use NativeCommandOptionsTrait;
     use SourcePipelineTrait;
+    use ResourceCompilationTrait;
 
     public const string VERSION = '0.3.0';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
@@ -1447,199 +1450,6 @@ CODE;
     public function output(string $message, string $style = 'out'): void
     {
         $this->climate->{$style}($message);
-    }
-
-    // ========================================================================
-    // Windows 资源文件支持
-    // ========================================================================
-
-    /**
-     * 检查是否配置了 Windows 资源信息
-     */
-    public function hasResourceFile(): bool
-    {
-        if (!$this->isWindows()) {
-            return false;
-        }
-        $generator = $this->createResourceGenerator();
-        return $generator !== null && $generator->hasResource();
-    }
-
-    /**
-     * 获取 .rc 资源文件路径
-     */
-    public function getResourceRcFile(): string
-    {
-        return $this->getBuildDir() . DIRECTORY_SEPARATOR . 'app_resource.rc';
-    }
-
-    /**
-     * 获取 .res 编译后的资源文件路径
-     */
-    public function getResourceResFile(): string
-    {
-        return $this->getBuildDir() . DIRECTORY_SEPARATOR . 'app_resource.res';
-    }
-
-    /**
-     * 创建资源文件生成器
-     */
-    protected function createResourceGenerator(): ?ResourceFileGenerator
-    {
-        if (empty($this->resourceConfig)) {
-            return null;
-        }
-        $projectDir = $this->resourceConfig['_projectDir'] ?? getcwd();
-        return new ResourceFileGenerator($this->resourceConfig, $projectDir);
-    }
-
-    /**
-     * 编译 Windows 资源文件
-     *
-     * 如果配置了 resource 选项，生成 .rc 文件并使用 rc.exe 编译为 .res
-     * .res 文件会在 build 阶段被链接到最终的 exe 中
-     */
-    protected function compileResourceFile(): void
-    {
-        if (!$this->isWindows()) {
-            return;
-        }
-
-        $generator = $this->createResourceGenerator();
-        if ($generator === null || !$generator->hasResource()) {
-            return;
-        }
-
-        // 生成 .rc 文件
-        $rcFile = $this->getResourceRcFile();
-        $rcContent = $generator->generate();
-        // 写入 UTF-8 BOM，确保 rc.exe 正确识别编码，避免中文乱码
-        $this->writeFile($rcFile, "\xEF\xBB\xBF" . $rcContent);
-        $this->climate->info('Generated resource file: ' . $rcFile);
-
-        // 使用 MSVC 的 rc.exe 编译 .rc -> .res
-        $backend = $this->getCompilerBackend();
-        if ($backend instanceof \TypePhp\Backend\Msvc) {
-            $resFile = $this->getResourceResFile();
-            $cmd = $backend->compileResourceFile($rcFile, $resFile);
-            $this->climate->comment($cmd);
-
-            exec($cmd . ' 2>&1', $output, $ret);
-
-            if (!empty($output)) {
-                foreach ($output as $line) {
-                    $this->climate->out($line);
-                }
-            }
-
-            if ($ret !== 0) {
-                $this->error('Resource compilation failed: ' . $rcFile);
-            }
-
-            if (!file_exists($resFile)) {
-                $this->error('Resource file not generated: ' . $resFile);
-            }
-
-            $this->climate->green('Resource compiled: ' . $resFile);
-        } else {
-            $this->climate->warning('Resource files are only supported with MSVC backend on Windows');
-        }
-    }
-
-    protected function getCommonCompileCommandOptions(): array
-    {
-        // 包含路径：系统路径 + 用户自定义路径
-        $includePaths = $this->getIncludePaths();
-        if (!empty($this->userIncludePaths)) {
-            $includePaths = array_merge($includePaths, $this->userIncludePaths);
-        }
-
-        $userDefines = $this->userDefines;
-        if ($this->isBuildModeLib()) {
-            $userDefines[] = 'TYPEPHP_NO_MAIN=1';
-        }
-
-        return [
-            'include_paths' => $includePaths,
-            'optimize' => $this->optimizeLevel,
-            'debug' => $this->debug,
-            'sanitize' => $this->sanitize,
-            'march' => $this->march,
-            'target_platform' => $this->targetPlatform,
-            'is_zts' => $this->isPhpZts,
-            'build_mode' => $this->buildMode,
-            'enable_profiler' => $this->enableProfiler,
-            'prof_output' => $this->targetName . '.prof',
-            'user_defines' => $userDefines,
-            'lto' => $this->enableLto,
-        ];
-    }
-
-    protected function getCompileCommandOptions(): array
-    {
-        $options = $this->getCommonCompileCommandOptions();
-        $options['cpp_std'] = $this->cxxStd;
-        $options['cxxflags'] = $this->cxxFlags;
-        $options['suppressed_warnings'] = Constants::MSVC_SUPPRESSED_WARNINGS ?? [];
-        return $options;
-    }
-
-    protected function getCCompileCommandOptions(): array
-    {
-        $options = $this->getCommonCompileCommandOptions();
-        $options['suppressed_warnings'] = ['4244', '4146'];
-        return $options;
-    }
-
-    /**
-     * 获取原生源文件（汇编/ObjC 等）的编译选项，不含 C++ 特定标志.
-     *
-     * @param string $language 语言标识（assembler, objective-c, objective-c++）
-     */
-    protected function getNativeCompileCommandOptions(string $language = ''): array
-    {
-        $options = $this->getCommonCompileCommandOptions();
-        $options['suppressed_warnings'] = Constants::MSVC_SUPPRESSED_WARNINGS ?? [];
-
-        if ($language === 'objective-c++') {
-            $options['cpp_std'] = $this->cxxStd;
-            $options['cxxflags'] = $this->cxxFlags;
-        }
-
-        return $options;
-    }
-
-    protected function getLinkCommandOptions(): array
-    {
-        $ldflags = $this->ldflags;
-        $libraryPaths = array_merge($this->getLibraryPaths(), $this->linkPaths);
-        $libraries = $this->getLibraries();
-        if ($this->enableProfiler) {
-            $libraries[] = 'profiler';
-        }
-        $libraries = array_merge($libraries, $this->linkLibs);
-
-        $options = [
-            'library_paths' => $libraryPaths,
-            'libraries' => $libraries,
-            'ldflags' => $ldflags,
-            'debug' => $this->debug,
-            'no_console' => $this->noConsole,
-            'build_mode' => $this->buildMode,
-            'sanitize' => $this->sanitize,
-            'lto' => $this->enableLto,
-            'target_platform' => $this->targetPlatform,
-        ];
-
-        $rpaths = $this->getPlatform()->getDefaultRpaths(
-            $this->getPhpxDir(),
-            $this->getPhpDir()
-        );
-        if (!empty($rpaths)) {
-            $options['rpath'] = $rpaths;
-        }
-
-        return $options;
     }
 
     protected function buildLinkCommand(array $objectFiles, string $targetFile): string
