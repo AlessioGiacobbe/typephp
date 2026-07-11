@@ -21,6 +21,185 @@ use TypePhp\Symbol;
 
 trait PropertyAccessTrait
 {
+    protected function emitDynamicPropertyRead(string $object, string $property): string
+    {
+        return "{$object}.getProperty({$property})";
+    }
+
+    protected function emitDynamicPropertyWrite(string $object, string $property, string $value): string
+    {
+        $scope = $this->class ? $this->getClassEntryPtr($this->getFullClassName()) : 'nullptr';
+        return 'typephp_write_property_scoped('
+            . $object . ', ' . $property . ', ' . $value . ', ' . $scope . ')';
+    }
+
+    protected function emitDynamicPropertyTargetRead(PropertyWriteTarget $target): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $this->emitDynamicPropertyRead($target->getDynamicObjectExpr(), $target->getDynamicPropertyExpr());
+    }
+
+    protected function emitDynamicPropertyTargetWrite(PropertyWriteTarget $target, string $value): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $this->emitDynamicPropertyWrite($target->getDynamicObjectExpr(), $target->getDynamicPropertyExpr(), $value);
+    }
+
+    protected function emitDynamicPropertyTargetUnset(PropertyWriteTarget $target): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $target->getDynamicObjectExpr() . '.unsetProperty(' . $target->getDynamicPropertyExpr() . ')';
+    }
+
+    protected function emitDynamicPropertyTargetRef(PropertyWriteTarget $target): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $target->getDynamicObjectExpr() . '.attrRef(' . $target->getDynamicPropertyExpr() . ')';
+    }
+
+    protected function emitDynamicPropertyTargetAppendArray(PropertyWriteTarget $target, string $value): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $this->emitDynamicPropertyAppendArray(
+            $target->getDynamicObjectExpr(),
+            $target->getDynamicPropertyExpr(),
+            $value
+        );
+    }
+
+    protected function emitDynamicPropertyTargetUpdateArray(PropertyWriteTarget $target, string $dim, string $value): string
+    {
+        $this->assertDynamicPropertyTarget($target);
+
+        return $this->emitDynamicPropertyUpdateArray(
+            $target->getDynamicObjectExpr(),
+            $target->getDynamicPropertyExpr(),
+            $dim,
+            $value
+        );
+    }
+
+    protected function canEmitDynamicPropertyTarget(?PropertyWriteTarget $target): bool
+    {
+        return $target !== null && $target->isDynamicObjectProperty();
+    }
+
+    protected function emitDynamicPropertyFetchRead(Expr\PropertyFetch $expr, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetRead($target);
+        }
+
+        return $this->emitDynamicPropertyRead(
+            $this->parseIdentifier($expr->var),
+            $this->identifierToStr($expr->name, literal: true)
+        );
+    }
+
+    protected function emitDynamicPropertyFetchWrite(Expr\PropertyFetch $expr, string $value, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetWrite($target, $value);
+        }
+
+        return $this->emitDynamicPropertyWrite(
+            $this->parseIdentifier($expr->var),
+            $this->identifierToStr($expr->name, literal: true),
+            $value
+        );
+    }
+
+    protected function getDynamicPropertyFetchObjectExpr(Expr\PropertyFetch $expr, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $target->getDynamicObjectExpr();
+        }
+
+        return $this->parseIdentifier($expr->var);
+    }
+
+    protected function emitDynamicPropertyFetchUnset(Expr\PropertyFetch $expr, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetUnset($target);
+        }
+
+        return $this->parseIdentifier($expr->var) . '.unsetProperty(' . $this->identifierToStr($expr->name, literal: true) . ')';
+    }
+
+    protected function emitDynamicPropertyFetchAppendArray(Expr\PropertyFetch $expr, string $value, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetAppendArray($target, $value);
+        }
+
+        return $this->emitDynamicPropertyAppendArray(
+            $this->parseIdentifier($expr->var),
+            $this->identifierToStr($expr->name, literal: true),
+            $value
+        );
+    }
+
+    protected function emitDynamicPropertyFetchUpdateArray(Expr\PropertyFetch $expr, string $dim, string $value, ?PropertyWriteTarget $target = null): string
+    {
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            return $this->emitDynamicPropertyTargetUpdateArray($target, $dim, $value);
+        }
+
+        return $this->emitDynamicPropertyUpdateArray(
+            $this->parseIdentifier($expr->var),
+            $this->identifierToStr($expr->name, literal: true),
+            $dim,
+            $value
+        );
+    }
+
+    protected function emitDynamicPropertyAppendArray(string $object, string $property, string $value): string
+    {
+        return "{$object}.attr({$property}, true).newItem() = {$value}";
+    }
+
+    protected function emitDynamicPropertyUpdateArray(string $object, string $property, string $dim, string $value): string
+    {
+        return "{$object}.attr({$property}, true).item({$dim}, true) = {$value}";
+    }
+
+    protected function assertDynamicPropertyTarget(PropertyWriteTarget $target): void
+    {
+        if (!$target->isDynamicObjectProperty()) {
+            $this->fatalError($target->node, 'Internal error: property write target is not a dynamic object property');
+        }
+    }
+
+    protected function emitDynamicPropertyFetchRef(Expr\PropertyFetch $expr, NodeAbstract $errorNode): string
+    {
+        $target = $this->preparePropertyWriteTarget($expr);
+        if ($this->canEmitDynamicPropertyTarget($target)) {
+            $objectExpr = $target->getDynamicObjectExpr();
+            if (!$this->hasVar($objectExpr)) {
+                $this->fatalError($errorNode, 'Undefined variable `$' . $objectExpr . '`');
+            }
+            return $this->emitDynamicPropertyTargetRef($target);
+        }
+
+        if (!$this->isVarExpr($expr->var)) {
+            return $this->parseExpr($expr->var) . '.attrRef(' . $this->identifierToStr($expr->name) . ')';
+        }
+
+        $objectExpr = $this->parseIdentifier($expr->var);
+        if (!$this->hasVar($objectExpr)) {
+            $this->fatalError($errorNode, 'Undefined variable `$' . $objectExpr . '`');
+        }
+
+        return $objectExpr . '.attrRef(' . $this->identifierToStr($expr->name) . ')';
+    }
+
+
     protected function resolveNativeStaticPropertyFetch(Expr\StaticPropertyFetch $expr): ?StaticPropertyFetchResolution
     {
         $target = $this->resolveStaticPropertyFetchTarget($expr);
