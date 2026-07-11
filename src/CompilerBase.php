@@ -39,10 +39,12 @@ use TypePhp\Parser\AssignOpTrait;
 use TypePhp\Parser\BinaryOpTrait;
 use TypePhp\Parser\ClassConstantFetchTrait;
 use TypePhp\Parser\ExceptionControlFlowTrait;
+use TypePhp\Parser\ForeachTrait;
 use TypePhp\Parser\FunctionCallTrait;
 use TypePhp\Parser\MethodCallTrait;
 use TypePhp\Parser\NullsafeAccessTrait;
 use TypePhp\Parser\PropertyAccessTrait;
+use TypePhp\Parser\SwitchTrait;
 use TypePhp\Parser\TypeConversionTrait;
 use TypePhp\Parser\TypeDetectionTrait;
 use TypePhp\Optimizer\FuncCallOptimizer;
@@ -97,10 +99,12 @@ class CompilerBase implements PropertyAccessContext
     use BinaryOpTrait;
     use ClassConstantFetchTrait;
     use ExceptionControlFlowTrait;
+    use ForeachTrait;
     use FunctionCallTrait;
     use MethodCallTrait;
     use NullsafeAccessTrait;
     use PropertyAccessTrait;
+    use SwitchTrait;
     use TypeConversionTrait;
     use TypeDetectionTrait;
     use AssignOpTrait;
@@ -4548,174 +4552,6 @@ class CompilerBase implements PropertyAccessContext
         }
     }
 
-    protected function parseForeachItemAsList(string $listTmpVar, array $listItems): string
-    {
-        $code = '';
-        foreach ($listItems as $k => $item) {
-            if (!$item) {
-                continue;
-            }
-            if ($item instanceof ArrayItem) {
-                $key = $item->key ? $this->parseArrayKey($item->key) : (string) $k;
-                if ($item->value instanceof Expr\List_) {
-                    $nestedTmpVar = $this->genTmpVarName();
-                    $this->addLocalVar($nestedTmpVar, self::TYPE_VAR);
-                    $code .= $this->getIndent() . ' ' . $nestedTmpVar . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
-                    $code .= $this->parseForeachItemAsList($nestedTmpVar, $item->value->items);
-                    continue;
-                }
-                $var = $this->parseWritableIdentifier($item->value);
-                if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
-                    $this->addLocalVar($var, self::TYPE_VAR);
-                }
-                $code .= $this->getIndent() . ' ' . $var . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
-            } else {
-                $this->fatalError($item, 'Unsupported foreach item type');
-            }
-        }
-        return $code;
-    }
-
-    protected function parseForeachBody(Foreach_ $node): string
-    {
-        return $this->parseStmts($node->stmts) . $this->genLoopEndFlagCheck();
-    }
-
-    protected function parseForeachKeyAssignment(Foreach_ $node, string $keyExpr, string $defaultType = self::TYPE_VAR): string
-    {
-        if (!$node->keyVar) {
-            return '';
-        }
-
-        $keyVar = $this->parseIdentifier($node->keyVar);
-        $this->checkVar($node, $keyVar, $defaultType);
-        return $this->getIndent() . ' ' . $keyVar . ' = ' . $keyExpr . ';' . PHP_EOL;
-    }
-
-    protected function parseForeachValueAssignment(Foreach_ $node, string $valueExpr, ?string $valueRefExpr = null): string
-    {
-        if ($node->byRef && $valueRefExpr === null) {
-            $this->fatalError($node, 'Cannot use & with foreach');
-        }
-
-        if ($node->byRef and !$this->isVarExpr($node->valueVar)) {
-            $this->fatalError($node, 'Foreach by reference only supports variable as value');
-        }
-
-        if ($node->valueVar instanceof Expr\List_) {
-            if ($node->byRef) {
-                $this->fatalError($node, 'Foreach by reference cannot use list destructuring');
-            }
-            $listTmpVar = $this->genTmpVarName();
-            $this->addLocalVar($listTmpVar, self::TYPE_VAR);
-            return $this->getIndent() . ' ' . $listTmpVar . ' = ' . $valueExpr . ';' . PHP_EOL
-                . $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
-        }
-
-        if ($this->isArrayDimFetch($node->valueVar)) {
-            if ($node->byRef) {
-                $this->fatalError($node, 'Foreach by reference only supports variable as value');
-            }
-            $array = $this->parseIdentifier($node->valueVar->var);
-            if (!$this->hasVar($array) or $node->valueVar->dim === null) {
-                abort($node->valueVar);
-            }
-            $dim = $this->parseIdentifier($node->valueVar->dim);
-            return $this->getIndent() . "{$array}.offsetSet({$dim}, {$valueExpr});";
-        }
-
-        $valueVar = $this->parseIdentifier($node->valueVar);
-        if ($node->byRef) {
-            if (!$this->hasVar($valueVar)) {
-                $this->addLocalVar($valueVar, self::TYPE_REF);
-            } elseif ($this->getVarType($valueVar) !== self::TYPE_REF) {
-                $this->fatalError($node, 'Cannot assign value to reference of type');
-            }
-            return $this->getIndent() . ' ' . $valueVar . ' = ' . $valueRefExpr . ';' . PHP_EOL;
-        }
-
-        if ($this->isVarExpr($node->valueVar)) {
-            $this->checkVar($node, $valueVar);
-        }
-        return $this->getIndent() . ' ' . $valueVar . ' = ' . $valueExpr . ';' . PHP_EOL;
-    }
-
-    protected function parseForeachArray(Foreach_ $node, string $iteratorVar): string
-    {
-        $tmpVar = $this->genTmpVarName();
-        $code = "for (auto $tmpVar = $iteratorVar.begin(); $tmpVar != $iteratorVar.end(); ++$tmpVar) {" . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->parseForeachKeyAssignment($node, $tmpVar . '.key()');
-        $code .= $this->parseForeachValueAssignment($node, $tmpVar . '.value()', $tmpVar . '.valueRef()');
-
-        $body = $this->parseForeachBody($node);
-        $this->indentLevel--;
-
-        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= $body . PHP_EOL;
-
-        $code .= $this->getIndent() . '}';
-
-        return $code;
-    }
-
-    protected function parseForeach(Foreach_ $node): string
-    {
-        if ($this->isVarExpr($node->expr)) {
-            $name = $this->parseIdentifier($node->expr);
-            if ($this->hasVar($name)) {
-                $type = $this->getVarType($name);
-                if ($type === self::TYPE_OBJECT) {
-                    if ($node->byRef) {
-                        $this->fatalError($node, 'Cannot use & with foreach');
-                    }
-                    return $this->parseForeachObject($node);
-                } elseif ($this->isStdContainerType($type)) {
-                    return $this->parseForeachStdContainer($node);
-                }
-            }
-        }
-
-        $code = '';
-        $expr = $this->parseIdentifier($node->expr);
-        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
-
-        $iterableVar = $this->genTmpVarName();
-        $arrayVar = $this->genTmpVarName();
-        $objectVar = $this->genTmpVarName();
-        $this->addLocalVar($iterableVar, self::TYPE_VAR);
-        $this->addLocalVar($arrayVar, self::TYPE_ARRAY);
-        $this->addLocalVar($objectVar, self::TYPE_OBJECT);
-
-        $code .= $iterableVar . ' = ' . $expr . ';' . PHP_EOL;
-        $code .= 'if (' . $iterableVar . '.isArray()) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $arrayVar . ' = ' . $iterableVar . ';' . PHP_EOL;
-        $code .= $this->parseForeachArray($node, $arrayVar) . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '} else if (' . $iterableVar . '.isObject()) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $objectVar . ' = ' . $iterableVar . ';' . PHP_EOL;
-        if ($node->byRef) {
-            $code .= $this->getIndent() . 'php::throwException(zend_ce_error, "Cannot use & with foreach");' . PHP_EOL;
-        } else {
-            $code .= $this->parseForeachObject($node, $objectVar);
-        }
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '} else {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, "foreach() argument must be of type array|object");' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}';
-
-        return $code;
-    }
-
-    /**
-     * 为了兼容已有代码，默认不使用原生类型，而是将整数和浮点数作为 php 变量处理
-     * 原生 int/float/bool 类型，是不支持自动转换的，例如如果 int 计算超过最大值后，会自动转为 float，除法若不能除尽，则会转为 float
-     * 某些情况下高性能计算，可能需要使用原生类型，使用 $a = std::int(0) 来显式地使用原生类型
-     */
     protected function detectConstType($expr): string
     {
         $name = $this->parseIdentifier($expr->name);
@@ -4764,155 +4600,6 @@ class CompilerBase implements PropertyAccessContext
             return $this->genCharPtr($value, true);
         }
         $this->error('Unsupported constant type: ' . gettype($value));
-    }
-
-    protected function parseSwitch(Node\Stmt\Switch_ $v): string
-    {
-        $cond    = $v->cond;
-        $tmp_var = $this->genTmpVarName();
-        $type    = $this->detectTypeOfExpr($cond);
-        $this->assertExprCanBeUsedAsValue($cond, 'switch condition');
-        if ($this->isVarExpr($cond)) {
-            $this->requireVar($v, $this->parseIdentifier($cond));
-        }
-        [$condExpr, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($cond);
-        $var_def = '';
-        $this->appendCapturedStmtLines($var_def, $condBeforeStmts);
-        $var_def .= $type . ' ' . $tmp_var . ' = ' . $condExpr . ';' . PHP_EOL;
-        $this->appendCapturedStmtLines($var_def, $condAfterStmts);
-
-        // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
-        $localVars = $this->context->localVars;
-        $code      = $this->parseBeforeStmtLines() . PHP_EOL;
-
-        if ($type === self::TYPE_INT or $type === self::TYPE_BOOL) {
-            $code .= 'do {' . PHP_EOL;
-            $this->indentLevel++;
-            $code .= $this->getIndent() . 'switch (' . $tmp_var . ') {' . PHP_EOL;
-            $this->indentLevel++;
-            foreach ($v->cases as $case) {
-                if (empty($case->cond)) {
-                    $code .= $this->getIndent() . 'default: {' . PHP_EOL;
-                } else {
-                    $condType = $case->cond->getType();
-                    if ($condType !== 'Scalar_Int' and $condType !== 'Scalar_Float') {
-                        $this->context->localVars = $localVars;
-                        $this->indentLevel -= 2;
-                        goto _fail;
-                    }
-                    $code .= $this->getIndent() . 'case ' . $this->parseScalar($case->cond) . ': {' . PHP_EOL;
-                }
-                $code .= $this->parseBlockStmts($case->stmts);
-                $code .= $this->getIndent() . '}' . PHP_EOL;
-            }
-            $this->indentLevel--;
-            $code .= $this->getIndent() . '}' . PHP_EOL;
-            $code .= $this->genLoopEndFlagCheck();
-            $this->indentLevel--;
-            $code .= $this->getIndent() . '} while(0);' . PHP_EOL;
-
-            return $var_def . $code;
-        }
-
-        _fail:
-
-        $code = 'do {' . PHP_EOL;
-        $this->indentLevel++;
-        $switchTarget = $this->genTmpVarName();
-        $switchMatched = $this->genTmpVarName();
-        $code .= $this->getIndent() . 'int ' . $switchTarget . ' = -1;' . PHP_EOL;
-        $code .= $this->getIndent() . 'bool ' . $switchMatched . ' = false;' . PHP_EOL;
-        $caseConds = [];
-        $caseGroups = [];
-        $hasDefault = false;
-        $defaultTarget = null;
-        foreach ($v->cases as $case) {
-            if (empty($case->cond)) {
-                $hasDefault = true;
-            } else {
-                $caseConds[] = $case->cond;
-            }
-            $stmts = $case->stmts;
-            if (empty($stmts)) {
-                continue;
-            }
-            if (count($stmts) === 1 and $stmts[0] instanceof Node\Stmt\Block) {
-                $stmts = $stmts[0]->stmts;
-            }
-            $lastExpr = end($stmts);
-            if (!$this->isReturnExpr($lastExpr)
-                and !$this->isExitExpr($lastExpr)
-                and !$this->isBreakExpr($lastExpr)
-                and !$this->isThrowExpr($lastExpr)
-            ) {
-                $this->fatalError($case, 'switch case must end with return/break/exit/throw, ' . $lastExpr->getType() . ' given');
-            }
-            $target = count($caseGroups);
-            if ($hasDefault) {
-                $defaultTarget = $target;
-            }
-            $caseGroups[] = [$caseConds, $hasDefault, $stmts];
-            $caseConds = [];
-            $hasDefault = false;
-        }
-
-        foreach ($caseGroups as $target => [$conds]) {
-            if (!empty($conds)) {
-                $groupMatched = $this->genTmpVarName();
-                $code .= $this->getIndent() . 'bool ' . $groupMatched . ' = false;' . PHP_EOL;
-                foreach ($conds as $caseCond) {
-                    $this->assertExprCanBeUsedAsValue($caseCond, 'switch case condition');
-                    $caseBeforeStmtCount = count($this->context->beforeStmtLines);
-                    $caseAfterStmtCount = count($this->context->afterStmtLines);
-                    $caseCondExpr = $this->parseIdentifier($caseCond);
-                    $caseBeforeStmts = array_slice($this->context->beforeStmtLines, $caseBeforeStmtCount);
-                    $caseAfterStmts = array_slice($this->context->afterStmtLines, $caseAfterStmtCount);
-                    $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $caseBeforeStmtCount);
-                    $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $caseAfterStmtCount);
-
-                    $code .= $this->getIndent() . 'if (!' . $switchMatched . ' && !' . $groupMatched . ') {' . PHP_EOL;
-                    $this->appendCapturedStmtLines($code, $caseBeforeStmts);
-                    if ($caseAfterStmts) {
-                        $caseTmpVar = $this->addTmpVar(self::TYPE_VAR);
-                        $code .= $this->getIndent() . $caseTmpVar . ' = ' . $caseCondExpr . ';' . PHP_EOL;
-                        $this->appendCapturedStmtLines($code, $caseAfterStmts);
-                        $caseCondExpr = $caseTmpVar;
-                    }
-                    $code .= $this->getIndent() . $groupMatched . ' = php::equals(' . $tmp_var . ', ' . $caseCondExpr . ');' . PHP_EOL;
-                    $code .= $this->getIndent() . '}' . PHP_EOL;
-                }
-                $code .= $this->getIndent() . 'if (' . $groupMatched . ') {' . PHP_EOL;
-                $code .= $this->getIndent() . $switchMatched . ' = true;' . PHP_EOL;
-                $code .= $this->getIndent() . $switchTarget . ' = ' . $target . ';' . PHP_EOL;
-                $code .= $this->getIndent() . '}' . PHP_EOL;
-            }
-        }
-        if ($defaultTarget !== null) {
-            $code .= $this->getIndent() . 'if (!' . $switchMatched . ') {' . PHP_EOL;
-            $code .= $this->getIndent() . $switchTarget . ' = ' . $defaultTarget . ';' . PHP_EOL;
-            $code .= $this->getIndent() . '}' . PHP_EOL;
-        }
-
-        foreach ($caseGroups as $target => [, , $stmts]) {
-            $code .= $this->getIndent() . 'if (' . $switchTarget . ' == ' . $target . ') {' . PHP_EOL;
-            $this->indentLevel++;
-            $code .= $this->parseStmts($stmts);
-            $this->indentLevel--;
-            $code .= $this->getIndent() . '}' . PHP_EOL;
-        }
-        if (!empty($caseConds) || $hasDefault) {
-            // PHP allows a trailing label without statements; it has no code to execute.
-            if ($hasDefault && $defaultTarget === null) {
-                $code .= $this->getIndent() . 'if (!' . $switchMatched . ') {' . PHP_EOL;
-                $code .= $this->getIndent() . $switchTarget . ' = -1;' . PHP_EOL;
-                $code .= $this->getIndent() . '}' . PHP_EOL;
-            }
-        }
-        $code .= $this->genLoopEndFlagCheck();
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '} while (0);';
-
-        return $var_def . $code;
     }
 
     protected function parseStatic(Node\Stmt\Static_ $v): string
