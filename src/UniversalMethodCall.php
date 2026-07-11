@@ -350,6 +350,15 @@ trait UniversalMethodCall
         return strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $name));
     }
 
+    /** @return list<string> */
+    protected function extensionFunctionCandidates(string $prefix, string $method): array
+    {
+        return array_values(array_unique([
+            $prefix . '_' . $this->camelToSnake($method),
+            $prefix . '_' . $method,
+        ]));
+    }
+
     protected const array TO_CONVERT_FN = [
         CompilerBase::TYPE_BIGINT   => ['toInt' => 'php::BigInt::toInt', 'toFloat' => 'php::BigInt::toFloat', 'toString' => 'php::BigInt::toString'],
         CompilerBase::TYPE_BIGFLOAT => ['toInt' => 'php::BigFloat::toInt', 'toFloat' => 'php::BigFloat::toFloat', 'toString' => 'php::BigFloat::toString'],
@@ -390,7 +399,9 @@ trait UniversalMethodCall
 
     /**
      * Look up an extension function for the given type+method.
-     * Extension functions follow the naming convention: {typePrefix}_{snake_case_method}
+     * Extension functions may use either {typePrefix}_{snake_case_method}
+     * or {typePrefix}_{lowerCamelCaseMethod}. Snake case takes precedence when
+     * both functions exist.
      *
      * Checks compiled user-defined functions first, then falls back to PHP internal
      * functions using reflection to resolve parameter counts and return types.
@@ -402,76 +413,69 @@ trait UniversalMethodCall
             return null;
         }
 
-        $snakeMethod = $this->camelToSnake($method);
-        $funcName = $prefix . '_' . $snakeMethod;
-
-        $resolvedName = $this->resolveExtensionFunctionName($funcName);
-        if ($resolvedName !== null) {
-            $funcDef = $this->getFunction($resolvedName);
-            if (!$this->validateExtensionFirstParam($type, $funcDef)) {
-                return null;
+        foreach ($this->extensionFunctionCandidates($prefix, $method) as $funcName) {
+            $resolvedName = $this->resolveExtensionFunctionName($funcName);
+            if ($resolvedName !== null) {
+                $funcDef = $this->getFunction($resolvedName);
+                if (!$this->validateExtensionFirstParam($type, $funcDef)) {
+                    continue;
+                }
+                return [
+                    'handler'      => 'php_fn',
+                    'fn'           => $resolvedName,
+                    'receiver_pos' => 1,
+                    'return_type'  => $funcDef->returnType,
+                    'min_args'     => 0,
+                    'max_args'     => -1,
+                ];
             }
-            return [
-                'handler'      => 'php_fn',
-                'fn'           => $resolvedName,
-                'receiver_pos' => 1,
-                'return_type'  => $funcDef->returnType,
-                'min_args'     => 0,
-                'max_args'     => -1,
-            ];
-        }
 
-        if ($this->isInternalFunction($funcName)) {
-            return $this->buildInternalExtensionMethod($type, $funcName);
+            if ($this->isInternalFunction($funcName)) {
+                $internal = $this->buildInternalExtensionMethod($type, $funcName);
+                if ($internal !== null) {
+                    return $internal;
+                }
+            }
         }
 
         return null;
     }
 
     /**
-     * Look up a keyword extension method: function __snake_case in root namespace
-     * whose first parameter is mixed/any. Callable as $receiver->camelCase() on any type.
+     * Look up a keyword extension method using __snake_case or
+     * __lowerCamelCase in the root namespace. Snake case takes precedence.
      */
     protected function findKeywordExtensionMethod(string $method): ?array
     {
-        $snakeMethod = $this->camelToSnake($method);
-        $funcName = '__' . $snakeMethod;
+        foreach ($this->extensionFunctionCandidates('_', $method) as $funcName) {
+            if (!$this->hasFunction($funcName)) {
+                continue;
+            }
 
-        if (!$this->hasFunction($funcName)) {
-            return null;
+            $funcDef = $this->getFunction($funcName);
+            if ($funcDef->namespace !== '' || empty($funcDef->argInfoList)) {
+                continue;
+            }
+            $firstParam = $funcDef->argInfoList[0];
+            if ($firstParam->type !== CompilerBase::TYPE_VAR) {
+                continue;
+            }
+
+            $totalParams = count($funcDef->argInfoList);
+            $minArgs = max(0, $funcDef->argCountRequired - 1);
+            $maxArgs = $funcDef->hasVariadicArg() ? -1 : $totalParams - 1;
+
+            return [
+                'handler'      => 'php_fn',
+                'fn'           => $funcName,
+                'receiver_pos' => 1,
+                'return_type'  => $funcDef->returnType,
+                'min_args'     => $minArgs,
+                'max_args'     => $maxArgs,
+            ];
         }
 
-        $funcDef = $this->getFunction($funcName);
-
-        // Must be in root namespace
-        if ($funcDef->namespace !== '') {
-            return null;
-        }
-
-        // First param must be mixed/any (TYPE_VAR)
-        if (empty($funcDef->argInfoList)) {
-            return null;
-        }
-        $firstParam = $funcDef->argInfoList[0];
-        if ($firstParam->type !== CompilerBase::TYPE_VAR) {
-            return null;
-        }
-
-        $totalParams = count($funcDef->argInfoList);
-        $minArgs = max(0, $funcDef->argCountRequired - 1);
-        $maxArgs = $totalParams - 1;
-        if ($funcDef->hasVariadicArg()) {
-            $maxArgs = -1;
-        }
-
-        return [
-            'handler'      => 'php_fn',
-            'fn'           => $funcName,
-            'receiver_pos' => 1,
-            'return_type'  => $funcDef->returnType,
-            'min_args'     => $minArgs,
-            'max_args'     => $maxArgs,
-        ];
+        return null;
     }
 
     /**
