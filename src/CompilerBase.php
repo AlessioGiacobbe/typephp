@@ -38,12 +38,15 @@ use TypePhp\Parser\StdContainerTrait;
 use TypePhp\Parser\AssignOpTrait;
 use TypePhp\Parser\BinaryOpTrait;
 use TypePhp\Parser\ClassConstantFetchTrait;
+use TypePhp\Parser\ConditionalControlTrait;
 use TypePhp\Parser\ExceptionControlFlowTrait;
 use TypePhp\Parser\ForeachTrait;
 use TypePhp\Parser\FunctionCallTrait;
+use TypePhp\Parser\LoopControlTrait;
 use TypePhp\Parser\MethodCallTrait;
 use TypePhp\Parser\NullsafeAccessTrait;
 use TypePhp\Parser\PropertyAccessTrait;
+use TypePhp\Parser\SelectionExpressionTrait;
 use TypePhp\Parser\SwitchTrait;
 use TypePhp\Parser\TypeConversionTrait;
 use TypePhp\Parser\TypeDetectionTrait;
@@ -98,12 +101,15 @@ class CompilerBase implements PropertyAccessContext
     use StdContainerTrait;
     use BinaryOpTrait;
     use ClassConstantFetchTrait;
+    use ConditionalControlTrait;
     use ExceptionControlFlowTrait;
     use ForeachTrait;
     use FunctionCallTrait;
+    use LoopControlTrait;
     use MethodCallTrait;
     use NullsafeAccessTrait;
     use PropertyAccessTrait;
+    use SelectionExpressionTrait;
     use SwitchTrait;
     use TypeConversionTrait;
     use TypeDetectionTrait;
@@ -3072,98 +3078,6 @@ class CompilerBase implements PropertyAccessContext
         return $targetFile;
     }
 
-    protected function parseFor(Node\Stmt\For_ $v): string
-    {
-        $init  = $v->init;
-        $cond  = $v->cond;
-        $loop  = $v->loop;
-        $stmts = $v->stmts;
-        $code  = '';
-
-        $list_expr = [];
-        foreach ($init as $expr) {
-            [$initExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
-            $initExpr = $this->stringifyParsedExpr($initExpr);
-            $this->appendCapturedStmtLines($code, $beforeStmts);
-            $list_expr[] = $initExpr;
-            if ($afterStmts) {
-                $list_expr[] = implode(";\n" . $this->getIndent(), $afterStmts);
-            }
-        }
-        $list_expr[] = '';
-        $code .= implode(";\n" . $this->getIndent(), $list_expr);
-
-        $list_cond = [];
-        $list_cond_expr = [];
-        $hasCondStmts = false;
-        foreach ($cond as $expr) {
-            $this->assertExprCanBeUsedAsCondition($expr, 'for condition');
-            [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
-            $condExpr = $this->stringifyParsedExpr($condExpr);
-            $hasCondStmts = $hasCondStmts || $beforeStmts || $afterStmts;
-            $list_cond[] = [$condExpr, $beforeStmts, $afterStmts];
-            $list_cond_expr[] = $condExpr;
-        }
-
-        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= 'for (;';
-        if ($hasCondStmts) {
-            $condCode = '[&]() -> bool {';
-            if (empty($list_cond)) {
-                $condCode .= $this->getIndent() . 'return true;';
-            } else {
-                $condResult = $this->genTmpVarName();
-                $condCode .= $this->getIndent() . 'bool ' . $condResult . ' = true;' . PHP_EOL;
-                foreach ($list_cond as [$condExpr, $beforeStmts, $afterStmts]) {
-                    $this->appendCapturedStmtLines($condCode, $beforeStmts);
-                    if ($afterStmts) {
-                        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-                        $condCode .= $this->getIndent() . $tmpVar . ' = ' . $condExpr . ';' . PHP_EOL;
-                        $this->appendCapturedStmtLines($condCode, $afterStmts);
-                        $condExpr = $tmpVar;
-                    }
-                    $condCode .= $this->getIndent() . $condResult . ' = ' . $this->convertBoolExpr($condExpr) . ';' . PHP_EOL;
-                }
-                $condCode .= $this->getIndent() . 'return ' . $condResult . ';';
-            }
-            $condCode .= $this->getIndent() . '}()';
-            $code .= $condCode;
-        } else {
-            $code .= implode(', ', $list_cond_expr);
-        }
-        $code .= '; ';
-
-        $list_loop = [];
-        foreach ($loop as $expr) {
-            [$loopExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
-            $loopExpr = $this->stringifyParsedExpr($loopExpr);
-            if ($beforeStmts || $afterStmts) {
-                $loopCode = '[&]() {';
-                $this->appendCapturedStmtLines($loopCode, $beforeStmts);
-                $loopCode .= $this->getIndent() . $loopExpr . ';' . PHP_EOL;
-                $this->appendCapturedStmtLines($loopCode, $afterStmts);
-                $loopCode .= $this->getIndent() . '}()';
-                $list_loop[] = $loopCode;
-            } else {
-                $list_loop[] = $loopExpr;
-            }
-        }
-        $code .= implode(', ', $list_loop);
-        $code .= ') {' . PHP_EOL;
-
-        $code .= $this->parseBlockStmts($stmts);
-        $code .= $this->genLoopEndFlagCheck();
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        return $code;
-    }
-
-    /**
-     * Generate C++ code for dynamic property ++/-- operations.
-     *
-     * Returns null if $var is not a dynamic property fetch, so callers can
-     * fall through to their normal codegen path.
-     */
     protected function genDynamicPropIncDec($var, string $op, bool $isPre): ?string
     {
         if (!$this->isPropertyFetch($var)) {
@@ -3674,144 +3588,6 @@ class CompilerBase implements PropertyAccessContext
         return $this->parsePostOp($expr, '+');
     }
 
-    protected function parseTernary(Expr\Ternary $expr): string
-    {
-        if ($expr->if === null) {
-            return $this->parseValueSelection($expr, $expr->cond, $expr->else, self::OP_NOT_EMPTY);
-        }
-        $this->assertExprCanBeUsedAsCondition($expr->cond, 'ternary condition');
-        $this->assertExprCanBeUsedAsValue($expr->if, 'ternary branch');
-        $this->assertExprCanBeUsedAsValue($expr->else, 'ternary branch');
-        [$cond, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($expr->cond);
-        $ifBeforeStmtCount = count($this->context->beforeStmtLines);
-        $ifAfterStmtCount = count($this->context->afterStmtLines);
-        $if = $this->parseExpr($expr->if);
-        $ifBeforeStmts = array_slice($this->context->beforeStmtLines, $ifBeforeStmtCount);
-        $ifAfterStmts = array_slice($this->context->afterStmtLines, $ifAfterStmtCount);
-        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $ifBeforeStmtCount);
-        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $ifAfterStmtCount);
-
-        $elseBeforeStmtCount = count($this->context->beforeStmtLines);
-        $elseAfterStmtCount = count($this->context->afterStmtLines);
-        $else = $this->parseExpr($expr->else);
-        $elseBeforeStmts = array_slice($this->context->beforeStmtLines, $elseBeforeStmtCount);
-        $elseAfterStmts = array_slice($this->context->afterStmtLines, $elseAfterStmtCount);
-        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $elseBeforeStmtCount);
-        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $elseAfterStmtCount);
-
-        $hasBranchStmts = $condBeforeStmts || $condAfterStmts || $ifBeforeStmts || $ifAfterStmts || $elseBeforeStmts || $elseAfterStmts;
-        $typeChanged = $this->detectTypeOfExpr($expr->if) !== $this->detectTypeOfExpr($expr->else);
-        if (!$hasBranchStmts && $typeChanged) {
-            $if = 'php::Var(' . $if . ')';
-            $else = 'php::Var(' . $else . ')';
-        }
-        if ($hasBranchStmts) {
-            $code = '[&]() -> ' . self::TYPE_VAR . '{';
-            $code .= $this->formatCapturedStmtLines($condBeforeStmts);
-            if ($condAfterStmts) {
-                $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
-                $code .= $this->getIndent() . "{$condTmpVar} = {$cond};";
-                $code .= $this->formatCapturedStmtLines($condAfterStmts);
-                $cond = $condTmpVar;
-            }
-            $code .= $this->getIndent() . 'if (' . $cond . ') {';
-            $code .= $this->formatTernaryReturn($if, $ifBeforeStmts, $ifAfterStmts);
-            $code .= $this->getIndent() . '} else {';
-            $code .= $this->formatTernaryReturn($else, $elseBeforeStmts, $elseAfterStmts);
-            $code .= $this->getIndent() . '}';
-            $code .= $this->getIndent() . '}()';
-            return $code;
-        }
-        return '(' . $cond . ') ? (' . $if . ') : (' . $else . ')';
-    }
-
-    protected function formatTernaryReturn(string $value, array $beforeStmts, array $afterStmts): string
-    {
-        $code = $this->formatCapturedStmtLines($beforeStmts);
-        if ($afterStmts) {
-            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-            $code .= $this->getIndent() . "{$tmpVar} = {$value};";
-            $code .= $this->formatCapturedStmtLines($afterStmts);
-            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
-        } else {
-            $code .= $this->getIndent() . 'return php::Var(' . $value . ');';
-        }
-        return $code;
-    }
-
-    protected function parseMatch(Expr\Match_ $expr): string
-    {
-        $this->assertExprCanBeUsedAsValue($expr->cond, 'match condition');
-        $var = $this->parseIdentifier($expr->cond);
-        if ($this->isVarExpr($expr->cond)) {
-            if (!$this->hasVar($var)) {
-                $this->errorUndefinedVariable($expr->cond);
-            }
-        } else {
-            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-            $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $var . ';';
-            $var = $tmpVar;
-        }
-
-        $code = '[&]() -> ' . self::TYPE_VAR . '{';
-        $default = null;
-        foreach ($expr->arms as $arm) {
-            if ($arm->conds === null) {
-                $default = $arm->body;
-                continue;
-            }
-            $matched = $this->genTmpVarName();
-            $code .= $this->getIndent() . 'bool ' . $matched . ' = false;';
-            foreach ($arm->conds as $cond) {
-                if ($this->isMatchExpr($cond)) {
-                    $this->fatalError($arm, 'Match expression cannot be used as a condition');
-                }
-                $this->assertExprCanBeUsedAsValue($cond, 'match arm condition');
-                [$condValue, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($cond);
-                $code .= $this->getIndent() . 'if (!' . $matched . ') {';
-                $code .= $this->formatCapturedStmtLines($beforeStmts);
-                if ($afterStmts) {
-                    $condTmpVar = $this->addTmpVar(self::TYPE_VAR);
-                    $code .= $this->getIndent() . "{$condTmpVar} = {$condValue};";
-                    $code .= $this->formatCapturedStmtLines($afterStmts);
-                    $condValue = $condTmpVar;
-                }
-                $code .= $this->getIndent() . $matched . ' = php::same(' . $var . ', ' . $condValue . ');';
-                $code .= $this->getIndent() . '}';
-            }
-            $code .= $this->getIndent() . 'if (' . $matched . ') {';
-            $code .= $this->formatMatchReturn($arm->body);
-            $code .= $this->getIndent() . '}';
-        }
-
-        if ($default) {
-            $code .= $this->getIndent() . '{';
-            $code .= $this->formatMatchReturn($default);
-            $code .= $this->getIndent() . '}';
-        } else {
-            $code .= $this->getIndent() . '{ return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
-        }
-        $code .= '}()';
-
-        return $code;
-    }
-
-    protected function formatMatchReturn(NodeAbstract $body): string
-    {
-        $this->assertExprCanBeUsedAsValue($body, 'match arm');
-        [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($body);
-        $code = $this->formatCapturedStmtLines($beforeStmts);
-        if ($afterStmts) {
-            $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-            $code .= $this->getIndent() . "{$tmpVar} = {$value};";
-            $code .= $this->formatCapturedStmtLines($afterStmts);
-            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
-        } else {
-            $code .= $this->getIndent() . 'return ' . $value . ';';
-        }
-        return $code;
-    }
-
     protected function parsePreDec(Expr\PreDec $expr): string
     {
         $this->assertNotNullsafeWriteContext($expr->var);
@@ -3839,169 +3615,16 @@ class CompilerBase implements PropertyAccessContext
         return '~' . $this->convertIntExpr($var);
     }
 
-    protected function parseIf(Node\Stmt\If_ $v): string
-    {
-        $arms = [[$v->cond, $v->stmts]];
-        foreach ($v->elseifs as $elseif) {
-            $arms[] = [$elseif->cond, $elseif->stmts];
-        }
-
-        return $this->parseBeforeStmtLines() . PHP_EOL . $this->parseIfChain($arms, $v->else, 0) . PHP_EOL;
-    }
-
-    protected function parseIfChain(array $arms, ?Node\Stmt\Else_ $else, int $index): string
-    {
-        if (!isset($arms[$index])) {
-            if (!$else || $this->isEmptyStmtList($else->stmts)) {
-                return '';
-            }
-            return $this->parseBlockStmts($else->stmts);
-        }
-
-        [$cond, $stmts] = $arms[$index];
-        $code = $this->genConditionWithCapturedStmts($cond, 'if ');
-        $code .= $this->parseBlockStmts($stmts);
-        $tail = $this->parseIfChain($arms, $else, $index + 1);
-        if ($tail !== '') {
-            $code .= $this->getIndent() . '} else {' . PHP_EOL;
-            $code .= $tail;
-        }
-        $code .= $this->getIndent() . '}';
-        return $code;
-    }
-
-    protected function isEmptyStmtList(array $stmts): bool
-    {
-        foreach ($stmts as $stmt) {
-            if (!$stmt instanceof Node\Stmt\Nop) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * 逻辑比较的运算，必须返回 bool 类型.
-     */
     protected function parseBooleanNot(Expr\BooleanNot $expr): string
     {
         $this->assertExprCanBeUsedAsCondition($expr->expr, 'boolean operand');
         return '!(' . $this->parseExprAsValue($expr->expr) . ')';
     }
 
-    protected function parseWhile(Node\Stmt\While_ $v): string
-    {
-        $stmts = $v->stmts;
-        $this->assertExprCanBeUsedAsCondition($v->cond, 'while condition');
-        [$cond, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($v->cond);
-
-        $code = $this->parseBeforeStmtLines() . PHP_EOL;
-        if ($beforeStmts || $afterStmts) {
-            $code .= 'while (true) {' . PHP_EOL;
-            $this->appendCapturedStmtLines($code, $beforeStmts);
-            if ($afterStmts) {
-                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-                $code .= $this->getIndent() . $tmpVar . ' = ' . $cond . ';' . PHP_EOL;
-                $this->appendCapturedStmtLines($code, $afterStmts);
-                $cond = $tmpVar;
-            }
-            $code .= $this->getIndent() . 'if (!(' . $cond . ')) { break; }' . PHP_EOL;
-        } else {
-            $code .= 'while (' . $cond . ') {' . PHP_EOL;
-        }
-        $code .= $this->parseBlockStmts($stmts);
-        $code .= $this->genLoopEndFlagCheck();
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        return $code;
-    }
-
     protected function parsePrint(Expr\Print_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'print operand');
         return 'php::print(' . $this->parseExprAsValue($expr->expr) . ')';
-    }
-
-    protected function parseDo(Node\Stmt\Do_ $v): string
-    {
-        $stmts = $v->stmts;
-        $this->assertExprCanBeUsedAsCondition($v->cond, 'do-while condition');
-        [$cond, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($v->cond);
-        if ($beforeStmts || $afterStmts) {
-            $condCode = '[&]() -> bool {';
-            $this->appendCapturedStmtLines($condCode, $beforeStmts);
-            if ($afterStmts) {
-                $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-                $condCode .= $this->getIndent() . $tmpVar . ' = ' . $cond . ';' . PHP_EOL;
-                $this->appendCapturedStmtLines($condCode, $afterStmts);
-                $cond = $tmpVar;
-            }
-            $condCode .= $this->getIndent() . 'return ' . $this->convertBoolExpr($cond) . ';';
-            $condCode .= $this->getIndent() . '}()';
-            $cond = $condCode;
-        }
-        $code  = $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= 'do {' . PHP_EOL;
-        $code .= $this->parseBlockStmts($stmts);
-        $code .= $this->genLoopEndFlagCheck();
-        $code .= $this->getIndent() . '} while (' . $cond . ');' . PHP_EOL;
-
-        return $code;
-    }
-
-    /**
-     * 值选择，如 ?: 或者 ??
-     */
-    protected function parseValueSelection(NodeAbstract $expr, Expr $left, Expr $right, string $op): string
-    {
-        $this->assertExprCanBeUsedAsValue($left, 'selection value');
-        $this->assertExprCanBeUsedAsValue($right, 'selection value');
-        $leftExpr = $this->parseIdentifier($left);
-        if ($this->isVarExpr($left)) {
-            $this->checkVarMustExist($left, $leftExpr);
-        }
-
-        $condExpr = $this->parseChainedExpr($left, $op, true);
-        $chainOpResult = $left->getAttribute('chainOpResult');
-        if ($chainOpResult) {
-            $leftExpr = $chainOpResult;
-        }
-
-        $rightBeforeStmtCount = count($this->context->beforeStmtLines);
-        $rightAfterStmtCount = count($this->context->afterStmtLines);
-        $rightExpr = $this->parseIdentifier($right);
-        $rightBeforeStmts = array_slice($this->context->beforeStmtLines, $rightBeforeStmtCount);
-        $rightAfterStmts = array_slice($this->context->afterStmtLines, $rightAfterStmtCount);
-        $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $rightBeforeStmtCount);
-        $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $rightAfterStmtCount);
-        $this->checkVarMustExist($right, $rightExpr);
-
-        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
-        if ($rightBeforeStmts || $rightAfterStmts) {
-            $code = $this->formatCppLineComment('Expr: ', $this->printer->prettyPrintExpr($expr)) . PHP_EOL .
-                'if (' . $condExpr . ') {' . PHP_EOL .
-                $this->getIndent() . $tmpVar . ' = ' . $leftExpr . ';' . PHP_EOL .
-                '} else {' . PHP_EOL;
-            if ($rightBeforeStmts) {
-                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $rightBeforeStmts) . PHP_EOL;
-            }
-            if ($rightAfterStmts) {
-                $rightTmpVar = $this->addTmpVar(self::TYPE_VAR);
-                $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';' . PHP_EOL;
-                $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $rightAfterStmts) . PHP_EOL;
-                $code .= $this->getIndent() . $tmpVar . ' = ' . $rightTmpVar . ';' . PHP_EOL;
-            } else {
-                $code .= $this->getIndent() . $tmpVar . ' = ' . $rightExpr . ';' . PHP_EOL;
-            }
-            $code .= '}';
-            $this->context->beforeStmtLines[] = $code;
-        } else {
-            $this->context->beforeStmtLines[] = $this->formatCppLineComment('Expr: ', $this->printer->prettyPrintExpr($expr)) . PHP_EOL .
-                $tmpVar . ' = ' . $condExpr . ' ? ' . $leftExpr . ' : ' . $rightExpr . ';';
-        }
-        $expr->setAttribute('replace', $tmpVar);
-
-        return $tmpVar;
     }
 
     protected function formatCppLineComment(string $label, string $text): string
@@ -4685,56 +4308,6 @@ class CompilerBase implements PropertyAccessContext
         }
 
         return 'php::include(' . $this->parseIdentifier($expr->expr) . ', ' . $type . ')';
-    }
-
-    protected function parseBreak(Node\Stmt\Break_ $v): string
-    {
-        if (!$this->context->inLoop) {
-            $this->fatalError($v, 'Cannot break outside loop');
-        }
-        $num = $v->num;
-        if ($num) {
-            if ($num->value > 1) {
-                $this->context->hasMultiLevelBreak = true;
-                return '_brk_flag = ' . ($num->value - 1) . '; break;';
-            }
-        }
-
-        return 'break;';
-    }
-
-    protected function parseContinue(Node\Stmt\Continue_ $v): string
-    {
-        if (!$this->context->inLoop) {
-            $this->fatalError($v, 'Cannot continue outside loop');
-        }
-        $num = $v->num;
-        if ($num) {
-            if ($num->value > 1) {
-                $this->context->hasMultiLevelContinue = true;
-                return '_cnt_flag = ' . ($num->value - 1) . '; break;';
-            }
-        }
-        return 'continue;';
-    }
-
-    /**
-     * Emit flag-propagation checks at the end of a loop body.
-     *
-     * Translates multi-level break / continue into plain break / continue
-     * by decrementing a counter at each loop boundary until it reaches zero.
-     */
-    protected function genLoopEndFlagCheck(): string
-    {
-        $code = '';
-        $indent = $this->getIndent();
-        if ($this->context->hasMultiLevelBreak) {
-            $code .= "{$indent}if (_brk_flag > 0) { _brk_flag--; break; }" . PHP_EOL;
-        }
-        if ($this->context->hasMultiLevelContinue) {
-            $code .= "{$indent}if (_cnt_flag > 0) { _cnt_flag--; if (_cnt_flag == 0) continue; else break; }" . PHP_EOL;
-        }
-        return $code;
     }
 
     protected function parseScalarFloat(Node\Scalar\Float_ $expr): string
