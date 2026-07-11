@@ -3336,9 +3336,14 @@ class PropertyInfo extends VariableLike
             $template .= "zend_declare_property_ex(class_entry, $nameCode, &$zvalName, %s, $commentCode);\n";
         }
 
+        $minimumFlagCompatibility = $this->phpVersionIdMinimumCompatibility;
+        if (($this->flags & (Modifiers::PRIVATE_SET | Modifiers::PROTECTED_SET))
+            && ($minimumFlagCompatibility === null || $minimumFlagCompatibility >= PHP_84_VERSION_ID)) {
+            $minimumFlagCompatibility = PHP_82_VERSION_ID;
+        }
         $code .= $this->getFlagsByPhpVersion()->generateVersionDependentFlagCode(
             $template,
-            $this->phpVersionIdMinimumCompatibility
+            $minimumFlagCompatibility
         );
 
         $code .= $stringRelease;
@@ -3362,6 +3367,12 @@ class PropertyInfo extends VariableLike
             $flags->addForVersionsAbove("ZEND_ACC_READONLY", PHP_81_VERSION_ID);
         } elseif ($this->classFlags & Modifiers::READONLY) {
             $flags->addForVersionsAbove("ZEND_ACC_READONLY", PHP_82_VERSION_ID);
+        }
+
+        if ($this->flags & Modifiers::PRIVATE_SET) {
+            $flags->addForVersionsAbove("ZEND_ACC_PRIVATE_SET", PHP_84_VERSION_ID);
+        } elseif ($this->flags & Modifiers::PROTECTED_SET) {
+            $flags->addForVersionsAbove("ZEND_ACC_PROTECTED_SET", PHP_84_VERSION_ID);
         }
 
         if ($this->isVirtual) {
@@ -3643,7 +3654,9 @@ class ClassInfo {
 
         $php80MinimumCompatibility = $this->phpVersionIdMinimumCompatibility === null || $this->phpVersionIdMinimumCompatibility >= PHP_80_VERSION_ID;
         $php81MinimumCompatibility = $this->phpVersionIdMinimumCompatibility === null || $this->phpVersionIdMinimumCompatibility >= PHP_81_VERSION_ID;
-        $php84MinimumCompatibility = $this->phpVersionIdMinimumCompatibility === null || $this->phpVersionIdMinimumCompatibility >= PHP_84_VERSION_ID;
+        // TypePHP classes may target a pre-8.4 Zend runtime even when parsing
+        // newer PHP syntax, so class registration retains the old API branch.
+        $php84MinimumCompatibility = false;
 
         if ($this->type === "enum" && !$php81MinimumCompatibility) {
             $code .= "#if (PHP_VERSION_ID >= " . PHP_81_VERSION_ID . ")\n";
@@ -3794,12 +3807,6 @@ class ClassInfo {
             $code .= "\n" . $attributeInitializationCode;
             $code .= $php80CondEnd;
         }
-
-        $code .= "\n\tstatic zend_object_handlers class_object_handlers;";
-        $code .= "\n\tmemcpy(&class_object_handlers, class_entry->default_object_handlers, sizeof(zend_object_handlers));";
-        $code .= "\n\tclass_object_handlers.unset_property = typephp_unset_typed_property;";
-        $code .= "\n\tclass_entry->default_object_handlers = &class_object_handlers;";
-        $code .= "\n";
 
         $code .= "\n\treturn class_entry;\n";
 
@@ -4461,6 +4468,7 @@ class FileInfo {
     public static function parseStubFile(string $code, string $phpVersion = '8.5'): FileInfo {
         $parser = (new PhpParser\ParserFactory())->createForVersion(PhpParser\PhpVersion::fromString($phpVersion));
         $nodeTraverser = new PhpParser\NodeTraverser;
+        $nodeTraverser->addVisitor(new TypePhp\Visitor());
         $nodeTraverser->addVisitor(new PhpParser\NodeVisitor\NameResolver);
         $prettyPrinter = new class extends Standard {
             protected function pName_FullyQualified(PhpParser\Node\Name\FullyQualified $node): string {

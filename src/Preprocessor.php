@@ -719,16 +719,21 @@ class Preprocessor extends CompilerBase
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
-        if ($v->hooks and count($v->hooks) > 0) {
-            $this->fatalError($v, 'The class property hooks are not supported');
-        }
         $oriCtx = $this->context;
         $this->context = $this->classDef->propertyContext;
         $nullable = $v->type instanceof NullableType;
 
         foreach ($v->props as $prop) {
             $propName = $this->parseIdentifier($prop->name);
-            $this->addClassProperty($propName, $v->flags, $v->type, $prop->default, $nullable, $v);
+            $propDef = $this->addClassProperty($propName, $v->flags, $v->type, $prop->default, $nullable, $v);
+            foreach ($v->hooks as $hook) {
+                $kind = strtolower($hook->name->toString());
+                if ($kind === 'get') {
+                    $propDef->getter = PropertyHookLowering::getterName($propName);
+                } elseif ($kind === 'set') {
+                    $propDef->setter = PropertyHookLowering::setterName($propName);
+                }
+            }
         }
 
         $this->context = $oriCtx;

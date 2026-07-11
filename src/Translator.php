@@ -988,8 +988,9 @@ CODE;
 
         $code .= "// class \n";
         foreach ($this->getClassLikesWithConstants() as $classDef) {
-            if ($classDef instanceof ClassDef && $classDef->requireCtor) {
+            if ($classDef instanceof ClassDef && !$classDef->trait && !$classDef->enum) {
                 $code .= 'static zend_object* (*create_object_' . $classDef->getNamespacedName() . ")(zend_class_entry *class_type);\n";
+                $code .= 'static zend_object_handlers property_handlers_' . $classDef->getNamespacedName() . ";\n";
             }
             foreach ($classDef->constants as $constant) {
                 if ($constant->type === self::TYPE_ARRAY) {
@@ -2034,22 +2035,41 @@ CODE;
             /**
              * @var ClassDef $classDef
              */
-            if ($classDef and $classDef->requireCtor) {
+            if ($classDef && !$classDef->trait && !$classDef->enum) {
                 $className = $classDef->getNamespacedName();
+                $handlers = "property_handlers_{$className}";
+                $buildCreateBody = function (bool $attachHandlers) use ($classDef, $className, $handlers): string {
+                    $body = $classDef->ctorInit;
+                    $body .= "auto obj = create_object_{$className}(class_type);\n";
+                    if ($attachHandlers) {
+                        $body .= "typephp_attach_property_handlers(obj, &{$handlers});\n";
+                    }
+                    foreach ($classDef->properties as $property) {
+                        if (!$property->isStatic() && $property->arrayInitPlan && $property->default) {
+                            $init = "auto value = {$property->arrayInitPlan->expr};\n";
+                            $init .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
+                            $init .= "php::throwErrorIfOccurred();\n";
+                            $body .= $this->wrapArrayInitPlan($property->arrayInitPlan, $init);
+                        }
+                    }
+                    $body .= $classDef->ctorClean;
+                    return $body . "return obj;\n";
+                };
+
+                $code .= "typephp_install_property_handlers({$ce}, &{$handlers});\n";
+                $code .= "#if (PHP_VERSION_ID < 80400)\n";
                 $code .= "create_object_{$className} = php_get_create_object_fn({$ce});\n";
                 $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
-                $code .= $classDef->ctorInit;
-                $code .= "auto obj = create_object_{$className}(class_type);\n";
-                foreach ($classDef->properties as $property) {
-                    if (!$property->isStatic() && $property->arrayInitPlan && $property->default) {
-                        $body = "auto value = {$property->arrayInitPlan->expr};\n";
-                        $body .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
-                        $body .= "php::throwErrorIfOccurred();\n";
-                        $code .= $this->wrapArrayInitPlan($property->arrayInitPlan, $body);
-                    }
+                $code .= $buildCreateBody(true);
+                $code .= "};\n";
+                if ($classDef->requireCtor) {
+                    $code .= "#else\n";
+                    $code .= "create_object_{$className} = php_get_create_object_fn({$ce});\n";
+                    $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
+                    $code .= $buildCreateBody(false);
+                    $code .= "};\n";
                 }
-                $code .= $classDef->ctorClean;
-                $code .= "return obj;\n};\n";
+                $code .= "#endif\n";
             }
         }
         return $code;
@@ -4131,6 +4151,11 @@ CODE;
                             "Declaration of `{$className}::\${$name}` must be compatible " .
                             "with `{$parentClass}::\${$name}`");
                     }
+                    if ($this->getPropertySetVisibilityRank($childProp) < $this->getPropertySetVisibilityRank($parentProp)) {
+                        $this->fatalError($classStmt,
+                            "Declaration of `{$className}::\${$name}` must not restrict set visibility " .
+                            "of `{$parentClass}::\${$name}`");
+                    }
                     if (($childProp->flags & Modifiers::READONLY) !== ($parentProp->flags & Modifiers::READONLY)) {
                         $this->fatalError($classStmt,
                             "Declaration of `{$className}::\${$name}` must be compatible " .
@@ -4139,6 +4164,17 @@ CODE;
                 }
             }
         }
+    }
+
+    private function getPropertySetVisibilityRank(PropertyDef $property): int
+    {
+        if ($property->isPrivateSet()) {
+            return 1;
+        }
+        if ($property->isProtectedSet()) {
+            return 2;
+        }
+        return $this->getVisibilityRank($property->flags);
     }
 
     private function checkConstantOverride(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $classStmt): void

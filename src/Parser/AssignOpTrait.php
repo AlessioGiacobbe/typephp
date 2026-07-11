@@ -152,6 +152,13 @@ trait AssignOpTrait
             $type = self::TYPE_VAR;
         }
 
+        if ($left instanceof Expr\PropertyFetch && ($setter = $this->getPropertyHookSetter($left)) !== null) {
+            return $this->parseAssignPropertyHook($left, $right, $propertyWriteTarget, $setter);
+        }
+        if ($left instanceof Expr\PropertyFetch && $this->isReadOnlyPropertyHook($left)) {
+            $this->fatalError($left, 'Cannot write to read-only hooked property');
+        }
+
         if ($propertyWriteTarget !== null && $this->shouldUseDynamicNativePropertyWrite($left, $type)) {
             return $this->parseAssignPropertyFetch($left, $right, $propertyWriteTarget);
         }
@@ -309,6 +316,25 @@ trait AssignOpTrait
         }
     }
 
+    protected function parseAssignPropertyHook(
+        Expr\PropertyFetch $left,
+        Expr $right,
+        ?PropertyWriteTarget $target,
+        string $setter,
+    ): string {
+        if ($target !== null) {
+            $this->assertCanAssignPropertyWrite($target, $right);
+        }
+        $rightExpr = $this->parseExprAsValue($right);
+        if ($target !== null) {
+            $rightExpr = $this->wrapPropertyWriteTypeCheck($target, $right, $rightExpr);
+        }
+        $tmp = $this->genTmpVarName();
+        $this->addLocalVar($tmp, self::TYPE_VAR);
+        $call = $this->emitPropertyHookSetterCall($left, $setter, new Expr\Variable($tmp));
+        return '((' . $tmp . ' = ' . $rightExpr . ', ' . $call . '), ' . $tmp . ')';
+    }
+
     protected function shouldUseDynamicNativePropertyWrite(Expr $left, string $rightType): bool
     {
         if (!$this->isPropertyFetch($left)) {
@@ -361,6 +387,27 @@ trait AssignOpTrait
         $this->assertNotNullsafeWriteContext($node->var);
         $propertyWriteTarget = $this->preparePropertyWriteTarget($node->var);
         $this->guardLiteralDivisionByZero($node->expr, $op);
+
+        if ($node->var instanceof Expr\PropertyFetch && $this->isReadOnlyPropertyHook($node->var)) {
+            $this->fatalError($node->var, 'Cannot write to read-only hooked property');
+        }
+
+        if ($node->var instanceof Expr\PropertyFetch
+            && ($setter = $this->getPropertyHookSetter($node->var)) !== null
+            && ($getter = $this->getPropertyHookGetter($node->var)) !== null) {
+            $right = $this->parseExprAsValue($node->expr);
+            $read = $this->emitPropertyHookGetterCall($node->var, $getter);
+            $tmp = $this->genTmpVarName();
+            $this->addLocalVar($tmp, self::TYPE_VAR);
+            $binaryOp = $this->removeAssignOp($op);
+            $value = match ($binaryOp) {
+                '.' => 'php::concat(' . $read . ', ' . $right . ')',
+                '**' => 'php::fn::pow(' . $read . ', ' . $right . ')',
+                default => $read . ' ' . $binaryOp . ' (' . $right . ')',
+            };
+            $call = $this->emitPropertyHookSetterCall($node->var, $setter, new Expr\Variable($tmp));
+            return '((' . $tmp . ' = ' . $value . ', ' . $call . '), ' . $tmp . ')';
+        }
 
         $nativePropertyAssignOp = $this->parseNativePropertyAssignOp($node, $op);
         if ($nativePropertyAssignOp !== null) {

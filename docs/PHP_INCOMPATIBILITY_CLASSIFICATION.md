@@ -78,7 +78,6 @@ These items should be documented with the exact boundary.
 | Feature | Classification | Implementation Direction |
 |---|---|---|
 | Variable variables (`$$var`) | Pending | Add a function-local symbol table mirror for dynamic locals, and disable or synchronize native locals that escape into dynamic lookup. |
-| PHP 8.4 property hooks | Pending | Add parser and AST support, then lower property read/write paths to hook calls. |
 | Closure or arrow function returning by reference | Pending | Closure metadata and wrappers must preserve return-by-reference and emit `ReturnRef`. |
 | Closure and arrow function by-reference parameters | Pending | Closure arginfo must preserve by-reference parameters and call lowering must pass reference slots. |
 | By-reference variadic parameters (`&...$args`) | Pending | Variadic storage must preserve references instead of copying values. |

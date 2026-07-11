@@ -3146,11 +3146,36 @@ class CompilerBase implements PropertyAccessContext
      */
     protected function genDynamicPropIncDec($var, string $op, bool $isPre): ?string
     {
-        if (!$this->isPropertyFetch($var) || $this->isNativePropertyAccess($var)) {
+        if (!$this->isPropertyFetch($var)) {
             return null;
         }
 
         $target = $this->preparePropertyWriteTarget($var);
+        $getter = $this->getPropertyHookGetter($var);
+        $setter = $this->getPropertyHookSetter($var);
+        if ($getter !== null && $setter === null) {
+            $this->fatalError($var, 'Cannot write to read-only hooked property');
+        }
+        if ($getter !== null && $setter !== null) {
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, self::TYPE_VAR);
+            $read = $this->emitPropertyHookGetterCall($var, $getter);
+            if ($isPre) {
+                $set = $this->emitPropertyHookSetterCall($var, $setter, new Expr\Variable($tmpVar));
+                $this->context->beforeStmtLines[] = "{$tmpVar} = {$read} {$op} 1; {$set};";
+            } else {
+                $nextVar = $this->genTmpVarName();
+                $this->addLocalVar($nextVar, self::TYPE_VAR);
+                $set = $this->emitPropertyHookSetterCall($var, $setter, new Expr\Variable($nextVar));
+                $this->context->beforeStmtLines[] = "{$tmpVar} = {$read};";
+                $this->context->afterStmtLines[] = "{$nextVar} = {$tmpVar} {$op} 1; {$set};";
+            }
+            return $tmpVar;
+        }
+        if ($this->isNativePropertyAccess($var)) {
+            return null;
+        }
+
         $tmpVar = $this->genTmpVarName();
         $this->addLocalVar($tmpVar, self::TYPE_VAR);
         if ($isPre) {
@@ -5370,6 +5395,7 @@ class CompilerBase implements PropertyAccessContext
             }
             if ($this->isIdExpr($left->name)) {
                 $this->getPropertyIdentifier($left, $left->var, $left->name);
+                $this->assertPropertySetVisibility($left);
             }
             return new PropertyWriteTarget($left, 'object property', $objectExpr, $propertyExpr);
         }
@@ -5377,11 +5403,33 @@ class CompilerBase implements PropertyAccessContext
         if ($left instanceof Expr\StaticPropertyFetch) {
             if ($this->isIdExpr($left->name)) {
                 $this->resolveNativeStaticPropertyFetch($left);
+                $this->assertPropertySetVisibility($left);
             }
             return new PropertyWriteTarget($left, 'static property');
         }
 
         return null;
+    }
+
+    private function assertPropertySetVisibility(NodeAbstract $property): void
+    {
+        if ($this->isPropertyHookBackingAccess($property)) {
+            return;
+        }
+        $access = $this->getNativePropertyAccess($property);
+        if ($access === null) {
+            return;
+        }
+        $def = $access->getPropertyDef();
+        $declaringClass = $access->resolution->declaringClass;
+        $scope = $this->class ? $this->getFullClassName() : '';
+        $propertyName = $this->parseIdentifier($property->name);
+        if ($def->isPrivateSet() && !$this->isSameClassName($scope, $declaringClass)) {
+            $this->fatalError($property, "Cannot modify private(set) property `{$declaringClass}::\${$propertyName}`");
+        }
+        if ($def->isProtectedSet() && !$this->canAccessProtectedProperty($scope, $declaringClass)) {
+            $this->fatalError($property, "Cannot modify protected(set) property `{$declaringClass}::\${$propertyName}`");
+        }
     }
 
     protected function assertCanAssignPropertyWrite(PropertyWriteTarget $target, Expr $right): void
@@ -5750,10 +5798,15 @@ class CompilerBase implements PropertyAccessContext
             return $this->parseNullsafeExpr($expr);
         }
 
-        $update = $this->isPropertyFetchUpdate($expr);
         $object = $expr->var;
         $property = $expr->name;
         $id = $this->getPropertyIdentifier($expr, $object, $property);
+        $hook = $this->getPropertyHookGetter($expr);
+        if ($hook !== null) {
+            return $this->emitPropertyHookGetterCall($expr, $hook);
+        }
+
+        $update = $this->isPropertyFetchUpdate($expr);
         $objectName = $update ? $this->parseWritableIdentifier($object) : $this->parseIdentifier($object);
         if ($this->isVarExpr($object) and !$this->hasVar($objectName)) {
             $this->errorUndefinedVariable($object);
@@ -5779,6 +5832,48 @@ class CompilerBase implements PropertyAccessContext
             $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
         }
         return $getProperty;
+    }
+
+    protected function isPropertyHookBackingAccess(NodeAbstract $expr): bool
+    {
+        return $expr->getAttribute(PropertyHookLowering::BACKING_ACCESS_ATTRIBUTE, false) === true;
+    }
+
+    protected function getPropertyHookGetter(NodeAbstract $expr): ?string
+    {
+        if ($this->isPropertyHookBackingAccess($expr)) {
+            return null;
+        }
+        return $this->getNativePropertyDef($expr)?->getter;
+    }
+
+    protected function getPropertyHookSetter(NodeAbstract $expr): ?string
+    {
+        if ($this->isPropertyHookBackingAccess($expr)) {
+            return null;
+        }
+        return $this->getNativePropertyDef($expr)?->setter;
+    }
+
+    protected function isReadOnlyPropertyHook(NodeAbstract $expr): bool
+    {
+        if ($this->isPropertyHookBackingAccess($expr)) {
+            return false;
+        }
+        $def = $this->getNativePropertyDef($expr);
+        return $def !== null && $def->getter !== null && $def->setter === null;
+    }
+
+    protected function emitPropertyHookGetterCall(Expr\PropertyFetch $expr, string $getter): string
+    {
+        $call = new Expr\MethodCall($expr->var, $getter, [], $expr->getAttributes());
+        return $this->parseMethodCall($call);
+    }
+
+    protected function emitPropertyHookSetterCall(Expr\PropertyFetch $expr, string $setter, Expr $value): string
+    {
+        $call = new Expr\MethodCall($expr->var, $setter, [new Node\Arg($value)], $expr->getAttributes());
+        return $this->parseMethodCall($call);
     }
 
     private function emitNativeInstancePropertyTypedFetch(
@@ -6415,7 +6510,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function emitDynamicPropertyWrite(string $object, string $property, string $value): string
     {
-        return "{$object}.setProperty({$property}, {$value})";
+        $scope = $this->class ? $this->getClassEntryPtr($this->getFullClassName()) : 'nullptr';
+        return 'typephp_write_property_scoped('
+            . $object . ', ' . $property . ', ' . $value . ', ' . $scope . ')';
     }
 
     protected function emitDynamicPropertyTargetRead(PropertyWriteTarget $target): string

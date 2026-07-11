@@ -14,7 +14,8 @@
 ## 声明与类型
 
 - 不支持可变变量 `$$var`。
-- 不支持 PHP 8.4 property hooks。
+- PHP 8.4 property hooks 会降级为 AOT getter/setter；直接属性读写和动态对象读写均受支持。当前不支持对 hook 属性取引用。
+- 支持 `private(set)` 与 `protected(set)` 非对称属性可见性；在 PHP 8.2/8.3 后端通过自定义属性写 handler 执行同等作用域检查。
 - 不支持闭包或箭头函数按引用返回。
 - `__construct()` 不允许返回值。
 - 参数默认值不允许出现在必填参数之前（`PHP`允许，但会直接丢弃此默认参数）。

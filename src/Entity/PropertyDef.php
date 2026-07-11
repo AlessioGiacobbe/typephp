@@ -22,6 +22,8 @@ class PropertyDef
     public array $typeCheck = [];
     public string $typeStr = '';
     public bool $promoted = false;
+    public ?string $getter = null;
+    public ?string $setter = null;
 
     public function __construct(string $name, int $flags, string $type, ?string $default = null, bool $nullable = false)
     {
@@ -50,5 +52,15 @@ class PropertyDef
     public function isStatic(): bool
     {
         return $this->flags & Modifiers::STATIC;
+    }
+
+    public function isPrivateSet(): bool
+    {
+        return (bool) ($this->flags & Modifiers::PRIVATE_SET);
+    }
+
+    public function isProtectedSet(): bool
+    {
+        return (bool) ($this->flags & Modifiers::PROTECTED_SET);
     }
 }
