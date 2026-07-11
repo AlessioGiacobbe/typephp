@@ -1,0 +1,740 @@
+<?php
+/**
+ * This file is part of TypePHP.
+ *
+ * Lowers instance property reads, writes, hooks, references, and unset operations.
+ */
+
+namespace TypePhp\Parser;
+
+use PhpParser\Node;
+use PhpParser\Node\Expr;
+use PhpParser\NodeAbstract;
+use TypePhp\Entity\PropertyDef;
+use TypePhp\PropertyHookLowering;
+use TypePhp\Resolver\InstancePropertyFetchTarget;
+use TypePhp\Resolver\PropertyAssignTypeInfo;
+use TypePhp\Resolver\PropertyWriteTarget;
+use TypePhp\Resolver\StaticPropertyFetchResolution;
+use TypePhp\Resolver\StaticPropertyFetchTarget;
+use TypePhp\Symbol;
+
+trait PropertyAccessTrait
+{
+    protected function resolveNativeStaticPropertyFetch(Expr\StaticPropertyFetch $expr): ?StaticPropertyFetchResolution
+    {
+        $target = $this->resolveStaticPropertyFetchTarget($expr);
+        if ($target === null) {
+            return null;
+        }
+        if ($target->isDynamic()) {
+            return new StaticPropertyFetchResolution(null, $target->dynamicExpression, false);
+        }
+        $class = $target->class;
+        if ($class === null) {
+            return null;
+        }
+        $result = $this->resolveNativeStaticProperty($expr, $target->property, $class);
+        if ($result !== null) {
+            $expression = $this->applyNativePropertyAccessResult($expr, $result);
+            return new StaticPropertyFetchResolution($class, $expression, true);
+        }
+        return null;
+    }
+
+    private function resolveStaticPropertyFetchTarget(Expr\StaticPropertyFetch $expr): ?StaticPropertyFetchTarget
+    {
+        if (!$this->isNameExpr($expr->class) or !$this->isIdExpr($expr->name)) {
+            return null;
+        }
+
+        $class = $this->parseIdentifier($expr->class);
+        $propertyName = $this->parseIdentifier($expr->name);
+        if ($class === 'static') {
+            return null;
+        }
+        if ($class === 'self') {
+            if ($this->classDef->trait) {
+                $expression = Symbol::getStaticProperty() . '(' . Symbol::getCalledCe() . ', ' . $this->getLiteralString($propertyName) . ')';
+                return new StaticPropertyFetchTarget($propertyName, null, $expression);
+            }
+            return new StaticPropertyFetchTarget($propertyName, $this->getFullClassName(), null);
+        }
+        if ($class === 'parent') {
+            if (!$this->classDef->extends) {
+                $this->fatalError($expr, 'Cannot access parent:: when current class does not extend any class');
+            }
+            return new StaticPropertyFetchTarget($propertyName, $this->classDef->extends, null);
+        }
+
+        return new StaticPropertyFetchTarget($propertyName, $this->getNamespacedClassName($class), null);
+    }
+
+
+    protected function parseNativeStaticPropertyFetch(Expr\StaticPropertyFetch $expr): ?string
+    {
+        $resolution = $this->resolveNativeStaticPropertyFetch($expr);
+        if ($resolution !== null) {
+            $nativeProp = $resolution->expression;
+            $def = $this->getNativePropertyDef($expr);
+            $class = $resolution->class;
+            if ($this->nativeTypes && $def && $class !== null) {
+                $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
+                return $this->emitNativeStaticPropertyTypedFetch($expr, $class, $def, $nativeProp);
+            }
+
+            if ($resolution->nativeProperty && $class !== null) {
+                $classPtr = $this->getClassEntryPtr($class);
+                $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
+                return Symbol::getStaticProperty() . '(' . $classPtr . ', ' . $nativeProp . ')';
+            } else {
+                $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
+                return $nativeProp;
+            }
+        }
+        return null;
+    }
+
+    private function emitNativeStaticPropertyTypedFetch(
+        Expr\StaticPropertyFetch $expr,
+        string $class,
+        PropertyDef $def,
+        string $nativeProp,
+    ): string {
+        $info = $this->getHoistedObjectPropInfo($def->type);
+        $propName = $this->parseIdentifier($expr->name);
+        $refVar = '_static_' . str_replace('\\', '_', $class) . '_' . $propName;
+        $this->registerStaticPropertyRef($refVar, $class, $nativeProp, $info);
+
+        if ($info['kind'] === 'zval') {
+            $helper = $def->type === self::TYPE_FLOAT ? 'typephp_static_float_ref' : 'typephp_static_int_ref';
+            return $helper . '(' . $refVar . ')';
+        }
+
+        return $refVar;
+    }
+
+    private function registerStaticPropertyRef(string $refVar, string $class, string $offsetExpr, array $info): void
+    {
+        if (isset($this->context->staticPropRefs[$refVar])) {
+            return;
+        }
+
+        $this->context->staticPropRefs[$refVar] = [
+            'type' => $info['type'],
+            'classPtr' => $this->getClassEntryPtr($class),
+            'offsetExpr' => $offsetExpr,
+            'kind' => $info['kind'],
+        ];
+    }
+
+    protected function parseStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string
+    {
+        $native = $this->parseNativeStaticPropertyFetch($expr);
+        if ($native !== null) {
+            return $native;
+        }
+
+        return $this->parseDynamicStaticPropertyFetch($expr);
+    }
+
+    /**
+     * Resolve a static-property target through the runtime path.
+     *
+     * PHP permits the class operand to be either a class-name string or an
+     * object. Materialising both operands preserves PHP's left-to-right
+     * evaluation order and avoids ambiguous C++ overload resolution for Var.
+     */
+    private function parseDynamicStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string
+    {
+        $classValue = $this->getDynamicStaticClassValue($expr->class);
+        $propertyValue = $this->identifierToStr($expr->name, literal: true);
+
+        $classVar = $this->addTmpVar(self::TYPE_VAR);
+        $propertyVar = $this->addTmpVar(self::TYPE_VAR);
+        $this->context->beforeStmtLines[] = $classVar . ' = ' . $classValue . ';';
+        $this->context->beforeStmtLines[] = $propertyVar . ' = ' . $propertyValue . ';';
+
+        $className = '(' . $classVar . '.isObject() ? php::fn::get_class(' . $classVar . ') : php::toString(' . $classVar . '))';
+        return Symbol::getStaticProperty() . '(' . $className . ', php::toString(' . $propertyVar . '))';
+    }
+
+    private function getDynamicStaticClassValue(NodeAbstract $class): string
+    {
+        if (!$this->isNameExpr($class)) {
+            return $this->parseExprAsValue($class);
+        }
+
+        $name = $this->parseIdentifier($class);
+        if ($name === 'self') {
+            return $this->getLiteralString($this->getFullClassName());
+        }
+        if ($name === 'parent') {
+            if (!$this->classDef || !$this->classDef->extends) {
+                $this->fatalError($class, 'Cannot access parent:: when current class does not extend any class');
+            }
+            return $this->getLiteralString($this->classDef->extends);
+        }
+        if ($name === 'static') {
+            if (!$this->methodDef) {
+                $this->fatalError($class, "The 'static' keyword can only be used as the class name in class methods");
+            }
+            return Symbol::getCalledClass();
+        }
+
+        return $this->getLiteralString($this->getNamespacedClassName($name));
+    }
+
+
+    protected function getFixedObjectPropDefaultValue(PropertyDef $def): ?string
+    {
+        return (new PropertyAssignTypeInfo())->getFixedDefaultValue($def);
+    }
+
+    protected function isFixedObjectProp(PropertyDef $def): bool
+    {
+        return (new PropertyAssignTypeInfo())->isFixed($def);
+    }
+
+    protected function assertCanAssignObjectProp(Expr\PropertyFetch $left, Expr $right): void
+    {
+        $this->assertCanAssignObjectProperty($left, $right, 'object property');
+    }
+
+    protected function assertCanAssignStaticProp(Expr\StaticPropertyFetch $left, Expr $right): void
+    {
+        $this->assertCanAssignObjectProperty($left, $right, 'static property');
+    }
+
+    protected function preparePropertyWriteTarget(NodeAbstract $left): ?PropertyWriteTarget
+    {
+        if ($left instanceof Expr\PropertyFetch) {
+            $objectExpr = null;
+            $propertyExpr = null;
+            if (!$this->isNativePropertyAccess($left) && $this->isVarExpr($left->var)) {
+                $objectExpr = $this->parseIdentifier($left->var);
+                $propertyExpr = $this->identifierToStr($left->name, literal: true);
+            }
+            if ($this->isIdExpr($left->name)) {
+                $this->getPropertyIdentifier($left, $left->var, $left->name);
+                $this->assertPropertySetVisibility($left);
+            }
+            return new PropertyWriteTarget($left, 'object property', $objectExpr, $propertyExpr);
+        }
+
+        if ($left instanceof Expr\StaticPropertyFetch) {
+            if ($this->isIdExpr($left->name)) {
+                $this->resolveNativeStaticPropertyFetch($left);
+                $this->assertPropertySetVisibility($left);
+            }
+            return new PropertyWriteTarget($left, 'static property');
+        }
+
+        return null;
+    }
+
+    private function assertPropertySetVisibility(NodeAbstract $property): void
+    {
+        if ($this->isPropertyHookBackingAccess($property)) {
+            return;
+        }
+        $access = $this->getNativePropertyAccess($property);
+        if ($access === null) {
+            return;
+        }
+        $def = $access->getPropertyDef();
+        $declaringClass = $access->resolution->declaringClass;
+        $scope = $this->class ? $this->getFullClassName() : '';
+        $propertyName = $this->parseIdentifier($property->name);
+        if ($def->isPrivateSet() && !$this->isSameClassName($scope, $declaringClass)) {
+            $this->fatalError($property, "Cannot modify private(set) property `{$declaringClass}::\${$propertyName}`");
+        }
+        if ($def->isProtectedSet() && !$this->canAccessProtectedProperty($scope, $declaringClass)) {
+            $this->fatalError($property, "Cannot modify protected(set) property `{$declaringClass}::\${$propertyName}`");
+        }
+    }
+
+    protected function assertCanAssignPropertyWrite(PropertyWriteTarget $target, Expr $right): void
+    {
+        $this->assertCanAssignObjectProperty($target->node, $right, $target->label);
+    }
+
+    protected function wrapPropertyWriteTypeCheck(PropertyWriteTarget $target, Expr $right, string $rightExpr): string
+    {
+        return $this->wrapObjectPropertyAssignTypeCheck($target->node, $right, $rightExpr);
+    }
+
+    private function assertCanAssignObjectProperty(NodeAbstract $left, Expr $right, string $label): void
+    {
+        $def = $this->getNativePropertyDef($left);
+        if (!$def) {
+            return;
+        }
+
+        $propName = $this->parseIdentifier($left->name);
+
+        if ($this->isNull($right)) {
+            // Untyped properties retain normal PHP mixed semantics: assigning
+            // null is valid. Only an explicitly typed non-nullable property
+            // can be rejected at compile time.
+            if ($def->type !== self::TYPE_VAR && !$def->nullable) {
+                $typeStr = $this->getObjectPropertyTypeCheckTypeString($def);
+                $this->fatalError(
+                    $left,
+                    "Cannot assign null to {$label} `{$propName}` of type `{$typeStr}`"
+                );
+            }
+            return;
+        }
+
+        $rightType = $this->detectTypeOfExpr($right);
+        if ($this->isFixedObjectProp($def) && $rightType !== self::TYPE_VAR) {
+            if (!$this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
+                $this->fatalError(
+                    $left,
+                    'Cannot assign ' . $this->getPropertyAssignmentTypeName($rightType)
+                    . ' to property ' . $this->getObjectPropertyTypeCheckDisplayName($left)
+                    . ' of type ' . $this->getObjectPropertyTypeCheckTypeString($def)
+                );
+            }
+            return;
+        }
+
+        if ($def->type !== self::TYPE_OBJECT) {
+            return;
+        }
+
+        if ($rightType !== self::TYPE_VAR && $rightType !== self::TYPE_OBJECT) {
+            $this->fatalError(
+                $left,
+                "Cannot assign value of type `{$rightType}` to {$label} `{$propName}` of type `{$def->type}`"
+            );
+        }
+
+        if ($def->class === '' or $this->isAbstractClass($def->class) or $this->isInterface($def->class) or !$this->hasClass($def->class)) {
+            // 属性 declared class 若是接口、抽象类或动态类，当前属性布局优化无法静态确认最终对象类型。
+            // 不在这里 fatal；后续 wrapObjectPropertyAssignTypeCheck() 会在需要时插入运行时检查。
+            return;
+        }
+
+        $rightClass = $this->detectClassOfExpr($right);
+        // TODO 静态编译阶段无法获得准确的类型，需要在运行时检查
+        if ($rightClass === '') {
+            return;
+        }
+        if (!$this->isObjectClassStaticallyAssignableTo($rightClass, $def->class)) {
+            $this->fatalError(
+                $left,
+                "Cannot assign object of class `{$rightClass}` to {$label} `{$propName}` of class `{$def->class}`"
+            );
+        }
+    }
+
+    protected function wrapObjectPropertyAssignTypeCheck(NodeAbstract $left, Expr $right, string $rightExpr): string
+    {
+        $def = $this->getNativePropertyDef($left);
+        if (!$def) {
+            return $rightExpr;
+        }
+
+        $typeCheck = $this->getObjectPropertyAssignTypeCheck($def);
+        if (empty($typeCheck)) {
+            return $rightExpr;
+        }
+
+        $rightType = $this->detectTypeOfExpr($right);
+        $compositeRelation = null;
+        if (!empty($def->typeCheck)) {
+            $compositeRelation = $this->checkCompositeTypeAssignment(
+                $left,
+                $def->typeCheck,
+                $def->typeStr,
+                $right,
+                'property assignment'
+            );
+        }
+        if ($compositeRelation === self::COMPOSITE_TYPE_MATCH && $rightType !== self::TYPE_VAR) {
+            // A statically known member of the composite type needs no
+            // Variant runtime guard on this property write.
+            return $rightExpr;
+        }
+
+        if ($rightType !== self::TYPE_VAR && $this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
+            return $rightExpr;
+        }
+        if ($rightType === self::TYPE_VAR && ($helper = $this->getNativeScalarPropertyTypeCheckHelper($def)) !== null) {
+            return $helper . '(' . $rightExpr . ', ' . $this->genCharPtr($this->getObjectPropertyTypeCheckDisplayName($left)) . ')';
+        }
+
+        $rightClass = $this->detectClassOfExpr($right);
+        if ($rightClass !== '' && $compositeRelation === null) {
+            return $rightExpr;
+        }
+
+        $tmpVar = $this->addTmpVar(self::TYPE_VAR);
+        $conditions = [];
+        foreach ($typeCheck as $entry) {
+            $cond = $this->genSingleTypeCondition($tmpVar, $entry);
+            if ($cond !== '') {
+                $conditions[] = $cond;
+            }
+        }
+        if (empty($conditions)) {
+            return $rightExpr;
+        }
+
+        $propDisplay = $this->getObjectPropertyTypeCheckDisplayName($left);
+        $typeStr = $this->getObjectPropertyTypeCheckTypeString($def);
+        if ($this->usesPhpStylePropertyAssignTypeError($def)) {
+            $msgExpr = 'php::concat({php::Str("Cannot assign "), ' . $tmpVar . '.typeStr(), php::Str(" to property "), '
+                . 'php::Str(' . $this->genCharPtr($propDisplay, true) . '), php::Str(" of type "), '
+                . 'php::Str(' . $this->genCharPtr($typeStr, true) . ')})';
+        } else {
+            $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($propDisplay, true) . ' " must be of type " '
+                . $this->genCharPtr($typeStr, true) . ' ", "), ' . $tmpVar . '.typeStr()), php::Str(" given"))';
+        }
+
+        $coercion = $this->compositeTypeNeedsIntToFloatCoercion($typeCheck)
+            ? 'if (' . $tmpVar . '.isInt()) { ' . $tmpVar . ' = php::toFloat(' . $tmpVar . '); } '
+            : '';
+
+        return '([&]() -> ' . self::TYPE_VAR . ' { '
+            . $tmpVar . ' = ' . $rightExpr . '; '
+            . $coercion
+            . 'if (UNEXPECTED(!(' . implode(' || ', $conditions) . '))) { '
+            . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString()); '
+            . '} '
+            . 'return ' . $tmpVar . '; '
+            . '}())';
+    }
+
+    private function getObjectPropertyAssignTypeCheck(PropertyDef $def): array
+    {
+        return (new PropertyAssignTypeInfo())->getRuntimeTypeCheck($def);
+    }
+
+    private function getObjectPropertyTypeCheckDisplayName(NodeAbstract $left): string
+    {
+        $propName = $this->parseIdentifier($left->name);
+        $classDef = $this->getNativePropertyClassDef($left);
+        if ($classDef) {
+            $class = $classDef->getNamespacedName(false);
+            return $class . '::$' . $propName;
+        }
+
+        if ($left instanceof Expr\StaticPropertyFetch) {
+            return $this->identifierToStr($left->class, literal: true) . '::$' . $propName;
+        }
+
+        return '$' . $propName;
+    }
+
+    private function getObjectPropertyTypeCheckTypeString(PropertyDef $def): string
+    {
+        return (new PropertyAssignTypeInfo())->getTypeString($def);
+    }
+
+    private function usesPhpStylePropertyAssignTypeError(PropertyDef $def): bool
+    {
+        return empty($def->typeCheck) && $def->class === '' && in_array($def->type, [
+            self::TYPE_INT,
+            self::TYPE_FLOAT,
+            self::TYPE_BOOL,
+            self::TYPE_STR,
+            self::TYPE_ARRAY,
+        ], true);
+    }
+
+    protected function getNativeScalarPropertyTypeCheckHelper(PropertyDef $def): ?string
+    {
+        if (!empty($def->typeCheck) || $def->class !== '' || $def->nullable) {
+            return null;
+        }
+
+        return match ($def->type) {
+            self::TYPE_INT => 'php::toIntExact',
+            self::TYPE_FLOAT => 'php::toFloatExact',
+            self::TYPE_BOOL => 'php::toBoolExact',
+            default => null,
+        };
+    }
+
+    protected function canAssignStaticTypeToObjectProperty(PropertyDef $def, string $rightType): bool
+    {
+        return match ($def->type) {
+            self::TYPE_FLOAT => $rightType === self::TYPE_FLOAT || $rightType === self::TYPE_INT,
+            default => $rightType === $def->type,
+        };
+    }
+
+    protected function getPropertyAssignmentTypeName(string $type): string
+    {
+        return match ($type) {
+            self::TYPE_INT => 'int',
+            self::TYPE_FLOAT => 'float',
+            self::TYPE_BOOL => 'bool',
+            self::TYPE_STR => 'string',
+            self::TYPE_ARRAY => 'array',
+            self::TYPE_OBJECT => 'object',
+            default => 'value',
+        };
+    }
+
+    protected function parseUnset(Node\Stmt\Unset_ $node): string
+    {
+        $vars = $node->vars;
+        $lines = [];
+        foreach ($vars as $var) {
+            $this->assertNotNullsafeWriteContext($var);
+            if ($this->isArrayDimFetch($var)) {
+                if ($var->dim === null) {
+                    $this->fatalError($var, 'Cannot use [] for array unset');
+                }
+                $array = $this->parseIdentifier($var->var);
+                if (($this->isStdMap($array) or $this->isStdOrderedMap($array))
+                    and !empty($this->context->stdContainers[$array]['locking'])) {
+                    $this->fatalError($var, 'Cannot delete element in std container in foreach loop');
+                }
+                $dim = $this->parseIdentifier($var->dim);
+                if ($this->isStdContainer($array)) {
+                    $lines[] = $array . '_ref.offsetUnset(' . $dim . ');';
+                } else {
+                    $lines[] = $array . '.offsetUnset(' . $dim . ');';
+                }
+            } elseif ($this->isPropertyFetch($var)) {
+                $propertyWriteTarget = $this->preparePropertyWriteTarget($var);
+                $object = $this->getDynamicPropertyFetchObjectExpr($var, $propertyWriteTarget);
+                $restoreDefault = null;
+                if ($this->isIdExpr($var->name)) {
+                    $propertyId = $this->getPropertyIdentifier($var, $var->var, $var->name);
+                    $def = $this->getNativePropertyDef($var);
+                    if ($def) {
+                        // Object typed properties are backed by Zend object
+                        // properties, so PHP can represent their uninitialized
+                        // state after unset(). Keep that behavior instead of
+                        // restoring a fixed default value.
+                        if ($this->isFixedObjectProp($def) && $def->type !== self::TYPE_OBJECT) {
+                            $restoreDefault = $this->getFixedObjectPropDefaultValue($def);
+                            if ($restoreDefault === null) {
+                                $this->fatalError($var, "Cannot unset object property `{$this->parseIdentifier($var->name)}` of fixed type `{$def->type}` without default value");
+                            }
+                            $this->warning($var, "Object property `{$this->parseIdentifier($var->name)}` of fixed type cannot be unset; restoring its default value");
+                            $propName = $this->parseIdentifier($var->name);
+                            $propVar = $this->getObjectPropVarName($object, $propName);
+                            if ($this->hasObjectPropVar($propVar)) {
+                                $lines[] = $propVar . ' = ' . $restoreDefault . ';';
+                            } else {
+                                $lines[] = $object . '.attr(' . $propertyId . ', true) = ' . $restoreDefault . ';';
+                            }
+                        }
+                    }
+                }
+                if ($restoreDefault === null) {
+                    $lines[] = $this->emitDynamicPropertyFetchUnset($var, $propertyWriteTarget) . ';';
+                }
+            } elseif ($this->isStaticPropertyFetch($var)) {
+                $this->fatalError($var, 'Attempt to unset static property ' . $this->parseIdentifier($var->class) . '::$' . $this->parseIdentifier($var->name));
+            } elseif ($this->isVarExpr($var)) {
+                $name = $this->parseIdentifier($var);
+                if (!$this->hasVar($name)) {
+                    $this->errorUndefinedVariable($var);
+                }
+                $type = $this->getVarType($name);
+                if ($this->isNativeType($type)) {
+                    $this->warning($var, "Variable of native type `\${$name}` cannot be unset");
+                } else {
+                    $lines[] = "{$name}.unset();";
+                }
+            } else {
+                $this->fatalError($var, "Unsupported unset type `{$var->getType()}`");
+            }
+        }
+
+        return implode(PHP_EOL . $this->getIndent(), $lines);
+    }
+
+    protected function getPropertyIdentifier(Expr\PropertyFetch $expr, NodeAbstract $object, NodeAbstract $property): ?string
+    {
+        $target = $this->resolveInstancePropertyFetchTarget($object, $property);
+        if ($target !== null) {
+            $result = $this->resolveNativeInstanceProperty($expr, $target->property, $target->class);
+            if ($result !== null) {
+                return $this->applyNativePropertyAccessResult($expr, $result);
+            }
+        }
+
+        return $this->identifierToStr($property, literal: true);
+    }
+
+    private function resolveInstancePropertyFetchTarget(
+        NodeAbstract $object,
+        NodeAbstract $property,
+    ): ?InstancePropertyFetchTarget {
+        if (!$this->isVarExpr($object) or !$this->isIdExpr($property)) {
+            return null;
+        }
+
+        $objectName = $this->parseIdentifier($object);
+        $propertyName = $this->parseIdentifier($property);
+        if ($objectName === 'this_') {
+            if ($this->classDef->trait) {
+                return null;
+            }
+            return new InstancePropertyFetchTarget($propertyName, $this->getFullClassName());
+        }
+        if ($this->isTypedObject($objectName)) {
+            return new InstancePropertyFetchTarget($propertyName, $this->getObjectType($objectName));
+        }
+
+        return null;
+    }
+
+    protected function parsePropertyFetchRead(Expr\PropertyFetch $expr): string
+    {
+        return $this->parsePropertyFetchWithUpdate($expr, false);
+    }
+
+    protected function parsePropertyFetchUpdate(Expr\PropertyFetch $expr): string
+    {
+        return $this->parsePropertyFetchWithUpdate($expr, true);
+    }
+
+    protected function parsePropertyFetchWithUpdate(Expr\PropertyFetch $expr, bool $update): string
+    {
+        return $this->parseNodeWithUpdateAttribute(
+            $expr,
+            self::ATTR_PROPERTY_FETCH_UPDATE,
+            $update,
+            fn() => $this->parsePropertyFetch($expr)
+        );
+    }
+
+    protected function isPropertyFetchUpdate(Expr\PropertyFetch|Expr\NullsafePropertyFetch $expr): bool
+    {
+        return $expr->getAttribute(self::ATTR_PROPERTY_FETCH_UPDATE, false) === true;
+    }
+
+    protected function parsePropertyFetch(Expr\PropertyFetch $expr): string
+    {
+        if ($this->containsNullsafeChain($expr->var)) {
+            return $this->parseNullsafeExpr($expr);
+        }
+
+        $object = $expr->var;
+        $property = $expr->name;
+        $id = $this->getPropertyIdentifier($expr, $object, $property);
+        $hook = $this->getPropertyHookGetter($expr);
+        if ($hook !== null) {
+            return $this->emitPropertyHookGetterCall($expr, $hook);
+        }
+
+        $update = $this->isPropertyFetchUpdate($expr);
+        $objectName = $update ? $this->parseWritableIdentifier($object) : $this->parseIdentifier($object);
+        if ($this->isVarExpr($object) and !$this->hasVar($objectName)) {
+            $this->errorUndefinedVariable($object);
+        }
+        $objectVar = $objectName;
+        $getProperty = $objectVar . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
+        $def = $this->getNativePropertyDef($expr);
+        if ($def and $this->nativeTypes) {
+            $propName = $this->parseIdentifier($property);
+            $typedFetch = $this->emitNativeInstancePropertyTypedFetch(
+                $expr,
+                $objectVar,
+                $propName,
+                $id,
+                $def,
+                $getProperty,
+            );
+            if ($typedFetch !== null) {
+                return $typedFetch;
+            }
+        }
+        if ($def) {
+            $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
+        }
+        return $getProperty;
+    }
+
+    protected function isPropertyHookBackingAccess(NodeAbstract $expr): bool
+    {
+        return $expr->getAttribute(PropertyHookLowering::BACKING_ACCESS_ATTRIBUTE, false) === true;
+    }
+
+    protected function getPropertyHookGetter(NodeAbstract $expr): ?string
+    {
+        if ($this->isPropertyHookBackingAccess($expr)) {
+            return null;
+        }
+        return $this->getNativePropertyDef($expr)?->getter;
+    }
+
+    protected function getPropertyHookSetter(NodeAbstract $expr): ?string
+    {
+        if ($this->isPropertyHookBackingAccess($expr)) {
+            return null;
+        }
+        return $this->getNativePropertyDef($expr)?->setter;
+    }
+
+    protected function isReadOnlyPropertyHook(NodeAbstract $expr): bool
+    {
+        if ($this->isPropertyHookBackingAccess($expr)) {
+            return false;
+        }
+        $def = $this->getNativePropertyDef($expr);
+        return $def !== null && $def->getter !== null && $def->setter === null;
+    }
+
+    protected function emitPropertyHookGetterCall(Expr\PropertyFetch $expr, string $getter): string
+    {
+        $call = new Expr\MethodCall($expr->var, $getter, [], $expr->getAttributes());
+        return $this->parseMethodCall($call);
+    }
+
+    protected function emitPropertyHookSetterCall(Expr\PropertyFetch $expr, string $setter, Expr $value): string
+    {
+        $call = new Expr\MethodCall($expr->var, $setter, [new Node\Arg($value)], $expr->getAttributes());
+        return $this->parseMethodCall($call);
+    }
+
+    private function emitNativeInstancePropertyTypedFetch(
+        Expr\PropertyFetch $expr,
+        string $objectVar,
+        string $propName,
+        string $propertyId,
+        PropertyDef $def,
+        string $getter,
+    ): ?string {
+        if ($this->isPropertyFetchUpdate($expr) && !in_array($def->type, [self::TYPE_INT, self::TYPE_FLOAT], true)) {
+            return null;
+        }
+
+        if ($def->type === self::TYPE_BOOL) {
+            $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_DYNAMIC);
+            return $this->convertBoolExpr($getter);
+        }
+
+        $propVar = $this->getObjectPropVarName($objectVar, $propName);
+        if ($objectVar === 'this_') {
+            if (!$this->canHoistObjectProp($objectVar, $propName)) {
+                return null;
+            }
+            $this->registerHoistedObjectPropVar($propVar, $def->type, $getter);
+            $this->setNativePropertyVar($expr, $propVar);
+            $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
+            return $propVar;
+        }
+
+        if (!$this->canHoistStableObjectProp($objectVar, $propName)) {
+            return null;
+        }
+
+        // SSA-stable object: lazily create reference at first access point.
+        $result = $this->hoistStableObjectProp($objectVar, $propName, $propertyId, $def->type);
+        $this->setNativePropertyVar($expr, $result);
+        $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
+        return $result;
+    }
+
+}
