@@ -63,6 +63,7 @@ use TypePhp\Resolver\InstancePropertyFetchTarget;
 use TypePhp\Resolver\DeclarationSymbolTrait;
 use TypePhp\Resolver\PropertyAccessContext;
 use TypePhp\Resolver\NativePropertyAccess;
+use TypePhp\Resolver\NameResolutionTrait;
 use TypePhp\Resolver\PropertyAccessResult;
 use TypePhp\Resolver\PropertyAccessResolver;
 use TypePhp\Resolver\PropertyAssignTypeInfo;
@@ -78,10 +79,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\CallLike;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\FunctionLike;
-use PhpParser\Node\IntersectionType;
-use PhpParser\Node\NullableType;
 use PhpParser\Node\Stmt\Foreach_;
-use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeFinder;
 use PhpParser\Parser;
@@ -97,6 +95,7 @@ class CompilerBase implements PropertyAccessContext
     use NativeTypeCompatibilityTrait;
     use NativeBuildConfigurationTrait;
     use DeclarationSymbolTrait;
+    use NameResolutionTrait;
     use AstNodeType;
     use FuncCallOptimizer;
     use AnonClassGenerator;
@@ -1088,114 +1087,6 @@ class CompilerBase implements PropertyAccessContext
         return $this->wrapVoidExprAsNull($expr, $this->parseExpr($expr));
     }
 
-    public function getNamespacedClassName(string $class, string $currentNamespace = ''): string
-    {
-        if ($class === '') {
-            $this->error('Class name can not be empty');
-        }
-        if ($class[0] === '\\') {
-            return ltrim($class, '\\');
-        }
-
-        $ns2 = explode('\\', trim($class, '\\'));
-
-        if (isset($this->useAliases[$ns2[0]])) {
-            $ns = '\\' . $this->useAliases[$ns2[0]];
-            _return:
-            if (count($ns2) > 1) {
-                $ns .= '\\' . implode('\\', array_slice($ns2, 1));
-            }
-            return ltrim($ns, '\\');
-        }
-
-        foreach ($this->useNamespaces as $useNamespace) {
-            $ns1 = explode('\\', trim($useNamespace, '\\'));
-            if (strcasecmp($ns1[array_key_last($ns1)], $ns2[0]) === 0) {
-                $ns = '\\' . implode('\\', $ns1);
-                goto _return;
-            }
-        }
-
-        // Handle qualified names that exactly match a use import (e.g. the extends
-        // of an anonymous class may already be a qualified name like "A\B\C" when the
-        // use import is also "A\B\C").
-        if (count($ns2) > 1) {
-            foreach ($this->useNamespaces as $useNamespace) {
-                if (strcasecmp(trim($useNamespace, '\\'), $class) === 0) {
-                    return $class;
-                }
-            }
-        }
-
-        if (!$currentNamespace) {
-            $currentNamespace = $this->namespace;
-        }
-        if (!empty($currentNamespace)) {
-            return trim($currentNamespace, '\\') . '\\' . $class;
-        }
-
-        return $class;
-    }
-
-    /**
-     * 将 trait 方法参数中的类名 Name 节点升级为 Name\FullyQualified。
-     * 对于已由 parseTypeDecl() 解析的限定名（含 \），直接升级节点类型；
-     * 对于尚未解析的非限定名（如 NullableType 内层，parseTypeDecl 返回 TYPE_VAR 跳过了解析），
-     * 先通过 useAliases/useNamespaces 解析再升级。
-     * gen_stub.php 的 SimpleType::fromNode() 依赖 isFullyQualified() 判断是否需要再次解析，
-     * 若不升级为 FullyQualified，在上下文丢失后会被错误地追加当前 namespace 前缀。
-     */
-    protected function upgradeToFullyQualifiedName(?NodeAbstract $type): ?NodeAbstract
-    {
-        if ($type === null) {
-            return null;
-        }
-        if ($type instanceof Node\NullableType) {
-            return new Node\NullableType($this->upgradeToFullyQualifiedName($type->type));
-        }
-        if ($type instanceof Node\UnionType) {
-            foreach ($type->types as $i => $subType) {
-                $type->types[$i] = $this->upgradeToFullyQualifiedName($subType);
-            }
-            return $type;
-        }
-        if ($type instanceof Node\IntersectionType) {
-            foreach ($type->types as $i => $subType) {
-                $type->types[$i] = $this->upgradeToFullyQualifiedName($subType);
-            }
-            return $type;
-        }
-        if ($type instanceof Node\Name\FullyQualified) {
-            return $type;
-        }
-        if ($type instanceof Node\Name) {
-            $typeName = $type->toString();
-            if (isset($this->zendTypeMap[strtolower($typeName)]) || in_array(strtolower($typeName), ['self', 'static', 'parent'], true)) {
-                return $type;
-            }
-            if ($type->isQualified()) {
-                return new Node\Name\FullyQualified($typeName, $type->getAttributes());
-            }
-            $resolved = $this->getNamespacedClassName($typeName);
-            return new Node\Name\FullyQualified($resolved, $type->getAttributes());
-        }
-        return $type;
-    }
-
-    /**
-     * 函数名称处理，补齐 namespace
-     */
-    public function getNamespacedFuncName(string $funcName): string
-    {
-        if ($funcName[0] == '\\') {
-            return ltrim($funcName, '\\');
-        }
-        if (isset($this->useFunctions[$funcName])) {
-            return $this->useFunctions[$funcName];
-        }
-        return $funcName;
-    }
-
     protected function getObjectPropVarName(string $object, string $prop): string
     {
         return self::OBJECT_PROP . $object . self::NAMESPACE_SEPARATOR . $prop;
@@ -1315,49 +1206,6 @@ class CompilerBase implements PropertyAccessContext
         $funcId = $this->getPropertyId($class, $prop);
         $classId = $this->getClassId($class);
         return 'php_get_prop(' . $funcId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
-    }
-
-    /**
-     * @param string $class 一定是带有命名空间的完整类名
-     */
-    protected function parseTypeDecl(?NodeAbstract $type, int $what, string &$class): string
-    {
-        // 未定义类型视为 var (mixed, any)
-        if ($type === null) {
-            return self::TYPE_VAR;
-        }
-        if ($type instanceof UnionType || $type instanceof NullableType || $type instanceof IntersectionType) {
-            // 复杂类型静态阶段统一按 mixed/var 处理，运行时再由 typeCheck 兜底。
-            return self::TYPE_VAR;
-        } else {
-            $typeName = $this->parseIdentifier($type);
-            $typeNameLower = strtolower($typeName);
-            // 属性和类常量的类型不能声明为 void/never ，只有返回值可以
-            if ($what !== self::DECL_TYPE_OF_RETURN and ($typeNameLower === 'void' or $typeNameLower === 'never')) {
-                $this->fatalError($type, 'The type `void`/`never` is allowed only for return type');
-            } elseif (isset($this->zendTypeMap[$typeNameLower])) {
-                return $this->getTypeFromZendType($typeNameLower);
-            } else {
-                if ($typeName === 'self') {
-                    $class = $this->getFullClassName();
-                } elseif ($typeName === 'parent') {
-                    if (!$this->classDef) {
-                        $this->fatalError($type, 'Cannot use "parent" type declaration outside a class');
-                    }
-                    $class = $this->classDef->extends;
-                } elseif ($typeName === 'static') {
-                    // static 类无法在编译期获取
-                    $class = '';
-                } else {
-                    $class = $this->getNamespacedClassName($typeName);
-                }
-                // Trait 在注入 class 需要使用完整类名
-                if ($class and $this->classDef and $this->classDef->trait) {
-                    $type->name = $class;
-                }
-                return self::TYPE_OBJECT;
-            }
-        }
     }
 
     protected function writeLog($msg): void
