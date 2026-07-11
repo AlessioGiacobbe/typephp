@@ -11,7 +11,6 @@ namespace TypePhp;
 use MJS\TopSort\Implementations\StringSort;
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Backend\CompilerFactory;
-use TypePhp\Entity\ArrayInitPlan;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ClassLikeDef;
 use TypePhp\Entity\ConstantDef;
@@ -24,6 +23,7 @@ use TypePhp\Exception\Skip;
 use TypePhp\Exception\SyntaxError;
 use TypePhp\Exception\Unsupported;
 use TypePhp\Generator\ResourceFileGenerator;
+use TypePhp\Generator\DefaultArgumentGenerator;
 use TypePhp\Platform\PlatformFactory;
 use TypePhp\Platform\Windows;
 use PhpParser\Modifiers;
@@ -38,6 +38,8 @@ use Symfony\Component\Yaml\Yaml;
 
 class Translator extends Preprocessor
 {
+    use DefaultArgumentGenerator;
+
     public const string VERSION = '0.3.0';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
     protected string $targetName = 'app';
@@ -63,61 +65,6 @@ class Translator extends Preprocessor
         return $func->method && str_ends_with($func->name, self::NAMESPACE_SEPARATOR . '__construct');
     }
 
-    protected function getDefaultArgumentType(ArgInfo $argInfo): string
-    {
-        $type = $argInfo->type;
-        if ($type === self::TYPE_STREAM || $type === self::TYPE_BOX) {
-            return self::TYPE_VAR;
-        }
-        return $type;
-    }
-
-    protected function getDefaultArgumentHelperName(FunctionDef $func, ArgInfo $argInfo): string
-    {
-        return self::PREFIX . 'default_arg_' . $func->name . '_' . $argInfo->name;
-    }
-
-    protected function genDefaultArgumentExpr(FunctionDef $func, ArgInfo $argInfo): string
-    {
-        if (!$argInfo->arrayInitPlan || !$argInfo->arrayInitPlan->requiresRuntimeInit()) {
-            return $argInfo->default;
-        }
-
-        return $this->getDefaultArgumentHelperName($func, $argInfo) . '()';
-    }
-
-    protected function wrapArrayInitPlan(ArrayInitPlan $plan, string $body): string
-    {
-        return "do {\n" . $plan->init . $body . $plan->clean . "} while (0);\n";
-    }
-
-    protected function genDefaultArgumentHelpers(): string
-    {
-        $code = '';
-        foreach ($this->functions as $func) {
-            foreach ($func->argInfoList as $argInfo) {
-                $plan = $argInfo->arrayInitPlan;
-                if (!$plan || !$plan->requiresRuntimeInit()) {
-                    continue;
-                }
-
-                $type = $this->getDefaultArgumentType($argInfo);
-                $helper = $this->getDefaultArgumentHelperName($func, $argInfo);
-                $code .= 'static inline ' . $type . ' ' . $helper . "() {\n";
-                $code .= $plan->init;
-                if ($plan->clean) {
-                    $code .= $type . ' retval = ' . $plan->expr . ';' . PHP_EOL;
-                    $code .= $plan->clean;
-                    $code .= 'return retval;' . PHP_EOL;
-                } else {
-                    $code .= 'return ' . $plan->expr . ';' . PHP_EOL;
-                }
-                $code .= '}' . PHP_EOL;
-            }
-        }
-
-        return $code ? $code . PHP_EOL : '';
-    }
 
     public function __construct(string $rootPath)
     {
