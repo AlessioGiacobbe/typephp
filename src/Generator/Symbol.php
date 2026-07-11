@@ -8,6 +8,8 @@
 
 namespace TypePhp\Generator;
 
+use TypePhp\CompilerBase;
+
 class Symbol
 {
     public static function getStaticProperty(): string

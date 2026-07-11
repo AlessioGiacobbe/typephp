@@ -1,8 +1,8 @@
 <?php
 
-require_once __DIR__ . '/../src/Php/FileScanner.php';
+require_once __DIR__ . '/../src/Build/FileScanner.php';
 
-use PhpAot\FileScanner;
+use TypePhp\Build\FileScanner;
 
 echo "测试 PHP 语法检查功能...\n";
 

@@ -1,8 +1,8 @@
 <?php
 
-require_once __DIR__ . '/../src/Php/FileScanner.php';
+require_once __DIR__ . '/../src/Build/FileScanner.php';
 
-use PhpAot\FileScanner;
+use TypePhp\Build\FileScanner;
 
 echo "测试基本扫描功能...\n";
 $scanner = new FileScanner(__DIR__ . '/..', ['.php', '.cc', '.cpp', '.cxx', '.c', '.h', '.hpp']);

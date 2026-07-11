@@ -1,9 +1,9 @@
 <?php
 
 require_once __DIR__ . '/../vendor/autoload.php'; // 添加自动加载器
-require_once __DIR__ . '/../src/Php/FileScanner.php';
+require_once __DIR__ . '/../src/Build/FileScanner.php';
 
-use PhpAot\FileScanner;
+use TypePhp\Build\FileScanner;
 
 echo "测试 FileScanner 类...\n";
 

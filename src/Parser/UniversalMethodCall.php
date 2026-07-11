@@ -2,6 +2,7 @@
 
 namespace TypePhp\Parser;
 
+use TypePhp\CompilerBase;
 use TypePhp\Resolver\Reflection;
 
 use PhpParser\Node;

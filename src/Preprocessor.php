@@ -9,6 +9,7 @@
 namespace TypePhp;
 
 use MJS\TopSort\Implementations\StringSort;
+use TypePhp\Entity\ArgInfo;
 use TypePhp\Entity\ArrayInitPlan;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ConstantDef;
@@ -17,6 +18,8 @@ use TypePhp\Entity\InterfaceDef;
 use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\SyntaxError;
+use TypePhp\Transform\PropertyHookLowering;
+use TypePhp\Transform\Visitor;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\IntersectionType;

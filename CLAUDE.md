@@ -79,12 +79,12 @@ src/CompilerBase.php (core PHP→C++ translation logic, indent/output/mode helpe
 | `src/Context/` | `ScopeContext` and `FunctionContext` for variable scoping and type tracking |
 | `src/Exception/` | `SyntaxError`, `Unsupported`, `DynamicCall`, `PlaceHolder`, `Skip`, `Redo`, `TestError` |
 | `src/Parser/` | Special-purpose parsers like `StdContainerParser` (C++ std container foreach support) |
-| `src/Reflection.php` | Static helpers wrapping PHP reflection (internal class/function detection) |
-| `src/Symbol.php` | Maps PHP operations to `phpx` C++ API symbol names |
-| `src/FileScanner.php` | Recursive file discovery with extension filtering (supports `.php`, `.cpp`, `.c`, `.s`, `.m`, `.mm`) |
-| `src/ArgInfo.php` | Generates C function argument info structures for internal function registration |
+| `src/Resolver/Reflection.php` | Static helpers wrapping PHP reflection (internal class/function detection) |
+| `src/Generator/Symbol.php` | Maps PHP operations to `phpx` C++ API symbol names |
+| `src/Build/FileScanner.php` | Recursive file discovery with extension filtering (supports `.php`, `.cpp`, `.c`, `.s`, `.m`, `.mm`) |
+| `src/Entity/ArgInfo.php` | Generates C function argument info structures for internal function registration |
 | `src/Extractor.php` | Extracts interfaces from PHP classes |
-| `src/Visitor.php` | Base `NodeVisitorAbstract` extension (skeleton for custom AST visitors) |
+| `src/Transform/Visitor.php` | Base `NodeVisitorAbstract` extension (skeleton for custom AST visitors) |
 
 ### Configuration
 

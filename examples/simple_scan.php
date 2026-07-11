@@ -1,6 +1,8 @@
 <?php
 
-require_once __DIR__ . '/../src/FileScanner.php';
+require_once __DIR__ . '/../src/Build/FileScanner.php';
+
+use TypePhp\Build\FileScanner;
 
 // 创建文件扫描器实例，用于扫描 PHP 和 C++ 文件
 $scanner = new FileScanner(['.php', '.cc', '.cpp', '.cxx', '.c', '.h', '.hpp']);

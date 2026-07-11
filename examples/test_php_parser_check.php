@@ -1,9 +1,9 @@
 <?php
 
 require_once __DIR__ . '/../vendor/autoload.php';
-require_once __DIR__ . '/../src/Php/FileScanner.php';
+require_once __DIR__ . '/../src/Build/FileScanner.php';
 
-use PhpAot\FileScanner;
+use TypePhp\Build\FileScanner;
 
 echo "测试使用 PHP-Parser 的语法检查功能...\n";
 

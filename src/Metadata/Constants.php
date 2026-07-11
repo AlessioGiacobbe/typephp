@@ -8,6 +8,8 @@
 
 namespace TypePhp\Metadata;
 
+use TypePhp\CompilerBase;
+
 class Constants
 {
     public const array CPP_RESERVED_NAMES = [
