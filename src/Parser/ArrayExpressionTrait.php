@@ -1,0 +1,231 @@
+<?php
+/**
+ * This file is part of TypePHP.
+ *
+ * Lowers PHP array literals, dimensions, writable targets, and mixed array initialization.
+ */
+
+namespace TypePhp\Parser;
+
+use PhpParser\Node;
+use PhpParser\Node\Expr;
+use PhpParser\NodeAbstract;
+
+trait ArrayExpressionTrait
+{
+    protected function parseArray(Expr\Array_ $node): string
+    {
+        $items = $node->items;
+        // 优化代码风格，空数组直接返回{}，否则会产生一些空洞内容
+        if (count($items) === 0) {
+            return self::TYPE_ARRAY . '{}';
+        }
+
+        $hasKey = false;
+        $hasIntKey = false;
+        $hasStrKey = false;
+        $hasUnpack = false;
+        $hasVarKey = false;
+        $hasNextInsert = false;
+        foreach ($items as $item) {
+            if ($item->unpack) {
+                $hasUnpack = true;
+            }
+            if ($item->key) {
+                if ($item->key instanceof Node\Scalar\LNumber) {
+                    $hasIntKey = true;
+                } elseif ($item->key instanceof Node\Scalar\String_) {
+                    $hasStrKey = true;
+                } else {
+                    $hasVarKey = true;
+                }
+                $hasKey = true;
+            } else {
+                $hasNextInsert = true;
+            }
+        }
+
+        // 存在混合键，则需要拆分为多行插入
+        if ($hasUnpack or $hasVarKey or ($hasNextInsert && $hasKey) or ($hasIntKey and $hasStrKey)) {
+            return $this->parseArrayMixed($node);
+        }
+
+        $list = [];
+        $this->indentLevel++;
+        foreach ($items as $item) {
+            $this->assertExprCanBeUsedAsValue($item->value, 'array value');
+            $value = $this->parseIdentifier($item->value);
+            if ($item->key) {
+                $this->assertExprCanBeUsedAsValue($item->key, 'array key');
+                $key = $this->parseArrayKey($item->key);
+                $list[] = $this->getIndent() . '{ ' . $key . ', ' . self::TYPE_VAR . '(' . $value . ') }';
+            } else {
+                $list[] = $this->getIndent() . self::TYPE_VAR . '(' . $value . ')';
+            }
+        }
+        $this->indentLevel--;
+
+        return self::TYPE_ARRAY . '{' . PHP_EOL .
+            implode(', ' . PHP_EOL, $list) . PHP_EOL .
+            $this->getIndent() .
+            '}';
+    }
+
+    /**
+     * 获取包含路径
+     */
+
+    protected function parseGlobalsArrayDimFetch(Expr\ArrayDimFetch $node): string
+    {
+        if ($node->dim === null) {
+            $this->fatalError($node, 'Cannot use [] for GLOBALS');
+        }
+        if ($this->isScalarString($node->dim)) {
+            $name = $node->dim->value;
+            if (!$this->hasGlobalVar($name)) {
+                $this->addGlobalVar($name, self::TYPE_VAR);
+            }
+            if (!$this->hasScopeGlobalVar($name)) {
+                $this->addScopeGlobalVar($name, self::TYPE_VAR);
+            }
+            return $name;
+        }
+        return 'php::global(' . $this->parseIdentifier($node->dim) . ')';
+    }
+
+    protected function parseWritableIdentifier(NodeAbstract $expr): string
+    {
+        if ($expr instanceof Expr\ArrayDimFetch) {
+            return $this->parseArrayDimFetchUpdate($expr);
+        }
+
+        if ($expr instanceof Expr\PropertyFetch) {
+            return $this->parsePropertyFetchUpdate($expr);
+        }
+
+        if ($expr instanceof Expr\NullsafePropertyFetch) {
+            return $this->parseNullsafePropertyFetchUpdate($expr);
+        }
+
+        return $this->parseIdentifier($expr);
+    }
+
+    protected function parseNodeWithUpdateAttribute(NodeAbstract $node, string $attribute, bool $update, callable $parser): string
+    {
+        $hadAttribute = $node->hasAttribute($attribute);
+        $previousValue = $node->getAttribute($attribute);
+        $node->setAttribute($attribute, $update);
+        try {
+            return $parser();
+        } finally {
+            if ($hadAttribute) {
+                $node->setAttribute($attribute, $previousValue);
+            } else {
+                $attributes = $node->getAttributes();
+                unset($attributes[$attribute]);
+                $node->setAttributes($attributes);
+            }
+        }
+    }
+
+    protected function parseArrayDimFetchRead(Expr\ArrayDimFetch $node): string
+    {
+        return $this->parseArrayDimFetchWithUpdate($node, false);
+    }
+
+    protected function parseArrayDimFetchUpdate(Expr\ArrayDimFetch $node): string
+    {
+        return $this->parseArrayDimFetchWithUpdate($node, true);
+    }
+
+    protected function parseArrayDimFetchWithUpdate(Expr\ArrayDimFetch $node, bool $update): string
+    {
+        return $this->parseNodeWithUpdateAttribute(
+            $node,
+            self::ATTR_ARRAY_DIM_FETCH_UPDATE,
+            $update,
+            fn() => $this->parseArrayDimFetch($node)
+        );
+    }
+
+    protected function isArrayDimFetchUpdate(Expr\ArrayDimFetch $node): bool
+    {
+        return $node->getAttribute(self::ATTR_ARRAY_DIM_FETCH_UPDATE, false) === true;
+    }
+
+    protected function parseArrayDimFetch(Expr\ArrayDimFetch $node): string
+    {
+        $write = $this->isArrayDimFetchUpdate($node);
+        if ($this->isStdContainerExpr($node)) {
+            if ($write && $node->dim === null) {
+                return $this->parseIdentifier($node->var);
+            }
+            return $this->parseStdContainerDimFetch($node);
+        }
+
+        $var = $write ? $this->parseWritableIdentifier($node->var) : $this->parseIdentifier($node->var);
+        if ($this->isVarExpr($node->var)) {
+            if ($var === 'GLOBALS') {
+                return $this->parseGlobalsArrayDimFetch($node);
+            }
+            if (!$this->hasVar($var)) {
+                if ($write) {
+                    $this->addLocalVar($var, self::TYPE_ARRAY);
+                } else {
+                    $this->errorUndefinedVariable($node->var);
+                }
+            } else {
+                $type = $this->getVarType($var);
+                if ($type === self::TYPE_BOOL || $type === self::TYPE_INT || $type === self::TYPE_FLOAT) {
+                    $this->fatalError($node, 'Cannot use [] for numbers');
+                }
+            }
+            if ($this->getVarType($var) === self::TYPE_STR) {
+                if ($node->dim === null) {
+                    $this->fatalError($node, 'Cannot use [] for strings');
+                }
+            }
+        }
+
+        if ($node->dim === null) {
+            if (!$write) {
+                $this->fatalError($node, 'Cannot use [] for reading');
+            } else {
+                return $var . '.newItem()';
+            }
+        } else {
+            $dim = $this->parseIdentifier($node->dim);
+            return $var . '.item(' . $dim . ', ' . $this->escapeBool($write) . ')';
+        }
+    }
+
+    /**
+     * 查找原生函数.
+     */
+
+    private function parseArrayMixed(Expr\Array_ $node): string
+    {
+        $tmpVar = $this->genTmpVarName();
+        $this->addLocalVar($tmpVar, self::TYPE_ARRAY);
+        // 释放临时变量，避免修改数组产生数组复制操作
+        $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.clean();';
+
+        $items = $node->items;
+        foreach ($items as $item) {
+            $this->assertExprCanBeUsedAsValue($item->value, $item->unpack ? 'array unpack value' : 'array value');
+            $value = $this->parseIdentifier($item->value);
+            if ($item->unpack) {
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
+            } elseif ($item->key) {
+                $this->assertExprCanBeUsedAsValue($item->key, 'array key');
+                $key = $this->parseArrayKey($item->key);
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
+            } else {
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
+            }
+        }
+
+        return $tmpVar;
+    }
+}
+
