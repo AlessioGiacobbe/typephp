@@ -12,6 +12,7 @@ use MJS\TopSort\Implementations\StringSort;
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Backend\CompilerFactory;
 use TypePhp\Build\FileScanner;
+use TypePhp\Build\SourcePipelineTrait;
 use TypePhp\Entity\ArgInfo;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ClassLikeDef;
@@ -45,6 +46,7 @@ use Symfony\Component\Yaml\Yaml;
 class Translator extends Preprocessor
 {
     use DefaultArgumentGenerator;
+    use SourcePipelineTrait;
 
     public const string VERSION = '0.3.0';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
@@ -610,172 +612,6 @@ class Translator extends Preprocessor
         }
 
         return $targetFile;
-    }
-
-    public function addFiles(array $files): void
-    {
-        $this->sourceDirs = array_merge($this->sourceDirs, $files);
-    }
-
-    public function getFiles(string $path): array
-    {
-        $this->applyPhpVersionCommandLineArgument();
-        $realpath = realpath($path);
-        if ($realpath === false) {
-            $this->error("path not exists: {$path}");
-        }
-        $path = $realpath;
-
-        if (is_dir($path)) {
-            // 目录模式：不解析 YAML
-            $list = $this->getFilesFromDir($path);
-            $targetName = basename($path);
-            $this->setTargetName($targetName);
-            $this->sourceDirs[] = $path;
-        } else {
-            $ext = pathinfo($path, PATHINFO_EXTENSION);
-            if ($ext === 'yml' || $ext === 'yaml') {
-                // YAML 配置模式：先解析 YAML
-                $list = $this->parseProjectYaml($path);
-            } elseif ($ext === 'php') {
-                // 单文件模式：不解析 YAML
-                $list = [$path];
-                $targetName = FileScanner::getFileName($path);
-                $this->setTargetName($targetName);
-                $this->sourceDirs[] = dirname($path);
-            } else {
-                $this->error('Unsupported file type: ' . $path);
-            }
-        }
-
-        // 在所有配置加载完成后，应用命令行参数（确保优先级最高）
-        $this->applyCommandLineArguments();
-
-        return $this->filterIgnoredFiles($list);
-    }
-
-    public function prepare(string $path): array
-    {
-        $files = $this->getFiles($path);
-        $this->validateCompilerToolchain();
-
-        // shell_exec 和 define 已通过 php::fn:: 直接调用，无需动态符号表
-
-        // 根据平台检查库文件（仅在构建二进制文件时需要）
-        if ($this->isBuildModeEmbed()) {
-            foreach ($this->getPlatform()->getBuildLibraryWarnings($this->getPhpDir(), $this->getPhpxDir(), $this->buildMode) as $message) {
-                $this->climate->warning($message['warning']);
-                if (!empty($message['info'])) {
-                    $this->climate->info($message['info']);
-                }
-            }
-        }
-
-        $files = $this->filterIgnoredFiles($files);
-        // 分析 PHP 文件，预处理
-        foreach ($files as $k => $file) {
-            if (FileScanner::isPhpFile($file)) {
-                try {
-                    $this->prepareFile($file);
-                } catch (Unsupported $e) {
-                    $this->output(' unsupported syntax: ' . $e->getMessage() . "\n" . ' skip: ' . $file . "\n", 'error');
-                    unset($files[$k]);
-                } catch (SyntaxError $e) {
-                    $this->output(' syntax error: ' . $e->getMessage() . "\n" . ' skip: ' . $file . "\n", 'error');
-                    unset($files[$k]);
-                }
-            }
-        }
-        $this->sortFiles($files);
-        return $files;
-    }
-
-    protected function validateCompilerToolchain(): void
-    {
-        $backend = $this->getCompilerBackend();
-        $compilerCommand = $backend->getCompilerCommand();
-        if (!CompilerFactory::isCommandExecutable($compilerCommand)) {
-            $program = CompilerFactory::getCommandProgram($compilerCommand);
-            $this->error(
-                "C/C++ compiler executable not found: {$program}\n" .
-                "Configured compiler command: {$compilerCommand}\n" .
-                "Install a supported compiler or set `cpp-compiler` in project.yml / PHPX_CC / CXX."
-            );
-        }
-
-        $linkerCommand = $backend->getLinkerCommand();
-        if ($linkerCommand !== $compilerCommand && !CompilerFactory::isCommandExecutable($linkerCommand)) {
-            $program = CompilerFactory::getCommandProgram($linkerCommand);
-            $this->error(
-                "Linker executable not found: {$program}\n" .
-                "Configured linker command: {$linkerCommand}\n" .
-                "Install the required linker or update compiler configuration."
-            );
-        }
-    }
-
-    protected function shouldIgnoreFile(string $file): bool
-    {
-        foreach ($this->ignorePaths as $ignorePath) {
-            if ($file === $ignorePath) {
-                return true;
-            }
-            if (is_dir($ignorePath) && str_starts_with($file, rtrim($ignorePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    protected function filterIgnoredFiles(array $files): array
-    {
-        if (empty($this->ignorePaths)) {
-            return $files;
-        }
-
-        $filteredFiles = [];
-        foreach ($files as $file) {
-            if (!$this->shouldIgnoreFile($file)) {
-                $filteredFiles[] = $file;
-            }
-        }
-
-        return $filteredFiles;
-    }
-
-    public function convert(array $files): array
-    {
-        $sourceFiles = [];
-        // 生成 C++ 文件
-        foreach ($files as $k => $file) {
-            try {
-                if (FileScanner::isPhpFile($file)) {
-                    $cppFile = $this->convertFile($file);
-                } elseif (FileScanner::isNativeSourceFile($file)) {
-                    $cppFile = $file;
-                } else {
-                    continue;
-                }
-                $sourceFiles[] = $cppFile;
-            } catch (Unsupported $e) {
-                echo ' unsupported syntax: ' . $e->getMessage() . "\n";
-                echo ' skip: ' . $file . "\n";
-                unset($files[$k]);
-            }
-        }
-
-        if (empty($sourceFiles)) {
-            $this->stop('No valid source file found');
-        }
-
-        // 生成头文件：函数声明、全局变量声明
-        $this->genFunctionDeclaration($this->getIncludeDir() . "/php_{$this->targetName}_func_decl.h");
-        $this->genExternGlobalVars($this->getIncludeDir() . "/php_{$this->targetName}_global_var_decl.h");
-        // 生成扩展模块源文件
-        $sourceFiles[] = $this->genExtension();
-
-        return $sourceFiles;
     }
 
     public function preprocessArgvAdvanced(): void
