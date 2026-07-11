@@ -413,9 +413,11 @@ trait UniversalMethodCall
     }
 
     /**
-     * Look up an object extension in the object's own namespace. Functions use
-     * {Class}_{snake_case_method} or {Class}_{lowerCamelCaseMethod}, and their
-     * first parameter must be exactly the extended class.
+     * Look up a statically compiled object extension in the object's own
+     * namespace. This lookup is only used by the named MethodCall AST path;
+     * dynamic method names and StaticCall nodes deliberately do not use it.
+     * Real methods are resolved before this fallback, while __call() is used
+     * only if no valid extension exists.
      */
     protected function findObjectExtensionMethod(string $class, string $method): ?array
     {

@@ -16,6 +16,11 @@ namespace App {
         {
             return 'real method';
         }
+
+        public function __call(string $method, array $args): string
+        {
+            return 'magic:' . $method;
+        }
     }
 
     function User_test_method(User $user, string $suffix): string
@@ -54,6 +59,11 @@ namespace {
         var_dump($user->formatName());
         var_dump($user->existing());
         var_dump((new \App\User('bob'))->displayName());
+        var_dump($user->missingMethod());
+
+        // Dynamic method names do not participate in static extension lookup.
+        $dynamicMethod = 'displayName';
+        var_dump($user->$dynamicMethod());
     }
 }
 ?>
@@ -63,3 +73,5 @@ string(11) "ALICE:camel"
 string(7) "[alice]"
 string(11) "real method"
 string(9) "BOB:camel"
+string(19) "magic:missingMethod"
+string(17) "magic:displayName"
