@@ -3722,7 +3722,7 @@ class CompilerBase implements PropertyAccessContext
     /**
      * @param array<Node\Arg|Node\VariadicPlaceholder> $callArgs
      */
-    protected function parseNativeCallArgs(array $callArgs, string $nativeFunc): string
+    protected function parseNativeCallArgs(array $callArgs, string $nativeFunc, int $parameterOffset = 0): string
     {
         $argList = [];
         $functionDef = $this->getFunction($nativeFunc);
@@ -3740,21 +3740,27 @@ class CompilerBase implements PropertyAccessContext
                 $argName = $arg->name->name;
                 $k = $argNameIndex[$argName] ?? null;
                 if ($k !== null and ($variadicArgIndex === null or $k < $variadicArgIndex)) {
+                    if ($k < $parameterOffset) {
+                        $this->fatalError($arg, 'Named argument cannot target the extension receiver');
+                    }
                     $args[$k] = $arg;
                 } else {
                     $variadicArgs[] = [$argName, $arg];
                 }
                 $hasNamedArg = true;
-            } elseif ($variadicArgIndex !== null and $i >= $variadicArgIndex) {
+            } elseif ($variadicArgIndex !== null and $i + $parameterOffset >= $variadicArgIndex) {
                 $variadicArgs[] = [null, $arg];
             } else {
-                $args[$i] = $arg;
+                $args[$i + $parameterOffset] = $arg;
             }
         }
         // 对 key 进行排序，确保参数顺序正确
         if ($hasNamedArg) {
             // 命名参数中间存在空洞，需要使用默认参数填充
             foreach ($functionDef->argInfoList as $k => $argInfo) {
+                if ($k < $parameterOffset) {
+                    continue;
+                }
                 if ($variadicArgIndex !== null and $k === $variadicArgIndex) {
                     continue;
                 }
@@ -3782,7 +3788,9 @@ class CompilerBase implements PropertyAccessContext
         }
 
         // 函数只接受一个变长参数，且调用参数为空，直接传入空数组
-        if (count($args) === 0 and count($functionDef->argInfoList) === 1 and $functionDef->argInfoList[0]->variadic) {
+        if (count($args) === 0
+            and count($functionDef->argInfoList) === $parameterOffset + 1
+            and $functionDef->argInfoList[$parameterOffset]->variadic) {
             return '{}';
         }
 
@@ -6922,7 +6930,17 @@ class CompilerBase implements PropertyAccessContext
                     }
                 }
             } catch (DynamicCall) {
+                $extension = $this->findObjectExtensionMethod($class, $methodName);
+                if ($extension !== null) {
+                    return $this->parseUniversalMethodCall($expr, $object, $methodName, $extension);
+                }
                 $magicMethod = true;
+            }
+            if (!$nativeFunc) {
+                $extension = $this->findObjectExtensionMethod($class, $methodName);
+                if ($extension !== null) {
+                    return $this->parseUniversalMethodCall($expr, $object, $methodName, $extension);
+                }
             }
         }
 
@@ -6947,6 +6965,12 @@ class CompilerBase implements PropertyAccessContext
                     }
                     return $this->parseUniversalMethodCall($expr, $receiver, $methodName, $fn, false);
                 }
+            }
+
+            $extensionClass = $this->detectClassOfExpr($expr->var);
+            $extension = $this->findObjectExtensionMethod($extensionClass, $methodName);
+            if ($extension !== null) {
+                return $this->parseUniversalMethodCall($expr, $object, $methodName, $extension, false);
             }
         }
 

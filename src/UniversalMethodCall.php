@@ -359,6 +359,21 @@ trait UniversalMethodCall
         ]));
     }
 
+    /** Resolve extension candidates in exactly one namespace. */
+    protected function extensionFunctionDefinitions(string $prefix, string $method, string $namespace = ''): iterable
+    {
+        foreach ($this->extensionFunctionCandidates($prefix, $method) as $localName) {
+            $function = $this->getNativeName($localName, $namespace);
+            if (!$this->hasFunction($function)) {
+                continue;
+            }
+            $definition = $this->getFunction($function);
+            if ($definition->namespace === $namespace) {
+                yield $function => $definition;
+            }
+        }
+    }
+
     protected const array TO_CONVERT_FN = [
         CompilerBase::TYPE_BIGINT   => ['toInt' => 'php::BigInt::toInt', 'toFloat' => 'php::BigInt::toFloat', 'toString' => 'php::BigInt::toString'],
         CompilerBase::TYPE_BIGFLOAT => ['toInt' => 'php::BigFloat::toInt', 'toFloat' => 'php::BigFloat::toFloat', 'toString' => 'php::BigFloat::toString'],
@@ -398,6 +413,44 @@ trait UniversalMethodCall
     }
 
     /**
+     * Look up an object extension in the object's own namespace. Functions use
+     * {Class}_{snake_case_method} or {Class}_{lowerCamelCaseMethod}, and their
+     * first parameter must be exactly the extended class.
+     */
+    protected function findObjectExtensionMethod(string $class, string $method): ?array
+    {
+        $class = ltrim($class, '\\');
+        if ($class === '' || !$this->hasClass($class)) {
+            return null;
+        }
+        $separator = strrpos($class, '\\');
+        $namespace = $separator === false ? '' : substr($class, 0, $separator);
+        $shortClass = $separator === false ? $class : substr($class, $separator + 1);
+
+        foreach ($this->extensionFunctionDefinitions($shortClass, $method, $namespace) as $function => $funcDef) {
+            if (empty($funcDef->argInfoList)) {
+                continue;
+            }
+            $receiver = $funcDef->argInfoList[0];
+            if ($receiver->byRef
+                || $receiver->type !== CompilerBase::TYPE_OBJECT
+                || !$this->isSameClassName($receiver->declaredClass, $class)) {
+                continue;
+            }
+
+            $totalParams = count($funcDef->argInfoList);
+            return [
+                'handler'      => 'object_extension_fn',
+                'fn'           => $function,
+                'return_type'  => $funcDef->returnType,
+                'min_args'     => max(0, $funcDef->argCountRequired - 1),
+                'max_args'     => $funcDef->hasVariadicArg() ? -1 : $totalParams - 1,
+            ];
+        }
+        return null;
+    }
+
+    /**
      * Look up an extension function for the given type+method.
      * Extension functions may use either {typePrefix}_{snake_case_method}
      * or {typePrefix}_{lowerCamelCaseMethod}. Snake case takes precedence when
@@ -417,6 +470,9 @@ trait UniversalMethodCall
             $resolvedName = $this->resolveExtensionFunctionName($funcName);
             if ($resolvedName !== null) {
                 $funcDef = $this->getFunction($resolvedName);
+                if ($funcDef->namespace !== '') {
+                    continue;
+                }
                 if (!$this->validateExtensionFirstParam($type, $funcDef)) {
                     continue;
                 }
@@ -447,13 +503,8 @@ trait UniversalMethodCall
      */
     protected function findKeywordExtensionMethod(string $method): ?array
     {
-        foreach ($this->extensionFunctionCandidates('_', $method) as $funcName) {
-            if (!$this->hasFunction($funcName)) {
-                continue;
-            }
-
-            $funcDef = $this->getFunction($funcName);
-            if ($funcDef->namespace !== '' || empty($funcDef->argInfoList)) {
+        foreach ($this->extensionFunctionDefinitions('_', $method) as $funcName => $funcDef) {
+            if (empty($funcDef->argInfoList)) {
                 continue;
             }
             $firstParam = $funcDef->argInfoList[0];
@@ -602,8 +653,15 @@ trait UniversalMethodCall
             'php_fn'               => $this->genUniversalPhpFn($receiver, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0, $def['const_args'] ?? []),
             'php_fn_ref'           => $this->genUniversalPhpFnRef($receiver, $def['fn'], $expr->args, $def['return_type']),
             'cpp_fn'               => $this->genUniversalCppFn($receiver, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
+            'object_extension_fn'  => $this->genObjectExtensionFn($receiver, $def['fn'], $expr->args),
             default                => null,
         };
+    }
+
+    protected function genObjectExtensionFn(string $receiver, string $nativeFunc, array $args): string
+    {
+        $tail = $this->parseNativeCallArgs($args, $nativeFunc, 1);
+        return self::PREFIX . $nativeFunc . '(' . $receiver . ($tail === '' ? '' : ', ' . $tail) . ')';
     }
 
     /**
