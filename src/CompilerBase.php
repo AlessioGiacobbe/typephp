@@ -11,6 +11,7 @@ namespace TypePhp;
 use League\CLImate\CLImate;
 use TypePhp\Backend\CompilerBackend;
 use TypePhp\Backend\CompilerFactory;
+use TypePhp\Build\NativeBuildConfigurationTrait;
 use TypePhp\Context\FunctionContext;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ConstantDef;
@@ -90,6 +91,7 @@ class CompilerBase implements PropertyAccessContext
 {
     public const string DEFAULT_PHP_VERSION = '8.5';
     use CompositeTypeCheckerTrait;
+    use NativeBuildConfigurationTrait;
     use AstNodeType;
     use FuncCallOptimizer;
     use AnonClassGenerator;
