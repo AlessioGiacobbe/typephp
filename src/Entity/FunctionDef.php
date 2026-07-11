@@ -28,6 +28,10 @@ class FunctionDef
     public bool $returnTypeUndeclared = false;
     public bool $returnsByRef = false;
     public bool $generator = false;
+    /** Source file containing this function definition. */
+    public string $sourceFile = '';
+    /** First source line of this function definition. */
+    public int $startLine = 1;
 
     /**
      * @var string 必须是带有命名空间的完整类名

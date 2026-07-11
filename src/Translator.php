@@ -1161,11 +1161,16 @@ CODE;
         $code .= 'php_app_init();' . PHP_EOL;
 
         if ($this->isBuildModeBin()) {
-            if (count($this->functions[self::ENTRY_FUNCTION]->argInfoList) == 2) {
-                $code .= 'php::eval("global $argc, $argv; main($argc, $argv);");' . PHP_EOL;
+            $entryFunction = $this->functions[self::ENTRY_FUNCTION];
+            $entryFile = $entryFunction->sourceFile;
+            $entryFileArg = $this->genCharPtr($entryFile, true);
+            $entryPrefix = str_repeat("\n", max(0, $entryFunction->startLine - 1));
+            if (count($entryFunction->argInfoList) == 2) {
+                $entryScript = $entryPrefix . 'global $argc, $argv; main($argc, $argv);';
             } else {
-                $code .= 'php::eval("main();");' . PHP_EOL;
+                $entryScript = $entryPrefix . 'main();';
             }
+            $code .= 'php::eval(' . $this->genCharPtr($entryScript, true) . ', ' . $entryFileArg . ');' . PHP_EOL;
         }
 
         $code .= 'return SUCCESS;' . PHP_EOL;

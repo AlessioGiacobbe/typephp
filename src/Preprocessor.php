@@ -495,6 +495,8 @@ class Preprocessor extends CompilerBase
             $this->fatalError($v, "The function `{$name}` is a built-in function and cannot be redefined");
         }
         $functionDef = $this->parseFunctionDecl($v);
+        $functionDef->sourceFile = $this->file;
+        $functionDef->startLine = $v->getStartLine();
         $this->addFunction($name, $functionDef);
         if ($this->methodDef) {
             $functionDef->method = true;
