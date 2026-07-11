@@ -27,8 +27,6 @@ use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\Redo;
 use TypePhp\Exception\Skip;
-use TypePhp\Exception\SyntaxError;
-use TypePhp\Exception\Unsupported;
 use TypePhp\Generator\DefaultArgumentGenerator;
 use TypePhp\Generator\Symbol;
 use TypePhp\Metadata\Constants;
@@ -39,7 +37,6 @@ use TypePhp\Resolver\ClassConstantValueTrait;
 use TypePhp\Transform\Visitor;
 use PhpParser\Modifiers;
 use PhpParser\Node;
-use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
@@ -54,6 +51,8 @@ class Translator extends Preprocessor
 
     public const string VERSION = '0.3.0';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
+    protected const string MODULE_NAME_PREFIX = 'app_';
+
     protected string $targetName = 'app';
     protected bool $hasExplicitOutput = false;
     protected ?string $explicitOutputExtension = null;
@@ -69,16 +68,27 @@ class Translator extends Preprocessor
 
     // Windows 资源文件配置（图标、版本信息等）
     protected array $resourceConfig = [];
-
     protected bool $useRegisterSymbolsFn = false;
-
-    protected const string MODULE_NAME_PREFIX = 'app_';
+    protected array $globalHeaders = [
+        'phpx.h',
+        'phpx_helper.h',
+        'phpx_big_int.h',
+        'phpx_big_float.h',
+        'phpx_decimal.h',
+        'typephp_helper.h',
+        'typephp_fiber_generator.h',
+        'phpx_std.h',
+    ];
+    /**
+     * @var array<string>
+     */
+    protected array $classCeList = [];
+    protected array $classCeInfo = [];
 
     protected function isConstructorNativeFunction(FunctionDef $func): bool
     {
         return $func->method && str_ends_with($func->name, self::NAMESPACE_SEPARATOR . '__construct');
     }
-
 
     public function __construct(string $rootPath)
     {
@@ -1074,8 +1084,8 @@ CODE;
     {
         $abi = [
             'php_version_id' => PHP_VERSION_ID,
-            'php_api_version' => defined('PHP_API_VERSION') ? PHP_API_VERSION : null,
-            'zend_module_api' => defined('ZEND_MODULE_API_NO') ? ZEND_MODULE_API_NO : null,
+            'php_api_version' => defined('PHP_API_VERSION') ? constant('PHP_API_VERSION') : null,
+            'zend_module_api' => defined('ZEND_MODULE_API_NO') ? constant('ZEND_MODULE_API_NO') : null,
             'php_zts' => defined('PHP_ZTS') ? PHP_ZTS : null,
             'php_debug' => defined('PHP_DEBUG') ? PHP_DEBUG : null,
             'integer_size' => PHP_INT_SIZE,

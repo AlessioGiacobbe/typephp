@@ -8,9 +8,15 @@ use TypePhp\Entity\InterfaceDef;
 
 final class SymbolRepository
 {
-    /** @var array<string, FunctionDef> */
+    /**
+     * 存储所有函数、类方法的定义，key 是 native name，命名空间需要转为 `_`，并且必须为小写
+     * @var array<string, FunctionDef>
+     */
     private array $functions = [];
-    /** @var array<string, ClassDef> */
+    /**
+     * key 类名，包含命名空间
+     * @var array<string, ClassDef>
+     */
     private array $classes = [];
     /** @var array<string, InterfaceDef> */
     private array $interfaces = [];

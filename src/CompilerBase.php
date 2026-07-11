@@ -26,7 +26,6 @@ use TypePhp\Entity\InterfaceDef;
 use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\DynamicCall;
-use TypePhp\Exception\PlaceHolder;
 use TypePhp\Exception\Redo;
 use TypePhp\Generator\AnonClassGenerator;
 use TypePhp\Generator\CallArgumentGenerator;
@@ -67,7 +66,6 @@ use TypePhp\Platform\Macos;
 use TypePhp\Platform\PlatformBase;
 use TypePhp\Platform\PlatformFactory;
 use TypePhp\Platform\Windows;
-use TypePhp\Resolver\InstancePropertyFetchTarget;
 use TypePhp\Resolver\DeclarationSymbolTrait;
 use TypePhp\Resolver\MagicMethodDetector;
 use TypePhp\Resolver\PropertyAccessContext;
@@ -75,11 +73,7 @@ use TypePhp\Resolver\NativePropertyAccess;
 use TypePhp\Resolver\NameResolutionTrait;
 use TypePhp\Resolver\PropertyAccessResult;
 use TypePhp\Resolver\PropertyAccessResolver;
-use TypePhp\Resolver\PropertyAssignTypeInfo;
-use TypePhp\Resolver\PropertyWriteTarget;
 use TypePhp\Resolver\Reflection;
-use TypePhp\Resolver\StaticPropertyFetchResolution;
-use TypePhp\Resolver\StaticPropertyFetchTarget;
 use TypePhp\Symbol\SymbolRepository;
 use TypePhp\TypeSystem\CompositeTypeCheckerTrait;
 use TypePhp\TypeSystem\NativeTypeCompatibilityTrait;
@@ -90,7 +84,6 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\CallLike;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\FunctionLike;
-use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeFinder;
 use PhpParser\Parser;
@@ -270,16 +263,6 @@ class CompilerBase implements PropertyAccessContext
         'decimal' => Type::DECIMAL,
         'box' => Type::BOX,
     ];
-    protected array $globalHeaders = [
-        'phpx.h',
-        'phpx_helper.h',
-        'phpx_big_int.h',
-        'phpx_big_float.h',
-        'phpx_decimal.h',
-        'typephp_helper.h',
-        'typephp_fiber_generator.h',
-        'phpx_std.h',
-    ];
     protected array $localHeaders = [];
     protected array $internalFunctions = [];
     protected array $internalConstants = [];
@@ -338,46 +321,23 @@ class CompilerBase implements PropertyAccessContext
     protected string $class = '';
     protected string $parentClass = '';
     protected string $interface = '';
-
-    /**
-     * @var array<string, InterfaceDef>
-     */
-
-    /**
-     * 存储所有函数、类方法的定义，key 是 native name，命名空间需要转为 `_`，并且必须为小写
-     * @var array<string, FunctionDef>
-     */
-
-    /**
-     * key 类名，包含命名空间
-     * @var array<string, ClassDef>
-     */
-
     /**
      * @var array<string, ConstantDef>
      */
     protected array $constants = [];
-
     /**
      * @var array<string, ClassDef>
      */
     protected array $classesDefineInFile = [];
-
     /**
      * @var array<string, InterfaceDef>
      */
     protected array $interfacesDefineInFile = [];
-
     /**
      * @var array<string, FunctionDef>
      */
     protected array $functionDefineInFile = [];
 
-    /**
-     * @var array<string>
-     */
-    protected array $classCeList = [];
-    protected array $classCeInfo = [];
     protected ?FunctionDef $functionDef = null;
     protected ?ClassDef $classDef = null;
     protected ?MethodDef $methodDef = null;

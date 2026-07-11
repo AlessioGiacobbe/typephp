@@ -7,7 +7,6 @@
 
 namespace TypePhp\Build;
 
-use TypePhp\Platform\Linux;
 use TypePhp\Platform\Windows;
 
 trait NativeBuildConfigurationTrait
@@ -162,21 +161,4 @@ trait NativeBuildConfigurationTrait
         return $this->getPlatform()->getLibraryFlags($this->getLibraries());
     }
 
-    protected function getTargetFileName(): string
-    {
-        $targetFile = $this->targetName;
-        $extension = $this->getPlatform()->getTargetExtension($this->buildMode);
-
-        if ($extension !== '' && !str_ends_with($targetFile, $extension)) {
-            $targetFile .= $extension;
-        }
-
-        if ($this->outputDir !== '') {
-            $targetFile = rtrim($this->outputDir, '/\\') . '/' . $targetFile;
-        }
-
-        return $targetFile;
-    }
-
 }
-
