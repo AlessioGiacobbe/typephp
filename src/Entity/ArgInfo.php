@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace TypePhp;
+namespace TypePhp\Entity;
 
 use TypePhp\Entity\ArrayInitPlan;
 use PhpParser\Node\Expr;

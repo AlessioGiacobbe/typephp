@@ -4,7 +4,7 @@ namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
 use TypePhp\CompilerTest;
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 use TypePhp\Exception\TestError;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Function_;

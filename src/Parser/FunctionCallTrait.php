@@ -12,7 +12,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\CallLike;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\NodeAbstract;
-use TypePhp\Constants;
+use TypePhp\Metadata\Constants;
 use TypePhp\Exception\PlaceHolder;
 
 trait FunctionCallTrait

@@ -8,7 +8,7 @@
 
 namespace TypePhp\Generator;
 
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 use PhpParser\Node;
 use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;

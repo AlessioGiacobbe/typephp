@@ -12,11 +12,11 @@ use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 use TypePhp\Entity\FunctionDef;
 use TypePhp\Exception\PlaceHolder;
-use TypePhp\Reflection;
-use TypePhp\Symbol;
+use TypePhp\Resolver\Reflection;
+use TypePhp\Generator\Symbol;
 
 trait CallArgumentGenerator
 {

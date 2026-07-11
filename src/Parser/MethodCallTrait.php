@@ -13,7 +13,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\CallLike;
 use TypePhp\Exception\DynamicCall;
 use TypePhp\Exception\PlaceHolder;
-use TypePhp\Symbol;
+use TypePhp\Generator\Symbol;
 
 trait MethodCallTrait
 {

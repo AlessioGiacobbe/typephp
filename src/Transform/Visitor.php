@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace TypePhp;
+namespace TypePhp\Transform;
 
 use PhpParser\Node;
 use PhpParser\Node\Stmt;

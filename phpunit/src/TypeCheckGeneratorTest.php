@@ -1,6 +1,6 @@
 <?php
 
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 use TypePhp\CompilerTest;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\FunctionDef;

@@ -10,7 +10,7 @@ use TypePhp\Exception\Skip;
 use TypePhp\Exception\SyntaxError;
 use TypePhp\Exception\TestError;
 use TypePhp\Exception\Unsupported;
-use TypePhp\Constants;
+use TypePhp\Metadata\Constants;
 
 class ExceptionTest extends TestCase
 {

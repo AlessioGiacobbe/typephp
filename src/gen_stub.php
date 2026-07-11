@@ -4468,7 +4468,7 @@ class FileInfo {
     public static function parseStubFile(string $code, string $phpVersion = '8.5'): FileInfo {
         $parser = (new PhpParser\ParserFactory())->createForVersion(PhpParser\PhpVersion::fromString($phpVersion));
         $nodeTraverser = new PhpParser\NodeTraverser;
-        $nodeTraverser->addVisitor(new TypePhp\Visitor());
+        $nodeTraverser->addVisitor(new TypePhp\Transform\Visitor());
         $nodeTraverser->addVisitor(new PhpParser\NodeVisitor\NameResolver);
         $prettyPrinter = new class extends Standard {
             protected function pName_FullyQualified(PhpParser\Node\Name\FullyQualified $node): string {

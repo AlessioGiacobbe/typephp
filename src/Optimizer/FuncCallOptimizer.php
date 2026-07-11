@@ -8,7 +8,7 @@
 
 namespace TypePhp\Optimizer;
 
-use TypePhp\Reflection;
+use TypePhp\Resolver\Reflection;
 use PhpParser\Node;
 
 /**

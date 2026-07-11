@@ -9,7 +9,7 @@ namespace TypePhp\Parser;
 
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
-use TypePhp\Symbol;
+use TypePhp\Generator\Symbol;
 
 trait ClassConstantFetchTrait
 {

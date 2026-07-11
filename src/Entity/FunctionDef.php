@@ -8,7 +8,7 @@
 
 namespace TypePhp\Entity;
 
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 use PhpParser\NodeAbstract;
 
 class FunctionDef

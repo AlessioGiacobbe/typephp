@@ -11,7 +11,7 @@ namespace TypePhp\Parser;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Scalar\MagicConst;
-use TypePhp\Symbol;
+use TypePhp\Generator\Symbol;
 
 trait ConstantExpressionTrait
 {

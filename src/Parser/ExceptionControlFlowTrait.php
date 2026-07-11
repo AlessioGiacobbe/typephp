@@ -11,7 +11,7 @@ use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\NodeFinder;
-use TypePhp\Symbol;
+use TypePhp\Generator\Symbol;
 
 trait ExceptionControlFlowTrait
 {

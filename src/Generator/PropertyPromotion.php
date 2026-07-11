@@ -8,7 +8,7 @@
 
 namespace TypePhp\Generator;
 
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 
 trait PropertyPromotion
 {

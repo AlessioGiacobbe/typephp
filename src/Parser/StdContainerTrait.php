@@ -8,7 +8,7 @@
 
 namespace TypePhp\Parser;
 
-use TypePhp\Symbol;
+use TypePhp\Generator\Symbol;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\StaticCall;
 use PhpParser\Node\Name;

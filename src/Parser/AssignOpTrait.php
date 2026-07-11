@@ -703,7 +703,7 @@ trait AssignOpTrait
                     $this->fatalError($expr, 'Cannot assign reference to a function that does not return by reference');
                 }
             } else {
-                $reflection = \TypePhp\Reflection::getFunction(ltrim($this->getNamespacedFuncName($name), '\\'));
+                $reflection = \TypePhp\Resolver\Reflection::getFunction(ltrim($this->getNamespacedFuncName($name), '\\'));
                 if ($reflection === null || !$reflection->isInternal() || !$reflection->returnsReference()) {
                     $this->fatalError($expr, 'Cannot assign reference to a function that does not return by reference');
                 }

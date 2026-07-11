@@ -7,7 +7,7 @@
 
 namespace TypePhp\Generator;
 
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 use TypePhp\Entity\ArrayInitPlan;
 use TypePhp\Entity\FunctionDef;
 

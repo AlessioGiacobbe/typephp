@@ -26,7 +26,7 @@ namespace TypePhp\Optimizer;
 
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Analysis\SsaFlags;
-use TypePhp\Reflection;
+use TypePhp\Resolver\Reflection;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 

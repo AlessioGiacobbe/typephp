@@ -4,7 +4,7 @@ namespace TypePhp\Tests\Entity;
 
 use PHPUnit\Framework\TestCase;
 use TypePhp\Entity\FunctionDef;
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 
 class FunctionDefTest extends TestCase
 {

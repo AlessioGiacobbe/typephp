@@ -8,7 +8,7 @@
 
 namespace TypePhp\Parser;
 
-use TypePhp\Reflection;
+use TypePhp\Resolver\Reflection;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;

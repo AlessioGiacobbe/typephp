@@ -21,7 +21,7 @@ use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\Property;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitorAbstract;
-use TypePhp\Reflection;
+use TypePhp\Resolver\Reflection;
 
 trait AnonClassGenerator
 {

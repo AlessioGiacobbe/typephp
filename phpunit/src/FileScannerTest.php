@@ -3,7 +3,7 @@
 namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use TypePhp\FileScanner;
+use TypePhp\Build\FileScanner;
 
 class FileScannerTest extends TestCase
 {

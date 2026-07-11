@@ -3,7 +3,7 @@
 namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use TypePhp\Reflection;
+use TypePhp\Resolver\Reflection;
 
 class ReflectionTest extends TestCase
 {

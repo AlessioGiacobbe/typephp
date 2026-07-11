@@ -1,6 +1,8 @@
 <?php
 
-namespace TypePhp;
+namespace TypePhp\Parser;
+
+use TypePhp\Resolver\Reflection;
 
 use PhpParser\Node;
 use PhpParser\Node\Expr;

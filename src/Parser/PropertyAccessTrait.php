@@ -11,13 +11,13 @@ use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 use TypePhp\Entity\PropertyDef;
-use TypePhp\PropertyHookLowering;
+use TypePhp\Transform\PropertyHookLowering;
 use TypePhp\Resolver\InstancePropertyFetchTarget;
 use TypePhp\Resolver\PropertyAssignTypeInfo;
 use TypePhp\Resolver\PropertyWriteTarget;
 use TypePhp\Resolver\StaticPropertyFetchResolution;
 use TypePhp\Resolver\StaticPropertyFetchTarget;
-use TypePhp\Symbol;
+use TypePhp\Generator\Symbol;
 
 trait PropertyAccessTrait
 {

@@ -9,7 +9,7 @@
 namespace TypePhp\Generator;
 
 use TypePhp\CompilerBase;
-use TypePhp\Constants;
+use TypePhp\Metadata\Constants;
 
 trait Utils
 {

@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace TypePhp;
+namespace TypePhp\Parser;
 
 use PhpParser\Node;
 use PhpParser\Node\Expr;

@@ -3,7 +3,7 @@
 namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 
 class ArgInfoTest extends TestCase
 {

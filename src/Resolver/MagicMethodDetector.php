@@ -6,7 +6,7 @@
  * @contact  service@swoole.com
  */
 
-namespace TypePhp;
+namespace TypePhp\Resolver;
 
 use TypePhp\Entity\MethodDef;
 use PhpParser\NodeAbstract;

@@ -5,7 +5,7 @@ namespace TypePhp\Tests\Entity;
 use PHPUnit\Framework\TestCase;
 use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\FunctionDef;
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 use PhpParser\Modifiers;
 
 class MethodDefExtendedTest extends TestCase

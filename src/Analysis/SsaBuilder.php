@@ -25,7 +25,7 @@
 
 namespace TypePhp\Analysis;
 
-use TypePhp\AstNodeType;
+use TypePhp\Parser\AstNodeType;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;

@@ -8,7 +8,7 @@
 namespace TypePhp\TypeSystem;
 
 use PhpParser\Node;
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 
 trait NativeTypeCompatibilityTrait
 {

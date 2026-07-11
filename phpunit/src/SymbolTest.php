@@ -3,7 +3,7 @@
 namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
-use TypePhp\Symbol;
+use TypePhp\Generator\Symbol;
 use TypePhp\CompilerBase;
 
 class SymbolTest extends TestCase

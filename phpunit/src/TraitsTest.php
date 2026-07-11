@@ -5,7 +5,7 @@ namespace TypePhp\Tests;
 use PHPUnit\Framework\TestCase;
 use TypePhp\CompilerTest;
 use TypePhp\CompilerBase;
-use TypePhp\ArgInfo;
+use TypePhp\Entity\ArgInfo;
 
 class TraitsTest extends TestCase
 {
