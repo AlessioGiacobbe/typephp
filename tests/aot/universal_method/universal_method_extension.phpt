@@ -23,10 +23,10 @@ function str_shout(string $str): string
 function main()
 {
     $num = 1024 * 512;
-    var_dump($num->toBytes());
+    var_dump($num->to_bytes());
 
     $array = [22, 33, 44];
-    var_dump($array->getFirstElement());
+    var_dump($array->get_first_element());
 
     $str = "hello";
     var_dump($str->shout());

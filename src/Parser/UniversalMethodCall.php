@@ -350,33 +350,22 @@ trait UniversalMethodCall
         Type::BOX => 'box',
     ];
 
-    protected function camelToSnake(string $name): string
+    protected function extensionFunctionName(string $prefix, string $method): string
     {
-        return strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $name));
+        return $prefix . '_' . $method;
     }
 
-    /** @return list<string> */
-    protected function extensionFunctionCandidates(string $prefix, string $method): array
+    protected function findUserExtensionFunction(string $prefix, string $method, string $namespace = ''): ?array
     {
-        return array_values(array_unique([
-            $prefix . '_' . $this->camelToSnake($method),
-            $prefix . '_' . $method,
-        ]));
-    }
-
-    /** Resolve extension candidates in exactly one namespace. */
-    protected function extensionFunctionDefinitions(string $prefix, string $method, string $namespace = ''): iterable
-    {
-        foreach ($this->extensionFunctionCandidates($prefix, $method) as $localName) {
-            $function = $this->getNativeName($localName, $namespace);
-            if (!$this->hasFunction($function)) {
-                continue;
-            }
-            $definition = $this->getFunction($function);
-            if ($definition->namespace === $namespace) {
-                yield $function => $definition;
-            }
+        $function = $this->getNativeName($this->extensionFunctionName($prefix, $method), $namespace);
+        if (!$this->hasFunction($function)) {
+            return null;
         }
+        $definition = $this->getFunction($function);
+        if ($definition->namespace !== $namespace) {
+            return null;
+        }
+        return ['name' => $function, 'definition' => $definition];
     }
 
     protected const array TO_CONVERT_FN = [
@@ -419,8 +408,10 @@ trait UniversalMethodCall
 
     /**
      * Look up a statically compiled object extension in the object's own
-     * namespace. This lookup is only used by the named MethodCall AST path;
-     * dynamic method names and StaticCall nodes deliberately do not use it.
+     * namespace. The class prefix and method suffix must match the declared
+     * names without converting between camelCase and snake_case. This lookup
+     * is only used by the named MethodCall AST path; dynamic method names and
+     * StaticCall nodes deliberately do not use it.
      * Real methods are resolved before this fallback, while __call() is used
      * only if no valid extension exists.
      */
@@ -434,34 +425,36 @@ trait UniversalMethodCall
         $namespace = $separator === false ? '' : substr($class, 0, $separator);
         $shortClass = $separator === false ? $class : substr($class, $separator + 1);
 
-        foreach ($this->extensionFunctionDefinitions($shortClass, $method, $namespace) as $function => $funcDef) {
-            if (empty($funcDef->argInfoList)) {
-                continue;
-            }
-            $receiver = $funcDef->argInfoList[0];
-            if ($receiver->byRef
-                || $receiver->type !== Type::OBJECT
-                || !$this->isSameClassName($receiver->declaredClass, $class)) {
-                continue;
-            }
-
-            $totalParams = count($funcDef->argInfoList);
-            return [
-                'handler'      => 'object_extension_fn',
-                'fn'           => $function,
-                'return_type'  => $funcDef->returnType,
-                'min_args'     => max(0, $funcDef->argCountRequired - 1),
-                'max_args'     => $funcDef->hasVariadicArg() ? -1 : $totalParams - 1,
-            ];
+        $extension = $this->findUserExtensionFunction($shortClass, $method, $namespace);
+        if ($extension === null) {
+            return null;
         }
-        return null;
+        $function = $extension['name'];
+        $funcDef = $extension['definition'];
+        if (empty($funcDef->argInfoList)) {
+            return null;
+        }
+        $receiver = $funcDef->argInfoList[0];
+        if ($receiver->byRef
+            || $receiver->type !== Type::OBJECT
+            || !$this->isSameClassName($receiver->declaredClass, $class)) {
+            return null;
+        }
+
+        $totalParams = count($funcDef->argInfoList);
+        return [
+            'handler'      => 'object_extension_fn',
+            'fn'           => $function,
+            'return_type'  => $funcDef->returnType,
+            'min_args'     => max(0, $funcDef->argCountRequired - 1),
+            'max_args'     => $funcDef->hasVariadicArg() ? -1 : $totalParams - 1,
+        ];
     }
 
     /**
      * Look up an extension function for the given type+method.
-     * Extension functions may use either {typePrefix}_{snake_case_method}
-     * or {typePrefix}_{lowerCamelCaseMethod}. Snake case takes precedence when
-     * both functions exist.
+     * Extension functions use the exact {typePrefix}_{method} spelling.
+     * Lookup remains case-insensitive according to PHP function semantics.
      *
      * Checks compiled user-defined functions first, then falls back to PHP internal
      * functions using reflection to resolve parameter counts and return types.
@@ -473,31 +466,27 @@ trait UniversalMethodCall
             return null;
         }
 
-        foreach ($this->extensionFunctionCandidates($prefix, $method) as $funcName) {
-            $resolvedName = $this->resolveExtensionFunctionName($funcName);
-            if ($resolvedName !== null) {
-                $funcDef = $this->getFunction($resolvedName);
-                if ($funcDef->namespace !== '') {
-                    continue;
-                }
-                if (!$this->validateExtensionFirstParam($type, $funcDef)) {
-                    continue;
-                }
-                return [
-                    'handler'      => 'php_fn',
-                    'fn'           => $resolvedName,
-                    'receiver_pos' => 1,
-                    'return_type'  => $funcDef->returnType,
-                    'min_args'     => 0,
-                    'max_args'     => -1,
-                ];
+        $funcName = $this->extensionFunctionName($prefix, $method);
+        $resolvedName = $this->resolveExtensionFunctionName($funcName);
+        if ($resolvedName !== null) {
+            $funcDef = $this->getFunction($resolvedName);
+            if ($funcDef->namespace !== '' || !$this->validateExtensionFirstParam($type, $funcDef)) {
+                return null;
             }
+            return [
+                'handler'      => 'php_fn',
+                'fn'           => $resolvedName,
+                'receiver_pos' => 1,
+                'return_type'  => $funcDef->returnType,
+                'min_args'     => 0,
+                'max_args'     => -1,
+            ];
+        }
 
-            if ($this->isInternalFunction($funcName)) {
-                $internal = $this->buildInternalExtensionMethod($type, $funcName);
-                if ($internal !== null) {
-                    return $internal;
-                }
+        if ($this->isInternalFunction($funcName)) {
+            $internal = $this->buildInternalExtensionMethod($type, $funcName);
+            if ($internal !== null) {
+                return $internal;
             }
         }
 
@@ -505,35 +494,37 @@ trait UniversalMethodCall
     }
 
     /**
-     * Look up a keyword extension method using __snake_case or
-     * __lowerCamelCase in the root namespace. Snake case takes precedence.
+     * Look up a keyword extension method using the exact __{method} spelling
+     * in the root namespace. Lookup remains case-insensitive.
      */
     protected function findKeywordExtensionMethod(string $method): ?array
     {
-        foreach ($this->extensionFunctionDefinitions('_', $method) as $funcName => $funcDef) {
-            if (empty($funcDef->argInfoList)) {
-                continue;
-            }
-            $firstParam = $funcDef->argInfoList[0];
-            if ($firstParam->type !== Type::VAR) {
-                continue;
-            }
-
-            $totalParams = count($funcDef->argInfoList);
-            $minArgs = max(0, $funcDef->argCountRequired - 1);
-            $maxArgs = $funcDef->hasVariadicArg() ? -1 : $totalParams - 1;
-
-            return [
-                'handler'      => 'php_fn',
-                'fn'           => $funcName,
-                'receiver_pos' => 1,
-                'return_type'  => $funcDef->returnType,
-                'min_args'     => $minArgs,
-                'max_args'     => $maxArgs,
-            ];
+        $extension = $this->findUserExtensionFunction('_', $method);
+        if ($extension === null) {
+            return null;
+        }
+        $funcName = $extension['name'];
+        $funcDef = $extension['definition'];
+        if (empty($funcDef->argInfoList)) {
+            return null;
+        }
+        $firstParam = $funcDef->argInfoList[0];
+        if ($firstParam->type !== Type::VAR) {
+            return null;
         }
 
-        return null;
+        $totalParams = count($funcDef->argInfoList);
+        $minArgs = max(0, $funcDef->argCountRequired - 1);
+        $maxArgs = $funcDef->hasVariadicArg() ? -1 : $totalParams - 1;
+
+        return [
+            'handler'      => 'php_fn',
+            'fn'           => $funcName,
+            'receiver_pos' => 1,
+            'return_type'  => $funcDef->returnType,
+            'min_args'     => $minArgs,
+            'max_args'     => $maxArgs,
+        ];
     }
 
     /**

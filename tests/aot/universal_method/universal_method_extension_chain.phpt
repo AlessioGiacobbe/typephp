@@ -36,11 +36,11 @@ function array_last(array $arr): mixed {
 function main()
 {
     $num = 2;
-    var_dump($num->toWords()->upper());
-    var_dump($num->toWords()->double()->upper());
+    var_dump($num->to_words()->upper());
+    var_dump($num->to_words()->double()->upper());
 
     $str = "hello";
-    var_dump($str->getLength()->add(100));
+    var_dump($str->get_length()->add(100));
     var_dump($str->double()->length());
 
     $str2 = "hello world";

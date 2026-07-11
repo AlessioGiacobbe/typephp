@@ -23,7 +23,7 @@ namespace App {
         }
     }
 
-    function User_test_method(User $user, string $suffix): string
+    function User_testMethod(User $user, string $suffix): string
     {
         return $user->name . $suffix . ':snake';
     }

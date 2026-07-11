@@ -1,5 +1,5 @@
 --TEST--
-keyword extension method: varDump()
+keyword extension method: exact snake_case name
 --FILE--
 <?php
 declare(strict_types=1);
@@ -11,13 +11,13 @@ function __var_dump(mixed $var): void {
 
 function main(): void {
     $str = "hello world";
-    $str->varDump();
+    $str->var_dump();
 
     $int_val = 42;
-    $int_val->varDump();
+    $int_val->var_dump();
 
     $float_val = 3.14;
-    $float_val->varDump();
+    $float_val->var_dump();
 }
 ?>
 --EXPECT--
