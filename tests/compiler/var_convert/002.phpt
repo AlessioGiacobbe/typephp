@@ -8,8 +8,13 @@ if (PHP_OS_FAMILY != 'Linux') {
 }
 --FILE--
 <?php
-function stream_write_test(stream $stream) {
-    $stream->write('world');
+#[ExtensionProvider(Type::Stream)]
+final class StreamExtensions
+{
+    public static function writeTest(stream $stream): void
+    {
+        $stream->write('world');
+    }
 }
 
 function main()
