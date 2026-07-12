@@ -641,6 +641,12 @@ trait UniversalMethodCall
             default         => null,
         };
 
+        // A void provider call is already a complete expression statement and
+        // cannot be materialized in the generic php::Var result temporary.
+        if (($def['return_type'] ?? Type::VAR) === Type::VOID) {
+            return $methodCall;
+        }
+
         $tmpVar = $this->addTmpVar(Type::VAR);
         $this->context->beforeStmtLines[] = "{$tmpVar} = {$methodCall};";
         return $tmpVar;
