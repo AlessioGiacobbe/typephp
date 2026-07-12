@@ -524,6 +524,7 @@ class Preprocessor extends CompilerBase
         }
 
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
+        $this->classDef->extensionProviderTarget = $this->parseExtensionProviderTarget($class);
         $this->addClass($fullClassName, $this->classDef);
 
         if (!empty($class->extends)) {
@@ -600,6 +601,71 @@ class Preprocessor extends CompilerBase
         $this->resetClass();
 
         return $code;
+    }
+
+    protected function parseExtensionProviderTarget(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): ?string
+    {
+        foreach ($class->attrGroups as $groupIndex => $group) {
+            foreach ($group->attrs as $attributeIndex => $attribute) {
+                $parts = $attribute->name->getParts();
+                if (strtolower((string) end($parts)) !== 'extensionprovider') {
+                    continue;
+                }
+                if (!$class instanceof Node\Stmt\Class_) {
+                    $this->fatalError($class, 'ExtensionProvider can only be applied to classes');
+                }
+                if (count($attribute->args) !== 1) {
+                    $this->fatalError($attribute, 'ExtensionProvider expects exactly one target');
+                }
+                $target = $this->parseExtensionProviderTargetValue($attribute->args[0]->value, $attribute);
+                unset($group->attrs[$attributeIndex]);
+                $group->attrs = array_values($group->attrs);
+                if (empty($group->attrs)) {
+                    unset($class->attrGroups[$groupIndex]);
+                    $class->attrGroups = array_values($class->attrGroups);
+                }
+                return $target;
+            }
+        }
+        return null;
+    }
+
+    private function parseExtensionProviderTargetValue(Node\Expr $value, NodeAbstract $errorNode): string
+    {
+        if ($value instanceof Node\Expr\ClassConstFetch
+            && $this->isNameExpr($value->class)
+            && $this->isIdExpr($value->name)) {
+            $class = strtolower(ltrim($value->class->toString(), '\\'));
+            $constant = strtolower($value->name->toString());
+            if ($constant === 'class') {
+                return $this->getNamespacedClassName($value->class->toString());
+            }
+            $targets = [
+                'native_types' => [
+                    'type_int' => Type::INT,
+                    'type_float' => Type::FLOAT,
+                    'type_bool' => Type::BOOL,
+                    'type_bigint' => Type::BIGINT,
+                    'type_bigfloat' => Type::BIGFLOAT,
+                    'type_decimal' => Type::DECIMAL,
+                ],
+                'complex_types' => [
+                    'type_any' => Type::VAR,
+                    'type_var' => Type::VAR,
+                    'type_variant' => Type::VAR,
+                    'type_str' => Type::STR,
+                    'type_string' => Type::STR,
+                    'type_array' => Type::ARRAY,
+                    'type_object' => Type::OBJECT,
+                    'type_stream' => Type::STREAM,
+                    'type_box' => Type::BOX,
+                ],
+            ];
+            if (isset($targets[$class][$constant])) {
+                return $targets[$class][$constant];
+            }
+        }
+        $this->fatalError($errorNode, 'ExtensionProvider target must use native_types, complex_types, or ClassName::class');
     }
 
     protected function buildLiteralArrayInitPlan(Node\Expr\Array_ $defaultNode): ArrayInitPlan

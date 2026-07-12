@@ -1,18 +1,26 @@
 --TEST--
-Universal extension methods support lowerCamelCase function names
+Universal ExtensionProvider methods use their declared names
 --FILE--
 <?php
 
 use native_types;
 
-function int_toBytes(int $value): string
+#[ExtensionProvider(native_types::type_int)]
+final class IntExtensions
 {
-    return ($value / 1024) . 'Kb';
+    public static function toBytes(int $value): string
+    {
+        return ($value / 1024) . 'Kb';
+    }
 }
 
-function array_getFirstElement(array $value): mixed
+#[ExtensionProvider(complex_types::type_array)]
+final class ArrayExtensions
 {
-    return $value[0];
+    public static function getFirstElement(array $value): mixed
+    {
+        return $value[0];
+    }
 }
 
 function main(): void

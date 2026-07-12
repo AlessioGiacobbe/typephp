@@ -32,6 +32,7 @@ class ClassDef extends ClassLikeDef
     public string $extends = '';
     public bool $requireCtor = false;
     public bool $enum = false;
+    public ?string $extensionProviderTarget = null;
 
     /**
      * Backing type for backed enums ('int' or 'string'), null for pure enums.

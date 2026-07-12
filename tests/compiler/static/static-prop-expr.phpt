@@ -15,4 +15,4 @@ function main(): void
 }
 ?>
 --EXPECTF--
-string(%d) "%s/aot/static/../../A"
+string(%d) "%s/compiler/static/../../A"

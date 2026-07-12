@@ -1,36 +1,49 @@
 --TEST--
-Universal method: extension function chaining with typed return
+ExtensionProvider method chaining with typed returns
 --FILE--
 <?php
 
 use native_types;
 
-function int_to_words(int $int): string
+#[ExtensionProvider(native_types::type_int)]
+final class IntExtensions
 {
-    $map = [1 => 'one', 2 => 'two', 3 => 'three'];
-    return $map[$int] ?? 'unknown';
-}
-
-function str_double(string $str): string
-{
-    return $str . $str;
-}
-
-function str_get_length(string $str): int
-{
-    return strlen($str);
-}
-
-function str_to_array(string $str, string $delimiter): array
-{
-    return $str->split($delimiter);
-}
-
-function array_last(array $arr): mixed {
-    if ($arr->count() === 0) {
-        return null;
+    public static function to_words(int $int): string
+    {
+        $map = [1 => 'one', 2 => 'two', 3 => 'three'];
+        return $map[$int] ?? 'unknown';
     }
-    return $arr[$arr->count() - 1];
+}
+
+#[ExtensionProvider(complex_types::type_string)]
+final class StringExtensions
+{
+    public static function double(string $str): string
+    {
+        return $str . $str;
+    }
+
+    public static function get_length(string $str): int
+    {
+        return strlen($str);
+    }
+
+    public static function to_array(string $str, string $delimiter): array
+    {
+        return $str->split($delimiter);
+    }
+}
+
+#[ExtensionProvider(complex_types::type_array)]
+final class ArrayExtensions
+{
+    public static function last(array $arr): mixed
+    {
+        if ($arr->count() === 0) {
+            return null;
+        }
+        return $arr[$arr->count() - 1];
+    }
 }
 
 function main()

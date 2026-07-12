@@ -1,9 +1,18 @@
 --TEST--
-Universal method: PHP internal function as extension method via reflection
+Universal method provider may wrap a PHP internal function
 --FILE--
 <?php
 
 use native_types;
+
+#[ExtensionProvider(complex_types::type_string)]
+final class StringExtensions
+{
+    public static function rot13(string $value): string
+    {
+        return str_rot13($value);
+    }
+}
 
 function main()
 {

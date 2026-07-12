@@ -1,5 +1,5 @@
 --TEST--
-Namespaced object extension methods use Class_method naming
+Namespaced object methods use an ExtensionProvider class
 --FILE--
 <?php
 
@@ -23,29 +23,28 @@ namespace App {
         }
     }
 
-    function User_testMethod(User $user, string $suffix): string
+    #[\ExtensionProvider(User::class)]
+    final class UserExtensions
     {
-        return $user->name . $suffix . ':snake';
-    }
+        public static function testMethod(User $user, string $suffix): string
+        {
+            return $user->name . $suffix . ':snake';
+        }
 
-    function User_displayName(User $user): string
-    {
-        return strtoupper($user->name) . ':camel';
-    }
+        public static function displayName(User $user): string
+        {
+            return strtoupper($user->name) . ':camel';
+        }
 
-    function User_format_name(int $invalid): string
-    {
-        return 'invalid';
-    }
+        public static function formatName(User $user): string
+        {
+            return '[' . $user->name . ']';
+        }
 
-    function User_formatName(User $user): string
-    {
-        return '[' . $user->name . ']';
-    }
-
-    function User_existing(User $user): string
-    {
-        return 'extension';
+        public static function existing(User $user): string
+        {
+            return 'extension';
+        }
     }
 
 }

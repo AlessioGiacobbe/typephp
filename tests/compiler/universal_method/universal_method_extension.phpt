@@ -1,23 +1,35 @@
 --TEST--
-Universal method: extension functions
+Universal methods provided by ExtensionProvider classes
 --FILE--
 <?php
 
 use native_types;
 
-function int_to_bytes(int $int, string $unit = 'Kb'): string
+#[ExtensionProvider(native_types::type_int)]
+final class IntExtensions
 {
-    return ($int / 1024) . $unit;
+    public static function to_bytes(int $int, string $unit = 'Kb'): string
+    {
+        return ($int / 1024) . $unit;
+    }
 }
 
-function array_get_first_element(array $array): mixed
+#[ExtensionProvider(complex_types::type_array)]
+final class ArrayExtensions
 {
-    return $array[0];
+    public static function get_first_element(array $array): mixed
+    {
+        return $array[0];
+    }
 }
 
-function str_shout(string $str): string
+#[ExtensionProvider(complex_types::type_string)]
+final class StringExtensions
 {
-    return strtoupper($str) . '!';
+    public static function shout(string $str): string
+    {
+        return strtoupper($str) . '!';
+    }
 }
 
 function main()

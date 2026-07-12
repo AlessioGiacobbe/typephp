@@ -3549,6 +3549,10 @@ class AttributeInfo {
 
         foreach ($attributeGroups as $attrGroup) {
             foreach ($attrGroup->attrs as $attr) {
+                $parts = $attr->name->getParts();
+                if (strtolower((string) end($parts)) === 'extensionprovider') {
+                    continue;
+                }
                 $attributes[] = new AttributeInfo($attr->name->toString(), $attr->args);
             }
         }

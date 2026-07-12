@@ -13,6 +13,7 @@ use PhpParser\NodeAbstract;
 
 trait UniversalMethodCall
 {
+    private ?array $extensionProviderMethods = null;
     protected const array UNIVERSAL_METHODS = [
         Type::INT => [
             'add'      => ['handler' => 'calc_op', 'op' => '+', 'return_type' => Type::INT, 'min_args' => 1, 'max_args' => 1],
@@ -337,35 +338,69 @@ trait UniversalMethodCall
         return $ext ? $ext['return_type'] : null;
     }
 
-    protected const array TYPE_EXTENSION_PREFIX = [
-        Type::INT    => 'int',
-        Type::FLOAT  => 'float',
-        Type::BOOL   => 'bool',
-        Type::STR    => 'str',
-        Type::ARRAY  => 'array',
-        Type::STREAM => 'stream',
-        Type::BIGINT => 'bigint',
-        Type::DECIMAL => 'decimal',
-        Type::BIGFLOAT => 'bigfloat',
-        Type::BOX => 'box',
-    ];
-
-    protected function extensionFunctionName(string $prefix, string $method): string
+    private function getExtensionProviderMethods(): array
     {
-        return $prefix . '_' . $method;
+        if ($this->extensionProviderMethods !== null) {
+            return $this->extensionProviderMethods;
+        }
+        $registry = [];
+        foreach ($this->symbols->classes() as $provider) {
+            $target = $provider->extensionProviderTarget;
+            if ($target === null) {
+                continue;
+            }
+            foreach ($provider->methods as $method) {
+                if (str_starts_with($method->name, '__')) {
+                    continue;
+                }
+                if (!($method->flags & \PhpParser\Modifiers::PUBLIC)) {
+                    continue;
+                }
+                if (!($method->flags & \PhpParser\Modifiers::STATIC)) {
+                    $this->error("Extension provider method {$provider->getNamespacedName(false)}::{$method->name}() must be static");
+                }
+                $function = $method->functionDef;
+                if ($function === null || empty($function->argInfoList)) {
+                    $this->error("Extension provider method {$provider->getNamespacedName(false)}::{$method->name}() must declare a receiver parameter");
+                }
+                $receiver = $function->argInfoList[0];
+                if ($receiver->byRef || !$this->extensionReceiverMatchesTarget($receiver, $target)) {
+                    $this->error("Invalid receiver parameter for extension provider method {$provider->getNamespacedName(false)}::{$method->name}()");
+                }
+                $targetKey = strtolower(ltrim($target, '\\'));
+                $methodKey = strtolower($method->name);
+                if (isset($registry[$targetKey][$methodKey])) {
+                    $this->error("Duplicate extension method {$target}::{$method->name}()");
+                }
+                $registry[$targetKey][$methodKey] = [
+                    'handler' => 'provider_extension',
+                    'fn' => $this->getNativeName($method->name, $provider->namespace, $provider->name),
+                    'class' => $provider->getNamespacedName(false),
+                    'return_type' => $function->returnType,
+                    'min_args' => max(0, $function->argCountRequired - 1),
+                    'max_args' => $function->hasVariadicArg() ? -1 : count($function->argInfoList) - 1,
+                ];
+            }
+        }
+        return $this->extensionProviderMethods = $registry;
     }
 
-    protected function findUserExtensionFunction(string $prefix, string $method, string $namespace = ''): ?array
+    private function extensionReceiverMatchesTarget($receiver, string $target): bool
     {
-        $function = $this->getNativeName($this->extensionFunctionName($prefix, $method), $namespace);
-        if (!$this->hasFunction($function)) {
-            return null;
+        $builtinTargets = [
+            Type::VAR, Type::INT, Type::FLOAT, Type::BOOL, Type::STR,
+            Type::ARRAY, Type::OBJECT, Type::STREAM, Type::BIGINT,
+            Type::BIGFLOAT, Type::DECIMAL, Type::BOX,
+        ];
+        if (!in_array($target, $builtinTargets, true)) {
+            return $receiver->type === Type::OBJECT && $this->isSameClassName($receiver->declaredClass, $target);
         }
-        $definition = $this->getFunction($function);
-        if ($definition->namespace !== $namespace) {
-            return null;
-        }
-        return ['name' => $function, 'definition' => $definition];
+        return $receiver->type === $target;
+    }
+
+    private function findProviderExtension(string $target, string $method): ?array
+    {
+        return $this->getExtensionProviderMethods()[strtolower(ltrim($target, '\\'))][strtolower($method)] ?? null;
     }
 
     protected const array TO_CONVERT_FN = [
@@ -421,34 +456,7 @@ trait UniversalMethodCall
         if ($class === '' || !$this->hasClass($class)) {
             return null;
         }
-        $separator = strrpos($class, '\\');
-        $namespace = $separator === false ? '' : substr($class, 0, $separator);
-        $shortClass = $separator === false ? $class : substr($class, $separator + 1);
-
-        $extension = $this->findUserExtensionFunction($shortClass, $method, $namespace);
-        if ($extension === null) {
-            return null;
-        }
-        $function = $extension['name'];
-        $funcDef = $extension['definition'];
-        if (empty($funcDef->argInfoList)) {
-            return null;
-        }
-        $receiver = $funcDef->argInfoList[0];
-        if ($receiver->byRef
-            || $receiver->type !== Type::OBJECT
-            || !$this->isSameClassName($receiver->declaredClass, $class)) {
-            return null;
-        }
-
-        $totalParams = count($funcDef->argInfoList);
-        return [
-            'handler'      => 'object_extension_fn',
-            'fn'           => $function,
-            'return_type'  => $funcDef->returnType,
-            'min_args'     => max(0, $funcDef->argCountRequired - 1),
-            'max_args'     => $funcDef->hasVariadicArg() ? -1 : $totalParams - 1,
-        ];
+        return $this->findProviderExtension($class, $method);
     }
 
     /**
@@ -461,36 +469,7 @@ trait UniversalMethodCall
      */
     protected function findExtensionMethod(string $type, string $method): ?array
     {
-        $prefix = self::TYPE_EXTENSION_PREFIX[$type] ?? null;
-        if ($prefix === null) {
-            return null;
-        }
-
-        $funcName = $this->extensionFunctionName($prefix, $method);
-        $resolvedName = $this->resolveExtensionFunctionName($funcName);
-        if ($resolvedName !== null) {
-            $funcDef = $this->getFunction($resolvedName);
-            if ($funcDef->namespace !== '' || !$this->validateExtensionFirstParam($type, $funcDef)) {
-                return null;
-            }
-            return [
-                'handler'      => 'php_fn',
-                'fn'           => $resolvedName,
-                'receiver_pos' => 1,
-                'return_type'  => $funcDef->returnType,
-                'min_args'     => 0,
-                'max_args'     => -1,
-            ];
-        }
-
-        if ($this->isInternalFunction($funcName)) {
-            $internal = $this->buildInternalExtensionMethod($type, $funcName);
-            if ($internal !== null) {
-                return $internal;
-            }
-        }
-
-        return null;
+        return $this->findProviderExtension($type, $method);
     }
 
     /**
@@ -499,32 +478,7 @@ trait UniversalMethodCall
      */
     protected function findKeywordExtensionMethod(string $method): ?array
     {
-        $extension = $this->findUserExtensionFunction('_', $method);
-        if ($extension === null) {
-            return null;
-        }
-        $funcName = $extension['name'];
-        $funcDef = $extension['definition'];
-        if (empty($funcDef->argInfoList)) {
-            return null;
-        }
-        $firstParam = $funcDef->argInfoList[0];
-        if ($firstParam->type !== Type::VAR) {
-            return null;
-        }
-
-        $totalParams = count($funcDef->argInfoList);
-        $minArgs = max(0, $funcDef->argCountRequired - 1);
-        $maxArgs = $funcDef->hasVariadicArg() ? -1 : $totalParams - 1;
-
-        return [
-            'handler'      => 'php_fn',
-            'fn'           => $funcName,
-            'receiver_pos' => 1,
-            'return_type'  => $funcDef->returnType,
-            'min_args'     => $minArgs,
-            'max_args'     => $maxArgs,
-        ];
+        return $this->findProviderExtension(Type::VAR, $method);
     }
 
     /**
@@ -651,15 +605,17 @@ trait UniversalMethodCall
             'php_fn'               => $this->genUniversalPhpFn($receiver, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0, $def['const_args'] ?? []),
             'php_fn_ref'           => $this->genUniversalPhpFnRef($receiver, $def['fn'], $expr->args, $def['return_type']),
             'cpp_fn'               => $this->genUniversalCppFn($receiver, $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
-            'object_extension_fn'  => $this->genObjectExtensionFn($receiver, $def['fn'], $expr->args),
+            'provider_extension'   => $this->genProviderExtensionCall($receiver, $def, $expr->args),
             default                => null,
         };
     }
 
-    protected function genObjectExtensionFn(string $receiver, string $nativeFunc, array $args): string
+    protected function genProviderExtensionCall(string $receiver, array $definition, array $args): string
     {
+        $nativeFunc = $definition['fn'];
         $tail = $this->parseNativeCallArgs($args, $nativeFunc, 1);
-        return self::PREFIX . $nativeFunc . '(' . $receiver . ($tail === '' ? '' : ', ' . $tail) . ')';
+        return self::PREFIX . $nativeFunc . '(' . $this->getCeWrapper($definition['class']) . ', '
+            . $receiver . ($tail === '' ? '' : ', ' . $tail) . ')';
     }
 
     /**
@@ -678,6 +634,7 @@ trait UniversalMethodCall
             'php_fn'        => $this->genUniversalPhpFn('php::toStream(' . $streamVar . ')', $def['fn'], $expr->args, $def['receiver_pos'] ?? 0, $def['const_args'] ?? []),
             'direct_method' => $this->genUniversalDirectMethod('php::toStream(' . $streamVar . ')', $def['method'], $expr->args, $def['int_cast_args'] ?? []),
             'cpp_fn'        => $this->genUniversalCppFn('php::toStream(' . $streamVar . ')', $def['fn'], $expr->args, $def['receiver_pos'] ?? 0),
+            'provider_extension' => $this->genProviderExtensionCall('php::toStream(' . $streamVar . ')', $def, $expr->args),
             default         => null,
         };
 

@@ -3,24 +3,28 @@ stream extension method support
 --FILE--
 <?php
 
-function stream_read_chunk($stream, int $size): string
+#[ExtensionProvider(complex_types::type_stream)]
+final class StreamExtensions
 {
-    return fread($stream, $size);
-}
-
-function stream_count_lines($stream): int
-{
-    $count = 0;
-    $pos = ftell($stream);
-    rewind($stream);
-    while (!feof($stream)) {
-        $line = fgets($stream);
-        if ($line !== false) {
-            $count++;
-        }
+    public static function readChunk(stream $stream, int $size): string
+    {
+        return fread($stream, $size);
     }
-    fseek($stream, $pos);
-    return $count;
+
+    public static function countLines(stream $stream): int
+    {
+        $count = 0;
+        $pos = ftell($stream);
+        rewind($stream);
+        while (!feof($stream)) {
+            $line = fgets($stream);
+            if ($line !== false) {
+                $count++;
+            }
+        }
+        fseek($stream, $pos);
+        return $count;
+    }
 }
 
 function main()

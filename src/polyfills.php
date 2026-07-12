@@ -6,6 +6,14 @@
  * @contact  service@swoole.com
  */
 
+#[Attribute(Attribute::TARGET_CLASS)]
+final readonly class ExtensionProvider
+{
+    public function __construct(public string $target)
+    {
+    }
+}
+
 class native_types
 {
     public const type_int = 'int';

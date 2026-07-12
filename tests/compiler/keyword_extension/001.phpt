@@ -1,12 +1,17 @@
 --TEST--
-keyword extension method: exact snake_case name
+Keyword ExtensionProvider method with snake_case name
 --FILE--
 <?php
 declare(strict_types=1);
 use native_types;
 
-function __var_dump(mixed $var): void {
-    var_dump($var);
+#[ExtensionProvider(complex_types::type_any)]
+final class KeywordExtensions
+{
+    public static function var_dump(mixed $var): void
+    {
+        var_dump($var);
+    }
 }
 
 function main(): void {

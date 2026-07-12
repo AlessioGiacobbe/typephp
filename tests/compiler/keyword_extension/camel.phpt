@@ -1,14 +1,18 @@
 --TEST--
-Keyword extension methods support lowerCamelCase function names
+Keyword ExtensionProvider method with lowerCamelCase name
 --FILE--
 <?php
 
 declare(strict_types=1);
 use native_types;
 
-function __inspectValue(mixed $value, string $prefix): void
+#[ExtensionProvider(complex_types::type_any)]
+final class KeywordExtensions
 {
-    echo $prefix, ':', $value, "\n";
+    public static function inspectValue(mixed $value, string $prefix): void
+    {
+        echo $prefix, ':', $value, "\n";
+    }
 }
 
 function main(): void

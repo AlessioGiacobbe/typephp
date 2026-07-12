@@ -1,5 +1,5 @@
 --TEST--
-Object extension methods require consistent names and ignore letter case
+Object ExtensionProvider methods require consistent names and ignore letter case
 --FILE--
 <?php
 
@@ -18,29 +18,23 @@ namespace App {
         }
     }
 
-    function UserService_displayName(UserService $service): string
+    #[\ExtensionProvider(UserService::class)]
+    final class UserServiceExtensions
     {
-        return 'camel:' . $service->name;
-    }
+        public static function displayName(UserService $service): string
+        {
+            return 'camel:' . $service->name;
+        }
 
-    function UserService_profile_label(UserService $service): string
-    {
-        return 'snake:' . $service->name;
-    }
+        public static function profile_label(UserService $service): string
+        {
+            return 'snake:' . $service->name;
+        }
 
-    function user_service_wrongName(UserService $service): string
-    {
-        return 'wrong class prefix';
-    }
-
-    function UserService_other_name(UserService $service): string
-    {
-        return 'wrong method suffix';
-    }
-
-    function UserService_CASECheck(UserService $service): string
-    {
-        return 'case-insensitive:' . $service->name;
+        public static function CASECheck(UserService $service): string
+        {
+            return 'case-insensitive:' . $service->name;
+        }
     }
 }
 
