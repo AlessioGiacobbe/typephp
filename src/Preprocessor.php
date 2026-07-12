@@ -710,6 +710,7 @@ class Preprocessor extends CompilerBase
         }
 
         $propDef = new PropertyDef($name, $flags, $type, $default, $nullable);
+        $propDef->readonly = (bool) (($flags | $this->classDef->flags) & Modifiers::READONLY);
         $propDef->class = $class;
         $propDef->arrayInitPlan = $arrayInitPlan;
         $propDef->promoted = $promoted;

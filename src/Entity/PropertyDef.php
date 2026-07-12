@@ -22,6 +22,7 @@ class PropertyDef
     public array $typeCheck = [];
     public string $typeStr = '';
     public bool $promoted = false;
+    public bool $readonly = false;
     public ?string $getter = null;
     public ?string $setter = null;
 
@@ -52,6 +53,11 @@ class PropertyDef
     public function isStatic(): bool
     {
         return $this->flags & Modifiers::STATIC;
+    }
+
+    public function isReadonly(): bool
+    {
+        return $this->readonly;
     }
 
     public function isPrivateSet(): bool

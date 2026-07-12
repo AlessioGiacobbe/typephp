@@ -17,6 +17,7 @@
  *  6. No func(&$o->prop) (property passed by reference)
  *  7. Object is not exposed to dynamic user code before later property access
  *  8. First access is not inside a loop or nested block scope
+ *  9. Property is not readonly (including properties of a readonly class)
  *
  * Direct unset($o->prop) is not dangerous: the object handlers reset/reject the
  * unset path, so a hoisted reference is not invalidated by direct unset alone.
@@ -24,6 +25,7 @@
 
 namespace TypePhp\Optimizer;
 
+use TypePhp\Entity\PropertyDef;
 use TypePhp\Type;
 
 use TypePhp\Analysis\SsaBuilder;
@@ -754,24 +756,31 @@ trait SsaPropOptimizer
         return isset($this->context->stableObjects[$objName]);
     }
 
-    public function canHoistStableObjectProp(string $objName, string $propName): bool
+    public function canHoistStableObjectProp(string $objName, string $propName, PropertyDef $property): bool
     {
         if (!$this->isStableObject($objName)) {
             return false;
         }
-        return $this->canHoistObjectPropBySafety($objName, $propName);
+        return $this->canHoistObjectPropBySafety($objName, $propName, $property);
     }
 
-    public function canHoistObjectProp(string $objName, string $propName): bool
+    public function canHoistObjectProp(string $objName, string $propName, PropertyDef $property): bool
     {
         if ($objName !== 'this_' && !$this->isStableObject($objName)) {
             return false;
         }
-        return $this->canHoistObjectPropBySafety($objName, $propName);
+        return $this->canHoistObjectPropBySafety($objName, $propName, $property);
     }
 
-    protected function canHoistObjectPropBySafety(string $objName, string $propName): bool
+    protected function canHoistObjectPropBySafety(
+        string $objName,
+        string $propName,
+        PropertyDef $property,
+    ): bool
     {
+        if ($property->isReadonly()) {
+            return false;
+        }
         $unsafeProps = $this->context->unsafeObjectProps[$objName] ?? [];
         return !isset($unsafeProps['*']) && !isset($unsafeProps[$propName]);
     }

@@ -898,7 +898,7 @@ trait PropertyAccessTrait
 
         $propVar = $this->getObjectPropVarName($objectVar, $propName);
         if ($objectVar === 'this_') {
-            if (!$this->canHoistObjectProp($objectVar, $propName)) {
+            if (!$this->canHoistObjectProp($objectVar, $propName, $def)) {
                 return null;
             }
             $this->registerHoistedObjectPropVar($propVar, $def->type, $getter);
@@ -907,7 +907,7 @@ trait PropertyAccessTrait
             return $propVar;
         }
 
-        if (!$this->canHoistStableObjectProp($objectVar, $propName)) {
+        if (!$this->canHoistStableObjectProp($objectVar, $propName, $def)) {
             return null;
         }
 
