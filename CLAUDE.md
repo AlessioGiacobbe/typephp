@@ -40,10 +40,10 @@ composer install
 ./vendor/bin/phpunit phpunit/src/AstNodeTypeTest.php
 
 # Run PHPT integration tests (all)
-php run-tests.php tests/aot/
+php run-tests.php tests/compiler/
 
 # Run a single PHPT test
-php run-tests.php tests/aot/arrays.phpt
+php run-tests.php tests/compiler/arrays.phpt
 ```
 
 ## Architecture
@@ -98,6 +98,6 @@ Generated `.cc` and `.o` files land in `build/` directory. The compiled binary i
 ### Test Infrastructure
 
 - **PHPUnit tests** (`phpunit/src/`) — unit/integration tests for compiler internals. Bootstrap at `phpunit/bootstrap.php` defines a `BaseTest` class with an `exec()` helper that runs the compiler and expects a `TestError` exception containing a given string
-- **PHPT tests** (`tests/aot/`) — end-to-end tests using the standard PHPT format (`run-tests.php`). Each `.phpt` contains PHP source and expected output sections
+- **PHPT tests** (`tests/compiler/`) — end-to-end tests using the standard PHPT format (`run-tests.php`). Each `.phpt` contains PHP source and expected output sections
 
 When writing new compiler tests, use `CompilerTest::create(ROOT_PATH)` (in `src/CompilerTest.php`) which sets `forTest = true` to enable test-specific behavior without writing files to disk.

@@ -422,7 +422,7 @@ HHVM 有庞大的测试体系：
 - Zend 测试：直接复用 php-src 官方测试，验证 PHP 兼容性
 
 **AOT 借鉴:**
-- Quick/Slow 分层测试策略——将现有 `tests/aot/` 按运行时间分类
+- Quick/Slow 分层测试策略——将现有 `tests/compiler/` 按运行时间分类
 - 直接复用 php-src 官方 PHPT 测试——验证 AOT 编译器的 PHP 行为兼容性
 - HHBBC 内部单元测试太少（仅 3 个），不应效仿——AOT 的 PHPUnit 测试覆盖更好
 

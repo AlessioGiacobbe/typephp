@@ -1105,8 +1105,8 @@ function main(): void {
 - **类型系统规范**：[`docs/NATIVE_TYPES.md`](NATIVE_TYPES.md)
 - **通用方法实现**：[`src/Parser/UniversalMethodCall.php`](../src/Parser/UniversalMethodCall.php)
 - **集成测试**：
-  - [`tests/aot/string_method/`](../tests/aot/string_method/) — String 通用方法测试
-  - [`tests/aot/array_method/`](../tests/aot/array_method/) — Array 通用方法测试
-  - [`tests/aot/stream_method/`](../tests/aot/stream_method/) — Stream 通用方法测试
-  - [`tests/aot/bigint/`](../tests/aot/bigint/) — BigInt 通用方法测试
-  - [`tests/aot/decimal/`](../tests/aot/decimal/) — Decimal 通用方法测试
+  - [`tests/compiler/string_method/`](../tests/compiler/string_method/) — String 通用方法测试
+  - [`tests/compiler/array_method/`](../tests/compiler/array_method/) — Array 通用方法测试
+  - [`tests/compiler/stream_method/`](../tests/compiler/stream_method/) — Stream 通用方法测试
+  - [`tests/compiler/bigint/`](../tests/compiler/bigint/) — BigInt 通用方法测试
+  - [`tests/compiler/decimal/`](../tests/compiler/decimal/) — Decimal 通用方法测试

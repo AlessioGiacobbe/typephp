@@ -79,17 +79,17 @@ echo "skip 不支持的原因";
 
 ### 方法 2: 运行测试时观察
 ```bash
-php run-tests.php tests/aot/generators.phpt
+php run-tests.php tests/compiler/generators.phpt
 ```
 输出会显示：
 ```
-TEST /home/swoole/workspace/aot/tests/aot/generators.phpt
-SKIP Generator syntax not supported in AOT  [tests/aot/generators.phpt] 
+TEST /home/swoole/workspace/aot/tests/compiler/generators.phpt
+SKIP Generator syntax not supported in AOT  [tests/compiler/generators.phpt]
 ```
 
 ### 方法 3: 统计 Skip 测试数量
 ```bash
-grep -l "^--SKIPIF--" tests/aot/*.phpt | wc -l
+grep -l "^--SKIPIF--" tests/compiler/*.phpt | wc -l
 ```
 
 ---
@@ -148,7 +148,7 @@ grep -l "^--SKIPIF--" tests/aot/*.phpt | wc -l
 
 2. **运行测试验证**
    ```bash
-   php run-tests.php tests/aot/test-name.phpt -v
+   php run-tests.php tests/compiler/test-name.phpt -v
    ```
 
 3. **确认测试通过**
@@ -210,7 +210,7 @@ A: 保留这些测试可以作为未来的开发参考，并且可以在功能�
 A: 不会。Skip 测试会被正确识别并单独统计，不会影响 pass/fail 的比例。
 
 ### Q: 如何查看所有 skip 测试？
-A: 运行 `php run-tests.php tests/aot/ -g SKIP` 可以查看所有 skip 测试及其原因。
+A: 运行 `php run-tests.php tests/compiler/ -g SKIP` 可以查看所有 skip 测试及其原因。
 
 ### Q: 什么时候会移除 skip 标记？
 A: 当对应的语法被实现并通过测试验证后，会移除 skip 标记。

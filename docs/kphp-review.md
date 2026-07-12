@@ -293,7 +293,7 @@ KPHP 有三层测试体系：
 - 增量编译支持（nocc 分布式编译）
 
 **AOT 借鉴**:
-- 当前 AOT 只有 `phpunit/` (PHPUnit) 和 `tests/aot/` (PHPT) 两层，缺少编译器内部单元测试和集成测试
+- 当前 AOT 只有 `phpunit/` (PHPUnit) 和 `tests/compiler/` (PHPT) 两层，缺少编译器内部单元测试和集成测试
 - 标签机制比纯 PHPT 更灵活——可以标记预期编译失败、预期警告等
 - Python 测试 runner 提供了更好的 CI 集成能力
 

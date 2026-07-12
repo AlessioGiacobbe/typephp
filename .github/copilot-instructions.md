@@ -53,14 +53,14 @@ Run a single PHPUnit file or a single test method:
 Run PHPT integration tests:
 
 ```bash
-php run-tests.php tests/aot/
-php run-tests.php tests/aot/arrays.phpt
+php run-tests.php tests/compiler/
+php run-tests.php tests/compiler/arrays.phpt
 ```
 
 For parser/runtime comparison without AOT compilation, there are docs using:
 
 ```bash
-php run-tests.php --no-aot tests/aot/arrow-functions.phpt
+php run-tests.php --no-aot tests/compiler/arrow-functions.phpt
 ```
 
 ## Formatting
@@ -87,4 +87,4 @@ Generated C++ is auto-formatted by the compiler itself when `clang-format` is av
 
 - PHPUnit tests for compiler internals should use `CompilerTest::create(ROOT_PATH)`, which enables test mode instead of normal fatal exits.
 - `phpunit/bootstrap.php` exposes a `BaseTest::exec()` helper that expects compilation failures to surface as `TypePhp\Exception\TestError`.
-- PHPT end-to-end tests live in `tests/aot/`; existing guidance and examples generally put executable test logic inside a `main()` function.
+- PHPT end-to-end tests live in `tests/compiler/`; existing guidance and examples generally put executable test logic inside a `main()` function.

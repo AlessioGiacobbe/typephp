@@ -2,7 +2,7 @@
 
 ## 📋 概述
 
-本次 review 了 `tests/aot/` 目录下的所有单测文件，分析了 PHP 语法覆盖情况，并新增了多个重要测试场景。
+本次 review 了 `tests/compiler/` 目录下的所有单测文件，分析了 PHP 语法覆盖情况，并新增了多个重要测试场景。
 
 ---
 
@@ -379,10 +379,10 @@ function sumTree(array $tree): int {
 
 ### 新增文件位置
 
-所有新增测试文件位于 `tests/aot/` 目录：
+所有新增测试文件位于 `tests/compiler/` 目录：
 
 ```
-tests/aot/
+tests/compiler/
 ├── readonly-class.phpt          # Readonly 类测试
 ├── backed-enum.phpt             # Backed 枚举测试
 ├── first-class-callable.phpt    # 一类可调用语法测试
@@ -393,16 +393,16 @@ tests/aot/
 
 ```bash
 # 运行单个测试
-php run-tests.php tests/aot/readonly-class.phpt
+php run-tests.php tests/compiler/readonly-class.phpt
 
 # 运行所有新增测试
-php run-tests.php tests/aot/readonly-class.phpt \
-                  tests/aot/backed-enum.phpt \
-                  tests/aot/first-class-callable.phpt \
-                  tests/aot/deep-recursion.phpt
+php run-tests.php tests/compiler/readonly-class.phpt \
+                  tests/compiler/backed-enum.phpt \
+                  tests/compiler/first-class-callable.phpt \
+                  tests/compiler/deep-recursion.phpt
 
 # 运行所有 AOT 测试
-php run-tests.php tests/aot/
+php run-tests.php tests/compiler/
 ```
 
 ---

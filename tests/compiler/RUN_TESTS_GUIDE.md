@@ -2,7 +2,7 @@
 
 ## 测试文件位置
 
-所有测试文件位于 `tests/aot/` 目录下，使用 `.phpt` 扩展名。
+所有测试文件位于 `tests/compiler/` 目录下，使用 `.phpt` 扩展名。
 
 ## 运行测试
 
@@ -10,39 +10,39 @@
 
 ```bash
 # 运行特定测试文件
-php run-tests.php tests/aot/test-name.phpt
+php run-tests.php tests/compiler/test-name.phpt
 
 # 示例：运行 match expression 测试
-php run-tests.php tests/aot/match-expression.phpt
+php run-tests.php tests/compiler/match-expression.phpt
 ```
 
 ### 运行多个测试
 
 ```bash
 # 运行多个测试（使用通配符）
-php run-tests.php tests/aot/pattern*.phpt
+php run-tests.php tests/compiler/pattern*.phpt
 
 # 运行整个目录
-php run-tests.php tests/aot/
+php run-tests.php tests/compiler/
 ```
 
 ### 常用选项
 
 ```bash
 # 显示详细信息
-php run-tests.php tests/aot/test-name.phpt -v
+php run-tests.php tests/compiler/test-name.phpt -v
 
 # 并行运行测试（加快测试速度）
-php run-tests.php tests/aot/ -j4
+php run-tests.php tests/compiler/ -j4
 
 # 只显示失败的测试
-php run-tests.php tests/aot/ -g FAIL
+php run-tests.php tests/compiler/ -g FAIL
 
 # 保持测试生成的文件
-php run-tests.php tests/aot/test-name.phpt --keep-all
+php run-tests.php tests/compiler/test-name.phpt --keep-all
 
 # 显示内存使用情况
-php run-tests.php tests/aot/test-name.phpt -m
+php run-tests.php tests/compiler/test-name.phpt -m
 ```
 
 ## 新增测试用例说明
@@ -89,7 +89,7 @@ php run-tests.php tests/aot/test-name.phpt -m
 
 ### 基本步骤
 
-1. 在 `tests/aot/` 目录创建新文件，如 `my-feature.phpt`
+1. 在 `tests/compiler/` 目录创建新文件，如 `my-feature.phpt`
 
 2. 添加测试头部：
    ```
@@ -151,7 +151,7 @@ string(6) "result"
 ### 查看差异
 
 ```bash
-php run-tests.php tests/aot/failed-test.phpt -v
+php run-tests.php tests/compiler/failed-test.phpt -v
 ```
 
 输出会显示期望值和实际值的差异：
@@ -168,20 +168,20 @@ string(7) "results"
 
 ```bash
 # 保持生成的 C++ 文件
-php run-tests.php tests/aot/test-name.phpt --keep-all
+php run-tests.php tests/compiler/test-name.phpt --keep-all
 
 # 查看生成的 C++ 代码
-cat build/tests/aot/test-name.cc
+cat build/tests/compiler/test-name.cc
 ```
 
 ### 手动编译和运行
 
 ```bash
 # 1. 生成 stub 文件
-php bin/gen_stub.php -f tests/aot/test-name.php
+php bin/gen_stub.php -f tests/compiler/test-name.php
 
 # 2. 转换为 C++
-php bin/compiler.php tests/aot/test-name.php
+php bin/compiler.php tests/compiler/test-name.php
 
 # 3. 编译 C++ 代码
 cd build && make test-name
@@ -196,13 +196,13 @@ cd build && make test-name
 
 ```bash
 # 统计测试文件数量
-ls tests/aot/*.phpt | wc -l
+ls tests/compiler/*.phpt | wc -l
 
 # 查看所有测试文件
-ls tests/aot/*.phpt | sort
+ls tests/compiler/*.phpt | sort
 
 # 查看测试覆盖总结
-cat tests/aot/README_TEST_COVERAGE.md
+cat tests/compiler/README_TEST_COVERAGE.md
 ```
 
 ## 常见问题

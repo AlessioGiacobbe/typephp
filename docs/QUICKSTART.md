@@ -209,13 +209,13 @@ for ($i = 0; $i < 10; $i++) {  // 错误！
 ### 运行单个测试
 
 ```bash
-PHPT=1 php run-tests.php tests/aot/arrow_fn/001.phpt
+PHPT=1 php run-tests.php tests/compiler/arrow_fn/001.phpt
 ```
 
 ### 运行所有测试
 
 ```bash
-PHPT=1 php run-tests.php tests/aot/
+PHPT=1 php run-tests.php tests/compiler/
 ```
 
 ### 查看测试结果
