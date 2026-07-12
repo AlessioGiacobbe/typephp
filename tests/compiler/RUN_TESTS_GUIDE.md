@@ -181,7 +181,7 @@ cat build/tests/compiler/test-name.cc
 php bin/gen_stub.php -f tests/compiler/test-name.php
 
 # 2. 转换为 C++
-php bin/compiler.php tests/compiler/test-name.php
+php bin/tpc.php tests/compiler/test-name.php
 
 # 3. 编译 C++ 代码
 cd build && make test-name

@@ -46,7 +46,7 @@ composer install
 ### 3. 验证安装
 
 ```bash
-php bin/compiler.php --help
+php bin/tpc.php --help
 ```
 
 如果看到帮助信息，说明安装成功！
@@ -102,7 +102,7 @@ function main() {
 #### 编译命令
 
 ```bash
-php bin/compiler.php my-project/src/ -o my-app
+php bin/tpc.php my-project/src/ -o my-app
 ```
 
 #### 运行程序
@@ -132,7 +132,7 @@ php bin/compiler.php my-project/src/ -o my-app
 #### 编译命令
 
 ```bash
-php bin/compiler.php my-project/src/ --mode=ext -o calculator
+php bin/tpc.php my-project/src/ --mode=ext -o calculator
 ```
 
 #### 安装扩展
@@ -269,14 +269,14 @@ project/
 **A**: 使用 `--dry` 只生成中间代码，并通过 `--build-dir` 指定目录。
 
 ```bash
-php bin/compiler.php src/ --dry --build-dir /tmp/typephp-build
+php bin/tpc.php src/ --dry --build-dir /tmp/typephp-build
 ```
 
 ### Q: 编译速度慢怎么办？
 **A**: 使用并行编译选项 `-j`：
 
 ```bash
-php bin/compiler.php src/ -o app -j4  # 使用 4 个进程
+php bin/tpc.php src/ -o app -j4  # 使用 4 个进程
 ```
 
 ---

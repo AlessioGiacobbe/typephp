@@ -35,37 +35,37 @@ tetris/
 
 ```bash
 cd examples/tetris
-php ../../bin/compiler.php build main.php
+php ../../bin/tpc.php build main.php
 ```
 
 或使用 project.yml：
 
 ```bash
 cd examples/tetris
-php ../../bin/compiler.php build .
+php ../../bin/tpc.php build .
 ```
 
 ### 方法二：编译简化测试版
 
 ```bash
 cd examples/tetris
-php ../../bin/compiler.php build test-simple.php
+php ../../bin/tpc.php build test-simple.php
 ```
 
 ### 编译选项
 
 ```bash
 # 启用优化
-php ../../bin/compiler.php build -O2 main.php
+php ../../bin/tpc.php build -O2 main.php
 
 # 启用调试信息
-php ../../bin/compiler.php build --debug-info main.php
+php ../../bin/tpc.php build --debug-info main.php
 
 # 指定输出文件名
-php ../../bin/compiler.php build -o tetris-game main.php
+php ../../bin/tpc.php build -o tetris-game main.php
 
 # 并行编译（加速）
-php ../../bin/compiler.php build -j 8 main.php
+php ../../bin/tpc.php build -j 8 main.php
 ```
 
 ## 🚀 运行游戏
@@ -280,7 +280,7 @@ file_put_contents('game.log', $message, FILE_APPEND);
 tetris_messagebox(0, $message, "Debug", MB_OK);
 
 // 4. 使用调试模式编译
-php ../../bin/compiler.php build --debug-info main.php
+php ../../bin/tpc.php build --debug-info main.php
 ```
 
 ## 📊 性能分析

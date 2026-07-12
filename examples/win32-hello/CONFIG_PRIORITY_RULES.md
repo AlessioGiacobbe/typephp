@@ -66,7 +66,7 @@ cxx-std: c++14
 
 #### 命令行覆盖
 ```bash
-php bin/compiler.php project.yml --cxx-std=c++17
+php bin/tpc.php project.yml --cxx-std=c++17
 ```
 
 #### 结果
@@ -84,7 +84,7 @@ build-mode: bin
 
 #### 命令行覆盖
 ```bash
-php bin/compiler.php project.yml --mode=ext
+php bin/tpc.php project.yml --mode=ext
 ```
 
 #### 结果
@@ -104,7 +104,7 @@ cxx-flags:
 
 #### 命令行覆盖
 ```bash
-php bin/compiler.php project.yml -O3
+php bin/tpc.php project.yml -O3
 ```
 
 #### 结果
@@ -118,7 +118,7 @@ php bin/compiler.php project.yml -O3
 ### 类型 1：YAML 配置文件
 
 ```bash
-php bin/compiler.php project.yml --cxx-std=c++17
+php bin/tpc.php project.yml --cxx-std=c++17
 ```
 
 **执行流程：**
@@ -136,7 +136,7 @@ php bin/compiler.php project.yml --cxx-std=c++17
 ### 类型 2：单个 PHP 文件
 
 ```bash
-php bin/compiler.php hello.php --cxx-std=c++17 -O2
+php bin/tpc.php hello.php --cxx-std=c++17 -O2
 ```
 
 **执行流程：**
@@ -154,7 +154,7 @@ php bin/compiler.php hello.php --cxx-std=c++17 -O2
 ### 类型 3：目录
 
 ```bash
-php bin/compiler.php src/ --mode=ext --cxx-std=c++17
+php bin/tpc.php src/ --mode=ext --cxx-std=c++17
 ```
 
 **执行流程：**
@@ -197,7 +197,7 @@ sources:
 ### 场景 1：使用默认配置
 
 ```bash
-php bin/compiler.php project.yml
+php bin/tpc.php project.yml
 ```
 
 **结果：**
@@ -210,7 +210,7 @@ php bin/compiler.php project.yml
 ### 场景 2：部分覆盖
 
 ```bash
-php bin/compiler.php project.yml --cxx-std=c++17
+php bin/tpc.php project.yml --cxx-std=c++17
 ```
 
 **结果：**
@@ -223,7 +223,7 @@ php bin/compiler.php project.yml --cxx-std=c++17
 ### 场景 3：完全覆盖
 
 ```bash
-php bin/compiler.php project.yml --cxx-std=c++20 --mode=ext -O3
+php bin/tpc.php project.yml --cxx-std=c++20 --mode=ext -O3
 ```
 
 **结果：**
@@ -237,7 +237,7 @@ php bin/compiler.php project.yml --cxx-std=c++20 --mode=ext -O3
 ### 场景 4：单文件编译
 
 ```bash
-php bin/compiler.php test.php --cxx-std=c++17 -O2
+php bin/tpc.php test.php --cxx-std=c++17 -O2
 ```
 
 **结果：**
@@ -296,13 +296,13 @@ cxx-flags:
 
 ```bash
 # 开发时使用调试模式
-php bin/compiler.php project.yml --debug
+php bin/tpc.php project.yml --debug
 
 # 发布时使用优化
-php bin/compiler.php project.yml -O3
+php bin/tpc.php project.yml -O3
 
 # 测试不同的 C++ 标准
-php bin/compiler.php project.yml --cxx-std=c++20
+php bin/tpc.php project.yml --cxx-std=c++20
 ```
 
 ---
@@ -311,7 +311,7 @@ php bin/compiler.php project.yml --cxx-std=c++20
 
 ```bash
 # 不需要 YAML，直接编译
-php bin/compiler.php test.php -O2 --cxx-std=c++17
+php bin/tpc.php test.php -O2 --cxx-std=c++17
 ```
 
 ---
@@ -324,10 +324,10 @@ A: 确保使用了正确的参数名称：
 
 ```bash
 # ✅ 正确
-php bin/compiler.php project.yml --cxx-std=c++17
+php bin/tpc.php project.yml --cxx-std=c++17
 
 # ❌ 错误（参数名不对）
-php bin/compiler.php project.yml --cxx_std=c++17
+php bin/tpc.php project.yml --cxx_std=c++17
 ```
 
 ---
@@ -342,7 +342,7 @@ cxx-std: c++14
 ```
 
 ```bash
-php bin/compiler.php project.yml --cxx-std=c++17
+php bin/tpc.php project.yml --cxx-std=c++17
 # 结果：使用 c++17
 ```
 
@@ -353,7 +353,7 @@ php bin/compiler.php project.yml --cxx-std=c++17
 A: 目前不支持。优化级别只能通过命令行设置：
 
 ```bash
-php bin/compiler.php project.yml -O2
+php bin/tpc.php project.yml -O2
 ```
 
 ---

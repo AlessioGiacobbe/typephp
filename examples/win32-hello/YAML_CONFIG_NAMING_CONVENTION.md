@@ -163,7 +163,7 @@ ignore:
 
 1. **命令行参数**（最高优先级）
    ```bash
-   php bin/compiler.php project.yml --cxx-std=c++20
+   php bin/tpc.php project.yml --cxx-std=c++20
    ```
 
 2. **YAML 配置文件**
@@ -441,13 +441,13 @@ A: 使用命令行参数：
 
 ```bash
 # 覆盖 cxx-std
-php bin/compiler.php project.yml --cxx-std=c++20
+php bin/tpc.php project.yml --cxx-std=c++20
 
 # 覆盖 build-mode
-php bin/compiler.php project.yml --mode=ext
+php bin/tpc.php project.yml --mode=ext
 
 # 启用调试信息
-php bin/compiler.php project.yml --debug
+php bin/tpc.php project.yml --debug
 ```
 
 ---

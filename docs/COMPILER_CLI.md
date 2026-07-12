@@ -3,26 +3,26 @@
 本文档与 `src/Translator.php::showUsage()` 保持同步。使用：
 
 ```bash
-bin/compiler.php <file|dir|project.yml> [options] [-- program-args...]
+bin/tpc.php <file|dir|project.yml> [options] [-- program-args...]
 ```
 
 ## 常用示例
 
 ```bash
 # 编译单文件
-bin/compiler.php app.php
+bin/tpc.php app.php
 
 # 优化并运行，`--` 后参数传给生成的程序
-bin/compiler.php app.php -O2 -r -- --flag value
+bin/tpc.php app.php -O2 -r -- --flag value
 
 # 编译项目配置
-bin/compiler.php project.yml -O2 -j 8
+bin/tpc.php project.yml -O2 -j 8
 
 # 生成 PHP 扩展
-bin/compiler.php extension/ -m ext -o my_extension
+bin/tpc.php extension/ -m ext -o my_extension
 
 # 只生成 C++，不编译和链接
-bin/compiler.php app.php --dry --build-dir /tmp/typephp-build
+bin/tpc.php app.php --dry --build-dir /tmp/typephp-build
 ```
 
 ## 构建选项
@@ -86,7 +86,7 @@ bin/compiler.php app.php --dry --build-dir /tmp/typephp-build
 命令行实现可能继续演进，发布版本的实际参数以以下命令为准：
 
 ```bash
-bin/compiler.php --help
+bin/tpc.php --help
 ```
 
 兼容性边界参见 [INCOMPATIBLE_PHP_FEATURES.md](INCOMPATIBLE_PHP_FEATURES.md)，构建模式参见 [COMPILATION_MODES.md](COMPILATION_MODES.md)。

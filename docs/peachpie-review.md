@@ -326,7 +326,7 @@ dotnet publish                         # 发布为独立应用
 
 **AOT 借鉴优先级: P2**
 
-AOT 目前使用 `php bin/compiler.php <project>` 命令行。可以借鉴：
+AOT 目前使用 `php bin/tpc.php <project>` 命令行。可以借鉴：
 - 为 AOT 编译器创建一个 Composer plugin 或 CLI phar 包
 - 定义 `project.yml` 的 JSON Schema（类似 `.csproj`）
 - 支持 `composer build` 或 `php-aot build` 统一入口

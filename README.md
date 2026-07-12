@@ -4,6 +4,26 @@
 - 需要 CMake-3.24 以上版本
 - 需要高精度数学库：`GMP`、`MPFR`、`libmpdec`
 
+# Composer 安装
+
+在项目中安装 TypePHP：
+
+```bash
+composer require --dev swoole/typephp
+```
+
+安装后可直接编译项目：
+
+```bash
+vendor/bin/tpc.php project.yml
+```
+
+在 TypePHP 源码仓库中则使用：
+
+```bash
+bin/tpc.php project.yml
+```
+
 ```shell
 # Ubuntu/Debian
 sudo apt install libgmp-dev libmpfr-dev libmpdec-dev

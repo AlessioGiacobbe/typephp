@@ -14,19 +14,19 @@ PHPX 编译器现在支持独立配置 C++ 标准版本，不再需要从 `cxxfl
 
 ```bash
 # 使用 C++14
-php bin/compiler.php app.php --cxx-std=c++14
+php bin/tpc.php app.php --cxx-std=c++14
 
 # 使用 C++17（默认）
-php bin/compiler.php app.php --cxx-std=c++17
+php bin/tpc.php app.php --cxx-std=c++17
 
 # 使用 C++20
-php bin/compiler.php app.php --cxx-std=c++20
+php bin/tpc.php app.php --cxx-std=c++20
 
 # Windows MSVC
-php bin/compiler.php app.php --cxx-std=c++17
+php bin/tpc.php app.php --cxx-std=c++17
 
 # Linux/macOS GCC/Clang
-php bin/compiler.php app.php --cxx-std=c++17
+php bin/tpc.php app.php --cxx-std=c++17
 ```
 
 ---
@@ -114,7 +114,7 @@ cxx_std: c++14
 
 ```bash
 # 命令行覆盖配置文件
-php bin/compiler.php project.yml --cxx-std=c++17
+php bin/tpc.php project.yml --cxx-std=c++17
 # 最终使用 c++17
 ```
 
@@ -189,7 +189,7 @@ cxx_std: c++17
 
 编译命令：
 ```bash
-php bin/compiler.php project.yml
+php bin/tpc.php project.yml
 ```
 
 生成的编译命令：
@@ -237,7 +237,7 @@ cxx_std: c++14  # 配置文件中的默认值
 
 ```bash
 # 使用 C++17 覆盖配置文件
-php bin/compiler.php project.yml --cxx-std=c++17
+php bin/tpc.php project.yml --cxx-std=c++17
 ```
 
 ---
@@ -278,7 +278,7 @@ cxxflags:
 编译时查看输出，确认 C++ 标准是否正确设置：
 
 ```bash
-php bin/compiler.php project.yml --verbose
+php bin/tpc.php project.yml --verbose
 ```
 
 应该看到类似这样的输出：
@@ -309,7 +309,7 @@ cxx_std: c++17  # 确保是 c++17 而不是 c++14
 或者使用命令行：
 
 ```bash
-php bin/compiler.php app.php --cxx-std=c++17
+php bin/tpc.php app.php --cxx-std=c++17
 ```
 
 ---

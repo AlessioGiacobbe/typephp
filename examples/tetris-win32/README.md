@@ -46,12 +46,12 @@ tetris/
 ### 编译
 ```bash
 cd examples/tetris
-php ../../bin/compiler.php build
+php ../../bin/tpc.php build
 ```
 
 或在项目根目录：
 ```bash
-php bin/compiler.php build examples/tetris
+php bin/tpc.php build examples/tetris
 ```
 
 ### 运行

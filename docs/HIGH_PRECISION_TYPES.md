@@ -70,7 +70,7 @@ function main(): void {
 编译运行：
 
 ```bash
-php bin/compiler.php my_program.php -o my_program
+php bin/tpc.php my_program.php -o my_program
 ./my_program
 ```
 

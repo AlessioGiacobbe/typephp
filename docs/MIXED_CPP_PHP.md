@@ -626,7 +626,7 @@ sources:
 
 ```bash
 # 编译项目
-php bin/compiler.php examples/prime -o prime
+php bin/tpc.php examples/prime -o prime
 
 # 运行生成的可执行文件
 ./prime
@@ -911,7 +911,7 @@ function get_adult_users() {
 
 ```bash
 # 保留中间文件
-php bin/compiler.php project --dry --build-dir /tmp/typephp-build
+php bin/tpc.php project --dry --build-dir /tmp/typephp-build
 
 # 查看生成的 C++ 代码
 find /tmp/typephp-build -name '*.cc' -o -name '*.cpp'
@@ -934,7 +934,7 @@ php::Int php_safe_add(php::Int a, php::Int b) {
 
 ```bash
 # 编译时添加调试信息
-php bin/compiler.php project -o app --debug
+php bin/tpc.php project -o app --debug
 
 # 使用 perf 分析性能
 perf record ./app

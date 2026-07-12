@@ -15,14 +15,14 @@ PHP AOT 编译器支持两种编译模式，每种模式针对不同的使用场
 ### 编译命令
 
 ```bash
-php bin/compiler.php <source_dir> --mode=ext -o <output_name>
+php bin/tpc.php <source_dir> --mode=ext -o <output_name>
 ```
 
 ### 示例
 
 ```bash
 # 编译 Coolify 项目
-php bin/compiler.php projects/coolify/app/ --mode=ext -o coolify
+php bin/tpc.php projects/coolify/app/ --mode=ext -o coolify
 
 # 输出文件
 coolify.so  # Linux
@@ -117,14 +117,14 @@ function route_handler($path) {
 ### 编译命令
 
 ```bash
-php bin/compiler.php <source_dir> -o <output_binary>
+php bin/tpc.php <source_dir> -o <output_binary>
 ```
 
 ### 示例
 
 ```bash
 # 编译 Workerman 项目
-php bin/compiler.php projects/workerman/src/ -o workerman
+php bin/tpc.php projects/workerman/src/ -o workerman
 
 # 输出文件
 workerman  # Linux 可执行文件
@@ -300,7 +300,7 @@ echo json_encode($data);
 
 **编译**:
 ```bash
-php bin/compiler.php api-project/src/ --mode=ext -o api_extension
+php bin/tpc.php api-project/src/ --mode=ext -o api_extension
 ```
 
 **使用**:
@@ -343,7 +343,7 @@ function main(int $argc, array $argv) {
 
 **编译**:
 ```bash
-php bin/compiler.php cli-tool/src/ -o mytool
+php bin/tpc.php cli-tool/src/ -o mytool
 ```
 
 **使用**:

@@ -131,7 +131,7 @@ Options:
     --no-aot    Run tests without AOT compilation (plain PHP mode).
 
     --compiler <path>
-                Use specified compiler binary (default: ./bin/compiler.php).
+                Use specified compiler binary (default: ./bin/tpc.php).
                 For bootstrap testing, use: --compiler ./swoole_compiler
 
     --bless     Bless failed tests using scripts/dev/bless_tests.php.
@@ -675,7 +675,7 @@ function main(): void
         $php = getenv('TEST_PHP_EXECUTABLE') ?: PHP_BINARY;
     }
     if (!$compiler_path) {
-        $compiler_path = './bin/compiler.php';
+        $compiler_path = './bin/tpc.php';
     }
 
     $php_cgi = getenv('TEST_PHP_CGI_EXECUTABLE') ?: get_binary($php, 'php-cgi', 'sapi/cgi/php-cgi');

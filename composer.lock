@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "72caced27fd0c3469dae5d4f4db591d0",
+    "content-hash": "ad62f0e0eada43bfe6673b9830c827b9",
     "packages": [
         {
             "name": "ajaxray/ansikit",
