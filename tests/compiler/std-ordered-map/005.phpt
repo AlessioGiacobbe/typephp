@@ -4,7 +4,7 @@ std ordered_map: unsafe_cast
 <?php
 function std_map_unsafe_ptr_update($source): void
 {
-    $map = $source->toStdOrderedMap(complex_types::type_str, native_types::type_int);
+    $map = $source->toStdOrderedMap(Type::String, Type::Int);
     var_dump($map["b"]);
     $map["c"] = 9;
 
@@ -15,7 +15,7 @@ function std_map_unsafe_ptr_update($source): void
 }
 
 function main() {
-    $map = std::ordered_map(complex_types::type_str, native_types::type_int);
+    $map = std::ordered_map(Type::String, Type::Int);
     $map["a"] = 1;
     $map["b"] = 7;
     $map["c"] = 3;

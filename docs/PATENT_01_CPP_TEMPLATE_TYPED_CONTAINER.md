@@ -103,10 +103,10 @@ Swoole-Compiler 是一种 PHP AOT 编译器。它将 PHP 源文件解析为抽�
 本发明在动态语言中定义一组强类型容器构造语法，例如：
 
 ```php
-$a = std::array(native_types::type_int, 100);
-$v = std::vector(native_types::type_float);
-$m = std::ordered_map(complex_types::type_str, native_types::type_int);
-$h = std::map(native_types::type_int, User::class);
+$a = std::array(Type::Int, 100);
+$v = std::vector(Type::Float);
+$m = std::ordered_map(Type::String, Type::Int);
+$h = std::map(Type::Int, User::class);
 ```
 
 编译器在 AOT 阶段识别这些构造表达式，生成容器元信息，并将其转换为 C++ 模版实例：
@@ -204,7 +204,7 @@ typeId：根据上述字段生成的类型标识。
 例如：
 
 ```php
-$b = std::array(std::array(native_types::type_int, 3), 2);
+$b = std::array(std::array(Type::Int, 3), 2);
 ```
 
 对应元信息可以表示为：
@@ -225,8 +225,8 @@ typeId=自动分配的整数
 示例：
 
 ```php
-$a = std::array(native_types::type_int, 3);
-$b = std::array(std::array(native_types::type_int, 3), 2);
+$a = std::array(Type::Int, 3);
+$b = std::array(std::array(Type::Int, 3), 2);
 $a = $b[1];
 ```
 
@@ -252,8 +252,8 @@ a = b[php::safeIndex(php::toInt(1L), 2)];
 第一类，左值为强类型容器且右值为完全相同强类型容器：
 
 ```php
-$a = std::vector(native_types::type_int);
-$b = std::vector(native_types::type_int);
+$a = std::vector(Type::Int);
+$b = std::vector(Type::Int);
 $a = $b;
 ```
 
@@ -344,13 +344,13 @@ for (auto it = v.begin(); it != v.end(); ++it) {
 ```php
 function update(UnsafePtr $ptr): void
 {
-    $v = std::unsafe_cast(std::vector(native_types::type_int), $ptr);
+    $v = std::unsafe_cast(std::vector(Type::Int), $ptr);
     $v[0] = 100;
 }
 
 function main(): void
 {
-    $v = std::vector(native_types::type_int, 1);
+    $v = std::vector(Type::Int, 1);
     update($v);
 }
 ```

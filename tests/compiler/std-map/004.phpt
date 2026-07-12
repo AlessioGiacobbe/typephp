@@ -24,7 +24,7 @@ function std_map_class_value_mixed(mixed $value): mixed
 }
 
 function main() {
-    $map = std::map(complex_types::type_str, StdMapClassValue::class);
+    $map = std::map(Type::String, StdMapClassValue::class);
     $map["a"] = new StdMapClassValue(1);
     var_dump($map["a"]->getValue());
 

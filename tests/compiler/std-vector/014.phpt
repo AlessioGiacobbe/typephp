@@ -39,11 +39,11 @@ function main() {
     $array[0] = std_container_interface_mixed(new StdContainerInterfaceImpl(3));
     var_dump($array[0]->getValue());
 
-    $map = std::map(complex_types::type_str, StdContainerInterfaceValue::class);
+    $map = std::map(Type::String, StdContainerInterfaceValue::class);
     $map["item"] = std_container_interface_mixed(new StdContainerInterfaceImpl(4));
     var_dump($map["item"]->getValue());
 
-    $ordered = std::ordered_map(complex_types::type_str, StdContainerInterfaceValue::class);
+    $ordered = std::ordered_map(Type::String, StdContainerInterfaceValue::class);
     $ordered["item"] = std_container_interface_mixed(new StdContainerInterfaceImpl(5));
     var_dump($ordered["item"]->getValue());
 

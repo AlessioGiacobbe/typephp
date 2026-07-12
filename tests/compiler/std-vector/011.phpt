@@ -3,8 +3,8 @@ std vector: same type copy
 --FILE--
 <?php
 function main() {
-    $a = std::vector(native_types::type_int);
-    $b = std::vector(native_types::type_int);
+    $a = std::vector(Type::Int);
+    $b = std::vector(Type::Int);
 
     $b[] = 10;
     $b[] = 20;

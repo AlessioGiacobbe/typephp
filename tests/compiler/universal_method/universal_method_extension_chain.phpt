@@ -5,7 +5,7 @@ ExtensionProvider method chaining with typed returns
 
 use native_types;
 
-#[ExtensionProvider(native_types::type_int)]
+#[ExtensionProvider(Type::Int)]
 final class IntExtensions
 {
     public static function to_words(int $int): string
@@ -15,7 +15,7 @@ final class IntExtensions
     }
 }
 
-#[ExtensionProvider(complex_types::type_string)]
+#[ExtensionProvider(Type::String)]
 final class StringExtensions
 {
     public static function double(string $str): string
@@ -34,7 +34,7 @@ final class StringExtensions
     }
 }
 
-#[ExtensionProvider(complex_types::type_array)]
+#[ExtensionProvider(Type::Array)]
 final class ArrayExtensions
 {
     public static function last(array $arr): mixed

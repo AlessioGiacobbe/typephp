@@ -4,7 +4,7 @@ std bigint: array write/read
 <?php
 
 function main() {
-    $a = std::array(native_types::type_bigint, 5);
+    $a = std::array(Type::BigInt, 5);
     $a[0] = 42;
     $a[1] = 84;
     $a[2] = 126;

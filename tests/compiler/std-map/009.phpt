@@ -3,7 +3,7 @@ std map: unset
 --FILE--
 <?php
 function main() {
-    $map = std::map(complex_types::type_string, native_types::type_int);
+    $map = std::map(Type::String, Type::Int);
     $map["alpha"] = 10;
     $map["beta"] = 20;
 

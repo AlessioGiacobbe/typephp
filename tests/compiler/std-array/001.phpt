@@ -3,7 +3,7 @@ std array: 001
 --FILE--
 <?php
 function main() {
-    $array = std::array(native_types::type_int, 100);
+    $array = std::array(Type::Int, 100);
     $array[99] = 2026;
     var_dump($array[99]);
     var_dump($array[10]);

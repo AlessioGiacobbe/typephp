@@ -328,7 +328,15 @@ trait MethodCallTrait
                 }
                 return $this->genToConvertCall($object, $methodName, $receiverType);
             }
-            // __ keyword extensions
+            // A provider targeting Type::Any only applies when
+            // the receiver's static type is actually mixed/any.
+            if ($receiverType === Type::VAR) {
+                $anyExtension = $this->findExtensionMethod(Type::VAR, $methodName);
+                if ($anyExtension) {
+                    return $this->parseUniversalMethodCall($expr, $object, $methodName, $anyExtension, $this->isVarExpr($expr->var));
+                }
+            }
+            // ExtensionProvider::Keyword extensions apply to every receiver type.
             $kwExt = $this->findKeywordExtensionMethod($methodName);
             if ($kwExt) {
                 return $this->parseUniversalMethodCall($expr, $object, $methodName, $kwExt, $this->isVarExpr($expr->var));

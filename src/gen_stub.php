@@ -186,15 +186,15 @@ class Context {
 }
 
 class ArrayType extends SimpleType {
-    private /* readonly */ Type $keyType;
-    private /* readonly */ Type $valueType;
+    private /* readonly */ StubType $keyType;
+    private /* readonly */ StubType $valueType;
 
     public static function createGenericArray(): self
     {
-        return new ArrayType(Type::fromString("int|string"), Type::fromString("mixed|ref"));
+        return new ArrayType(StubType::fromString("int|string"), StubType::fromString("mixed|ref"));
     }
 
-    public function __construct(Type $keyType, Type $valueType)
+    public function __construct(StubType $keyType, StubType $valueType)
     {
         parent::__construct("array", true);
 
@@ -217,8 +217,8 @@ class ArrayType extends SimpleType {
             return false;
         }
 
-        return Type::equals($this->keyType, $other->keyType) &&
-            Type::equals($this->valueType, $other->valueType);
+        return StubType::equals($this->keyType, $other->keyType) &&
+            StubType::equals($this->valueType, $other->valueType);
     }
 }
 
@@ -299,7 +299,7 @@ class SimpleType {
         $matches = [];
         $isArray = preg_match("/(.*)\s*\[\s*\]/", $typeString, $matches);
         if ($isArray) {
-            return new ArrayType(Type::fromString("int"), Type::fromString($matches[1]));
+            return new ArrayType(StubType::fromString("int"), StubType::fromString($matches[1]));
         }
 
         $matches = [];
@@ -309,7 +309,7 @@ class SimpleType {
                 throw new Exception("array<> type hint must have both a key and a value");
             }
 
-            return new ArrayType(Type::fromString($matches[1]), Type::fromString($matches[3]));
+            return new ArrayType(StubType::fromString($matches[1]), StubType::fromString($matches[3]));
         }
 
         return new SimpleType($typeString, false);
@@ -521,27 +521,27 @@ class SimpleType {
     }
 }
 
-// Instances of Type are immutable and do not need to be cloned
+// Instances of StubType are immutable and do not need to be cloned
 // when held by an object that is cloned
-class Type {
+class StubType {
     /** @var SimpleType[] */
     public /* readonly */ array $types;
     public /* readonly */ bool $isIntersection;
 
-    public static function fromNode(Node $node): Type {
+    public static function fromNode(Node $node): StubType {
         if ($node instanceof Node\UnionType || $node instanceof Node\IntersectionType) {
-            $nestedTypeObjects = array_map(['Type', 'fromNode'], $node->types);
+            $nestedTypeObjects = array_map(['StubType', 'fromNode'], $node->types);
             $types = [];
             foreach ($nestedTypeObjects as $typeObject) {
                 array_push($types, ...$typeObject->types);
             }
-            return new Type($types, ($node instanceof Node\IntersectionType));
+            return new StubType($types, ($node instanceof Node\IntersectionType));
         }
 
         if ($node instanceof Node\NullableType) {
-            return new Type(
+            return new StubType(
                 [
-                    ...Type::fromNode($node->type)->types,
+                    ...StubType::fromNode($node->type)->types,
                     SimpleType::null(),
                 ],
                 false
@@ -549,7 +549,7 @@ class Type {
         }
 
         if ($node instanceof Node\Identifier && $node->toLowerString() === "iterable") {
-            return new Type(
+            return new StubType(
                 [
                     SimpleType::fromString("Traversable"),
                     ArrayType::createGenericArray(),
@@ -558,7 +558,7 @@ class Type {
             );
         }
 
-        return new Type([SimpleType::fromNode($node)], false);
+        return new StubType([SimpleType::fromNode($node)], false);
     }
 
     public static function fromString(string $typeString): self {
@@ -596,7 +596,7 @@ class Type {
             }
         }
 
-        return new Type($simpleTypes, $isIntersection);
+        return new StubType($simpleTypes, $isIntersection);
     }
 
     /**
@@ -706,7 +706,7 @@ class Type {
         return $typeElement;
     }
 
-    public static function equals(?Type $a, ?Type $b): bool {
+    public static function equals(?StubType $a, ?StubType $b): bool {
         if ($a === null || $b === null) {
             return $a === $b;
         }
@@ -776,8 +776,8 @@ class ArgInfo {
     public /* readonly */ string $name;
     public /* readonly */ string $sendBy;
     public /* readonly */ bool $isVariadic;
-    public ?Type $type;
-    private /* readonly */ ?Type $phpDocType;
+    public ?StubType $type;
+    private /* readonly */ ?StubType $phpDocType;
     public ?string $defaultValue;
     /** @var AttributeInfo[] */
     public array $attributes;
@@ -789,8 +789,8 @@ class ArgInfo {
         string $name,
         string $sendBy,
         bool $isVariadic,
-        ?Type $type,
-        ?Type $phpDocType,
+        ?StubType $type,
+        ?StubType $phpDocType,
         ?string $defaultValue,
         array $attributes
     ) {
@@ -807,11 +807,11 @@ class ArgInfo {
         return $this->name === $other->name
             && $this->sendBy === $other->sendBy
             && $this->isVariadic === $other->isVariadic
-            && Type::equals($this->type, $other->type)
+            && StubType::equals($this->type, $other->type)
             && $this->defaultValue === $other->defaultValue;
     }
 
-    public function getMethodSynopsisType(): Type {
+    public function getMethodSynopsisType(): StubType {
         if ($this->type) {
             return $this->type;
         }
@@ -1116,15 +1116,15 @@ class ReturnInfo {
 
     private /* readonly */ bool $byRef;
     // NOT readonly - gets removed when discarding info for older PHP versions
-    public ?Type $type;
-    public /* readonly */ ?Type $phpDocType;
+    public ?StubType $type;
+    public /* readonly */ ?StubType $phpDocType;
     public /* readonly */ bool $tentativeReturnType;
     public /* readonly */ string $refcount;
 
     public function __construct(
         bool $byRef,
-        ?Type $type,
-        ?Type $phpDocType,
+        ?StubType $type,
+        ?StubType $phpDocType,
         bool $tentativeReturnType,
         ?string $refcount
     ) {
@@ -1137,11 +1137,11 @@ class ReturnInfo {
 
     public function equalsApartFromPhpDocAndRefcount(ReturnInfo $other): bool {
         return $this->byRef === $other->byRef
-            && Type::equals($this->type, $other->type)
+            && StubType::equals($this->type, $other->type)
             && $this->tentativeReturnType === $other->tentativeReturnType;
     }
 
-    public function getMethodSynopsisType(): ?Type {
+    public function getMethodSynopsisType(): ?StubType {
         return $this->type ?? $this->phpDocType;
     }
 
@@ -2513,8 +2513,8 @@ class EvaluatedValue
 abstract class VariableLike
 {
     protected int $flags;
-    public ?Type $type;
-    public /* readonly */ ?Type $phpDocType;
+    public ?StubType $type;
+    public /* readonly */ ?StubType $phpDocType;
     private /* readonly */ ?string $link;
     protected ?int $phpVersionIdMinimumCompatibility;
     /** @var AttributeInfo[] */
@@ -2526,8 +2526,8 @@ abstract class VariableLike
      */
     public function __construct(
         int $flags,
-        ?Type $type,
-        ?Type $phpDocType,
+        ?StubType $type,
+        ?StubType $phpDocType,
         ?string $link,
         ?int $phpVersionIdMinimumCompatibility,
         array $attributes,
@@ -2684,8 +2684,8 @@ class ConstInfo extends VariableLike
         int $flags,
         Expr $value,
         ?string $valueString,
-        ?Type $type,
-        ?Type $phpDocType,
+        ?StubType $type,
+        ?StubType $phpDocType,
         bool $isDeprecated,
         ?string $cond,
         ?string $cValue,
@@ -3212,8 +3212,8 @@ class PropertyInfo extends VariableLike
         PropertyName $name,
         int $classFlags,
         int $flags,
-        ?Type $type,
-        ?Type $phpDocType,
+        ?StubType $type,
+        ?StubType $phpDocType,
         ?Expr $defaultValue,
         ?string $defaultValueString,
         bool $isDocReadonly,
@@ -5018,11 +5018,11 @@ function parseFunctionLike(
                 throw new Exception("Only the last parameter can be variadic");
             }
 
-            $type = $param->type ? Type::fromNode($param->type) : null;
+            $type = $param->type ? StubType::fromNode($param->type) : null;
             if ($type === null && !isset($docParamTypes[$varName])) {
                 $defaultParamType = getMagicMethodDefaultParamType($name, $i);
                 if ($defaultParamType !== null) {
-                    $type = Type::fromString($defaultParamType);
+                    $type = StubType::fromString($defaultParamType);
                 } else {
                     $docParamTypes[$varName] = 'mixed';
                 }
@@ -5052,7 +5052,7 @@ function parseFunctionLike(
                 $sendBy,
                 $param->variadic,
                 $type,
-                isset($docParamTypes[$varName]) ? Type::fromString($docParamTypes[$varName]) : null,
+                isset($docParamTypes[$varName]) ? StubType::fromString($docParamTypes[$varName]) : null,
                 $defaultValue,
                 AttributeInfo::createFromGroups($param->attrGroups)
             );
@@ -5072,8 +5072,8 @@ function parseFunctionLike(
 
         $return = new ReturnInfo(
             $func->returnsByRef(),
-            $returnType ? Type::fromNode($returnType) : null,
-            $docReturnType ? Type::fromString($docReturnType) : null,
+            $returnType ? StubType::fromNode($returnType) : null,
+            $docReturnType ? StubType::fromString($docReturnType) : null,
             $tentativeReturnType,
             $refcount
         );
@@ -5163,8 +5163,8 @@ function parseConstLike(
         }
     }
 
-    $constType = $type ? Type::fromNode($type) : null;
-    $constPhpDocType = $phpDocType ? Type::fromString($phpDocType) : null;
+    $constType = $type ? StubType::fromNode($type) : null;
+    $constPhpDocType = $phpDocType ? StubType::fromString($phpDocType) : null;
 
     if ($const->value instanceof Expr\ConstFetch &&
         $const->value->name->toLowerString() === "null" &&
@@ -5225,9 +5225,9 @@ function parseProperty(
         }
     }
 
-    $propertyType = $type ? Type::fromNode($type) : null;
+    $propertyType = $type ? StubType::fromNode($type) : null;
     if ($propertyType === null && !$phpDocType) {
-        $propertyType = Type::fromString("mixed");
+        $propertyType = StubType::fromString("mixed");
     }
 
     if ($property->default instanceof Expr\ConstFetch &&
@@ -5245,7 +5245,7 @@ function parseProperty(
         $classFlags,
         $flags,
         $propertyType,
-        $phpDocType ? Type::fromString($phpDocType) : null,
+        $phpDocType ? StubType::fromString($phpDocType) : null,
         $property->default,
         $property->default ? $prettyPrinter->prettyPrintExpr($property->default) : null,
         $isDocReadonly,

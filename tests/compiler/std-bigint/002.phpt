@@ -4,7 +4,7 @@ std bigint: map set/get
 <?php
 
 function main() {
-    $m = std::map(native_types::type_int, native_types::type_bigint);
+    $m = std::map(Type::Int, Type::BigInt);
     $m[1] = 100;
     $m[2] = 200;
     $m[3] = 300;

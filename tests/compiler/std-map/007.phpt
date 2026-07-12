@@ -3,7 +3,7 @@ std map: assign to PHP array
 --FILE--
 <?php
 function main() {
-    $map = std::map(native_types::type_int, native_types::type_int);
+    $map = std::map(Type::Int, Type::Int);
     $map[10] = 100;
     $map[20] = 200;
 

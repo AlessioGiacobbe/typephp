@@ -3,7 +3,7 @@ std vector: unset
 --FILE--
 <?php
 function main() {
-    $a = std::vector(native_types::type_int);
+    $a = std::vector(Type::Int);
     $a[] = 99;
     $a[] = 88;
     $a[] = 77;

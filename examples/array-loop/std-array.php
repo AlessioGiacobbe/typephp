@@ -4,7 +4,7 @@ use native_types;
 
 function main()
 {
-    $array = std::array(std::array(std::array(native_types::type_int, 13), 16), 19);
+    $array = std::array(std::array(std::array(Type::Int, 13), 16), 19);
     $index = 9;
     $index2 = 5;
     $array[$index2][$index][0] = 2026;

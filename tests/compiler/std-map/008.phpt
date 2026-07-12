@@ -3,8 +3,8 @@ std map: same type copy
 --FILE--
 <?php
 function main() {
-    $a = std::map(native_types::type_int, native_types::type_int);
-    $b = std::map(native_types::type_int, native_types::type_int);
+    $a = std::map(Type::Int, Type::Int);
+    $b = std::map(Type::Int, Type::Int);
 
     $b[10] = 100;
     $b[20] = 200;

@@ -3,7 +3,7 @@ std vector: assign to PHP array
 --FILE--
 <?php
 function main() {
-    $vector = std::vector(native_types::type_int);
+    $vector = std::vector(Type::Int);
     $vector[] = 10;
     $vector[] = 20;
 

@@ -102,7 +102,7 @@ Swoole AOT 提供 `std` 容器，用来表达“这个容器的结构和元素�
 ```php
 function main(): void
 {
-    $array = std::array(native_types::type_int, 100);
+    $array = std::array(Type::Int, 100);
 
     $array[0] = 123;
     $array[99] = 456;
@@ -125,7 +125,7 @@ function main(): void
 function main(): void
 {
     $matrix = std::array(
-        std::array(native_types::type_int, 4),
+        std::array(Type::Int, 4),
         3
     );
 
@@ -141,8 +141,8 @@ function main(): void
 ```php
 function main(): void
 {
-    $a = std::array(native_types::type_int, 3);
-    $b = std::array(std::array(native_types::type_int, 3), 2);
+    $a = std::array(Type::Int, 3);
+    $b = std::array(std::array(Type::Int, 3), 2);
 
     $b[1][0] = 10;
     $b[1][1] = 20;
@@ -159,7 +159,7 @@ function main(): void
 ```php
 function main(): void
 {
-    $vector = std::vector(native_types::type_int);
+    $vector = std::vector(Type::Int);
 
     $vector[] = 1;
     $vector[] = 2;
@@ -173,7 +173,7 @@ function main(): void
 也可以指定初始长度：
 
 ```php
-$vector = std::vector(native_types::type_float, 1024);
+$vector = std::vector(Type::Float, 1024);
 ```
 
 特点：
@@ -187,8 +187,8 @@ $vector = std::vector(native_types::type_float, 1024);
 同类型 vector 可以 copy：
 
 ```php
-$a = std::vector(native_types::type_int);
-$b = std::vector(native_types::type_int);
+$a = std::vector(Type::Int);
+$b = std::vector(Type::Int);
 
 $b[] = 10;
 $b[] = 20;
@@ -204,8 +204,8 @@ $a = $b; // 允许，类型完全一致，执行容器 copy
 function main(): void
 {
     $map = std::ordered_map(
-        complex_types::type_str,
-        native_types::type_int
+        Type::String,
+        Type::Int
     );
 
     $map["a"] = 1;
@@ -225,7 +225,7 @@ function main(): void
 示例：
 
 ```php
-$map = std::ordered_map(native_types::type_int, native_types::type_float);
+$map = std::ordered_map(Type::Int, Type::Float);
 
 $map[10] = 1.25;
 $map[20] = 3.5;
@@ -234,8 +234,8 @@ $map[20] = 3.5;
 同类型 ordered_map 可以 copy：
 
 ```php
-$a = std::ordered_map(native_types::type_int, native_types::type_int);
-$b = std::ordered_map(native_types::type_int, native_types::type_int);
+$a = std::ordered_map(Type::Int, Type::Int);
+$b = std::ordered_map(Type::Int, Type::Int);
 
 $b[10] = 100;
 $a = $b;
@@ -249,8 +249,8 @@ $a = $b;
 function main(): void
 {
     $map = std::map(
-        native_types::type_int,
-        native_types::type_int
+        Type::Int,
+        Type::Int
     );
 
     $map[100] = 1;
@@ -270,8 +270,8 @@ function main(): void
 同类型 map 可以 copy：
 
 ```php
-$a = std::map(native_types::type_int, native_types::type_int);
-$b = std::map(native_types::type_int, native_types::type_int);
+$a = std::map(Type::Int, Type::Int);
+$b = std::map(Type::Int, Type::Int);
 
 $b[1] = 42;
 $a = $b;
@@ -279,23 +279,18 @@ $a = $b;
 
 ## 支持的元素类型
 
-基础类型：
+类型符号：
 
 ```php
-native_types::type_int
-native_types::type_float
-native_types::type_bool
-```
-
-复杂类型：
-
-```php
-complex_types::type_string
-complex_types::type_str
-complex_types::type_array
-complex_types::type_object
-complex_types::type_any
-complex_types::type_var
+Type::Int
+Type::Float
+Type::Bool
+Type::String
+Type::Array
+Type::Object
+Type::Any
+Type::Stream
+Type::Box
 ```
 
 也可以使用类名作为 value 类型：
@@ -307,7 +302,7 @@ class User
 
 $vector = std::vector(User::class);
 $array = std::array(User::class, 10);
-$map = std::ordered_map(complex_types::type_str, User::class);
+$map = std::ordered_map(Type::String, User::class);
 ```
 
 类类型容器会在写入时检查对象类型，避免错误对象混入。
@@ -319,7 +314,7 @@ $map = std::ordered_map(complex_types::type_str, User::class);
 ```php
 function main(): void
 {
-    $vector = std::vector(native_types::type_int);
+    $vector = std::vector(Type::Int);
     $vector[] = 1;
     $vector[] = 2;
 
@@ -332,8 +327,8 @@ function main(): void
 如果左值本身是同类型 std 容器，则执行容器 copy，而不是转 PHP Array：
 
 ```php
-$a = std::vector(native_types::type_int);
-$b = std::vector(native_types::type_int);
+$a = std::vector(Type::Int);
+$b = std::vector(Type::Int);
 
 $a = $b; // std::vector copy
 ```
@@ -341,8 +336,8 @@ $a = $b; // std::vector copy
 如果类型不同，则不允许 copy：
 
 ```php
-$a = std::vector(native_types::type_int);
-$b = std::vector(native_types::type_float);
+$a = std::vector(Type::Int);
+$b = std::vector(Type::Float);
 
 $a = $b; // 编译失败
 ```
@@ -357,7 +352,7 @@ $a = $b; // 编译失败
 function update(UnsafePtr $ptr): void
 {
     $vector = std::unsafe_cast(
-        std::vector(native_types::type_int),
+        std::vector(Type::Int),
         $ptr
     );
 
@@ -366,7 +361,7 @@ function update(UnsafePtr $ptr): void
 
 function main(): void
 {
-    $vector = std::vector(native_types::type_int, 1);
+    $vector = std::vector(Type::Int, 1);
     update($vector); // 编译器自动转为 UnsafePtr box
 }
 ```
@@ -404,7 +399,7 @@ std 容器则不同。编译器在解析代码时记录容器元信息：
 例如：
 
 ```php
-$vector = std::vector(native_types::type_int);
+$vector = std::vector(Type::Int);
 ```
 
 可以生成类似：
@@ -416,7 +411,7 @@ php::StdVector<php::Int> vector;
 再例如：
 
 ```php
-$array = std::array(std::array(native_types::type_int, 3), 2);
+$array = std::array(std::array(Type::Int, 3), 2);
 ```
 
 可以生成类似：
@@ -506,7 +501,7 @@ function main(int $argc, array $argv): void
     $u = (int)$argv[2];
     echo "u: $u\n";
     $r = rand(0, 10000);
-    $a = std::array(native_types::type_int, 10000);
+    $a = std::array(Type::Int, 10000);
 
     $begin = microtime(true);
     for ($i = 0; $i < 10000; $i++) {

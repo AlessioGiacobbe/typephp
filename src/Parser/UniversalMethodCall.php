@@ -387,6 +387,9 @@ trait UniversalMethodCall
 
     private function extensionReceiverMatchesTarget($receiver, string $target): bool
     {
+        if ($target === '*') {
+            return $receiver->type === Type::VAR;
+        }
         $builtinTargets = [
             Type::VAR, Type::INT, Type::FLOAT, Type::BOOL, Type::STR,
             Type::ARRAY, Type::OBJECT, Type::STREAM, Type::BIGINT,
@@ -478,7 +481,7 @@ trait UniversalMethodCall
      */
     protected function findKeywordExtensionMethod(string $method): ?array
     {
-        return $this->findProviderExtension(Type::VAR, $method);
+        return $this->findProviderExtension('*', $method);
     }
 
     /**

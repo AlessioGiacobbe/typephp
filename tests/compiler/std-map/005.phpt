@@ -4,13 +4,13 @@ std map: unsafe_cast
 <?php
 function std_map_unsafe_ptr_update($source): void
 {
-    $map = $source->toStdMap(native_types::type_int, native_types::type_int);
+    $map = $source->toStdMap(Type::Int, Type::Int);
     var_dump($map[2]);
     $map[3] = 9;
 }
 
 function main() {
-    $map = std::map(native_types::type_int, native_types::type_int);
+    $map = std::map(Type::Int, Type::Int);
     $map[1] = 1;
     $map[2] = 7;
     $map[3] = 3;

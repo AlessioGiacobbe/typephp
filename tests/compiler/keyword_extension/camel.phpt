@@ -6,7 +6,7 @@ Keyword ExtensionProvider method with lowerCamelCase name
 declare(strict_types=1);
 use native_types;
 
-#[ExtensionProvider(complex_types::type_any)]
+#[ExtensionProvider(ExtensionProvider::Keyword)]
 final class KeywordExtensions
 {
     public static function inspectValue(mixed $value, string $prefix): void
@@ -15,11 +15,24 @@ final class KeywordExtensions
     }
 }
 
+#[ExtensionProvider(Type::Any)]
+final class AnyExtensions
+{
+    public static function dynamicType(mixed $value): string
+    {
+        return get_debug_type($value);
+    }
+}
+
 function main(): void
 {
     $value = 42;
     $value->inspectValue('number');
+
+    $dynamic = $value->toAny();
+    echo $dynamic->dynamicType(), "\n";
 }
 ?>
 --EXPECT--
 number:42
+int

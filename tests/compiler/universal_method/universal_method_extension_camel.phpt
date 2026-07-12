@@ -5,7 +5,7 @@ Universal ExtensionProvider methods use their declared names
 
 use native_types;
 
-#[ExtensionProvider(native_types::type_int)]
+#[ExtensionProvider(Type::Int)]
 final class IntExtensions
 {
     public static function toBytes(int $value): string
@@ -14,7 +14,7 @@ final class IntExtensions
     }
 }
 
-#[ExtensionProvider(complex_types::type_array)]
+#[ExtensionProvider(Type::Array)]
 final class ArrayExtensions
 {
     public static function getFirstElement(array $value): mixed

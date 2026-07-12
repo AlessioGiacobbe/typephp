@@ -4,7 +4,7 @@ std bigfloat: vector push_back and read
 <?php
 
 function main() {
-    $v = std::vector(native_types::type_bigfloat);
+    $v = std::vector(Type::BigFloat);
     $v[] = 3.14;
     $v[] = 2.71;
     $v[] = 100;

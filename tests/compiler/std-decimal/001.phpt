@@ -4,7 +4,7 @@ std decimal: vector push_back and read
 <?php
 
 function main() {
-    $v = std::vector(native_types::type_decimal);
+    $v = std::vector(Type::Decimal);
     $v[] = 3.14;
     $v[] = 2.5;
     $v[] = 100;

@@ -5,7 +5,7 @@ Keyword ExtensionProvider method with snake_case name
 declare(strict_types=1);
 use native_types;
 
-#[ExtensionProvider(complex_types::type_any)]
+#[ExtensionProvider(ExtensionProvider::Keyword)]
 final class KeywordExtensions
 {
     public static function var_dump(mixed $var): void

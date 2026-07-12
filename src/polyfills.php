@@ -9,32 +9,36 @@
 #[Attribute(Attribute::TARGET_CLASS)]
 final readonly class ExtensionProvider
 {
+    public const string Keyword = '*';
+
     public function __construct(public string $target)
     {
     }
 }
 
-class native_types
+/**
+ * Public compile-time type symbols shared by extension providers and std containers.
+ * This root class is deliberately distinct from the compiler-internal TypePhp\Type.
+ */
+final class Type
 {
-    public const type_int = 'int';
-    public const type_float = 'float';
-    public const type_bool = 'bool';
-    public const type_bigint = 'bigint';
-    public const type_bigfloat = 'bigfloat';
-    public const type_decimal = 'decimal';
+    public const string Int = 'int';
+    public const string Float = 'float';
+    public const string Bool = 'bool';
+    public const string BigInt = 'bigint';
+    public const string BigFloat = 'bigfloat';
+    public const string Decimal = 'decimal';
+    public const string String = 'string';
+    public const string Array = 'array';
+    public const string Object = 'object';
+    public const string Any = 'any';
+    public const string Stream = 'stream';
+    public const string Box = 'box';
 }
 
-class complex_types
+/** @deprecated Compiler directive retained independently of public type symbols. */
+class native_types
 {
-    public const type_any = 'any';
-    public const type_var = 'any';
-    public const type_variant = 'any';
-    public const type_str = 'string';
-    public const type_string = 'string';
-    public const type_array = 'array';
-    public const type_object = 'object';
-    public const type_stream = 'stream';
-    public const type_box = 'box';
 }
 
 class std
@@ -101,7 +105,13 @@ function any(mixed $var): mixed
     return $var;
 }
 
+/**
+ * @throws Exception
+ */
 function objval(mixed $var, string $className): mixed
 {
+    if (!$var instanceof $className) {
+        throw new \Exception("Invalid object type: " . get_class($var) . " expected " . $className);
+    }
     return $var;
 }

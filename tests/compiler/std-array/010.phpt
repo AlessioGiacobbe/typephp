@@ -3,8 +3,8 @@ std array: nested same type copy
 --FILE--
 <?php
 function main() {
-    $a = std::array(native_types::type_int, 3);
-    $b = std::array(std::array(native_types::type_int, 3), 2);
+    $a = std::array(Type::Int, 3);
+    $b = std::array(std::array(Type::Int, 3), 2);
 
     $b[1][0] = 10;
     $b[1][1] = 20;

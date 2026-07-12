@@ -4,7 +4,7 @@ std stream: vector push_back and use
 <?php
 
 function main() {
-    $v = std::vector(complex_types::type_stream);
+    $v = std::vector(Type::Stream);
     $tmpfile = tempnam(sys_get_temp_dir(), 'aot');
 
     $fp = fopen($tmpfile, 'w+');

@@ -3,7 +3,7 @@ std ordered_map: unset
 --FILE--
 <?php
 function main() {
-    $map = std::ordered_map(complex_types::type_string, native_types::type_int);
+    $map = std::ordered_map(Type::String, Type::Int);
     $map["alpha"] = 10;
     $map["beta"] = 20;
     var_dump($map);

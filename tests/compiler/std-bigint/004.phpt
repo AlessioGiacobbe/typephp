@@ -4,7 +4,7 @@ std bigint: foreach
 <?php
 
 function main() {
-    $v = std::vector(native_types::type_bigint);
+    $v = std::vector(Type::BigInt);
     $v[] = 10;
     $v[] = 20;
     $v[] = 30;

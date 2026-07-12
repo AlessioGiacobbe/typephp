@@ -3,7 +3,7 @@ std vector: 001
 --FILE--
 <?php
 function main() {
-    $vector = std::vector(native_types::type_int);
+    $vector = std::vector(Type::Int);
     $vector[] = 1;
     $vector[] = 2;
     $vector[1] += 40;
@@ -12,7 +12,7 @@ function main() {
     var_dump($vector[1]);
     var_dump(count($vector));
 
-    $floatVector = std::vector(native_types::type_float, 2);
+    $floatVector = std::vector(Type::Float, 2);
     $floatVector[0] = 3.14;
     var_dump($floatVector[0] == 3.14);
     var_dump($floatVector[1] == 0.0);

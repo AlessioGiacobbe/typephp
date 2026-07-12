@@ -469,19 +469,17 @@ trait StdContainerTrait
 
     protected function parseStdNativeType(NodeAbstract $expr, string $owner): string
     {
-        if (!$this->isClassConstFetch($expr)) {
-            $this->fatalError($expr, "{$owner} expects a native_types class constant");
-        }
-        if (!$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name) || strtolower($expr->class->toString()) !== 'native_types') {
+        if (!$this->isClassConstFetch($expr) || !$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)
+            || strcasecmp(ltrim($expr->class->toString(), '\\'), 'Type') !== 0) {
             $this->fatalError($expr, "An incorrect `{$owner}` definition");
         }
-        return match (strtolower($expr->name->name)) {
-            'type_int' => Type::INT,
-            'type_float' => Type::FLOAT,
-            'type_bool' => Type::BOOL,
-            'type_bigint' => Type::BIGINT,
-            'type_bigfloat' => Type::BIGFLOAT,
-            'type_decimal' => Type::DECIMAL,
+        return match ($expr->name->name) {
+            'Int' => Type::INT,
+            'Float' => Type::FLOAT,
+            'Bool' => Type::BOOL,
+            'BigInt' => Type::BIGINT,
+            'BigFloat' => Type::BIGFLOAT,
+            'Decimal' => Type::DECIMAL,
             default => $this->fatalError($expr, "An incorrect `{$owner}` definition"),
         };
     }
@@ -489,24 +487,22 @@ trait StdContainerTrait
     protected function parseStdValueTypeInfo(NodeAbstract $expr, string $owner): array
     {
         if (!$this->isClassConstFetch($expr)) {
-            $this->fatalError($expr, "{$owner} expects a native_types or complex_types class constant");
+            $this->fatalError($expr, "{$owner} expects a Type constant or ClassName::class");
         }
         if (!$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)) {
             $this->fatalError($expr, "An incorrect `{$owner}` definition");
         }
-        $className = strtolower($expr->class->toString());
-        if ($className === 'native_types') {
-            return ['type' => $this->parseStdNativeType($expr, $owner), 'class' => null];
-        }
-        if ($className === 'complex_types') {
+        $className = ltrim($expr->class->toString(), '\\');
+        if (strcasecmp($className, 'Type') === 0) {
             return [
-                'type' => match (strtolower($expr->name->name)) {
-                    'type_str', 'type_string' => Type::STR,
-                    'type_array' => Type::ARRAY,
-                    'type_object' => Type::OBJECT,
-                    'type_any', 'type_var', 'type_variant' => Type::VAR,
-                    'type_stream' => Type::STREAM,
-                    'type_box' => Type::BOX,
+                'type' => match ($expr->name->name) {
+                    'Int', 'Float', 'Bool', 'BigInt', 'BigFloat', 'Decimal' => $this->parseStdNativeType($expr, $owner),
+                    'String' => Type::STR,
+                    'Array' => Type::ARRAY,
+                    'Object' => Type::OBJECT,
+                    'Any' => Type::VAR,
+                    'Stream' => Type::STREAM,
+                    'Box' => Type::BOX,
                     default => $this->fatalError($expr, "An incorrect `{$owner}` definition"),
                 },
                 'class' => null,
@@ -634,17 +630,17 @@ trait StdContainerTrait
     protected function parseStdMapKeyType(NodeAbstract $expr, string $owner): string
     {
         if (!$this->isClassConstFetch($expr) || !$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)) {
-            $this->fatalError($expr, "{$owner} expects a native_types or complex_types class constant");
+            $this->fatalError($expr, "{$owner} expects Type::Int or Type::String");
         }
-        $className = strtolower($expr->class->toString());
-        $constName = strtolower($expr->name->name);
-        if ($className === 'native_types' && $constName === 'type_int') {
+        $className = ltrim($expr->class->toString(), '\\');
+        $constName = $expr->name->name;
+        if (strcasecmp($className, 'Type') === 0 && $constName === 'Int') {
             return Type::INT;
         }
-        if ($className === 'complex_types' && in_array($constName, ['type_string', 'type_str'], true)) {
+        if (strcasecmp($className, 'Type') === 0 && $constName === 'String') {
             return Type::STR;
         }
-        $this->fatalError($expr, "{$owner} key only supports native_types::type_int, complex_types::type_string or complex_types::type_str");
+        $this->fatalError($expr, "{$owner} key only supports Type::Int or Type::String");
     }
 
     protected function getStdMapDecl(string $containerType, string $keyType, string $valueType): string

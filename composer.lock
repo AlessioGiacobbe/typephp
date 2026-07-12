@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "41bca06c5ece84cfb4ed396385b10988",
+    "content-hash": "72caced27fd0c3469dae5d4f4db591d0",
     "packages": [
         {
             "name": "ajaxray/ansikit",
@@ -4876,7 +4876,7 @@
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
-        "php": ">=8.2 <8.6"
+        "php": ">=8.4 <8.6"
     },
     "platform-dev": {},
     "plugin-api-version": "2.9.0"

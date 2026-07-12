@@ -3,8 +3,8 @@ std ordered_map: same type copy
 --FILE--
 <?php
 function main() {
-    $a = std::ordered_map(native_types::type_int, native_types::type_int);
-    $b = std::ordered_map(native_types::type_int, native_types::type_int);
+    $a = std::ordered_map(Type::Int, Type::Int);
+    $b = std::ordered_map(Type::Int, Type::Int);
 
     $b[10] = 100;
     $b[20] = 200;

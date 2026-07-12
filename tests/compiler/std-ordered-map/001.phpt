@@ -3,7 +3,7 @@ std ordered_map: 001
 --FILE--
 <?php
 function main() {
-    $map = std::ordered_map(native_types::type_int, native_types::type_float);
+    $map = std::ordered_map(Type::Int, Type::Float);
     $map[10] = 1.25;
     $map[10] += 0.75;
     $map[11] = 3.5;

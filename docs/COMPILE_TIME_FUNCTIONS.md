@@ -74,7 +74,7 @@
 ## 不计入本文清单的机制
 
 - `$array->any()` 是 universal method，映射到 PHP `array_any()`，不是 `any()` 编译期函数。
-- `native_types::type_*`、`complex_types::type_*` 是编译期类型描述常量，不是函数。
+- `Type::*` 是编译期类型描述常量，不是函数。
 - keyword extension method 是用户自定义扩展方法机制，不属于固定内置编译期函数清单。
 
 ## 实现约束

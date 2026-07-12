@@ -11,7 +11,7 @@ class Foo {
 
 function main()
 {
-    $map = std::map(complex_types::type_str, Foo::class);
+    $map = std::map(Type::String, Foo::class);
     $map["a"] = new Foo("a", 1);
     $map["b"] = new Foo("b", 2);
     var_dump($map);

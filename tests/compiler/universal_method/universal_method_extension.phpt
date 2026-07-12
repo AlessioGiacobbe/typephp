@@ -5,7 +5,7 @@ Universal methods provided by ExtensionProvider classes
 
 use native_types;
 
-#[ExtensionProvider(native_types::type_int)]
+#[ExtensionProvider(Type::Int)]
 final class IntExtensions
 {
     public static function to_bytes(int $int, string $unit = 'Kb'): string
@@ -14,7 +14,7 @@ final class IntExtensions
     }
 }
 
-#[ExtensionProvider(complex_types::type_array)]
+#[ExtensionProvider(Type::Array)]
 final class ArrayExtensions
 {
     public static function get_first_element(array $array): mixed
@@ -23,7 +23,7 @@ final class ArrayExtensions
     }
 }
 
-#[ExtensionProvider(complex_types::type_string)]
+#[ExtensionProvider(Type::String)]
 final class StringExtensions
 {
     public static function shout(string $str): string

@@ -13,7 +13,7 @@ TypePHP is a PHP native compilation project. Its `tpc` command is TypePHP Compil
 
 ## Setup and build commands
 
-The repo expects PHP 8.2+, GCC 9+ with C++17, CMake 3.24+, and a compiled `swoole/phpx` dependency. Install PHP dependencies with:
+The repo expects PHP 8.4+, GCC 9+ with C++17, CMake 3.24+, and a compiled `swoole/phpx` dependency. Install PHP dependencies with:
 
 ```bash
 composer install

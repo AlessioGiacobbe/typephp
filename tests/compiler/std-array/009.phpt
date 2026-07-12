@@ -3,7 +3,7 @@ std array: assign to PHP array
 --FILE--
 <?php
 function main() {
-    $array = std::array(native_types::type_int, 3);
+    $array = std::array(Type::Int, 3);
     $array[0] = 10;
     $array[1] = 20;
     $array[2] = 30;

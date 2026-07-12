@@ -4,7 +4,7 @@ std bigint: vector push_back and read
 <?php
 
 function main() {
-    $v = std::vector(native_types::type_bigint);
+    $v = std::vector(Type::BigInt);
     $v[] = 99;
     $v[] = 88;
     $v[] = 77;

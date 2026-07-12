@@ -28,7 +28,7 @@ function std_container_class_value_mixed(mixed $value): mixed
 }
 
 function main() {
-    $map = std::ordered_map(complex_types::type_str, StdContainerClassValue::class);
+    $map = std::ordered_map(Type::String, StdContainerClassValue::class);
     $map["a"] = new StdContainerClassValue(1);
     $item = $map["a"];
     var_dump($item->getValue());
@@ -41,7 +41,7 @@ function main() {
     $array[0] = new StdContainerClassValue(3);
     var_dump($array[0]->getValue());
 
-    $unordered = std::map(native_types::type_int, StdContainerClassValue::class);
+    $unordered = std::map(Type::Int, StdContainerClassValue::class);
     $unordered[1] = std_container_class_value_mixed(new StdContainerClassValue(4));
     var_dump($unordered[1]->getValue());
 

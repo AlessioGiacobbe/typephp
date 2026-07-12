@@ -635,37 +635,33 @@ class Preprocessor extends CompilerBase
         if ($value instanceof Node\Expr\ClassConstFetch
             && $this->isNameExpr($value->class)
             && $this->isIdExpr($value->name)) {
-            $class = strtolower(ltrim($value->class->toString(), '\\'));
-            $constant = strtolower($value->name->toString());
-            if ($constant === 'class') {
+            $class = ltrim($value->class->toString(), '\\');
+            $constant = $value->name->toString();
+            if (strtolower($constant) === 'class') {
                 return $this->getNamespacedClassName($value->class->toString());
             }
             $targets = [
-                'native_types' => [
-                    'type_int' => Type::INT,
-                    'type_float' => Type::FLOAT,
-                    'type_bool' => Type::BOOL,
-                    'type_bigint' => Type::BIGINT,
-                    'type_bigfloat' => Type::BIGFLOAT,
-                    'type_decimal' => Type::DECIMAL,
-                ],
-                'complex_types' => [
-                    'type_any' => Type::VAR,
-                    'type_var' => Type::VAR,
-                    'type_variant' => Type::VAR,
-                    'type_str' => Type::STR,
-                    'type_string' => Type::STR,
-                    'type_array' => Type::ARRAY,
-                    'type_object' => Type::OBJECT,
-                    'type_stream' => Type::STREAM,
-                    'type_box' => Type::BOX,
-                ],
+                'Int' => Type::INT,
+                'Float' => Type::FLOAT,
+                'Bool' => Type::BOOL,
+                'BigInt' => Type::BIGINT,
+                'BigFloat' => Type::BIGFLOAT,
+                'Decimal' => Type::DECIMAL,
+                'String' => Type::STR,
+                'Array' => Type::ARRAY,
+                'Object' => Type::OBJECT,
+                'Any' => Type::VAR,
+                'Stream' => Type::STREAM,
+                'Box' => Type::BOX,
             ];
-            if (isset($targets[$class][$constant])) {
-                return $targets[$class][$constant];
+            if (strcasecmp($class, 'Type') === 0 && isset($targets[$constant])) {
+                return $targets[$constant];
+            }
+            if (strcasecmp($class, 'ExtensionProvider') === 0 && $constant === 'Keyword') {
+                return '*';
             }
         }
-        $this->fatalError($errorNode, 'ExtensionProvider target must use native_types, complex_types, or ClassName::class');
+        $this->fatalError($errorNode, 'ExtensionProvider target must be Type::*, ExtensionProvider::Keyword, or ClassName::class');
     }
 
     protected function buildLiteralArrayInitPlan(Node\Expr\Array_ $defaultNode): ArrayInitPlan

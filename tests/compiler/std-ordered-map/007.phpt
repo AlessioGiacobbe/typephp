@@ -3,7 +3,7 @@ std ordered_map: assign to PHP array
 --FILE--
 <?php
 function main() {
-    $map = std::ordered_map(native_types::type_int, native_types::type_int);
+    $map = std::ordered_map(Type::Int, Type::Int);
     $map[10] = 100;
     $map[20] = 200;
 

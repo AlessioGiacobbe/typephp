@@ -4,7 +4,7 @@ std vector: foreach
 <?php
 use native_types;
 function main() {
-    $a = std::vector(native_types::type_int);
+    $a = std::vector(Type::Int);
     $n = 5;
     while($n--){
         $a[] = random_int(1, 1000);
