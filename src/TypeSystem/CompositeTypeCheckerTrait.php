@@ -35,7 +35,11 @@ trait CompositeTypeCheckerTrait
         // TYPE_VAR means that the expression is dynamic or its result cannot
         // be represented by the current scalar type system. It must retain the
         // runtime type check.
-        if ($this->detectTypeOfExpr($value) === Type::VAR && !$this->isNullExpr($value)) {
+        // A reference (TYPE_REF) is a Variant reference whose concrete type is
+        // only known at runtime (e.g. an undefined variable auto-created by a
+        // by-reference argument), so it is treated the same way.
+        $valueType = $this->detectTypeOfExpr($value);
+        if (($valueType === Type::VAR || $valueType === Type::REF) && !$this->isNullExpr($value)) {
             return self::COMPOSITE_TYPE_UNKNOWN;
         }
 
