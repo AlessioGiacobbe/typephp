@@ -103,14 +103,14 @@ abstract class PlatformBase
         if (!is_file($phpDir . '/lib/libphp.' . $ext)) {
             $warnings[] = [
                 'warning' => "The `libphp.{$ext}` is not found",
-                'info' => 'Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it',
+                'info' => 'Run tpc.php in an interactive terminal to build it automatically, or set PHP_HOME',
             ];
         }
 
         if (!is_file($phpxDir . '/lib/libphpx.' . $ext)) {
             $warnings[] = [
                 'warning' => "The `libphpx.{$ext}` is not found",
-                'info' => 'Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it',
+                'info' => 'Run tpc.php in an interactive terminal to build it automatically, or set PHPX_HOME',
             ];
         }
 

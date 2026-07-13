@@ -634,6 +634,9 @@ class Preprocessor extends CompilerBase
 
     private function parseExtensionProviderTargetValue(Node\Expr $value, NodeAbstract $errorNode): string
     {
+        if ($value instanceof Node\Scalar\String_ && $value->value === '*') {
+            return '*';
+        }
         if ($value instanceof Node\Expr\ClassConstFetch
             && $this->isNameExpr($value->class)
             && $this->isIdExpr($value->name)) {
@@ -659,11 +662,8 @@ class Preprocessor extends CompilerBase
             if (strcasecmp($class, 'Type') === 0 && isset($targets[$constant])) {
                 return $targets[$constant];
             }
-            if (strcasecmp($class, 'ExtensionProvider') === 0 && $constant === 'Keyword') {
-                return '*';
-            }
         }
-        $this->fatalError($errorNode, 'ExtensionProvider target must be Type::*, ExtensionProvider::Keyword, or ClassName::class');
+        $this->fatalError($errorNode, "ExtensionProvider target must be '*', Type::*, or ClassName::class");
     }
 
     protected function buildLiteralArrayInitPlan(Node\Expr\Array_ $defaultNode): ArrayInitPlan

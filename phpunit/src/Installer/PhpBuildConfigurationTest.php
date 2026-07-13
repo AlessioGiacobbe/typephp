@@ -37,9 +37,22 @@ final class PhpBuildConfigurationTest extends TestCase
         $packages = $manager->packagesForConfigureOptions(['--with-curl', '--enable-mbstring']);
 
         self::assertContains('build-essential', $packages);
+        self::assertContains('cmake', $packages);
         self::assertContains('libcurl4-openssl-dev', $packages);
         self::assertContains('libonig-dev', $packages);
         self::assertNotContains('libzip-dev', $packages);
+    }
+
+    public function testBuildToolPackagesIncludeCompilerMakeAndCmake(): void
+    {
+        self::assertSame(
+            ['build-essential', 'cmake', 'pkg-config'],
+            (new LinuxPackageManager('apt-get'))->packagesForBuildTools()
+        );
+        self::assertSame(
+            ['gcc', 'gcc-c++', 'make', 'cmake', 'pkgconf-pkg-config'],
+            (new LinuxPackageManager('dnf'))->packagesForBuildTools()
+        );
     }
 
     public function testMissingPackagesFiltersInstalledPackages(): void

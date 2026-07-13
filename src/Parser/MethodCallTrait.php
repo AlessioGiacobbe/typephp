@@ -336,7 +336,7 @@ trait MethodCallTrait
                     return $this->parseUniversalMethodCall($expr, $object, $methodName, $anyExtension, $this->isVarExpr($expr->var));
                 }
             }
-            // ExtensionProvider::Keyword extensions apply to every receiver type.
+            // ExtensionProvider('*') extensions apply to every receiver type.
             $kwExt = $this->findKeywordExtensionMethod($methodName);
             if ($kwExt) {
                 return $this->parseUniversalMethodCall($expr, $object, $methodName, $kwExt, $this->isVarExpr($expr->var));

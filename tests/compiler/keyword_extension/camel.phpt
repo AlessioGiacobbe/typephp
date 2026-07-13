@@ -6,7 +6,7 @@ Keyword ExtensionProvider method with lowerCamelCase name
 declare(strict_types=1);
 use native_types;
 
-#[ExtensionProvider(ExtensionProvider::Keyword)]
+#[ExtensionProvider('*')]
 final class KeywordExtensions
 {
     public static function inspectValue(mixed $value, string $prefix): void

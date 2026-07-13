@@ -486,7 +486,18 @@ class CompilerBase implements PropertyAccessContext
             return rtrim($phpxDir, '\/');
         }
 
-        // 尝试使用 Composer 安装的 phpx
+        // Composer-installed TypePHP and PHPX are sibling packages. Ask
+        // Composer for the actual package path instead of assuming a nested
+        // vendor directory inside the TypePHP package.
+        if (class_exists(\Composer\InstalledVersions::class)
+            && \Composer\InstalledVersions::isInstalled('swoole/phpx')) {
+            $composerInstallPath = \Composer\InstalledVersions::getInstallPath('swoole/phpx');
+            if (is_string($composerInstallPath) && is_dir($composerInstallPath)) {
+                return rtrim($composerInstallPath, '\/');
+            }
+        }
+
+        // TypePHP source checkout: phpx is installed below this repository.
         $composerPhpxDir = $this->rootPath . self::PHPX_VENDOR_DIR;
         if (is_dir($composerPhpxDir)) {
             return $composerPhpxDir;

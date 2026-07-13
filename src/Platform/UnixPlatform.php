@@ -88,6 +88,15 @@ abstract class UnixPlatform extends PlatformBase
             return rtrim($phpDir, '\/');
         }
 
+        // Composer executes tpc.php with an already selected PHP binary. Use
+        // that installation before consulting an unrelated php-config from
+        // PATH, which may point at another PHP minor version or ABI.
+        $runningPhp = realpath(PHP_BINARY) ?: PHP_BINARY;
+        $runningPhpDir = dirname(dirname($runningPhp));
+        if (is_executable($runningPhpDir . '/bin/php-config')) {
+            return $runningPhpDir;
+        }
+
         $phpDir = shell_exec('php-config --prefix 2>/dev/null');
         if (!empty($phpDir)) {
             return trim($phpDir);

@@ -27,14 +27,12 @@ final class LibPhpInstaller
             return null;
         }
 
-        $release = $this->latestRelease();
-        $version = $this->console->ask("PHP version [{$release['version']}]: ", $release['version']);
+        $defaultVersion = PHP_VERSION;
+        $version = $this->console->ask("PHP version [{$defaultVersion}]: ", $defaultVersion);
         if (!preg_match('/^8\.[45]\.\d+$/', $version)) {
             throw new \RuntimeException('Only stable PHP 8.4.x and 8.5.x versions are supported by the automatic installer');
         }
-        if ($version !== $release['version']) {
-            $release = $this->release($version);
-        }
+        $release = $this->release($version);
 
         $home = getenv('HOME') ?: (string) ($_SERVER['HOME'] ?? '');
         $defaultPrefix = rtrim($home, '/') . '/.typephp';

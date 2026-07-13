@@ -9,8 +9,6 @@
 #[Attribute(Attribute::TARGET_CLASS)]
 final readonly class ExtensionProvider
 {
-    public const string Keyword = '*';
-
     public function __construct(public string $target)
     {
     }

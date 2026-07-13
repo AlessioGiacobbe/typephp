@@ -29,9 +29,9 @@ final readonly class LinuxPackageManager
         $text = implode(' ', $options);
         $groups = [
             'base' => [
-                'apt-get' => ['build-essential', 'pkg-config', 'autoconf', 'bison', 're2c', 'libxml2-dev', 'libsqlite3-dev'],
-                'dnf' => ['gcc', 'gcc-c++', 'make', 'pkgconf-pkg-config', 'autoconf', 'bison', 're2c', 'libxml2-devel', 'sqlite-devel'],
-                'yum' => ['gcc', 'gcc-c++', 'make', 'pkgconfig', 'autoconf', 'bison', 're2c', 'libxml2-devel', 'sqlite-devel'],
+                'apt-get' => ['autoconf', 'bison', 're2c', 'libxml2-dev', 'libsqlite3-dev'],
+                'dnf' => ['autoconf', 'bison', 're2c', 'libxml2-devel', 'sqlite-devel'],
+                'yum' => ['autoconf', 'bison', 're2c', 'libxml2-devel', 'sqlite-devel'],
             ],
             'curl' => ['needle' => '--with-curl', 'apt-get' => ['libcurl4-openssl-dev'], 'dnf' => ['libcurl-devel'], 'yum' => ['libcurl-devel']],
             'openssl' => ['needle' => '--with-openssl', 'apt-get' => ['libssl-dev'], 'dnf' => ['openssl-devel'], 'yum' => ['openssl-devel']],
@@ -52,7 +52,7 @@ final readonly class LinuxPackageManager
             'gd' => ['needle' => '--enable-gd', 'apt-get' => ['libpng-dev', 'libjpeg-dev', 'libwebp-dev', 'libfreetype6-dev'], 'dnf' => ['libpng-devel', 'libjpeg-turbo-devel', 'libwebp-devel', 'freetype-devel'], 'yum' => ['libpng-devel', 'libjpeg-turbo-devel', 'libwebp-devel', 'freetype-devel']],
         ];
 
-        $packages = $groups['base'][$this->command];
+        $packages = [...$this->packagesForBuildTools(), ...$groups['base'][$this->command]];
         unset($groups['base']);
         foreach ($groups as $group) {
             if (str_contains($text, $group['needle'])) {
@@ -60,6 +60,15 @@ final readonly class LinuxPackageManager
             }
         }
         return array_values(array_unique($packages));
+    }
+
+    public function packagesForBuildTools(): array
+    {
+        return match ($this->command) {
+            'apt-get' => ['build-essential', 'cmake', 'pkg-config'],
+            'dnf' => ['gcc', 'gcc-c++', 'make', 'cmake', 'pkgconf-pkg-config'],
+            'yum' => ['gcc', 'gcc-c++', 'make', 'cmake', 'pkgconfig'],
+        };
     }
 
     public function installCommand(array $packages, bool $useSudo): array

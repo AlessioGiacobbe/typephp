@@ -12,6 +12,7 @@ use TypePhp\Backend\CompilerFactory;
 use TypePhp\Exception\SyntaxError;
 use TypePhp\Exception\Unsupported;
 use TypePhp\Installer\LibPhpInstaller;
+use TypePhp\Installer\LibPhpxInstaller;
 use TypePhp\Platform\Linux;
 
 trait SourcePipelineTrait
@@ -64,9 +65,19 @@ trait SourcePipelineTrait
 
         if ($this->isBuildModeEmbed() && $this->getPlatform() instanceof Linux) {
             try {
-                (new LibPhpInstaller())->ensure($this->getPhpDir());
+                $phpDir = (new LibPhpInstaller())->ensure($this->getPhpDir()) ?? $this->getPhpDir();
             } catch (\Throwable $e) {
                 $this->error('Unable to install libphp.so: ' . $e->getMessage());
+            }
+        } else {
+            $phpDir = $this->getPhpDir();
+        }
+
+        if ($this->getPlatform() instanceof Linux) {
+            try {
+                (new LibPhpxInstaller())->ensure($this->getPhpxDir(), $phpDir);
+            } catch (\Throwable $e) {
+                $this->error('Unable to build libphpx.so: ' . $e->getMessage());
             }
         }
 
