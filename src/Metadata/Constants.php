@@ -109,6 +109,9 @@ class Constants
         'while',
         'xor',
         'xor_eq',
+        'stdin',  // C stdio macros
+        'stdout',
+        'stderr',
         'pipe',
         'errno', // Linux error code
         'this_', // phpx keywords

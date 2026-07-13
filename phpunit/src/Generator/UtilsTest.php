@@ -186,6 +186,13 @@ class UtilsTest extends TestCase
         $this->assertStringStartsWith('_php__var__', $result);
     }
 
+    public function testEscapeVarNameStdioMacros(): void
+    {
+        foreach (['stdin', 'stdout', 'stderr'] as $name) {
+            $this->assertEquals('_php__var__' . $name, $this->invokeMethod('escapeVarName', $name));
+        }
+    }
+
     public function testUnescapeVarName(): void
     {
         $this->assertEquals('foo', $this->invokeMethod('unescapeVarName', '_php__var__foo'));
