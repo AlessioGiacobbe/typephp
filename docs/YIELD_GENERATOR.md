@@ -85,14 +85,15 @@ TypePHP generator 暂不支持以下参数声明：
 
 ### Traversable 边界
 
-`yield from` 和 TypePHP Native 对象 `foreach` 当前通过 `Iterator`/`IteratorAggregate` 接口方法驱动对象，而不是直接使用所有 Zend iterator handlers。
+`yield from` 与 TypePHP Native 对象 `foreach` 使用不同的底层路径。`foreach` 统一通过 PHPX `ForeachIterator` 驱动数组、普通对象和 Zend `Traversable`；`yield from` 仍由 generator 自己完成委托。
 
 这意味着：
 
-- 用户态 `Iterator`、`IteratorAggregate` 和 Zend `Generator` 可以迭代。
+- 用户态 `Iterator`、`IteratorAggregate`、Zend `Generator` 以及扩展提供的内部 `Traversable` 均通过类的 `get_iterator` handler 迭代。
+- 普通对象直接遍历实时 property table，并按当前 TypePHP 类作用域执行 public、protected、private 可见性检查。
+- 不读取 key 的 `foreach ($iterable as $value)` 不会调用 `Iterator::key()`。
 - TypePHP `yield from` 会检测 `IteratorAggregate::getIterator()` 返回自身或形成对象环，并抛出异常。
-- TypePHP Native 对象 `foreach` 的 `IteratorAggregate` 展开路径尚未加入同样的环检测；`getIterator()` 返回自身或形成对象环时可能无限循环，应避免这种实现。
-- 某些扩展提供的内部 `Traversable` 如果既不实现 `Iterator`，也不实现 `IteratorAggregate`，可能无法按 PHP 原生 `foreach` 的方式迭代。
+- TypePHP Native `foreach` 将 `IteratorAggregate` 的展开与环检测交给 Zend iterator handler，行为与当前 PHP 运行时保持一致。
 - 非法 `getIterator()` 返回值的异常类型、消息文本和栈信息可能与 ZendVM 不完全一致。
 
 ### Fiber 可观察差异

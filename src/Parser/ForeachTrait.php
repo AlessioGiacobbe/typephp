@@ -95,14 +95,22 @@ trait ForeachTrait
         if ($node->byRef) {
             if (!$this->hasVar($valueVar)) {
                 $this->addLocalVar($valueVar, Type::REF);
-            } elseif ($this->getVarType($valueVar) !== Type::REF) {
-                $this->fatalError($node, 'Cannot assign value to reference of type');
+            } elseif ($this->getVarType($valueVar) !== Type::REF && $this->getVarType($valueVar) !== Type::VAR) {
+                if ($this->hasLocalVar($valueVar) && !$this->hasArgument($valueVar)) {
+                    // Local declarations are emitted after the body is parsed, so a
+                    // previously optimized scalar can still be promoted to Variant.
+                    $this->context->localVars[$valueVar] = Type::VAR;
+                } else {
+                    $this->fatalError($node, 'Cannot bind foreach reference to native variable of type ' . $this->getVarType($valueVar));
+                }
             }
-            return $this->getIndent() . ' ' . $valueVar . ' = ' . $valueRefExpr . ';' . PHP_EOL;
+            return $this->getIndent() . ' ' . $valueRefExpr . '(' . $valueVar . ');' . PHP_EOL;
         }
 
         if ($this->isVarExpr($node->valueVar)) {
-            $this->checkVar($node, $valueVar);
+            if (!$this->hasVar($valueVar) || $this->getVarType($valueVar) !== Type::REF) {
+                $this->checkVar($node, $valueVar);
+            }
         }
         return $this->getIndent() . ' ' . $valueVar . ' = ' . $valueExpr . ';' . PHP_EOL;
     }
@@ -111,15 +119,18 @@ trait ForeachTrait
     {
         $iterator = $this->genTmpVarName();
         $byRef = $node->byRef ? 'true' : 'false';
-        $code = "php::ForeachIterator $iterator{{$iterableVar}, $byRef};" . PHP_EOL;
-        $code .= "while ($iterator.next()) {" . PHP_EOL;
+        $scope = $this->class ? $this->getClassEntryPtr($this->getFullClassName()) : 'nullptr';
+        $code = '{' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . "php::ForeachIterator $iterator{{$iterableVar}, $byRef, $scope};" . PHP_EOL;
+        $code .= $this->getIndent() . "while ($iterator.next()) {" . PHP_EOL;
         $this->indentLevel++;
 
         $code .= $this->parseForeachKeyAssignment($node, $iterator . '.key()');
         $code .= $this->parseForeachValueAssignment(
             $node,
             $iterator . '.value()',
-            $iterator . '.valueRef()',
+            $iterator . '.assignValueRef',
         );
 
         $body = $this->parseForeachBody($node);
@@ -128,6 +139,8 @@ trait ForeachTrait
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= $body . PHP_EOL;
         $code .= $this->getIndent() . '}';
+        $this->indentLevel--;
+        $code .= PHP_EOL . $this->getIndent() . '}';
 
         return $code;
     }
@@ -141,9 +154,6 @@ trait ForeachTrait
                 if ($type === Type::ARRAY) {
                     return $this->parseForeachIterable($node, $name);
                 } elseif ($type === Type::OBJECT) {
-                    if ($node->byRef) {
-                        $this->fatalError($node, 'Cannot use & with foreach');
-                    }
                     return $this->parseForeachIterable($node, $name);
                 } elseif ($this->isStdContainerType($type)) {
                     return $this->parseForeachStdContainer($node);

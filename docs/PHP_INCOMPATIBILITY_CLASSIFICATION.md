@@ -75,6 +75,7 @@ These items should be documented with the exact boundary.
 | Strict function argument counts | Intentional Rule | Non-variadic functions reject extra arguments. `func_get_args()` does not implicitly make a function variadic. |
 | Reserved keyword methods such as `toArray()` | Intentional Rule | Conversion keywords are resolved before ordinary object methods to keep conversion lowering static and predictable. |
 | Zero-initialized fixed typed property slots | Intentional Rule / Partial | Native fixed-layout slots use their type's zero value instead of preserving every Zend uninitialized-property transition. |
+| Structural mutation of `std` containers during `foreach` | Intentional Rule | Native C++ iterators may be invalidated by append, insertion, erase or whole-container replacement. TypePHP rejects these operations inside the active loop while allowing non-structural element updates. |
 
 ## Implementable but Currently Unsupported
 

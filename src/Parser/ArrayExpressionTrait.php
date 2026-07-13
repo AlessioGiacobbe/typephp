@@ -29,9 +29,13 @@ trait ArrayExpressionTrait
         $hasUnpack = false;
         $hasVarKey = false;
         $hasNextInsert = false;
+        $hasReference = false;
         foreach ($items as $item) {
             if ($item->unpack) {
                 $hasUnpack = true;
+            }
+            if ($item->byRef) {
+                $hasReference = true;
             }
             if ($item->key) {
                 if ($item->key instanceof Node\Scalar\LNumber) {
@@ -48,7 +52,7 @@ trait ArrayExpressionTrait
         }
 
         // 存在混合键，则需要拆分为多行插入
-        if ($hasUnpack or $hasVarKey or ($hasNextInsert && $hasKey) or ($hasIntKey and $hasStrKey)) {
+        if ($hasReference or $hasUnpack or $hasVarKey or ($hasNextInsert && $hasKey) or ($hasIntKey and $hasStrKey)) {
             return $this->parseArrayMixed($node);
         }
 
@@ -211,7 +215,14 @@ trait ArrayExpressionTrait
         $items = $node->items;
         foreach ($items as $item) {
             $this->assertExprCanBeUsedAsValue($item->value, $item->unpack ? 'array unpack value' : 'array value');
-            $value = $this->parseIdentifier($item->value);
+            if ($item->byRef) {
+                if ($item->unpack) {
+                    $this->fatalError($item, 'Cannot unpack references in array literals');
+                }
+                $value = $this->convertToRef($item->value);
+            } else {
+                $value = $this->parseIdentifier($item->value);
+            }
             if ($item->unpack) {
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';
             } elseif ($item->key) {
@@ -226,4 +237,3 @@ trait ArrayExpressionTrait
         return $tmpVar;
     }
 }
-

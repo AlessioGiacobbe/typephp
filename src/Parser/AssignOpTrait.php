@@ -364,6 +364,10 @@ trait AssignOpTrait
             $this->fatalError($right, 'Cannot copy std container with different type');
         }
 
+        if (!$this->isStdArray($leftVar)) {
+            $this->assertStdContainerStructureMutable($right, $leftVar);
+        }
+
         return $leftVar . '_ref = ' . $this->parseStdContainerCopyExpr($right);
     }
 

@@ -196,6 +196,18 @@ $b[] = 20;
 $a = $b; // 允许，类型完全一致，执行容器 copy
 ```
 
+### foreach 中修改元素
+
+遍历 `std::vector`、`std::map` 或 `std::ordered_map` 时，可以更新已经存在的元素值，例如使用 `+=`：
+
+```php
+foreach ($vector as $index => $value) {
+    $vector[$index] += 10;
+}
+```
+
+遍历期间不能执行可能使 C++ iterator 失效的结构修改，包括追加元素、插入或覆盖 key、`unset()` 以及整体替换容器。编译器会直接报告错误。需要改变结构时，先记录待处理的 key，结束 `foreach` 后再统一修改。
+
 ## std::ordered_map
 
 `std::ordered_map` 是有序 key-value 容器。

@@ -20,6 +20,18 @@ use PhpParser\NodeAbstract;
 
 trait StdContainerTrait
 {
+    protected function isStdContainerIterating(string $var): bool
+    {
+        return !empty($this->context->stdContainers[$var]['iterationDepth']);
+    }
+
+    protected function assertStdContainerStructureMutable(NodeAbstract $node, string $var): void
+    {
+        if ($this->isStdContainerIterating($var)) {
+            $this->fatalError($node, "Cannot structurally modify std container `\${$var}` during foreach");
+        }
+    }
+
     protected function isStdContainer(string $var): bool
     {
         return $this->hasLocalVar($var) and $this->isStdContainerType($this->getVarType($var));
@@ -259,17 +271,20 @@ trait StdContainerTrait
         }
 
         $info = $this->getStdContainerInfo($left);
+        $container = $this->parseVariable($left->var);
         if ($info['kind'] === 'vector' && $left->dim === null) {
             if (!$this->isVarExpr($left->var)) {
                 $this->fatalError($left, 'std::vector append only supports a vector variable');
             }
             $vector = $this->parseVariable($left->var);
+            $this->assertStdContainerStructureMutable($left, $vector);
             return $vector . '_ref.push_back(' . $this->convertStdValueExpr($info, $right) . ')';
         }
         if ($left->dim === null) {
             $this->fatalError($left, 'std map expects a key');
         }
 
+        $this->assertStdContainerStructureMutable($left, $container);
         return $this->parseStdContainerOffsetSet($left, $this->convertStdValueExpr($info, $right));
     }
 
@@ -352,8 +367,10 @@ trait StdContainerTrait
     protected function parseForeachStdContainer(Foreach_ $node): string
     {
         $container = $this->parseIdentifier($node->expr);
-        if ($this->isStdMap($container) or $this->isStdOrderedMap($container)) {
-            $this->context->stdContainers[$container]['locking'] = true;
+        $mutableContainer = !$this->isStdArray($container);
+        if ($mutableContainer) {
+            $this->context->stdContainers[$container]['iterationDepth'] =
+                ($this->context->stdContainers[$container]['iterationDepth'] ?? 0) + 1;
         }
         $iterator = $this->genTmpVarName();
         $code = "for (auto $iterator = {$container}_ref.begin(); $iterator != {$container}_ref.end(); ++$iterator) {" . PHP_EOL;
@@ -385,7 +402,13 @@ trait StdContainerTrait
             $code .= $this->getIndent() . "$valueVar = {$iterator}->second;" . PHP_EOL;
         }
 
-        $body = $this->parseForeachBody($node);
+        try {
+            $body = $this->parseForeachBody($node);
+        } finally {
+            if ($mutableContainer) {
+                --$this->context->stdContainers[$container]['iterationDepth'];
+            }
+        }
         $this->indentLevel--;
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
@@ -393,9 +416,6 @@ trait StdContainerTrait
 
         $code .= $this->getIndent() . '}';
         unset($this->context->objects[$valueVar]);
-        if ($this->isStdMap($container) or $this->isStdOrderedMap($container)) {
-            $this->context->stdContainers[$container]['locking'] = false;
-        }
         return $code;
     }
 

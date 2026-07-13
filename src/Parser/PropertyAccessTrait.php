@@ -673,9 +673,8 @@ trait PropertyAccessTrait
                     $this->fatalError($var, 'Cannot use [] for array unset');
                 }
                 $array = $this->parseIdentifier($var->var);
-                if (($this->isStdMap($array) or $this->isStdOrderedMap($array))
-                    and !empty($this->context->stdContainers[$array]['locking'])) {
-                    $this->fatalError($var, 'Cannot delete element in std container in foreach loop');
+                if ($this->isStdVector($array) or $this->isStdMap($array) or $this->isStdOrderedMap($array)) {
+                    $this->assertStdContainerStructureMutable($var, $array);
                 }
                 $dim = $this->parseIdentifier($var->dim);
                 if ($this->isStdContainer($array)) {
