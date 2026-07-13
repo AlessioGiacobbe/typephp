@@ -11,6 +11,8 @@ namespace TypePhp\Build;
 use TypePhp\Backend\CompilerFactory;
 use TypePhp\Exception\SyntaxError;
 use TypePhp\Exception\Unsupported;
+use TypePhp\Installer\LibPhpInstaller;
+use TypePhp\Platform\Linux;
 
 trait SourcePipelineTrait
 {
@@ -59,6 +61,15 @@ trait SourcePipelineTrait
     public function prepare(string $path): array
     {
         $files = $this->getFiles($path);
+
+        if ($this->isBuildModeEmbed() && $this->getPlatform() instanceof Linux) {
+            try {
+                (new LibPhpInstaller())->ensure($this->getPhpDir());
+            } catch (\Throwable $e) {
+                $this->error('Unable to install libphp.so: ' . $e->getMessage());
+            }
+        }
+
         $this->validateCompilerToolchain();
 
         // shell_exec 和 define 已通过 php::fn:: 直接调用，无需动态符号表

@@ -24,6 +24,8 @@ vendor/bin/tpc.php project.yml
 bin/tpc.php project.yml
 ```
 
+Linux 环境缺少 `libphp.so` 时，`tpc.php` 可以交互式下载 PHP 源码并自动构建，详见 [自动构建 libphp.so](docs/LIBPHP_INSTALLER.md)。
+
 ```shell
 # Ubuntu/Debian
 sudo apt install libgmp-dev libmpfr-dev libmpdec-dev

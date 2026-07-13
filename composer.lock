@@ -342,16 +342,16 @@
         },
         {
             "name": "swoole/phpx",
-            "version": "v2.3.9",
+            "version": "v2.3.10",
             "source": {
                 "type": "git",
                 "url": "https://github.com/swoole/phpx.git",
-                "reference": "98f96dead31b36510a4d3323a2d1a1bcfcd07a5e"
+                "reference": "e0f948db951b2d127f7bea644466f72ba2d58d6c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/swoole/phpx/zipball/98f96dead31b36510a4d3323a2d1a1bcfcd07a5e",
-                "reference": "98f96dead31b36510a4d3323a2d1a1bcfcd07a5e",
+                "url": "https://api.github.com/repos/swoole/phpx/zipball/e0f948db951b2d127f7bea644466f72ba2d58d6c",
+                "reference": "e0f948db951b2d127f7bea644466f72ba2d58d6c",
                 "shasum": ""
             },
             "require": {
@@ -381,9 +381,9 @@
             ],
             "support": {
                 "issues": "https://github.com/swoole/phpx/issues",
-                "source": "https://github.com/swoole/phpx/tree/v2.3.9"
+                "source": "https://github.com/swoole/phpx/tree/v2.3.10"
             },
-            "time": "2026-06-23T05:59:31+00:00"
+            "time": "2026-06-26T11:19:07+00:00"
         },
         {
             "name": "symfony/polyfill-ctype",
