@@ -1801,11 +1801,66 @@ class CompilerBase implements PropertyAccessContext
         $this->fatalError($arg, 'Only string literals or `ClassName::class` constant are supported');
     }
 
+    /**
+     * Returns true when the expression is a function/method/static call that
+     * itself returns by reference, so its result can be forwarded directly
+     * from a `return by reference` context. In PHP, `function &f() { return g(); }`
+     * is valid as long as `g()` also returns by reference.
+     */
+    protected function isRefReturningCall(Node $expr): bool
+    {
+        if ($expr instanceof Expr\FuncCall && ($this->isNameExpr($expr->name) || $this->isFullNameExpr($expr->name))) {
+            $name = $this->parseIdentifier($expr->name);
+            $function = $this->findNativeFunction($name);
+            if ($function !== false) {
+                return $this->getFunction($function)->returnsByRef;
+            }
+            $reflection = \TypePhp\Resolver\Reflection::getFunction(ltrim($this->getNamespacedFuncName($name), '\\'));
+            return $reflection !== null && $reflection->isInternal() && $reflection->returnsReference();
+        }
+        if ($expr instanceof Expr\MethodCall && $this->isNamedMethod($expr->name) && $this->isVarExpr($expr->var)) {
+            $object = $this->parseIdentifier($expr->var);
+            $method = $this->parseIdentifier($expr->name);
+            $function = $this->findNativeMethod($expr, $object, $method);
+            if ($function !== false) {
+                return $this->getFunction($function)->returnsByRef;
+            }
+            return false;
+        }
+        if ($expr instanceof Expr\StaticCall && ($this->isNameExpr($expr->class) || $this->isFullNameExpr($expr->class)) && $this->isIdExpr($expr->name)) {
+            $class = $this->parseIdentifier($expr->class);
+            if ($class === 'self') {
+                $class = $this->getFullClassName();
+            } elseif ($class === 'parent') {
+                if (!$this->classDef || !$this->classDef->extends) {
+                    return false;
+                }
+                $class = $this->classDef->extends;
+            } elseif ($class !== 'static') {
+                $class = $this->getNamespacedClassName($class);
+            }
+            if ($class === 'static') {
+                return false;
+            }
+            $method = $this->parseIdentifier($expr->name);
+            $function = $this->getNativeMethod($expr, $class, $method);
+            if ($function !== false) {
+                return $this->getFunction($function)->returnsByRef;
+            }
+            return false;
+        }
+        return false;
+    }
+
     protected function parseReturn(Node\Stmt\Return_ $v): string
     {
         if ($this->functionDef->returnsByRef) {
             if ($v->expr === null) {
                 return 'return ' . Type::REF . '{};';
+            }
+            // Forwarding a call that itself returns by reference is valid PHP.
+            if ($this->isRefReturningCall($v->expr)) {
+                return 'return ' . $this->parseExpr($v->expr) . ';';
             }
             if (!$this->isVarExpr($v->expr)
                 && !$this->isPropertyFetch($v->expr)
