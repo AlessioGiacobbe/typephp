@@ -201,6 +201,36 @@ trait PropertyAccessTrait
         return $objectExpr . '.attrRef(' . $this->identifierToStr($expr->name) . ')';
     }
 
+    /**
+     * Emit a reference (php::Ref) bound to a static property's underlying zval.
+     *
+     * `php::getStaticProperty(ce, offset)` returns a Variant that shares the
+     * static property's zval, so `.toReference()` yields a live reference whose
+     * writes propagate back to the static property.
+     */
+    protected function emitStaticPropertyFetchRef(Expr\StaticPropertyFetch $expr, NodeAbstract $errorNode): string
+    {
+        if ($this->isIdExpr($expr->name)) {
+            $this->resolveNativeStaticPropertyFetch($expr);
+            $this->assertPropertySetVisibility($expr);
+        }
+
+        $resolution = $this->resolveNativeStaticPropertyFetch($expr);
+        if ($resolution !== null) {
+            if ($resolution->class !== null) {
+                $classPtr = $this->getClassEntryPtr($resolution->class);
+                return Symbol::getStaticProperty() . '(' . $classPtr . ', ' . $resolution->expression . ').toReference()';
+            }
+            if ($resolution->expression !== null) {
+                // Dynamic target, e.g. `self` resolved through the called class inside a trait.
+                return $resolution->expression . '.toReference()';
+            }
+        }
+
+        // Fully dynamic path: `static` keyword, dynamic class name, or dynamic property name.
+        return $this->parseDynamicStaticPropertyFetch($expr) . '.toReference()';
+    }
+
 
     protected function resolveNativeStaticPropertyFetch(Expr\StaticPropertyFetch $expr): ?StaticPropertyFetchResolution
     {
