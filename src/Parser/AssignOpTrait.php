@@ -397,15 +397,16 @@ trait AssignOpTrait
         if ($node->var instanceof Expr\PropertyFetch
             && ($setter = $this->getPropertyHookSetter($node->var)) !== null
             && ($getter = $this->getPropertyHookGetter($node->var)) !== null) {
-            $right = $this->parseExprAsValue($node->expr);
             $read = $this->emitPropertyHookGetterCall($node->var, $getter);
             $tmp = $this->genTmpVarName();
             $this->addLocalVar($tmp, Type::VAR);
             $binaryOp = $this->removeAssignOp($op);
             $value = match ($binaryOp) {
-                '.' => 'php::concat(' . $read . ', ' . $right . ')',
-                '**' => 'php::fn::pow(' . $read . ', ' . $right . ')',
-                default => $read . ' ' . $binaryOp . ' (' . $right . ')',
+                '.' => $this->parseFlattenedConcat($node->expr, [
+                    $this->prepareConcatOperand($read, $this->detectTypeOfExpr($node->var)),
+                ]),
+                '**' => 'php::fn::pow(' . $read . ', ' . $this->parseExprAsValue($node->expr) . ')',
+                default => $read . ' ' . $binaryOp . ' (' . $this->parseExprAsValue($node->expr) . ')',
             };
             $call = $this->emitPropertyHookSetterCall($node->var, $setter, new Expr\Variable($tmp));
             return '((' . $tmp . ' = ' . $value . ', ' . $call . '), ' . $tmp . ')';
@@ -417,7 +418,7 @@ trait AssignOpTrait
         }
 
         $var          = $this->parseWritableIdentifier($node->var);
-        $expr         = $this->parseIdentifier($node->expr);
+        $expr         = $this->isAssignOpConcat($op) ? '' : (string) $this->parseIdentifier($node->expr);
 
         if ($this->isVarExpr($node->var)) {
             if (!$this->hasVar($var)) {
@@ -439,7 +440,9 @@ trait AssignOpTrait
                 if ($this->isArrayVar($node->var)) {
                     $this->fatalError($node->var, 'Cannot concat string to array');
                 }
-                return $var . ' = php::concat(' . $var . ', ' . $rightExprStr . ')';
+                return $var . ' = ' . $this->parseFlattenedConcat($node->expr, [
+                    $this->prepareConcatOperand($var, $type),
+                ]);
             }
             if ($this->isAssignOpPow($op)) {
                 $powExpr = 'php::fn::pow(' . $var . ', ' . $rightExprStr . ')';
@@ -467,9 +470,10 @@ trait AssignOpTrait
             $binaryOp = $this->removeAssignOp($op);
 
             if ($binaryOp === '.') {
-                $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat(" .
-                    $this->convertVarType($tmpVar, $readVar) . ', ' .
-                    $this->convertExprType($expr, $type, $rightType) . ');';
+                $this->context->beforeStmtLines[] = "{$tmpVar} = " .
+                    $this->parseFlattenedConcat($node->expr, [
+                        $this->prepareConcatOperand($this->convertVarType($tmpVar, $readVar), $type),
+                    ]) . ';';
             } elseif ($type === Type::BIGINT || $type === Type::DECIMAL || $type === Type::BIGFLOAT) {
                 $bigAssign = $this->parseBigAssignOpExpr($readVar, $type, $expr, $rightType, $binaryOp, $node->var, $node->expr);
                 $this->context->beforeStmtLines[] = "{$tmpVar} = {$bigAssign};";
@@ -495,7 +499,10 @@ trait AssignOpTrait
             $this->addLocalVar($tmpVar, Type::VAR);
             $readProperty = $this->emitDynamicPropertyFetchRead($node->var, $propertyWriteTarget);
             if ($this->isAssignOpConcat($op)) {
-                $this->context->beforeStmtLines[] = "{$tmpVar} = php::concat({$readProperty}, {$expr});";
+                $this->context->beforeStmtLines[] = "{$tmpVar} = " .
+                    $this->parseFlattenedConcat($node->expr, [
+                        $this->prepareConcatOperand($readProperty, $this->detectTypeOfExpr($node->var)),
+                    ]) . ';';
             } elseif ($this->isAssignOpPow($op)) {
                 $this->context->beforeStmtLines[] = "{$tmpVar} = php::fn::pow({$readProperty}, {$expr});";
             } else {
@@ -506,7 +513,12 @@ trait AssignOpTrait
         }
 
         if ($this->isAssignOpConcat($op)) {
-            return $var . '.append(' . $expr . ')';
+            $items = [];
+            $this->flattenConcatExpr($node->expr, $items);
+            if (count($items) === 1) {
+                return $var . '.append(' . $this->parseExprAsValue($node->expr) . ')';
+            }
+            return $var . ' = php::toString(' . $this->parseFlattenedConcat($node->expr, [$var]) . ')';
         }
         return $var . ' ' . $op . ' (' . $expr . ')';
     }

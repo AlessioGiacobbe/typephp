@@ -126,17 +126,44 @@ trait ForeachTrait
         return $code;
     }
 
+    protected function parseForeachIterable(Foreach_ $node, string $iterableVar): string
+    {
+        $iterator = $this->genTmpVarName();
+        $byRef = $node->byRef ? 'true' : 'false';
+        $code = "php::ForeachIterator $iterator{{$iterableVar}, $byRef};" . PHP_EOL;
+        $code .= "while ($iterator.next()) {" . PHP_EOL;
+        $this->indentLevel++;
+
+        $code .= $this->parseForeachKeyAssignment($node, $iterator . '.key()');
+        $code .= $this->parseForeachValueAssignment(
+            $node,
+            $iterator . '.value()',
+            $iterator . '.valueRef()',
+        );
+
+        $body = $this->parseForeachBody($node);
+        $this->indentLevel--;
+
+        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
+        $code .= $body . PHP_EOL;
+        $code .= $this->getIndent() . '}';
+
+        return $code;
+    }
+
     protected function parseForeach(Foreach_ $node): string
     {
         if ($this->isVarExpr($node->expr)) {
             $name = $this->parseIdentifier($node->expr);
             if ($this->hasVar($name)) {
                 $type = $this->getVarType($name);
-                if ($type === Type::OBJECT) {
+                if ($type === Type::ARRAY) {
+                    return $this->parseForeachArray($node, $name);
+                } elseif ($type === Type::OBJECT) {
                     if ($node->byRef) {
                         $this->fatalError($node, 'Cannot use & with foreach');
                     }
-                    return $this->parseForeachObject($node);
+                    return $this->parseForeachIterable($node, $name);
                 } elseif ($this->isStdContainerType($type)) {
                     return $this->parseForeachStdContainer($node);
                 }
@@ -148,32 +175,10 @@ trait ForeachTrait
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
 
         $iterableVar = $this->genTmpVarName();
-        $arrayVar = $this->genTmpVarName();
-        $objectVar = $this->genTmpVarName();
         $this->addLocalVar($iterableVar, Type::VAR);
-        $this->addLocalVar($arrayVar, Type::ARRAY);
-        $this->addLocalVar($objectVar, Type::OBJECT);
 
         $code .= $iterableVar . ' = ' . $expr . ';' . PHP_EOL;
-        $code .= 'if (' . $iterableVar . '.isArray()) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $arrayVar . ' = ' . $iterableVar . ';' . PHP_EOL;
-        $code .= $this->parseForeachArray($node, $arrayVar) . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '} else if (' . $iterableVar . '.isObject()) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $objectVar . ' = ' . $iterableVar . ';' . PHP_EOL;
-        if ($node->byRef) {
-            $code .= $this->getIndent() . 'php::throwException(zend_ce_error, "Cannot use & with foreach");' . PHP_EOL;
-        } else {
-            $code .= $this->parseForeachObject($node, $objectVar);
-        }
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '} else {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . 'php::throwException(zend_ce_type_error, "foreach() argument must be of type array|object");' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}';
+        $code .= $this->parseForeachIterable($node, $iterableVar);
 
         return $code;
     }
@@ -184,4 +189,3 @@ trait ForeachTrait
      * 某些情况下高性能计算，可能需要使用原生类型，使用 $a = std::int(0) 来显式地使用原生类型
      */
 }
-

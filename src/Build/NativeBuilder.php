@@ -76,15 +76,26 @@ final readonly class NativeBuilder
         Closure $succeeded,
         ?Closure $completed = null,
     ): array {
-        $queue = array_values($sources);
+        // Keep most workers on the largest translation units to reduce the
+        // parallel tail, but reserve one fast lane for small files so progress
+        // remains visible while the expensive units are still compiling.
+        $queue = SourceCompileQueue::largestFirst($sources);
         $running = [];
         $objects = [];
         $failures = [];
         $completedCount = 0;
+        $largeTaskCount = 0;
+        $largeLaneLimit = max(1, $jobs - 1);
 
         while ($queue !== [] || $running !== []) {
             while (count($running) < $jobs && $queue !== []) {
-                $source = array_shift($queue);
+                if ($largeTaskCount < $largeLaneLimit) {
+                    $source = array_shift($queue);
+                    $lane = 'large';
+                } else {
+                    $source = array_pop($queue);
+                    $lane = 'small';
+                }
                 $object = $objectFile($source);
                 $pid = $fork();
                 if ($pid === -1) {
@@ -101,7 +112,10 @@ final readonly class NativeBuilder
                         exit(1);
                     }
                 }
-                $running[$pid] = ['source' => $source, 'object' => $object];
+                $running[$pid] = ['source' => $source, 'object' => $object, 'lane' => $lane];
+                if ($lane === 'large') {
+                    $largeTaskCount++;
+                }
             }
             if ($running === []) {
                 break;
@@ -111,6 +125,9 @@ final readonly class NativeBuilder
             unset($running[$pid]);
             if ($task === null) {
                 continue;
+            }
+            if ($task['lane'] === 'large') {
+                $largeTaskCount--;
             }
             $success = $succeeded($status);
             if ($success) {

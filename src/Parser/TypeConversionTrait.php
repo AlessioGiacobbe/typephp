@@ -17,6 +17,9 @@ trait TypeConversionTrait
 {
     protected function convertExprToStringByType(string $expr, $type): string
     {
+        if ($type === Type::STR) {
+            return $expr;
+        }
         if ($type === Type::BIGINT) {
             return 'php::BigInt::toString(' . $expr . ')';
         }
@@ -108,6 +111,9 @@ trait TypeConversionTrait
 
     protected function convertStringExpr(string $expr): string
     {
+        if (preg_match('/^_literal_strings\[\d+\]$/', $expr) === 1) {
+            return $expr;
+        }
         if (!$this->isClosedExpr($expr, 'php::toString')) {
             return 'php::toString(' . $expr . ')';
         }

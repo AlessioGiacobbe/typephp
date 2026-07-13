@@ -16,6 +16,7 @@ use TypePhp\Backend\CompilerFactory;
 use TypePhp\Build\FileScanner;
 use TypePhp\Build\NativeCommandOptionsTrait;
 use TypePhp\Build\NativeBuilder;
+use TypePhp\Build\PrecompiledHeaderManager;
 use TypePhp\Build\SourcePipelineTrait;
 use TypePhp\Config\ProjectYamlLoader;
 use TypePhp\Build\ResourceCompilationTrait;
@@ -39,7 +40,6 @@ use TypePhp\Resolver\ClassConstantValueTrait;
 use TypePhp\Transform\Visitor;
 use PhpParser\Modifiers;
 use PhpParser\Node;
-use PhpParser\Node\Stmt\Foreach_;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
 
@@ -1219,6 +1219,8 @@ CODE;
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/ps_title.c';
         }
 
+        $this->preparePhpXPrecompiledHeader();
+
         // Windows 平台：编译资源文件（图标、版本信息等）
         $this->compileResourceFile();
 
@@ -1228,6 +1230,46 @@ CODE;
 
         // Unix/Linux/macOS 使用 pcntl 并行编译
         return $this->compileWithPcntl($sourceFiles, $job);
+    }
+
+    protected function preparePhpXPrecompiledHeader(): void
+    {
+        $backend = $this->getCompilerBackend();
+        if (!$backend->supportsPrecompiledHeaders()) {
+            return;
+        }
+
+        $phpxDir = $this->getPhpxDir();
+        $phpDir = $this->getPhpDir();
+        $dependencies = [
+            $phpxDir . '/include',
+            $phpxDir . '/src/misc',
+            $phpxDir . '/thirdparty/mpdecimal/libmpdec',
+            $phpxDir . '/thirdparty/mpdecimal/libmpdec++',
+            $phpDir . '/include',
+        ];
+
+        try {
+            $result = (new PrecompiledHeaderManager($backend, $this->getNativeBuilder()))->prepare(
+                $this->globalHeaders,
+                $dependencies,
+                $this->getBuildDir() . '/cache/pch',
+                $this->getCompileCommandOptions(),
+            );
+            $this->precompiledHeader = [
+                'header' => $result['header'],
+                'artifact' => $result['artifact'],
+            ];
+            $displayArtifact = $this->getRelativePath($result['artifact']);
+            $this->climate->darkGray($result['cached']
+                ? '[pch] cache: ' . $displayArtifact
+                : '[pch] built: ' . $displayArtifact);
+        } catch (\Throwable $e) {
+            // PCH is an optimization. A compiler-specific failure must not make
+            // an otherwise valid TypePHP project unbuildable.
+            $this->precompiledHeader = null;
+            $this->climate->warning('[pch] disabled: ' . $e->getMessage());
+        }
     }
 
     protected function compileSourceFile(array $sourceFiles): array
@@ -1358,7 +1400,9 @@ CODE;
                     $this->climate->red("Compilation failed: {$source} ({$this->getCompileChildFailureReason($status)})");
                 }
                 if ($this->noProgress) {
-                    $percent = (int) ($completed / $totalFiles * 100);
+                    $percent = $completed >= $totalFiles
+                        ? 100
+                        : min(99, (int) ceil($completed / $totalFiles * 100));
                     $shortSource = $this->removeCommonPrefix($this->buildDir, $source);
                     $this->climate->white("[{$completed}/{$totalFiles}] {$percent}% {$shortSource}");
                 } else {
@@ -3571,82 +3615,6 @@ CODE;
             $existing->class === $incoming->class &&
             $existing->nullable === $incoming->nullable &&
             $existing->default === $incoming->default;
-    }
-
-    protected function parseForeachObject(Foreach_ $node, ?string $objectExpr = null): string
-    {
-        $obj = $objectExpr ?? $this->parseIdentifier($node->expr);
-        $iterableVar = $this->genTmpVarName();
-        $this->addLocalVar($iterableVar, Type::VAR);
-
-        $iteratorObj = $this->genTmpVarName();
-        $this->addLocalVar($iteratorObj, Type::OBJECT);
-
-        $aggregateObj = $this->genTmpVarName();
-        $this->addLocalVar($aggregateObj, Type::OBJECT);
-
-        $tmpArrayVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpArrayVar, Type::ARRAY);
-
-        $IteratorAggregateCe = $this->getClassEntryPtr('IteratorAggregate');
-        $IteratorCe = $this->getClassEntryPtr('Iterator');
-        $getIteratorStr = $this->getLiteralString('getIterator');
-        $validStr = $this->getLiteralString('valid');
-        $currentStr = $this->getLiteralString('current');
-        $keyStr = $this->getLiteralString('key');
-        $nextStr = $this->getLiteralString('next');
-        $rewindStr = $this->getLiteralString('rewind');
-        $invalidAggregateReturn = static function (string $aggregateObj): string {
-            return 'php::throwExceptionEx(zend_ce_exception, 0, '
-                . '"Objects returned by %s::getIterator() must be traversable or implement interface Iterator", '
-                . $aggregateObj . '.getClassName().toCString());';
-        };
-
-        $code = $iterableVar . ' = ' . $obj . ';' . PHP_EOL;
-        $code .= $iteratorObj . ' = ' . $iterableVar . ';' . PHP_EOL;
-        $code .= 'if (' . $iteratorObj . '.instanceOf(' . $IteratorAggregateCe . ')) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . 'do {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $aggregateObj . ' = ' . $iteratorObj . ';' . PHP_EOL;
-        $code .= $this->getIndent() . $iterableVar . ' = ' . $aggregateObj . '.call(' . $getIteratorStr . ');' . PHP_EOL;
-        $code .= $this->getIndent() . 'if (UNEXPECTED(!' . $iterableVar . '.isObject())) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $invalidAggregateReturn($aggregateObj) . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-        $code .= $this->getIndent() . $iteratorObj . ' = ' . $iterableVar . ';' . PHP_EOL;
-        $code .= $this->getIndent() . 'if (UNEXPECTED(!' . $iteratorObj . '.instanceOf(' . $IteratorCe . ') && !' . $iteratorObj . '.instanceOf(' . $IteratorAggregateCe . '))) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $invalidAggregateReturn($aggregateObj) . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '} while (' . $iteratorObj . '.instanceOf(' . $IteratorAggregateCe . '));' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        $code .= 'if (' . $iteratorObj . '.instanceOf(' . $IteratorCe . ')) {' . PHP_EOL;
-
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $iteratorObj . '.call(' . $rewindStr . ');' . PHP_EOL;
-        $code .= $this->getIndent() . 'for (;' . $iteratorObj . '.call(' . $validStr . ');  ' . $iteratorObj . '.call(' . $nextStr . ')) {' . PHP_EOL;
-        $this->indentLevel++;
-
-        $code .= $this->parseForeachKeyAssignment($node, $iteratorObj . '.call(' . $keyStr . ')');
-        $code .= $this->parseForeachValueAssignment($node, $iteratorObj . '.call(' . $currentStr . ')');
-        $code .= $this->parseForeachBody($node);
-        $code .= '}' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '} else {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . $tmpArrayVar . ' = php::call(' . $this->getFuncPtr('get_object_vars') . ', {' . $obj . '});' . PHP_EOL;
-        $code .= $this->parseForeachArray($node, $tmpArrayVar);
-        $this->indentLevel--;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        return $code;
     }
 
     private function getRegisterClassFunctionArgDef(ClassDef|InterfaceDef $classDef): string

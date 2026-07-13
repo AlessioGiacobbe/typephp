@@ -26,6 +26,16 @@ abstract class GccLikeBackend extends CompilerBackend
         return $this->compilerCommand;
     }
 
+    public function supportsPrecompiledHeaders(): bool
+    {
+        return true;
+    }
+
+    public function getPrecompiledHeaderArtifact(string $headerFile): string
+    {
+        return $headerFile . '.gch';
+    }
+
     // ──── 钩子方法（子类覆盖点） ────
 
     /** 编译器特定的前缀标志（如 MSVC 兼容模式） */
@@ -113,7 +123,17 @@ abstract class GccLikeBackend extends CompilerBackend
             $cmd .= ' -flto';
         }
 
+        if ($includeCppStd && !empty($config['precompiled_header'])) {
+            $cmd .= $this->formatPrecompiledHeaderFlag($config['precompiled_header']);
+        }
+
         return $cmd;
+    }
+
+    /** @param array{header: string, artifact: string} $precompiledHeader */
+    protected function formatPrecompiledHeaderFlag(array $precompiledHeader): string
+    {
+        return ' -include ' . escapeshellarg($precompiledHeader['header']);
     }
 
     /** 获取平台特定的链接选项 */

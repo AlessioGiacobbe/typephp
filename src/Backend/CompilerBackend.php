@@ -40,6 +40,16 @@ abstract class CompilerBackend
      */
     abstract public function getLinkerCommand(): string;
 
+    public function supportsPrecompiledHeaders(): bool
+    {
+        return false;
+    }
+
+    public function getPrecompiledHeaderArtifact(string $headerFile): string
+    {
+        throw new \LogicException($this->getName() . ' does not support precompiled headers');
+    }
+
     /**
      * 编译单个文件
      */

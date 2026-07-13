@@ -255,19 +255,37 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpConcat(Expr\BinaryOp\Concat $expr): string
     {
+        return $this->parseFlattenedConcat($expr);
+    }
+
+    protected function parseFlattenedConcat(NodeAbstract $expr, array $prefixExpressions = []): string
+    {
         $items = [];
         $this->flattenConcatExpr($expr, $items);
 
-        $argList = [];
+        $argList = $prefixExpressions;
         foreach ($items as $item) {
             $type = $this->detectTypeOfExpr($item);
-            $argList[] = $this->convertExprToStringByType($this->parseExprAsValue($item), $type);
+            $parsed = $this->parseExprAsValue($item);
+            $argList[] = $this->prepareConcatOperand($parsed, $type);
         }
 
-        return Symbol::concat() . '(' . Symbol::argList() . '{' . implode(', ', $argList) . '})';
+        return Symbol::concat() . '({' . implode(', ', $argList) . '})';
     }
 
-    private function flattenConcatExpr(NodeAbstract $expr, array &$items): void
+    protected function prepareConcatOperand(string $expr, string $type): string
+    {
+        if (in_array($type, [Type::STR, Type::INT, Type::FLOAT, Type::BOOL], true)) {
+            return $expr;
+        }
+
+        // Keep conversions of objects/arrays/any values at their original
+        // operand position. Moving them into concat() would evaluate all later
+        // operands before __toString() or a conversion error is triggered.
+        return $this->convertExprToStringByType($expr, $type);
+    }
+
+    protected function flattenConcatExpr(NodeAbstract $expr, array &$items): void
     {
         if ($expr instanceof Expr\BinaryOp\Concat) {
             $this->flattenConcatExpr($expr->left, $items);

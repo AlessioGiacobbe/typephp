@@ -85,6 +85,16 @@ class Clang extends GccLikeBackend
         return '-fsanitize=' . $sanitizer;
     }
 
+    public function getPrecompiledHeaderArtifact(string $headerFile): string
+    {
+        return dirname($headerFile) . DIRECTORY_SEPARATOR . pathinfo($headerFile, PATHINFO_FILENAME) . '.pch';
+    }
+
+    protected function formatPrecompiledHeaderFlag(array $precompiledHeader): string
+    {
+        return ' -include-pch ' . escapeshellarg($precompiledHeader['artifact']);
+    }
+
     protected function getPICFlag(array $config): string
     {
         if ($this->platform instanceof Windows) {

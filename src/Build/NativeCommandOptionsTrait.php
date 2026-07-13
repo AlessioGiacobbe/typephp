@@ -12,6 +12,9 @@ use TypePhp\Metadata\Constants;
 
 trait NativeCommandOptionsTrait
 {
+    /** @var null|array{header: string, artifact: string} */
+    protected ?array $precompiledHeader = null;
+
     protected function getCommonCompileCommandOptions(): CompileOptions
     {
         $includePaths = $this->getIncludePaths();
@@ -43,10 +46,16 @@ trait NativeCommandOptionsTrait
     protected function getCompileCommandOptions(): CompileOptions
     {
         $options = $this->getCommonCompileCommandOptions();
-        return $options
+        $options = $options
             ->with('cpp_std', $this->cxxStd)
             ->with('cxxflags', $this->cxxFlags)
             ->with('suppressed_warnings', Constants::MSVC_SUPPRESSED_WARNINGS ?? []);
+
+        if ($this->precompiledHeader !== null) {
+            $options = $options->with('precompiled_header', $this->precompiledHeader);
+        }
+
+        return $options;
     }
 
     protected function getCCompileCommandOptions(): CompileOptions
