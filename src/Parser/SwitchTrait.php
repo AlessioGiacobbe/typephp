@@ -24,9 +24,9 @@ trait SwitchTrait
         }
         [$condExpr, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($cond);
         $var_def = '';
-        $this->appendCapturedStmtLines($var_def, $condBeforeStmts);
+        $var_def .= $this->formatCapturedStmtLines($condBeforeStmts);
         $var_def .= $type . ' ' . $tmp_var . ' = ' . $condExpr . ';' . PHP_EOL;
-        $this->appendCapturedStmtLines($var_def, $condAfterStmts);
+        $var_def .= $this->formatCapturedStmtLines($condAfterStmts);
 
         // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
         $localVars = $this->context->localVars;
@@ -118,11 +118,11 @@ trait SwitchTrait
                     $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $caseAfterStmtCount);
 
                     $code .= $this->getIndent() . 'if (!' . $switchMatched . ' && !' . $groupMatched . ') {' . PHP_EOL;
-                    $this->appendCapturedStmtLines($code, $caseBeforeStmts);
+                    $code .= $this->formatCapturedStmtLines($caseBeforeStmts);
                     if ($caseAfterStmts) {
                         $caseTmpVar = $this->addTmpVar(Type::VAR);
                         $code .= $this->getIndent() . $caseTmpVar . ' = ' . $caseCondExpr . ';' . PHP_EOL;
-                        $this->appendCapturedStmtLines($code, $caseAfterStmts);
+                        $code .= $this->formatCapturedStmtLines($caseAfterStmts);
                         $caseCondExpr = $caseTmpVar;
                     }
                     $code .= $this->getIndent() . $groupMatched . ' = php::equals(' . $tmp_var . ', ' . $caseCondExpr . ');' . PHP_EOL;
@@ -163,4 +163,3 @@ trait SwitchTrait
     }
 
 }
-

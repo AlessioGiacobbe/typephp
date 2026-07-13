@@ -31,7 +31,7 @@ use PhpParser\NodeTraverser;
 
 class Preprocessor extends CompilerBase
 {
-    public function sortFiles(array &$list): void
+    protected function getSortedFiles(array $list): array
     {
         $sorter = new StringSort();
         $fileDeps = [];
@@ -61,9 +61,8 @@ class Preprocessor extends CompilerBase
             }
         }
 
-        $list = $sortedFiles;
-
-        $this->climate->lightBlue('prepare completed: ' . count($list) . ' source files in total');
+        $this->climate->lightBlue('prepare completed: ' . count($sortedFiles) . ' source files in total');
+        return $sortedFiles;
     }
 
     protected function genArgumentDeclaration(ArgInfo $argInfo): string
@@ -269,8 +268,7 @@ class Preprocessor extends CompilerBase
         if ($param->byRef) {
             return Type::REF;
         }
-        $class = '';
-        $type = $this->parseTypeDecl($param->type, self::DECL_TYPE_OF_PARAM, $class);
+        [$type, $class] = $this->resolveTypeDecl($param->type, self::DECL_TYPE_OF_PARAM);
         $argInfo->undeclared = $param->type === null;
         if (
             $param->type !== null
@@ -434,8 +432,7 @@ class Preprocessor extends CompilerBase
         }
 
         $fnName = $this->parseIdentifier($v->name);
-        $class = '';
-        $returnType = $this->parseTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN, $class);
+        [$returnType, $class] = $this->resolveTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
         // 构造、析构、克隆方法不能有返回值
         if ($this->method and in_array($this->method, ['__construct', '__destruct', '__clone'])) {
             $returnType = Type::VOID;
@@ -587,13 +584,18 @@ class Preprocessor extends CompilerBase
             }
         }
 
-        // 将 trait 方法参数中的类名升级为 FullyQualified，避免 gen_stub 时上下文丢失
+        // Trait members are later injected into the consuming class for stub
+        // generation. Fully qualify every declared class type while the
+        // trait's own namespace/import context is still active.
         if ($class instanceof Node\Stmt\Trait_) {
             foreach ($class->stmts as $v) {
                 if ($v instanceof Node\Stmt\ClassMethod) {
+                    $v->returnType = $this->upgradeToFullyQualifiedName($v->returnType);
                     foreach ($v->params as $param) {
                         $param->type = $this->upgradeToFullyQualifiedName($param->type);
                     }
+                } elseif ($v instanceof Node\Stmt\Property || $v instanceof Node\Stmt\ClassConst) {
+                    $v->type = $this->upgradeToFullyQualifiedName($v->type);
                 }
             }
         }
@@ -702,9 +704,9 @@ class Preprocessor extends CompilerBase
     {
         $this->resetFunction();
         $flags = $this->parseModifiers($v->flags);
-        $class = '';
-
-        $declaredType = $v->type ? $this->parseTypeDecl($v->type, self::DECL_TYPE_OF_CONST, $class) : null;
+        [$declaredType, $class] = $v->type
+            ? $this->resolveTypeDecl($v->type, self::DECL_TYPE_OF_CONST)
+            : [null, ''];
 
         foreach ($v->consts as $const) {
             $type = $declaredType;
@@ -752,8 +754,7 @@ class Preprocessor extends CompilerBase
     protected function addClassProperty(string $name, int $flags, ?NodeAbstract $typeNode, $defaultNode, bool $nullable, NodeAbstract $errorNode, bool $promoted = false): PropertyDef
     {
         $flags = $this->parseModifiers($flags);
-        $class = '';
-        $type = $this->parseTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY, $class);
+        [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);
 
         $default = null;
         $arrayInitPlan = null;
@@ -927,14 +928,16 @@ class Preprocessor extends CompilerBase
                     if ($this->interfaceDef->hasConstant($constName)) {
                         $this->fatalError($stmt, "Duplicate constant `{$constName}`");
                     }
-                    $class = '';
-                    $type = $stmt->type
-                        ? $this->parseTypeDecl($stmt->type, self::DECL_TYPE_OF_CONST, $class)
-                        : match ($const->value->getType()) {
+                    if ($stmt->type) {
+                        [$type, $class] = $this->resolveTypeDecl($stmt->type, self::DECL_TYPE_OF_CONST);
+                    } else {
+                        $class = '';
+                        $type = match ($const->value->getType()) {
                             'Expr_Array' => Type::ARRAY,
                             'Scalar_String' => Type::STR,
                             default => Type::VAR,
                         };
+                    }
                     $constInfo = $this->parseClassLikeConstant($const, $this->parseModifiers($stmt->flags), $type, $class);
                     $this->interfaceDef->constants[$constName] = $constInfo;
                 }

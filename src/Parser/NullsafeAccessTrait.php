@@ -109,7 +109,7 @@ trait NullsafeAccessTrait
         return "{$tmpFn}()";
     }
 
-    private function containsNullsafeChain(NodeAbstract $expr): bool
+    protected function containsNullsafeChain(NodeAbstract $expr): bool
     {
         while ($expr instanceof Expr\PropertyFetch
             || $expr instanceof Expr\MethodCall
@@ -161,4 +161,3 @@ trait NullsafeAccessTrait
     }
 
 }
-

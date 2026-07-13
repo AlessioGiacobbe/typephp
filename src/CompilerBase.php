@@ -1434,13 +1434,6 @@ class CompilerBase implements PropertyAccessContext
         throw new \LogicException('Parsed expression must be stringable');
     }
 
-    protected function appendCapturedStmtLines(string &$code, array $stmts): void
-    {
-        if ($stmts) {
-            $code .= $this->formatCapturedStmtLines($stmts);
-        }
-    }
-
     protected function formatCapturedStmtLines(array $stmts): string
     {
         if (!$stmts) {
@@ -1454,11 +1447,11 @@ class CompilerBase implements PropertyAccessContext
         $this->assertExprCanBeUsedAsCondition($cond);
         [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($cond);
         $code = '';
-        $this->appendCapturedStmtLines($code, $beforeStmts);
+        $code .= $this->formatCapturedStmtLines($beforeStmts);
         if ($afterStmts) {
             $tmpVar = $this->addTmpVar(Type::VAR);
             $code .= $this->getIndent() . $tmpVar . ' = ' . $condExpr . ';' . PHP_EOL;
-            $this->appendCapturedStmtLines($code, $afterStmts);
+            $code .= $this->formatCapturedStmtLines($afterStmts);
             $condExpr = $tmpVar;
         }
 
@@ -3380,7 +3373,7 @@ class CompilerBase implements PropertyAccessContext
         }
     }
 
-    private function createPropertyAccessResolver(): PropertyAccessResolver
+    protected function createPropertyAccessResolver(): PropertyAccessResolver
     {
         $this->assertCompilerPhase(self::PHASE_CONVERT, 'PropertyAccessResolver');
         return new PropertyAccessResolver($this);
@@ -3413,19 +3406,19 @@ class CompilerBase implements PropertyAccessContext
             || $this->isSameOrSubclassOf($declaringClass, $scope);
     }
 
-    private function resolveNativeInstanceProperty(NodeAbstract $expr, string $property, string $class): ?PropertyAccessResult
+    protected function resolveNativeInstanceProperty(NodeAbstract $expr, string $property, string $class): ?PropertyAccessResult
     {
         $scope = $this->class ? $this->getFullClassName() : '';
         return $this->createPropertyAccessResolver()->resolveNativeInstanceProperty($expr, $property, $class, $scope);
     }
 
-    private function resolveNativeStaticProperty(NodeAbstract $expr, string $property, string $class): ?PropertyAccessResult
+    protected function resolveNativeStaticProperty(NodeAbstract $expr, string $property, string $class): ?PropertyAccessResult
     {
         $scope = $this->class ? $this->getFullClassName() : '';
         return $this->createPropertyAccessResolver()->resolveNativeStaticProperty($expr, $property, $class, $scope);
     }
 
-    private function applyNativePropertyAccessResult(NodeAbstract $expr, PropertyAccessResult $result): string
+    protected function applyNativePropertyAccessResult(NodeAbstract $expr, PropertyAccessResult $result): string
     {
         $offset = $this->getPropertyOffset($result->classDef->getNamespacedName(false), $result->property);
         $expr->setAttribute('nativePropertyAccess', new NativePropertyAccess($offset, $result));

@@ -103,10 +103,21 @@ trait NameResolutionTrait
             if (isset($this->zendTypeMap[strtolower($typeName)]) || in_array(strtolower($typeName), ['self', 'static', 'parent'], true)) {
                 return $type;
             }
-            if ($type->isQualified()) {
-                return new Node\Name\FullyQualified($typeName, $type->getAttributes());
+            $resolved = $typeName;
+            $firstSegment = explode('\\', $typeName, 2)[0];
+            $hasImportedPrefix = isset($this->useAliases[$firstSegment]);
+            if (!$hasImportedPrefix) {
+                foreach ($this->useNamespaces as $useNamespace) {
+                    $segments = explode('\\', trim($useNamespace, '\\'));
+                    if (strcasecmp($segments[array_key_last($segments)], $firstSegment) === 0) {
+                        $hasImportedPrefix = true;
+                        break;
+                    }
+                }
             }
-            $resolved = $this->getNamespacedClassName($typeName);
+            if (!$type->isQualified() || $hasImportedPrefix) {
+                $resolved = $this->getNamespacedClassName($typeName);
+            }
             return new Node\Name\FullyQualified($resolved, $type->getAttributes());
         }
         return $type;
@@ -129,6 +140,13 @@ trait NameResolutionTrait
     /**
      * @param string $class 一定是带有命名空间的完整类名
      */
+    protected function resolveTypeDecl(?NodeAbstract $type, int $what): array
+    {
+        $class = '';
+        $declaredType = $this->parseTypeDecl($type, $what, $class);
+        return [$declaredType, $class];
+    }
+
     protected function parseTypeDecl(?NodeAbstract $type, int $what, string &$class): string
     {
         // 未定义类型视为 var (mixed, any)

@@ -34,6 +34,7 @@
 ## 调用与引用
 
 - TypePHP 使用严格参数数量规则：非 variadic 函数不接受声明范围之外的额外参数；`func_get_args()` 不会隐式放宽签名。
+- 已知签名的普通函数、普通方法和 native 直调支持引用参数及写回；不要把编译器内部跨 Trait 动态分派的限制误写成“TypePHP 不支持引用参数”。
 - 闭包和箭头函数不支持引用参数。
 - 引用赋值不支持从复杂静态属性表达式建立引用。
 - 动态调用、闭包调用等编译期无法确定参数签名的调用，不能自动转换引用参数；需要显式使用 `refval()` 或等价关键词方法 `toRef()`。
@@ -66,3 +67,14 @@
 - `Closure::bind()` 绑定静态闭包访问私有成员时，当前行为与标准 PHP 不完全一致。
 - first-class callable 存入 typed nullable `Closure` 属性后，当前存在运行时稳定性限制。
 - 所有源文件必须是 `UTF-8` 编码。
+
+## 编译器自举与内部重构约束
+
+本节描述编译器自身使用 TypePHP 编译时的约束，不是面向用户代码新增的 PHP 语义差异。
+
+- 重构前，同一核心类内可静态解析的 `$this->method()` 会生成 native C++ 直调。引用参数会直接映射为 `php::Ref` 或 C++ 引用，写回语义正常。
+- 将调用方和被调用方拆到不同 Trait 后，单独编译 Trait 本体时无法从 Trait 的 `$this` 确定最终宿主类。当前方法解析器可能将跨 Trait 调用降级为 Zend method call，例如生成 `this_.call(..., php::ArgList{value})`。
+- 动态 method call 的 `ArgList` 不会仅凭被调 wrapper 的 arginfo 自动把普通实参升级为引用。若被调方法声明 `&$value`，wrapper 会通过 `getCallArgByRef()` 取参；调用方传入的却是普通值，结果是 `must be passed by reference` 警告，并且被调方修改无法写回调用方。
+- 因此，编译器内部跨 Trait API 禁止使用引用输出参数和“修改传入标量/数组后由调用方读取”的协议。应返回结果值、元组数组或 DTO，例如用 `[$type, $class] = resolveTypeDecl(...)` 代替 `parseTypeDecl(..., &$class)`。
+- 对字符串累加、数组排序、解析结果输出等内部 helper，优先设计为纯返回值：`$code .= format(...)`、`$files = sort(...)`。只有确认调用会保持 native 直调时，才允许依赖引用写回。
+- 每次移动方法到 Trait、父类或独立组件后，必须使用自举产物重新编译至少一个覆盖该调用的测试；仅使用 `bin/tpc.php` 运行测试不能发现“源编译器正常、自举编译器退化”的问题。

@@ -839,7 +839,19 @@ trait PropertyAccessTrait
 
     protected function isPropertyHookBackingAccess(NodeAbstract $expr): bool
     {
-        return $expr->getAttribute(PropertyHookLowering::BACKING_ACCESS_ATTRIBUTE, false) === true;
+        if ($expr->getAttribute(PropertyHookLowering::BACKING_ACCESS_ATTRIBUTE, false) === true) {
+            return true;
+        }
+        if (!$expr instanceof Expr\PropertyFetch
+            || !$expr->var instanceof Expr\Variable
+            || $expr->var->name !== 'this'
+            || !$expr->name instanceof Node\Identifier) {
+            return false;
+        }
+
+        $property = $expr->name->toString();
+        return $this->method === PropertyHookLowering::getterName($property)
+            || $this->method === PropertyHookLowering::setterName($property);
     }
 
     protected function getPropertyHookGetter(NodeAbstract $expr): ?string

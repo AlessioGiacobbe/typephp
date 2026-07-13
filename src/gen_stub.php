@@ -245,7 +245,12 @@ class SimpleType {
                 return new SimpleType('mixed', true);
             }
 
-            $class = $node->isFullyQualified() ? $node->toString() : getTranslator()->getNamespacedClassName($node->toString());
+            $resolvedName = $node->getAttribute('resolvedName');
+            if ($resolvedName instanceof Node\Name) {
+                $class = $resolvedName->toString();
+            } else {
+                $class = $node->isFullyQualified() ? $node->toString() : getTranslator()->getNamespacedClassName($node->toString());
+            }
             return new SimpleType($class, false);
         }
 

@@ -239,25 +239,24 @@ class PreprocessorTest extends TestCase
     }
 
     // ========================================================================
-    // sortFiles
+    // getSortedFiles
     // ========================================================================
 
     public function testSortFilesPreservesOrderForUnrelatedFiles(): void
     {
         $files = ['/a/file1.php', '/a/file2.php', '/a/file3.php'];
-        $this->compiler->sortFiles($files);
+        $files = $this->invokeMethod('getSortedFiles', $files);
         // All original files must still be present
         $this->assertContains('/a/file1.php', $files);
         $this->assertContains('/a/file2.php', $files);
         $this->assertContains('/a/file3.php', $files);
-        // Original files are preserved (sortFiles may append, not remove)
+        // Original files are preserved (sorting may append, not remove)
         $this->assertGreaterThanOrEqual(3, count($files));
     }
 
     public function testSortFilesEmpty(): void
     {
-        $files = [];
-        $this->compiler->sortFiles($files);
+        $files = $this->invokeMethod('getSortedFiles', []);
         // Empty array stays empty or nearly empty
         $this->assertIsArray($files);
     }
@@ -334,7 +333,7 @@ class PreprocessorTest extends TestCase
         $this->compiler->prepareFile($traitFile);
 
         $files = [$classFile, $interfaceFile, $traitUserFile, $traitFile];
-        $this->compiler->sortFiles($files);
+        $files = $this->invokeMethod('getSortedFiles', $files);
 
         $this->assertLessThan(array_search($classFile, $files, true), array_search($interfaceFile, $files, true));
         $this->assertLessThan(array_search($traitUserFile, $files, true), array_search($traitFile, $files, true));

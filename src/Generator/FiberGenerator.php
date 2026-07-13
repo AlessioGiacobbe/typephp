@@ -110,8 +110,7 @@ trait FiberGenerator
             return true;
         }
 
-        $class = '';
-        $this->parseTypeDecl($type, self::DECL_TYPE_OF_RETURN, $class);
+        [, $class] = $this->resolveTypeDecl($type, self::DECL_TYPE_OF_RETURN);
         $class = strtolower(ltrim($class, '\\'));
         return in_array($class, ['iterator', 'traversable', 'typephp\\fibergenerator'], true);
     }

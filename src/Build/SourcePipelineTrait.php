@@ -99,7 +99,7 @@ trait SourcePipelineTrait
                 }
             }
         }
-        $this->sortFiles($files);
+        $files = $this->getSortedFiles($files);
         return $files;
     }
 

@@ -112,6 +112,34 @@ These items should be documented with the exact boundary.
 | Native typed properties | Partial / Intentional Rule | Fast native paths may not preserve every PHP dynamic state transition. Unknown or incompatible values can fall back to `setProperty()`. |
 | Reflection metadata | Partial | Runtime declarations exist, but some AOT-specific metadata such as promoted-property flags may be incomplete. |
 
+## Self-hosting Compatibility Notes
+
+The compiler itself is a TypePHP program, so an internal refactor can change
+how its own calls are lowered even when the PHP source-level API is unchanged.
+This is an implementation compatibility boundary, not a new user-facing rule
+that reference parameters are unsupported.
+
+| Internal pattern | Status | Boundary and required design |
+|---|---|---|
+| Statically resolved function or method with by-reference parameters | Supported | Native direct calls preserve reference slots and write-back semantics. This was the path used before the core methods were split into traits. |
+| Cross-trait `$this->method()` with a by-reference output parameter | Self-hosting Partial | While compiling a trait body, the final consuming class may be unknown. The call can fall back to `this_.call()` with ordinary `ArgList` values, while the callee wrapper expects `getCallArgByRef()`. This produces a by-reference warning and loses write-back. |
+| Cross-trait helper returning a value, tuple array or DTO | Supported / Required internally | Return data explicitly and assign it at the call site. Do not use by-reference output parameters for compiler services that may cross trait boundaries. |
+| Moving an existing method into a trait | Requires bootstrap verification | Test both the PHP-source compiler and the newly bootstrapped `tpc`; source-compiler tests alone do not exercise the changed lowering path. |
+
+The observed regression after refactoring followed this exact sequence:
+
+1. Before extraction, calls such as file sorting, captured-statement appending and
+   type declaration parsing were statically resolved inside the core class.
+2. After extraction, their callers and implementations lived in different
+   traits mixed into `Translator`, `CompilerBase` or `Preprocessor`.
+3. The self-hosted compiler emitted Zend dynamic method calls for those
+   cross-trait edges and passed ordinary values.
+4. Callee wrappers still correctly advertised and parsed reference parameters,
+   but they could not retroactively turn the caller's value argument into the
+   caller's reference slot.
+5. The fixes replaced internal output-parameter protocols with explicit return
+   values. User-level statically known reference calls remain supported.
+
 ## Documentation Rule
 
 When documenting a compatibility difference, use one of these labels:
