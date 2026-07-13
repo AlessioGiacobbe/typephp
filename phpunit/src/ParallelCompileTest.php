@@ -3,6 +3,8 @@
 namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
+use TypePhp\Backend\CompilerBackend;
+use TypePhp\Build\NativeBuilder;
 use TypePhp\CompilerTest;
 
 class ParallelCompileTest extends TestCase
@@ -54,6 +56,38 @@ class ParallelCompileTest extends TestCase
         }
 
         $this->assertSame(1, $compiler->getWaitCallCount());
+    }
+
+    public function testParallelDispatcherReportsEachCompletedTask(): void
+    {
+        $builder = new NativeBuilder($this->createMock(CompilerBackend::class));
+        $forkResults = [101, 102];
+        $waitResults = [[102, 0], [101, 1 << 8]];
+        $completed = [];
+
+        $result = $builder->dispatchParallel(
+            ['first.cc', 'second.cc'],
+            2,
+            static fn(string $source): string => $source . '.o',
+            static function (): void {},
+            static function () use (&$forkResults): int {
+                return array_shift($forkResults);
+            },
+            static function () use (&$waitResults): array {
+                return array_shift($waitResults);
+            },
+            static fn(int $status): bool => $status === 0,
+            static function (string $source, string $object, int $status, bool $success, int $count) use (&$completed): void {
+                $completed[] = [$source, $object, $status, $success, $count];
+            },
+        );
+
+        $this->assertSame(['second.cc.o'], $result['objects']);
+        $this->assertSame(['first.cc'], $result['failures']);
+        $this->assertSame([
+            ['second.cc', 'second.cc.o', 0, true, 1],
+            ['first.cc', 'first.cc.o', 1 << 8, false, 2],
+        ], $completed);
     }
 }
 

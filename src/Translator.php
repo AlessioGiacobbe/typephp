@@ -8,6 +8,8 @@
 
 namespace TypePhp;
 
+use Ajaxray\AnsiKit\AnsiTerminal;
+use Ajaxray\AnsiKit\Components\Progressbar;
 use MJS\TopSort\Implementations\StringSort;
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Backend\CompilerFactory;
@@ -49,7 +51,7 @@ class Translator extends Preprocessor
     use ResourceCompilationTrait;
     use ClassConstantValueTrait;
 
-    public const string VERSION = '0.3.0';
+    public const string VERSION = '0.4.0';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
     protected const string MODULE_NAME_PREFIX = 'app_';
 
@@ -1312,6 +1314,17 @@ CODE;
         return pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0;
     }
 
+    protected function getCompileChildFailureReason(int $status): string
+    {
+        if (pcntl_wifsignaled($status)) {
+            return 'terminated by signal ' . pcntl_wtermsig($status);
+        }
+        if (pcntl_wifexited($status)) {
+            return 'exited with status ' . pcntl_wexitstatus($status);
+        }
+        return 'terminated abnormally';
+    }
+
     protected function compileWithPcntl(array $sourceFiles, int $job): array
     {
         if (!function_exists('pcntl_fork')) {
@@ -1321,6 +1334,14 @@ CODE;
 
         $totalFiles = count($sourceFiles);
         $this->climate->lightBlue("Starting parallel compilation with {$job} jobs for {$totalFiles} files");
+        $progress = null;
+        if (!$this->noProgress) {
+            $progress = new Progressbar();
+            $progress->barStyle([AnsiTerminal::FG_GREEN])
+                ->percentageStyle([AnsiTerminal::TEXT_BOLD])
+                ->labelStyle([AnsiTerminal::FG_CYAN]);
+            $progress->renderInPlace(0, $totalFiles, 'Compiling');
+        }
         $result = $this->getNativeBuilder()->dispatchParallel(
             $sourceFiles,
             $job,
@@ -1331,7 +1352,24 @@ CODE;
             fn(): int => $this->pcntlFork(),
             fn(): array => $this->waitForCompileChild(),
             fn(int $status): bool => $this->compileChildSucceeded($status),
+            function (string $source, string $object, int $status, bool $success, int $completed) use ($progress, $totalFiles): void {
+                if (!$success) {
+                    echo PHP_EOL;
+                    $this->climate->red("Compilation failed: {$source} ({$this->getCompileChildFailureReason($status)})");
+                }
+                if ($this->noProgress) {
+                    $percent = (int) ($completed / $totalFiles * 100);
+                    $shortSource = $this->removeCommonPrefix($this->buildDir, $source);
+                    $this->climate->white("[{$completed}/{$totalFiles}] {$percent}% {$shortSource}");
+                } else {
+                    $progress->renderInPlace($completed, $totalFiles, 'Compiling');
+                }
+            },
         );
+
+        if (!$this->noProgress) {
+            echo PHP_EOL;
+        }
 
         if ($result['failures'] !== []) {
             throw new \Exception('Compilation failed for: ' . implode(', ', $result['failures']));
@@ -2653,15 +2691,14 @@ CODE;
     {
         $required = $functionDef->argCountRequired;
         $expected = $required === count($functionDef->argInfoList) ? 'exactly' : 'at least';
-        $message = 'php::concat({'
-            . 'php::Str(' . $this->genCharPtr('Too few arguments to function ' . $displayName . '(), ', true) . '), '
-            . 'php::toString(php::getCallArgNum()), '
-            . 'php::Str(' . $this->genCharPtr(' passed and ' . $expected . ' ' . $required . ' expected', true) . ')'
-            . '})';
+        $message = $this->genCharPtr(
+            'Too few arguments to function ' . $displayName . '(), %u passed and ' . $expected . ' ' . $required . ' expected',
+            true
+        );
 
         $code = $this->getIndent() . 'if (UNEXPECTED(php::getCallArgNum() < ' . $required . ')) {' . PHP_EOL;
         $this->indentLevel++;
-        $code .= $this->getIndent() . 'php::throwException(zend_ce_argument_count_error, (' . $message . ').toCString());' . PHP_EOL;
+        $code .= $this->getIndent() . 'php::throwExceptionEx(zend_ce_argument_count_error, 0, ' . $message . ', php::getCallArgNum());' . PHP_EOL;
         $code .= $this->getIndent() . 'return;' . PHP_EOL;
         $this->indentLevel--;
         $code .= $this->getIndent() . '}' . PHP_EOL;
@@ -3560,11 +3597,9 @@ CODE;
         $nextStr = $this->getLiteralString('next');
         $rewindStr = $this->getLiteralString('rewind');
         $invalidAggregateReturn = static function (string $aggregateObj): string {
-            return 'php::throwException(zend_ce_exception, (php::concat({'
-                . 'php::Str("Objects returned by "), '
-                . $aggregateObj . '.getClassName(), '
-                . 'php::Str("::getIterator() must be traversable or implement interface Iterator")'
-                . '})).toCString());';
+            return 'php::throwExceptionEx(zend_ce_exception, 0, '
+                . '"Objects returned by %s::getIterator() must be traversable or implement interface Iterator", '
+                . $aggregateObj . '.getClassName().toCString());';
         };
 
         $code = $iterableVar . ' = ' . $obj . ';' . PHP_EOL;
@@ -3608,7 +3643,8 @@ CODE;
         $code .= $this->getIndent() . $tmpArrayVar . ' = php::call(' . $this->getFuncPtr('get_object_vars') . ', {' . $obj . '});' . PHP_EOL;
         $code .= $this->parseForeachArray($node, $tmpArrayVar);
         $this->indentLevel--;
-        $code .= '}' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
 
         return $code;
     }

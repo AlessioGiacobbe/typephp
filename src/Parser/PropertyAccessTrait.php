@@ -567,12 +567,13 @@ trait PropertyAccessTrait
         $propDisplay = $this->getObjectPropertyTypeCheckDisplayName($left);
         $typeStr = $this->getObjectPropertyTypeCheckTypeString($def);
         if ($this->usesPhpStylePropertyAssignTypeError($def)) {
-            $msgExpr = 'php::concat({php::Str("Cannot assign "), ' . $tmpVar . '.typeStr(), php::Str(" to property "), '
-                . 'php::Str(' . $this->genCharPtr($propDisplay, true) . '), php::Str(" of type "), '
-                . 'php::Str(' . $this->genCharPtr($typeStr, true) . ')})';
+            $throwExpr = 'php::throwExceptionEx(zend_ce_type_error, 0, '
+                . $this->genCharPtr('Cannot assign %s to property ' . $propDisplay . ' of type ' . $typeStr, true)
+                . ', ' . $tmpVar . '.typeStr())';
         } else {
-            $msgExpr = 'php::concat(php::concat(php::Str(' . $this->genCharPtr($propDisplay, true) . ' " must be of type " '
-                . $this->genCharPtr($typeStr, true) . ' ", "), ' . $tmpVar . '.typeStr()), php::Str(" given"))';
+            $throwExpr = 'php::throwExceptionEx(zend_ce_type_error, 0, '
+                . $this->genCharPtr($propDisplay . ' must be of type ' . $typeStr . ', %s given', true)
+                . ', ' . $tmpVar . '.typeStr())';
         }
 
         $coercion = $this->compositeTypeNeedsIntToFloatCoercion($typeCheck)
@@ -583,7 +584,7 @@ trait PropertyAccessTrait
             . $tmpVar . ' = ' . $rightExpr . '; '
             . $coercion
             . 'if (UNEXPECTED(!(' . implode(' || ', $conditions) . '))) { '
-            . 'php::throwException(zend_ce_type_error, (' . $msgExpr . ').toCString()); '
+            . $throwExpr . '; '
             . '} '
             . 'return ' . $tmpVar . '; '
             . '}())';

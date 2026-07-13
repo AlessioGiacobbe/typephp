@@ -63,6 +63,7 @@ final readonly class NativeBuilder
      * @param Closure(): int $fork
      * @param Closure(): array{int, int} $wait
      * @param Closure(int): bool $succeeded
+     * @param null|Closure(string, string, int, bool, int): void $completed
      * @return array{objects: list<string>, failures: list<string>}
      */
     public function dispatchParallel(
@@ -73,11 +74,13 @@ final readonly class NativeBuilder
         Closure $fork,
         Closure $wait,
         Closure $succeeded,
+        ?Closure $completed = null,
     ): array {
         $queue = array_values($sources);
         $running = [];
         $objects = [];
         $failures = [];
+        $completedCount = 0;
 
         while ($queue !== [] || $running !== []) {
             while (count($running) < $jobs && $queue !== []) {
@@ -109,11 +112,14 @@ final readonly class NativeBuilder
             if ($task === null) {
                 continue;
             }
-            if ($succeeded($status)) {
+            $success = $succeeded($status);
+            if ($success) {
                 $objects[] = $task['object'];
             } else {
                 $failures[] = $task['source'];
             }
+            $completedCount++;
+            $completed?->__invoke($task['source'], $task['object'], $status, $success, $completedCount);
         }
         return ['objects' => $objects, 'failures' => $failures];
     }
