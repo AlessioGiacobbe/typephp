@@ -107,25 +107,6 @@ trait ForeachTrait
         return $this->getIndent() . ' ' . $valueVar . ' = ' . $valueExpr . ';' . PHP_EOL;
     }
 
-    protected function parseForeachArray(Foreach_ $node, string $iteratorVar): string
-    {
-        $tmpVar = $this->genTmpVarName();
-        $code = "for (auto $tmpVar = $iteratorVar.begin(); $tmpVar != $iteratorVar.end(); ++$tmpVar) {" . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->parseForeachKeyAssignment($node, $tmpVar . '.key()');
-        $code .= $this->parseForeachValueAssignment($node, $tmpVar . '.value()', $tmpVar . '.valueRef()');
-
-        $body = $this->parseForeachBody($node);
-        $this->indentLevel--;
-
-        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= $body . PHP_EOL;
-
-        $code .= $this->getIndent() . '}';
-
-        return $code;
-    }
-
     protected function parseForeachIterable(Foreach_ $node, string $iterableVar): string
     {
         $iterator = $this->genTmpVarName();
@@ -158,7 +139,7 @@ trait ForeachTrait
             if ($this->hasVar($name)) {
                 $type = $this->getVarType($name);
                 if ($type === Type::ARRAY) {
-                    return $this->parseForeachArray($node, $name);
+                    return $this->parseForeachIterable($node, $name);
                 } elseif ($type === Type::OBJECT) {
                     if ($node->byRef) {
                         $this->fatalError($node, 'Cannot use & with foreach');
