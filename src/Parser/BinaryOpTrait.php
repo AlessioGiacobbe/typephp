@@ -264,10 +264,17 @@ trait BinaryOpTrait
         $this->flattenConcatExpr($expr, $items);
 
         $argList = $prefixExpressions;
-        foreach ($items as $item) {
-            $type = $this->detectTypeOfExpr($item);
-            $parsed = $this->parseExprAsValue($item);
-            $argList[] = $this->prepareConcatOperand($parsed, $type);
+        foreach ($items as $index => $item) {
+            // 在字符串拼接中，除了第一个元素之外，剩下的字符串如果出现空字符串，忽略这个字符串
+            if ($index > 0 && $item->value == '') {
+                continue;
+            }
+
+            $argList[] = $this->prepareConcatOperand($this->parseExprAsValue($item), $this->detectTypeOfExpr($item));
+        }
+
+        if (sizeof($argList) == 1) {
+            return $argList[0];
         }
 
         return Symbol::concat() . '({' . implode(', ', $argList) . '})';
