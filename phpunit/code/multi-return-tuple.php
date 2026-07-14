@@ -27,6 +27,26 @@ function phpunit_multi_repeated_value(): array
     return [$repeated, $repeated, $tail];
 }
 
+function phpunit_multi_forward_args(
+    mixed $value,
+    string $text,
+    array $items,
+    object $object,
+    int $count,
+    &$reference,
+    ...$rest,
+): array {
+    return [$value, $text];
+}
+
+function phpunit_multi_forward_defaults(
+    string $text = 'default',
+    array $items = [],
+    ...$rest,
+): array {
+    return [$text, $items];
+}
+
 function phpunit_multi_side_effect(): array
 {
     return [time(), 2];

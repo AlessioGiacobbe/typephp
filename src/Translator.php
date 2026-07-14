@@ -2713,7 +2713,7 @@ CODE;
                 $cppCode .= $this->getIndent() . $cppType . ' ' . $var . ' = ' . $expr . ';' . PHP_EOL;
             }
             $callParam = $var;
-            if ($this->canConsumeWrapperArgument($argInfo)) {
+            if ($this->canConsumeForwardedArgument($argInfo)) {
                 $callParam = 'php::takeValue(' . $var . ')';
             }
             $callParams .= $callParam . ',';
@@ -2739,7 +2739,7 @@ CODE;
         return $cppCode;
     }
 
-    private function canConsumeWrapperArgument(ArgInfo $argInfo): bool
+    private function canConsumeForwardedArgument(ArgInfo $argInfo): bool
     {
         if ($argInfo->byRef) {
             return false;
@@ -3023,7 +3023,9 @@ CODE;
 
         if ($multiReturn) {
             $forwardArgs = implode(', ', array_map(
-                static fn($argInfo) => $argInfo->name,
+                fn($argInfo) => $this->canConsumeForwardedArgument($argInfo)
+                    ? 'php::takeValue(' . $argInfo->name . ')'
+                    : $argInfo->name,
                 $this->functionDef->argInfoList,
             ));
             $code .= Type::ARRAY . ' ' . $nativeName . '(' . $this->functionDef->params . ') {' . PHP_EOL;

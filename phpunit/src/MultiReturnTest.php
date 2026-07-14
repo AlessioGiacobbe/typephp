@@ -47,6 +47,19 @@ final class MultiReturnTest extends TestCase
             $code,
         );
         $this->assertStringContainsString(
+            'return php::Array(typephp::detail::php_phpunit_multi_forward_args('
+            . 'php::takeValue(value), php::takeValue(text), php::takeValue(items), '
+            . 'php::takeValue(object), count, reference, php::takeValue(rest)));',
+            $code,
+        );
+        $this->assertStringContainsString(
+            'return php::Array(typephp::detail::php_phpunit_multi_forward_defaults('
+            . 'php::takeValue(text), php::takeValue(items), php::takeValue(rest)));',
+            $code,
+        );
+        $this->assertStringNotContainsString('php::takeValue(reference)', $code);
+        $this->assertStringNotContainsString('php::takeValue(count)', $code);
+        $this->assertStringContainsString(
             'std::tie(partialFirst, partialSecond, std::ignore) = typephp::detail::php_phpunit_multi_three_values()',
             $code,
         );
