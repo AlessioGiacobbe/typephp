@@ -32,9 +32,10 @@ final class MultiReturnTest extends TestCase
             $code,
         );
         $this->assertMatchesRegularExpression(
-            '/std::tuple<php::Var, php::Var> (tmp_var_\\d+);\\s*'
+            '/std::tuple<php::Var, php::Var, php::Var> (tmp_var_\\d+);\\s*'
             . 'std::get<0>\\(\\1\\) = repeated;\\s*'
-            . 'std::get<1>\\(\\1\\) = std::move\\(repeated\\);/',
+            . 'std::get<1>\\(\\1\\) = std::move\\(repeated\\);\\s*'
+            . 'std::get<2>\\(\\1\\) = std::move\\(tail\\);/',
             $code,
         );
         $this->assertStringContainsString(

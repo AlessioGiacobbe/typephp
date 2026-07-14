@@ -14,7 +14,8 @@ function multi_return_owned_values(): array
 function multi_return_repeated_value(): array
 {
     $value = ['repeated'];
-    return [$value, $value];
+    $tail = 'tail';
+    return [$value, $value, $tail];
 }
 
 function multi_return_reference_value(&$value): array
@@ -43,9 +44,9 @@ function main(): void
     [$text, $array, $object] = multi_return_owned_values();
     var_dump($text, $array, $object->value);
 
-    [$first, $second] = multi_return_repeated_value();
+    [$first, $second, $tail] = multi_return_repeated_value();
     $first[] = 'changed';
-    var_dump($first, $second);
+    var_dump($first, $second, $tail);
 
     $source = 'reference';
     [$referenceFirst, $referenceSecond] = multi_return_reference_value($source);
@@ -84,6 +85,7 @@ array(1) {
   [0]=>
   string(8) "repeated"
 }
+string(4) "tail"
 string(9) "reference"
 string(7) "changed"
 string(9) "reference"

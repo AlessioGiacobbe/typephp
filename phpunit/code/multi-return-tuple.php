@@ -23,7 +23,8 @@ function phpunit_multi_three_values(): array
 function phpunit_multi_repeated_value(): array
 {
     $repeated = 'value';
-    return [$repeated, $repeated];
+    $tail = 'tail';
+    return [$repeated, $repeated, $tail];
 }
 
 function phpunit_multi_side_effect(): array
