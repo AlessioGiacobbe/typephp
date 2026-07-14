@@ -544,7 +544,7 @@ trait PropertyAccessTrait
             return $rightExpr;
         }
         if ($rightType === Type::VAR && ($helper = $this->getNativeScalarPropertyTypeCheckHelper($def)) !== null) {
-            return $helper . '(' . $rightExpr . ', ' . $this->genCharPtr($this->getObjectPropertyTypeCheckDisplayName($left)) . ')';
+            return $helper . '(' . $rightExpr . ', ' . $this->genCharPtr($this->getObjectPropertyTypeCheckDisplayName($left), true) . ')';
         }
 
         $rightClass = $this->detectClassOfExpr($right);
