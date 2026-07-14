@@ -17,6 +17,11 @@ class Symbol
         return 'php::getStaticProperty';
     }
 
+    public static function getStaticPropertyRef(): string
+    {
+        return 'php::getStaticPropertyRef';
+    }
+
     public static function setStaticProperty(): string
     {
         return 'php::setStaticProperty';

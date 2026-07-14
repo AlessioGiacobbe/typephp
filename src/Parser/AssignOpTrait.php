@@ -774,6 +774,9 @@ trait AssignOpTrait
         } elseif ($this->isPropertyFetch($expr->expr)) {
             $left = $this->parseIdentifier($expr->var);
             $rightExpr = $tmpVar . ' = ' . $this->emitDynamicPropertyFetchRef($expr->expr, $expr);
+        } elseif ($this->isStaticPropertyFetch($expr->expr)) {
+            $left = $this->parseIdentifier($expr->var);
+            $rightExpr = $tmpVar . ' = ' . $this->emitStaticPropertyFetchRef($expr->expr, $expr);
         } elseif ($this->isArrayDimFetch($expr->expr)) {
             $left = $this->parseIdentifier($expr->var);
             $array = $this->parseWritableIdentifier($expr->expr->var);

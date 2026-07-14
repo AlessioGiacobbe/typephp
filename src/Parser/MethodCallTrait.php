@@ -252,6 +252,7 @@ trait MethodCallTrait
             $this->guardAbstractMethod($parentClass, $method, $expr);
             $methodPtr = $this->getMethodPtr($parentClass, $method);
         } else {
+            $method = '';
             // parent:: is bound to the lexical parent class, not the runtime
             // object's parent. Look the method up on that class, then invoke it
             // through this_ so Zend receives the current call scope.
@@ -261,7 +262,8 @@ trait MethodCallTrait
         if (empty($expr->args)) {
             return 'this_.call(' . $methodPtr . ')';
         }
-        return 'this_.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args) . ')';
+        // 传入方法名与父类名，以便在按引用参数检测时解析方法签名
+        return 'this_.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $method, $parentClass) . ')';
     }
 
 
@@ -453,6 +455,8 @@ trait MethodCallTrait
     {
         $self = false;
         $callScope = [];
+        $rtFunc = '';
+        $rtClass = '';
         $class = $this->parseIdentifier($expr->class);
 
         // parent::$method() still has a lexical parent class even when the
@@ -475,13 +479,17 @@ trait MethodCallTrait
             }
             $placeHolder = $fn;
         } elseif ($this->isNameExpr($expr->class) and $class === 'static') {
+            $method = $this->parseIdentifier($expr->name);
             $methodPtr = $this->identifierToStr($expr->name, literal: true);
             $fn = Symbol::getCalledCe() . ', php::getMethod(' . Symbol::getCalledCe() . ', ' . $methodPtr . ')';
             $this->context->beforeStmtLines[] = $this->formatCppLineComment(
                 'Static Method Call: ',
-                'static::' . $this->parseIdentifier($expr->name) . '()'
+                'static::' . $method . '()'
             );
             $placeHolder = $this->genArray([Symbol::getCalledClass(), $methodPtr]);
+            // 用于在按引用参数检测时解析方法签名（late static binding 在当前类层级中解析）
+            $rtFunc = $method;
+            $rtClass = $this->getNamespacedClassName($this->class);
         } elseif ($this->isNameExpr($expr->class)) {
             if ($class === 'self') {
                 $class = $this->class;
@@ -493,6 +501,8 @@ trait MethodCallTrait
 
             _do_call:
             $method = $this->parseIdentifier($expr->name);
+            $rtFunc = $method;
+            $rtClass = $class;
             $dynamicCall = false;
             $this->context->beforeStmtLines[] = $this->formatCppLineComment(
                 'Static Method Call: ',
@@ -556,7 +566,7 @@ trait MethodCallTrait
             return $call . '(' . $fn . ')';
         }
         try {
-            return $this->genRuntimeFunctionCall($fn, $expr->args);
+            return $this->genRuntimeFunctionCall($fn, $expr->args, $rtFunc, $rtClass);
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($placeHolder);
         }

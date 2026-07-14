@@ -1812,11 +1812,84 @@ class CompilerBase implements PropertyAccessContext
         $this->fatalError($arg, 'Only string literals or `ClassName::class` constant are supported');
     }
 
+    /**
+     * Resolve whether a call returns by reference. A null result means that
+     * dispatch is dynamic and must be checked at runtime.
+     */
+    protected function resolveRefReturningCall(Node $expr): ?bool
+    {
+        if ($expr instanceof Expr\FuncCall && ($this->isNameExpr($expr->name) || $this->isFullNameExpr($expr->name))) {
+            $name = $this->parseIdentifier($expr->name);
+            $function = $this->findNativeFunction($name);
+            if ($function !== false) {
+                return $this->getFunction($function)->returnsByRef;
+            }
+            $reflection = \TypePhp\Resolver\Reflection::getFunction(ltrim($this->getNamespacedFuncName($name), '\\'));
+            return $reflection?->returnsReference();
+        }
+        if ($expr instanceof Expr\FuncCall) {
+            return null;
+        }
+        if ($expr instanceof Expr\MethodCall && $this->isNamedMethod($expr->name) && $this->isVarExpr($expr->var)) {
+            $object = $this->parseIdentifier($expr->var);
+            $method = $this->parseIdentifier($expr->name);
+            if ($object === 'this_') {
+                $class = $this->getFullClassName();
+            } elseif (isset($this->context->objects[$object])) {
+                $class = $this->context->stableObjects[$object] ?? $this->context->objects[$object];
+            } else {
+                return null;
+            }
+            $function = $this->getNativeMethod($expr, $class, $method, false);
+            if ($function !== false) {
+                return $this->getFunction($function)->returnsByRef;
+            }
+            return null;
+        }
+        if ($expr instanceof Expr\MethodCall) {
+            return null;
+        }
+        if ($expr instanceof Expr\StaticCall && ($this->isNameExpr($expr->class) || $this->isFullNameExpr($expr->class)) && $this->isIdExpr($expr->name)) {
+            $class = $this->parseIdentifier($expr->class);
+            if ($class === 'self') {
+                $class = $this->getFullClassName();
+            } elseif ($class === 'parent') {
+                if (!$this->classDef || !$this->classDef->extends) {
+                    return false;
+                }
+                $class = $this->classDef->extends;
+            } elseif ($class === 'static') {
+                if (!$this->classDef) {
+                    return null;
+                }
+                $class = $this->getFullClassName();
+            } else {
+                $class = $this->getNamespacedClassName($class);
+            }
+            $method = $this->parseIdentifier($expr->name);
+            $function = $this->getNativeMethod($expr, $class, $method, false);
+            if ($function !== false) {
+                return $this->getFunction($function)->returnsByRef;
+            }
+            return null;
+        }
+        if ($expr instanceof Expr\StaticCall) {
+            return null;
+        }
+        return false;
+    }
+
     protected function parseReturn(Node\Stmt\Return_ $v): string
     {
         if ($this->functionDef->returnsByRef) {
             if ($v->expr === null) {
                 return 'return ' . Type::REF . '{};';
+            }
+            if ($v->expr instanceof CallLike) {
+                $returnsByRef = $this->resolveRefReturningCall($v->expr);
+                if ($returnsByRef !== false) {
+                    return 'return php::toReferenceExact(' . $this->parseExpr($v->expr) . ');';
+                }
             }
             if (!$this->isVarExpr($v->expr)
                 && !$this->isPropertyFetch($v->expr)
@@ -1848,6 +1921,9 @@ class CompilerBase implements PropertyAccessContext
             }
             if ($this->isPropertyFetch($v->expr)) {
                 return 'return ' . $this->emitDynamicPropertyFetchRef($v->expr, $v) . ';';
+            }
+            if ($this->isStaticPropertyFetch($v->expr)) {
+                return 'return ' . $this->emitStaticPropertyFetchRef($v->expr, $v) . ';';
             }
             return 'return ' . $this->parseChainedExpr($v->expr, self::OP_REFVAL) . ';';
         }
