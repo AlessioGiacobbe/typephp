@@ -2712,7 +2712,11 @@ CODE;
                 }
                 $cppCode .= $this->getIndent() . $cppType . ' ' . $var . ' = ' . $expr . ';' . PHP_EOL;
             }
-            $callParams .= 'arg_' . $argInfo->name . ',';
+            $callParam = $var;
+            if ($this->canConsumeWrapperArgument($argInfo)) {
+                $callParam = 'php::takeValue(' . $var . ')';
+            }
+            $callParams .= $callParam . ',';
         }
 
         if ($functionDef->method) {
@@ -2733,6 +2737,23 @@ CODE;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
         return $cppCode;
+    }
+
+    private function canConsumeWrapperArgument(ArgInfo $argInfo): bool
+    {
+        if ($argInfo->byRef) {
+            return false;
+        }
+        if ($argInfo->variadic) {
+            return true;
+        }
+
+        return in_array($this->getDefaultArgumentType($argInfo), [
+            Type::VAR,
+            Type::STR,
+            Type::ARRAY,
+            Type::OBJECT,
+        ], true);
     }
 
     private function genWrapperRequiredArgCountCheck(FunctionDef $functionDef, string $displayName): string
