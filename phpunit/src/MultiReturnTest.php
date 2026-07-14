@@ -32,6 +32,14 @@ final class MultiReturnTest extends TestCase
             'array = php_phpunit_multi_values()',
             $code,
         );
+        $this->assertStringContainsString(
+            'std::tie(partialFirst, partialSecond, std::ignore) = typephp::detail::php_phpunit_multi_three_values()',
+            $code,
+        );
+        $this->assertStringNotContainsString(
+            'std::tie(overflowFirst, overflowSecond, overflowThird)',
+            $code,
+        );
         $this->assertStringNotContainsString(
             'typephp::detail::php_phpunit_multi_side_effect',
             $code,

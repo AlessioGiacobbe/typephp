@@ -123,7 +123,7 @@ trait AssignOpTrait
         }
         $functionDef = $this->getFunction($nativeFunc);
         if (!$functionDef->hasMultiReturn()
-            || $functionDef->multiReturnCount !== count($left->items)
+            || $functionDef->multiReturnCount < count($left->items)
             || $this->shouldUseDynamicCallForNativeArgs($nativeFunc, $right->args)) {
             return null;
         }
@@ -146,8 +146,12 @@ trait AssignOpTrait
                 $this->addLocalVar($name, Type::VAR);
             }
         }
+        $tieItems = array_merge(
+            $variables,
+            array_fill(0, $functionDef->multiReturnCount - count($variables), 'std::ignore'),
+        );
         $right->setAttribute(self::ATTR_MULTI_RETURN_IMPL, true);
-        return 'std::tie(' . implode(', ', $variables) . ') = ' . $this->parseFuncCall($right);
+        return 'std::tie(' . implode(', ', $tieItems) . ') = ' . $this->parseFuncCall($right);
     }
 
     protected function parseAssignToList(Expr $left, Expr $right): string

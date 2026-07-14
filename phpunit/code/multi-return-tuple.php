@@ -10,6 +10,14 @@ function phpunit_multi_consumer(): void
 {
     [$first, $second] = phpunit_multi_values();
     $array = phpunit_multi_values();
+
+    [$partialFirst, $partialSecond] = phpunit_multi_three_values();
+    [$overflowFirst, $overflowSecond, $overflowThird] = phpunit_multi_values();
+}
+
+function phpunit_multi_three_values(): array
+{
+    return [1, 2, 3];
 }
 
 function phpunit_multi_side_effect(): array
