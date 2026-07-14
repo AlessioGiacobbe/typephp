@@ -25,6 +25,10 @@ function main(): void
         $type = (new ReflectionMethod($generator, $method))->getReturnType();
         echo $method, ':', $type?->getName() ?? 'none', "\n";
     }
+
+    foreach ((new ReflectionClass($generator))->getProperties() as $property) {
+        echo $property->getName(), ':', $property->isPrivate() ? 'private' : 'visible', "\n";
+    }
 }
 ?>
 --EXPECT--
@@ -36,3 +40,12 @@ key:mixed
 send:mixed
 throw:mixed
 getReturn:mixed
+callback:private
+fiber:private
+current:private
+key:private
+valid:private
+state:private
+yield_count:private
+next_index:private
+return_value:private
