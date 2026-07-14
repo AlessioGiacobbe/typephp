@@ -1802,12 +1802,10 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * Returns true when the expression is a function/method/static call that
-     * itself returns by reference, so its result can be forwarded directly
-     * from a `return by reference` context. In PHP, `function &f() { return g(); }`
-     * is valid as long as `g()` also returns by reference.
+     * Resolve whether a call returns by reference. A null result means that
+     * dispatch is dynamic and must be checked at runtime.
      */
-    protected function isRefReturningCall(Node $expr): bool
+    protected function resolveRefReturningCall(Node $expr): ?bool
     {
         if ($expr instanceof Expr\FuncCall && ($this->isNameExpr($expr->name) || $this->isFullNameExpr($expr->name))) {
             $name = $this->parseIdentifier($expr->name);
@@ -1816,16 +1814,29 @@ class CompilerBase implements PropertyAccessContext
                 return $this->getFunction($function)->returnsByRef;
             }
             $reflection = \TypePhp\Resolver\Reflection::getFunction(ltrim($this->getNamespacedFuncName($name), '\\'));
-            return $reflection !== null && $reflection->isInternal() && $reflection->returnsReference();
+            return $reflection?->returnsReference();
+        }
+        if ($expr instanceof Expr\FuncCall) {
+            return null;
         }
         if ($expr instanceof Expr\MethodCall && $this->isNamedMethod($expr->name) && $this->isVarExpr($expr->var)) {
             $object = $this->parseIdentifier($expr->var);
             $method = $this->parseIdentifier($expr->name);
-            $function = $this->findNativeMethod($expr, $object, $method);
+            if ($object === 'this_') {
+                $class = $this->getFullClassName();
+            } elseif (isset($this->context->objects[$object])) {
+                $class = $this->context->stableObjects[$object] ?? $this->context->objects[$object];
+            } else {
+                return null;
+            }
+            $function = $this->getNativeMethod($expr, $class, $method, false);
             if ($function !== false) {
                 return $this->getFunction($function)->returnsByRef;
             }
-            return false;
+            return null;
+        }
+        if ($expr instanceof Expr\MethodCall) {
+            return null;
         }
         if ($expr instanceof Expr\StaticCall && ($this->isNameExpr($expr->class) || $this->isFullNameExpr($expr->class)) && $this->isIdExpr($expr->name)) {
             $class = $this->parseIdentifier($expr->class);
@@ -1836,18 +1847,23 @@ class CompilerBase implements PropertyAccessContext
                     return false;
                 }
                 $class = $this->classDef->extends;
-            } elseif ($class !== 'static') {
+            } elseif ($class === 'static') {
+                if (!$this->classDef) {
+                    return null;
+                }
+                $class = $this->getFullClassName();
+            } else {
                 $class = $this->getNamespacedClassName($class);
             }
-            if ($class === 'static') {
-                return false;
-            }
             $method = $this->parseIdentifier($expr->name);
-            $function = $this->getNativeMethod($expr, $class, $method);
+            $function = $this->getNativeMethod($expr, $class, $method, false);
             if ($function !== false) {
                 return $this->getFunction($function)->returnsByRef;
             }
-            return false;
+            return null;
+        }
+        if ($expr instanceof Expr\StaticCall) {
+            return null;
         }
         return false;
     }
@@ -1858,9 +1874,11 @@ class CompilerBase implements PropertyAccessContext
             if ($v->expr === null) {
                 return 'return ' . Type::REF . '{};';
             }
-            // Forwarding a call that itself returns by reference is valid PHP.
-            if ($this->isRefReturningCall($v->expr)) {
-                return 'return ' . $this->parseExpr($v->expr) . ';';
+            if ($v->expr instanceof CallLike) {
+                $returnsByRef = $this->resolveRefReturningCall($v->expr);
+                if ($returnsByRef !== false) {
+                    return 'return php::toReferenceExact(' . $this->parseExpr($v->expr) . ');';
+                }
             }
             if (!$this->isVarExpr($v->expr)
                 && !$this->isPropertyFetch($v->expr)
@@ -1892,6 +1910,9 @@ class CompilerBase implements PropertyAccessContext
             }
             if ($this->isPropertyFetch($v->expr)) {
                 return 'return ' . $this->emitDynamicPropertyFetchRef($v->expr, $v) . ';';
+            }
+            if ($this->isStaticPropertyFetch($v->expr)) {
+                return 'return ' . $this->emitStaticPropertyFetchRef($v->expr, $v) . ';';
             }
             return 'return ' . $this->parseChainedExpr($v->expr, self::OP_REFVAL) . ';';
         }

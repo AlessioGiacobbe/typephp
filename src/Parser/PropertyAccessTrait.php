@@ -201,34 +201,27 @@ trait PropertyAccessTrait
         return $objectExpr . '.attrRef(' . $this->identifierToStr($expr->name) . ')';
     }
 
-    /**
-     * Emit a reference (php::Ref) bound to a static property's underlying zval.
-     *
-     * `php::getStaticProperty(ce, offset)` returns a Variant that shares the
-     * static property's zval, so `.toReference()` yields a live reference whose
-     * writes propagate back to the static property.
-     */
     protected function emitStaticPropertyFetchRef(Expr\StaticPropertyFetch $expr, NodeAbstract $errorNode): string
     {
+        $resolution = $this->resolveNativeStaticPropertyFetch($expr);
         if ($this->isIdExpr($expr->name)) {
-            $this->resolveNativeStaticPropertyFetch($expr);
             $this->assertPropertySetVisibility($expr);
         }
 
-        $resolution = $this->resolveNativeStaticPropertyFetch($expr);
         if ($resolution !== null) {
+            $property = $this->identifierToStr($expr->name, literal: true);
             if ($resolution->class !== null) {
                 $classPtr = $this->getClassEntryPtr($resolution->class);
-                return Symbol::getStaticProperty() . '(' . $classPtr . ', ' . $resolution->expression . ').toReference()';
+                return Symbol::getStaticPropertyRef() . '(' . $classPtr . ', ' . $property . ')';
             }
             if ($resolution->expression !== null) {
                 // Dynamic target, e.g. `self` resolved through the called class inside a trait.
-                return $resolution->expression . '.toReference()';
+                return Symbol::getStaticPropertyRef() . '(' . Symbol::getCalledCe() . ', ' . $property . ')';
             }
         }
 
         // Fully dynamic path: `static` keyword, dynamic class name, or dynamic property name.
-        return $this->parseDynamicStaticPropertyFetch($expr) . '.toReference()';
+        return $this->parseDynamicStaticPropertyFetch($expr, true);
     }
 
 
@@ -356,7 +349,7 @@ trait PropertyAccessTrait
      * object. Materialising both operands preserves PHP's left-to-right
      * evaluation order and avoids ambiguous C++ overload resolution for Var.
      */
-    private function parseDynamicStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string
+    private function parseDynamicStaticPropertyFetch(Expr\StaticPropertyFetch $expr, bool $reference = false): string
     {
         $classValue = $this->getDynamicStaticClassValue($expr->class);
         $propertyValue = $this->identifierToStr($expr->name, literal: true);
@@ -367,7 +360,8 @@ trait PropertyAccessTrait
         $this->context->beforeStmtLines[] = $propertyVar . ' = ' . $propertyValue . ';';
 
         $className = '(' . $classVar . '.isObject() ? php::fn::get_class(' . $classVar . ') : php::toString(' . $classVar . '))';
-        return Symbol::getStaticProperty() . '(' . $className . ', php::toString(' . $propertyVar . '))';
+        $helper = $reference ? Symbol::getStaticPropertyRef() : Symbol::getStaticProperty();
+        return $helper . '(' . $className . ', php::toString(' . $propertyVar . '))';
     }
 
     private function getDynamicStaticClassValue(NodeAbstract $class): string
