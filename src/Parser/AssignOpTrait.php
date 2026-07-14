@@ -101,7 +101,53 @@ trait AssignOpTrait
         if ($this->isAssignExpr($right)) {
             return $this->parseRightAssociativeAssign($left, $right);
         }
+        if ($left instanceof Expr\List_ && $v->getAttribute(self::ATTR_STATEMENT_EXPRESSION, false)) {
+            $optimized = $this->parseAssignToMultiReturn($left, $right);
+            if ($optimized !== null) {
+                return $optimized;
+            }
+        }
         return $this->parseAssignFinally($left, $right);
+    }
+
+    private function parseAssignToMultiReturn(Expr\List_ $left, Expr $right): ?string
+    {
+        if (!$right instanceof Expr\FuncCall
+            || (!$this->isNameExpr($right->name) && !$this->isFullNameExpr($right->name))) {
+            return null;
+        }
+
+        $nativeFunc = $this->findNativeFunction($this->parseIdentifier($right->name));
+        if ($nativeFunc === false) {
+            return null;
+        }
+        $functionDef = $this->getFunction($nativeFunc);
+        if (!$functionDef->hasMultiReturn()
+            || $functionDef->multiReturnCount !== count($left->items)
+            || $this->shouldUseDynamicCallForNativeArgs($nativeFunc, $right->args)) {
+            return null;
+        }
+
+        $variables = [];
+        foreach ($left->items as $item) {
+            if (!$item instanceof ArrayItem || $item->key !== null || $item->unpack || $item->byRef
+                || !$this->isVarExpr($item->value) || !is_string($item->value->name)) {
+                return null;
+            }
+            $name = $this->parseWritableIdentifier($item->value);
+            if ($this->hasVar($name) && $this->getVarType($name) !== Type::VAR) {
+                return null;
+            }
+            $variables[] = $name;
+        }
+
+        foreach ($variables as $name) {
+            if (!$this->hasVar($name)) {
+                $this->addLocalVar($name, Type::VAR);
+            }
+        }
+        $right->setAttribute(self::ATTR_MULTI_RETURN_IMPL, true);
+        return 'std::tie(' . implode(', ', $variables) . ') = ' . $this->parseFuncCall($right);
     }
 
     protected function parseAssignToList(Expr $left, Expr $right): string

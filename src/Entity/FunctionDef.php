@@ -28,6 +28,8 @@ class FunctionDef
     public bool $returnTypeUndeclared = false;
     public bool $returnsByRef = false;
     public bool $generator = false;
+    /** Number of fixed positional values returned through the internal tuple fast path. */
+    public int $multiReturnCount = 0;
     /** Source file containing this function definition. */
     public string $sourceFile = '';
     /** First source line of this function definition. */
@@ -62,5 +64,15 @@ class FunctionDef
     public function hasVariadicArg(): bool
     {
         return $this->argInfoList && $this->argInfoList[count($this->argInfoList) - 1]->variadic;
+    }
+
+    public function hasMultiReturn(): bool
+    {
+        return $this->multiReturnCount > 0;
+    }
+
+    public function getMultiReturnCppType(): string
+    {
+        return 'std::tuple<' . implode(', ', array_fill(0, $this->multiReturnCount, 'php::Var')) . '>';
     }
 }

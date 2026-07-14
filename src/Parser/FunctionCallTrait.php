@@ -102,7 +102,10 @@ trait FunctionCallTrait
                     return $this->genRuntimeFunctionCall($this->getFuncPtr($functionDef->getNamespacedName()), $expr->args, $name);
                 }
                 try {
-                    return self::PREFIX . $nativeFn . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
+                    $callee = $expr->getAttribute(self::ATTR_MULTI_RETURN_IMPL, false)
+                        ? $this->getMultiReturnImplName($nativeFn)
+                        : self::PREFIX . $nativeFn;
+                    return $callee . '(' . $this->parseNativeCallArgs($expr->args, $nativeFn) . ')';
                 } catch (PlaceHolder) {
                     return $this->genPlaceHolder($this->identifierToStr($expr->name));
                 }
@@ -133,4 +136,3 @@ trait FunctionCallTrait
         }
     }
 }
-

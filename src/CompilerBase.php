@@ -143,6 +143,8 @@ class CompilerBase implements PropertyAccessContext
     protected const int COMPOSITE_TYPE_MATCH = 1;
     protected const string ATTR_ARRAY_DIM_FETCH_UPDATE = 'aotArrayDimFetchUpdate';
     protected const string ATTR_PROPERTY_FETCH_UPDATE = 'aotPropertyFetchUpdate';
+    protected const string ATTR_STATEMENT_EXPRESSION = 'aotStatementExpression';
+    protected const string ATTR_MULTI_RETURN_IMPL = 'aotMultiReturnImpl';
 
     /**
      * Keyword methods (to* builtins) with mandated return types.
@@ -195,6 +197,7 @@ class CompilerBase implements PropertyAccessContext
     public const string NAMESPACE_SEPARATOR = '__';
 
     public const string PREFIX = 'php_';
+    protected const string MULTI_RETURN_NAMESPACE = 'typephp::detail::multi_return';
     public const string OP_ISSET = 'isset';
     public const string OP_EMPTY = 'empty';
     public const string OP_NOT_EMPTY = 'notEmpty';
@@ -1497,6 +1500,7 @@ class CompilerBase implements PropertyAccessContext
             $lines[] = $this->getComment($v, $class);
             switch ($class) {
                 case 'Stmt_Expression':
+                    $v->expr->setAttribute(self::ATTR_STATEMENT_EXPRESSION, true);
                     if ($this->inGeneratorBody && $v->expr instanceof Expr\Yield_) {
                         $result = $this->parseYieldStmt($v->expr);
                     } elseif ($this->inGeneratorBody && $v->expr instanceof Expr\YieldFrom) {
@@ -1956,6 +1960,16 @@ class CompilerBase implements PropertyAccessContext
                 return 'return ' . self::VALUE_NULL . ';';
             }
         }
+        if (!$this->context->inClosure && $this->functionDef->hasMultiReturn()) {
+            if (!$v->expr instanceof Expr\Array_) {
+                throw new \LogicException('Optimized multi-return function must return a fixed array literal');
+            }
+            $values = [];
+            foreach ($v->expr->items as $item) {
+                $values[] = Type::VAR . '(' . $this->parseExprAsValue($item->value) . ')';
+            }
+            return 'return ' . $this->functionDef->getMultiReturnCppType() . '{' . implode(', ', $values) . '};';
+        }
         // 实际函数的返回值
         $type = $this->detectTypeOfExpr($v->expr);
         if ($this->isCurrentConstructor() && !$this->context->inClosure) {
@@ -2030,6 +2044,11 @@ class CompilerBase implements PropertyAccessContext
         }
 
         return $code;
+    }
+
+    protected function getMultiReturnImplName(string $nativeName): string
+    {
+        return self::MULTI_RETURN_NAMESPACE . '::' . self::PREFIX . $nativeName;
     }
 
     protected function genClosureCheckedReturn(string $exprCode): string

@@ -459,6 +459,13 @@ class Preprocessor extends CompilerBase
             }
         }
 
+        if (!$this->method && $this->canOptimizeMultiReturn($v, $functionDef)) {
+            $functionDef->multiReturnCount = count($v->stmts[array_key_last($v->stmts)]->expr->items);
+            // The fixed tuple is an internal ABI detail. PHP and ordinary native
+            // callers continue to observe an array return value.
+            $functionDef->returnType = Type::ARRAY;
+        }
+
         $this->parseParams($v->params, $functionDef);
 
         // main 函数，返回值必须为 void 类型，参数必须为空或者 argc, argv 两个参数
@@ -480,6 +487,40 @@ class Preprocessor extends CompilerBase
         }
 
         return $functionDef;
+    }
+
+    private function canOptimizeMultiReturn(Node\Stmt\Function_|Node\Stmt\ClassMethod $function, FunctionDef $functionDef): bool
+    {
+        if ($functionDef->stub || $functionDef->generator || $functionDef->returnsByRef
+            || ($functionDef->returnType !== Type::ARRAY && !$functionDef->returnTypeUndeclared)
+            || !$function->stmts) {
+            return false;
+        }
+
+        $return = $function->stmts[array_key_last($function->stmts)] ?? null;
+        if (!$return instanceof Node\Stmt\Return_ || !$return->expr instanceof Node\Expr\Array_
+            || count($return->expr->items) < 2) {
+            return false;
+        }
+
+        $returns = (new NodeFinder())->findInstanceOf($function->stmts, Node\Stmt\Return_::class);
+        if (count($returns) !== 1) {
+            return false;
+        }
+
+        foreach ($return->expr->items as $item) {
+            if ($item === null || $item->key !== null || $item->unpack || $item->byRef) {
+                return false;
+            }
+            $value = $item->value;
+            if (($value instanceof Node\Expr\Variable && is_string($value->name))
+                || $value instanceof Node\Scalar
+                || $value instanceof Node\Expr\ConstFetch) {
+                continue;
+            }
+            return false;
+        }
+        return true;
     }
 
     protected function prepareFunction(Node\Stmt\ClassMethod|Node\Stmt\Function_ $v): void

@@ -1524,7 +1524,6 @@ CODE;
         $code .= $this->genDefaultArgumentHelpers();
 
         foreach ($this->symbols->functions() as $name => $func) {
-            $code .= 'extern ' . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(';
             $list = [];
             if ($func->method) {
                 $list[] = Type::OBJECT . ' &this_';
@@ -1543,8 +1542,13 @@ CODE;
                     $list[] = $arg;
                 }
             }
-            $code .= implode(', ', $list);
-            $code .= ');' . PHP_EOL;
+            $params = implode(', ', $list);
+            $code .= 'extern ' . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
+            if ($func->hasMultiReturn()) {
+                $code .= 'namespace ' . self::MULTI_RETURN_NAMESPACE . ' {' . PHP_EOL;
+                $code .= 'extern ' . $func->getMultiReturnCppType() . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
+                $code .= '}' . PHP_EOL;
+            }
         }
 
         $code .= PHP_EOL;
@@ -2945,8 +2949,12 @@ CODE;
             $stmts = $this->genReturnCode();
         }
 
-        $cppReturnType = $this->functionDef->returnsByRef ? Type::REF : $this->getReturnType();
-        $functionDeclCode = $cppReturnType . ' ' . self::PREFIX . $name . '(';
+        $multiReturn = $this->functionDef->hasMultiReturn();
+        $cppReturnType = $multiReturn
+            ? $this->functionDef->getMultiReturnCppType()
+            : ($this->functionDef->returnsByRef ? Type::REF : $this->getReturnType());
+        $nativeName = self::PREFIX . $name;
+        $functionDeclCode = $cppReturnType . ' ' . ($multiReturn ? $this->getMultiReturnImplName($name) : $nativeName) . '(';
         if ($this->class) {
             $functionDeclCode .= Type::OBJECT . ' &this_';
             if ($this->functionDef->params) {
@@ -2991,6 +2999,18 @@ CODE;
 
         $code .= $stmts;
         $code .= "}\n";
+
+        if ($multiReturn) {
+            $forwardArgs = implode(', ', array_map(
+                static fn($argInfo) => $argInfo->name,
+                $this->functionDef->argInfoList,
+            ));
+            $code .= Type::ARRAY . ' ' . $nativeName . '(' . $this->functionDef->params . ') {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . 'return ' . Type::ARRAY . '(' . $this->getMultiReturnImplName($name) . '(' . $forwardArgs . '));' . PHP_EOL;
+            $this->indentLevel--;
+            $code .= '}' . PHP_EOL;
+        }
 
         $this->resetFunction();
 
