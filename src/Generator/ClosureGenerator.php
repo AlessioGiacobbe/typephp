@@ -77,6 +77,25 @@ trait ClosureGenerator
 
     protected function genClosure(Expr\ArrowFunction|Expr\Closure $expr, array $params, array $uses = []): string
     {
+        $entryContext = $this->context;
+        $entryIndent = $this->indentLevel;
+        $entryInGeneratorBody = $this->inGeneratorBody;
+
+        try {
+            return $this->doGenClosure($expr, $params, $uses);
+        } finally {
+            $this->context = $entryContext;
+            $this->indentLevel = $entryIndent;
+            $this->inGeneratorBody = $entryInGeneratorBody;
+        }
+    }
+
+    private function doGenClosure(Expr\ArrowFunction|Expr\Closure $expr, array $params, array $uses = []): string
+    {
+        $isGenerator = $this->closureContainsYield($expr);
+        if ($isGenerator) {
+            $this->validateGeneratorClosure($expr, $params);
+        }
         $tmpVar = $this->genTmpVarName();
 
         $code = $this->getIndent() .
@@ -90,7 +109,10 @@ trait ClosureGenerator
         $this->context = new FunctionContext();
 
         $this->context->inClosure = true;
-        if ($expr->returnType instanceof NullableType || $expr->returnType instanceof UnionType || $expr->returnType instanceof IntersectionType) {
+        if (!$isGenerator
+            && ($expr->returnType instanceof NullableType
+                || $expr->returnType instanceof UnionType
+                || $expr->returnType instanceof IntersectionType)) {
             $returnTypeInfo = $this->buildTypeCheckFromNode($expr->returnType);
             if (!empty($returnTypeInfo['check'])) {
                 $this->context->closureReturnTypeCheck = $returnTypeInfo['check'];
@@ -156,7 +178,9 @@ trait ClosureGenerator
             $this->addArgument('this_', Type::OBJECT);
         }
 
-        $body = $this->genClosureBody($expr);
+        $body = $isGenerator
+            ? $this->genGeneratorClosureFactoryBody($expr, $params, $uses)
+            : $this->genClosureBody($expr);
         $code .= $this->genScopeVarDecl() . $body;
 
         $this->indentLevel--;
@@ -191,6 +215,120 @@ trait ClosureGenerator
         } else {
             return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
         }
+    }
+
+    protected function closureContainsYield(Expr\ArrowFunction|Expr\Closure $expr): bool
+    {
+        if ($expr instanceof Expr\ArrowFunction) {
+            return $this->containsYieldInNode($expr->expr);
+        }
+        return $this->containsYieldInNodes($expr->stmts);
+    }
+
+    protected function validateGeneratorClosure(Expr\ArrowFunction|Expr\Closure $expr, array $params): void
+    {
+        if ($expr->byRef) {
+            $this->fatalError($expr, 'Generator closures returning by reference are not supported yet');
+        }
+        foreach ($params as $param) {
+            if ($param->byRef || $param->variadic) {
+                $this->fatalError($param, 'Generator closures with by-reference or variadic parameters are not supported yet');
+            }
+        }
+        if (!$this->generatorReturnTypeAcceptsFiber($expr->returnType)) {
+            $this->fatalError(
+                $expr,
+                'Generator closure return type must accept \\FiberGenerator; use Iterator, Traversable, iterable, object, mixed, or omit the return type'
+            );
+        }
+    }
+
+    protected function genGeneratorClosureFactoryBody(
+        Expr\ArrowFunction|Expr\Closure $expr,
+        array $params,
+        array $uses
+    ): string {
+        $capturedNames = [];
+        $capturedArgs = [];
+        foreach ($params as $param) {
+            $name = $this->parseIdentifier($param->var);
+            $capturedNames[] = $name;
+            $capturedArgs[] = $name;
+        }
+        foreach ($uses as $useItem) {
+            $name = $this->parseIdentifier($useItem->var);
+            $capturedNames[] = $name;
+            // Building an initializer_list copies Variants by value. Re-wrap
+            // reference captures so the delayed Fiber callback keeps identity.
+            $capturedArgs[] = $useItem->byRef ? $name . '.toReference()' : $name;
+        }
+
+        $outerContext = $this->context;
+        $outerIndent = $this->indentLevel;
+        $outerInGeneratorBody = $this->inGeneratorBody;
+        $callbackVar = $this->genTmpVarName();
+
+        $code = $this->getIndent() . 'php::ClosureFn ' . $callbackVar . ' = []('
+            . 'INTERNAL_FUNCTION_PARAMETERS, '
+            . Type::OBJECT . ' &this_, '
+            . Type::ARGS . ' &vars_) -> ' . Type::VAR . ' {' . PHP_EOL;
+
+        $this->context = new FunctionContext();
+        $this->context->inClosure = true;
+        $this->inGeneratorBody = true;
+        $this->indentLevel++;
+
+        try {
+            foreach ($capturedNames as $i => $name) {
+                $code .= $this->getIndent() . Type::VAR . ' ' . $name . ' = vars_.get(' . $i . ');' . PHP_EOL;
+                $this->addArgument($name, Type::VAR);
+            }
+            if ($this->methodDef) {
+                $this->addArgument('this_', Type::OBJECT);
+            }
+
+            $this->indentLevel++;
+            $body = '';
+            if ($this->methodDef && $this->methodDef->hasDynamicCall) {
+                $body .= $this->genScopeSwitchCode();
+            }
+            if ($expr instanceof Expr\ArrowFunction) {
+                [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr->expr);
+                $body .= $this->formatCapturedStmtLines($beforeStmts);
+                if ($afterStmts) {
+                    $resultVar = $this->addTmpVar(Type::VAR);
+                    $body .= $this->getIndent() . $resultVar . ' = ' . $value . ';' . PHP_EOL;
+                    $body .= $this->formatCapturedStmtLines($afterStmts);
+                    $value = $resultVar;
+                }
+                $body .= $this->getIndent() . 'return ' . $value . ';' . PHP_EOL;
+            } else {
+                $body .= $this->parseStmts($expr->stmts);
+                if (!$this->isReturnStmtInLastLine($expr->stmts)) {
+                    $body .= $this->getIndent() . 'return php::null;' . PHP_EOL;
+                }
+            }
+            $this->indentLevel--;
+
+            $code .= $this->genScopeVarDecl();
+            $code .= $this->getIndent() . 'try {' . PHP_EOL;
+            $code .= $body;
+            $code .= $this->getIndent() . '} catch (zend_object *) {' . PHP_EOL;
+            $code .= $this->getIndent() . '    return php::null;' . PHP_EOL;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        } finally {
+            $this->context = $outerContext;
+            $this->indentLevel = $outerIndent;
+            $this->inGeneratorBody = $outerInGeneratorBody;
+        }
+
+        $code .= $this->getIndent() . '};' . PHP_EOL;
+        $args = $capturedArgs ? '{ ' . implode(', ', $capturedArgs) . ' }' : '{}';
+        $callback = $this->methodDef
+            ? 'php::newClosure(' . $callbackVar . ', ' . $args . ', this_)'
+            : 'php::newClosure(' . $callbackVar . ', ' . $args . ')';
+        $code .= $this->getIndent() . 'return typephp_new_fiber_generator(' . $callback . ');' . PHP_EOL;
+        return $code;
     }
 
     protected function genClosureBody(NodeAbstract $expr): string

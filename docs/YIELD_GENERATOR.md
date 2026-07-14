@@ -1,8 +1,8 @@
 # yield / Generator
 
-TypePHP 将包含 `yield` 或 `yield from` 的函数和方法编译为 Fiber generator。调用这类函数时不会立即执行函数体，而是返回一个 `TypePHP\FiberGenerator` 对象；第一次迭代、调用 `current()`、`valid()`、`send()` 或 `throw()` 时才创建并启动 Fiber。
+TypePHP 将包含 `yield` 或 `yield from` 的函数、方法、匿名函数和箭头函数编译为 Fiber generator。调用时不会立即执行 generator 函数体，而是返回一个全局 `\FiberGenerator` 对象；第一次迭代、调用 `current()`、`valid()`、`send()` 或 `throw()` 时才创建并启动 Fiber。
 
-生成的 C++ 函数体运行在 Fiber 中。每次 `yield` 都通过 `Fiber::suspend()` 将 key/value 交给迭代驱动方，并在 `next()`、`send()` 或 `throw()` 时恢复原来的 C++ 调用栈。运行时使用 `NEW`、`SUSPENDED`、`CLOSED_RETURNED` 和 `CLOSED_FAILED` 四种状态区分未启动、挂起、正常返回和异常关闭。
+生成的 C++ 函数体运行在 Fiber 中。每次 `yield` 都通过 `Fiber::suspend()` 将 key/value 交给迭代驱动方，并在 `next()`、`send()` 或 `throw()` 时恢复原来的 C++ 调用栈。运行时使用 `NEW`、`RUNNING`、`SUSPENDED`、`CLOSED_RETURNED` 和 `CLOSED_FAILED` 区分未启动、执行中、挂起、正常返回和异常关闭。
 
 ## 迭代互操作
 
@@ -12,10 +12,10 @@ TypePHP 将包含 `yield` 或 `yield from` 的函数和方法编译为 Fiber gen
 |---|---|
 | TypePHP Native `foreach` | TypePHP Native generator |
 | TypePHP Native `foreach` | 动态 PHP 返回的 Zend `Generator` |
-| ZendVM `foreach` | TypePHP Native generator 返回的 `TypePHP\FiberGenerator` |
-| TypePHP `yield from` | 数组、`Iterator`、`IteratorAggregate`、Zend `Generator`、`TypePHP\FiberGenerator` |
+| ZendVM `foreach` | TypePHP Native generator 返回的 `\FiberGenerator` |
+| TypePHP `yield from` | 数组、`Iterator`、`IteratorAggregate`、Zend `Generator`、`\FiberGenerator` |
 
-`TypePHP\FiberGenerator` 实现了 `Iterator`，其接口签名与 PHP 一致：
+`\FiberGenerator` 实现了 `Iterator`，其接口签名与 PHP 一致：
 
 ```php
 rewind(): void
@@ -34,7 +34,7 @@ getReturn(): mixed
 
 ### 不是 Zend Generator
 
-TypePHP generator 返回的是 `TypePHP\FiberGenerator`，不是 PHP 内置的 `Generator`：
+TypePHP generator 返回的是全局 `\FiberGenerator`，不是 PHP 内置的 `Generator`：
 
 ```php
 $generator instanceof Iterator;  // true
@@ -45,10 +45,10 @@ $generator instanceof Generator; // false
 
 - generator 函数不能声明精确返回类型 `Generator`。
 - 可以使用 `Iterator`、`Traversable`、`iterable`、`object`、`mixed`，或包含这些兼容类型的联合类型。
-- `ReflectionGenerator` 只接受 Zend `Generator`，不能用于 `TypePHP\FiberGenerator`。
+- `ReflectionGenerator` 只接受 Zend `Generator`，不能用于 `\FiberGenerator`。
 - `get_class()`、Reflection class 信息和异常栈中的类名与 Zend `Generator` 不同。
-- 不保证 `var_dump()`、调试属性、序列化错误、clone 行为及内部对象布局与 Zend `Generator` 一致。
-- `TypePHP\FiberGenerator` 是运行时内部实现类型，不应由业务代码直接实例化、继承、clone 或序列化。
+- 不保证 `var_dump()`、调试属性及内部对象布局与 Zend `Generator` 一致。
+- `\FiberGenerator` 是 final 运行时内部类型，禁止业务代码直接实例化、继承、clone 或序列化。
 
 ### 不支持引用 Generator
 
@@ -112,7 +112,7 @@ Zend `Generator` 是 ZendVM 的专用执行对象；TypePHP generator 使用 PHP
 
 - 委托通过 `rewind()`、`valid()`、`key()`、`current()`、`next()`、`send()`、`throw()` 和 `getReturn()` 方法完成。
 - 自定义 Iterator 方法产生的副作用、异常栈和调用次数应避免依赖 Zend Generator 的内部实现细节。
-- 非 generator Iterator 的 `yield from` 结果为 `null`；只有 Zend `Generator` 和 `TypePHP\FiberGenerator` 会读取 `getReturn()`。
+- 非 generator Iterator 的 `yield from` 结果为 `null`；只有 Zend `Generator` 和 `\FiberGenerator` 会读取 `getReturn()`。
 
 ## 性能差异
 
@@ -138,6 +138,6 @@ Fiber generator 不会改变普通数组或普通容器 `foreach` 的生成代�
 - `ReflectionGenerator`。
 - generator 按引用返回、by-reference yield 或按引用 foreach。
 - generator 的按引用参数或可变参数。
-- clone、序列化、调试输出及内部属性与 Zend Generator 相同。
+- 调试输出及内部属性与 Zend Generator 相同。
 - 所有内部扩展 `Traversable` 都能通过 Zend iterator handlers 迭代。
 - Fiber 关闭、复杂析构和进程退出时与 Zend Generator 完全相同的栈及析构顺序。

@@ -70,7 +70,7 @@ trait FiberGenerator
             }
         }
         if (!$this->generatorReturnTypeAcceptsFiber($v->returnType)) {
-            $this->fatalError($v, 'Generator return type must accept TypePHP\\FiberGenerator; use Iterator, Traversable, iterable, object, mixed, or omit the return type');
+            $this->fatalError($v, 'Generator return type must accept \\FiberGenerator; use Iterator, Traversable, iterable, object, mixed, or omit the return type');
         }
         $functionDef->generator = true;
         $functionDef->returnType = Type::VAR;
@@ -112,7 +112,7 @@ trait FiberGenerator
 
         [, $class] = $this->resolveTypeDecl($type, self::DECL_TYPE_OF_RETURN);
         $class = strtolower(ltrim($class, '\\'));
-        return in_array($class, ['iterator', 'traversable', 'typephp\\fibergenerator'], true);
+        return in_array($class, ['iterator', 'traversable', 'fibergenerator'], true);
     }
 
     protected function parseYieldExpr(Yield_ $expr): string
@@ -140,7 +140,7 @@ trait FiberGenerator
         $closed = $this->genTmpVarName();
         $this->addLocalVar($closed, Type::BOOL);
         return $closed . ' = false;' . PHP_EOL
-            . $this->getIndent() . 'typephp_fiber_yield_from(' . $this->parseExprAsValue($expr->expr) . ', &' . $closed . ');' . PHP_EOL
+            . $this->getIndent() . 'typephp_fiber_yield_from(' . $this->genYieldFromIterable($expr) . ', &' . $closed . ');' . PHP_EOL
             . $this->getIndent() . 'if (' . $closed . ') {' . PHP_EOL
             . $this->getIndent() . '    return ' . self::VALUE_NULL . ';' . PHP_EOL
             . $this->getIndent() . '}';
@@ -148,12 +148,43 @@ trait FiberGenerator
 
     protected function genYieldPayload(Yield_ $expr): string
     {
-        $value = $expr->value ? $this->parseExprAsValue($expr->value) : self::VALUE_NULL;
         if ($expr->key) {
-            $key = $this->parseExprAsValue($expr->key);
+            // PHP evaluates an explicit yield key before its value. Materialize
+            // both operands so lowering helpers cannot hoist value side effects
+            // ahead of the key or defer postfix side effects until after resume.
+            $key = $this->materializeYieldOperand($expr->key, true);
+            $value = $expr->value
+                ? $this->materializeYieldOperand($expr->value, true)
+                : self::VALUE_NULL;
             return 'php::Array(php::StdStrKeyMap{{"key", ' . $key . '}, {"value", ' . $value . '}, {"has_key", true}})';
         }
+        $value = $expr->value
+            ? $this->materializeYieldOperand($expr->value)
+            : self::VALUE_NULL;
         return 'php::Array(php::StdStrKeyMap{{"value", ' . $value . '}, {"has_key", false}})';
+    }
+
+    private function materializeYieldOperand(Node $expr, bool $force = false): string
+    {
+        [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
+        foreach ($beforeStmts as $stmt) {
+            $this->context->beforeStmtLines[] = $stmt;
+        }
+        if (!$force && !$afterStmts) {
+            return $value;
+        }
+
+        $tmpVar = $this->addTmpVar(Type::VAR);
+        $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
+        foreach ($afterStmts as $stmt) {
+            $this->context->beforeStmtLines[] = $stmt;
+        }
+        return $tmpVar;
+    }
+
+    private function genYieldFromIterable(YieldFrom $expr): string
+    {
+        return $this->materializeYieldOperand($expr->expr);
     }
 
     protected function parseYieldFromExpr(YieldFrom $expr): string
@@ -161,7 +192,7 @@ trait FiberGenerator
         if (!$this->inGeneratorBody) {
             $this->fatalError($expr, 'The `Expr_YieldFrom` is not supported outside generator functions');
         }
-        return 'typephp_fiber_yield_from(' . $this->parseExprAsValue($expr->expr) . ', nullptr)';
+        return 'typephp_fiber_yield_from(' . $this->genYieldFromIterable($expr) . ', nullptr)';
     }
 
     protected function genFiberGeneratorFunction(Function_|ClassMethod $v, FunctionDef $functionDef, string $nativeName): string
@@ -256,7 +287,7 @@ trait FiberGenerator
         $closureExpr = $this->class
             ? 'php::newClosure(' . $closureVar . ', ' . $args . ', this_)'
             : 'php::newClosure(' . $closureVar . ', ' . $args . ')';
-        $code .= $this->getIndent() . 'return php::newObject(typephp_fiber_generator_ce, {' . $closureExpr . '});' . PHP_EOL;
+        $code .= $this->getIndent() . 'return typephp_new_fiber_generator(' . $closureExpr . ');' . PHP_EOL;
         $this->indentLevel--;
         $code .= '}' . PHP_EOL;
 

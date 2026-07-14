@@ -1,5 +1,5 @@
 --TEST--
-TypePHP FiberGenerator methods expose Iterator-compatible return types
+FiberGenerator methods expose Iterator-compatible return types
 --INI--
 error_reporting=E_ALL
 --FILE--
