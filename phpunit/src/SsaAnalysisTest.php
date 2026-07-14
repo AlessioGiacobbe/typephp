@@ -1263,6 +1263,15 @@ class SsaAnalysisTest extends TestCase
         }
     }
 
+    public function testDetectTypeOfConcatExpressions(): void
+    {
+        $concat = new Expr\BinaryOp\Concat(new Scalar\LNumber(1), new Scalar\String_(''));
+        $concatAssign = new Expr\AssignOp\Concat(new Expr\Variable('value'), new Scalar\LNumber(2));
+
+        $this->assertSame(Type::STR, $this->invoke('detectTypeOfExpr', $concat));
+        $this->assertSame(Type::STR, $this->invoke('detectTypeOfExpr', $concatAssign));
+    }
+
     public function testDetectSsaDefTypeNull(): void
     {
         $ssaVar = new SsaVar(1, 'x');

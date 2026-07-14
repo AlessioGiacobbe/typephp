@@ -265,6 +265,13 @@ trait BinaryOpTrait
 
         $argList = $prefixExpressions;
         foreach ($items as $item) {
+            // Keep one operand so concat still performs PHP string coercion.
+            // Prefix expressions are operands too (for example, the left-hand
+            // value of `.=`), so an empty RHS literal can be omitted there.
+            if ($argList !== [] && $this->isScalarString($item) && $item->value === '') {
+                continue;
+            }
+
             $type = $this->detectTypeOfExpr($item);
             $parsed = $this->parseExprAsValue($item);
             $argList[] = $this->prepareConcatOperand($parsed, $type);

@@ -2299,6 +2299,9 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_Array':
             case 'Expr_Cast_Array':
                 return Type::ARRAY;
+            case 'Expr_BinaryOp_Concat':
+            case 'Expr_AssignOp_Concat':
+                return Type::STR;
             case 'Expr_BinaryOp_Plus':
             case 'Expr_BinaryOp_Minus':
             case 'Expr_BinaryOp_Mul':
