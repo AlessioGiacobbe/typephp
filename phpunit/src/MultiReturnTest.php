@@ -24,6 +24,19 @@ final class MultiReturnTest extends TestCase
             'std::tie(first, second) = typephp::detail::php_phpunit_multi_values()',
             $code,
         );
+        $this->assertMatchesRegularExpression(
+            '/std::tuple<php::Var, php::Var> (tmp_var_\\d+);\\s*'
+            . 'std::get<0>\\(\\1\\) = std::move\\(first\\);\\s*'
+            . 'std::get<1>\\(\\1\\) = std::move\\(second\\);\\s*'
+            . 'return \\1;/',
+            $code,
+        );
+        $this->assertMatchesRegularExpression(
+            '/std::tuple<php::Var, php::Var> (tmp_var_\\d+);\\s*'
+            . 'std::get<0>\\(\\1\\) = repeated;\\s*'
+            . 'std::get<1>\\(\\1\\) = std::move\\(repeated\\);/',
+            $code,
+        );
         $this->assertStringContainsString(
             'php::Array php_phpunit_multi_values()',
             $code,

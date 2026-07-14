@@ -20,6 +20,12 @@ function phpunit_multi_three_values(): array
     return [1, 2, 3];
 }
 
+function phpunit_multi_repeated_value(): array
+{
+    $repeated = 'value';
+    return [$repeated, $repeated];
+}
+
 function phpunit_multi_side_effect(): array
 {
     return [time(), 2];

@@ -1964,11 +1964,36 @@ class CompilerBase implements PropertyAccessContext
             if (!$v->expr instanceof Expr\Array_) {
                 throw new \LogicException('Optimized multi-return function must return a fixed array literal');
             }
-            $values = [];
+
+            // Assign tuple elements through Variant::operator= instead of constructing
+            // temporary Vars. The rvalue overload can transfer an owned zval without
+            // refcount churn while retaining PHP value-assignment semantics for
+            // references and indirect zvals.
+            $remainingVariableUses = [];
             foreach ($v->expr->items as $item) {
-                $values[] = Type::VAR . '(' . $this->parseExprAsValue($item->value) . ')';
+                if ($this->isVarExpr($item->value) && is_string($item->value->name)) {
+                    $name = $this->parseIdentifier($item->value);
+                    $remainingVariableUses[$name] = ($remainingVariableUses[$name] ?? 0) + 1;
+                }
             }
-            return 'return ' . $this->functionDef->getMultiReturnCppType() . '{' . implode(', ', $values) . '};';
+
+            $tuple = $this->genTmpVarName();
+            $lines = [$this->functionDef->getMultiReturnCppType() . ' ' . $tuple . ';'];
+            foreach ($v->expr->items as $index => $item) {
+                $value = $this->parseExprAsValue($item->value);
+                if ($this->isVarExpr($item->value) && is_string($item->value->name)) {
+                    $name = $this->parseIdentifier($item->value);
+                    $remainingVariableUses[$name]--;
+                    // Only consume a local on its final occurrence. Globals and
+                    // statics outlive the function and must never be emptied.
+                    if ($remainingVariableUses[$name] === 0 && $this->hasLocalVar($name)) {
+                        $value = 'std::move(' . $value . ')';
+                    }
+                }
+                $lines[] = 'std::get<' . $index . '>(' . $tuple . ') = ' . $value . ';';
+            }
+            $lines[] = 'return ' . $tuple . ';';
+            return implode(PHP_EOL . $this->getIndent(), $lines);
         }
         // 实际函数的返回值
         $type = $this->detectTypeOfExpr($v->expr);
