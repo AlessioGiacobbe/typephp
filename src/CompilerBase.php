@@ -197,7 +197,7 @@ class CompilerBase implements PropertyAccessContext
     public const string NAMESPACE_SEPARATOR = '__';
 
     public const string PREFIX = 'php_';
-    protected const string MULTI_RETURN_NAMESPACE = 'typephp::detail::multi_return';
+    protected const string MULTI_RETURN_NAMESPACE = 'typephp::detail';
     public const string OP_ISSET = 'isset';
     public const string OP_EMPTY = 'empty';
     public const string OP_NOT_EMPTY = 'notEmpty';

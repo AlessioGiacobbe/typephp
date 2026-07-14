@@ -17,11 +17,11 @@ final class MultiReturnTest extends TestCase
         $code = file_get_contents($cppFile);
 
         $this->assertStringContainsString(
-            'std::tuple<php::Var, php::Var> typephp::detail::multi_return::php_phpunit_multi_values()',
+            'std::tuple<php::Var, php::Var> typephp::detail::php_phpunit_multi_values()',
             $code,
         );
         $this->assertStringContainsString(
-            'std::tie(first, second) = typephp::detail::multi_return::php_phpunit_multi_values()',
+            'std::tie(first, second) = typephp::detail::php_phpunit_multi_values()',
             $code,
         );
         $this->assertStringContainsString(
@@ -33,7 +33,7 @@ final class MultiReturnTest extends TestCase
             $code,
         );
         $this->assertStringNotContainsString(
-            'typephp::detail::multi_return::php_phpunit_multi_side_effect',
+            'typephp::detail::php_phpunit_multi_side_effect',
             $code,
         );
     }
