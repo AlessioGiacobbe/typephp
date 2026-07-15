@@ -3249,8 +3249,8 @@ CODE;
             Type::STR => [['kind' => 'isString']],
             Type::ARRAY => [['kind' => 'isArray']],
             Type::RESOURCE => [['kind' => 'isResource']],
-            Type::OBJECT => $arg->class
-                ? [['kind' => 'instanceof', 'class' => $arg->class]]
+            Type::OBJECT => $arg->declaredClass
+                ? [['kind' => 'instanceof', 'class' => $arg->declaredClass]]
                 : [['kind' => 'isObject']],
             default => null,
         };
