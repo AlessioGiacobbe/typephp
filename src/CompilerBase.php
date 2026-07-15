@@ -1017,7 +1017,10 @@ class CompilerBase implements PropertyAccessContext
 
     protected function getFullClassName(): string
     {
-        return ltrim($this->namespace . '\\' . $this->class, '\\');
+        // 在接口上下文中，$this->class 为空但 $this->interface 已设置，
+        // `self` 类型声明应解析为接口自身的完整名称。
+        $classLike = $this->class !== '' ? $this->class : $this->interface;
+        return ltrim($this->namespace . '\\' . $classLike, '\\');
     }
 
     protected function getFullMethodName(string $fullClassName, string $method): string
