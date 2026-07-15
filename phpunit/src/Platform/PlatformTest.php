@@ -299,6 +299,28 @@ class PlatformTest extends TestCase
         $this->assertEquals('-dynamiclib', $platform->getSharedLinkFlag());
     }
 
+    public function testMacosHomebrewSearchPaths(): void
+    {
+        $platform = new Macos();
+
+        $includePaths = $platform->buildPhpIncludePaths('/path/that/does/not/exist');
+        $this->assertContains('/opt/homebrew/include', $includePaths);
+        $this->assertContains('/usr/local/include', $includePaths);
+
+        $libraryPaths = $platform->buildPhpLibPaths('/path/that/does/not/exist');
+        $this->assertContains('/opt/homebrew/lib', $libraryPaths);
+        $this->assertContains('/usr/local/lib', $libraryPaths);
+
+        $this->assertStringContainsString(
+            '-I' . escapeshellarg('/opt/homebrew/include'),
+            $platform->getIncludeFlags($includePaths),
+        );
+        $this->assertStringContainsString(
+            '-L' . escapeshellarg('/opt/homebrew/lib'),
+            $platform->getLibraryPathFlags($libraryPaths),
+        );
+    }
+
     /**
      * 测试空数组处理
      */

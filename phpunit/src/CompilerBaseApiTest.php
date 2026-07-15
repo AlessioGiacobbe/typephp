@@ -7,6 +7,7 @@ use TypePhp\CompilerTest;
 use TypePhp\CompilerBase;
 use TypePhp\Type;
 use TypePhp\Exception\TestError;
+use TypePhp\Platform\Macos;
 use TypePhp\Platform\Windows;
 
 class CompilerBaseApiTest extends TestCase
@@ -789,6 +790,19 @@ YAML);
         $this->assertTrue($options['lto']);
         $this->assertArrayNotHasKey('cpp_std', $options);
         $this->assertArrayNotHasKey('cxxflags', $options);
+    }
+
+    public function testMacosNativeBuildOptionsIncludeHomebrewSearchPaths(): void
+    {
+        $this->setPropertyValue('platform', new Macos());
+
+        $includePaths = $this->invokeMethod('getIncludePaths');
+        $this->assertContains('/opt/homebrew/include', $includePaths);
+        $this->assertContains('/usr/local/include', $includePaths);
+
+        $libraryPaths = $this->invokeMethod('getLibraryPaths');
+        $this->assertContains('/opt/homebrew/lib', $libraryPaths);
+        $this->assertContains('/usr/local/lib', $libraryPaths);
     }
 
     public function testExtensionCleanClearsRuntimeMapsWithValidCpp(): void
