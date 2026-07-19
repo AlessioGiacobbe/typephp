@@ -60,7 +60,7 @@ trait ArrayExpressionTrait
         $this->indentLevel++;
         foreach ($items as $item) {
             $this->assertExprCanBeUsedAsValue($item->value, 'array value');
-            $value = $this->parseIdentifier($item->value);
+            $value = $this->materializeRefReturnAsValue($item->value, $this->parseIdentifier($item->value));
             if ($item->key) {
                 $this->assertExprCanBeUsedAsValue($item->key, 'array key');
                 $key = $this->parseArrayKey($item->key);
@@ -221,7 +221,7 @@ trait ArrayExpressionTrait
                 }
                 $value = $this->convertToRef($item->value);
             } else {
-                $value = $this->parseIdentifier($item->value);
+                $value = $this->materializeRefReturnAsValue($item->value, $this->parseIdentifier($item->value));
             }
             if ($item->unpack) {
                 $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.merge(' . $value . ');';

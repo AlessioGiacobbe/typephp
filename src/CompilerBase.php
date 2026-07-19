@@ -1020,6 +1020,12 @@ class CompilerBase implements PropertyAccessContext
         return ltrim($this->namespace . '\\' . $this->class, '\\');
     }
 
+    protected function getFullClassLikeName(): string
+    {
+        $name = $this->class !== '' ? $this->class : $this->interface;
+        return ltrim($this->namespace . '\\' . $name, '\\');
+    }
+
     protected function getFullMethodName(string $fullClassName, string $method): string
     {
         return strtolower($fullClassName . '::' . $method);
@@ -1064,6 +1070,21 @@ class CompilerBase implements PropertyAccessContext
     protected function parseExprAsValue(NodeAbstract $expr): string
     {
         return $this->wrapVoidExprAsNull($expr, $this->parseExpr($expr));
+    }
+
+    /**
+     * Snapshot a reference-returning call before a by-value container can retain
+     * its php::Ref. Assigning to an existing Var detaches the reference, unlike
+     * constructing a Variant directly from Ref. Keep the assignment inline so
+     * earlier arguments or array elements retain PHP's evaluation order.
+     */
+    protected function materializeRefReturnAsValue(NodeAbstract $value, string $expr): string
+    {
+        if ($value instanceof Expr\CallLike && $this->resolveRefReturningCall($value) !== false) {
+            $tmpVar = $this->addTmpVar(Type::VAR);
+            return '(' . $tmpVar . ' = ' . $expr . ')';
+        }
+        return $expr;
     }
 
     protected function getObjectPropVarName(string $object, string $prop): string
@@ -1273,7 +1294,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseVariable(Variable $expr): string
     {
-        if (is_object($expr->name) and $this->isVarExpr($expr->name)) {
+        if (!is_string($expr->name)) {
             $this->fatalError($expr, 'The `$$` syntax is not supported');
         }
         if ($this->isSuperGlobal($expr->name)) {
