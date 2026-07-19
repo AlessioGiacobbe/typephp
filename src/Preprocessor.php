@@ -801,9 +801,16 @@ class Preprocessor extends CompilerBase
         $arrayInitPlan = null;
         if ($defaultNode !== null) {
             if ($defaultNode instanceof Node\Expr\Array_) {
-                $type = Type::ARRAY;
                 $arrayInitPlan = $this->buildLiteralArrayInitPlan($defaultNode);
                 $default = $arrayInitPlan->expr;
+                // Only narrow the property type to `array` when the declared type
+                // cannot already hold an array. `mixed`/`iterable`/union/nullable
+                // types are represented as php::Var and can legally store an array,
+                // so forcing `array` here would wrongly reject non-array assignments
+                // (e.g. `mixed $value = []` followed by `$this->value = 123`).
+                if ($type !== Type::VAR) {
+                    $type = Type::ARRAY;
+                }
             } else {
                 $default = $this->parseIdentifier($defaultNode);
             }

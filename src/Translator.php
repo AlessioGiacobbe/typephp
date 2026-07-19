@@ -867,14 +867,22 @@ CODE;
         $code .= '// static property ' . PHP_EOL;
         foreach ($this->symbols->classes() as $classDef) {
             foreach ($classDef->properties as $property) {
-                if (!$property->isStatic() || !$property->arrayInitPlan || !$property->default) {
+                if (!$property->isStatic() || $property->default === null) {
                     continue;
                 }
-                $statement = 'php::setStaticProperty('
-                    . $this->genCharPtr($classDef->getNamespacedName(false), true) . ', '
-                    . $this->genCharPtr($property->name) . ', '
-                    . $property->arrayInitPlan->expr . ');' . PHP_EOL;
-                $code .= $this->wrapArrayInitPlan($property->arrayInitPlan, $statement);
+                if ($property->arrayInitPlan) {
+                    $statement = 'php::setStaticProperty('
+                        . $this->genCharPtr($classDef->getNamespacedName(false), true) . ', '
+                        . $this->genCharPtr($property->name) . ', '
+                        . $property->arrayInitPlan->expr . ');' . PHP_EOL;
+                    $code .= $this->wrapArrayInitPlan($property->arrayInitPlan, $statement);
+                } else {
+                    $statement = 'php::setStaticProperty('
+                        . $this->genCharPtr($classDef->getNamespacedName(false), true) . ', '
+                        . $this->genCharPtr($property->name) . ', '
+                        . 'php::Var(' . $property->default . '));' . PHP_EOL;
+                    $code .= $statement;
+                }
             }
         }
 
@@ -1616,11 +1624,26 @@ CODE;
                         $body .= "typephp_attach_property_handlers(obj, &{$handlers});\n";
                     }
                     foreach ($classDef->properties as $property) {
-                        if (!$property->isStatic() && $property->arrayInitPlan && $property->default) {
+                        if ($property->isStatic() || $property->default === null) {
+                            continue;
+                        }
+                        if ($property->arrayInitPlan) {
                             $init = "auto value = {$property->arrayInitPlan->expr};\n";
                             $init .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
                             $init .= "php::throwErrorIfOccurred();\n";
                             $body .= $this->wrapArrayInitPlan($property->arrayInitPlan, $init);
+                        } else {
+                            // Scalar / constant / null default value. Wrap it in a
+                            // php::Var so it can be stored as a zval in the object's
+                            // property table via zend_update_property. Each property is
+                            // wrapped in its own block so the local `value` does not
+                            // clash with siblings declared in the same create_object body.
+                            $init = "do {\n";
+                            $init .= "auto value = php::Var({$property->default});\n";
+                            $init .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
+                            $init .= "php::throwErrorIfOccurred();\n";
+                            $init .= "} while (0);\n";
+                            $body .= $init;
                         }
                     }
                     $body .= $classDef->ctorClean;
@@ -2805,13 +2828,13 @@ CODE;
 
         // 接口没有方法实体
         if ($classDef instanceof ClassDef) {
-            $arrayPropCount = 0;
+            $defaultPropCount = 0;
             foreach ($classDef->properties as $property) {
-                if ($property->type === Type::ARRAY && $property->arrayInitPlan && $property->default && !$property->isStatic()) {
-                    $arrayPropCount++;
+                if (!$property->isStatic() && $property->default !== null) {
+                    $defaultPropCount++;
                 }
             }
-            if ($arrayPropCount > 0) {
+            if ($defaultPropCount > 0) {
                 $classDef->requireCtor = true;
             }
             $methods = $classDef->methods;
