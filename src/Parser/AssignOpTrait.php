@@ -862,9 +862,17 @@ trait AssignOpTrait
     protected function parseAssignOpCoalesce(Expr\AssignOp\Coalesce $expr): string
     {
         $this->checkLeftValue($expr->var);
+
+        // An undefined variable must exist before generating its isset check.
+        // Keep it as Variant so NULL remains distinguishable from native defaults.
+        $var = $this->isVarExpr($expr->var) ? $this->parseIdentifier($expr->var) : null;
+        if ($var !== null && !$this->hasVar($var)) {
+            $this->addLocalVar($var, Type::VAR);
+        }
+
         $isset = $this->parseChainedExpr($expr->var, self::OP_ISSET);
 
-        $var = $this->parseWritableIdentifier($expr->var);
+        $var ??= $this->parseWritableIdentifier($expr->var);
         $propertyWriteTarget = $this->preparePropertyWriteTarget($expr->var);
 
         if ($propertyWriteTarget !== null) {
@@ -877,9 +885,6 @@ trait AssignOpTrait
         }
         if ($this->isVarExpr($expr->expr) and !$this->hasVar($right)) {
             $this->errorUndefinedVariable($expr->expr);
-        }
-        if ($this->isVarExpr($expr->var) and !$this->hasVar($var)) {
-            $this->addLocalVar($var, $this->getNormalAssignType($this->detectTypeOfExpr($expr->expr)));
         }
         return '(' . $isset . '?' . $var . ':(' . $var . ' = ' . $right . '))';
     }
