@@ -104,7 +104,7 @@ trait TypeCheckGenerator
         }
 
         if ($name === 'self') {
-            $class = $this->getFullClassName();
+            $class = $this->getFullClassLikeName();
         } elseif ($name === 'parent') {
             $class = $this->classDef->extends ?? '';
         } elseif ($name === 'static') {

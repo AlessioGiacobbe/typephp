@@ -1020,6 +1020,12 @@ class CompilerBase implements PropertyAccessContext
         return ltrim($this->namespace . '\\' . $this->class, '\\');
     }
 
+    protected function getFullClassLikeName(): string
+    {
+        $name = $this->class !== '' ? $this->class : $this->interface;
+        return ltrim($this->namespace . '\\' . $name, '\\');
+    }
+
     protected function getFullMethodName(string $fullClassName, string $method): string
     {
         return strtolower($fullClassName . '::' . $method);

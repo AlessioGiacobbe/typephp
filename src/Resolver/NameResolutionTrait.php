@@ -166,7 +166,7 @@ trait NameResolutionTrait
                 return $this->getTypeFromZendType($typeNameLower);
             } else {
                 if ($typeName === 'self') {
-                    $class = $this->getFullClassName();
+                    $class = $this->getFullClassLikeName();
                 } elseif ($typeName === 'parent') {
                     if (!$this->classDef) {
                         $this->fatalError($type, 'Cannot use "parent" type declaration outside a class');
