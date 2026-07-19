@@ -31,6 +31,17 @@ trait ClassConstantFetchTrait
                 $self = true;
                 $class = $this->class;
             }
+        } elseif ($class === 'parent') {
+            // `parent::` refers to the parent of the current class. Resolve it to
+            // the real parent class name and treat it like `self` for the purpose
+            // of constant/magic-class resolution.
+            $parentClass = $this->getParentClass($this->class);
+            if ($parentClass !== '' && $this->hasClass($parentClass)) {
+                $class = $this->getClass($parentClass)->name;
+            } else {
+                $class = $parentClass;
+            }
+            $self = true;
         }
 
         $const = $this->escapeString($this->parseIdentifier($expr->name));

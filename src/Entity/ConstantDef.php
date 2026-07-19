@@ -19,6 +19,8 @@ class ConstantDef
     public string $arrayExpr = '';
     public string $class = '';
     public ?NodeAbstract $valueExpr = null;
+    /** Explicit declared type (e.g. `const int FOO`); null for inferred/untyped constants. */
+    public ?string $declaredType = null;
 
     public function __construct(string $name, int $flags, string $type, string $value)
     {
