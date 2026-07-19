@@ -831,7 +831,7 @@ class Preprocessor extends CompilerBase
      * the reference cannot be resolved yet (for instance when the referenced
      * class has not been prepared). `::class` always resolves to a string.
      */
-    private function resolveReferencedConstantType(Node\Expr\ClassConstFetch $fetch, string $currentClass): ?string
+    protected function resolveReferencedConstantType(Node\Expr\ClassConstFetch $fetch, string $currentClass): ?string
     {
         $constName = $fetch->name->toString();
         if (strcasecmp($constName, 'class') === 0) {
