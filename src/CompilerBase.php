@@ -1020,6 +1020,12 @@ class CompilerBase implements PropertyAccessContext
         return ltrim($this->namespace . '\\' . $this->class, '\\');
     }
 
+    protected function getFullClassLikeName(): string
+    {
+        $name = $this->class !== '' ? $this->class : $this->interface;
+        return ltrim($this->namespace . '\\' . $name, '\\');
+    }
+
     protected function getFullMethodName(string $fullClassName, string $method): string
     {
         return strtolower($fullClassName . '::' . $method);
@@ -1288,7 +1294,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseVariable(Variable $expr): string
     {
-        if (is_object($expr->name) and $this->isVarExpr($expr->name)) {
+        if (!is_string($expr->name)) {
             $this->fatalError($expr, 'The `$$` syntax is not supported');
         }
         if ($this->isSuperGlobal($expr->name)) {
