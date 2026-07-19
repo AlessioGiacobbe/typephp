@@ -866,6 +866,16 @@ CODE;
 
         $code .= '// static property ' . PHP_EOL;
         foreach ($this->symbols->classes() as $classDef) {
+            // Traits are never instantiated on their own; their static properties
+            // live on the classes that use them (where the members are flattened).
+            // Initialising a default on the trait itself would write to the trait's
+            // static property table and, on PHP >= 8.3, trigger a
+            // "Accessing static trait property" deprecation when the value is read
+            // through `self::` from a consuming class. Skip traits here; the
+            // consuming classes still initialise their own (flattened) copies.
+            if ($classDef->trait) {
+                continue;
+            }
             foreach ($classDef->properties as $property) {
                 if (!$property->isStatic() || $property->default === null) {
                     continue;
