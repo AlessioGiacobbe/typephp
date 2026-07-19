@@ -1617,34 +1617,60 @@ CODE;
             if ($classDef && !$classDef->trait && !$classDef->enum) {
                 $className = $classDef->getNamespacedName();
                 $handlers = "property_handlers_{$className}";
-                $buildCreateBody = function (bool $attachHandlers) use ($classDef, $className, $handlers): string {
-                    $body = $classDef->ctorInit;
-                    $body .= "auto obj = create_object_{$className}(class_type);\n";
-                    if ($attachHandlers) {
-                        $body .= "typephp_attach_property_handlers(obj, &{$handlers});\n";
+                $initBlock = '';
+                foreach ($classDef->properties as $property) {
+                    if ($property->isStatic() || $property->default === null) {
+                        continue;
                     }
-                    foreach ($classDef->properties as $property) {
-                        if ($property->isStatic() || $property->default === null) {
-                            continue;
-                        }
-                        if ($property->arrayInitPlan) {
-                            $init = "auto value = {$property->arrayInitPlan->expr};\n";
-                            $init .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
-                            $init .= "php::throwErrorIfOccurred();\n";
-                            $body .= $this->wrapArrayInitPlan($property->arrayInitPlan, $init);
-                        } else {
-                            // Scalar / constant / null default value. Wrap it in a
-                            // php::Var so it can be stored as a zval in the object's
-                            // property table via zend_update_property. Each property is
-                            // wrapped in its own block so the local `value` does not
-                            // clash with siblings declared in the same create_object body.
-                            $init = "do {\n";
-                            $init .= "auto value = php::Var({$property->default});\n";
-                            $init .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
-                            $init .= "php::throwErrorIfOccurred();\n";
-                            $init .= "} while (0);\n";
-                            $body .= $init;
-                        }
+                    if ($property->arrayInitPlan) {
+                        $init = "auto value = {$property->arrayInitPlan->expr};\n";
+                        $init .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
+                        $init .= "php::throwErrorIfOccurred();\n";
+                        $initBlock .= $this->wrapArrayInitPlan($property->arrayInitPlan, $init);
+                    } else {
+                        // Scalar / constant / null default value. Wrap it in a
+                        // php::Var so it can be stored as a zval in the object's
+                        // property table via zend_update_property. Each property is
+                        // wrapped in its own block so the local `value` does not
+                        // clash with siblings declared in the same create_object body.
+                        $init = "do {\n";
+                        $init .= "auto value = php::Var({$property->default});\n";
+                        $init .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
+                        $init .= "php::throwErrorIfOccurred();\n";
+                        $init .= "} while (0);\n";
+                        $initBlock .= $init;
+                    }
+                }
+
+                $buildCreateBody = function (bool $attachHandlers) use ($classDef, $className, $handlers, $ce, $initBlock): string {
+                    $body = $classDef->ctorInit;
+                    if ($attachHandlers) {
+                        // PHP < 8.4: the custom handlers are attached to the object
+                        // AFTER the standard create_object, so object_properties_init
+                        // runs with the standard handlers (no asymmetric check). Our
+                        // explicit default inits run with the custom handlers
+                        // attached, so we set EG(fake_scope) to the object's own class
+                        // to satisfy asymmetric visibility for the class's own
+                        // properties.
+                        $body .= "auto obj = create_object_{$className}(class_type);\n";
+                        $body .= "typephp_attach_property_handlers(obj, &{$handlers});\n";
+                        $body .= "zend_class_entry *__typephp_saved_fake_scope = EG(fake_scope);\n";
+                        $body .= "EG(fake_scope) = obj->ce;\n";
+                        $body .= $initBlock;
+                        $body .= "EG(fake_scope) = __typephp_saved_fake_scope;\n";
+                    } else {
+                        // PHP >= 8.4: the custom handlers live in
+                        // default_object_handlers, so the object already carries the
+                        // asymmetric write_property hook at creation time and
+                        // object_properties_init would reject private(set)/protected(set)
+                        // default values (including inherited ones). Create the object
+                        // with the standard handlers, run the default initialization
+                        // (no visibility check), then attach the custom handlers.
+                        $body .= "auto obj = zend_objects_new(class_type);\n";
+                        $body .= "obj->handlers = const_cast<zend_object_handlers *>(zend_get_std_object_handlers());\n";
+                        $body .= "object_properties_init(obj, class_type);\n";
+                        $body .= $initBlock;
+                        $body .= "obj->handlers = &{$handlers};\n";
                     }
                     $body .= $classDef->ctorClean;
                     return $body . "return obj;\n";
@@ -1656,7 +1682,7 @@ CODE;
                 $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
                 $code .= $buildCreateBody(true);
                 $code .= "};\n";
-                if ($classDef->requireCtor) {
+                if ($classDef->requireCtor || $this->classHasAsymmetricOrHookedProperty($classDef)) {
                     $code .= "#else\n";
                     $code .= "create_object_{$className} = php_get_create_object_fn({$ce});\n";
                     $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
@@ -1667,6 +1693,46 @@ CODE;
             }
         }
         return $code;
+    }
+
+    /**
+     * Whether the given class (or any of its ancestors) declares an asymmetric
+     * visibility property (private(set)/protected(set)) or a hooked property
+     * (getter/setter). Such classes install a custom write_property handler, and
+     * on PHP >= 8.4 that handler lives in the class's default object handlers, so
+     * the engine's object_properties_init would reject inherited default values
+     * unless we generate our own create_object that initializes with the standard
+     * handlers first.
+     */
+    private function classHasAsymmetricOrHookedProperty(ClassDef $classDef): bool
+    {
+        $current = $classDef;
+        $seen = [];
+        while ($current !== null) {
+            $key = strtolower(ltrim($current->getNamespacedName(), '\\'));
+            if (isset($seen[$key])) {
+                break;
+            }
+            $seen[$key] = true;
+            foreach ($current->properties as $property) {
+                if ($property->isPrivateSet()
+                    || $property->isProtectedSet()
+                    || $property->getter !== null
+                    || $property->setter !== null
+                ) {
+                    return true;
+                }
+            }
+            if (!$current->extends) {
+                break;
+            }
+            $parent = $this->getClassDef($current->extends);
+            if ($parent === null) {
+                break;
+            }
+            $current = $parent;
+        }
+        return false;
     }
 
     protected function getRegisterClassFunction(string $name): string
