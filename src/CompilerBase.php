@@ -1273,7 +1273,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseVariable(Variable $expr): string
     {
-        if (is_object($expr->name) and $this->isVarExpr($expr->name)) {
+        if (is_object($expr->name)) {
             $this->fatalError($expr, 'The `$$` syntax is not supported');
         }
         if ($this->isSuperGlobal($expr->name)) {
