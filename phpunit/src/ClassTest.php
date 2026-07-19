@@ -194,4 +194,74 @@ class ClassTest extends \BaseTest
         // 作为函数/方法默认参数值应当能够在编译期正确解析。
         $this->compile('class-const-default-value.php');
     }
+
+    public function testPropertyDefaultArrayForIntTypeFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use array as default value for property PropertyDefaultArrayForInt::$a of type int',
+            'property-default-array-for-int.php'
+        );
+    }
+
+    public function testPropertyDefaultStringForIntTypeFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use string as default value for property PropertyDefaultStringForInt::$a of type int',
+            'property-default-string-for-int.php'
+        );
+    }
+
+    public function testPropertyDefaultNullForNonNullableIntFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use null as default value for property PropertyDefaultNullForInt::$a of type int',
+            'property-default-null-for-int.php'
+        );
+    }
+
+    public function testPropertyDefaultArrayForObjectTypeFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use array as default value for property PropertyDefaultArrayForObject::$dep of type PropertyDefaultArrayForObjectDep',
+            'property-default-array-for-object.php'
+        );
+    }
+
+    public function testValidPropertyDefaultsCompile()
+    {
+        // 合法的默认值（含 int→float 协变、nullable、联合类型、mixed、常量）应通过检查。
+        $this->compile('property-default-valid.php');
+    }
+
+    public function testTrueDefaultForFalsePropertyFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use true as default value for property PropertyDefaultTrueForFalse::$value of type false',
+            'property-default-true-for-false.php'
+        );
+    }
+
+    public function testFalseDefaultForTruePropertyFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use false as default value for property PropertyDefaultFalseForTrue::$value of type true',
+            'property-default-false-for-true.php'
+        );
+    }
+
+    public function testClassConstantPropertyDefaultTypeFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use string as default value for property PropertyDefaultClassConstType::$value of type int',
+            'property-default-class-const-type.php'
+        );
+    }
+
+    public function testExpressionPropertyDefaultTypeFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use float as default value for property PropertyDefaultExpressionType::$value of type int',
+            'property-default-expression-type.php'
+        );
+    }
 }

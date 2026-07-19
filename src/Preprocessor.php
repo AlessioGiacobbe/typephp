@@ -21,6 +21,7 @@ use TypePhp\Exception\SyntaxError;
 use TypePhp\Transform\PropertyHookLowering;
 use TypePhp\Transform\Visitor;
 use PhpParser\Modifiers;
+use PhpParser\ConstExprEvaluator;
 use PhpParser\Node;
 use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
@@ -620,12 +621,20 @@ class Preprocessor extends CompilerBase
         }
         $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
+        // Property defaults may reference class constants declared later in the
+        // class body. Collect every constant first so default-value validation
+        // is independent of declaration order, matching PHP's class semantics.
+        foreach ($class->stmts as $stmt) {
+            if ($stmt instanceof Node\Stmt\ClassConst) {
+                $this->parseClassConstDef($stmt);
+            }
+        }
+
         $code = '';
         foreach ($class->stmts as $v) {
             $type = $v->getType();
             switch ($type) {
                 case 'Stmt_ClassConst':
-                    $this->parseClassConstDef($v);
                     break;
                 case 'Stmt_Property':
                     $this->parseClassPropertyDef($v);
@@ -891,10 +900,18 @@ class Preprocessor extends CompilerBase
         $default = null;
         $arrayInitPlan = null;
         if ($defaultNode !== null) {
+            $this->checkPropertyDefaultType($name, $typeNode, $defaultNode, $errorNode);
             if ($defaultNode instanceof Node\Expr\Array_) {
-                $type = Type::ARRAY;
                 $arrayInitPlan = $this->buildLiteralArrayInitPlan($defaultNode);
                 $default = $arrayInitPlan->expr;
+                // Only narrow the property type to `array` when the declared type
+                // cannot already hold an array. `mixed`/`iterable`/union/nullable
+                // types are represented as php::Var and can legally store an array,
+                // so forcing `array` here would wrongly reject non-array assignments
+                // (e.g. `mixed $value = []` followed by `$this->value = 123`).
+                if ($type !== Type::VAR) {
+                    $type = Type::ARRAY;
+                }
             } else {
                 $default = $this->parseIdentifier($defaultNode);
             }
@@ -916,6 +933,205 @@ class Preprocessor extends CompilerBase
         }
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
+    }
+
+    /**
+     * Diagnose, during preprocessing, whether a property's default value is
+     * compatible with its declared type.
+     *
+     * TypePHP rejects obvious mismatches such as `int $a = []` at compile time
+     * instead of silently coercing the declared type or deferring to a runtime
+     * TypeError, matching the static-compilation principles in CLAUDE.md.
+     */
+    protected function checkPropertyDefaultType(string $name, ?NodeAbstract $typeNode, NodeAbstract $defaultNode, NodeAbstract $errorNode): void
+    {
+        if ($typeNode === null) {
+            // Untyped property accepts any default value.
+            return;
+        }
+
+        $valueType = $this->detectDefaultValueType($defaultNode);
+        if ($valueType === null) {
+            // The value type is not statically decidable (e.g. user or class
+            // constant references); leave it to later stages.
+            return;
+        }
+
+        $allowed = $this->collectAllowedDefaultTypes($typeNode);
+        if ($allowed === null) {
+            // mixed / callable / otherwise unconstrained type declaration.
+            return;
+        }
+
+        if (in_array($valueType, $allowed, true)) {
+            return;
+        }
+
+        $className = $this->getFullClassName();
+        $typeStr   = $this->propertyTypeDeclToString($typeNode);
+        $this->fatalError(
+            $errorNode,
+            "Cannot use {$valueType} as default value for property {$className}::\${$name} of type {$typeStr}"
+        );
+    }
+
+    /**
+     * Determine the PHP value type of a constant expression used as a default
+     * value. Returns one of int/float/string/true/false/array/null, or null when
+     * the type cannot be decided statically.
+     */
+    protected function detectDefaultValueType(NodeAbstract $node, ?string $scopeClass = null, int $depth = 0): ?string
+    {
+        if ($depth > 16) {
+            return null;
+        }
+        $scopeClass ??= $this->getFullClassName();
+
+        switch ($node->getType()) {
+            case 'Scalar_Int':
+                return 'int';
+            case 'Scalar_Float':
+                return 'float';
+            case 'Scalar_String':
+            case 'Scalar_InterpolatedString':
+            case 'Expr_BinaryOp_Concat':
+                return 'string';
+            case 'Expr_Array':
+                return 'array';
+            case 'Expr_UnaryMinus':
+            case 'Expr_UnaryPlus':
+                return $this->detectDefaultValueType($node->expr, $scopeClass, $depth + 1);
+            case 'Expr_ConstFetch':
+                return match (strtolower($node->name->toString())) {
+                    'true'          => 'true',
+                    'false'         => 'false',
+                    'null'          => 'null',
+                    default         => null,
+                };
+            case 'Expr_ClassConstFetch':
+                if (!$node->class instanceof Node\Name || !$node->name instanceof Node\Identifier) {
+                    return null;
+                }
+                $constName = $node->name->toString();
+                if (strcasecmp($constName, 'class') === 0) {
+                    return 'string';
+                }
+                $className = $node->class->toString();
+                if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
+                    $targetClass = $scopeClass;
+                } elseif (strcasecmp($className, 'parent') === 0) {
+                    $targetClass = $this->getParentClass($scopeClass);
+                } else {
+                    $targetClass = $this->getNamespacedClassName($className);
+                }
+                if ($targetClass === '' || !$this->hasClass($targetClass)) {
+                    return null;
+                }
+                $targetDef = $this->getClass($targetClass);
+                if (!$targetDef->hasConstant($constName)) {
+                    return null;
+                }
+                return $this->detectDefaultValueType(
+                    $targetDef->getConstant($constName)->valueExpr,
+                    $targetClass,
+                    $depth + 1
+                );
+            default:
+                try {
+                    $value = (new ConstExprEvaluator(
+                        static function (Node\Expr $expr): never {
+                            throw new \RuntimeException('Unresolved constant expression');
+                        }
+                    ))->evaluateDirectly($node);
+                } catch (\Throwable) {
+                    return null;
+                }
+                return match (true) {
+                    is_int($value) => 'int',
+                    is_float($value) => 'float',
+                    is_string($value) => 'string',
+                    $value === true => 'true',
+                    $value === false => 'false',
+                    is_array($value) => 'array',
+                    $value === null => 'null',
+                    default => null,
+                };
+        }
+    }
+
+    /**
+     * Collect the set of value types accepted as a default for a declared type
+     * node. Returns null when the type imposes no statically-checkable
+     * constraint (mixed / callable / unknown).
+     *
+     * @return array<int, string>|null
+     */
+    protected function collectAllowedDefaultTypes(NodeAbstract $typeNode): ?array
+    {
+        if ($typeNode instanceof NullableType) {
+            $inner = $this->collectAllowedDefaultTypes($typeNode->type);
+            if ($inner === null) {
+                return null;
+            }
+            return array_values(array_unique(array_merge($inner, ['null'])));
+        }
+
+        if ($typeNode instanceof UnionType) {
+            $all = [];
+            foreach ($typeNode->types as $sub) {
+                $part = $this->collectAllowedDefaultTypes($sub);
+                if ($part === null) {
+                    // A mixed-like member accepts any default value.
+                    return null;
+                }
+                $all = array_merge($all, $part);
+            }
+            return array_values(array_unique($all));
+        }
+
+        if ($typeNode instanceof IntersectionType) {
+            // Intersection types are object-only; no scalar/array default valid.
+            return [];
+        }
+
+        return match (strtolower($this->parseIdentifier($typeNode))) {
+            'int'                      => ['int'],
+            'float', 'double'          => ['float', 'int'], // int coerces to float
+            'string'                   => ['string'],
+            'bool'                     => ['true', 'false'],
+            'true'                     => ['true'],
+            'false'                    => ['false'],
+            'array'                    => ['array'],
+            'iterable'                 => ['array'],
+            'null'                     => ['null'],
+            'object'                   => [], // no literal object default exists
+            'self', 'parent', 'static' => [],
+            'mixed'                    => null,
+            'callable'                 => null, // string/array/closure — not checkable
+            default                    => [],   // class type: only null via ?Type
+        };
+    }
+
+    protected function propertyTypeDeclToString(NodeAbstract $typeNode): string
+    {
+        if ($typeNode instanceof NullableType) {
+            return '?' . $this->propertyTypeDeclToString($typeNode->type);
+        }
+        if ($typeNode instanceof UnionType) {
+            $parts = [];
+            foreach ($typeNode->types as $t) {
+                $parts[] = $this->propertyTypeDeclToString($t);
+            }
+            return implode('|', $parts);
+        }
+        if ($typeNode instanceof IntersectionType) {
+            $parts = [];
+            foreach ($typeNode->types as $t) {
+                $parts[] = $this->propertyTypeDeclToString($t);
+            }
+            return implode('&', $parts);
+        }
+        return $this->parseIdentifier($typeNode);
     }
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
