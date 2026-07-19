@@ -2506,8 +2506,7 @@ CODE;
 
         if ($fn->returnTypeKeyword !== '' && $methodStmt->returnType instanceof Node\Name) {
             if ($fn->returnTypeKeyword === 'static') {
-                // `static` is late-static-bound: keep the keyword so ZendVM
-                // resolves it to the concrete class at call time.
+                // `static` remains late-bound in the composed method signature.
                 $methodStmt->returnType = new Node\Name('static');
             } else {
                 $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
@@ -2734,7 +2733,12 @@ CODE;
         return $code;
     }
 
-    protected function genWrapperFunctionArgs(string $fn, FunctionDef $functionDef, string $displayName): string
+    protected function genWrapperFunctionArgs(
+        string $fn,
+        FunctionDef $functionDef,
+        string $displayName,
+        array $implicitMethodArgs = []
+    ): string
     {
         $cppCode = '';
         $callParams = '';
@@ -2783,7 +2787,8 @@ CODE;
         }
 
         if ($functionDef->method) {
-            $callParams = $functionDef->argInfoList ? 'this_, ' . rtrim($callParams, ',') : 'this_';
+            $methodArgs = implode(', ', array_merge(['this_'], $implicitMethodArgs));
+            $callParams = $functionDef->argInfoList ? $methodArgs . ', ' . rtrim($callParams, ',') : $methodArgs;
         } else {
             $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
         }
@@ -2844,7 +2849,18 @@ CODE;
         $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
         $cppCode .= $this->getIndent() . Type::OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
         $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
-        $cppCode .= $this->genWrapperFunctionArgs($fn, $methodDef->functionDef, $classDef->getNamespacedName(false) . '::' . $methodDef->name);
+        $implicitMethodArgs = [];
+        if ($classDef->trait !== null && $methodDef->parentMethodCalls) {
+            // Trait methods are not directly callable without a composing class,
+            // but keep the generated Zend wrapper well-formed.
+            $implicitMethodArgs[] = 'this_.parent_ce()';
+        }
+        $cppCode .= $this->genWrapperFunctionArgs(
+            $fn,
+            $methodDef->functionDef,
+            $classDef->getNamespacedName(false) . '::' . $methodDef->name,
+            $implicitMethodArgs
+        );
 
         return $cppCode;
     }
@@ -3041,6 +3057,9 @@ CODE;
         $functionDeclCode = $cppReturnType . ' ' . ($multiReturn ? $this->getMultiReturnImplName($name) : $nativeName) . '(';
         if ($this->class) {
             $functionDeclCode .= Type::OBJECT . ' &this_';
+            if ($this->classDef?->trait !== null && $this->methodDef?->parentMethodCalls) {
+                $functionDeclCode .= ', zend_class_entry *trait_parent_ce';
+            }
             if ($this->functionDef->params) {
                 $functionDeclCode .= ', ';
             }
@@ -3733,6 +3752,11 @@ CODE;
         $traitMethodNativeName = $this->getNativeName($traitMethodName, $traitDef->namespace, $traitDef->name);
         $classMethodNativeName = $this->getNativeName($classMethodName, $classDef->namespace, $classDef->name);
         $argList = ['this_'];
+        if ($methodDef->parentMethodCalls) {
+            // Bind parent:: to the class that actually composes the trait. This
+            // remains correct when the generated wrapper is inherited further.
+            $argList[] = $this->getClassEntryPtr($classDef->extends);
+        }
         foreach ($methodDef->functionDef->argInfoList as $argInfo) {
             $argList[] = $argInfo->name;
         }
@@ -3853,8 +3877,10 @@ CODE;
     private function validateTraitParentCall(ClassDef $traitDef, ClassDef $usingClassDef, string $method, NodeAbstract $node): void
     {
         if (!$usingClassDef->extends) {
-            // No parent class: cannot validate; PHP would report at runtime.
-            return;
+            $this->fatalError(
+                $node,
+                "Cannot access parent when class `{$usingClassDef->getNamespacedName(false)}` has no parent"
+            );
         }
         $parentClass = $usingClassDef->extends;
         // Internal / not-compiled parents are opaque to the compiler; let the
@@ -3895,18 +3921,33 @@ CODE;
             if (!$extends) {
                 break;
             }
-            // Internal / not-compiled parents are opaque to the compiler; let the
-            // runtime enforce compatibility for those.
-            if ($classDef->inheritedFromInternalClass || !$this->hasClass($extends)) {
+            if ($classDef->inheritedFromInternalClass) {
+                $modifiers = Reflection::getClassMethodModifiers($extends, $methodName);
+                if ($modifiers !== null && ($modifiers & \ReflectionMethod::IS_FINAL)) {
+                    $this->fatalError($methodDef->node, "Cannot override final method `{$extends}::{$methodName}()`");
+                }
+                break;
+            }
+            // Dynamically supplied parents are opaque to the compiler.
+            if (!$this->hasClass($extends)) {
                 break;
             }
             $classDef = $this->getClass($extends);
             if ($classDef->hasMethod($methodName)) {
+                $parentMethodDef = $classDef->getMethod($methodName);
+                // A private method is a separate slot and may be shadowed by the
+                // method imported from the trait.
+                if ($parentMethodDef->flags & Modifiers::PRIVATE) {
+                    break;
+                }
+                if ($parentMethodDef->flags & Modifiers::FINAL) {
+                    $this->fatalError($methodDef->node, "Cannot override final method `{$extends}::{$methodName}()`");
+                }
                 $this->validateMethodOverrideSignature(
                     $methodDef->node,
                     $methodName,
                     $methodDef,
-                    $classDef->getMethod($methodName),
+                    $parentMethodDef,
                     $extends
                 );
                 break;

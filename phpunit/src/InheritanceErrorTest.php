@@ -325,4 +325,14 @@ class InheritanceErrorTest extends TestCase
         // runtime fatal error that the compiled binary would otherwise ignore.
         $this->exec('must be compatible', 'trait-method-override-incompatible.php');
     }
+
+    public function testTraitMethodCannotOverrideFinalParentMethod()
+    {
+        $this->exec('Cannot override final method', 'trait-method-override-final.php');
+    }
+
+    public function testTraitParentCallRequiresParentClass()
+    {
+        $this->exec('has no parent', 'trait-parent-without-parent.php');
+    }
 }

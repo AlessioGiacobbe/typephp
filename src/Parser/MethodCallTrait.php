@@ -243,11 +243,10 @@ trait MethodCallTrait
 
     protected function parseParentMethodCall(Expr\StaticCall $expr): string
     {
-        // Inside a trait, `parent::` refers to the parent of the class that
-        // *uses* the trait. That parent class is only known at runtime (a single
-        // trait may be composed into classes with different parents), so resolve
-        // it dynamically from the current object's class entry instead of the
-        // trait's own (non-existent) parent.
+        // A trait's parent scope is supplied by the wrapper generated for the
+        // class that composes it. It must not be derived from the runtime
+        // object's class: an inherited trait method is still lexically bound to
+        // the parent of the composing class, not to the runtime object's parent.
         if ($this->classDef !== null && $this->classDef->trait !== null) {
             $method = $this->isIdExpr($expr->name) ? $this->parseIdentifier($expr->name) : '';
             // Record the parent:: call so it can be validated against the parent
@@ -256,12 +255,19 @@ trait MethodCallTrait
             if ($method !== '' && isset($this->methodDef)) {
                 $this->methodDef->parentMethodCalls[] = ['method' => $method, 'node' => $expr];
             }
-            $methodPtr = 'php::getMethod(this_.parent_ce(), ' . $this->identifierToStr($expr->name) . ')';
+            $methodPtr = 'php::getMethod(trait_parent_ce, ' . $this->identifierToStr($expr->name) . ')';
             if (empty($expr->args)) {
                 return 'this_.call(' . $methodPtr . ')';
             }
-            // Parent class is unknown statically, so by-ref argument detection is skipped.
-            return 'this_.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $method, '') . ')';
+            // The concrete parent signature is only known at each trait use
+            // site. Preserve arguments that are already references so forwarding
+            // a by-reference trait parameter does not silently drop its alias.
+            return 'this_.call(' . $methodPtr . ', ' . $this->parseCallArgs(
+                $expr->args,
+                $method,
+                '',
+                preserveExistingReferences: true
+            ) . ')';
         }
 
         if (!$this->classDef->extends) {
