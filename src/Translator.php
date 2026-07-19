@@ -3242,6 +3242,7 @@ CODE;
             return $arg->typeCheck;
         }
 
+        $declaredClass = $arg->declaredClass ?: $arg->class;
         return match ($arg->type) {
             Type::INT => [['kind' => 'isInt']],
             Type::FLOAT => [['kind' => 'isFloat']],
@@ -3249,8 +3250,8 @@ CODE;
             Type::STR => [['kind' => 'isString']],
             Type::ARRAY => [['kind' => 'isArray']],
             Type::RESOURCE => [['kind' => 'isResource']],
-            Type::OBJECT => $arg->declaredClass
-                ? [['kind' => 'instanceof', 'class' => $arg->declaredClass]]
+            Type::OBJECT => $declaredClass
+                ? [['kind' => 'instanceof', 'class' => $declaredClass]]
                 : [['kind' => 'isObject']],
             default => null,
         };
