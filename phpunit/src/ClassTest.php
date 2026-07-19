@@ -232,4 +232,36 @@ class ClassTest extends \BaseTest
         // 合法的默认值（含 int→float 协变、nullable、联合类型、mixed、常量）应通过检查。
         $this->compile('property-default-valid.php');
     }
+
+    public function testTrueDefaultForFalsePropertyFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use true as default value for property PropertyDefaultTrueForFalse::$value of type false',
+            'property-default-true-for-false.php'
+        );
+    }
+
+    public function testFalseDefaultForTruePropertyFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use false as default value for property PropertyDefaultFalseForTrue::$value of type true',
+            'property-default-false-for-true.php'
+        );
+    }
+
+    public function testClassConstantPropertyDefaultTypeFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use string as default value for property PropertyDefaultClassConstType::$value of type int',
+            'property-default-class-const-type.php'
+        );
+    }
+
+    public function testExpressionPropertyDefaultTypeFailsAtCompileTime()
+    {
+        $this->exec(
+            'Cannot use float as default value for property PropertyDefaultExpressionType::$value of type int',
+            'property-default-expression-type.php'
+        );
+    }
 }

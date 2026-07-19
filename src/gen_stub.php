@@ -2371,12 +2371,16 @@ class EvaluatedValue
                     if ($class === 'self') {
                         $constName = ClassInfo::$currentClass . "::" . $constName;
                         if (isset($allConstInfos[$constName])) {
-                            return formatConstValue($allConstInfos[$constName]->getValue($allConstInfos)->value);
+                            return $allConstInfos[$constName]->getValue($allConstInfos)->value;
                         } else {
-                            return formatConstValue(getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $constName));
+                            return normalizeConstExprValue(
+                                getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $constName)
+                            );
                         }
                     } else {
-                        return formatConstValue(getTranslator()->getClassConstValue($expr, $class, $constName, ClassInfo::$currentClass));
+                        return normalizeConstExprValue(
+                            getTranslator()->getClassConstValue($expr, $class, $constName, ClassInfo::$currentClass)
+                        );
                     }
                 } else {
                     $constName = $expr->name->__toString();
@@ -2414,7 +2418,7 @@ class EvaluatedValue
                 if (isset($definedConstants[$constName])) {
                     $constValue = $definedConstants[$constName];
                     if (is_scalar($constValue)) {
-                        return formatConstValue($constValue);
+                        return $constValue;
                     }
                 }
 
@@ -2508,11 +2512,15 @@ class EvaluatedValue
                     // fully qualified class name (already stored in $this->value).
                     return '"' . addcslashes($this->value, '\\') . '"';
                 }
-                return $this->value;
+                return '"' . getTranslator()->escapeString((string) $this->value) . '"';
             } elseif ($this->expr instanceof Expr\ConstFetch) {
                 return getTranslator()->getConstValue($this->expr->name->toString());
             } elseif (!($this->expr instanceof String_)) {
-                throw new Exception("Expression at line " . $this->expr->getStartLine() . " must be a scalar string");
+                // ConstExprEvaluator has already reduced concatenations and
+                // other constant string expressions to their PHP value. Emit
+                // that value as a C string literal instead of rejecting every
+                // non-literal string expression.
+                return '"' . getTranslator()->escapeString((string) $this->value) . '"';
             }
             $expr = preg_replace("/(^'|'$)/", '"', getTranslator()->escapeString($expr));
         } elseif ($this->type->isInt() or $this->type->isFloat()) {
@@ -3306,6 +3314,11 @@ class PropertyInfo extends VariableLike
                 $defaultValue = EvaluatedValue::null();
             } else {
                 $defaultValue = EvaluatedValue::createFromExpression($this->defaultValue, null, null, $allConstInfos);
+                if ($simpleType !== null && $simpleType->isFloat() && $defaultValue->type->isInt()) {
+                    // PHP permits an integer default for a float property and
+                    // stores it as a double in the class default table.
+                    $defaultValue->type = $simpleType;
+                }
                 if ($defaultValue->isUnknownConstValue || ($defaultValue->originatingConsts && $defaultValue->getCExpr() === null)) {
                     echo "Skipping code generation for property $this->name, because it has an unknown constant default value\n";
                     return "";
@@ -6365,16 +6378,16 @@ function initPhpParser() {
     $isInitialized = true;
 }
 
-function formatConstValue(mixed $constValue)
+function normalizeConstExprValue(mixed $constValue): mixed
 {
-    if (is_string($constValue)) {
-        if (str_starts_with($constValue, '"') and str_ends_with($constValue, '"')) {
-            return $constValue;
-        }
-        return '"' . $constValue . '"';
-    } else {
-        return $constValue;
+    if (is_string($constValue)
+        && strlen($constValue) >= 2
+        && $constValue[0] === '"'
+        && $constValue[strlen($constValue) - 1] === '"'
+    ) {
+        return stripcslashes(substr($constValue, 1, -1));
     }
+    return $constValue;
 }
 
 function getTranslator(): Translator

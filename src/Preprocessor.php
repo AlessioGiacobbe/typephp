@@ -21,6 +21,7 @@ use TypePhp\Exception\SyntaxError;
 use TypePhp\Transform\PropertyHookLowering;
 use TypePhp\Transform\Visitor;
 use PhpParser\Modifiers;
+use PhpParser\ConstExprEvaluator;
 use PhpParser\Node;
 use PhpParser\Node\IntersectionType;
 use PhpParser\Node\NullableType;
@@ -620,12 +621,20 @@ class Preprocessor extends CompilerBase
         }
         $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
+        // Property defaults may reference class constants declared later in the
+        // class body. Collect every constant first so default-value validation
+        // is independent of declaration order, matching PHP's class semantics.
+        foreach ($class->stmts as $stmt) {
+            if ($stmt instanceof Node\Stmt\ClassConst) {
+                $this->parseClassConstDef($stmt);
+            }
+        }
+
         $code = '';
         foreach ($class->stmts as $v) {
             $type = $v->getType();
             switch ($type) {
                 case 'Stmt_ClassConst':
-                    $this->parseClassConstDef($v);
                     break;
                 case 'Stmt_Property':
                     $this->parseClassPropertyDef($v);
@@ -968,11 +977,16 @@ class Preprocessor extends CompilerBase
 
     /**
      * Determine the PHP value type of a constant expression used as a default
-     * value. Returns one of int/float/string/bool/array/null, or null when the
-     * type cannot be decided statically.
+     * value. Returns one of int/float/string/true/false/array/null, or null when
+     * the type cannot be decided statically.
      */
-    protected function detectDefaultValueType(NodeAbstract $node): ?string
+    protected function detectDefaultValueType(NodeAbstract $node, ?string $scopeClass = null, int $depth = 0): ?string
     {
+        if ($depth > 16) {
+            return null;
+        }
+        $scopeClass ??= $this->getFullClassName();
+
         switch ($node->getType()) {
             case 'Scalar_Int':
                 return 'int';
@@ -986,15 +1000,62 @@ class Preprocessor extends CompilerBase
                 return 'array';
             case 'Expr_UnaryMinus':
             case 'Expr_UnaryPlus':
-                return $this->detectDefaultValueType($node->expr);
+                return $this->detectDefaultValueType($node->expr, $scopeClass, $depth + 1);
             case 'Expr_ConstFetch':
                 return match (strtolower($node->name->toString())) {
-                    'true', 'false' => 'bool',
+                    'true'          => 'true',
+                    'false'         => 'false',
                     'null'          => 'null',
                     default         => null,
                 };
+            case 'Expr_ClassConstFetch':
+                if (!$node->class instanceof Node\Name || !$node->name instanceof Node\Identifier) {
+                    return null;
+                }
+                $constName = $node->name->toString();
+                if (strcasecmp($constName, 'class') === 0) {
+                    return 'string';
+                }
+                $className = $node->class->toString();
+                if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
+                    $targetClass = $scopeClass;
+                } elseif (strcasecmp($className, 'parent') === 0) {
+                    $targetClass = $this->getParentClass($scopeClass);
+                } else {
+                    $targetClass = $this->getNamespacedClassName($className);
+                }
+                if ($targetClass === '' || !$this->hasClass($targetClass)) {
+                    return null;
+                }
+                $targetDef = $this->getClass($targetClass);
+                if (!$targetDef->hasConstant($constName)) {
+                    return null;
+                }
+                return $this->detectDefaultValueType(
+                    $targetDef->getConstant($constName)->valueExpr,
+                    $targetClass,
+                    $depth + 1
+                );
             default:
-                return null;
+                try {
+                    $value = (new ConstExprEvaluator(
+                        static function (Node\Expr $expr): never {
+                            throw new \RuntimeException('Unresolved constant expression');
+                        }
+                    ))->evaluateDirectly($node);
+                } catch (\Throwable) {
+                    return null;
+                }
+                return match (true) {
+                    is_int($value) => 'int',
+                    is_float($value) => 'float',
+                    is_string($value) => 'string',
+                    $value === true => 'true',
+                    $value === false => 'false',
+                    is_array($value) => 'array',
+                    $value === null => 'null',
+                    default => null,
+                };
         }
     }
 
@@ -1037,7 +1098,9 @@ class Preprocessor extends CompilerBase
             'int'                      => ['int'],
             'float', 'double'          => ['float', 'int'], // int coerces to float
             'string'                   => ['string'],
-            'bool', 'true', 'false'    => ['bool'],
+            'bool'                     => ['true', 'false'],
+            'true'                     => ['true'],
+            'false'                    => ['false'],
             'array'                    => ['array'],
             'iterable'                 => ['array'],
             'null'                     => ['null'],

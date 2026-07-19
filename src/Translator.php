@@ -887,10 +887,13 @@ CODE;
                         . $property->arrayInitPlan->expr . ');' . PHP_EOL;
                     $code .= $this->wrapArrayInitPlan($property->arrayInitPlan, $statement);
                 } else {
+                    $default = $property->type === Type::FLOAT
+                        ? $this->convertFloatExpr($property->default)
+                        : $property->default;
                     $statement = 'php::setStaticProperty('
                         . $this->genCharPtr($classDef->getNamespacedName(false), true) . ', '
                         . $this->genCharPtr($property->name) . ', '
-                        . 'php::Var(' . $property->default . '));' . PHP_EOL;
+                        . 'php::Var(' . $default . '));' . PHP_EOL;
                     $code .= $statement;
                 }
             }
@@ -1643,8 +1646,11 @@ CODE;
                         // property table via zend_update_property. Each property is
                         // wrapped in its own block so the local `value` does not
                         // clash with siblings declared in the same create_object body.
+                        $default = $property->type === Type::FLOAT
+                            ? $this->convertFloatExpr($property->default)
+                            : $property->default;
                         $init = "do {\n";
-                        $init .= "auto value = php::Var({$property->default});\n";
+                        $init .= "auto value = php::Var({$default});\n";
                         $init .= 'zend_update_property(obj->ce, obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
                         $init .= "php::throwErrorIfOccurred();\n";
                         $init .= "} while (0);\n";
