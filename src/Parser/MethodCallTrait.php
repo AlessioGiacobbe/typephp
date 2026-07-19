@@ -243,6 +243,27 @@ trait MethodCallTrait
 
     protected function parseParentMethodCall(Expr\StaticCall $expr): string
     {
+        // Inside a trait, `parent::` refers to the parent of the class that
+        // *uses* the trait. That parent class is only known at runtime (a single
+        // trait may be composed into classes with different parents), so resolve
+        // it dynamically from the current object's class entry instead of the
+        // trait's own (non-existent) parent.
+        if ($this->classDef !== null && $this->classDef->trait !== null) {
+            $method = $this->isIdExpr($expr->name) ? $this->parseIdentifier($expr->name) : '';
+            // Record the parent:: call so it can be validated against the parent
+            // of every class that uses this trait (the trait itself has no parent
+            // at compile time). Dynamic method names cannot be validated statically.
+            if ($method !== '' && isset($this->methodDef)) {
+                $this->methodDef->parentMethodCalls[] = ['method' => $method, 'node' => $expr];
+            }
+            $methodPtr = 'php::getMethod(this_.parent_ce(), ' . $this->identifierToStr($expr->name) . ')';
+            if (empty($expr->args)) {
+                return 'this_.call(' . $methodPtr . ')';
+            }
+            // Parent class is unknown statically, so by-ref argument detection is skipped.
+            return 'this_.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $method, '') . ')';
+        }
+
         if (!$this->classDef->extends) {
             $this->fatalError($expr, 'Cannot call parent method because class `' . $this->classDef->name . '` does not extend any class');
         }
@@ -250,6 +271,11 @@ trait MethodCallTrait
         if ($this->isIdExpr($expr->name)) {
             $method = $this->parseIdentifier($expr->name);
             $this->guardAbstractMethod($parentClass, $method, $expr);
+            // A private parent method is not reachable via parent:: — PHP throws
+            // "Call to private method" at runtime, so report it at compile time.
+            if ($this->getMethodFlags($parentClass, $method) & Modifiers::PRIVATE) {
+                $this->fatalError($expr, "Cannot access private method `{$parentClass}::{$method}()` via parent::");
+            }
             $methodPtr = $this->getMethodPtr($parentClass, $method);
         } else {
             $method = '';

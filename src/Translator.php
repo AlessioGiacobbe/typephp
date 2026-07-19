@@ -3500,6 +3500,9 @@ CODE;
 
         if (!($flags & Modifiers::ABSTRACT)) {
             $this->methodDef = $this->classDef->getMethod($name);
+            // Keep the AST node so trait-composed methods can report accurate
+            // line numbers when validated for override compatibility later.
+            $this->methodDef->node = $v;
             // 预处理阶段没有父类的信息，只能在实现阶段检查
             $this->checkParentMethodCanBeOverridden($v, $name);
             $methodCodes[$name] = $this->parseFunction($v);
@@ -3610,6 +3613,23 @@ CODE;
         string $traitMethodName,
         string $classMethodName
     ): string {
+        // Validate `parent::` calls emitted from this trait method against the
+        // parent of the class that is composing the trait. The trait itself has
+        // no parent at compile time, so this is the only place the parent class
+        // (and therefore the visibility of its methods) is known.
+        foreach ($methodDef->parentMethodCalls as $parentCall) {
+            $this->validateTraitParentCall($traitDef, $classDef, $parentCall['method'], $parentCall['node']);
+        }
+
+        // A trait method flattened into a class participates in the inheritance
+        // hierarchy: it must remain signature-compatible with any same-named
+        // parent method, exactly as a directly-declared override would. PHP
+        // enforces this at class declaration time ("Declaration of X::m() must
+        // be compatible with Y::m()"); without this check the incompatibility
+        // only surfaces as a runtime fatal error that the compiled binary would
+        // otherwise ignore and keep executing past.
+        $this->checkTraitMethodOverrideCompatibility($classDef, $methodDef, $classMethodName);
+
         $classDef->addMethod($methodDef);
         $traitMethodNativeName = $this->getNativeName($traitMethodName, $traitDef->namespace, $traitDef->name);
         $classMethodNativeName = $this->getNativeName($classMethodName, $classDef->namespace, $classDef->name);
@@ -3641,6 +3661,88 @@ CODE;
         $this->indentLevel--;
         $code .= $this->getIndent() . '}' . PHP_EOL;
         return $code;
+    }
+
+    /**
+     * Validate a `parent::method()` call recorded inside a trait method.
+     *
+     * The trait has no parent of its own, so the only point at which the parent
+     * class is known is when a class actually uses the trait. At that moment we
+     * can statically resolve the parent method and reject private methods, which
+     * PHP would otherwise only report as a runtime "Call to private method" error.
+     */
+    private function validateTraitParentCall(ClassDef $traitDef, ClassDef $usingClassDef, string $method, NodeAbstract $node): void
+    {
+        if (!$usingClassDef->extends) {
+            // No parent class: cannot validate; PHP would report at runtime.
+            return;
+        }
+        $parentClass = $usingClassDef->extends;
+        // Internal / not-compiled parents are opaque to the compiler; let the
+        // runtime enforce visibility for those.
+        if (!$this->hasClass($parentClass)) {
+            return;
+        }
+        if ($this->getMethodFlags($parentClass, $method) & Modifiers::PRIVATE) {
+            $this->fatalError(
+                $node,
+                "Cannot access private method `{$parentClass}::{$method}()` via parent:: in trait `{$traitDef->name}`"
+            );
+        }
+    }
+
+    /**
+     * Validate that a trait method being flattened into a class remains
+     * signature-compatible with any same-named method declared up the parent
+     * chain — the same compatibility contract a directly-declared override must
+     * satisfy (see `checkParentMethodCanBeOverridden`).
+     *
+     * Only the signature contract is enforced here (not the "cannot override
+     * private/final" rule), because a trait method is flattened into the class
+     * and, like a normal subclass method, is allowed to shadow a private parent
+     * method. PHP reports the incompatibility as a class-declaration fatal error
+     * ("Declaration of X::m() must be compatible with Y::m()"), which we surface
+     * at compile time so the broken program is rejected instead of being emitted
+     * and executed past a runtime fatal error.
+     */
+    private function checkTraitMethodOverrideCompatibility(ClassDef $usingClassDef, MethodDef $methodDef, string $methodName): void
+    {
+        if ($methodName === '__construct' || $methodDef->node === null) {
+            return;
+        }
+        $classDef = $usingClassDef;
+        while (true) {
+            $extends = $classDef->extends;
+            if (!$extends) {
+                break;
+            }
+            // Internal / not-compiled parents are opaque to the compiler; let the
+            // runtime enforce compatibility for those.
+            if ($classDef->inheritedFromInternalClass || !$this->hasClass($extends)) {
+                break;
+            }
+            $classDef = $this->getClass($extends);
+            if ($classDef->hasMethod($methodName)) {
+                $this->validateMethodOverrideSignature(
+                    $methodDef->node,
+                    $methodName,
+                    $methodDef,
+                    $classDef->getMethod($methodName),
+                    $extends
+                );
+                break;
+            }
+            if ($classDef->hasAbstractMethod($methodName) && isset($classDef->abstractMethodDefs[strtolower($methodName)])) {
+                $this->validateMethodOverrideSignature(
+                    $methodDef->node,
+                    $methodName,
+                    $methodDef,
+                    $classDef->getAbstractMethod($methodName),
+                    $extends
+                );
+                break;
+            }
+        }
     }
 
     private function isCompatibleTraitConstant(ConstantDef $existing, ConstantDef $incoming): bool
