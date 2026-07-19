@@ -2354,6 +2354,13 @@ CODE;
                     if ($traitStmt instanceof Node\Stmt\ClassMethod) {
                         $methodName = strtolower($traitStmt->name->toString());
                         $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
+                        // A trait method's `self`/`static`/`parent` return and parameter
+                        // types refer to the class that uses the trait, not the trait
+                        // itself. Re-resolve them on the cloned AST so the generated
+                        // arginfo reflects the consuming class (PHP trait semantics) and
+                        // passes ZendVM's runtime signature-compatibility checks. The
+                        // alias clones below inherit this rewrite.
+                        $this->reresolveTraitMethodAstLateBoundTypes($classDef, $traitFullName, $traitStmt);
                         foreach ($classDef->traitAliases[$fullMethodName] ?? [] as $alias) {
                             $aliasName = strtolower($alias['newName']);
                             if ($aliasName === $methodName) {
@@ -2468,6 +2475,61 @@ CODE;
                 }
 
                 $stmt->stmts = array_merge($stmt->stmts, $traitStmts, $aliasStmts);
+            }
+        }
+    }
+
+    /**
+     * Re-resolve a trait method's late-bound `self`/`static`/`parent` return and
+     * parameter types on the cloned AST that is being flattened into a class.
+     *
+     * `resolveTypeDecl()` mutates a trait method's `self`/`static`/`parent` type
+     * node to the trait's own name at parse time, so the cloned AST carries the
+     * trait name rather than the late-bound keyword. We instead rewrite those
+     * nodes to the consuming class (or its parent) using the keyword recorded on
+     * the trait method's FunctionDef, matching PHP's trait semantics. This keeps
+     * the generated arginfo correct for ZendVM's runtime compatibility checks.
+     */
+    private function reresolveTraitMethodAstLateBoundTypes(
+        ClassDef $usingClassDef,
+        string $traitFullName,
+        Node\Stmt\ClassMethod $methodStmt
+    ): void {
+        if (!$this->hasClass($traitFullName)) {
+            return;
+        }
+        $traitDef = $this->getClass($traitFullName);
+        if (!$traitDef->hasMethod($methodStmt->name->toString())) {
+            return;
+        }
+        $fn = $traitDef->getMethod($methodStmt->name->toString())->functionDef;
+
+        if ($fn->returnTypeKeyword !== '' && $methodStmt->returnType instanceof Node\Name) {
+            if ($fn->returnTypeKeyword === 'static') {
+                // `static` remains late-bound in the composed method signature.
+                $methodStmt->returnType = new Node\Name('static');
+            } else {
+                $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
+                if ($resolved !== null) {
+                    $methodStmt->returnType = new Node\Name($resolved);
+                }
+            }
+        }
+
+        foreach ($fn->argInfoList as $i => $arg) {
+            if (
+                $arg->typeKeyword !== ''
+                && isset($methodStmt->params[$i])
+                && $methodStmt->params[$i]->type instanceof Node\Name
+            ) {
+                if ($arg->typeKeyword === 'static') {
+                    $methodStmt->params[$i]->type = new Node\Name('static');
+                } else {
+                    $resolved = $this->resolveLateBoundClass($usingClassDef, $arg->typeKeyword);
+                    if ($resolved !== null) {
+                        $methodStmt->params[$i]->type = new Node\Name($resolved);
+                    }
+                }
             }
         }
     }
@@ -2671,7 +2733,12 @@ CODE;
         return $code;
     }
 
-    protected function genWrapperFunctionArgs(string $fn, FunctionDef $functionDef, string $displayName): string
+    protected function genWrapperFunctionArgs(
+        string $fn,
+        FunctionDef $functionDef,
+        string $displayName,
+        array $implicitMethodArgs = []
+    ): string
     {
         $cppCode = '';
         $callParams = '';
@@ -2720,7 +2787,8 @@ CODE;
         }
 
         if ($functionDef->method) {
-            $callParams = $functionDef->argInfoList ? 'this_, ' . rtrim($callParams, ',') : 'this_';
+            $methodArgs = implode(', ', array_merge(['this_'], $implicitMethodArgs));
+            $callParams = $functionDef->argInfoList ? $methodArgs . ', ' . rtrim($callParams, ',') : $methodArgs;
         } else {
             $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
         }
@@ -2781,7 +2849,18 @@ CODE;
         $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
         $cppCode .= $this->getIndent() . Type::OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
         $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
-        $cppCode .= $this->genWrapperFunctionArgs($fn, $methodDef->functionDef, $classDef->getNamespacedName(false) . '::' . $methodDef->name);
+        $implicitMethodArgs = [];
+        if ($classDef->trait !== null && $methodDef->parentMethodCalls) {
+            // Trait methods are not directly callable without a composing class,
+            // but keep the generated Zend wrapper well-formed.
+            $implicitMethodArgs[] = 'this_.parent_ce()';
+        }
+        $cppCode .= $this->genWrapperFunctionArgs(
+            $fn,
+            $methodDef->functionDef,
+            $classDef->getNamespacedName(false) . '::' . $methodDef->name,
+            $implicitMethodArgs
+        );
 
         return $cppCode;
     }
@@ -2978,6 +3057,9 @@ CODE;
         $functionDeclCode = $cppReturnType . ' ' . ($multiReturn ? $this->getMultiReturnImplName($name) : $nativeName) . '(';
         if ($this->class) {
             $functionDeclCode .= Type::OBJECT . ' &this_';
+            if ($this->classDef?->trait !== null && $this->methodDef?->parentMethodCalls) {
+                $functionDeclCode .= ', zend_class_entry *trait_parent_ce';
+            }
             if ($this->functionDef->params) {
                 $functionDeclCode .= ', ';
             }
@@ -3528,6 +3610,9 @@ CODE;
 
         if (!($flags & Modifiers::ABSTRACT)) {
             $this->methodDef = $this->classDef->getMethod($name);
+            // Keep the AST node so trait-composed methods can report accurate
+            // line numbers when validated for override compatibility later.
+            $this->methodDef->node = $v;
             // 预处理阶段没有父类的信息，只能在实现阶段检查
             $this->checkParentMethodCanBeOverridden($v, $name);
             $methodCodes[$name] = $this->parseFunction($v);
@@ -3638,10 +3723,40 @@ CODE;
         string $traitMethodName,
         string $classMethodName
     ): string {
+        // A trait method's `self`/`static`/`parent` return and parameter types
+        // refer to the class that uses the trait, not the trait itself. Re-resolve
+        // them to the consuming class so signature-compatibility checks (against
+        // parent classes and interfaces) and `detectClassOfExpr()` observe the
+        // correct type. The cloned FunctionDef keeps the trait's own native
+        // function untouched.
+        $this->reresolveTraitLateBoundTypes($classDef, $methodDef);
+
+        // Validate `parent::` calls emitted from this trait method against the
+        // parent of the class that is composing the trait. The trait itself has
+        // no parent at compile time, so this is the only place the parent class
+        // (and therefore the visibility of its methods) is known.
+        foreach ($methodDef->parentMethodCalls as $parentCall) {
+            $this->validateTraitParentCall($traitDef, $classDef, $parentCall['method'], $parentCall['node']);
+        }
+
+        // A trait method flattened into a class participates in the inheritance
+        // hierarchy: it must remain signature-compatible with any same-named
+        // parent method, exactly as a directly-declared override would. PHP
+        // enforces this at class declaration time ("Declaration of X::m() must
+        // be compatible with Y::m()"); without this check the incompatibility
+        // only surfaces as a runtime fatal error that the compiled binary would
+        // otherwise ignore and keep executing past.
+        $this->checkTraitMethodOverrideCompatibility($classDef, $methodDef, $classMethodName);
+
         $classDef->addMethod($methodDef);
         $traitMethodNativeName = $this->getNativeName($traitMethodName, $traitDef->namespace, $traitDef->name);
         $classMethodNativeName = $this->getNativeName($classMethodName, $classDef->namespace, $classDef->name);
         $argList = ['this_'];
+        if ($methodDef->parentMethodCalls) {
+            // Bind parent:: to the class that actually composes the trait. This
+            // remains correct when the generated wrapper is inherited further.
+            $argList[] = $this->getClassEntryPtr($classDef->extends);
+        }
         foreach ($methodDef->functionDef->argInfoList as $argInfo) {
             $argList[] = $argInfo->name;
         }
@@ -3669,6 +3784,185 @@ CODE;
         $this->indentLevel--;
         $code .= $this->getIndent() . '}' . PHP_EOL;
         return $code;
+    }
+
+    /**
+     * Re-resolve a trait method's late-bound `self`/`static`/`parent` return and
+     * parameter types to the class that is composing the trait.
+     *
+     * In PHP, `self` (and `static`) inside a trait refers to the using class, and
+     * `parent` refers to the using class's parent. The compiler records these as
+     * the trait's own name at parse time, which is wrong once the method is
+     * flattened into a class: interface/trait `self` comparisons and
+     * `detectClassOfExpr()` would otherwise observe the trait name instead of the
+     * consuming class. We clone the FunctionDef so the trait's standalone native
+     * function keeps its original (trait-context) types.
+     */
+    private function reresolveTraitLateBoundTypes(ClassDef $usingClassDef, MethodDef $methodDef): void
+    {
+        $fn = $methodDef->functionDef;
+        $needsClone = false;
+
+        if ($fn->returnTypeKeyword !== '') {
+            $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
+            if ($resolved !== null && $resolved !== $fn->returnClass) {
+                $needsClone = true;
+            }
+        }
+        foreach ($fn->argInfoList as $arg) {
+            if ($arg->typeKeyword !== '') {
+                $resolved = $this->resolveLateBoundClass($usingClassDef, $arg->typeKeyword);
+                if ($resolved !== null && ($resolved !== $arg->class || $resolved !== $arg->declaredClass)) {
+                    $needsClone = true;
+                    break;
+                }
+            }
+        }
+
+        if (!$needsClone) {
+            return;
+        }
+
+        $newFn = clone $fn;
+        if ($fn->returnTypeKeyword !== '') {
+            $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
+            if ($resolved !== null && $resolved !== $newFn->returnClass) {
+                $newFn->returnClass = $resolved;
+            }
+        }
+        $newArgs = [];
+        foreach ($newFn->argInfoList as $arg) {
+            $newArg = clone $arg;
+            if ($newArg->typeKeyword !== '') {
+                $resolved = $this->resolveLateBoundClass($usingClassDef, $newArg->typeKeyword);
+                if ($resolved !== null) {
+                    if ($newArg->class !== '') {
+                        $newArg->class = $resolved;
+                    }
+                    if ($newArg->declaredClass !== '') {
+                        $newArg->declaredClass = $resolved;
+                    }
+                }
+            }
+            $newArgs[] = $newArg;
+        }
+        $newFn->argInfoList = $newArgs;
+        $methodDef->functionDef = $newFn;
+    }
+
+    private function resolveLateBoundClass(ClassDef $usingClassDef, string $keyword): ?string
+    {
+        if ($keyword === 'self') {
+            return $usingClassDef->getNamespacedName(false);
+        }
+        if ($keyword === 'parent') {
+            return $usingClassDef->extends !== '' ? $usingClassDef->extends : null;
+        }
+        // `static` is late-static-bound and resolved to the concrete class only at
+        // call time, so it must keep an empty class (matching a directly-declared
+        // `: static` method). Resolving it to the consuming class here would break
+        // interface/trait signature-compatibility checks, which compare the empty
+        // `static` class on both sides.
+        return null;
+    }
+
+    /**
+     * Validate a `parent::method()` call recorded inside a trait method.
+     *
+     * The trait has no parent of its own, so the only point at which the parent
+     * class is known is when a class actually uses the trait. At that moment we
+     * can statically resolve the parent method and reject private methods, which
+     * PHP would otherwise only report as a runtime "Call to private method" error.
+     */
+    private function validateTraitParentCall(ClassDef $traitDef, ClassDef $usingClassDef, string $method, NodeAbstract $node): void
+    {
+        if (!$usingClassDef->extends) {
+            $this->fatalError(
+                $node,
+                "Cannot access parent when class `{$usingClassDef->getNamespacedName(false)}` has no parent"
+            );
+        }
+        $parentClass = $usingClassDef->extends;
+        // Internal / not-compiled parents are opaque to the compiler; let the
+        // runtime enforce visibility for those.
+        if (!$this->hasClass($parentClass)) {
+            return;
+        }
+        if ($this->getMethodFlags($parentClass, $method) & Modifiers::PRIVATE) {
+            $this->fatalError(
+                $node,
+                "Cannot access private method `{$parentClass}::{$method}()` via parent:: in trait `{$traitDef->name}`"
+            );
+        }
+    }
+
+    /**
+     * Validate that a trait method being flattened into a class remains
+     * signature-compatible with any same-named method declared up the parent
+     * chain — the same compatibility contract a directly-declared override must
+     * satisfy (see `checkParentMethodCanBeOverridden`).
+     *
+     * Only the signature contract is enforced here (not the "cannot override
+     * private/final" rule), because a trait method is flattened into the class
+     * and, like a normal subclass method, is allowed to shadow a private parent
+     * method. PHP reports the incompatibility as a class-declaration fatal error
+     * ("Declaration of X::m() must be compatible with Y::m()"), which we surface
+     * at compile time so the broken program is rejected instead of being emitted
+     * and executed past a runtime fatal error.
+     */
+    private function checkTraitMethodOverrideCompatibility(ClassDef $usingClassDef, MethodDef $methodDef, string $methodName): void
+    {
+        if ($methodName === '__construct' || $methodDef->node === null) {
+            return;
+        }
+        $classDef = $usingClassDef;
+        while (true) {
+            $extends = $classDef->extends;
+            if (!$extends) {
+                break;
+            }
+            if ($classDef->inheritedFromInternalClass) {
+                $modifiers = Reflection::getClassMethodModifiers($extends, $methodName);
+                if ($modifiers !== null && ($modifiers & \ReflectionMethod::IS_FINAL)) {
+                    $this->fatalError($methodDef->node, "Cannot override final method `{$extends}::{$methodName}()`");
+                }
+                break;
+            }
+            // Dynamically supplied parents are opaque to the compiler.
+            if (!$this->hasClass($extends)) {
+                break;
+            }
+            $classDef = $this->getClass($extends);
+            if ($classDef->hasMethod($methodName)) {
+                $parentMethodDef = $classDef->getMethod($methodName);
+                // A private method is a separate slot and may be shadowed by the
+                // method imported from the trait.
+                if ($parentMethodDef->flags & Modifiers::PRIVATE) {
+                    break;
+                }
+                if ($parentMethodDef->flags & Modifiers::FINAL) {
+                    $this->fatalError($methodDef->node, "Cannot override final method `{$extends}::{$methodName}()`");
+                }
+                $this->validateMethodOverrideSignature(
+                    $methodDef->node,
+                    $methodName,
+                    $methodDef,
+                    $parentMethodDef,
+                    $extends
+                );
+                break;
+            }
+            if ($classDef->hasAbstractMethod($methodName) && isset($classDef->abstractMethodDefs[strtolower($methodName)])) {
+                $this->validateMethodOverrideSignature(
+                    $methodDef->node,
+                    $methodName,
+                    $methodDef,
+                    $classDef->getAbstractMethod($methodName),
+                    $extends
+                );
+                break;
+            }
+        }
     }
 
     private function isCompatibleTraitConstant(ConstantDef $existing, ConstantDef $incoming): bool

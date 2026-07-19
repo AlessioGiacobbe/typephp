@@ -316,4 +316,23 @@ class InheritanceErrorTest extends TestCase
     {
         $this->exec('must be compatible', 'abstract_method_signature_mismatch.php');
     }
+
+    public function testTraitMethodMustBeCompatibleWithParent()
+    {
+        // A trait method flattened into a class must remain signature-compatible
+        // with any same-named parent method, just like a directly-declared
+        // override. Without this check the incompatibility only surfaces as a
+        // runtime fatal error that the compiled binary would otherwise ignore.
+        $this->exec('must be compatible', 'trait-method-override-incompatible.php');
+    }
+
+    public function testTraitMethodCannotOverrideFinalParentMethod()
+    {
+        $this->exec('Cannot override final method', 'trait-method-override-final.php');
+    }
+
+    public function testTraitParentCallRequiresParentClass()
+    {
+        $this->exec('has no parent', 'trait-parent-without-parent.php');
+    }
 }

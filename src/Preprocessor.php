@@ -268,6 +268,16 @@ class Preprocessor extends CompilerBase
         if ($param->byRef) {
             return Type::REF;
         }
+        // Capture the late-bound parameter type keyword *before* resolveTypeDecl
+        // runs, because resolveTypeDecl mutates the `self`/`static`/`parent` node
+        // name to the declaring class when the method belongs to a trait.
+        $typeKeyword = '';
+        if ($param->type instanceof Node\Name) {
+            $ptLower = strtolower($param->type->toString());
+            if ($ptLower === 'self' || $ptLower === 'static' || $ptLower === 'parent') {
+                $typeKeyword = $ptLower;
+            }
+        }
         [$type, $class] = $this->resolveTypeDecl($param->type, self::DECL_TYPE_OF_PARAM);
         $argInfo->undeclared = $param->type === null;
         if (
@@ -284,6 +294,9 @@ class Preprocessor extends CompilerBase
         if ($class and !$this->hasInterface($class)) {
             $argInfo->class = $class;
         }
+        // Record late-bound parameter type keywords so they can be re-resolved
+        // to the consuming class when a trait method is flattened into a class.
+        $argInfo->typeKeyword = $typeKeyword;
         return $type;
     }
 
@@ -432,6 +445,16 @@ class Preprocessor extends CompilerBase
         }
 
         $fnName = $this->parseIdentifier($v->name);
+        // Capture the late-bound return type keyword *before* resolveTypeDecl runs,
+        // because resolveTypeDecl mutates the `self`/`static`/`parent` node name to
+        // the declaring class when the method belongs to a trait.
+        $returnTypeKeyword = '';
+        if ($v->returnType instanceof Node\Name) {
+            $rtLower = strtolower($v->returnType->toString());
+            if ($rtLower === 'self' || $rtLower === 'static' || $rtLower === 'parent') {
+                $returnTypeKeyword = $rtLower;
+            }
+        }
         [$returnType, $class] = $this->resolveTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
         // 构造、析构、克隆方法不能有返回值
         if ($this->method and in_array($this->method, ['__construct', '__destruct', '__clone'])) {
@@ -440,6 +463,9 @@ class Preprocessor extends CompilerBase
 
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
         $functionDef->returnClass = $class;
+        // Record late-bound return type keywords so they can be re-resolved to
+        // the consuming class when a trait method is flattened into a class.
+        $functionDef->returnTypeKeyword = $returnTypeKeyword;
         $functionDef->stub = $this->stubFile;
         $functionDef->returnTypeUndeclared = $v->returnType === null;
         $functionDef->returnsByRef = $v->byRef;

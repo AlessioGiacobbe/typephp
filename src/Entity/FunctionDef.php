@@ -40,6 +40,15 @@ class FunctionDef
      */
     public string $returnClass = '';
 
+    /**
+     * Late-bound return type keyword: 'self', 'static' or 'parent'.
+     * Empty for ordinary class-name return types. When set, the effective class
+     * depends on the consuming context (e.g. a trait method's `self` resolves to
+     * the class that uses the trait), so it must be re-resolved when the method
+     * is flattened into a class.
+     */
+    public string $returnTypeKeyword = '';
+
     /** Same format as ArgInfo::$typeCheck. Null means no runtime return type check. */
     public ?array $returnTypeCheck = null;
 

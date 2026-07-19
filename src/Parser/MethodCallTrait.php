@@ -243,6 +243,33 @@ trait MethodCallTrait
 
     protected function parseParentMethodCall(Expr\StaticCall $expr): string
     {
+        // A trait's parent scope is supplied by the wrapper generated for the
+        // class that composes it. It must not be derived from the runtime
+        // object's class: an inherited trait method is still lexically bound to
+        // the parent of the composing class, not to the runtime object's parent.
+        if ($this->classDef !== null && $this->classDef->trait !== null) {
+            $method = $this->isIdExpr($expr->name) ? $this->parseIdentifier($expr->name) : '';
+            // Record the parent:: call so it can be validated against the parent
+            // of every class that uses this trait (the trait itself has no parent
+            // at compile time). Dynamic method names cannot be validated statically.
+            if ($method !== '' && isset($this->methodDef)) {
+                $this->methodDef->parentMethodCalls[] = ['method' => $method, 'node' => $expr];
+            }
+            $methodPtr = 'php::getMethod(trait_parent_ce, ' . $this->identifierToStr($expr->name) . ')';
+            if (empty($expr->args)) {
+                return 'this_.call(' . $methodPtr . ')';
+            }
+            // The concrete parent signature is only known at each trait use
+            // site. Preserve arguments that are already references so forwarding
+            // a by-reference trait parameter does not silently drop its alias.
+            return 'this_.call(' . $methodPtr . ', ' . $this->parseCallArgs(
+                $expr->args,
+                $method,
+                '',
+                preserveExistingReferences: true
+            ) . ')';
+        }
+
         if (!$this->classDef->extends) {
             $this->fatalError($expr, 'Cannot call parent method because class `' . $this->classDef->name . '` does not extend any class');
         }
@@ -250,6 +277,11 @@ trait MethodCallTrait
         if ($this->isIdExpr($expr->name)) {
             $method = $this->parseIdentifier($expr->name);
             $this->guardAbstractMethod($parentClass, $method, $expr);
+            // A private parent method is not reachable via parent:: — PHP throws
+            // "Call to private method" at runtime, so report it at compile time.
+            if ($this->getMethodFlags($parentClass, $method) & Modifiers::PRIVATE) {
+                $this->fatalError($expr, "Cannot access private method `{$parentClass}::{$method}()` via parent::");
+            }
             $methodPtr = $this->getMethodPtr($parentClass, $method);
         } else {
             $method = '';
