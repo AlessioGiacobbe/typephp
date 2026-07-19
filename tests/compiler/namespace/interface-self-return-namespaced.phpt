@@ -7,6 +7,10 @@ namespace App {
     interface Chainable
     {
         public function chain(): self;
+
+        public function maybe(bool $present): ?self;
+
+        public function combine(self $other): self;
     }
 
     // comment inside a named namespace block (Stmt_Nop)
@@ -19,6 +23,16 @@ namespace App {
             $this->log[] = 'chain';
             return $this;
         }
+
+        public function maybe(bool $present): ?self
+        {
+            return $present ? $this : null;
+        }
+
+        public function combine(Chainable $other): self
+        {
+            return $this;
+        }
     }
 }
 
@@ -28,9 +42,15 @@ namespace {
         $w = new \App\Widget();
         var_dump($w->chain()->chain() instanceof \App\Chainable);
         var_dump(count($w->log));
+        var_dump($w->maybe(true) instanceof \App\Chainable);
+        var_dump($w->maybe(false));
+        var_dump($w->combine(new \App\Widget()) === $w);
     }
 }
 ?>
 --EXPECT--
 bool(true)
 int(2)
+bool(true)
+NULL
+bool(true)
