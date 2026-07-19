@@ -3478,10 +3478,37 @@ CODE;
                     if ($parentConst->flags & Modifiers::PRIVATE) {
                         continue;
                     }
-                    if ($childConst->type !== $parentConst->type || $childConst->class !== $parentConst->class) {
+                    if ($parentConst->flags & Modifiers::FINAL) {
                         $this->fatalError($classStmt,
-                            "Declaration of `{$className}::{$name}` must be compatible " .
-                            "with `{$parentClass}::{$name}`");
+                            "Cannot override final constant `{$parentClass}::{$name}`");
+                    }
+                    // PHP only enforces type compatibility when the parent constant
+                    // carries an explicit declared type. Overriding an untyped constant
+                    // with a value of any type is permitted, so the type check is skipped
+                    // in that case. Visibility is always enforced below.
+                    if ($parentConst->declaredType !== null) {
+                        if ($childConst->declaredType === null) {
+                            $this->fatalError($classStmt,
+                                "Declaration of `{$className}::{$name}` must be compatible " .
+                                "with `{$parentClass}::{$name}`");
+                        }
+                        // An untyped child constant whose value is an expression (e.g.
+                        // `X = ParentClass::Y`) is inferred as a variant. Resolve its real
+                        // type from the referenced constant so the compatibility check uses
+                        // the actual value type.
+                        $childType = $childConst->type;
+                        if ($childType === Type::VAR
+                            && $childConst->valueExpr instanceof Node\Expr\ClassConstFetch) {
+                            $resolved = $this->resolveReferencedConstantType($childConst->valueExpr, $this->getFullClassName());
+                            if ($resolved !== null) {
+                                $childType = $resolved;
+                            }
+                        }
+                        if ($childType !== $parentConst->type || $childConst->class !== $parentConst->class) {
+                            $this->fatalError($classStmt,
+                                "Declaration of `{$className}::{$name}` must be compatible " .
+                                "with `{$parentClass}::{$name}`");
+                        }
                     }
                     if ($this->getVisibilityRank($childConst->flags) < $this->getVisibilityRank($parentConst->flags)) {
                         $this->fatalError($classStmt,
