@@ -2354,6 +2354,13 @@ CODE;
                     if ($traitStmt instanceof Node\Stmt\ClassMethod) {
                         $methodName = strtolower($traitStmt->name->toString());
                         $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
+                        // A trait method's `self`/`static`/`parent` return and parameter
+                        // types refer to the class that uses the trait, not the trait
+                        // itself. Re-resolve them on the cloned AST so the generated
+                        // arginfo reflects the consuming class (PHP trait semantics) and
+                        // passes ZendVM's runtime signature-compatibility checks. The
+                        // alias clones below inherit this rewrite.
+                        $this->reresolveTraitMethodAstLateBoundTypes($classDef, $traitFullName, $traitStmt);
                         foreach ($classDef->traitAliases[$fullMethodName] ?? [] as $alias) {
                             $aliasName = strtolower($alias['newName']);
                             if ($aliasName === $methodName) {
@@ -2468,6 +2475,62 @@ CODE;
                 }
 
                 $stmt->stmts = array_merge($stmt->stmts, $traitStmts, $aliasStmts);
+            }
+        }
+    }
+
+    /**
+     * Re-resolve a trait method's late-bound `self`/`static`/`parent` return and
+     * parameter types on the cloned AST that is being flattened into a class.
+     *
+     * `resolveTypeDecl()` mutates a trait method's `self`/`static`/`parent` type
+     * node to the trait's own name at parse time, so the cloned AST carries the
+     * trait name rather than the late-bound keyword. We instead rewrite those
+     * nodes to the consuming class (or its parent) using the keyword recorded on
+     * the trait method's FunctionDef, matching PHP's trait semantics. This keeps
+     * the generated arginfo correct for ZendVM's runtime compatibility checks.
+     */
+    private function reresolveTraitMethodAstLateBoundTypes(
+        ClassDef $usingClassDef,
+        string $traitFullName,
+        Node\Stmt\ClassMethod $methodStmt
+    ): void {
+        if (!$this->hasClass($traitFullName)) {
+            return;
+        }
+        $traitDef = $this->getClass($traitFullName);
+        if (!$traitDef->hasMethod($methodStmt->name->toString())) {
+            return;
+        }
+        $fn = $traitDef->getMethod($methodStmt->name->toString())->functionDef;
+
+        if ($fn->returnTypeKeyword !== '' && $methodStmt->returnType instanceof Node\Name) {
+            if ($fn->returnTypeKeyword === 'static') {
+                // `static` is late-static-bound: keep the keyword so ZendVM
+                // resolves it to the concrete class at call time.
+                $methodStmt->returnType = new Node\Name('static');
+            } else {
+                $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
+                if ($resolved !== null) {
+                    $methodStmt->returnType = new Node\Name($resolved);
+                }
+            }
+        }
+
+        foreach ($fn->argInfoList as $i => $arg) {
+            if (
+                $arg->typeKeyword !== ''
+                && isset($methodStmt->params[$i])
+                && $methodStmt->params[$i]->type instanceof Node\Name
+            ) {
+                if ($arg->typeKeyword === 'static') {
+                    $methodStmt->params[$i]->type = new Node\Name('static');
+                } else {
+                    $resolved = $this->resolveLateBoundClass($usingClassDef, $arg->typeKeyword);
+                    if ($resolved !== null) {
+                        $methodStmt->params[$i]->type = new Node\Name($resolved);
+                    }
+                }
             }
         }
     }
@@ -3613,6 +3676,14 @@ CODE;
         string $traitMethodName,
         string $classMethodName
     ): string {
+        // A trait method's `self`/`static`/`parent` return and parameter types
+        // refer to the class that uses the trait, not the trait itself. Re-resolve
+        // them to the consuming class so signature-compatibility checks (against
+        // parent classes and interfaces) and `detectClassOfExpr()` observe the
+        // correct type. The cloned FunctionDef keeps the trait's own native
+        // function untouched.
+        $this->reresolveTraitLateBoundTypes($classDef, $methodDef);
+
         // Validate `parent::` calls emitted from this trait method against the
         // parent of the class that is composing the trait. The trait itself has
         // no parent at compile time, so this is the only place the parent class
@@ -3661,6 +3732,86 @@ CODE;
         $this->indentLevel--;
         $code .= $this->getIndent() . '}' . PHP_EOL;
         return $code;
+    }
+
+    /**
+     * Re-resolve a trait method's late-bound `self`/`static`/`parent` return and
+     * parameter types to the class that is composing the trait.
+     *
+     * In PHP, `self` (and `static`) inside a trait refers to the using class, and
+     * `parent` refers to the using class's parent. The compiler records these as
+     * the trait's own name at parse time, which is wrong once the method is
+     * flattened into a class: interface/trait `self` comparisons and
+     * `detectClassOfExpr()` would otherwise observe the trait name instead of the
+     * consuming class. We clone the FunctionDef so the trait's standalone native
+     * function keeps its original (trait-context) types.
+     */
+    private function reresolveTraitLateBoundTypes(ClassDef $usingClassDef, MethodDef $methodDef): void
+    {
+        $fn = $methodDef->functionDef;
+        $needsClone = false;
+
+        if ($fn->returnTypeKeyword !== '') {
+            $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
+            if ($resolved !== null && $resolved !== $fn->returnClass) {
+                $needsClone = true;
+            }
+        }
+        foreach ($fn->argInfoList as $arg) {
+            if ($arg->typeKeyword !== '') {
+                $resolved = $this->resolveLateBoundClass($usingClassDef, $arg->typeKeyword);
+                if ($resolved !== null && ($resolved !== $arg->class || $resolved !== $arg->declaredClass)) {
+                    $needsClone = true;
+                    break;
+                }
+            }
+        }
+
+        if (!$needsClone) {
+            return;
+        }
+
+        $newFn = clone $fn;
+        if ($fn->returnTypeKeyword !== '') {
+            $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
+            if ($resolved !== null && $resolved !== $newFn->returnClass) {
+                $newFn->returnClass = $resolved;
+            }
+        }
+        $newArgs = [];
+        foreach ($newFn->argInfoList as $arg) {
+            $newArg = clone $arg;
+            if ($newArg->typeKeyword !== '') {
+                $resolved = $this->resolveLateBoundClass($usingClassDef, $newArg->typeKeyword);
+                if ($resolved !== null) {
+                    if ($newArg->class !== '') {
+                        $newArg->class = $resolved;
+                    }
+                    if ($newArg->declaredClass !== '') {
+                        $newArg->declaredClass = $resolved;
+                    }
+                }
+            }
+            $newArgs[] = $newArg;
+        }
+        $newFn->argInfoList = $newArgs;
+        $methodDef->functionDef = $newFn;
+    }
+
+    private function resolveLateBoundClass(ClassDef $usingClassDef, string $keyword): ?string
+    {
+        if ($keyword === 'self') {
+            return $usingClassDef->getNamespacedName(false);
+        }
+        if ($keyword === 'parent') {
+            return $usingClassDef->extends !== '' ? $usingClassDef->extends : null;
+        }
+        // `static` is late-static-bound and resolved to the concrete class only at
+        // call time, so it must keep an empty class (matching a directly-declared
+        // `: static` method). Resolving it to the consuming class here would break
+        // interface/trait signature-compatibility checks, which compare the empty
+        // `static` class on both sides.
+        return null;
     }
 
     /**

@@ -23,6 +23,14 @@ class ArgInfo
     public string $class = '';
 
     /**
+     * Late-bound type keyword: 'self', 'static' or 'parent'.
+     * Empty for ordinary class-name parameter types. When set, the effective
+     * class depends on the consuming context (e.g. a trait method's `self`
+     * parameter resolves to the class that uses the trait).
+     */
+    public string $typeKeyword = '';
+
+    /**
      * Object type declared in the PHP signature, including interfaces.
      * Unlike $class, this is only an assignment/type-check constraint and must
      * not be used for typed-object native-call dispatch.
