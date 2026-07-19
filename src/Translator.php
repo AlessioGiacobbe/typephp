@@ -3477,11 +3477,20 @@ CODE;
                     if ($parentConst->flags & Modifiers::PRIVATE) {
                         continue;
                     }
+                    if ($parentConst->flags & Modifiers::FINAL) {
+                        $this->fatalError($classStmt,
+                            "Cannot override final constant `{$parentClass}::{$name}`");
+                    }
                     // PHP only enforces type compatibility when the parent constant
                     // carries an explicit declared type. Overriding an untyped constant
                     // with a value of any type is permitted, so the type check is skipped
                     // in that case. Visibility is always enforced below.
                     if ($parentConst->declaredType !== null) {
+                        if ($childConst->declaredType === null) {
+                            $this->fatalError($classStmt,
+                                "Declaration of `{$className}::{$name}` must be compatible " .
+                                "with `{$parentClass}::{$name}`");
+                        }
                         // An untyped child constant whose value is an expression (e.g.
                         // `X = ParentClass::Y`) is inferred as a variant. Resolve its real
                         // type from the referenced constant so the compatibility check uses

@@ -32,15 +32,12 @@ trait ClassConstantFetchTrait
                 $class = $this->class;
             }
         } elseif ($class === 'parent') {
-            // `parent::` refers to the parent of the current class. Resolve it to
-            // the real parent class name and treat it like `self` for the purpose
-            // of constant/magic-class resolution.
-            $parentClass = $this->getParentClass($this->class);
-            if ($parentClass !== '' && $this->hasClass($parentClass)) {
-                $class = $this->getClass($parentClass)->name;
-            } else {
-                $class = $parentClass;
+            if (!$this->classDef || !$this->classDef->extends) {
+                $this->fatalError($expr, 'Cannot use "parent" outside a class or class does not extend any class');
             }
+            // extends is already fully resolved. Keep the leading slash so the
+            // current namespace is not applied again below.
+            $class = '\\' . $this->classDef->extends;
             $self = true;
         }
 
@@ -109,4 +106,3 @@ trait ClassConstantFetchTrait
     }
 
 }
-
