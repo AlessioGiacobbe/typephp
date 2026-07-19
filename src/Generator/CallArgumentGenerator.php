@@ -586,6 +586,13 @@ trait CallArgumentGenerator
 
     protected function materializeCallArgValue(NodeAbstract $value, string $expr): string
     {
+        // A call that returns by reference yields a live php::Ref aliasing the
+        // callee's storage. When such a call feeds a by-value argument, PHP takes
+        // a value snapshot at evaluation time (left to right), so later mutations
+        // to the aliased storage must not be observable. The dynamic ArgList keeps
+        // references verbatim (Ctor::CopyRef), so we dereference into a temporary
+        // value at the point of the call.
+        $expr = $this->materializeRefReturnAsValue($value, $expr);
         if (!$this->shouldMaterializeCallArg($value)) {
             return $expr;
         }

@@ -31,6 +31,14 @@ trait ClassConstantFetchTrait
                 $self = true;
                 $class = $this->class;
             }
+        } elseif ($class === 'parent') {
+            if (!$this->classDef || !$this->classDef->extends) {
+                $this->fatalError($expr, 'Cannot use "parent" outside a class or class does not extend any class');
+            }
+            // extends is already fully resolved. Keep the leading slash so the
+            // current namespace is not applied again below.
+            $class = '\\' . $this->classDef->extends;
+            $self = true;
         }
 
         $const = $this->escapeString($this->parseIdentifier($expr->name));
@@ -98,4 +106,3 @@ trait ClassConstantFetchTrait
     }
 
 }
-

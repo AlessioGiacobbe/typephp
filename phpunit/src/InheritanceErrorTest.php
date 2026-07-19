@@ -168,6 +168,16 @@ class InheritanceErrorTest extends TestCase
         $this->exec('must be compatible', 'inheritance_error_const_type.php');
     }
 
+    public function testTypedConstantCannotBeOverriddenWithoutDeclaredType()
+    {
+        $this->exec('must be compatible', 'inheritance_error_const_missing_type.php');
+    }
+
+    public function testFinalConstantCannotBeOverridden()
+    {
+        $this->exec('Cannot override final constant', 'inheritance_error_const_final.php');
+    }
+
     public function testConstantVisibilityMismatch()
     {
         $this->exec('must be compatible', 'inheritance_error_const_visibility.php');

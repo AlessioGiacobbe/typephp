@@ -116,6 +116,16 @@ trait ClassConstantValueTrait
             if ($expr instanceof Node\Expr\ClassConstFetch && $expr->class instanceof Node\Name) {
                 $constName = $expr->name->toString();
                 $className = $expr->class->toString();
+                if (strcasecmp($constName, 'class') === 0) {
+                    // `::class` is a compile-time magic constant that resolves to the
+                    // fully qualified class name of the referenced class.
+                    if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
+                        $className = $class;
+                    } elseif (strcasecmp($className, 'parent') === 0) {
+                        $className = $this->getParentClass($class);
+                    }
+                    return ltrim($this->getNamespacedClassName($className, $this->getNamespaceOfClass($class)), '\\');
+                }
                 if (strcasecmp($className, 'self') === 0) {
                     $className = $class;
                 } elseif (strcasecmp($className, 'parent') === 0) {
