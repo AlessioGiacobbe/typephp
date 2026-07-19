@@ -1072,6 +1072,21 @@ class CompilerBase implements PropertyAccessContext
         return $this->wrapVoidExprAsNull($expr, $this->parseExpr($expr));
     }
 
+    /**
+     * Snapshot a reference-returning call before a by-value container can retain
+     * its php::Ref. Assigning to an existing Var detaches the reference, unlike
+     * constructing a Variant directly from Ref. Keep the assignment inline so
+     * earlier arguments or array elements retain PHP's evaluation order.
+     */
+    protected function materializeRefReturnAsValue(NodeAbstract $value, string $expr): string
+    {
+        if ($value instanceof Expr\CallLike && $this->resolveRefReturningCall($value) !== false) {
+            $tmpVar = $this->addTmpVar(Type::VAR);
+            return '(' . $tmpVar . ' = ' . $expr . ')';
+        }
+        return $expr;
+    }
+
     protected function getObjectPropVarName(string $object, string $prop): string
     {
         return self::OBJECT_PROP . $object . self::NAMESPACE_SEPARATOR . $prop;
