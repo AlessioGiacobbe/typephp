@@ -2354,18 +2354,29 @@ class EvaluatedValue
                 }
 
                 if ($expr instanceof Expr\ClassConstFetch) {
+                    $constName = $expr->name->__toString();
+                    if (strcasecmp($constName, 'class') === 0) {
+                        // `::class` is a compile-time magic constant that resolves to the
+                        // fully qualified class name of the referenced class.
+                        $className = getClassConstFetchClassName($expr);
+                        if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
+                            return ClassInfo::$currentClass;
+                        }
+                        if (strcasecmp($className, 'parent') === 0) {
+                            return getTranslator()->getParentClass(ClassInfo::$currentClass);
+                        }
+                        return ltrim($className, '\\');
+                    }
                     $class = getClassConstFetchClassName($expr);
                     if ($class === 'self') {
-                        $constName = ClassInfo::$currentClass . "::" . $expr->name->__toString();
+                        $constName = ClassInfo::$currentClass . "::" . $constName;
                         if (isset($allConstInfos[$constName])) {
                             return formatConstValue($allConstInfos[$constName]->getValue($allConstInfos)->value);
                         } else {
-                            return formatConstValue(getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $expr->name->toString()));
+                            return formatConstValue(getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $constName));
                         }
-                    } elseif ($expr->name->__toString() === 'class') {
-                        return $class;
                     } else {
-                        return formatConstValue(getTranslator()->getClassConstValue($expr, $class, $expr->name->__toString(), ClassInfo::$currentClass));
+                        return formatConstValue(getTranslator()->getClassConstValue($expr, $class, $constName, ClassInfo::$currentClass));
                     }
                 } else {
                     $constName = $expr->name->__toString();
@@ -2490,16 +2501,14 @@ class EvaluatedValue
 
         // PHP single-quote to C double-quote string
         if ($this->type->isString()) {
-            if (
-                $this->expr instanceof PhpParser\Node\Expr\ClassConstFetch
-            ) {
-                if ($this->expr->class instanceof PhpParser\Node\Name\FullyQualified and
-                    $this->expr->name instanceof PhpParser\Node\Identifier and
+            if ($this->expr instanceof PhpParser\Node\Expr\ClassConstFetch) {
+                if ($this->expr->name instanceof PhpParser\Node\Identifier and
                     $this->expr->name->__toString() === 'class') {
-                    $expr = '"' . addcslashes($this->expr->class->name, '\\') . '"';
-                } else {
-                    return $this->value;
+                    // `::class` is a compile-time magic constant that resolves to the
+                    // fully qualified class name (already stored in $this->value).
+                    return '"' . addcslashes($this->value, '\\') . '"';
                 }
+                return $this->value;
             } elseif ($this->expr instanceof Expr\ConstFetch) {
                 return getTranslator()->getConstValue($this->expr->name->toString());
             } elseif (!($this->expr instanceof String_)) {
@@ -2898,6 +2907,12 @@ class ConstInfo extends VariableLike
 
         $code .= "\tzend_string *const_{$constName}_name = zend_string_init_interned(\"$constName\", sizeof(\"$constName\") - 1, true);\n";
         $nameCode = "const_{$constName}_name";
+
+        // A child class may override a constant inherited from its parent. The
+        // runtime copies the parent's constants into the child, so re-declaring
+        // the constant would fail with "Cannot redefine class constant".
+        // Drop any inherited entry first so the child's value replaces it.
+        $code .= "\tzend_hash_del(&class_entry->constants_table, $nameCode);\n";
 
         if ($this->exposedDocComment) {
             $commentCode = "const_{$constName}_comment";

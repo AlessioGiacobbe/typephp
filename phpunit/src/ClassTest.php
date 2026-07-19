@@ -37,6 +37,28 @@ class ClassTest extends \BaseTest
         $this->exec('Cannot override private method `Base::doWork()`', 'override-private-method.php');
     }
 
+    public function testTraitMayCallProtectedParentMethod()
+    {
+        // A protected parent method is reachable via parent:: from a trait,
+        // matching PHP runtime behaviour.
+        $this->compile('trait-parent-method-protected.php');
+    }
+
+    public function testCannotAccessPrivateParentMethodFromRegularClass()
+    {
+        $this->exec('Cannot access private method `Base::secret()`', 'parent-method-private.php');
+    }
+
+    public function testCannotAccessPrivateParentMethodFromTrait()
+    {
+        $this->exec('Cannot access private method `BaseSecret::secret()`', 'trait-parent-method-private.php');
+    }
+
+    public function testTraitMethodMayShadowPrivateParentMethod()
+    {
+        $this->compile('trait-method-shadows-private.php');
+    }
+
     public function testSelfCanBePartOfUnionType()
     {
         global $translator;

@@ -348,7 +348,8 @@ trait CallArgumentGenerator
         string $funcName = '',
         string $className = '',
         bool $separateNamedArgs = true,
-        bool $forceArrayArgs = false
+        bool $forceArrayArgs = false,
+        bool $preserveExistingReferences = false
     ): string
     {
         $list_args = [];
@@ -390,7 +391,8 @@ trait CallArgumentGenerator
                     $this->fatalError($arg, "Duplicate named argument `{$arg->name->name}`");
                 }
                 $namedArgs[$arg->name->name] = true;
-                $byRef = $funcName && $this->isReferenceNamedArgument($funcName, $className, $arg->name->name);
+                $byRef = ($funcName && $this->isReferenceNamedArgument($funcName, $className, $arg->name->name))
+                    || ($preserveExistingReferences && $this->isExistingReferenceCallArg($arg));
                 $value = ($byRef || $this->isRefvalCall($arg->value) || $this->isToRefCall($arg->value))
                     ? $this->parseReferenceCallArgValue($arg)
                     : $this->parseCallArgValue($arg);
@@ -409,7 +411,8 @@ trait CallArgumentGenerator
             if ($hasUnpack) {
                 $this->fatalError($arg, 'Cannot use positional argument after argument unpacking');
             }
-            $byRef = $funcName && $this->isReferenceArgument($funcName, $className, $i);
+            $byRef = ($funcName && $this->isReferenceArgument($funcName, $className, $i))
+                || ($preserveExistingReferences && $this->isExistingReferenceCallArg($arg));
             if (($funcName === 'call_user_func' || $funcName === 'call_user_func_array') && $i === 0) {
                 $callback = $this->parseScopedCallbackArg($arg);
                 if ($callback !== null) {
@@ -499,6 +502,15 @@ trait CallArgumentGenerator
         return $namedArgsVar !== null ? $callArgs . ', ' . $namedArgsVar . '.array()' : $callArgs;
     }
 
+    private function isExistingReferenceCallArg(Node\Arg $arg): bool
+    {
+        if (!$this->isVarExpr($arg->value)) {
+            return $this->isReferenceWrapperCall($arg->value);
+        }
+        $name = $this->parseIdentifier($arg->value);
+        return $this->hasVar($name) && $this->getVarType($name) === Type::REF;
+    }
+
     protected function parseScopedCallbackArg(Node\Arg $arg): ?string
     {
         $value = $arg->value;
@@ -586,6 +598,13 @@ trait CallArgumentGenerator
 
     protected function materializeCallArgValue(NodeAbstract $value, string $expr): string
     {
+        // A call that returns by reference yields a live php::Ref aliasing the
+        // callee's storage. When such a call feeds a by-value argument, PHP takes
+        // a value snapshot at evaluation time (left to right), so later mutations
+        // to the aliased storage must not be observable. The dynamic ArgList keeps
+        // references verbatim (Ctor::CopyRef), so we dereference into a temporary
+        // value at the point of the call.
+        $expr = $this->materializeRefReturnAsValue($value, $expr);
         if (!$this->shouldMaterializeCallArg($value)) {
             return $expr;
         }
@@ -709,6 +728,8 @@ trait CallArgumentGenerator
         if (!$this->hasVar($name)) {
             // 若参数是引用类型，可以传入未定义变量，将立即创建变量作为引用
             $this->addLocalVar($name, Type::REF);
+        } elseif ($this->getVarType($name) === Type::REF) {
+            return '&' . $name;
         } else {
             // 本地变量，且是原生类型，则转为普通变量
             if ($this->hasLocalVar($name) and $this->isNativeType($this->getVarType($name))) {
@@ -781,4 +802,3 @@ trait CallArgumentGenerator
     }
 
 }
-

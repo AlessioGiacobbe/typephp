@@ -268,6 +268,16 @@ class Preprocessor extends CompilerBase
         if ($param->byRef) {
             return Type::REF;
         }
+        // Capture the late-bound parameter type keyword *before* resolveTypeDecl
+        // runs, because resolveTypeDecl mutates the `self`/`static`/`parent` node
+        // name to the declaring class when the method belongs to a trait.
+        $typeKeyword = '';
+        if ($param->type instanceof Node\Name) {
+            $ptLower = strtolower($param->type->toString());
+            if ($ptLower === 'self' || $ptLower === 'static' || $ptLower === 'parent') {
+                $typeKeyword = $ptLower;
+            }
+        }
         [$type, $class] = $this->resolveTypeDecl($param->type, self::DECL_TYPE_OF_PARAM);
         $argInfo->undeclared = $param->type === null;
         if (
@@ -284,6 +294,9 @@ class Preprocessor extends CompilerBase
         if ($class and !$this->hasInterface($class)) {
             $argInfo->class = $class;
         }
+        // Record late-bound parameter type keywords so they can be re-resolved
+        // to the consuming class when a trait method is flattened into a class.
+        $argInfo->typeKeyword = $typeKeyword;
         return $type;
     }
 
@@ -432,6 +445,16 @@ class Preprocessor extends CompilerBase
         }
 
         $fnName = $this->parseIdentifier($v->name);
+        // Capture the late-bound return type keyword *before* resolveTypeDecl runs,
+        // because resolveTypeDecl mutates the `self`/`static`/`parent` node name to
+        // the declaring class when the method belongs to a trait.
+        $returnTypeKeyword = '';
+        if ($v->returnType instanceof Node\Name) {
+            $rtLower = strtolower($v->returnType->toString());
+            if ($rtLower === 'self' || $rtLower === 'static' || $rtLower === 'parent') {
+                $returnTypeKeyword = $rtLower;
+            }
+        }
         [$returnType, $class] = $this->resolveTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
         // 构造、析构、克隆方法不能有返回值
         if ($this->method and in_array($this->method, ['__construct', '__destruct', '__clone'])) {
@@ -440,6 +463,9 @@ class Preprocessor extends CompilerBase
 
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
         $functionDef->returnClass = $class;
+        // Record late-bound return type keywords so they can be re-resolved to
+        // the consuming class when a trait method is flattened into a class.
+        $functionDef->returnTypeKeyword = $returnTypeKeyword;
         $functionDef->stub = $this->stubFile;
         $functionDef->returnTypeUndeclared = $v->returnType === null;
         $functionDef->returnsByRef = $v->byRef;
@@ -757,24 +783,89 @@ class Preprocessor extends CompilerBase
                     'Scalar_String' => Type::STR,
                     default => Type::VAR,
                 };
+                // `::class` is a compile-time magic constant that always yields a string,
+                // so a constant declared as `X = self::class` (or `Foo::class`) must be
+                // typed as a string rather than a generic variant.
+                if ($type === Type::VAR
+                    && $const->value instanceof Node\Expr\ClassConstFetch
+                    && strtolower((string) $const->value->name) === 'class') {
+                    $type = Type::STR;
+                }
+                // A constant whose value references another class constant
+                // (e.g. `X = ParentClass::Y` or `X = self::Y`) must take the referenced
+                // constant's type. This keeps override compatibility checks and the C++
+                // declaration correct, mirroring PHP where overriding an untyped constant
+                // with a value of any (compatible) type is allowed.
+                if ($type === Type::VAR
+                    && $const->value instanceof Node\Expr\ClassConstFetch
+                    && $const->value->class instanceof Node\Name) {
+                    $refType = $this->resolveReferencedConstantType($const->value, $this->getFullClassName());
+                    if ($refType !== null) {
+                        $type = $refType;
+                    }
+                }
             }
             $constName = $this->parseIdentifier($const->name);
             if ($this->classDef->hasConstant($constName)) {
                 $this->fatalError($v, "Duplicate constant `{$constName}`");
             }
-            $constInfo = $this->parseClassLikeConstant($const, $flags, $type, $class);
+            $constInfo = $this->parseClassLikeConstant($const, $flags, $type, $class, $declaredType);
             $constInfo->class = $class;
             $this->classDef->constants[$constInfo->name] = $constInfo;
         }
     }
 
-    private function parseClassLikeConstant(Node\Const_ $const, int $flags, string $type, string $class = ''): ConstantDef
+    /**
+     * Resolve the compile-time type of a class constant whose value is a
+     * `ClassConstFetch` referencing another constant (e.g. `X = ParentClass::Y`
+     * or `X = self::Y`). Returns the referenced constant's type, or null when
+     * the reference cannot be resolved yet (for instance when the referenced
+     * class has not been prepared). `::class` always resolves to a string.
+     */
+    private function resolveReferencedConstantType(Node\Expr\ClassConstFetch $fetch, string $currentClass): ?string
+    {
+        $constName = $fetch->name->toString();
+        if (strcasecmp($constName, 'class') === 0) {
+            return Type::STR;
+        }
+        if (!($fetch->class instanceof Node\Name)) {
+            return null;
+        }
+        $className = $fetch->class->toString();
+        if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
+            $targetClass = $currentClass;
+        } elseif (strcasecmp($className, 'parent') === 0) {
+            $targetClass = $this->getParentClass($currentClass);
+        } else {
+            $targetClass = $this->getNamespacedClassName($className);
+        }
+        if ($targetClass === '' || !$this->hasClass($targetClass)) {
+            return null;
+        }
+        $def = $this->getClass($targetClass);
+        if (!$def->hasConstant($constName)) {
+            return null;
+        }
+        $refConst = $def->getConstant($constName);
+        // Follow the chain in case the referenced constant is itself an
+        // expression that resolves to another constant.
+        if ($refConst->type !== Type::VAR) {
+            return $refConst->type;
+        }
+        if ($refConst->valueExpr instanceof Node\Expr\ClassConstFetch) {
+            return $this->resolveReferencedConstantType($refConst->valueExpr, $targetClass);
+        }
+        return null;
+    }
+
+    private function parseClassLikeConstant(Node\Const_ $const, int $flags, string $type, string $class = '', ?string $declaredType = null): ConstantDef
     {
         $constName = $this->parseIdentifier($const->name);
         $constValue = $this->parseIdentifier($const->value);
 
         $constInfo = new ConstantDef($constName, $flags, $type, $constValue);
         $constInfo->valueExpr = $const->value;
+        $constInfo->declaredType = $declaredType;
 
         if ($this->context->beforeStmtLines) {
             $arrayExpr = '';
@@ -1132,7 +1223,7 @@ class Preprocessor extends CompilerBase
                             default => Type::VAR,
                         };
                     }
-                    $constInfo = $this->parseClassLikeConstant($const, $this->parseModifiers($stmt->flags), $type, $class);
+                    $constInfo = $this->parseClassLikeConstant($const, $this->parseModifiers($stmt->flags), $type, $class, $stmt->type ? $type : null);
                     $this->interfaceDef->constants[$constName] = $constInfo;
                 }
                 continue;
