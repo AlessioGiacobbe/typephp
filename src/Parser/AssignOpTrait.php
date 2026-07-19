@@ -863,19 +863,16 @@ trait AssignOpTrait
     {
         $this->checkLeftValue($expr->var);
 
-        // PHP 允许对未定义的简单变量使用 ??=（例如 `$a ??= 123`）：
-        // 此时 isset 为 false，直接执行赋值。需要提前声明该局部变量，
-        // 否则 isset 检查会因变量未定义而报错。此处必须声明为 Type::VAR
-        // （Variant），使其初值为 NULL，从而 isset 在运行时正确判定为
-        // false 并执行赋值；若使用原生类型，isset 恒为 true 会导致取到
-        // 未初始化的默认值（如 int(0)、空字符串）。
-        if ($this->isVarExpr($expr->var) and !$this->hasVar($this->parseIdentifier($expr->var))) {
-            $this->addLocalVar($this->parseIdentifier($expr->var), Type::VAR);
+        // An undefined variable must exist before generating its isset check.
+        // Keep it as Variant so NULL remains distinguishable from native defaults.
+        $var = $this->isVarExpr($expr->var) ? $this->parseIdentifier($expr->var) : null;
+        if ($var !== null && !$this->hasVar($var)) {
+            $this->addLocalVar($var, Type::VAR);
         }
 
         $isset = $this->parseChainedExpr($expr->var, self::OP_ISSET);
 
-        $var = $this->parseWritableIdentifier($expr->var);
+        $var ??= $this->parseWritableIdentifier($expr->var);
         $propertyWriteTarget = $this->preparePropertyWriteTarget($expr->var);
 
         if ($propertyWriteTarget !== null) {
