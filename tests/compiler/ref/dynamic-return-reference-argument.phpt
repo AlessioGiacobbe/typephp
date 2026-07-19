@@ -14,6 +14,9 @@ function main()
     var_dump($v1, $v2);
     var_dump(test1(), test2());
     var_dump([test1(), test2()]);
+    var_dump(['first' => test1(), test2()]);
+    var_dump(value_order('arg-left'), ref_order('arg-ref'));
+    var_dump([value_order('array-left'), ref_order('array-ref')]);
 }
 
 function &test1()
@@ -26,6 +29,19 @@ function &test2()
 {
     static $value = 0;
     ++$value;
+    return $value;
+}
+
+function value_order(string $label): string
+{
+    echo "$label\n";
+    return $label;
+}
+
+function &ref_order(string $label)
+{
+    static $value = 42;
+    echo "$label\n";
     return $value;
 }
 ?>
@@ -43,4 +59,22 @@ array(2) {
   int(3)
   [1]=>
   int(4)
+}
+array(2) {
+  ["first"]=>
+  int(5)
+  [0]=>
+  int(6)
+}
+arg-left
+arg-ref
+string(8) "arg-left"
+int(42)
+array-left
+array-ref
+array(2) {
+  [0]=>
+  string(10) "array-left"
+  [1]=>
+  int(42)
 }

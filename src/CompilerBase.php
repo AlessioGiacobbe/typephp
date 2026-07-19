@@ -1067,23 +1067,16 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * 把一个"按引用返回"的调用在按值消费处解引用为值快照。
-     *
-     * 返回引用的调用会产生一个指向被调用方存储的活引用。当该调用被按值消费
-     * （例如作为按值函数参数、数组元素、按值返回等会触发 PHP 分离语义的上下文）
-     * 时，PHP 会在求值那一刻拷贝出值的快照，因此之后对别名存储的修改不应再可见。
-     * 我们通过把结果赋值给一个临时 php::Var 来分离引用（普通的 Var 赋值会断开
-     * 引用，而 php::Variant(php::Ref) 构造会保留引用），从而保留从左到右的求值顺序。
-     *
-     * 注意：二元/一元运算等操作数上下文应保持引用活动、在运算时读值，不应在此快照；
-     * 那些上下文由各自的解析器直接保留引用。
+     * Snapshot a reference-returning call before a by-value container can retain
+     * its php::Ref. Assigning to an existing Var detaches the reference, unlike
+     * constructing a Variant directly from Ref. Keep the assignment inline so
+     * earlier arguments or array elements retain PHP's evaluation order.
      */
     protected function materializeRefReturnAsValue(NodeAbstract $value, string $expr): string
     {
         if ($value instanceof Expr\CallLike && $this->resolveRefReturningCall($value) !== false) {
             $tmpVar = $this->addTmpVar(Type::VAR);
-            $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $expr . ';';
-            return $tmpVar;
+            return '(' . $tmpVar . ' = ' . $expr . ')';
         }
         return $expr;
     }
