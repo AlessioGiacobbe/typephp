@@ -1865,7 +1865,11 @@ class CompilerBase implements PropertyAccessContext
             } else {
                 return null;
             }
-            $function = $this->getNativeMethod($expr, $class, $method, false);
+            try {
+                $function = $this->getNativeMethod($expr, $class, $method, false);
+            } catch (DynamicCall) {
+                return null;
+            }
             if ($function !== false) {
                 return $this->getFunction($function)->returnsByRef;
             }
@@ -1892,7 +1896,11 @@ class CompilerBase implements PropertyAccessContext
                 $class = $this->getNamespacedClassName($class);
             }
             $method = $this->parseIdentifier($expr->name);
-            $function = $this->getNativeMethod($expr, $class, $method, false);
+            try {
+                $function = $this->getNativeMethod($expr, $class, $method, false);
+            } catch (DynamicCall) {
+                return null;
+            }
             if ($function !== false) {
                 return $this->getFunction($function)->returnsByRef;
             }

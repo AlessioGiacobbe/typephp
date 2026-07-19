@@ -397,6 +397,7 @@ trait MethodCallTrait
                 'Method Call: ',
                 $object . '->' . $this->parseIdentifier($expr->name) . '()'
             );
+            $nativeFunc = false;
             try {
                 $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
                 if ($nativeFunc) {
