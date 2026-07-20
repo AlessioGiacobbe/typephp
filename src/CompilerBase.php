@@ -2488,6 +2488,7 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_FuncCall':
                 if ($this->isNameExpr($expr->name)) {
                     $name = $this->parseIdentifier($expr->name);
+                    $globalName = ltrim($name, '\\');
                     // Math function optimization: propagate Big* return types
                     if (in_array($name, ['abs', 'pow', 'sqrt', 'floor', 'ceil', 'round'], true) && !empty($expr->args)) {
                         $argType = $this->detectTypeOfExpr($expr->args[0]->value);
@@ -2512,6 +2513,9 @@ class CompilerBase implements PropertyAccessContext
                     }
                     if (in_array($name, self::STREAM_FUNCTIONS)) {
                         return Type::STREAM;
+                    }
+                    if ($globalName === 'expected' || $globalName === 'unexpected') {
+                        return Type::BOOL;
                     }
                     if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
                         return Type::OBJECT;

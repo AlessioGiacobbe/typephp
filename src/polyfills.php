@@ -103,6 +103,16 @@ function any(mixed $var): mixed
     return $var;
 }
 
+function expected(mixed $condition): bool
+{
+    return (bool) $condition;
+}
+
+function unexpected(mixed $condition): bool
+{
+    return (bool) $condition;
+}
+
 /**
  * @throws Exception
  */

@@ -77,6 +77,7 @@ trait FunctionCallTrait
             $name = '';
         } elseif ($expr->name->getType() === 'Name' or $expr->name->getType() === 'Name_FullyQualified') {
             $name = $this->parseIdentifier($expr->name);
+            $globalName = ltrim($name, '\\');
             if (in_array($name, Constants::UNSUPPORTED_FUNCTIONS)) {
                 $this->fatalError($expr, 'Unsupported function: `' . $name . '`');
             }
@@ -85,6 +86,13 @@ trait FunctionCallTrait
                     $this->fatalError($expr, 'The any function expects exactly one non-unpacked argument');
                 }
                 return $this->parseExprAsValue($expr->args[0]->value);
+            }
+            if ($globalName === 'expected' || $globalName === 'unexpected') {
+                if (count($expr->args) !== 1 || $expr->args[0]->unpack) {
+                    $this->fatalError($expr, "The {$globalName} function expects exactly one non-unpacked argument");
+                }
+                $condition = $this->parseExprAsValue($expr->args[0]->value);
+                return 'static_cast<bool>(' . strtoupper($globalName) . '((' . $condition . ')))';
             }
             if ($name === 'objval') {
                 return $this->genObjvalCall($expr);

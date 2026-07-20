@@ -9,7 +9,7 @@
 - [编译器命令行](COMPILER_CLI.md)：当前 CLI 参数和项目配置。
 - [编译模式](COMPILATION_MODES.md)：binary、extension、library 模式。
 - [快速入门](QUICKSTART.md)：最小编译流程。
-- [编译期函数](COMPILE_TIME_FUNCTIONS.md)：`any()`、`refval()`、`objval()` 和关键词方法。
+- [编译期函数](COMPILE_TIME_FUNCTIONS.md)：`any()`、`refval()`、`objval()`、`expected()`、`unexpected()` 和关键词方法。
 - [原生类型](NATIVE_TYPES.md)、[高精度类型](HIGH_PRECISION_TYPES.md)、[Std 容器](STD_CONTAINERS.md)。
 - [通用与扩展方法](UNIVERSAL_METHODS.md)、[Generator](YIELD_GENERATOR.md)。
 - [类继承](CLASS_INHERITANCE.md)、[混合 C++/PHP](MIXED_CPP_PHP.md)。
