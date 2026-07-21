@@ -3583,7 +3583,9 @@ class AttributeInfo {
         foreach ($attributeGroups as $attrGroup) {
             foreach ($attrGroup->attrs as $attr) {
                 $parts = $attr->name->getParts();
-                if (strtolower((string) end($parts)) === 'extensionprovider') {
+                $compileTimeAttribute = count($parts) === 1
+                    && in_array(strtolower($parts[0]), ['extensionprovider', 'noexport'], true);
+                if ($compileTimeAttribute) {
                     continue;
                 }
                 $attributes[] = new AttributeInfo($attr->name->toString(), $attr->args);
@@ -4506,7 +4508,10 @@ class FileInfo {
         $parser = (new PhpParser\ParserFactory())->createForVersion(PhpParser\PhpVersion::fromString($phpVersion));
         $nodeTraverser = new PhpParser\NodeTraverser;
         $nodeTraverser->addVisitor(new TypePhp\Transform\Visitor());
-        $nodeTraverser->addVisitor(new PhpParser\NodeVisitor\NameResolver);
+        $nodeTraverser->addVisitor(new PhpParser\NodeVisitor\NameResolver(
+            null,
+            ['preserveOriginalNames' => true]
+        ));
         $prettyPrinter = new class extends Standard {
             protected function pName_FullyQualified(PhpParser\Node\Name\FullyQualified $node): string {
                 return implode('\\', $node->getParts());

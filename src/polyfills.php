@@ -14,6 +14,11 @@ final readonly class ExtensionProvider
     }
 }
 
+#[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_FUNCTION | Attribute::TARGET_METHOD)]
+final readonly class NoExport
+{
+}
+
 /**
  * Public compile-time type symbols shared by extension providers and std containers.
  * This root class is deliberately distinct from the compiler-internal TypePhp\Type.

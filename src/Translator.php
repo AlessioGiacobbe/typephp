@@ -43,6 +43,7 @@ use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
+use PhpParser\NodeVisitor\NameResolver;
 
 class Translator extends Preprocessor
 {
@@ -1649,7 +1650,7 @@ CODE;
         if ($this->isImportedFunction($function)) {
             return $this->getNamedLibraryImportMacroName($function->importLibrary) . ' ';
         }
-        if ($this->isBuildModeLib()) {
+        if ($this->isBuildModeLib() && $function->exported) {
             return $this->getLibraryApiMacroName() . ' ';
         }
         return 'extern ';
@@ -2285,6 +2286,7 @@ CODE;
 
         $ast = $this->parser->parse($phpCode);
         $traverser = new NodeTraverser();
+        $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
         $traverser->addVisitor(new Visitor());
 
         $stmts = $traverser->traverse($ast);

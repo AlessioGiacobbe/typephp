@@ -923,12 +923,19 @@ YAML);
         $files = [
             ROOT_PATH . '/phpunit/code/compiler_api/library_import_php.php',
             ROOT_PATH . '/phpunit/code/compiler_api/library_import_native.stub.php',
+            ROOT_PATH . '/phpunit/code/compiler_api/library_import_global.php',
         ];
         $this->compiler->addFiles($files);
         foreach ($files as $file) {
             $this->compiler->prepareFile($file);
             $this->compiler->convertFile($file);
+            $this->assertStringNotContainsString(
+                'NoExport',
+                file_get_contents($this->compiler->getArgInfoHeaderFile($file)),
+            );
         }
+        $provider = $this->invokeMethod('getClass', 'LibraryApi\\InternalStringExtension');
+        $this->assertSame(Type::STR, $provider->extensionProviderTarget);
 
         $stubFile = $this->compiler->genLibraryImportStub($files);
         $stub = file_get_contents($stubFile);
@@ -947,9 +954,52 @@ YAML);
         $this->assertStringContainsString('function native_value(string $name = \'typephp\'): string', $stub);
         $this->assertStringContainsString('class NativeCounter', $stub);
         $this->assertStringContainsString('function bump(int $amount): int', $stub);
+        $this->assertStringNotContainsString('function reset()', $stub);
+        $this->assertStringNotContainsString('class InternalCounter', $stub);
+        $this->assertStringNotContainsString('class InternalStringExtension', $stub);
+        $this->assertStringNotContainsString('function internal_twice(', $stub);
+        $this->assertStringNotContainsString('function native_hidden(', $stub);
+        $this->assertStringNotContainsString('function global_hidden(', $stub);
+        $this->assertStringNotContainsString('NoExport', $stub);
         $this->assertStringNotContainsString('return $this->value', $stub);
         $this->assertStringNotContainsString('intdiv($value, 2)', $stub);
         $this->assertStringNotContainsString('return $value * 2', $stub);
+
+        $libraryHeaderFile = $this->testDir . '/php_prime2_func_decl.h';
+        $this->compiler->genFunctionDeclarations($libraryHeaderFile);
+        $libraryHeader = file_get_contents($libraryHeaderFile);
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_API php::Int php_libraryapi__twice(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'extern php::Int php_libraryapi__internal_twice(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'extern php::Int php_libraryapi__internalcounter__value(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'extern php::Int php_libraryapi__internalstringextension__bytelength(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'extern void php_libraryapi__counter__reset(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'extern php::Int php_libraryapi__native_hidden(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'extern php::Int php_global_hidden(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'extern php::Int php_libraryapi__internal_twice_arg_0_default_value();',
+            $libraryHeader,
+        );
 
         $consumerDir = $this->testDir . '/consumer';
         mkdir($consumerDir, 0777, true);
@@ -1005,6 +1055,24 @@ YAML);
         $this->assertStringContainsString('const_STEP_value', $arginfo);
         $this->assertStringContainsString('property_value_default_value', $arginfo);
         $this->assertSame(['prime2'], $consumer->getLinkLibs());
+    }
+
+    public function testNoExportFollowsPhpNamespaceResolution(): void
+    {
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
+        $this->setPropertyValue('outputDir', $this->testDir);
+        $this->compiler->setTargetName('namespace_rules');
+
+        $stubFile = $this->compiler->genLibraryImportStub([
+            ROOT_PATH . '/phpunit/code/compiler_api/library_no_export_namespace.php',
+        ]);
+        $stub = file_get_contents($stubFile);
+
+        $this->assertStringNotContainsString('function imported_attribute(): int', $stub);
+        $this->assertStringNotContainsString('function aliased_attribute(): int', $stub);
+        $this->assertStringNotContainsString('function fully_qualified_attribute(): int', $stub);
+        $this->assertStringContainsString('function relative_attribute(): int', $stub);
+        $this->assertStringContainsString('function qualified_attribute(): int', $stub);
     }
 
     public function testLibraryCompileOptionsExportOnlyPublicApiByDefault(): void

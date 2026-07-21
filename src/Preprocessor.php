@@ -29,6 +29,7 @@ use PhpParser\Node\UnionType;
 use PhpParser\NodeAbstract;
 use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
+use PhpParser\NodeVisitor\NameResolver;
 
 class Preprocessor extends CompilerBase
 {
@@ -136,6 +137,7 @@ class Preprocessor extends CompilerBase
             }
 
             $traverser = new NodeTraverser();
+            $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
             $traverser->addVisitor(new Visitor());
             $stmts = $traverser->traverse($ast);
             $this->validateUnsupportedAttributeArguments($stmts);
@@ -214,6 +216,37 @@ class Preprocessor extends CompilerBase
         }
 
         return false;
+    }
+
+    private function hasNoExportAttribute(NodeAbstract $node): bool
+    {
+        foreach ($node->attrGroups as $group) {
+            foreach ($group->attrs as $attribute) {
+                if (!$this->isRootCompileTimeAttribute($attribute, 'NoExport')) {
+                    continue;
+                }
+                if ($attribute->args !== []) {
+                    $this->fatalError($attribute, 'NoExport does not accept arguments');
+                }
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isRootCompileTimeAttribute(Node\Attribute $attribute, string $name): bool
+    {
+        return strcasecmp($this->getResolvedPhpName($attribute->name), $name) === 0;
+    }
+
+    private function getResolvedPhpName(Node\Name $name): string
+    {
+        $resolvedName = $name->getAttribute('resolvedName')
+            ?? $name->getAttribute('namespacedName')
+            ?? $name;
+
+        return ltrim($resolvedName->toString(), '\\');
     }
 
     private function getExternalImportLibraryName(string $stubFile): string
@@ -500,6 +533,7 @@ class Preprocessor extends CompilerBase
         }
 
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
+        $functionDef->exported = !($this->classDef?->exported === false || $this->hasNoExportAttribute($v));
         $functionDef->returnClass = $class;
         // Record late-bound return type keywords so they can be re-resolved to
         // the consuming class when a trait method is flattened into a class.
@@ -627,6 +661,7 @@ class Preprocessor extends CompilerBase
         }
 
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
+        $this->classDef->exported = !$this->hasNoExportAttribute($class);
         $this->classDef->extensionProviderTarget = $this->parseExtensionProviderTarget($class);
         $this->addClass($fullClassName, $this->classDef);
 
@@ -723,8 +758,7 @@ class Preprocessor extends CompilerBase
     {
         foreach ($class->attrGroups as $groupIndex => $group) {
             foreach ($group->attrs as $attributeIndex => $attribute) {
-                $parts = $attribute->name->getParts();
-                if (strtolower((string) end($parts)) !== 'extensionprovider') {
+                if (!$this->isRootCompileTimeAttribute($attribute, 'ExtensionProvider')) {
                     continue;
                 }
                 if (!$class instanceof Node\Stmt\Class_) {
@@ -754,10 +788,10 @@ class Preprocessor extends CompilerBase
         if ($value instanceof Node\Expr\ClassConstFetch
             && $this->isNameExpr($value->class)
             && $this->isIdExpr($value->name)) {
-            $class = ltrim($value->class->toString(), '\\');
+            $class = $this->getResolvedPhpName($value->class);
             $constant = $value->name->toString();
             if (strtolower($constant) === 'class') {
-                return $this->getNamespacedClassName($value->class->toString());
+                return $class;
             }
             $targets = [
                 'Int' => Type::INT,

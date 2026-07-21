@@ -698,6 +698,20 @@ function vector_new(int $size, bool $init = false): mixed {}
 外部 stub 中的类会在消费项目中生成类注册、属性和常量实体，但不生成 `php_*` 方法本体；方法本体由动态库提供。
 Property hook 同样按方法处理：发布 stub 保留 `get`/`set` 的声明并移除实现，消费项目生成属性实体，hook 的 getter/setter `php_*` 实现从动态库导入。
 
+库内部声明可使用编译期 Attribute `#[NoExport]` 从公开 ABI 排除：
+
+```php
+#[\NoExport]
+function internal_helper(): void {}
+
+#[\NoExport]
+class InternalService {}
+```
+
+声明仍参与当前库编译，但不会进入 `<target>.stub.php`，对应 `php_*` 符号也不添加 library export 修饰。类注解会级联到其全部方法；单个方法也可以独立标记。`NoExport` 位于根命名空间：全局命名空间可写 `#[NoExport]`，其他命名空间必须写 `#[\NoExport]`，并且该编译期 Attribute 不会进入运行时元数据。
+
+`NoExport` 与 `ExtensionProvider` 都遵循 PHP 类名解析规则，支持完全限定名、`use` 和 `use ... as ...` 别名。只有解析结果严格指向根命名空间内建 Attribute 时，编译器才会消费它。
+
 `php_<target>_func_decl.h` 和 `php_<target>_data_decl.h` 都是 TypePHP 构建过程的内部生成文件，不是库的对外开发头文件。
 `func_decl.h` 在 `-m lib` 构建时还会被强制包含，用于给当前 target 的 `php_*` C++ ABI 函数添加平台导出标记；`data_decl.h` 仅在 target 内部声明全局变量、字面量、常量对象和运行时映射等数据。
 

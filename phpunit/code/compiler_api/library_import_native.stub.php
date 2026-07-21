@@ -2,6 +2,8 @@
 
 namespace LibraryApi;
 
+use \NoExport;
+
 class NativeCounter
 {
     public const int INITIAL = 3;
@@ -11,3 +13,6 @@ class NativeCounter
 }
 
 function native_value(string $name = 'typephp'): string {}
+
+#[NoExport]
+function native_hidden(): int {}

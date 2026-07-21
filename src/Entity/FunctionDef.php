@@ -25,6 +25,8 @@ class FunctionDef
     public string $namespace;
     public bool $method = false;
     public bool $stub = false;
+    /** Whether this function is part of the public ABI of a library build. */
+    public bool $exported = true;
     /** External library imported by the stub containing this function. */
     public string $importLibrary = '';
     public bool $returnTypeUndeclared = false;

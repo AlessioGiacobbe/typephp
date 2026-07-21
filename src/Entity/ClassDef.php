@@ -32,6 +32,8 @@ class ClassDef extends ClassLikeDef
     public string $extends = '';
     public bool $requireCtor = false;
     public bool $enum = false;
+    /** Whether this class and its methods are part of the public ABI of a library build. */
+    public bool $exported = true;
     public ?string $extensionProviderTarget = null;
 
     /**

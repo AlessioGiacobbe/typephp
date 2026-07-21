@@ -47,7 +47,7 @@ final class LibraryImportStubGenerator
             }
             $ast = $this->parser->parse($code) ?? [];
             $traverser = new NodeTraverser();
-            $traverser->addVisitor(new NameResolver());
+            $traverser->addVisitor(new NameResolver(null, ['preserveOriginalNames' => true]));
             $ast = $traverser->traverse($ast);
 
             foreach ($ast as $stmt) {
@@ -98,6 +98,10 @@ final class LibraryImportStubGenerator
 
     private function makeImportDeclaration(Node\Stmt $stmt): ?Node\Stmt
     {
+        if ($this->hasNoExportAttribute($stmt)) {
+            return null;
+        }
+
         $comments = array_filter(
             $stmt->getComments(),
             static fn(\PhpParser\Comment $comment): bool => preg_match(
@@ -116,6 +120,9 @@ final class LibraryImportStubGenerator
             $members = [];
             foreach ($stmt->stmts as $member) {
                 if ($member instanceof Node\Stmt\ClassMethod) {
+                    if ($this->hasNoExportAttribute($member)) {
+                        continue;
+                    }
                     if (!($member->flags & Modifiers::ABSTRACT)
                         && !($stmt instanceof Node\Stmt\Interface_)) {
                         $member->stmts = [];
@@ -143,5 +150,22 @@ final class LibraryImportStubGenerator
         }
 
         return null;
+    }
+
+    private function hasNoExportAttribute(Node $node): bool
+    {
+        if (!property_exists($node, 'attrGroups')) {
+            return false;
+        }
+        foreach ($node->attrGroups as $group) {
+            foreach ($group->attrs as $attribute) {
+                $parts = $attribute->name->getParts();
+                if (count($parts) === 1 && strcasecmp($parts[0], 'NoExport') === 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }
