@@ -933,6 +933,16 @@ YAML);
                 'NoExport',
                 file_get_contents($this->compiler->getArgInfoHeaderFile($file)),
             );
+            $this->assertStringNotContainsString(
+                'Getter',
+                file_get_contents($this->compiler->getArgInfoHeaderFile($file)),
+            );
+            foreach (['NotNull', 'Printer', 'Setter', 'With'] as $attribute) {
+                $this->assertStringNotContainsString(
+                    $attribute,
+                    file_get_contents($this->compiler->getArgInfoHeaderFile($file)),
+                );
+            }
         }
         $provider = $this->invokeMethod('getClass', 'LibraryApi\\InternalStringExtension');
         $this->assertSame(Type::STR, $provider->extensionProviderTarget);
@@ -945,11 +955,18 @@ YAML);
         $this->assertStringContainsString('class Counter', $stub);
         $this->assertStringContainsString('public const int STEP = 2;', $stub);
         $this->assertStringContainsString('public int $value = 1;', $stub);
+        $this->assertStringContainsString('#[\Getter, \Setter, \With]', $stub);
+        $this->assertStringContainsString('#[\Printer]', $stub);
+        $this->assertStringContainsString('#[\NotNull]', $stub);
         $this->assertMatchesRegularExpression(
             '/public int \$doubled\s*\{\s*get\s*\{\s*\}\s*set\(int \$value\)\s*\{\s*\}\s*\}/s',
             $stub,
         );
         $this->assertStringContainsString('function add(int $amount = self::STEP): int', $stub);
+        $this->assertMatchesRegularExpression(
+            '/function label\(\s*#\[\\\\NotNull\]\s*string \$value\s*\): string/s',
+            $stub,
+        );
         $this->assertStringContainsString('function twice(int $value): int', $stub);
         $this->assertStringContainsString('function native_value(string $name = \'typephp\'): string', $stub);
         $this->assertStringContainsString('class NativeCounter', $stub);
@@ -970,6 +987,10 @@ YAML);
         $libraryHeader = file_get_contents($libraryHeaderFile);
         $this->assertStringContainsString(
             'TYPEPHP_PRIME2_API php::Int php_libraryapi__twice(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_API php::Int php_libraryapi__counter__getvalue(',
             $libraryHeader,
         );
         $this->assertStringContainsString(
@@ -1022,6 +1043,10 @@ YAML);
             $header,
         );
         $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_IMPORT php::Int php_libraryapi__counter__getvalue(',
+            $header,
+        );
+        $this->assertStringContainsString(
             'TYPEPHP_PRIME2_IMPORT php::Int php_libraryapi__twice(',
             $header,
         );
@@ -1044,6 +1069,8 @@ YAML);
 
         $stubCppCode = file_get_contents($stubCpp);
         $this->assertStringContainsString('ZEND_METHOD(LibraryApi_Counter, add)', $stubCppCode);
+        $this->assertStringContainsString('ZEND_METHOD(LibraryApi_Counter, getValue)', $stubCppCode);
+        $this->assertStringContainsString('php_libraryapi__counter__getvalue(this_)', $stubCppCode);
         $this->assertStringContainsString('php_libraryapi__counter__add(this_, arg_amount)', $stubCppCode);
         $this->assertStringNotContainsString(
             'php::Int php_libraryapi__counter__add(php::Object &this_',
@@ -1052,6 +1079,7 @@ YAML);
 
         $arginfoFile = $consumer->getArgInfoHeaderFile($stubFile);
         $arginfo = file_get_contents($arginfoFile);
+        $this->assertStringNotContainsString('Getter', $arginfo);
         $this->assertStringContainsString('const_STEP_value', $arginfo);
         $this->assertStringContainsString('property_value_default_value', $arginfo);
         $this->assertSame(['prime2'], $consumer->getLinkLibs());

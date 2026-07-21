@@ -19,6 +19,31 @@ final readonly class NoExport
 {
 }
 
+#[Attribute(Attribute::TARGET_PROPERTY)]
+final readonly class Getter
+{
+}
+
+#[Attribute(Attribute::TARGET_PROPERTY)]
+final readonly class Setter
+{
+}
+
+#[Attribute(Attribute::TARGET_PROPERTY)]
+final readonly class With
+{
+}
+
+#[Attribute(Attribute::TARGET_CLASS)]
+final readonly class Printer
+{
+}
+
+#[Attribute(Attribute::TARGET_PARAMETER)]
+final readonly class NotNull
+{
+}
+
 /**
  * Public compile-time type symbols shared by extension providers and std containers.
  * This root class is deliberately distinct from the compiler-internal TypePhp\Type.

@@ -3,12 +3,19 @@
 namespace LibraryApi;
 
 use \ExtensionProvider as Provider;
+use \Getter;
+use \NotNull;
 use \NoExport as Internal;
+use \Printer;
+use \Setter;
 use \Type;
+use \With;
 
+#[Printer]
 class Counter
 {
     public const int STEP = 2;
+    #[Getter, Setter, With]
     public int $value = 1;
     public int $doubled {
         get {
@@ -23,6 +30,11 @@ class Counter
     {
         $this->value += $amount;
         return $this->value;
+    }
+
+    public function label(#[NotNull] string $value): string
+    {
+        return $value;
     }
 
     #[Internal]

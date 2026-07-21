@@ -35,6 +35,8 @@ class ClassDef extends ClassLikeDef
     /** Whether this class and its methods are part of the public ABI of a library build. */
     public bool $exported = true;
     public ?string $extensionProviderTarget = null;
+    /** Whether #[Printer] generated this class's own toString() method. */
+    public bool $printerGenerated = false;
 
     /**
      * Backing type for backed enums ('int' or 'string'), null for pure enums.
@@ -100,6 +102,14 @@ class ClassDef extends ClassLikeDef
     public function hasMethod(string $method): bool
     {
         return isset($this->methods[strtolower($method)]);
+    }
+
+    public function removeMethod(string $method): ?MethodDef
+    {
+        $name = strtolower($method);
+        $methodDef = $this->methods[$name] ?? null;
+        unset($this->methods[$name]);
+        return $methodDef;
     }
 
     public function hasAbstractMethod(string $method): bool

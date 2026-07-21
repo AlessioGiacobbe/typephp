@@ -26,6 +26,7 @@ final class SymbolRepository
     public function putFunction(string $key, FunctionDef $definition): void { $this->functions[$key] = $definition; }
     public function hasFunction(string $key): bool { return array_key_exists($key, $this->functions); }
     public function function(string $key): FunctionDef { return $this->functions[$key]; }
+    public function removeFunction(string $key): void { unset($this->functions[$key]); }
     /** @return array<string, FunctionDef> */
     public function functions(): array { return $this->functions; }
 

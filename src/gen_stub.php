@@ -3584,7 +3584,9 @@ class AttributeInfo {
             foreach ($attrGroup->attrs as $attr) {
                 $parts = $attr->name->getParts();
                 $compileTimeAttribute = count($parts) === 1
-                    && in_array(strtolower($parts[0]), ['extensionprovider', 'noexport'], true);
+                    && in_array(strtolower($parts[0]), [
+                        'extensionprovider', 'getter', 'noexport', 'notnull', 'printer', 'setter', 'with',
+                    ], true);
                 if ($compileTimeAttribute) {
                     continue;
                 }
@@ -4507,11 +4509,17 @@ class FileInfo {
     public static function parseStubFile(string $code, string $phpVersion = '8.5'): FileInfo {
         $parser = (new PhpParser\ParserFactory())->createForVersion(PhpParser\PhpVersion::fromString($phpVersion));
         $nodeTraverser = new PhpParser\NodeTraverser;
-        $nodeTraverser->addVisitor(new TypePhp\Transform\Visitor());
         $nodeTraverser->addVisitor(new PhpParser\NodeVisitor\NameResolver(
             null,
             ['preserveOriginalNames' => true]
         ));
+        $nodeTraverser->addVisitor(new TypePhp\Transform\Visitor(static function (Stmt\Class_ $class): bool {
+            if (!isset($GLOBALS['translator'])) {
+                return true;
+            }
+            $name = isset($class->namespacedName) ? $class->namespacedName->toString() : $class->name->toString();
+            return getTranslator()->shouldGeneratePrinter($name);
+        }));
         $prettyPrinter = new class extends Standard {
             protected function pName_FullyQualified(PhpParser\Node\Name\FullyQualified $node): string {
                 return implode('\\', $node->getParts());

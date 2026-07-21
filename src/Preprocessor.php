@@ -19,6 +19,7 @@ use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\SyntaxError;
 use TypePhp\Transform\PropertyHookLowering;
+use TypePhp\Transform\PrinterLowering;
 use TypePhp\Transform\Visitor;
 use PhpParser\Modifiers;
 use PhpParser\ConstExprEvaluator;
@@ -694,6 +695,25 @@ class Preprocessor extends CompilerBase
         }
         $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
+        if ($class instanceof Node\Stmt\Class_) {
+            $generatedPrinter = false;
+            foreach ($class->getMethods() as $method) {
+                if ($method->getAttribute(PrinterLowering::GENERATED_ATTRIBUTE)) {
+                    $generatedPrinter = true;
+                    break;
+                }
+            }
+            if ($generatedPrinter && $this->parentHasMethod($this->classDef->extends, 'toString')) {
+                PrinterLowering::removeGeneratedMethod($class);
+            } elseif ($generatedPrinter) {
+                $this->classDef->printerGenerated = true;
+                PrinterLowering::rebuildGeneratedMethod(
+                    $class,
+                    [...$this->parentPublicProperties($this->classDef->extends), ...PrinterLowering::ownPublicProperties($class)],
+                );
+            }
+        }
+
         // Property defaults may reference class constants declared later in the
         // class body. Collect every constant first so default-value validation
         // is independent of declaration order, matching PHP's class semantics.
@@ -752,6 +772,64 @@ class Preprocessor extends CompilerBase
         $this->resetClass();
 
         return $code;
+    }
+
+    public function shouldGeneratePrinter(string $class): bool
+    {
+        $classDef = $this->getClassDef(ltrim($class, '\\'));
+        if ($classDef === null) {
+            return true;
+        }
+        // A child may be discovered before its parent during the initial
+        // project scan. Reconcile the provisional method once every class is
+        // available, before conversion and arginfo generation begin.
+        if ($classDef->printerGenerated && $this->parentHasMethod($classDef->extends, 'toString')) {
+            $generated = $classDef->removeMethod('toString');
+            if ($generated?->functionDef !== null) {
+                foreach ($this->symbols->functions() as $name => $functionDef) {
+                    if ($functionDef === $generated->functionDef) {
+                        $this->symbols->removeFunction($name);
+                        break;
+                    }
+                }
+            }
+            $classDef->printerGenerated = false;
+        }
+        return $classDef->printerGenerated;
+    }
+
+    /** @return list<string> */
+    protected function parentPublicProperties(string $parent): array
+    {
+        if ($parent === '') {
+            return [];
+        }
+        $classDef = $this->getClassDef($parent);
+        if ($classDef === null) {
+            return [];
+        }
+        $properties = $this->parentPublicProperties($classDef->extends);
+        foreach ($classDef->properties as $property) {
+            if ($property->isPublic() && !$property->isStatic()) {
+                $properties[] = $property->name;
+            }
+        }
+        return array_values(array_unique($properties));
+    }
+
+    protected function parentHasMethod(string $parent, string $method): bool
+    {
+        while ($parent !== '') {
+            $classDef = $this->getClassDef($parent);
+            if ($classDef === null) {
+                return $this->isInternalClass($parent) && method_exists($parent, $method);
+            }
+            if ($classDef->hasMethod($method) || $classDef->hasAbstractMethod($method)) {
+                return true;
+            }
+            $parent = $classDef->extends;
+        }
+        return false;
     }
 
     protected function parseExtensionProviderTarget(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): ?string

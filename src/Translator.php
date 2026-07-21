@@ -2287,7 +2287,10 @@ CODE;
         $ast = $this->parser->parse($phpCode);
         $traverser = new NodeTraverser();
         $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
-        $traverser->addVisitor(new Visitor());
+        $traverser->addVisitor(new Visitor(function (Node\Stmt\Class_ $class): bool {
+            $name = isset($class->namespacedName) ? $class->namespacedName->toString() : $class->name->toString();
+            return $this->shouldGeneratePrinter($name);
+        }));
 
         $stmts = $traverser->traverse($ast);
 
@@ -2870,6 +2873,13 @@ CODE;
         }
         $this->classDef = $this->getClass($fullName);
         $this->parseExtensionProviderTarget($class);
+
+        if ($class instanceof Node\Stmt\Class_ && $this->classDef->printerGenerated) {
+            \TypePhp\Transform\PrinterLowering::rebuildGeneratedMethod(
+                $class,
+                [...$this->parentPublicProperties($this->classDef->extends), ...\TypePhp\Transform\PrinterLowering::ownPublicProperties($class)],
+            );
+        }
 
         // 如果不是继承自内置类，需要检查父类是否存在，在预处理阶段只需检查了是否继承内置类
         // 目前不允许继承自动态加载的自定义类

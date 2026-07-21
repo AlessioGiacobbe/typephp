@@ -2,6 +2,37 @@
 
 class ClassTest extends \BaseTest
 {
+    public function testGetterGeneratesPublicMethodsForInstanceProperties(): void
+    {
+        $this->compile('getter.php');
+    }
+
+    public function testGetterRejectsStaticProperties(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Getter can only be applied to instance properties');
+        $this->compile('getter-static-property.php');
+    }
+
+    public function testGetterRejectsNonPropertyTargets(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Getter can only be applied to instance properties');
+        $this->compile('getter-function.php');
+    }
+
+    public function testCompileTimeGeneratedPropertyMethodsPrinterAndNotNull(): void
+    {
+        $this->compile('compile_time_attributes.php');
+    }
+
+    public function testNotNullRejectsNonParameterTargets(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('NotNull can only be applied to function or method parameters');
+        $this->compile('not-null-invalid-target.php');
+    }
+
     public function testReAssignThis()
     {
         $this->exec('Cannot re-assign $this', 're-assign-this.php');
