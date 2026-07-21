@@ -669,6 +669,10 @@ class Translator extends Preprocessor
             $lines[] = 'extern ' . Type::STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
         }
 
+        foreach ($this->constants as $name => $constant) {
+            $lines[] = 'extern ' . $constant->type . ' ' . $name . ';';
+        }
+
         // 确保数组大小至少为 1，避免 C/C++ 编译错误
         $classCount = max(1, count($this->classMap));
         $lines[] = 'extern THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;
@@ -1590,10 +1594,6 @@ CODE;
             }
         }
 
-        $code .= PHP_EOL;
-        foreach ($this->constants as $name => $constant) {
-            $code .= 'extern ' . $constant->type . ' ' . $name . ';' . PHP_EOL;
-        }
         $this->writeFile($file, $code);
     }
 

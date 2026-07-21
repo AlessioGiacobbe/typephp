@@ -863,8 +863,18 @@ YAML);
             $header
         );
         $this->assertStringNotContainsString('_literal_strings', $header);
+        $this->assertStringNotContainsString('_const_var_', $header);
         $this->assertStringNotContainsString('php_func_map', $header);
         $this->assertStringNotContainsString('php_class_map', $header);
+
+        $globalHeaderFile = $this->testDir . '/php_abi_defaults_global_var_decl.h';
+        $this->compiler->genExternGlobalVars($globalHeaderFile);
+        $globalHeader = file_get_contents($globalHeaderFile);
+        $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_INT;', $globalHeader);
+        $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_STRING;', $globalHeader);
+        $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_ARRAY;', $globalHeader);
+        $this->assertStringContainsString('extern php::Str _literal_strings[', $globalHeader);
+        $this->assertStringContainsString('extern THREAD_LOCAL zend_function *php_func_map[', $globalHeader);
 
         $extensionFile = $this->compiler->genExtension();
         $extension = file_get_contents($extensionFile);
