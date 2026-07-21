@@ -11,7 +11,6 @@ use TypePhp\Type;
 
 use TypePhp\Entity\ArgInfo;
 use TypePhp\Entity\ArrayInitPlan;
-use TypePhp\Entity\FunctionDef;
 
 trait DefaultArgumentGenerator
 {
@@ -24,18 +23,19 @@ trait DefaultArgumentGenerator
         return $type;
     }
 
-    protected function getDefaultArgumentHelperName(FunctionDef $func, ArgInfo $argInfo): string
+    protected function getDefaultArgumentHelperType(ArgInfo $argInfo): string
     {
-        return self::PREFIX . 'default_arg_' . $func->name . '_' . $argInfo->name;
+        return $argInfo->variadic ? Type::ARRAY : $this->getDefaultArgumentType($argInfo);
     }
 
-    protected function genDefaultArgumentExpr(FunctionDef $func, ArgInfo $argInfo): string
+    protected function getDefaultArgumentHelperName(string $nativeName, int $argumentIndex): string
     {
-        if (!$argInfo->arrayInitPlan || !$argInfo->arrayInitPlan->requiresRuntimeInit()) {
-            return $argInfo->default;
-        }
+        return self::PREFIX . $nativeName . '_arg_' . $argumentIndex . '_default_value';
+    }
 
-        return $this->getDefaultArgumentHelperName($func, $argInfo) . '()';
+    protected function genDefaultArgumentExpr(string $nativeName, int $argumentIndex): string
+    {
+        return $this->getDefaultArgumentHelperName($nativeName, $argumentIndex) . '()';
     }
 
     protected function wrapArrayInitPlan(ArrayInitPlan $plan, string $body): string
@@ -43,31 +43,64 @@ trait DefaultArgumentGenerator
         return "do {\n" . $plan->init . $body . $plan->clean . "} while (0);\n";
     }
 
-    protected function genDefaultArgumentHelpers(): string
+    protected function genDefaultArgumentHelperDeclarations(string $declarationPrefix): string
     {
         $code = '';
-        foreach ($this->symbols->functions() as $func) {
-            foreach ($func->argInfoList as $argInfo) {
-                $plan = $argInfo->arrayInitPlan;
-                if (!$plan || !$plan->requiresRuntimeInit()) {
+        foreach ($this->symbols->functions() as $nativeName => $func) {
+            foreach ($func->argInfoList as $argumentIndex => $argInfo) {
+                if (!$this->shouldGenerateDefaultArgumentHelper($argInfo)) {
                     continue;
                 }
 
-                $type = $this->getDefaultArgumentType($argInfo);
-                $helper = $this->getDefaultArgumentHelperName($func, $argInfo);
-                $code .= 'static inline ' . $type . ' ' . $helper . "() {\n";
-                $code .= $plan->init;
-                if ($plan->clean) {
-                    $code .= $type . ' retval = ' . $plan->expr . ';' . PHP_EOL;
-                    $code .= $plan->clean;
-                    $code .= 'return retval;' . PHP_EOL;
-                } else {
-                    $code .= 'return ' . $plan->expr . ';' . PHP_EOL;
-                }
-                $code .= '}' . PHP_EOL;
+                $type = $this->getDefaultArgumentHelperType($argInfo);
+                $helper = $this->getDefaultArgumentHelperName($nativeName, $argumentIndex);
+                $code .= $declarationPrefix . $type . ' ' . $helper . '();' . PHP_EOL;
             }
         }
 
         return $code ? $code . PHP_EOL : '';
+    }
+
+    protected function genDefaultArgumentHelperDefinitions(): string
+    {
+        $code = '';
+        foreach ($this->symbols->functions() as $nativeName => $func) {
+            foreach ($func->argInfoList as $argumentIndex => $argInfo) {
+                if (!$this->shouldGenerateDefaultArgumentHelper($argInfo)) {
+                    continue;
+                }
+
+                $type = $this->getDefaultArgumentHelperType($argInfo);
+                $helper = $this->getDefaultArgumentHelperName($nativeName, $argumentIndex);
+                $code .= $type . ' ' . $helper . "() {\n";
+
+                $plan = $argInfo->arrayInitPlan;
+                if ($plan && $plan->requiresRuntimeInit()) {
+                    $code .= $plan->init;
+                    if ($plan->clean) {
+                        $code .= $type . ' retval = ' . $plan->expr . ';' . PHP_EOL;
+                        $code .= $plan->clean;
+                        $code .= 'return retval;' . PHP_EOL;
+                    } else {
+                        $code .= 'return ' . $plan->expr . ';' . PHP_EOL;
+                    }
+                } else {
+                    $code .= 'return ' . $argInfo->default . ';' . PHP_EOL;
+                }
+
+                $code .= '}' . PHP_EOL . PHP_EOL;
+            }
+        }
+
+        return $code;
+    }
+
+    private function shouldGenerateDefaultArgumentHelper(ArgInfo $argInfo): bool
+    {
+        if ($argInfo->variadic) {
+            return true;
+        }
+
+        return $argInfo->default !== '';
     }
 }

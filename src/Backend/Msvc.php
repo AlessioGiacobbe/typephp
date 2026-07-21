@@ -96,6 +96,10 @@ class Msvc extends CompilerBackend
             if (!empty($config['cxxflags'])) {
                 $cmd .= ' ' . $config['cxxflags'];
             }
+
+            if (!empty($config['forced_include'])) {
+                $cmd .= ' /FI' . escapeshellarg($config['forced_include']);
+            }
         }
 
         $cmd .= ' /nologo';

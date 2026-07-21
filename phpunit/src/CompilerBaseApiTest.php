@@ -831,6 +831,64 @@ YAML);
         $this->assertStringNotContainsString('property_map = {}', $code);
     }
 
+    public function testLibraryFunctionHeaderExportsDefaultValueHelpersWithoutLiteralStorage(): void
+    {
+        global $translator;
+        $translator = $this->compiler;
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
+        $this->compiler->setTargetName('abi_defaults');
+
+        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/default_argument_abi.php';
+        $this->compiler->addFiles([$testFile]);
+        $this->compiler->prepareFile($testFile);
+        $this->compiler->convertFile($testFile);
+
+        $headerFile = $this->testDir . '/php_abi_defaults_func_decl.h';
+        $this->compiler->genFunctionDeclaration($headerFile);
+        $header = file_get_contents($headerFile);
+
+        $this->assertStringContainsString('#pragma once', $header);
+        $this->assertStringContainsString('TYPEPHP_ABI_DEFAULTS_API __declspec(dllexport)', $header);
+        $this->assertStringContainsString('TYPEPHP_ABI_DEFAULTS_API __declspec(dllimport)', $header);
+        $this->assertStringContainsString(
+            'TYPEPHP_ABI_DEFAULTS_API php::Str php_exported_defaults_arg_0_default_value();',
+            $header
+        );
+        $this->assertStringContainsString(
+            'php::Str text = php_exported_defaults_arg_0_default_value()',
+            $header
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_ABI_DEFAULTS_API php::Array php_exported_variadic_arg_0_default_value();',
+            $header
+        );
+        $this->assertStringNotContainsString('_literal_strings', $header);
+        $this->assertStringNotContainsString('php_func_map', $header);
+        $this->assertStringNotContainsString('php_class_map', $header);
+
+        $extensionFile = $this->compiler->genExtension();
+        $extension = file_get_contents($extensionFile);
+        $this->assertStringContainsString('php::Str php_exported_defaults_arg_0_default_value() {', $extension);
+        $this->assertStringContainsString('return _literal_strings[', $extension);
+        $this->assertStringContainsString('php::Array php_exported_variadic_arg_0_default_value() {', $extension);
+    }
+
+    public function testLibraryCompileOptionsExportOnlyPublicApiByDefault(): void
+    {
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
+        $this->compiler->setTargetName('abi_defaults');
+
+        $options = $this->invokeMethod('getCompileCommandOptions');
+
+        $this->assertContains('TYPEPHP_ABI_DEFAULTS_EXPORTS=1', $options['user_defines']);
+        $this->assertStringEndsWith('/php_abi_defaults_func_decl.h', $options['forced_include']);
+        if (!$this->compiler->isWindows()) {
+            $flags = $this->getPropertyValue('compilerBackend')->buildCompileOptions($options->toArray());
+            $this->assertStringContainsString('-fvisibility=hidden', $flags);
+            $this->assertStringContainsString('-include', $flags);
+        }
+    }
+
     public function testObjectiveCppCompileCommandOptionsKeepCppOptions(): void
     {
         $this->setPropertyValue('cxxStd', 'c++20');

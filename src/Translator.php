@@ -788,6 +788,9 @@ CODE;
             $code .= PHP_EOL;
         }
 
+        $code .= "// default argument values \n";
+        $code .= $this->genDefaultArgumentHelperDefinitions();
+
         $code .= "// constants \n";
         foreach ($this->constants as $name => $const) {
             $code .= $const->type . ' ' . $name . ";\n";
@@ -1275,7 +1278,7 @@ CODE;
                 $this->globalHeaders,
                 $dependencies,
                 $this->getBuildDir() . '/cache/pch',
-                $this->getCompileCommandOptions(),
+                $this->getPrecompiledHeaderCompileCommandOptions(),
             );
             $this->precompiledHeader = [
                 'header' => $result['header'],
@@ -1534,15 +1537,29 @@ CODE;
 
     public function genFunctionDeclaration(string $file): void
     {
-        $code = '#include <phpx.h>' . PHP_EOL;
+        $code = '#pragma once' . PHP_EOL . PHP_EOL;
+        $code .= '#include <phpx.h>' . PHP_EOL;
         $code .= '#include <typephp_fiber_generator.h>' . PHP_EOL;
 
-        // 函数的默认值可能会使用字符串字面量，需要提前声明
-        if ($this->literalStrings) {
-            $literalStringsCount = count($this->literalStrings);
-            $code .= 'extern ' . Type::STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+        $declarationPrefix = 'extern ';
+        if ($this->isBuildModeLib()) {
+            $apiMacro = $this->getLibraryApiMacroName();
+            $exportsMacro = $this->getLibraryExportsMacroName();
+            $code .= "#if defined(_WIN32)\n";
+            $code .= "# if defined({$exportsMacro})\n";
+            $code .= "#  define {$apiMacro} __declspec(dllexport)\n";
+            $code .= "# else\n";
+            $code .= "#  define {$apiMacro} __declspec(dllimport)\n";
+            $code .= "# endif\n";
+            $code .= "#elif defined(__GNUC__) && __GNUC__ >= 4\n";
+            $code .= "# define {$apiMacro} __attribute__((visibility(\"default\")))\n";
+            $code .= "#else\n";
+            $code .= "# define {$apiMacro}\n";
+            $code .= "#endif\n\n";
+            $declarationPrefix = $apiMacro . ' ';
         }
-        $code .= $this->genDefaultArgumentHelpers();
+
+        $code .= $this->genDefaultArgumentHelperDeclarations($declarationPrefix);
 
         foreach ($this->symbols->functions() as $name => $func) {
             $list = [];
@@ -1551,23 +1568,24 @@ CODE;
             }
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
-                foreach ($argInfoList as $argInfo) {
+                foreach ($argInfoList as $argumentIndex => $argInfo) {
                     if ($argInfo->variadic) {
-                        $arg = Type::ARRAY . ' ' . $argInfo->name . ' = {}';
+                        $arg = Type::ARRAY . ' ' . $argInfo->name
+                            . ' = ' . $this->genDefaultArgumentExpr($name, $argumentIndex);
                     } else {
                         $arg = $this->genArgumentDeclaration($argInfo);
-                        if ($argInfo->default && !$this->isConstructorNativeFunction($func)) {
-                            $arg .= ' = ' . $this->genDefaultArgumentExpr($func, $argInfo);
+                        if ($argInfo->default !== '' && !$this->isConstructorNativeFunction($func)) {
+                            $arg .= ' = ' . $this->genDefaultArgumentExpr($name, $argumentIndex);
                         }
                     }
                     $list[] = $arg;
                 }
             }
             $params = implode(', ', $list);
-            $code .= 'extern ' . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
+            $code .= $declarationPrefix . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
             if ($func->hasMultiReturn()) {
                 $code .= 'namespace ' . self::MULTI_RETURN_NAMESPACE . ' {' . PHP_EOL;
-                $code .= 'extern ' . $func->getMultiReturnCppType() . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
+                $code .= $declarationPrefix . $func->getMultiReturnCppType() . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
                 $code .= '}' . PHP_EOL;
             }
         }
@@ -1577,6 +1595,16 @@ CODE;
             $code .= 'extern ' . $constant->type . ' ' . $name . ';' . PHP_EOL;
         }
         $this->writeFile($file, $code);
+    }
+
+    protected function getLibraryApiMacroName(): string
+    {
+        return 'TYPEPHP_' . strtoupper($this->targetName) . '_API';
+    }
+
+    protected function getLibraryExportsMacroName(): string
+    {
+        return 'TYPEPHP_' . strtoupper($this->targetName) . '_EXPORTS';
     }
 
     public function getBuildMode(): string
@@ -2870,8 +2898,11 @@ CODE;
                 $cppCode .= '}' . PHP_EOL;
                 $cppCode .= $this->genExtraNamedVariadicArgs($var);
             } else {
-                if ($argInfo->default) {
-                    $defaultExpr = $this->genDefaultArgumentExpr($functionDef, $argInfo);
+                if ($argInfo->default !== '') {
+                    $nativeName = str_starts_with($fn, self::PREFIX)
+                        ? substr($fn, strlen(self::PREFIX))
+                        : $fn;
+                    $defaultExpr = $this->genDefaultArgumentExpr($nativeName, $k);
                     if ($argInfo->byRef) {
                         $argExpr = 'php::getCallArgByRef(' . $k . ', ' . $defaultExpr . ')';
                     } else {

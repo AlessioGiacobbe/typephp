@@ -25,6 +25,7 @@ trait NativeCommandOptionsTrait
         $userDefines = $this->userDefines;
         if ($this->isBuildModeLib()) {
             $userDefines[] = 'TYPEPHP_NO_MAIN=1';
+            $userDefines[] = $this->getLibraryExportsMacroName() . '=1';
         }
 
         return new CompileOptions([
@@ -51,6 +52,13 @@ trait NativeCommandOptionsTrait
             ->with('cxxflags', $this->cxxFlags)
             ->with('suppressed_warnings', Constants::MSVC_SUPPRESSED_WARNINGS ?? []);
 
+        if ($this->isBuildModeLib()) {
+            $options = $options->with(
+                'forced_include',
+                $this->getIncludeDir() . '/php_' . $this->targetName . '_func_decl.h'
+            );
+        }
+
         if ($this->precompiledHeader !== null) {
             $options = $options->with('precompiled_header', $this->precompiledHeader);
         }
@@ -62,6 +70,13 @@ trait NativeCommandOptionsTrait
     {
         $options = $this->getCommonCompileCommandOptions();
         return $options->with('suppressed_warnings', ['4244', '4146']);
+    }
+
+    protected function getPrecompiledHeaderCompileCommandOptions(): CompileOptions
+    {
+        $values = $this->getCompileCommandOptions()->toArray();
+        unset($values['forced_include'], $values['precompiled_header']);
+        return new CompileOptions($values);
     }
 
     protected function getNativeCompileCommandOptions(string $language = ''): CompileOptions

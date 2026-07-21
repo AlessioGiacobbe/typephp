@@ -3,6 +3,7 @@
 namespace TypePhp\Backend;
 
 use TypePhp\Platform\PlatformBase;
+use TypePhp\Platform\Windows;
 
 /**
  * GCC/Clang 共享后端基类
@@ -101,6 +102,10 @@ abstract class GccLikeBackend extends CompilerBackend
 
         $cmd .= $this->getPICFlag($config);
 
+        if (($config['build_mode'] ?? null) === 'lib' && !($this->platform instanceof Windows)) {
+            $cmd .= ' -fvisibility=hidden';
+        }
+
         if (!empty($config['enable_profiler'])) {
             $cmd .= ' ' . $this->formatDefineFlag('PPROF_ON=1', '-D');
             if (!empty($config['prof_output'])) {
@@ -125,6 +130,10 @@ abstract class GccLikeBackend extends CompilerBackend
 
         if ($includeCppStd && !empty($config['precompiled_header'])) {
             $cmd .= $this->formatPrecompiledHeaderFlag($config['precompiled_header']);
+        }
+
+        if ($includeCppStd && !empty($config['forced_include'])) {
+            $cmd .= ' -include ' . escapeshellarg($config['forced_include']);
         }
 
         return $cmd;
