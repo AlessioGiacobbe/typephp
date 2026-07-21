@@ -14,6 +14,7 @@ use TypePhp\Analysis\PiConstraint;
 use TypePhp\CompilerTest;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\MethodDef;
+use TypePhp\Entity\PropertyDef;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\FunctionLike;
@@ -1050,8 +1051,10 @@ class SsaAnalysisTest extends TestCase
         $this->setContextProperty('stableObjects', ['obj' => 'App\\MyClass']);
         $this->setContextProperty('unsafeObjectProps', ['obj' => ['b' => true]]);
 
-        $this->assertTrue($this->compiler->canHoistStableObjectProp('obj', 'a'));
-        $this->assertFalse($this->compiler->canHoistStableObjectProp('obj', 'b'));
+        $propertyA = new PropertyDef('a', 0, Type::INT);
+        $propertyB = new PropertyDef('b', 0, Type::INT);
+        $this->assertTrue($this->compiler->canHoistStableObjectProp('obj', 'a', $propertyA));
+        $this->assertFalse($this->compiler->canHoistStableObjectProp('obj', 'b', $propertyB));
     }
 
     public function testCanHoistStableObjectPropRejectsWildcard(): void
@@ -1060,7 +1063,8 @@ class SsaAnalysisTest extends TestCase
         $this->setContextProperty('stableObjects', ['obj' => 'App\\MyClass']);
         $this->setContextProperty('unsafeObjectProps', ['obj' => ['*' => true]]);
 
-        $this->assertFalse($this->compiler->canHoistStableObjectProp('obj', 'a'));
+        $property = new PropertyDef('a', 0, Type::INT);
+        $this->assertFalse($this->compiler->canHoistStableObjectProp('obj', 'a', $property));
     }
 
     // ========================================================================
