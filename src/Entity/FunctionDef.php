@@ -25,8 +25,8 @@ class FunctionDef
     public string $namespace;
     public bool $method = false;
     public bool $stub = false;
-    /** Library that owns this stub function, as declared by @typephp-library. */
-    public string $library = '';
+    /** External library imported by the stub containing this function. */
+    public string $importLibrary = '';
     public bool $returnTypeUndeclared = false;
     public bool $returnsByRef = false;
     public bool $generator = false;

@@ -56,6 +56,19 @@ trait SourcePipelineTrait
         // 在所有配置加载完成后，应用命令行参数（确保优先级最高）
         $this->applyCommandLineArguments();
 
+        // The generated public import stub is an output artifact, not an input
+        // of the library that produced it. Exclude a previous build's copy when
+        // a project scans its output directory recursively.
+        if ($this->isBuildModeLib()) {
+            $generatedStub = realpath($this->getLibraryImportStubFile());
+            if ($generatedStub !== false) {
+                $list = array_values(array_filter(
+                    $list,
+                    static fn(string $file): bool => realpath($file) !== $generatedStub,
+                ));
+            }
+        }
+
         return $this->filterIgnoredFiles($list);
     }
 
@@ -191,6 +204,10 @@ trait SourcePipelineTrait
 
         if (empty($sourceFiles)) {
             $this->stop('No valid source file found');
+        }
+
+        if ($this->isBuildModeLib()) {
+            $this->genLibraryImportStub($files);
         }
 
         // 生成构建期内部头文件：函数声明、运行时数据声明

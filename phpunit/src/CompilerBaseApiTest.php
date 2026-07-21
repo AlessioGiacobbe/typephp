@@ -883,34 +883,128 @@ YAML);
         $this->assertStringContainsString('php::Array php_exported_variadic_arg_0_default_value() {', $extension);
     }
 
-    public function testTypePhpLibraryStubFunctionsAreImportedOutsideOwningTarget(): void
+    public function testExternalImportStubFunctionsAreAlwaysImported(): void
     {
         global $translator;
         $translator = $this->compiler;
         $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
-        $this->compiler->setTargetName('consumer');
+        $this->compiler->setTargetName('prime2');
 
-        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/default_argument_abi.stub.php';
+        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/prime2.stub.php';
         $this->compiler->addFiles([$testFile]);
         $this->compiler->prepareFile($testFile);
         $this->compiler->convertFile($testFile);
 
-        $headerFile = $this->testDir . '/php_consumer_func_decl.h';
+        $headerFile = $this->testDir . '/php_prime2_func_decl.h';
         $this->compiler->genFunctionDeclarations($headerFile);
         $header = file_get_contents($headerFile);
 
-        $this->assertStringContainsString('TYPEPHP_PRIME2_API __declspec(dllimport)', $header);
-        $this->assertStringContainsString('TYPEPHP_CONSUMER_API __declspec(dllexport)', $header);
+        $this->assertStringContainsString('TYPEPHP_PRIME2_IMPORT __declspec(dllimport)', $header);
+        $this->assertStringContainsString('TYPEPHP_PRIME2_API __declspec(dllexport)', $header);
         $this->assertStringContainsString(
-            'TYPEPHP_PRIME2_API php::Array php_exported_defaults(',
+            'TYPEPHP_PRIME2_IMPORT php::Array php_exported_defaults(',
             $header
         );
         $this->assertSame(['prime2'], $this->getPropertyValue('linkLibs'));
         $this->assertSame('', $this->invokeMethod('genDefaultArgumentHelperDefinitions'));
 
         $options = $this->invokeMethod('getCompileCommandOptions');
-        $this->assertContains('TYPEPHP_CONSUMER_EXPORTS=1', $options['user_defines']);
-        $this->assertNotContains('TYPEPHP_PRIME2_EXPORTS=1', $options['user_defines']);
+        $this->assertContains('TYPEPHP_PRIME2_EXPORTS=1', $options['user_defines']);
+    }
+
+    public function testLibraryImportStubCombinesPhpFunctionsClassesAndNativeStubs(): void
+    {
+        global $translator;
+        $translator = $this->compiler;
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
+        $this->setPropertyValue('outputDir', $this->testDir);
+        $this->compiler->setTargetName('prime2');
+
+        $files = [
+            ROOT_PATH . '/phpunit/code/compiler_api/library_import_php.php',
+            ROOT_PATH . '/phpunit/code/compiler_api/library_import_native.stub.php',
+        ];
+        $this->compiler->addFiles($files);
+        foreach ($files as $file) {
+            $this->compiler->prepareFile($file);
+            $this->compiler->convertFile($file);
+        }
+
+        $stubFile = $this->compiler->genLibraryImportStub($files);
+        $stub = file_get_contents($stubFile);
+        $this->assertSame($this->testDir . '/prime2.stub.php', $stubFile);
+        $this->assertStringContainsString('/** @import-library */', $stub);
+        $this->assertStringContainsString('namespace LibraryApi;', $stub);
+        $this->assertStringContainsString('class Counter', $stub);
+        $this->assertStringContainsString('public const int STEP = 2;', $stub);
+        $this->assertStringContainsString('public int $value = 1;', $stub);
+        $this->assertMatchesRegularExpression(
+            '/public int \$doubled\s*\{\s*get\s*\{\s*\}\s*set\(int \$value\)\s*\{\s*\}\s*\}/s',
+            $stub,
+        );
+        $this->assertStringContainsString('function add(int $amount = self::STEP): int', $stub);
+        $this->assertStringContainsString('function twice(int $value): int', $stub);
+        $this->assertStringContainsString('function native_value(string $name = \'typephp\'): string', $stub);
+        $this->assertStringContainsString('class NativeCounter', $stub);
+        $this->assertStringContainsString('function bump(int $amount): int', $stub);
+        $this->assertStringNotContainsString('return $this->value', $stub);
+        $this->assertStringNotContainsString('intdiv($value, 2)', $stub);
+        $this->assertStringNotContainsString('return $value * 2', $stub);
+
+        $consumerDir = $this->testDir . '/consumer';
+        mkdir($consumerDir, 0777, true);
+        $consumer = CompilerTest::create($consumerDir);
+        $translator = $consumer;
+        $consumerRef = new \ReflectionClass($consumer);
+        $buildMode = $consumerRef->getProperty('buildMode');
+        $buildMode->setAccessible(true);
+        $buildMode->setValue($consumer, CompilerBase::BUILD_MODE_BIN);
+        $consumer->setTargetName('consumer');
+        $consumer->addFiles([$stubFile]);
+        $consumer->prepareFile($stubFile);
+        $stubCpp = $consumer->convertFile($stubFile);
+
+        $headerFile = $consumerDir . '/php_consumer_func_decl.h';
+        $consumer->genFunctionDeclarations($headerFile);
+        $header = file_get_contents($headerFile);
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_IMPORT php::Int php_libraryapi__counter__add(',
+            $header,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_IMPORT php::Int php_libraryapi__twice(',
+            $header,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_IMPORT php::Str php_libraryapi__native_value(',
+            $header,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_IMPORT php::Int php_libraryapi__nativecounter__bump(',
+            $header,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_IMPORT php::Int php_libraryapi__counter____typephp_property_get_646f75626c6564(',
+            $header,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_IMPORT void php_libraryapi__counter____typephp_property_set_646f75626c6564(',
+            $header,
+        );
+
+        $stubCppCode = file_get_contents($stubCpp);
+        $this->assertStringContainsString('ZEND_METHOD(LibraryApi_Counter, add)', $stubCppCode);
+        $this->assertStringContainsString('php_libraryapi__counter__add(this_, arg_amount)', $stubCppCode);
+        $this->assertStringNotContainsString(
+            'php::Int php_libraryapi__counter__add(php::Object &this_',
+            $stubCppCode,
+        );
+
+        $arginfoFile = $consumer->getArgInfoHeaderFile($stubFile);
+        $arginfo = file_get_contents($arginfoFile);
+        $this->assertStringContainsString('const_STEP_value', $arginfo);
+        $this->assertStringContainsString('property_value_default_value', $arginfo);
+        $this->assertSame(['prime2'], $consumer->getLinkLibs());
     }
 
     public function testLibraryCompileOptionsExportOnlyPublicApiByDefault(): void

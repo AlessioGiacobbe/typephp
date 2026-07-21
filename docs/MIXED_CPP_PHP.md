@@ -686,25 +686,24 @@ void php_print(php::Str msg);           // void 不支持
 
 ### 3. .stub.php 文件要求
 
-当 stub 中的函数由一个 TypePHP 库提供时，在文件顶部声明库名：
+库项目中的 `.stub.php` 用于声明由 C++ 实现的函数，不需要添加库名注解：
 
 ```php
 <?php
-/** @typephp-library prime2 */
-
 function vector_new(int $size, bool $init = false): mixed {}
 ```
 
-- 当当前 target 为 `prime2` 且使用 `-m lib` 构建时，这些 `php_*` 函数按库 ABI 导出。
-- 当其他 target 引用该 stub 时，函数按 `prime2` 库 ABI 导入，且链接阶段自动加入 `prime2` 库。
-- 注解只允许用于 `.stub.php` 文件；未声明时，stub 函数默认由当前 target 实现。
+`-m lib` 会把库项目的 `.php` 和本地 `.stub.php` 接口汇总到 `<target>.stub.php`。该发布 stub 自动带有 `@import-library`，其他项目加载后，其中的所有函数和类方法都按外部库 ABI 导入。库名由文件名推导，例如 `prime2.stub.php` 对应 `prime2` 库。
+
+外部 stub 中的类会在消费项目中生成类注册、属性和常量实体，但不生成 `php_*` 方法本体；方法本体由动态库提供。
+Property hook 同样按方法处理：发布 stub 保留 `get`/`set` 的声明并移除实现，消费项目生成属性实体，hook 的 getter/setter `php_*` 实现从动态库导入。
 
 `php_<target>_func_decl.h` 和 `php_<target>_data_decl.h` 都是 TypePHP 构建过程的内部生成文件，不是库的对外开发头文件。
 `func_decl.h` 在 `-m lib` 构建时还会被强制包含，用于给当前 target 的 `php_*` C++ ABI 函数添加平台导出标记；`data_decl.h` 仅在 target 内部声明全局变量、字面量、常量对象和运行时映射等数据。
 
 发布 TypePHP 库时，对外提供：
 
-- 描述 TypePHP 函数接口和所属库的 `.stub.php`；
+- 由 `-m lib` 自动生成的 `<target>.stub.php`；
 - Windows 平台的 `.dll` 和导入库 `.lib`；
 - Linux 等平台的 `.so`。
 

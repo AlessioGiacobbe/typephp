@@ -1,5 +1,4 @@
 <?php
-/** @typephp-library prime2 */
 
 function vector_new(int $size, bool $init = false): mixed
 {

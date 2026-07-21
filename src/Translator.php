@@ -31,6 +31,7 @@ use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\Redo;
 use TypePhp\Exception\Skip;
 use TypePhp\Generator\DefaultArgumentGenerator;
+use TypePhp\Generator\LibraryImportStubGenerator;
 use TypePhp\Generator\Symbol;
 use TypePhp\Metadata\Constants;
 use TypePhp\Platform\PlatformFactory;
@@ -630,6 +631,22 @@ class Translator extends Preprocessor
         }
 
         return $targetFile;
+    }
+
+    public function getLibraryImportStubFile(): string
+    {
+        $directory = $this->outputDir !== '' ? $this->outputDir : (getcwd() ?: $this->rootPath);
+        return rtrim($directory, '/\\') . '/' . $this->targetName . '.stub.php';
+    }
+
+    /** @param array<string> $files */
+    public function genLibraryImportStub(array $files): string
+    {
+        $file = $this->getLibraryImportStubFile();
+        $generator = new LibraryImportStubGenerator($this->parser, $this->printer);
+        $this->writeFile($file, $generator->generate($files, $this->externalImportStubFiles));
+        $this->climate->info('generate library import stub: ' . $this->getRelativePath($file));
+        return $file;
     }
 
     public function preprocessArgvAdvanced(): void
@@ -1545,17 +1562,17 @@ CODE;
         $code .= '#include <phpx.h>' . PHP_EOL;
         $code .= '#include <typephp_fiber_generator.h>' . PHP_EOL;
 
-        $apiLibraries = [];
         if ($this->isBuildModeLib()) {
-            $apiLibraries[$this->targetName] = true;
+            $code .= $this->genLibraryApiMacro($this->targetName);
         }
+        $importLibraries = [];
         foreach ($this->symbols->functions() as $function) {
             if ($this->isImportedFunction($function)) {
-                $apiLibraries[$function->library] = true;
+                $importLibraries[$function->importLibrary] = true;
             }
         }
-        foreach (array_keys($apiLibraries) as $library) {
-            $code .= $this->genLibraryApiMacro($library);
+        foreach (array_keys($importLibraries) as $library) {
+            $code .= $this->genLibraryImportMacro($library);
         }
 
         $code .= $this->genDefaultArgumentHelperDeclarations();
@@ -1615,10 +1632,22 @@ CODE;
         return $code . "#endif\n\n";
     }
 
+    protected function genLibraryImportMacro(string $library): string
+    {
+        $importMacro = $this->getNamedLibraryImportMacroName($library);
+        $code = "#if defined(_WIN32)\n";
+        $code .= "# define {$importMacro} __declspec(dllimport)\n";
+        $code .= "#elif defined(__GNUC__) && __GNUC__ >= 4\n";
+        $code .= "# define {$importMacro} __attribute__((visibility(\"default\")))\n";
+        $code .= "#else\n";
+        $code .= "# define {$importMacro}\n";
+        return $code . "#endif\n\n";
+    }
+
     protected function getFunctionDeclarationPrefix(FunctionDef $function): string
     {
         if ($this->isImportedFunction($function)) {
-            return $this->getNamedLibraryApiMacroName($function->library) . ' ';
+            return $this->getNamedLibraryImportMacroName($function->importLibrary) . ' ';
         }
         if ($this->isBuildModeLib()) {
             return $this->getLibraryApiMacroName() . ' ';
@@ -1628,12 +1657,17 @@ CODE;
 
     protected function isImportedFunction(FunctionDef $function): bool
     {
-        return $function->library !== '' && $function->library !== $this->targetName;
+        return $function->importLibrary !== '';
     }
 
     protected function getNamedLibraryApiMacroName(string $library): string
     {
         return 'TYPEPHP_' . strtoupper($library) . '_API';
+    }
+
+    protected function getNamedLibraryImportMacroName(string $library): string
+    {
+        return 'TYPEPHP_' . strtoupper($library) . '_IMPORT';
     }
 
     protected function getNamedLibraryExportsMacroName(string $library): string

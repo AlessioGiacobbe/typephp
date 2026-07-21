@@ -369,7 +369,10 @@ class CompilerBase implements PropertyAccessContext
     protected int $debugLine = 0;
     protected CLImate $climate;
     protected bool $stubFile = false;
-    protected string $stubLibrary = '';
+    protected string $stubImportLibrary = '';
+
+    /** @var array<string, true> */
+    protected array $externalImportStubFiles = [];
     protected bool $enableProfiler = false;
     protected bool $noProgress = false;
     protected bool $forTest = false;
@@ -1000,7 +1003,7 @@ class CompilerBase implements PropertyAccessContext
         $this->classesDefineInFile = [];
         $this->interfacesDefineInFile = [];
         $this->functionDefineInFile = [];
-        $this->stubLibrary = '';
+        $this->stubImportLibrary = '';
     }
 
     protected function resetNamespace(): void

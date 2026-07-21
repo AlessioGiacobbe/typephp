@@ -125,10 +125,14 @@ class Preprocessor extends CompilerBase
                 throw new SyntaxError($e->getMessage(), $e->getCode());
             }
 
-            $this->stubLibrary = $this->stubFile ? $this->parseTypePhpLibrary($ast) : '';
-            if ($this->stubLibrary !== '' && $this->stubLibrary !== $this->targetName
-                && !in_array($this->stubLibrary, $this->linkLibs, true)) {
-                $this->linkLibs[] = $this->stubLibrary;
+            $this->stubImportLibrary = $this->stubFile && $this->hasLibraryImportAnnotation($ast)
+                ? $this->getExternalImportLibraryName($this->file)
+                : '';
+            if ($this->stubImportLibrary !== '') {
+                $this->externalImportStubFiles[$this->file] = true;
+            }
+            if ($this->stubImportLibrary !== '' && !in_array($this->stubImportLibrary, $this->linkLibs, true)) {
+                $this->linkLibs[] = $this->stubImportLibrary;
             }
 
             $traverser = new NodeTraverser();
@@ -199,27 +203,28 @@ class Preprocessor extends CompilerBase
     }
 
     /** @param array<Node> $stmts */
-    private function parseTypePhpLibrary(array $stmts): string
+    private function hasLibraryImportAnnotation(array $stmts): bool
     {
-        $library = '';
         foreach ($stmts as $stmt) {
             foreach ($stmt->getComments() as $comment) {
-                if (!preg_match('/@typephp-library\s+([^\s*]+)/', $comment->getText(), $matches)) {
-                    continue;
+                if (preg_match('/@import-library\b/', $comment->getText()) === 1) {
+                    return true;
                 }
-
-                $candidate = str_replace('-', '_', trim($matches[1]));
-                if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $candidate)) {
-                    $this->fatalError($stmt, 'Invalid @typephp-library name `' . $matches[1] . '`');
-                }
-                if ($library !== '' && $library !== $candidate) {
-                    $this->fatalError($stmt, 'A stub file cannot declare multiple @typephp-library values');
-                }
-                $library = $candidate;
             }
         }
 
-        return $library;
+        return false;
+    }
+
+    private function getExternalImportLibraryName(string $stubFile): string
+    {
+        $name = basename($stubFile, '.stub.php');
+        $name = str_replace(['-', '*'], '_', $name);
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name)) {
+            throw new SyntaxError('Invalid external import stub filename `' . basename($stubFile) . '`');
+        }
+
+        return $name;
     }
 
     protected function findSymbolUsing(NodeAbstract $ast)
@@ -356,8 +361,9 @@ class Preprocessor extends CompilerBase
             }
             $phpName = $param->var->name;
             $name = $this->escapeVarName($phpName);
-            // .stub 存根定义 C++ Native 函数，必须设置函数的参数类型
-            if ($this->stubFile and !$param->type) {
+            // Local stubs define C++ native functions and require explicit ABI types.
+            // Generated external stubs may preserve an untyped PHP declaration as php::Var.
+            if ($this->stubFile && $this->stubImportLibrary === '' && !$param->type) {
                 throw new \RuntimeException('No type for ' . $phpName);
             }
             // 构造方法属性定义语法（Constructor Property Promotion）
@@ -456,8 +462,9 @@ class Preprocessor extends CompilerBase
 
     protected function parseFunctionDecl(Node\Stmt\Function_|Node\Stmt\ClassMethod $v): FunctionDef
     {
-        // .stub 存根定义 C++ Native 函数，必须设置返回值类型
-        if ($this->stubFile and !$v->returnType) {
+        // Local stubs define C++ native functions and require an explicit ABI return type.
+        // Generated external stubs may preserve an untyped PHP declaration as php::Var.
+        if ($this->stubFile && $this->stubImportLibrary === '' && !$v->returnType) {
             // 以下魔术方法都不能声明返回值类型 __construct()/__destruct()/__clone()
             if (($this->method and !in_array($this->method, ['__construct', '__destruct', '__clone'])) or !$this->method) {
                 $name = $this->class ? $this->class . '::' . $v->name : $v->name;
@@ -498,7 +505,7 @@ class Preprocessor extends CompilerBase
         // the consuming class when a trait method is flattened into a class.
         $functionDef->returnTypeKeyword = $returnTypeKeyword;
         $functionDef->stub = $this->stubFile;
-        $functionDef->library = $this->stubLibrary;
+        $functionDef->importLibrary = $this->stubImportLibrary;
         $functionDef->returnTypeUndeclared = $v->returnType === null;
         $functionDef->returnsByRef = $v->byRef;
         if ($this->containsYield($v)) {
