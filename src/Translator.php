@@ -656,7 +656,7 @@ class Translator extends Preprocessor
         $argv = $processed;
     }
 
-    public function genExternGlobalVars(string $file): void
+    public function genDataDeclarations(string $file): void
     {
         $lines[] = '#include <phpx.h>';
         $lines[] = PHP_EOL;
@@ -1539,7 +1539,7 @@ CODE;
         return $this->climate->arguments->trailingArray() ?? [];
     }
 
-    public function genFunctionDeclaration(string $file): void
+    public function genFunctionDeclarations(string $file): void
     {
         $code = '#pragma once' . PHP_EOL . PHP_EOL;
         $code .= '#include <phpx.h>' . PHP_EOL;
@@ -1673,7 +1673,7 @@ CODE;
     {
         $headers = array_merge($this->globalHeaders, [
             "php_{$this->targetName}_func_decl.h",
-            "php_{$this->targetName}_global_var_decl.h",
+            "php_{$this->targetName}_data_decl.h",
         ], $this->localHeaders);
         $lines = [];
         foreach ($headers as $header) {

@@ -844,7 +844,7 @@ YAML);
         $this->compiler->convertFile($testFile);
 
         $headerFile = $this->testDir . '/php_abi_defaults_func_decl.h';
-        $this->compiler->genFunctionDeclaration($headerFile);
+        $this->compiler->genFunctionDeclarations($headerFile);
         $header = file_get_contents($headerFile);
 
         $this->assertStringContainsString('#pragma once', $header);
@@ -867,14 +867,14 @@ YAML);
         $this->assertStringNotContainsString('php_func_map', $header);
         $this->assertStringNotContainsString('php_class_map', $header);
 
-        $globalHeaderFile = $this->testDir . '/php_abi_defaults_global_var_decl.h';
-        $this->compiler->genExternGlobalVars($globalHeaderFile);
-        $globalHeader = file_get_contents($globalHeaderFile);
-        $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_INT;', $globalHeader);
-        $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_STRING;', $globalHeader);
-        $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_ARRAY;', $globalHeader);
-        $this->assertStringContainsString('extern php::Str _literal_strings[', $globalHeader);
-        $this->assertStringContainsString('extern THREAD_LOCAL zend_function *php_func_map[', $globalHeader);
+        $dataHeaderFile = $this->testDir . '/php_abi_defaults_data_decl.h';
+        $this->compiler->genDataDeclarations($dataHeaderFile);
+        $dataHeader = file_get_contents($dataHeaderFile);
+        $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_INT;', $dataHeader);
+        $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_STRING;', $dataHeader);
+        $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_ARRAY;', $dataHeader);
+        $this->assertStringContainsString('extern php::Str _literal_strings[', $dataHeader);
+        $this->assertStringContainsString('extern THREAD_LOCAL zend_function *php_func_map[', $dataHeader);
 
         $extensionFile = $this->compiler->genExtension();
         $extension = file_get_contents($extensionFile);
@@ -896,7 +896,7 @@ YAML);
         $this->compiler->convertFile($testFile);
 
         $headerFile = $this->testDir . '/php_consumer_func_decl.h';
-        $this->compiler->genFunctionDeclaration($headerFile);
+        $this->compiler->genFunctionDeclarations($headerFile);
         $header = file_get_contents($headerFile);
 
         $this->assertStringContainsString('TYPEPHP_PRIME2_API __declspec(dllimport)', $header);

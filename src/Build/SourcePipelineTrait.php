@@ -193,9 +193,9 @@ trait SourcePipelineTrait
             $this->stop('No valid source file found');
         }
 
-        // 生成头文件：函数声明、全局变量声明
-        $this->genFunctionDeclaration($this->getIncludeDir() . "/php_{$this->targetName}_func_decl.h");
-        $this->genExternGlobalVars($this->getIncludeDir() . "/php_{$this->targetName}_global_var_decl.h");
+        // 生成构建期内部头文件：函数声明、运行时数据声明
+        $this->genFunctionDeclarations($this->getIncludeDir() . "/php_{$this->targetName}_func_decl.h");
+        $this->genDataDeclarations($this->getIncludeDir() . "/php_{$this->targetName}_data_decl.h");
         // 生成扩展模块源文件
         $sourceFiles[] = $this->genExtension();
 

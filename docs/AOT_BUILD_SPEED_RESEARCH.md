@@ -18,7 +18,7 @@
 1. `prepare()`：扫描文件、解析 AST、收集符号、排序依赖
 2. `convert()`：生成每个 PHP 文件对应的 `.cc`
 3. `genStubFile()`：生成 arginfo / class register 头文件
-4. `genFunctionDeclaration()` / `genExternGlobalVars()`：生成公共声明头
+4. `genFunctionDeclarations()` / `genDataDeclarations()`：生成构建期内部声明头
 5. `genExtension()`：生成单个 `extension-<target>.cc`
 6. `compile()`：把所有 `.cc/.c/...` 编译为 `.o`
 7. `build()`：链接为最终可执行文件或扩展
@@ -30,7 +30,7 @@
 当前所有翻译单元都会包含：
 
 - `php_<target>_func_decl.h`
-- `php_<target>_global_var_decl.h`
+- `php_<target>_data_decl.h`
 
 只要任何函数声明、默认参数 helper、全局符号声明发生变化，就会导致大量 `.cc` 重新编译。
 
@@ -101,7 +101,7 @@ clang-format -i <file>
 - `.cc`
 - arginfo `.h`
 - `php_<target>_func_decl.h`
-- `php_<target>_global_var_decl.h`
+- `php_<target>_data_decl.h`
 - `extension-<target>.cc`
 
 在写盘前先比较内容：
@@ -317,8 +317,8 @@ clang-format -i <file>
   - `compile()`
   - `compileSourceFile()`
   - `compileWithPcntl()`
-  - `genFunctionDeclaration()`
-  - `genExternGlobalVars()`
+  - `genFunctionDeclarations()`
+  - `genDataDeclarations()`
   - `genExtension()`
   - `genStubFile()`
 - `src/Php/Backend/*`
@@ -339,4 +339,3 @@ clang-format -i <file>
 - **增量**
 - **拆分**
 - **减少公共依赖面**
-

@@ -699,13 +699,24 @@ function vector_new(int $size, bool $init = false): mixed {}
 - 当其他 target 引用该 stub 时，函数按 `prime2` 库 ABI 导入，且链接阶段自动加入 `prime2` 库。
 - 注解只允许用于 `.stub.php` 文件；未声明时，stub 函数默认由当前 target 实现。
 
+`php_<target>_func_decl.h` 和 `php_<target>_data_decl.h` 都是 TypePHP 构建过程的内部生成文件，不是库的对外开发头文件。
+`func_decl.h` 在 `-m lib` 构建时还会被强制包含，用于给当前 target 的 `php_*` C++ ABI 函数添加平台导出标记；`data_decl.h` 仅在 target 内部声明全局变量、字面量、常量对象和运行时映射等数据。
+
+发布 TypePHP 库时，对外提供：
+
+- 描述 TypePHP 函数接口和所属库的 `.stub.php`；
+- Windows 平台的 `.dll` 和导入库 `.lib`；
+- Linux 等平台的 `.so`。
+
+如果库另外导出了自定义 C++ ABI 或 C ABI，库作者需要自行编写并随库发布对应的 `.h` 头文件。
+
 ✅ **正确**:
 ```php
 <?php
-function is_prime(int $n): bool {
-    // 空实现或简单返回
-}
+function is_prime(int $n): bool {}
 ```
+
+stub 仅保留空函数体，实现位于 C++ 或所属 TypePHP 库中。
 
 ❌ **错误**:
 ```php
