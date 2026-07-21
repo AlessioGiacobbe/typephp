@@ -1545,27 +1545,23 @@ CODE;
         $code .= '#include <phpx.h>' . PHP_EOL;
         $code .= '#include <typephp_fiber_generator.h>' . PHP_EOL;
 
-        $declarationPrefix = 'extern ';
+        $apiLibraries = [];
         if ($this->isBuildModeLib()) {
-            $apiMacro = $this->getLibraryApiMacroName();
-            $exportsMacro = $this->getLibraryExportsMacroName();
-            $code .= "#if defined(_WIN32)\n";
-            $code .= "# if defined({$exportsMacro})\n";
-            $code .= "#  define {$apiMacro} __declspec(dllexport)\n";
-            $code .= "# else\n";
-            $code .= "#  define {$apiMacro} __declspec(dllimport)\n";
-            $code .= "# endif\n";
-            $code .= "#elif defined(__GNUC__) && __GNUC__ >= 4\n";
-            $code .= "# define {$apiMacro} __attribute__((visibility(\"default\")))\n";
-            $code .= "#else\n";
-            $code .= "# define {$apiMacro}\n";
-            $code .= "#endif\n\n";
-            $declarationPrefix = $apiMacro . ' ';
+            $apiLibraries[$this->targetName] = true;
+        }
+        foreach ($this->symbols->functions() as $function) {
+            if ($this->isImportedFunction($function)) {
+                $apiLibraries[$function->library] = true;
+            }
+        }
+        foreach (array_keys($apiLibraries) as $library) {
+            $code .= $this->genLibraryApiMacro($library);
         }
 
-        $code .= $this->genDefaultArgumentHelperDeclarations($declarationPrefix);
+        $code .= $this->genDefaultArgumentHelperDeclarations();
 
         foreach ($this->symbols->functions() as $name => $func) {
+            $functionDeclarationPrefix = $this->getFunctionDeclarationPrefix($func);
             $list = [];
             if ($func->method) {
                 $list[] = Type::OBJECT . ' &this_';
@@ -1586,10 +1582,10 @@ CODE;
                 }
             }
             $params = implode(', ', $list);
-            $code .= $declarationPrefix . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
+            $code .= $functionDeclarationPrefix . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
             if ($func->hasMultiReturn()) {
                 $code .= 'namespace ' . self::MULTI_RETURN_NAMESPACE . ' {' . PHP_EOL;
-                $code .= $declarationPrefix . $func->getMultiReturnCppType() . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
+                $code .= $functionDeclarationPrefix . $func->getMultiReturnCppType() . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
                 $code .= '}' . PHP_EOL;
             }
         }
@@ -1602,9 +1598,52 @@ CODE;
         return 'TYPEPHP_' . strtoupper($this->targetName) . '_API';
     }
 
+    protected function genLibraryApiMacro(string $library): string
+    {
+        $apiMacro = $this->getNamedLibraryApiMacroName($library);
+        $exportsMacro = $this->getNamedLibraryExportsMacroName($library);
+        $code = "#if defined(_WIN32)\n";
+        $code .= "# if defined({$exportsMacro})\n";
+        $code .= "#  define {$apiMacro} __declspec(dllexport)\n";
+        $code .= "# else\n";
+        $code .= "#  define {$apiMacro} __declspec(dllimport)\n";
+        $code .= "# endif\n";
+        $code .= "#elif defined(__GNUC__) && __GNUC__ >= 4\n";
+        $code .= "# define {$apiMacro} __attribute__((visibility(\"default\")))\n";
+        $code .= "#else\n";
+        $code .= "# define {$apiMacro}\n";
+        return $code . "#endif\n\n";
+    }
+
+    protected function getFunctionDeclarationPrefix(FunctionDef $function): string
+    {
+        if ($this->isImportedFunction($function)) {
+            return $this->getNamedLibraryApiMacroName($function->library) . ' ';
+        }
+        if ($this->isBuildModeLib()) {
+            return $this->getLibraryApiMacroName() . ' ';
+        }
+        return 'extern ';
+    }
+
+    protected function isImportedFunction(FunctionDef $function): bool
+    {
+        return $function->library !== '' && $function->library !== $this->targetName;
+    }
+
+    protected function getNamedLibraryApiMacroName(string $library): string
+    {
+        return 'TYPEPHP_' . strtoupper($library) . '_API';
+    }
+
+    protected function getNamedLibraryExportsMacroName(string $library): string
+    {
+        return 'TYPEPHP_' . strtoupper($library) . '_EXPORTS';
+    }
+
     protected function getLibraryExportsMacroName(): string
     {
-        return 'TYPEPHP_' . strtoupper($this->targetName) . '_EXPORTS';
+        return $this->getNamedLibraryExportsMacroName($this->targetName);
     }
 
     public function getBuildMode(): string

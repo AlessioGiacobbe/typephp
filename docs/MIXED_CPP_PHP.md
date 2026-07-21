@@ -686,6 +686,19 @@ void php_print(php::Str msg);           // void 不支持
 
 ### 3. .stub.php 文件要求
 
+当 stub 中的函数由一个 TypePHP 库提供时，在文件顶部声明库名：
+
+```php
+<?php
+/** @typephp-library prime2 */
+
+function vector_new(int $size, bool $init = false): mixed {}
+```
+
+- 当当前 target 为 `prime2` 且使用 `-m lib` 构建时，这些 `php_*` 函数按库 ABI 导出。
+- 当其他 target 引用该 stub 时，函数按 `prime2` 库 ABI 导入，且链接阶段自动加入 `prime2` 库。
+- 注解只允许用于 `.stub.php` 文件；未声明时，stub 函数默认由当前 target 实现。
+
 ✅ **正确**:
 ```php
 <?php

@@ -43,7 +43,7 @@ trait DefaultArgumentGenerator
         return "do {\n" . $plan->init . $body . $plan->clean . "} while (0);\n";
     }
 
-    protected function genDefaultArgumentHelperDeclarations(string $declarationPrefix): string
+    protected function genDefaultArgumentHelperDeclarations(): string
     {
         $code = '';
         foreach ($this->symbols->functions() as $nativeName => $func) {
@@ -54,7 +54,7 @@ trait DefaultArgumentGenerator
 
                 $type = $this->getDefaultArgumentHelperType($argInfo);
                 $helper = $this->getDefaultArgumentHelperName($nativeName, $argumentIndex);
-                $code .= $declarationPrefix . $type . ' ' . $helper . '();' . PHP_EOL;
+                $code .= $this->getFunctionDeclarationPrefix($func) . $type . ' ' . $helper . '();' . PHP_EOL;
             }
         }
 
@@ -65,6 +65,9 @@ trait DefaultArgumentGenerator
     {
         $code = '';
         foreach ($this->symbols->functions() as $nativeName => $func) {
+            if ($this->isImportedFunction($func)) {
+                continue;
+            }
             foreach ($func->argInfoList as $argumentIndex => $argInfo) {
                 if (!$this->shouldGenerateDefaultArgumentHelper($argInfo)) {
                     continue;

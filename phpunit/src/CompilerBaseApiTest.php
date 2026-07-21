@@ -836,9 +836,9 @@ YAML);
         global $translator;
         $translator = $this->compiler;
         $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
-        $this->compiler->setTargetName('abi_defaults');
+        $this->compiler->setTargetName('prime2');
 
-        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/default_argument_abi.php';
+        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/default_argument_abi.stub.php';
         $this->compiler->addFiles([$testFile]);
         $this->compiler->prepareFile($testFile);
         $this->compiler->convertFile($testFile);
@@ -848,10 +848,10 @@ YAML);
         $header = file_get_contents($headerFile);
 
         $this->assertStringContainsString('#pragma once', $header);
-        $this->assertStringContainsString('TYPEPHP_ABI_DEFAULTS_API __declspec(dllexport)', $header);
-        $this->assertStringContainsString('TYPEPHP_ABI_DEFAULTS_API __declspec(dllimport)', $header);
+        $this->assertStringContainsString('TYPEPHP_PRIME2_API __declspec(dllexport)', $header);
+        $this->assertStringContainsString('TYPEPHP_PRIME2_API __declspec(dllimport)', $header);
         $this->assertStringContainsString(
-            'TYPEPHP_ABI_DEFAULTS_API php::Str php_exported_defaults_arg_0_default_value();',
+            'TYPEPHP_PRIME2_API php::Str php_exported_defaults_arg_0_default_value();',
             $header
         );
         $this->assertStringContainsString(
@@ -859,7 +859,7 @@ YAML);
             $header
         );
         $this->assertStringContainsString(
-            'TYPEPHP_ABI_DEFAULTS_API php::Array php_exported_variadic_arg_0_default_value();',
+            'TYPEPHP_PRIME2_API php::Array php_exported_variadic_arg_0_default_value();',
             $header
         );
         $this->assertStringNotContainsString('_literal_strings', $header);
@@ -881,6 +881,36 @@ YAML);
         $this->assertStringContainsString('php::Str php_exported_defaults_arg_0_default_value() {', $extension);
         $this->assertStringContainsString('return _literal_strings[', $extension);
         $this->assertStringContainsString('php::Array php_exported_variadic_arg_0_default_value() {', $extension);
+    }
+
+    public function testTypePhpLibraryStubFunctionsAreImportedOutsideOwningTarget(): void
+    {
+        global $translator;
+        $translator = $this->compiler;
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
+        $this->compiler->setTargetName('consumer');
+
+        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/default_argument_abi.stub.php';
+        $this->compiler->addFiles([$testFile]);
+        $this->compiler->prepareFile($testFile);
+        $this->compiler->convertFile($testFile);
+
+        $headerFile = $this->testDir . '/php_consumer_func_decl.h';
+        $this->compiler->genFunctionDeclaration($headerFile);
+        $header = file_get_contents($headerFile);
+
+        $this->assertStringContainsString('TYPEPHP_PRIME2_API __declspec(dllimport)', $header);
+        $this->assertStringContainsString('TYPEPHP_CONSUMER_API __declspec(dllexport)', $header);
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_API php::Array php_exported_defaults(',
+            $header
+        );
+        $this->assertSame(['prime2'], $this->getPropertyValue('linkLibs'));
+        $this->assertSame('', $this->invokeMethod('genDefaultArgumentHelperDefinitions'));
+
+        $options = $this->invokeMethod('getCompileCommandOptions');
+        $this->assertContains('TYPEPHP_CONSUMER_EXPORTS=1', $options['user_defines']);
+        $this->assertNotContains('TYPEPHP_PRIME2_EXPORTS=1', $options['user_defines']);
     }
 
     public function testLibraryCompileOptionsExportOnlyPublicApiByDefault(): void

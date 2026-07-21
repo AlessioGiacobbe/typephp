@@ -125,6 +125,12 @@ class Preprocessor extends CompilerBase
                 throw new SyntaxError($e->getMessage(), $e->getCode());
             }
 
+            $this->stubLibrary = $this->stubFile ? $this->parseTypePhpLibrary($ast) : '';
+            if ($this->stubLibrary !== '' && $this->stubLibrary !== $this->targetName
+                && !in_array($this->stubLibrary, $this->linkLibs, true)) {
+                $this->linkLibs[] = $this->stubLibrary;
+            }
+
             $traverser = new NodeTraverser();
             $traverser->addVisitor(new Visitor());
             $stmts = $traverser->traverse($ast);
@@ -190,6 +196,30 @@ class Preprocessor extends CompilerBase
                 }
             }
         }
+    }
+
+    /** @param array<Node> $stmts */
+    private function parseTypePhpLibrary(array $stmts): string
+    {
+        $library = '';
+        foreach ($stmts as $stmt) {
+            foreach ($stmt->getComments() as $comment) {
+                if (!preg_match('/@typephp-library\s+([^\s*]+)/', $comment->getText(), $matches)) {
+                    continue;
+                }
+
+                $candidate = str_replace('-', '_', trim($matches[1]));
+                if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $candidate)) {
+                    $this->fatalError($stmt, 'Invalid @typephp-library name `' . $matches[1] . '`');
+                }
+                if ($library !== '' && $library !== $candidate) {
+                    $this->fatalError($stmt, 'A stub file cannot declare multiple @typephp-library values');
+                }
+                $library = $candidate;
+            }
+        }
+
+        return $library;
     }
 
     protected function findSymbolUsing(NodeAbstract $ast)
@@ -468,6 +498,7 @@ class Preprocessor extends CompilerBase
         // the consuming class when a trait method is flattened into a class.
         $functionDef->returnTypeKeyword = $returnTypeKeyword;
         $functionDef->stub = $this->stubFile;
+        $functionDef->library = $this->stubLibrary;
         $functionDef->returnTypeUndeclared = $v->returnType === null;
         $functionDef->returnsByRef = $v->byRef;
         if ($this->containsYield($v)) {
