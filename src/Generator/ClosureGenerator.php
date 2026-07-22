@@ -196,7 +196,8 @@ trait ClosureGenerator
                 }
                 if ($useItem->byRef) {
                     // 闭包的 use 语法，若为引用类型，可以就地创建变量
-                    if (!isset($oriContext->localVars[$var])) {
+                    if (!isset($oriContext->localVars[$var])
+                        && !isset($oriContext->staticVars[$var])) {
                         $oriContext->localVars[$var] = Type::REF;
                     }
                     $useVars[] = $this->convertToRef($useItem->var);

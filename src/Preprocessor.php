@@ -920,10 +920,10 @@ class Preprocessor extends CompilerBase
         if ($value instanceof Node\Expr\ClassConstFetch
             && $this->isNameExpr($value->class)
             && $this->isIdExpr($value->name)) {
-            $class = $this->getResolvedPhpName($value->class);
+            $targetClass = $this->getResolvedPhpName($value->class);
             $constant = $value->name->toString();
             if (strtolower($constant) === 'class') {
-                return $class;
+                return $targetClass;
             }
             $targets = [
                 'Int' => Type::INT,
@@ -939,7 +939,7 @@ class Preprocessor extends CompilerBase
                 'Stream' => Type::STREAM,
                 'Box' => Type::BOX,
             ];
-            if (strcasecmp($class, 'Type') === 0 && isset($targets[$constant])) {
+            if (strcasecmp($targetClass, 'Type') === 0 && isset($targets[$constant])) {
                 return $targets[$constant];
             }
         }
