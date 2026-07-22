@@ -3,7 +3,7 @@ stream extension method support
 --FILE--
 <?php
 
-#[ExtensionProvider(Type::Stream)]
+#[MethodsFor(Type::Stream)]
 final class StreamExtensions
 {
     public static function readChunk(stream $stream, int $size): string

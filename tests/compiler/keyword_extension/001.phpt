@@ -1,11 +1,11 @@
 --TEST--
-Keyword ExtensionProvider method with snake_case name
+Keyword MethodsFor method with snake_case name
 --FILE--
 <?php
 declare(strict_types=1);
 use native_types;
 
-#[ExtensionProvider('*')]
+#[MethodsFor('*')]
 final class KeywordExtensions
 {
     public static function var_dump(mixed $var): void

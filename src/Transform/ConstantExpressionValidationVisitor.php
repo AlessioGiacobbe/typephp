@@ -15,15 +15,21 @@ use PhpParser\NodeVisitorAbstract;
  * Applies the allow_dynamic values used by php-src at each declaration site.
  *
  * false: class constants, property defaults and enum cases.
- * true: attributes, parameter defaults, global constants and static variables.
+ * true: attributes, parameter defaults and global constants.
+ *
+ * Static variable initializers are constant expressions on PHP 8.2. PHP 8.3
+ * and later compile them as regular expressions and evaluate them only once.
  */
 final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
 {
     private readonly ConstantExpressionValidator $validator;
 
+    private readonly bool $supportsDynamicStaticInitializers;
+
     public function __construct(string $phpVersion)
     {
         $this->validator = new ConstantExpressionValidator($phpVersion);
+        $this->supportsDynamicStaticInitializers = version_compare($phpVersion, '8.3', '>=');
     }
 
     public function enterNode(Node $node): null
@@ -70,7 +76,7 @@ final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
             return null;
         }
 
-        if ($node instanceof Node\Stmt\Static_) {
+        if ($node instanceof Node\Stmt\Static_ && !$this->supportsDynamicStaticInitializers) {
             foreach ($node->vars as $variable) {
                 if ($variable->default !== null) {
                     $this->validator->validate($variable->default, allowDynamic: true);

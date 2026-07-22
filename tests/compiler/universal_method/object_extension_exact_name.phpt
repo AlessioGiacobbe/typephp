@@ -1,5 +1,5 @@
 --TEST--
-Object ExtensionProvider methods require consistent names and ignore letter case
+Object MethodsFor methods require consistent names and ignore letter case
 --FILE--
 <?php
 
@@ -18,7 +18,7 @@ namespace App {
         }
     }
 
-    #[\ExtensionProvider(UserService::class)]
+    #[\MethodsFor(UserService::class)]
     final class UserServiceExtensions
     {
         public static function displayName(UserService $service): string

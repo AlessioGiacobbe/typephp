@@ -1,5 +1,5 @@
 --TEST--
-Namespaced object methods use an ExtensionProvider class
+Namespaced object methods use a MethodsFor class
 --FILE--
 <?php
 
@@ -23,7 +23,7 @@ namespace App {
         }
     }
 
-    #[\ExtensionProvider(User::class)]
+    #[\MethodsFor(User::class)]
     final class UserExtensions
     {
         public static function testMethod(User $user, string $suffix): string

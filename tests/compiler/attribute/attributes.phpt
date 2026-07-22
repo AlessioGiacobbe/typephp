@@ -1,9 +1,6 @@
 --TEST--
 Attributes (Annotations) - PHP 8+ metadata syntax
 --SKIPIF--
-<?php
-echo "skip Attributes/Annotations not supported in AOT";
-?>
 --FILE--
 <?php
 // Define attribute classes
@@ -104,7 +101,7 @@ function main() {
 ?>
 --EXPECT--
 int(1)
-string(11) "/api/users"
+string(10) "/api/users"
 array(2) {
   [0]=>
   string(3) "GET"
@@ -117,4 +114,4 @@ int(1)
 string(2) "id"
 string(3) "int"
 int(1)
-string(11) "/api/posts"
+string(10) "/api/posts"

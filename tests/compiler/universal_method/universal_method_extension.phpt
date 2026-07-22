@@ -1,11 +1,11 @@
 --TEST--
-Universal methods provided by ExtensionProvider classes
+Universal methods provided by MethodsFor classes
 --FILE--
 <?php
 
 use native_types;
 
-#[ExtensionProvider(Type::Int)]
+#[MethodsFor(Type::Int)]
 final class IntExtensions
 {
     public static function to_bytes(int $int, string $unit = 'Kb'): string
@@ -14,7 +14,7 @@ final class IntExtensions
     }
 }
 
-#[ExtensionProvider(Type::Array)]
+#[MethodsFor(Type::Array)]
 final class ArrayExtensions
 {
     public static function get_first_element(array $array): mixed
@@ -23,7 +23,7 @@ final class ArrayExtensions
     }
 }
 
-#[ExtensionProvider(Type::String)]
+#[MethodsFor(Type::String)]
 final class StringExtensions
 {
     public static function shout(string $str): string

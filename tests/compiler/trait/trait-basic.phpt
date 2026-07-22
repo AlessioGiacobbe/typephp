@@ -1,9 +1,6 @@
 --TEST--
 Traits - Basic functionality and method inheritance
 --SKIPIF--
-<?php
-echo "skip Traits not yet supported in AOT";
-?>
 --FILE--
 <?php
 // Test basic trait usage
@@ -90,7 +87,7 @@ function main() {
 string(5) "Hello"
 string(7) "Goodbye"
 string(4) "John"
-string(22) "[users] User created"
+string(20) "[users] User created"
 string(5) "Hello"
 string(9) "Test Post"
 string(19) "2024-01-01 00:00:00"

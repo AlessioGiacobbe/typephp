@@ -1,12 +1,12 @@
 --TEST--
-Keyword ExtensionProvider method with lowerCamelCase name
+Keyword MethodsFor method with lowerCamelCase name
 --FILE--
 <?php
 
 declare(strict_types=1);
 use native_types;
 
-#[ExtensionProvider('*')]
+#[MethodsFor('*')]
 final class KeywordExtensions
 {
     public static function inspectValue(mixed $value, string $prefix): void
@@ -15,7 +15,7 @@ final class KeywordExtensions
     }
 }
 
-#[ExtensionProvider(Type::Any)]
+#[MethodsFor(Type::Any)]
 final class AnyExtensions
 {
     public static function dynamicType(mixed $value): string

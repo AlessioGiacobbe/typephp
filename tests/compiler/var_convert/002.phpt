@@ -8,7 +8,7 @@ if (PHP_OS_FAMILY != 'Linux') {
 }
 --FILE--
 <?php
-#[ExtensionProvider(Type::Stream)]
+#[MethodsFor(Type::Stream)]
 final class StreamExtensions
 {
     public static function writeTest(stream $stream): void

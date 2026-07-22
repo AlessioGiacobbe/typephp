@@ -5,7 +5,7 @@ Universal method provider may wrap a PHP internal function
 
 use native_types;
 
-#[ExtensionProvider(Type::String)]
+#[MethodsFor(Type::String)]
 final class StringExtensions
 {
     public static function rot13(string $value): string

@@ -1,7 +1,6 @@
 --TEST--
 Attribute： 003
 --SKIPIF--
-<?php die("skip"); ?>
 --FILE--
 <?php
 
@@ -25,10 +24,15 @@ function main() {
 --EXPECT--
 object(Thing)#1 (0) {
 }
+string(11) "MyAttribute"
 array(1) {
   [0]=>
-  object(ReflectionAttribute)#3 (1) {
-    ["name"]=>
-    string(11) "MyAttribute"
+  array(3) {
+    [0]=>
+    int(1)
+    [1]=>
+    int(2)
+    [2]=>
+    int(3)
   }
 }

@@ -1,11 +1,11 @@
 --TEST--
-Universal ExtensionProvider methods use their declared names
+Universal MethodsFor methods use their declared names
 --FILE--
 <?php
 
 use native_types;
 
-#[ExtensionProvider(Type::Int)]
+#[MethodsFor(Type::Int)]
 final class IntExtensions
 {
     public static function toBytes(int $value): string
@@ -14,7 +14,7 @@ final class IntExtensions
     }
 }
 
-#[ExtensionProvider(Type::Array)]
+#[MethodsFor(Type::Array)]
 final class ArrayExtensions
 {
     public static function getFirstElement(array $value): mixed

@@ -1,11 +1,11 @@
 --TEST--
-ExtensionProvider method chaining with typed returns
+MethodsFor method chaining with typed returns
 --FILE--
 <?php
 
 use native_types;
 
-#[ExtensionProvider(Type::Int)]
+#[MethodsFor(Type::Int)]
 final class IntExtensions
 {
     public static function to_words(int $int): string
@@ -15,7 +15,7 @@ final class IntExtensions
     }
 }
 
-#[ExtensionProvider(Type::String)]
+#[MethodsFor(Type::String)]
 final class StringExtensions
 {
     public static function double(string $str): string
@@ -34,7 +34,7 @@ final class StringExtensions
     }
 }
 
-#[ExtensionProvider(Type::Array)]
+#[MethodsFor(Type::Array)]
 final class ArrayExtensions
 {
     public static function last(array $arr): mixed
