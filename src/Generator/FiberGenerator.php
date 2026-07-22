@@ -112,7 +112,11 @@ trait FiberGenerator
 
         [, $class] = $this->resolveTypeDecl($type, self::DECL_TYPE_OF_RETURN);
         $class = strtolower(ltrim($class, '\\'));
-        return in_array($class, ['iterator', 'traversable', 'fibergenerator'], true);
+        // `\Generator` is the return type PHP programmers naturally write for a
+        // generator. TypePHP generators actually return a `\FiberGenerator`, so
+        // accepting the declared `Generator` type keeps PHP source compatible
+        // while the runtime object remains a `\FiberGenerator`.
+        return in_array($class, ['iterator', 'traversable', 'fibergenerator', 'generator'], true);
     }
 
     protected function parseYieldExpr(Yield_ $expr): string
