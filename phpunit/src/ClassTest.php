@@ -523,7 +523,20 @@ class ClassTest extends \BaseTest
 
     public function testConstructorRejectsExistingConstructor(): void
     {
-        $this->exec('Duplicate method `__construct`', 'constructor-existing.php');
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage(
+            'Constructor cannot generate InvalidConstructor::__construct(): method is already declared',
+        );
+        $this->compile('constructor-existing.php');
+    }
+
+    public function testConstructorRejectsExistingConstructorRegardlessOfParameterOrder(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage(
+            'Constructor cannot generate ReorderedConstructor::__construct(): method is already declared',
+        );
+        $this->compile('constructor-existing-reordered.php');
     }
 
     public function testConstructorRejectsStaticProperties(): void

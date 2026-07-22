@@ -33,6 +33,14 @@ final class ConstructorLowering
 
     public static function lowerClassLike(Stmt\Class_|Stmt\Trait_|Stmt\Enum_ $class): void
     {
+        $declaredConstructor = null;
+        foreach ($class->stmts as $stmt) {
+            if ($stmt instanceof Stmt\ClassMethod && $stmt->name->toLowerString() === '__construct') {
+                $declaredConstructor = $stmt;
+                break;
+            }
+        }
+
         $properties = [];
         $target = null;
         foreach ($class->stmts as $stmt) {
@@ -43,6 +51,17 @@ final class ConstructorLowering
                 throw new SyntaxError('Constructor properties can only be declared in classes');
             }
             $attribute = CompileTimeAttribute::find($stmt, 'Constructor');
+            if ($declaredConstructor !== null) {
+                $className = $class->name?->toString() ?? 'anonymous class';
+                throw new CompileTimeAttributeError(
+                    "Constructor cannot generate {$className}::__construct(): method is already declared",
+                    $stmt,
+                    'Constructor',
+                    $attribute ?? $stmt,
+                    null,
+                    $declaredConstructor,
+                );
+            }
             CompileTimeAttribute::consume($stmt, 'Constructor');
             $target ??= $stmt;
             foreach ($stmt->props as $property) {
