@@ -13,7 +13,7 @@ use PhpParser\NodeAbstract;
 
 trait UniversalMethodCall
 {
-    private ?array $extensionProviderMethods = null;
+    private ?array $methodsForRegistry = null;
     protected const array UNIVERSAL_METHODS = [
         Type::INT => [
             'add'      => ['handler' => 'calc_op', 'op' => '+', 'return_type' => Type::INT, 'min_args' => 1, 'max_args' => 1],
@@ -338,16 +338,19 @@ trait UniversalMethodCall
         return $ext ? $ext['return_type'] : null;
     }
 
-    private function getExtensionProviderMethods(): array
+    private function getMethodsForRegistry(): array
     {
-        if ($this->extensionProviderMethods !== null) {
-            return $this->extensionProviderMethods;
+        if ($this->methodsForRegistry !== null) {
+            return $this->methodsForRegistry;
         }
         $registry = [];
         foreach ($this->symbols->classes() as $provider) {
-            $target = $provider->extensionProviderTarget;
+            $target = $provider->methodsForTarget;
             if ($target === null) {
                 continue;
+            }
+            if (!$this->isBuiltinMethodsForTarget($target) && $this->isInterface($target)) {
+                $this->error("MethodsFor target {$target} must be a class; interfaces are not supported");
             }
             foreach ($provider->methods as $method) {
                 if (str_starts_with($method->name, '__')) {
@@ -357,20 +360,35 @@ trait UniversalMethodCall
                     continue;
                 }
                 if (!($method->flags & \PhpParser\Modifiers::STATIC)) {
-                    $this->error("Extension provider method {$provider->getNamespacedName(false)}::{$method->name}() must be static");
+                    $this->error("MethodsFor method {$provider->getNamespacedName(false)}::{$method->name}() must be static");
                 }
                 $function = $method->functionDef;
                 if ($function === null || empty($function->argInfoList)) {
-                    $this->error("Extension provider method {$provider->getNamespacedName(false)}::{$method->name}() must declare a receiver parameter");
+                    $this->error("MethodsFor method {$provider->getNamespacedName(false)}::{$method->name}() must declare a receiver parameter");
                 }
                 $receiver = $function->argInfoList[0];
                 if ($receiver->byRef || !$this->extensionReceiverMatchesTarget($receiver, $target)) {
-                    $this->error("Invalid receiver parameter for extension provider method {$provider->getNamespacedName(false)}::{$method->name}()");
+                    $this->error("Invalid receiver parameter for MethodsFor method {$provider->getNamespacedName(false)}::{$method->name}()");
                 }
                 $targetKey = strtolower(ltrim($target, '\\'));
                 $methodKey = strtolower($method->name);
                 if (isset($registry[$targetKey][$methodKey])) {
                     $this->error("Duplicate extension method {$target}::{$method->name}()");
+                }
+                if ($target === '*') {
+                    foreach ($registry as $registeredTarget => $registeredMethods) {
+                        if ($registeredTarget !== '*' && isset($registeredMethods[$methodKey])) {
+                            $this->error(
+                                "Keyword extension method *::{$method->name}() conflicts with extension method "
+                                . "{$registeredTarget}::{$method->name}()"
+                            );
+                        }
+                    }
+                } elseif (isset($registry['*'][$methodKey])) {
+                    $this->error(
+                        "Extension method {$target}::{$method->name}() conflicts with keyword extension method "
+                        . "*::{$method->name}()"
+                    );
                 }
                 $registry[$targetKey][$methodKey] = [
                     'handler' => 'provider_extension',
@@ -382,7 +400,16 @@ trait UniversalMethodCall
                 ];
             }
         }
-        return $this->extensionProviderMethods = $registry;
+        return $this->methodsForRegistry = $registry;
+    }
+
+    private function isBuiltinMethodsForTarget(string $target): bool
+    {
+        return $target === '*' || in_array($target, [
+            Type::VAR, Type::INT, Type::FLOAT, Type::BOOL, Type::STR,
+            Type::ARRAY, Type::OBJECT, Type::STREAM, Type::BIGINT,
+            Type::BIGFLOAT, Type::DECIMAL, Type::BOX,
+        ], true);
     }
 
     private function extensionReceiverMatchesTarget($receiver, string $target): bool
@@ -390,12 +417,7 @@ trait UniversalMethodCall
         if ($target === '*') {
             return $receiver->type === Type::VAR;
         }
-        $builtinTargets = [
-            Type::VAR, Type::INT, Type::FLOAT, Type::BOOL, Type::STR,
-            Type::ARRAY, Type::OBJECT, Type::STREAM, Type::BIGINT,
-            Type::BIGFLOAT, Type::DECIMAL, Type::BOX,
-        ];
-        if (!in_array($target, $builtinTargets, true)) {
+        if (!$this->isBuiltinMethodsForTarget($target)) {
             return $receiver->type === Type::OBJECT && $this->isSameClassName($receiver->declaredClass, $target);
         }
         return $receiver->type === $target;
@@ -403,7 +425,7 @@ trait UniversalMethodCall
 
     private function findProviderExtension(string $target, string $method): ?array
     {
-        return $this->getExtensionProviderMethods()[strtolower(ltrim($target, '\\'))][strtolower($method)] ?? null;
+        return $this->getMethodsForRegistry()[strtolower(ltrim($target, '\\'))][strtolower($method)] ?? null;
     }
 
     protected const array TO_CONVERT_FN = [
@@ -445,21 +467,95 @@ trait UniversalMethodCall
     }
 
     /**
-     * Look up a statically compiled object extension in the object's own
-     * namespace. The class prefix and method suffix must match the declared
-     * names without converting between camelCase and snake_case. This lookup
-     * is only used by the named MethodCall AST path; dynamic method names and
-     * StaticCall nodes deliberately do not use it.
-     * Real methods are resolved before this fallback, while __call() is used
-     * only if no valid extension exists.
+     * Look up an object extension using the receiver's static class hierarchy.
+     * Real methods always win. Extensions are searched on the exact static
+     * class, then its parents from nearest to farthest, and finally Type::Object
+     * when the receiver is statically known to be an object. __call() remains
+     * the last fallback in the caller.
      */
-    protected function findObjectExtensionMethod(string $class, string $method): ?array
-    {
+    protected function findObjectExtensionMethod(
+        string $class,
+        string $method,
+        bool $receiverIsDefinitelyObject,
+    ): ?array {
         $class = ltrim($class, '\\');
-        if ($class === '' || !$this->hasClass($class)) {
+        if ($class !== '' && $this->objectTypeDeclaresMethod($class, $method)) {
             return null;
         }
-        return $this->findProviderExtension($class, $method);
+
+        $visited = [];
+        $current = $class;
+        while ($current !== '') {
+            $key = strtolower(ltrim($current, '\\'));
+            if (isset($visited[$key])) {
+                break;
+            }
+            $visited[$key] = true;
+
+            $extension = $this->findProviderExtension($current, $method);
+            if ($extension !== null) {
+                return $extension;
+            }
+
+            $classDef = $this->getClassDef($current);
+            if ($classDef !== null) {
+                $current = $classDef->extends;
+                continue;
+            }
+            $reflection = Reflection::getClass($current);
+            $parent = $reflection?->getParentClass();
+            $current = $parent === false || $parent === null ? '' : $parent->getName();
+        }
+
+        return $receiverIsDefinitelyObject
+            ? $this->findProviderExtension(Type::OBJECT, $method)
+            : null;
+    }
+
+    private function objectTypeDeclaresMethod(string $class, string $method): bool
+    {
+        return $this->classOrInterfaceDeclaresMethod($class, $method, []);
+    }
+
+    /** @param array<string, true> $visited */
+    private function classOrInterfaceDeclaresMethod(string $type, string $method, array $visited): bool
+    {
+        $type = ltrim($type, '\\');
+        $key = strtolower($type);
+        if ($type === '' || isset($visited[$key])) {
+            return false;
+        }
+        $visited[$key] = true;
+
+        $classDef = $this->getClassDef($type);
+        if ($classDef !== null) {
+            if ($classDef->hasMethod($method) || $classDef->hasAbstractMethod($method)) {
+                return true;
+            }
+            foreach ($classDef->implements as $interface) {
+                if ($this->classOrInterfaceDeclaresMethod($interface, $method, $visited)) {
+                    return true;
+                }
+            }
+            return $classDef->extends !== ''
+                && $this->classOrInterfaceDeclaresMethod($classDef->extends, $method, $visited);
+        }
+
+        if ($this->hasInterface($type)) {
+            $interfaceDef = $this->getInterface($type);
+            if ($interfaceDef->hasMethod($method)) {
+                return true;
+            }
+            foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parent) {
+                if ($this->classOrInterfaceDeclaresMethod($parent, $method, $visited)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        $reflection = Reflection::getClass($type);
+        return $reflection?->hasMethod($method) ?? false;
     }
 
     /**

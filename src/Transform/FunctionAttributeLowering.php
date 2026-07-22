@@ -1,0 +1,35 @@
+<?php
+/**
+ * This file is part of TypePHP.
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+namespace TypePhp\Transform;
+
+use PhpParser\Node;
+use PhpParser\Node\Stmt;
+use TypePhp\Exception\SyntaxError;
+
+final class FunctionAttributeLowering
+{
+    public const MUST_USE_ATTRIBUTE = 'typephpMustUse';
+    public const OVERRIDE_ATTRIBUTE = 'typephpOverride';
+    public const HOT_ATTRIBUTE = 'typephpHot';
+    public const COLD_ATTRIBUTE = 'typephpCold';
+
+    public static function lower(Node $node): void
+    {
+        foreach (CompileTimeAttributeRegistry::namesForPhase(CompileTimeAttributeRegistry::PHASE_ENTER) as $name) {
+            if (!CompileTimeAttribute::has($node, $name)) {
+                continue;
+            }
+            if (!$node instanceof Stmt\Function_ && !$node instanceof Stmt\ClassMethod) {
+                throw new SyntaxError($name . ' can only be applied to functions or methods');
+            }
+            CompileTimeAttribute::consume($node, $name);
+            $node->setAttribute('typephp' . $name, true);
+        }
+    }
+}

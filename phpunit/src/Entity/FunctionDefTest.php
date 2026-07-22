@@ -17,6 +17,8 @@ class FunctionDefTest extends TestCase
         $this->assertEquals('', $fn->namespace);
         $this->assertFalse($fn->method);
         $this->assertFalse($fn->stub);
+        $this->assertFalse($fn->hot);
+        $this->assertFalse($fn->cold);
         $this->assertEmpty($fn->argInfoList);
         $this->assertEquals(0, $fn->argCountRequired);
         $this->assertEquals('', $fn->params);

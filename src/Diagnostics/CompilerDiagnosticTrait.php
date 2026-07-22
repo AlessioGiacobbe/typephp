@@ -32,6 +32,25 @@ trait CompilerDiagnosticTrait
         $this->getDiagnosticReporter()->warning($node, $this->file, $msg);
     }
 
+    protected function fatalCompileTimeAttribute(
+        Node $target,
+        string $attribute,
+        string $message,
+        ?Node $source = null,
+        ?string $conflictAttribute = null,
+        ?Node $conflictSource = null,
+    ): never {
+        $this->error(CompileTimeAttributeDiagnostic::format(
+            $message,
+            $attribute,
+            $target,
+            $this->file,
+            $source,
+            $conflictAttribute,
+            $conflictSource,
+        ));
+    }
+
     protected function errorUndefinedVariable(Variable $node): never
     {
         $this->fatalError($node, "The variable `\${$node->name}` is undefined");

@@ -21,9 +21,187 @@ class ClassTest extends \BaseTest
         $this->compile('getter-function.php');
     }
 
+    public function testCompileTimeAttributeRejectsAliasesOfTheSameAttributeRepeated(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Getter cannot be repeated on the same declaration');
+        $this->compile('compile-time-attribute-duplicate.php');
+    }
+
+    public function testGetterSupportsReadonlyProperties(): void
+    {
+        $this->compile('getter-readonly-property.php');
+    }
+
+    public function testGetterRejectsHookProperties(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Getter cannot be applied to properties with hooks');
+        $this->compile('getter-hook-property.php');
+    }
+
+    public function testSetterRejectsReadonlyProperties(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Setter cannot be applied to readonly properties');
+        $this->compile('setter-readonly-property.php');
+    }
+
+    public function testSetterRejectsHookProperties(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Setter cannot be applied to properties with hooks');
+        $this->compile('setter-hook-property.php');
+    }
+
+    public function testWithRejectsReadonlyPropertiesIncludingReadonlyClasses(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('With cannot be applied to readonly properties');
+        $this->compile('with-readonly-property.php');
+    }
+
+    public function testWithRejectsHookProperties(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('With cannot be applied to properties with hooks');
+        $this->compile('with-hook-property.php');
+    }
+
+    public function testGeneratedMethodRejectsDeclaredMethodConflictCaseInsensitively(): void
+    {
+        $this->exec('Duplicate method `getName`', 'generated-method-declared-conflict.php');
+    }
+
+    public function testGeneratedMethodConflictDiagnosticPointsToAttributeAndDeclaration(): void
+    {
+        try {
+            $this->compile('generated-method-declared-conflict.php');
+            $this->fail('Expected generated Getter conflict');
+        } catch (\TypePhp\Exception\TestError $error) {
+            $file = realpath(__DIR__ . '/../code/generated-method-declared-conflict.php');
+            $this->assertNotFalse($file);
+            $message = $error->getMessage();
+            $this->assertStringContainsString('compile-time attribute: #[Getter]', $message);
+            $this->assertStringContainsString('target: property $name', $message);
+            $this->assertStringContainsString('source: ' . $file . ':5', $message);
+            $this->assertStringContainsString('conflict source: declaration at ' . $file . ':8', $message);
+        }
+    }
+
+    public function testGeneratedMethodsRejectEachOtherCaseInsensitively(): void
+    {
+        $this->exec('Duplicate method `getName`', 'generated-method-generated-conflict.php');
+    }
+
+    public function testPrinterGeneratedMethodUsesNormalDuplicateMethodValidation(): void
+    {
+        $this->exec('Duplicate method `__toString`', 'printer-generated-method-conflict.php');
+    }
+
+    public function testArrayableGeneratedMethodUsesNormalDuplicateMethodValidation(): void
+    {
+        $this->exec('Duplicate method `toArray`', 'arrayable-generated-method-conflict.php');
+    }
+
+    public function testGeneratedMethodMayOverrideCompatibleParentMethod(): void
+    {
+        $this->compile('generated-method-parent-conflict.php');
+    }
+
+    public function testGeneratedMethodObeysFinalParentMethodRule(): void
+    {
+        $this->exec(
+            'Cannot override final method `GeneratedMethodFinalConflictParent::withName()`',
+            'generated-method-final-parent-conflict.php'
+        );
+    }
+
     public function testCompileTimeGeneratedPropertyMethodsPrinterAndNotNull(): void
     {
         $this->compile('compile_time_attributes.php');
+    }
+
+    public function testArrayableAndPrinterFieldSelection(): void
+    {
+        $this->compile('arrayable.php');
+    }
+
+    public function testArrayableRejectsNonClassTargets(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Arrayable can only be applied to named classes');
+        $this->compile('arrayable-invalid-target.php');
+    }
+
+    public function testArrayableAcceptsExplicitFieldsWithoutVisibilityFiltering(): void
+    {
+        $this->compile('arrayable-explicit-fields.php');
+    }
+
+    public function testArrayableRejectsDynamicFields(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage(
+            'Arrayable field `missing` must be a declared instance property accessible from the class'
+        );
+        $this->compile('arrayable-dynamic-field.php');
+    }
+
+    public function testArrayableAcceptsPublicAndProtectedParentFields(): void
+    {
+        $this->compile('arrayable-parent-visible-fields.php');
+    }
+
+    public function testPrinterAcceptsPrivateSelectedFields(): void
+    {
+        $this->compile('printer-private-fields.php');
+    }
+
+    public function testPrinterRejectsPrivateParentFields(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage(
+            'Printer field `secret` must be a declared instance property accessible from the class'
+        );
+        $this->compile('printer-parent-private-field.php');
+    }
+
+    public function testPrinterRejectsStaticFields(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage(
+            'Printer field `shared` must be a declared instance property accessible from the class'
+        );
+        $this->compile('printer-static-field.php');
+    }
+
+    public function testPrinterConvertsNonStringFieldsAndArrayablePreservesValues(): void
+    {
+        global $translator;
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/printer-arrayable-field-types.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $cppFile = $compiler->convertFile($testFile);
+        $code = file_get_contents($cppFile);
+
+        $printerStart = strpos($code, 'php_printerarrayablefieldtypes____tostring');
+        $arrayableStart = strpos($code, 'php_printerarrayablefieldtypes__toarray');
+        $this->assertNotFalse($printerStart);
+        $this->assertNotFalse($arrayableStart);
+        $printerCode = substr($code, $printerStart, $arrayableStart - $printerStart);
+        $arrayableCode = substr($code, $arrayableStart);
+        $this->assertSame(4, substr_count($printerCode, 'php::toString('));
+        $this->assertStringNotContainsString('php::toString(', $arrayableCode);
+    }
+
+    public function testArrayableRejectsNonArrayFields(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Arrayable $fields must be an array literal');
+        $this->compile('arrayable-invalid-argument.php');
     }
 
     public function testNotNullRejectsNonParameterTargets(): void
@@ -31,6 +209,360 @@ class ClassTest extends \BaseTest
         $this->expectException(\TypePhp\Exception\SyntaxError::class);
         $this->expectExceptionMessage('NotNull can only be applied to function or method parameters');
         $this->compile('not-null-invalid-target.php');
+    }
+
+    public function testNotNullRejectsArrowFunctionParameters(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('NotNull is not supported on arrow function parameters');
+        $this->compile('not-null-arrow-function.php');
+    }
+
+    public function testNotNullWarnsForExplicitlyNullableParameters(): void
+    {
+        global $translator;
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $reporter = new class implements \TypePhp\Diagnostics\DiagnosticReporter {
+            /** @var list<string> */
+            public array $warnings = [];
+
+            public function fatal(string $message): never
+            {
+                throw new \TypePhp\Exception\TestError($message);
+            }
+
+            public function warning(\PhpParser\Node $node, string $file, string $message): void
+            {
+                $this->warnings[] = $message;
+            }
+        };
+        $compiler->setDiagnosticReporter($reporter);
+        $testFile = __DIR__ . '/../code/not-null-nullable-warning.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+
+        $this->assertSame([
+            'NotNull is applied to nullable parameter `$value`',
+            'NotNull is applied to nullable parameter `$value`',
+            'NotNull is applied to nullable parameter `$value`',
+        ], $reporter->warnings);
+    }
+
+    public function testParameterValidationUsesFixedSemanticOrder(): void
+    {
+        $parser = (new \PhpParser\ParserFactory())->createForHostVersion();
+        $ast = $parser->parse(file_get_contents(__DIR__ . '/../code/parameter-validation-order.php'));
+        $traverser = new \PhpParser\NodeTraverser();
+        $traverser->addVisitor(new \PhpParser\NodeVisitor\NameResolver(null, ['replaceNodes' => false]));
+        $traverser->addVisitor(new \TypePhp\Transform\Visitor());
+        $stmts = $traverser->traverse($ast);
+        $function = $stmts[0];
+
+        $this->assertInstanceOf(\PhpParser\Node\Stmt\Function_::class, $function);
+        $this->assertInstanceOf(\PhpParser\Node\Expr\BinaryOp\Identical::class, $function->stmts[0]->cond);
+        $this->assertInstanceOf(\PhpParser\Node\Expr\Empty_::class, $function->stmts[1]->cond);
+        $this->assertInstanceOf(\PhpParser\Node\Expr\BinaryOp\Identical::class, $function->stmts[2]->cond);
+        $this->assertInstanceOf(\PhpParser\Node\Expr\FuncCall::class, $function->stmts[2]->cond->left);
+        $this->assertSame('filter_var', strtolower($function->stmts[2]->cond->left->name->toString()));
+    }
+
+    public function testNotEmptyRejectsArrowFunctionParameters(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('NotEmpty is not supported on arrow function parameters');
+        $this->compile('not-empty-arrow-function.php');
+    }
+
+    public function testValidateRejectsArrowFunctionParameters(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Validate is not supported on arrow function parameters');
+        $this->compile('validate-arrow-function.php');
+    }
+
+    public function testValidateRejectsSanitizeFilters(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Validate only accepts FILTER_VALIDATE_* filters');
+        $this->compile('validate-sanitize.php');
+    }
+
+    public function testValidateRejectsProvablyIncompatibleScalarType(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage(
+            'Validate filter FILTER_VALIDATE_EMAIL is incompatible with parameter `$email` declared as `int`'
+        );
+        $this->compile('validate-incompatible-email-int.php');
+    }
+
+    public function testValidateRejectsArrayWithoutArrayMode(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage(
+            'Validate filter FILTER_VALIDATE_INT is incompatible with parameter `$values` declared as `array`'
+        );
+        $this->compile('validate-incompatible-array.php');
+    }
+
+    public function testValidateAllowsCompatibleUnionAndExplicitArrayMode(): void
+    {
+        $this->compile('validate-compatible-types.php');
+    }
+
+    public function testValidateRejectsNonParameterTargets(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Validate can only be applied to function or method parameters');
+        $this->compile('validate-invalid-target.php');
+    }
+
+    public function testValidateUsesCentralDuplicateAttributeValidation(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Validate cannot be repeated on the same declaration');
+        $this->compile('validate-duplicate.php');
+    }
+
+    public function testCompileTimeAttributeDiagnosticsContainTargetAndBothConflictSources(): void
+    {
+        try {
+            $this->compile('validate-duplicate.php');
+            $this->fail('Expected duplicate Validate diagnostic');
+        } catch (\TypePhp\Exception\SyntaxError $error) {
+            $message = $error->getMessage();
+            $file = realpath(__DIR__ . '/../code/validate-duplicate.php');
+            $this->assertNotFalse($file);
+            $this->assertStringContainsString('target: parameter $value', $message);
+            $this->assertStringContainsString('source: ' . $file . ':4', $message);
+            $this->assertStringContainsString(
+                'conflict source: #[Validate] at ' . $file . ':5',
+                $message,
+            );
+        }
+    }
+
+    public function testLanguageCompileTimeAttributes(): void
+    {
+        $this->compile('language_attributes.php');
+    }
+
+    public function testMethodsForSupportsAliasesAndObjectTargets(): void
+    {
+        $this->compile('methods-for.php');
+    }
+
+    public function testMethodsForUsesKeywordClassHierarchyAndObjectFallbackPriority(): void
+    {
+        global $translator;
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/methods-for-inheritance.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $cppFile = $compiler->convertFile($testFile);
+        $cpp = file_get_contents($cppFile);
+
+        $this->assertStringContainsString('php_hierarchykeywordmethods__keywordwins(', $cpp);
+        $this->assertStringContainsString('php::echo(php_hierarchybase__realwins(child));', $cpp);
+        $this->assertStringNotContainsString(
+            'php::echo(php::toString(php_hierarchyobjectmethods__realwins(',
+            $cpp,
+        );
+        $this->assertStringNotContainsString(
+            'php::echo(php::toString(php_hierarchyobjectmethods__declaredmethod(',
+            $cpp,
+        );
+        $this->assertStringContainsString('php_hierarchybasemethods__inheritedextension(', $cpp);
+        $this->assertMatchesRegularExpression(
+            '/php_hierarchychildmethods__nearestextension\([^,\n]+, child\)/',
+            $cpp,
+        );
+        $this->assertMatchesRegularExpression(
+            '/php_hierarchybasemethods__nearestextension\([^,\n]+, base\)/',
+            $cpp,
+        );
+        $this->assertSame(
+            3,
+            substr_count($cpp, 'php::echo(php::toString(php_hierarchyobjectmethods__objectfallback('),
+        );
+    }
+
+    public function testMethodsForRejectsKeywordAndTargetSpecificNameConflict(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage(
+            'conflicts with keyword extension method *::inspect()'
+        );
+        $this->compile('methods-for-keyword-conflict.php');
+    }
+
+    public function testMethodsForKeywordConflictDoesNotDependOnDeclarationOrder(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage(
+            'Keyword extension method *::inspect() conflicts with extension method php::str::inspect()'
+        );
+        $this->compile('methods-for-keyword-conflict-reversed.php');
+    }
+
+    public function testMethodsForRejectsInterfaceTargets(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage(
+            'MethodsFor target InvalidMethodsForContract must be a class; interfaces are not supported'
+        );
+        $this->compile('methods-for-interface-target.php');
+    }
+
+    public function testHotAndColdFunctionAttributes(): void
+    {
+        $this->compile('hot-cold.php');
+    }
+
+    public function testHotAndColdCannotBeCombined(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Hot and Cold cannot be applied to the same function or method');
+        $this->compile('hot-cold-conflict.php');
+    }
+
+    public function testHotRejectsNonFunctionTargets(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Hot can only be applied to functions or methods');
+        $this->compile('hot-invalid-target.php');
+    }
+
+    public function testMustUseRejectsDiscardedReturnValue(): void
+    {
+        $this->exec('must be used', 'must-use-discard.php');
+    }
+
+    public function testMustUseRejectsDiscardedMethodReturnValue(): void
+    {
+        $this->exec('must be used', 'must-use-method-discard.php');
+    }
+
+    public function testOverrideAcceptsParentInterfaceTraitAndNamespaceAliasMatches(): void
+    {
+        $this->compile('override-valid.php');
+    }
+
+    public function testOverrideRequiresMatchingParentMethod(): void
+    {
+        $this->exec(
+            'OverrideMissing::missing() has #[\\Override] attribute, but no matching parent method exists',
+            'override-missing.php',
+        );
+    }
+
+    public function testOverrideNeverMatchesConstructor(): void
+    {
+        $this->exec(
+            'OverrideConstructorChild::__construct() has #[\\Override] attribute, but no matching parent method exists',
+            'override-constructor.php',
+        );
+    }
+
+    public function testOverrideDoesNotMatchPrivateParentMethod(): void
+    {
+        $this->exec(
+            'OverridePrivateChild::value() has #[\\Override] attribute, but no matching parent method exists',
+            'override-attribute-private-parent.php',
+        );
+    }
+
+    public function testOverrideOnTraitMethodIsValidatedAtUseSite(): void
+    {
+        $this->exec(
+            'OverrideTraitConsumer::missing() has #[\\Override] attribute, but no matching parent method exists',
+            'override-trait-missing.php',
+        );
+    }
+
+    public function testOverrideOnRootInterfaceRequiresParentMethod(): void
+    {
+        $this->exec(
+            'OverrideInterfaceMissing::missing() has #[\\Override] attribute, but no matching parent method exists',
+            'override-interface-missing.php',
+        );
+    }
+
+    public function testOverrideRejectsNonMethodTargets(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Override can only be applied to methods');
+        $this->compile('override-invalid-target.php');
+    }
+
+    public function testOverrideRejectsArguments(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Override does not accept arguments');
+        $this->compile('override-arguments.php');
+    }
+
+    public function testOverrideCannotBeRepeated(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Override cannot be repeated on the same declaration');
+        $this->compile('override-duplicate.php');
+    }
+
+    public function testConstructorRejectsExistingConstructor(): void
+    {
+        $this->exec('Duplicate method `__construct`', 'constructor-existing.php');
+    }
+
+    public function testConstructorRejectsStaticProperties(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Constructor can only be applied to instance properties');
+        $this->compile('constructor-static.php');
+    }
+
+    public function testConstructorCallsParentConstructorWithoutRequiredArguments(): void
+    {
+        global $translator;
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/constructor-parent-optional.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $cppFile = $compiler->convertFile($testFile);
+
+        $this->assertStringContainsString(
+            '// Stmt_Expression(Expr_StaticCall)',
+            file_get_contents($cppFile),
+        );
+    }
+
+    public function testConstructorAllowsParentWithoutConstructor(): void
+    {
+        $this->compile('constructor-parent-none.php');
+    }
+
+    public function testConstructorRejectsParentConstructorWithRequiredArguments(): void
+    {
+        $this->exec(
+            'parent constructor `ConstructorRequiredParent::__construct()` requires 1 argument(s)',
+            'constructor-parent-required.php'
+        );
+    }
+
+    public function testConstructorDoesNotCallPrivateParentConstructor(): void
+    {
+        $this->compile('constructor-parent-private.php');
+    }
+
+    public function testConstructorRejectsFinalParentConstructor(): void
+    {
+        $this->exec(
+            'Cannot override final method `ConstructorFinalParent::__construct()`',
+            'constructor-parent-final.php'
+        );
     }
 
     public function testReAssignThis()

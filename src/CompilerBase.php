@@ -16,6 +16,7 @@ use TypePhp\Entity\ArgInfo;
 use TypePhp\Context\FunctionContext;
 use TypePhp\Context\CompilationStateTrait;
 use TypePhp\Diagnostics\CompilerDiagnosticTrait;
+use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 use TypePhp\Diagnostics\CliDiagnosticReporter;
 use TypePhp\Diagnostics\DiagnosticReporter;
 use TypePhp\Diagnostics\ThrowingDiagnosticReporter;
@@ -1527,6 +1528,7 @@ class CompilerBase implements PropertyAccessContext
             switch ($class) {
                 case 'Stmt_Expression':
                     $v->expr->setAttribute(self::ATTR_STATEMENT_EXPRESSION, true);
+                    $this->assertMustUseResultIsConsumed($v->expr);
                     if ($this->inGeneratorBody && $v->expr instanceof Expr\Yield_) {
                         $result = $this->parseYieldStmt($v->expr);
                     } elseif ($this->inGeneratorBody && $v->expr instanceof Expr\YieldFrom) {
@@ -1632,6 +1634,54 @@ class CompilerBase implements PropertyAccessContext
         $this->context->leaveScope();
 
         return $code;
+    }
+
+    protected function assertMustUseResultIsConsumed(NodeAbstract $expr): void
+    {
+        $functionDef = $this->resolveCalledFunctionDef($expr);
+        if ($functionDef?->mustUse) {
+            $target = ($functionDef->method ? 'method ' : 'function ') . $functionDef->name . '()';
+            $this->error(CompileTimeAttributeDiagnostic::formatPositions(
+                'The return value of `' . $functionDef->name . '()` must be used',
+                'MustUse',
+                $target,
+                $functionDef->sourceFile,
+                $functionDef->startLine,
+                'discarded call',
+                $this->file,
+                $expr->getStartLine(),
+            ));
+        }
+    }
+
+    protected function resolveCalledFunctionDef(NodeAbstract $expr): ?FunctionDef
+    {
+        if ($expr instanceof Expr\FuncCall && $expr->name instanceof Node\Name) {
+            $name = $this->parseIdentifier($expr->name);
+            $native = $this->findNativeFunction($name);
+            return $native ? $this->getFunction($native) : null;
+        }
+        if ($expr instanceof Expr\MethodCall && $expr->name instanceof Node\Identifier) {
+            $class = $this->detectClassOfExpr($expr->var);
+            if ($class === '' && $expr->var instanceof Expr\Variable && is_string($expr->var->name)) {
+                $var = $this->parseVariable($expr->var);
+                $class = $var === 'this_' ? $this->getFullClassName() : $this->getDeclaredObjectType($var);
+            }
+            return $class === '' ? null : $this->findAotMethodFunctionDef($class, $expr->name->toString());
+        }
+        if ($expr instanceof Expr\StaticCall && $expr->class instanceof Node\Name
+            && $expr->name instanceof Node\Identifier) {
+            $class = $this->parseIdentifier($expr->class);
+            if ($class === 'self' || $class === 'static') {
+                $class = $this->getFullClassName();
+            } elseif ($class === 'parent') {
+                $class = $this->classDef?->extends ?? '';
+            } else {
+                $class = $this->getNamespacedClassName($class);
+            }
+            return $class === '' ? null : $this->findAotMethodFunctionDef($class, $expr->name->toString());
+        }
+        return null;
     }
 
     protected function parseEcho(mixed $v): string

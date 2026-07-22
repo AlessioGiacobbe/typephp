@@ -12,41 +12,47 @@ use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;
-use TypePhp\Exception\SyntaxError;
+use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 
 final class PrinterLowering
 {
     public const GENERATED_ATTRIBUTE = 'typephpPrinterGenerated';
+    public const FIELDS_ATTRIBUTE = 'typephpPrinterFields';
 
-    public static function validateTarget(Node $node): void
+    public static function lowerClass(Stmt\Class_ $class): void
     {
-        if (!CompileTimeAttribute::has($node, 'Printer')) {
+        $attribute = CompileTimeAttribute::find($class, 'Printer');
+        if ($attribute === null) {
             return;
         }
-        if (!$node instanceof Stmt\Class_ || $node->name === null) {
-            throw new SyntaxError('Printer can only be applied to named classes');
-        }
+        $fields = ClassFieldSelection::parse($attribute, 'Printer');
+        CompileTimeAttribute::remove($class, 'Printer');
+        self::appendGeneratedMethod(
+            $class,
+            $fields ?? ClassFieldSelection::ownPublicProperties($class),
+            $fields,
+            self::ownStringProperties($class),
+        );
     }
 
-    public static function lowerClass(Stmt\Class_ $class, bool $generate = true): void
-    {
-        if (!CompileTimeAttribute::consume($class, 'Printer') || !$generate) {
-            return;
-        }
-        foreach ($class->getMethods() as $method) {
-            if ($method->name->toLowerString() === 'tostring') {
-                return;
-            }
-        }
-
-        self::appendGeneratedMethod($class, self::ownPublicProperties($class));
-    }
-
-    /** @param list<string> $properties */
-    public static function rebuildGeneratedMethod(Stmt\Class_ $class, array $properties): void
+    /**
+     * @param list<string> $properties
+     * @param list<string>|null $fields
+     */
+    public static function rebuildGeneratedMethod(
+        Stmt\Class_ $class,
+        array $properties,
+        ?array $fields,
+        array $stringProperties = [],
+    ): void
     {
         self::removeGeneratedMethod($class);
-        self::appendGeneratedMethod($class, array_values(array_unique($properties)));
+        self::appendGeneratedMethod(
+            $class,
+            array_values(array_unique($properties)),
+            $fields,
+            $stringProperties,
+        );
     }
 
     public static function removeGeneratedMethod(Stmt\Class_ $class): void
@@ -59,19 +65,55 @@ final class PrinterLowering
         $class->stmts = array_values($class->stmts);
     }
 
+    /**
+     * @param list<string> $properties
+     * @param list<string>|null $fields
+     * @param list<string> $stringProperties
+     */
+    private static function appendGeneratedMethod(
+        Stmt\Class_ $class,
+        array $properties,
+        ?array $fields,
+        array $stringProperties,
+    ): void
+    {
+        $expression = new Node\Scalar\String_($class->name->toString() . '(');
+        foreach ($properties as $index => $property) {
+            $prefix = ($index === 0 ? '' : ', ') . $property . '=';
+            $value = new Expr\PropertyFetch(new Expr\Variable('this'), $property);
+            if (!in_array($property, $stringProperties, true)) {
+                $value = new Expr\MethodCall($value, new Node\Identifier('toString'));
+            }
+            $expression = new Expr\BinaryOp\Concat(
+                new Expr\BinaryOp\Concat($expression, new Node\Scalar\String_($prefix)),
+                $value,
+            );
+        }
+        $expression = new Expr\BinaryOp\Concat($expression, new Node\Scalar\String_(')'));
+        $method = new Stmt\ClassMethod('__toString', [
+            'flags' => Modifiers::PUBLIC,
+            'returnType' => new Node\Identifier('string'),
+            'stmts' => [new Stmt\Return_($expression)],
+        ]);
+        $method->setAttribute(self::GENERATED_ATTRIBUTE, true);
+        $method->setAttribute(self::FIELDS_ATTRIBUTE, $fields);
+        CompileTimeAttributeDiagnostic::markGenerated($method, 'Printer', $class);
+        $class->stmts[] = $method;
+    }
+
     /** @return list<string> */
-    public static function ownPublicProperties(Stmt\Class_ $class): array
+    private static function ownStringProperties(Stmt\Class_ $class): array
     {
         $properties = [];
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof Stmt\Property && $stmt->isPublic() && !$stmt->isStatic()) {
+            if ($stmt instanceof Stmt\Property && self::isStringType($stmt->type)) {
                 foreach ($stmt->props as $property) {
                     $properties[] = $property->name->toString();
                 }
             }
             if ($stmt instanceof Stmt\ClassMethod && $stmt->name->toLowerString() === '__construct') {
                 foreach ($stmt->params as $param) {
-                    if ($param->isPromoted() && ($param->flags & Modifiers::PUBLIC) && is_string($param->var->name)) {
+                    if ($param->isPromoted() && is_string($param->var->name) && self::isStringType($param->type)) {
                         $properties[] = $param->var->name;
                     }
                 }
@@ -80,24 +122,8 @@ final class PrinterLowering
         return $properties;
     }
 
-    /** @param list<string> $properties */
-    private static function appendGeneratedMethod(Stmt\Class_ $class, array $properties): void
+    private static function isStringType(?Node $type): bool
     {
-        $expression = new Node\Scalar\String_($class->name->toString() . '(');
-        foreach ($properties as $index => $property) {
-            $prefix = ($index === 0 ? '' : ', ') . $property . '=';
-            $expression = new Expr\BinaryOp\Concat(
-                new Expr\BinaryOp\Concat($expression, new Node\Scalar\String_($prefix)),
-                new Expr\PropertyFetch(new Expr\Variable('this'), $property),
-            );
-        }
-        $expression = new Expr\BinaryOp\Concat($expression, new Node\Scalar\String_(')'));
-        $method = new Stmt\ClassMethod('toString', [
-            'flags' => Modifiers::PUBLIC,
-            'returnType' => new Node\Identifier('string'),
-            'stmts' => [new Stmt\Return_($expression)],
-        ]);
-        $method->setAttribute(self::GENERATED_ATTRIBUTE, true);
-        $class->stmts[] = $method;
+        return $type instanceof Node\Identifier && strtolower($type->name) === 'string';
     }
 }

@@ -19,6 +19,7 @@ use TypePhp\Build\NativeBuilder;
 use TypePhp\Build\PrecompiledHeaderManager;
 use TypePhp\Build\SourcePipelineTrait;
 use TypePhp\Config\ProjectYamlLoader;
+use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 use TypePhp\Build\ResourceCompilationTrait;
 use TypePhp\Entity\ArgInfo;
 use TypePhp\Entity\ClassDef;
@@ -30,6 +31,7 @@ use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\Redo;
 use TypePhp\Exception\Skip;
+use TypePhp\Exception\SyntaxError;
 use TypePhp\Generator\DefaultArgumentGenerator;
 use TypePhp\Generator\LibraryImportStubGenerator;
 use TypePhp\Generator\Symbol;
@@ -39,6 +41,7 @@ use TypePhp\Platform\Windows;
 use TypePhp\Resolver\Reflection;
 use TypePhp\Resolver\ClassConstantValueTrait;
 use TypePhp\Transform\Visitor;
+use TypePhp\Transform\ConstructorLowering;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
@@ -1561,7 +1564,9 @@ CODE;
     {
         $code = '#pragma once' . PHP_EOL . PHP_EOL;
         $code .= '#include <phpx.h>' . PHP_EOL;
+        $code .= '#include <typephp_helper.h>' . PHP_EOL;
         $code .= '#include <typephp_fiber_generator.h>' . PHP_EOL;
+        $code .= PHP_EOL;
 
         if ($this->isBuildModeLib()) {
             $code .= $this->genLibraryApiMacro($this->targetName);
@@ -1600,10 +1605,11 @@ CODE;
                 }
             }
             $params = implode(', ', $list);
-            $code .= $functionDeclarationPrefix . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
+            $functionAttribute = $this->getFunctionOptimizationAttribute($func);
+            $code .= $functionDeclarationPrefix . $functionAttribute . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
             if ($func->hasMultiReturn()) {
                 $code .= 'namespace ' . self::MULTI_RETURN_NAMESPACE . ' {' . PHP_EOL;
-                $code .= $functionDeclarationPrefix . $func->getMultiReturnCppType() . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
+                $code .= $functionDeclarationPrefix . $functionAttribute . $func->getMultiReturnCppType() . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
                 $code .= '}' . PHP_EOL;
             }
         }
@@ -1620,29 +1626,17 @@ CODE;
     {
         $apiMacro = $this->getNamedLibraryApiMacroName($library);
         $exportsMacro = $this->getNamedLibraryExportsMacroName($library);
-        $code = "#if defined(_WIN32)\n";
-        $code .= "# if defined({$exportsMacro})\n";
-        $code .= "#  define {$apiMacro} __declspec(dllexport)\n";
-        $code .= "# else\n";
-        $code .= "#  define {$apiMacro} __declspec(dllimport)\n";
-        $code .= "# endif\n";
-        $code .= "#elif defined(__GNUC__) && __GNUC__ >= 4\n";
-        $code .= "# define {$apiMacro} __attribute__((visibility(\"default\")))\n";
+        $code = "#if defined({$exportsMacro})\n";
+        $code .= "# define {$apiMacro} TYPEPHP_SYMBOL_EXPORT\n";
         $code .= "#else\n";
-        $code .= "# define {$apiMacro}\n";
+        $code .= "# define {$apiMacro} TYPEPHP_SYMBOL_IMPORT\n";
         return $code . "#endif\n\n";
     }
 
     protected function genLibraryImportMacro(string $library): string
     {
         $importMacro = $this->getNamedLibraryImportMacroName($library);
-        $code = "#if defined(_WIN32)\n";
-        $code .= "# define {$importMacro} __declspec(dllimport)\n";
-        $code .= "#elif defined(__GNUC__) && __GNUC__ >= 4\n";
-        $code .= "# define {$importMacro} __attribute__((visibility(\"default\")))\n";
-        $code .= "#else\n";
-        $code .= "# define {$importMacro}\n";
-        return $code . "#endif\n\n";
+        return "#define {$importMacro} TYPEPHP_SYMBOL_IMPORT\n\n";
     }
 
     protected function getFunctionDeclarationPrefix(FunctionDef $function): string
@@ -1654,6 +1648,17 @@ CODE;
             return $this->getLibraryApiMacroName() . ' ';
         }
         return 'extern ';
+    }
+
+    protected function getFunctionOptimizationAttribute(FunctionDef $function): string
+    {
+        if ($function->hot) {
+            return 'TYPEPHP_HOT_ATTRIBUTE ';
+        }
+        if ($function->cold) {
+            return 'TYPEPHP_COLD_ATTRIBUTE ';
+        }
+        return '';
     }
 
     protected function isImportedFunction(FunctionDef $function): bool
@@ -2287,10 +2292,7 @@ CODE;
         $ast = $this->parser->parse($phpCode);
         $traverser = new NodeTraverser();
         $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
-        $traverser->addVisitor(new Visitor(function (Node\Stmt\Class_ $class): bool {
-            $name = isset($class->namespacedName) ? $class->namespacedName->toString() : $class->name->toString();
-            return $this->shouldGeneratePrinter($name);
-        }));
+        $traverser->addVisitor(new Visitor(sourceFile: $this->file));
 
         $stmts = $traverser->traverse($ast);
 
@@ -2328,6 +2330,7 @@ CODE;
                     $this->parseConstDef($v);
                     break;
                 case 'Stmt_Interface':
+                    $this->validateInterfaceOverrideAttributes($v);
                     break;
                 case 'Stmt_Nop':
                     break;
@@ -2490,6 +2493,7 @@ CODE;
                     $this->parseGroupUse($v2);
                     break;
                 case 'Stmt_Interface':
+                    $this->validateInterfaceOverrideAttributes($v2);
                     break;
                 default:
                     abort($v2);
@@ -2864,6 +2868,109 @@ CODE;
         return $typeNode ? $this->typeNodeToString($typeNode) : null;
     }
 
+    private function configureGeneratedConstructorParentCall(Node\Stmt\Class_ $class): void
+    {
+        $constructor = null;
+        foreach ($class->getMethods() as $method) {
+            if ($method->getAttribute(ConstructorLowering::GENERATED_ATTRIBUTE, false)) {
+                $constructor = $method;
+                break;
+            }
+        }
+        if ($constructor === null || $this->classDef->extends === '') {
+            return;
+        }
+
+        $parent = $this->classDef->extends;
+        while ($parent !== '') {
+            $parentDef = $this->getClassDef($parent);
+            if ($parentDef === null) {
+                $reflection = Reflection::getClass($parent);
+                $parentConstructor = $reflection?->getConstructor();
+                if ($parentConstructor === null) {
+                    return;
+                }
+                $owner = $parentConstructor->getDeclaringClass()->getName();
+                $this->applyGeneratedConstructorParentRule(
+                    $constructor,
+                    $owner,
+                    $parentConstructor->getModifiers(),
+                    $parentConstructor->getNumberOfRequiredParameters(),
+                    $parentConstructor->isAbstract(),
+                );
+                return;
+            }
+
+            if ($parentDef->hasMethod('__construct')) {
+                $parentConstructor = $parentDef->getMethod('__construct');
+                $this->applyGeneratedConstructorParentRule(
+                    $constructor,
+                    $parent,
+                    $parentConstructor->flags,
+                    $parentConstructor->functionDef?->argCountRequired ?? 0,
+                    false,
+                );
+                return;
+            }
+            if ($parentDef->hasAbstractMethod('__construct')) {
+                $parentConstructor = $parentDef->getAbstractMethod('__construct');
+                $this->applyGeneratedConstructorParentRule(
+                    $constructor,
+                    $parent,
+                    $parentConstructor->flags,
+                    $parentConstructor->functionDef?->argCountRequired ?? 0,
+                    true,
+                );
+                return;
+            }
+            $parent = $parentDef->extends;
+        }
+    }
+
+    private function applyGeneratedConstructorParentRule(
+        Node\Stmt\ClassMethod $constructor,
+        string $parent,
+        int $flags,
+        int $requiredArguments,
+        bool $abstract,
+    ): void {
+        $attributeTarget = $constructor->getAttribute(
+            \TypePhp\Diagnostics\CompileTimeAttributeDiagnostic::GENERATED_TARGET,
+            $constructor,
+        );
+        if (!$attributeTarget instanceof Node) {
+            $attributeTarget = $constructor;
+        }
+        if ($flags & Modifiers::FINAL) {
+            $this->fatalCompileTimeAttribute(
+                $attributeTarget,
+                'Constructor',
+                "Cannot override final method `{$parent}::__construct()`",
+                $attributeTarget,
+            );
+        }
+        if ($flags & Modifiers::PRIVATE) {
+            return;
+        }
+        if ($requiredArguments > 0) {
+            $this->fatalCompileTimeAttribute(
+                $attributeTarget,
+                'Constructor',
+                "Constructor cannot be generated because parent constructor `{$parent}::__construct()` " .
+                "requires {$requiredArguments} argument(s); declare `__construct()` explicitly",
+                $attributeTarget,
+            );
+        }
+        if ($abstract) {
+            return;
+        }
+
+        array_unshift($constructor->stmts, new Node\Stmt\Expression(new Node\Expr\StaticCall(
+            new Node\Name('parent'),
+            new Node\Identifier('__construct'),
+        )));
+    }
+
     protected function parseClass(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): string
     {
         $this->class = $this->parseIdentifier($class->name);
@@ -2872,12 +2979,59 @@ CODE;
             $this->fatalError($class, "class {$fullName} not found");
         }
         $this->classDef = $this->getClass($fullName);
-        $this->parseExtensionProviderTarget($class);
+        $this->parseMethodsForTarget($class);
+
+        if ($class instanceof Node\Stmt\Class_) {
+            $this->configureGeneratedConstructorParentCall($class);
+        }
 
         if ($class instanceof Node\Stmt\Class_ && $this->classDef->printerGenerated) {
+            $available = [...$this->parentPublicProperties($this->classDef->extends), ...\TypePhp\Transform\ClassFieldSelection::ownPublicProperties($class)];
+            try {
+                $properties = \TypePhp\Transform\ClassFieldSelection::resolve(
+                    $this->classDef->printerFields,
+                    $this->classDef->printerFields === null
+                        ? $available
+                        : $this->selectableProperties($this->classDef),
+                    'Printer',
+                );
+            } catch (SyntaxError $error) {
+                throw new SyntaxError(CompileTimeAttributeDiagnostic::format(
+                    $error->getMessage(),
+                    'Printer',
+                    $class,
+                    $this->file,
+                ), 0, $error);
+            }
             \TypePhp\Transform\PrinterLowering::rebuildGeneratedMethod(
                 $class,
-                [...$this->parentPublicProperties($this->classDef->extends), ...\TypePhp\Transform\PrinterLowering::ownPublicProperties($class)],
+                $properties,
+                $this->classDef->printerFields,
+                $this->classStringProperties($this->classDef),
+            );
+        }
+        if ($class instanceof Node\Stmt\Class_ && $this->classDef->arrayableGenerated) {
+            $available = [...$this->parentPublicProperties($this->classDef->extends), ...\TypePhp\Transform\ClassFieldSelection::ownPublicProperties($class)];
+            try {
+                $properties = \TypePhp\Transform\ClassFieldSelection::resolve(
+                    $this->classDef->arrayableFields,
+                    $this->classDef->arrayableFields === null
+                        ? $available
+                        : $this->selectableProperties($this->classDef),
+                    'Arrayable',
+                );
+            } catch (SyntaxError $error) {
+                throw new SyntaxError(CompileTimeAttributeDiagnostic::format(
+                    $error->getMessage(),
+                    'Arrayable',
+                    $class,
+                    $this->file,
+                ), 0, $error);
+            }
+            \TypePhp\Transform\ArrayableLowering::rebuildGeneratedMethod(
+                $class,
+                $properties,
+                $this->classDef->arrayableFields,
             );
         }
 
@@ -2932,6 +3086,7 @@ CODE;
             }
         }
         if (!$class instanceof Node\Stmt\Trait_) {
+            $this->validateOverrideAttributes($class);
             $this->checkInterfaceImplementations($class);
             $this->checkInheritedAbstractMethodsAreImplemented($class);
         }
@@ -3284,7 +3439,8 @@ CODE;
             ? $this->functionDef->getMultiReturnCppType()
             : ($this->functionDef->returnsByRef ? Type::REF : $this->getReturnType());
         $nativeName = self::PREFIX . $name;
-        $functionDeclCode = $cppReturnType . ' ' . ($multiReturn ? $this->getMultiReturnImplName($name) : $nativeName) . '(';
+        $functionAttribute = $this->getFunctionOptimizationAttribute($this->functionDef);
+        $functionDeclCode = $functionAttribute . $cppReturnType . ' ' . ($multiReturn ? $this->getMultiReturnImplName($name) : $nativeName) . '(';
         if ($this->class) {
             $functionDeclCode .= Type::OBJECT . ' &this_';
             if ($this->classDef?->trait !== null && $this->methodDef?->parentMethodCalls) {
@@ -3340,7 +3496,7 @@ CODE;
                     : $argInfo->name,
                 $this->functionDef->argInfoList,
             ));
-            $code .= Type::ARRAY . ' ' . $nativeName . '(' . $this->functionDef->params . ') {' . PHP_EOL;
+            $code .= $functionAttribute . Type::ARRAY . ' ' . $nativeName . '(' . $this->functionDef->params . ') {' . PHP_EOL;
             $this->indentLevel++;
             $code .= $this->getIndent() . 'return ' . Type::ARRAY . '(' . $this->getMultiReturnImplName($name) . '(' . $forwardArgs . '));' . PHP_EOL;
             $this->indentLevel--;
@@ -3384,15 +3540,17 @@ CODE;
                 $methodDef = $classDef->getMethod($name);
                 if ($methodDef->flags & Modifiers::PRIVATE) {
                     _error:
+                    $message = 'Cannot override private method `' . $extends . '::' . $name . '()`';
+                    $this->fatalGeneratedMethodAttributeIfAny($v, $message, $extends, $name);
                     $this->fatalError($v,
-                        'Cannot override private method `' .
-                        $extends . '::' . $name . '()`');
+                        $message);
                 }
                 if ($methodDef->flags & Modifiers::FINAL) {
                     _final_error:
+                    $message = 'Cannot override final method `' . $extends . '::' . $name . '()`';
+                    $this->fatalGeneratedMethodAttributeIfAny($v, $message, $extends, $name);
                     $this->fatalError($v,
-                        'Cannot override final method `' .
-                        $extends . '::' . $name . '()`');
+                        $message);
                 }
                 $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
                 break;
@@ -3427,6 +3585,24 @@ CODE;
         $parentFuncDef = $parentMethodDef->functionDef;
         if (!$childFuncDef || !$parentFuncDef) {
             return;
+        }
+
+        // MustUse is part of the callable contract. An override may strengthen
+        // this guarantee, but it must not drop one promised by a parent class
+        // or interface.
+        if ($parentFuncDef->mustUse && !$childFuncDef->mustUse) {
+            $message = "Declaration of `{$className}::{$methodName}()` must be compatible with " .
+                "`{$parentClass}::{$methodName}()`";
+            $this->error(CompileTimeAttributeDiagnostic::formatPositions(
+                $message,
+                'MustUse',
+                "method {$parentClass}::{$methodName}()",
+                $parentFuncDef->sourceFile,
+                $parentFuncDef->startLine,
+                'override drops MustUse contract',
+                $this->file,
+                $v->getStartLine(),
+            ));
         }
 
         if (!$this->isReturnTypeOverrideCompatible($childFuncDef, $parentFuncDef)) {
@@ -3474,9 +3650,44 @@ CODE;
         string $methodName,
         string $parentClass
     ): void {
-        $this->fatalError($v,
-            "Declaration of `{$className}::{$methodName}()` must be compatible " .
-            "with `{$parentClass}::{$methodName}()`");
+        $message = "Declaration of `{$className}::{$methodName}()` must be compatible " .
+            "with `{$parentClass}::{$methodName}()`";
+        $this->fatalGeneratedMethodAttributeIfAny($v, $message, $parentClass, $methodName);
+        $this->fatalError($v, $message);
+    }
+
+    private function fatalGeneratedMethodAttributeIfAny(
+        NodeAbstract $method,
+        string $message,
+        string $parentClass,
+        string $methodName,
+    ): void {
+        $attribute = $method->getAttribute(CompileTimeAttributeDiagnostic::GENERATED_BY);
+        $target = $method->getAttribute(CompileTimeAttributeDiagnostic::GENERATED_TARGET);
+        if (!is_string($attribute) || !$target instanceof Node) {
+            return;
+        }
+
+        $parentFunction = null;
+        $parentDef = $this->getClassDef($parentClass);
+        if ($parentDef instanceof ClassDef) {
+            if ($parentDef->hasMethod($methodName)) {
+                $parentFunction = $parentDef->getMethod($methodName)->functionDef;
+            } elseif ($parentDef->hasAbstractMethod($methodName)
+                && isset($parentDef->abstractMethodDefs[strtolower($methodName)])) {
+                $parentFunction = $parentDef->getAbstractMethod($methodName)->functionDef;
+            }
+        }
+        $this->error(CompileTimeAttributeDiagnostic::formatPositions(
+            $message,
+            $attribute,
+            CompileTimeAttributeDiagnostic::describeTarget($target),
+            $this->file,
+            $target->getStartLine(),
+            $parentFunction === null ? null : 'parent method',
+            $parentFunction?->sourceFile,
+            $parentFunction?->startLine,
+        ));
     }
 
     private function isReturnTypeOverrideCompatible(FunctionDef $childFuncDef, FunctionDef $parentFuncDef): bool
@@ -3626,6 +3837,130 @@ CODE;
         foreach ($this->getClassImplementedInterfaces($classDef) as $interfaceName) {
             $this->checkInterfaceImplementation($classStmt, $classDef, $interfaceName);
         }
+    }
+
+    private function validateOverrideAttributes(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void
+    {
+        $methods = [...$this->classDef->methods, ...$this->classDef->abstractMethodDefs];
+        foreach ($methods as $methodDef) {
+            if (!$methodDef->functionDef?->overrideRequired) {
+                continue;
+            }
+            if ($this->hasMatchingOverrideDeclaration($this->classDef, $methodDef->name)) {
+                continue;
+            }
+            $this->fatalMissingOverride(
+                $methodDef->node ?? $classStmt,
+                $this->classDef->getNamespacedName(false),
+                $methodDef->name,
+            );
+        }
+    }
+
+    private function hasMatchingOverrideDeclaration(ClassDef $classDef, string $methodName): bool
+    {
+        if (strtolower($methodName) === '__construct') {
+            return false;
+        }
+
+        $current = $classDef;
+        while ($current->extends !== '') {
+            $parentName = $current->extends;
+            if ($current->inheritedFromInternalClass || $this->isInternalClass($parentName)) {
+                $modifiers = Reflection::getClassMethodModifiers($parentName, $methodName);
+                if ($modifiers !== null && !($modifiers & \ReflectionMethod::IS_PRIVATE)) {
+                    return true;
+                }
+                break;
+            }
+            if (!$this->hasClass($parentName)) {
+                break;
+            }
+            $current = $this->getClass($parentName);
+            if ($current->hasMethod($methodName)) {
+                if (!($current->getMethod($methodName)->flags & Modifiers::PRIVATE)) {
+                    return true;
+                }
+            } elseif ($current->hasAbstractMethod($methodName)) {
+                if (!($current->getMethodFlags($methodName) & Modifiers::PRIVATE)) {
+                    return true;
+                }
+            }
+        }
+
+        foreach ($this->getClassImplementedInterfaces($classDef) as $interfaceName) {
+            if ($this->isInternalInterface($interfaceName)) {
+                if (Reflection::hasMethod($interfaceName, $methodName)) {
+                    return true;
+                }
+                continue;
+            }
+            if ($this->hasInterface($interfaceName) && $this->getInterface($interfaceName)->hasMethod($methodName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function validateInterfaceOverrideAttributes(Node\Stmt\Interface_ $interfaceStmt): void
+    {
+        $name = $this->parseIdentifier($interfaceStmt->name);
+        $interfaceName = $this->namespace === '' ? $name : $this->namespace . '\\' . $name;
+        if (!$this->hasInterface($interfaceName)) {
+            return;
+        }
+
+        $interfaceDef = $this->getInterface($interfaceName);
+        foreach ($interfaceDef->methods as $methodDef) {
+            if (!$methodDef->functionDef?->overrideRequired) {
+                continue;
+            }
+            $visited = [];
+            if ($this->interfaceParentsHaveMethod($interfaceDef, $methodDef->name, $visited)) {
+                continue;
+            }
+            $this->fatalMissingOverride($methodDef->node ?? $interfaceStmt, $interfaceName, $methodDef->name);
+        }
+    }
+
+    private function fatalMissingOverride(NodeAbstract $node, string $className, string $methodName): never
+    {
+        $this->fatalCompileTimeAttribute(
+            $node,
+            'Override',
+            "{$className}::{$methodName}() has #[\\Override] attribute, " .
+            'but no matching parent method exists',
+        );
+    }
+
+    /** @param array<string, true> $visited */
+    private function interfaceParentsHaveMethod(
+        InterfaceDef $interfaceDef,
+        string $methodName,
+        array &$visited,
+    ): bool {
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentName) {
+            $key = strtolower($parentName);
+            if (isset($visited[$key])) {
+                continue;
+            }
+            $visited[$key] = true;
+            if ($this->isInternalInterface($parentName)) {
+                if (Reflection::hasMethod($parentName, $methodName)) {
+                    return true;
+                }
+                continue;
+            }
+            if (!$this->hasInterface($parentName)) {
+                continue;
+            }
+            $parent = $this->getInterface($parentName);
+            if ($parent->hasMethod($methodName)
+                || $this->interfaceParentsHaveMethod($parent, $methodName, $visited)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function checkInterfaceImplementation(NodeAbstract $node, ClassDef $classDef, string $interfaceName): void
@@ -3843,6 +4178,11 @@ CODE;
             // Keep the AST node so trait-composed methods can report accurate
             // line numbers when validated for override compatibility later.
             $this->methodDef->node = $v;
+            if ($this->classDef->trait === null
+                && $this->methodDef->functionDef?->overrideRequired
+                && !$this->hasMatchingOverrideDeclaration($this->classDef, $name)) {
+                $this->fatalMissingOverride($v, $this->classDef->getNamespacedName(false), $name);
+            }
             // 预处理阶段没有父类的信息，只能在实现阶段检查
             $this->checkParentMethodCanBeOverridden($v, $name);
             $methodCodes[$name] = $this->parseFunction($v);

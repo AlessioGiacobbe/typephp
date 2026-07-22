@@ -212,7 +212,8 @@ trait FiberGenerator
 
     private function doGenFiberGeneratorFunction(Function_|ClassMethod $v, FunctionDef $functionDef, string $nativeName): string
     {
-        $functionDeclCode = Type::VAR . ' ' . self::PREFIX . $nativeName . '(';
+        $functionDeclCode = $this->getFunctionOptimizationAttribute($functionDef)
+            . Type::VAR . ' ' . self::PREFIX . $nativeName . '(';
         if ($this->class) {
             $functionDeclCode .= Type::OBJECT . ' &this_';
             if ($functionDef->params) {

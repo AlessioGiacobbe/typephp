@@ -362,6 +362,11 @@ trait MethodCallTrait
                 }
                 return $this->genToConvertCall($object, $methodName, $receiverType);
             }
+            // MethodsFor('*') extensions apply to every receiver type.
+            $kwExt = $this->findKeywordExtensionMethod($methodName);
+            if ($kwExt) {
+                return $this->parseUniversalMethodCall($expr, $object, $methodName, $kwExt, $this->isVarExpr($expr->var));
+            }
             // A provider targeting Type::Any only applies when
             // the receiver's static type is actually mixed/any.
             if ($receiverType === Type::VAR) {
@@ -369,11 +374,6 @@ trait MethodCallTrait
                 if ($anyExtension) {
                     return $this->parseUniversalMethodCall($expr, $object, $methodName, $anyExtension, $this->isVarExpr($expr->var));
                 }
-            }
-            // ExtensionProvider('*') extensions apply to every receiver type.
-            $kwExt = $this->findKeywordExtensionMethod($methodName);
-            if ($kwExt) {
-                return $this->parseUniversalMethodCall($expr, $object, $methodName, $kwExt, $this->isVarExpr($expr->var));
             }
         }
 
@@ -412,14 +412,22 @@ trait MethodCallTrait
                     }
                 }
             } catch (DynamicCall) {
-                $extension = $this->findObjectExtensionMethod($class, $methodName);
+                $extension = $this->findObjectExtensionMethod(
+                    $class,
+                    $methodName,
+                    $this->isDefinitelyObjectReceiver($expr->var, $object, $class, $type),
+                );
                 if ($extension !== null) {
                     return $this->parseUniversalMethodCall($expr, $object, $methodName, $extension);
                 }
                 $magicMethod = true;
             }
             if (!$nativeFunc) {
-                $extension = $this->findObjectExtensionMethod($class, $methodName);
+                $extension = $this->findObjectExtensionMethod(
+                    $class,
+                    $methodName,
+                    $this->isDefinitelyObjectReceiver($expr->var, $object, $class, $type),
+                );
                 if ($extension !== null) {
                     return $this->parseUniversalMethodCall($expr, $object, $methodName, $extension);
                 }
@@ -450,7 +458,11 @@ trait MethodCallTrait
             }
 
             $extensionClass = $this->detectClassOfExpr($expr->var);
-            $extension = $this->findObjectExtensionMethod($extensionClass, $methodName);
+            $extension = $this->findObjectExtensionMethod(
+                $extensionClass,
+                $methodName,
+                $this->isDefinitelyObjectReceiver($expr->var, $object, $extensionClass, $type),
+            );
             if ($extension !== null) {
                 return $this->parseUniversalMethodCall($expr, $object, $methodName, $extension, false);
             }
@@ -481,6 +493,55 @@ trait MethodCallTrait
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($this->genArray([$object, $method]));
         }
+    }
+
+    private function isDefinitelyObjectReceiver(
+        Expr $receiver,
+        string $object,
+        string $class,
+        string $type,
+    ): bool {
+        if ($type !== Type::OBJECT && $class === '') {
+            return false;
+        }
+
+        if ($this->isVarExpr($receiver)) {
+            foreach ($this->functionDef?->argInfoList ?? [] as $argument) {
+                if ($argument->name === $object && $argument->nullable) {
+                    return false;
+                }
+            }
+        }
+
+        if ($this->isPropertyFetch($receiver) && $this->getNativePropertyDef($receiver)?->nullable) {
+            return false;
+        }
+
+        $calledFunction = $this->resolveCalledFunctionDef($receiver);
+        if ($calledFunction !== null && $this->typeNodeAllowsNull($calledFunction->returnTypeNode)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function typeNodeAllowsNull(?Node $type): bool
+    {
+        if ($type instanceof Node\NullableType) {
+            return true;
+        }
+        if (!$type instanceof Node\UnionType) {
+            return false;
+        }
+        foreach ($type->types as $member) {
+            if ($member instanceof Node\Identifier && strtolower($member->name) === 'null') {
+                return true;
+            }
+            if ($member instanceof Node\Name && strtolower($member->toString()) === 'null') {
+                return true;
+            }
+        }
+        return false;
     }
 
 

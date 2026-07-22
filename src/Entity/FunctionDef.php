@@ -32,6 +32,14 @@ class FunctionDef
     public bool $returnTypeUndeclared = false;
     public bool $returnsByRef = false;
     public bool $generator = false;
+    /** The call result must not be discarded as a statement expression. */
+    public bool $mustUse = false;
+    /** The method must override an inherited class or interface method. */
+    public bool $overrideRequired = false;
+    /** Prefer optimizing this function for frequently executed paths. */
+    public bool $hot = false;
+    /** Prefer optimizing this function for rarely executed paths. */
+    public bool $cold = false;
     /** Number of fixed positional values returned through the internal tuple fast path. */
     public int $multiReturnCount = 0;
     /** Source file containing this function definition. */

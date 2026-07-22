@@ -14,6 +14,8 @@ use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitor\NameResolver;
 use PhpParser\Parser;
 use PhpParser\PrettyPrinter;
+use TypePhp\Transform\CompileTimeAttribute;
+use TypePhp\Transform\CompileTimeAttributeRegistry;
 
 final class LibraryImportStubGenerator
 {
@@ -110,8 +112,12 @@ final class LibraryImportStubGenerator
             ) !== 1,
         );
         $stmt->setAttribute('comments', array_values($comments));
+        $this->filterAttributesForLibraryStub($stmt);
 
         if ($stmt instanceof Node\Stmt\Function_) {
+            foreach ($stmt->params as $param) {
+                $this->filterAttributesForLibraryStub($param);
+            }
             $stmt->stmts = [];
             return $stmt;
         }
@@ -127,10 +133,15 @@ final class LibraryImportStubGenerator
                         && !($stmt instanceof Node\Stmt\Interface_)) {
                         $member->stmts = [];
                     }
+                    $this->filterAttributesForLibraryStub($member);
+                    foreach ($member->params as $param) {
+                        $this->filterAttributesForLibraryStub($param);
+                    }
                     $members[] = $member;
                     continue;
                 }
                 if ($member instanceof Node\Stmt\Property) {
+                    $this->filterAttributesForLibraryStub($member);
                     foreach ($member->hooks as $hook) {
                         if ($hook->body !== null) {
                             $hook->body = [];
@@ -159,13 +170,32 @@ final class LibraryImportStubGenerator
         }
         foreach ($node->attrGroups as $group) {
             foreach ($group->attrs as $attribute) {
-                $parts = $attribute->name->getParts();
-                if (count($parts) === 1 && strcasecmp($parts[0], 'NoExport') === 0) {
+                if (CompileTimeAttribute::is($attribute, 'NoExport')) {
                     return true;
                 }
             }
         }
 
         return false;
+    }
+
+    private function filterAttributesForLibraryStub(Node $node): void
+    {
+        if (!property_exists($node, 'attrGroups')) {
+            return;
+        }
+        foreach ($node->attrGroups as $groupIndex => $group) {
+            foreach ($group->attrs as $attributeIndex => $attribute) {
+                $definition = CompileTimeAttributeRegistry::get(CompileTimeAttribute::resolvedName($attribute));
+                if ($definition !== null && !$definition['preserve_in_library_stub']) {
+                    unset($group->attrs[$attributeIndex]);
+                }
+            }
+            $group->attrs = array_values($group->attrs);
+            if ($group->attrs === []) {
+                unset($node->attrGroups[$groupIndex]);
+            }
+        }
+        $node->attrGroups = array_values($node->attrGroups);
     }
 }

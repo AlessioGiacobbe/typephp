@@ -14,6 +14,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Param;
 use PhpParser\Node\Stmt;
 use TypePhp\Exception\SyntaxError;
+use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 
 final class GetterLowering
 {
@@ -40,6 +41,9 @@ final class GetterLowering
     /** @return list<Stmt\ClassMethod> */
     public static function lowerProperty(Stmt\Property $property): array
     {
+        if (CompileTimeAttribute::has($property, 'Getter') && $property->hooks !== []) {
+            throw new SyntaxError('Getter cannot be applied to properties with hooks');
+        }
         if (!CompileTimeAttribute::consume($property, 'Getter')) {
             return [];
         }
@@ -49,7 +53,7 @@ final class GetterLowering
             $methods[] = self::createGetter(
                 $prop->name->toString(),
                 $property->type,
-                $property->getAttributes(),
+                $property,
             );
         }
         return $methods;
@@ -57,23 +61,28 @@ final class GetterLowering
 
     public static function lowerPromotedProperty(Param $param): ?Stmt\ClassMethod
     {
+        if (CompileTimeAttribute::has($param, 'Getter') && $param->hooks !== []) {
+            throw new SyntaxError('Getter cannot be applied to properties with hooks');
+        }
         if (!$param->isPromoted() || !is_string($param->var->name) || !CompileTimeAttribute::consume($param, 'Getter')) {
             return null;
         }
 
-        return self::createGetter($param->var->name, $param->type, $param->getAttributes());
+        return self::createGetter($param->var->name, $param->type, $param);
     }
 
-    private static function createGetter(string $property, ?Node $type, array $attributes): Stmt\ClassMethod
+    private static function createGetter(string $property, ?Node $type, Node $target): Stmt\ClassMethod
     {
-        return new Stmt\ClassMethod('get' . ucfirst($property), [
+        $method = new Stmt\ClassMethod('get' . ucfirst($property), [
             'flags' => Modifiers::PUBLIC,
             'returnType' => $type === null ? null : clone $type,
             'stmts' => [new Stmt\Return_(new Expr\PropertyFetch(
                 new Expr\Variable('this'),
                 $property,
             ))],
-        ], $attributes);
+        ], $target->getAttributes());
+        CompileTimeAttributeDiagnostic::markGenerated($method, 'Getter', $target);
+        return $method;
     }
 
 }

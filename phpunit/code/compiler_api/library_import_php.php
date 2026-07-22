@@ -2,20 +2,28 @@
 
 namespace LibraryApi;
 
-use \ExtensionProvider as Provider;
+use \Arrayable;
+use \MethodsFor as Provider;
+use \Constructor;
+use \Validate;
 use \Getter;
+use \Hot;
 use \NotNull;
 use \NoExport as Internal;
+use \Override;
+use \MustUse;
 use \Printer;
+use \Cold;
 use \Setter;
 use \Type;
 use \With;
 
-#[Printer]
+#[Printer(fields: ['value', 'doubled'])]
+#[Arrayable(['value'])]
 class Counter
 {
     public const int STEP = 2;
-    #[Getter, Setter, With]
+    #[Constructor, Getter, Setter, With]
     public int $value = 1;
     public int $doubled {
         get {
@@ -32,7 +40,8 @@ class Counter
         return $this->value;
     }
 
-    public function label(#[NotNull] string $value): string
+    #[MustUse, Cold]
+    public function label(#[NotNull, Validate(FILTER_VALIDATE_EMAIL)] string $value): string
     {
         return $value;
     }
@@ -63,6 +72,7 @@ class InternalStringExtension
     }
 }
 
+#[MustUse, Hot]
 function twice(int $value): int
 {
     return $value * 2;
@@ -72,4 +82,21 @@ function twice(int $value): int
 function internal_twice(int $value = 2): int
 {
     return $value * 2;
+}
+
+class LibraryParent
+{
+    public function version(): int
+    {
+        return 1;
+    }
+}
+
+class LibraryChild extends LibraryParent
+{
+    #[Override]
+    public function version(): int
+    {
+        return 2;
+    }
 }

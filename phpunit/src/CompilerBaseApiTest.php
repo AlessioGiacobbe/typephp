@@ -831,6 +831,22 @@ YAML);
         $this->assertStringNotContainsString('property_map = {}', $code);
     }
 
+    public function testArrayableKeywordConversionCallsGeneratedMethodAtRuntime(): void
+    {
+        global $translator;
+        $translator = $this->compiler;
+
+        $testFile = ROOT_PATH . '/phpunit/code/arrayable.php';
+        $this->compiler->addFiles([$testFile]);
+        $this->compiler->prepareFile($testFile);
+        $cppFile = $this->compiler->convertFile($testFile);
+        $cpp = file_get_contents($cppFile);
+
+        $this->assertStringContainsString('data = php::toArray(user);', $cpp);
+        $this->assertStringContainsString('php::Array php_arrayableuser__toarray(', $cpp);
+        $this->assertStringContainsString('php::Str php_arrayableuser____tostring(', $cpp);
+    }
+
     public function testLibraryFunctionHeaderExportsDefaultValueHelpersWithoutLiteralStorage(): void
     {
         global $translator;
@@ -848,8 +864,13 @@ YAML);
         $header = file_get_contents($headerFile);
 
         $this->assertStringContainsString('#pragma once', $header);
-        $this->assertStringContainsString('TYPEPHP_PRIME2_API __declspec(dllexport)', $header);
-        $this->assertStringContainsString('TYPEPHP_PRIME2_API __declspec(dllimport)', $header);
+        $this->assertStringContainsString('#include <typephp_helper.h>', $header);
+        $this->assertStringContainsString('# define TYPEPHP_PRIME2_API TYPEPHP_SYMBOL_EXPORT', $header);
+        $this->assertStringContainsString('# define TYPEPHP_PRIME2_API TYPEPHP_SYMBOL_IMPORT', $header);
+        $this->assertStringNotContainsString('__declspec(', $header);
+        $this->assertStringNotContainsString('__attribute__(', $header);
+        $this->assertStringNotContainsString('defined(_WIN32)', $header);
+        $this->assertStringNotContainsString('defined(__GNUC__)', $header);
         $this->assertStringContainsString(
             'TYPEPHP_PRIME2_API php::Str php_exported_defaults_arg_0_default_value();',
             $header
@@ -899,8 +920,8 @@ YAML);
         $this->compiler->genFunctionDeclarations($headerFile);
         $header = file_get_contents($headerFile);
 
-        $this->assertStringContainsString('TYPEPHP_PRIME2_IMPORT __declspec(dllimport)', $header);
-        $this->assertStringContainsString('TYPEPHP_PRIME2_API __declspec(dllexport)', $header);
+        $this->assertStringContainsString('#define TYPEPHP_PRIME2_IMPORT TYPEPHP_SYMBOL_IMPORT', $header);
+        $this->assertStringContainsString('# define TYPEPHP_PRIME2_API TYPEPHP_SYMBOL_EXPORT', $header);
         $this->assertStringContainsString(
             'TYPEPHP_PRIME2_IMPORT php::Array php_exported_defaults(',
             $header
@@ -926,9 +947,10 @@ YAML);
             ROOT_PATH . '/phpunit/code/compiler_api/library_import_global.php',
         ];
         $this->compiler->addFiles($files);
+        $cppFiles = [];
         foreach ($files as $file) {
             $this->compiler->prepareFile($file);
-            $this->compiler->convertFile($file);
+            $cppFiles[$file] = $this->compiler->convertFile($file);
             $this->assertStringNotContainsString(
                 'NoExport',
                 file_get_contents($this->compiler->getArgInfoHeaderFile($file)),
@@ -937,15 +959,24 @@ YAML);
                 'Getter',
                 file_get_contents($this->compiler->getArgInfoHeaderFile($file)),
             );
-            foreach (['NotNull', 'Printer', 'Setter', 'With'] as $attribute) {
+            foreach (\TypePhp\Transform\CompileTimeAttributeRegistry::names() as $attribute) {
                 $this->assertStringNotContainsString(
                     $attribute,
                     file_get_contents($this->compiler->getArgInfoHeaderFile($file)),
                 );
             }
         }
+        $phpCpp = file_get_contents($cppFiles[$files[0]]);
+        $this->assertStringContainsString(
+            'TYPEPHP_HOT_ATTRIBUTE php::Int php_libraryapi__twice(',
+            $phpCpp,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_COLD_ATTRIBUTE php::Str php_libraryapi__counter__label(',
+            $phpCpp,
+        );
         $provider = $this->invokeMethod('getClass', 'LibraryApi\\InternalStringExtension');
-        $this->assertSame(Type::STR, $provider->extensionProviderTarget);
+        $this->assertSame(Type::STR, $provider->methodsForTarget);
 
         $stubFile = $this->compiler->genLibraryImportStub($files);
         $stub = file_get_contents($stubFile);
@@ -955,16 +986,20 @@ YAML);
         $this->assertStringContainsString('class Counter', $stub);
         $this->assertStringContainsString('public const int STEP = 2;', $stub);
         $this->assertStringContainsString('public int $value = 1;', $stub);
-        $this->assertStringContainsString('#[\Getter, \Setter, \With]', $stub);
-        $this->assertStringContainsString('#[\Printer]', $stub);
-        $this->assertStringContainsString('#[\NotNull]', $stub);
+        $this->assertStringContainsString('#[\Constructor, \Getter, \Setter, \With]', $stub);
+        $this->assertStringContainsString("#[\Printer(fields: ['value', 'doubled'])]", $stub);
+        $this->assertStringContainsString("#[\Arrayable(['value'])]", $stub);
+        $this->assertStringContainsString('#[\NotNull, \Validate(FILTER_VALIDATE_EMAIL)]', $stub);
+        $this->assertStringContainsString('#[\MustUse, \Cold]', $stub);
+        $this->assertStringContainsString('#[\MustUse, \Hot]', $stub);
+        $this->assertStringContainsString('#[\Override]', $stub);
         $this->assertMatchesRegularExpression(
             '/public int \$doubled\s*\{\s*get\s*\{\s*\}\s*set\(int \$value\)\s*\{\s*\}\s*\}/s',
             $stub,
         );
         $this->assertStringContainsString('function add(int $amount = self::STEP): int', $stub);
         $this->assertMatchesRegularExpression(
-            '/function label\(\s*#\[\\\\NotNull\]\s*string \$value\s*\): string/s',
+            '/function label\(\s*#\[\\\\NotNull, \\\\Validate\(FILTER_VALIDATE_EMAIL\)\]\s*string \$value\s*\): string/s',
             $stub,
         );
         $this->assertStringContainsString('function twice(int $value): int', $stub);
@@ -986,11 +1021,23 @@ YAML);
         $this->compiler->genFunctionDeclarations($libraryHeaderFile);
         $libraryHeader = file_get_contents($libraryHeaderFile);
         $this->assertStringContainsString(
-            'TYPEPHP_PRIME2_API php::Int php_libraryapi__twice(',
+            'TYPEPHP_PRIME2_API TYPEPHP_HOT_ATTRIBUTE php::Int php_libraryapi__twice(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_API TYPEPHP_COLD_ATTRIBUTE php::Str php_libraryapi__counter__label(',
             $libraryHeader,
         );
         $this->assertStringContainsString(
             'TYPEPHP_PRIME2_API php::Int php_libraryapi__counter__getvalue(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_API php::Array php_libraryapi__counter__toarray(',
+            $libraryHeader,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_API php::Str php_libraryapi__counter____tostring(',
             $libraryHeader,
         );
         $this->assertStringContainsString(
@@ -1047,7 +1094,15 @@ YAML);
             $header,
         );
         $this->assertStringContainsString(
-            'TYPEPHP_PRIME2_IMPORT php::Int php_libraryapi__twice(',
+            'TYPEPHP_PRIME2_IMPORT php::Array php_libraryapi__counter__toarray(',
+            $header,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_IMPORT php::Str php_libraryapi__counter____tostring(',
+            $header,
+        );
+        $this->assertStringContainsString(
+            'TYPEPHP_PRIME2_IMPORT TYPEPHP_HOT_ATTRIBUTE php::Int php_libraryapi__twice(',
             $header,
         );
         $this->assertStringContainsString(

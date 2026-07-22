@@ -17,9 +17,13 @@ use TypePhp\Entity\FunctionDef;
 use TypePhp\Entity\InterfaceDef;
 use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\PropertyDef;
+use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 use TypePhp\Exception\SyntaxError;
 use TypePhp\Transform\PropertyHookLowering;
 use TypePhp\Transform\PrinterLowering;
+use TypePhp\Transform\ArrayableLowering;
+use TypePhp\Transform\ClassFieldSelection;
+use TypePhp\Transform\FunctionAttributeLowering;
 use TypePhp\Transform\Visitor;
 use PhpParser\Modifiers;
 use PhpParser\ConstExprEvaluator;
@@ -139,7 +143,10 @@ class Preprocessor extends CompilerBase
 
             $traverser = new NodeTraverser();
             $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
-            $traverser->addVisitor(new Visitor());
+            $traverser->addVisitor(new Visitor(
+                fn (Node $node, string $message) => $this->warning($node, $message),
+                $this->file,
+            ));
             $stmts = $traverser->traverse($ast);
             $this->validateUnsupportedAttributeArguments($stmts);
 
@@ -227,7 +234,12 @@ class Preprocessor extends CompilerBase
                     continue;
                 }
                 if ($attribute->args !== []) {
-                    $this->fatalError($attribute, 'NoExport does not accept arguments');
+                    $this->fatalCompileTimeAttribute(
+                        $node,
+                        'NoExport',
+                        'NoExport does not accept arguments',
+                        $attribute,
+                    );
                 }
                 return true;
             }
@@ -534,6 +546,17 @@ class Preprocessor extends CompilerBase
         }
 
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
+        $functionDef->mustUse = (bool) $v->getAttribute(FunctionAttributeLowering::MUST_USE_ATTRIBUTE, false);
+        $functionDef->overrideRequired = (bool) $v->getAttribute(FunctionAttributeLowering::OVERRIDE_ATTRIBUTE, false);
+        $functionDef->hot = (bool) $v->getAttribute(FunctionAttributeLowering::HOT_ATTRIBUTE, false);
+        $functionDef->cold = (bool) $v->getAttribute(FunctionAttributeLowering::COLD_ATTRIBUTE, false);
+        if ($functionDef->mustUse && $returnType === Type::VOID) {
+            $this->fatalCompileTimeAttribute(
+                $v,
+                'MustUse',
+                'MustUse cannot be applied to a function or method returning void',
+            );
+        }
         $functionDef->exported = !($this->classDef?->exported === false || $this->hasNoExportAttribute($v));
         $functionDef->returnClass = $class;
         // Record late-bound return type keywords so they can be re-resolved to
@@ -663,7 +686,7 @@ class Preprocessor extends CompilerBase
 
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
         $this->classDef->exported = !$this->hasNoExportAttribute($class);
-        $this->classDef->extensionProviderTarget = $this->parseExtensionProviderTarget($class);
+        $this->classDef->methodsForTarget = $this->parseMethodsForTarget($class);
         $this->addClass($fullClassName, $this->classDef);
 
         if (!empty($class->extends)) {
@@ -696,20 +719,37 @@ class Preprocessor extends CompilerBase
         $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
         if ($class instanceof Node\Stmt\Class_) {
-            $generatedPrinter = false;
+            $generatedPrinter = null;
+            $generatedArrayable = null;
             foreach ($class->getMethods() as $method) {
                 if ($method->getAttribute(PrinterLowering::GENERATED_ATTRIBUTE)) {
-                    $generatedPrinter = true;
-                    break;
+                    $generatedPrinter = $method;
+                }
+                if ($method->getAttribute(ArrayableLowering::GENERATED_ATTRIBUTE)) {
+                    $generatedArrayable = $method;
                 }
             }
-            if ($generatedPrinter && $this->parentHasMethod($this->classDef->extends, 'toString')) {
-                PrinterLowering::removeGeneratedMethod($class);
-            } elseif ($generatedPrinter) {
+            if ($generatedPrinter !== null) {
                 $this->classDef->printerGenerated = true;
+                $this->classDef->printerFields = $generatedPrinter->getAttribute(PrinterLowering::FIELDS_ATTRIBUTE);
+                $properties = $this->classDef->printerFields
+                    ?? [...$this->parentPublicProperties($this->classDef->extends), ...ClassFieldSelection::ownPublicProperties($class)];
                 PrinterLowering::rebuildGeneratedMethod(
                     $class,
-                    [...$this->parentPublicProperties($this->classDef->extends), ...PrinterLowering::ownPublicProperties($class)],
+                    $properties,
+                    $this->classDef->printerFields,
+                    $this->classStringProperties($this->classDef),
+                );
+            }
+            if ($generatedArrayable !== null) {
+                $this->classDef->arrayableGenerated = true;
+                $this->classDef->arrayableFields = $generatedArrayable->getAttribute(ArrayableLowering::FIELDS_ATTRIBUTE);
+                $properties = $this->classDef->arrayableFields
+                    ?? [...$this->parentPublicProperties($this->classDef->extends), ...ClassFieldSelection::ownPublicProperties($class)];
+                ArrayableLowering::rebuildGeneratedMethod(
+                    $class,
+                    $properties,
+                    $this->classDef->arrayableFields,
                 );
             }
         }
@@ -774,30 +814,6 @@ class Preprocessor extends CompilerBase
         return $code;
     }
 
-    public function shouldGeneratePrinter(string $class): bool
-    {
-        $classDef = $this->getClassDef(ltrim($class, '\\'));
-        if ($classDef === null) {
-            return true;
-        }
-        // A child may be discovered before its parent during the initial
-        // project scan. Reconcile the provisional method once every class is
-        // available, before conversion and arginfo generation begin.
-        if ($classDef->printerGenerated && $this->parentHasMethod($classDef->extends, 'toString')) {
-            $generated = $classDef->removeMethod('toString');
-            if ($generated?->functionDef !== null) {
-                foreach ($this->symbols->functions() as $name => $functionDef) {
-                    if ($functionDef === $generated->functionDef) {
-                        $this->symbols->removeFunction($name);
-                        break;
-                    }
-                }
-            }
-            $classDef->printerGenerated = false;
-        }
-        return $classDef->printerGenerated;
-    }
-
     /** @return list<string> */
     protected function parentPublicProperties(string $parent): array
     {
@@ -817,35 +833,75 @@ class Preprocessor extends CompilerBase
         return array_values(array_unique($properties));
     }
 
-    protected function parentHasMethod(string $parent, string $method): bool
+    /** @return list<string> */
+    protected function selectableProperties(ClassDef $classDef): array
     {
+        $properties = [];
+        $parent = $classDef->extends;
         while ($parent !== '') {
-            $classDef = $this->getClassDef($parent);
-            if ($classDef === null) {
-                return $this->isInternalClass($parent) && method_exists($parent, $method);
+            $parentDef = $this->getClassDef($parent);
+            if ($parentDef === null) {
+                break;
             }
-            if ($classDef->hasMethod($method) || $classDef->hasAbstractMethod($method)) {
-                return true;
+            foreach ($parentDef->properties as $property) {
+                if (!$property->isStatic() && !$property->isPrivate()) {
+                    $properties[] = $property->name;
+                }
             }
-            $parent = $classDef->extends;
+            $parent = $parentDef->extends;
         }
-        return false;
+        foreach ($classDef->properties as $property) {
+            if (!$property->isStatic()) {
+                $properties[] = $property->name;
+            }
+        }
+        return array_values(array_unique($properties));
     }
 
-    protected function parseExtensionProviderTarget(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): ?string
+    /** @return list<string> */
+    protected function classStringProperties(ClassDef $classDef): array
+    {
+        $types = [];
+        if ($classDef->extends !== '') {
+            $parent = $this->getClassDef($classDef->extends);
+            if ($parent !== null) {
+                foreach ($this->classStringProperties($parent) as $property) {
+                    $types[$property] = true;
+                }
+            }
+        }
+        foreach ($classDef->properties as $property) {
+            if (!$property->isStatic()) {
+                $types[$property->name] = $property->type === Type::STR;
+            }
+        }
+        return array_keys(array_filter($types));
+    }
+
+    protected function parseMethodsForTarget(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): ?string
     {
         foreach ($class->attrGroups as $groupIndex => $group) {
             foreach ($group->attrs as $attributeIndex => $attribute) {
-                if (!$this->isRootCompileTimeAttribute($attribute, 'ExtensionProvider')) {
+                if (!$this->isRootCompileTimeAttribute($attribute, 'MethodsFor')) {
                     continue;
                 }
                 if (!$class instanceof Node\Stmt\Class_) {
-                    $this->fatalError($class, 'ExtensionProvider can only be applied to classes');
+                    $this->fatalCompileTimeAttribute(
+                        $class,
+                        'MethodsFor',
+                        'MethodsFor can only be applied to classes',
+                        $attribute,
+                    );
                 }
                 if (count($attribute->args) !== 1) {
-                    $this->fatalError($attribute, 'ExtensionProvider expects exactly one target');
+                    $this->fatalCompileTimeAttribute(
+                        $class,
+                        'MethodsFor',
+                        'MethodsFor expects exactly one target',
+                        $attribute,
+                    );
                 }
-                $target = $this->parseExtensionProviderTargetValue($attribute->args[0]->value, $attribute);
+                $target = $this->parseMethodsForTargetValue($attribute->args[0]->value, $attribute, $class);
                 unset($group->attrs[$attributeIndex]);
                 $group->attrs = array_values($group->attrs);
                 if (empty($group->attrs)) {
@@ -858,7 +914,11 @@ class Preprocessor extends CompilerBase
         return null;
     }
 
-    private function parseExtensionProviderTargetValue(Node\Expr $value, NodeAbstract $errorNode): string
+    private function parseMethodsForTargetValue(
+        Node\Expr $value,
+        NodeAbstract $errorNode,
+        Node\Stmt\Class_ $class,
+    ): string
     {
         if ($value instanceof Node\Scalar\String_ && $value->value === '*') {
             return '*';
@@ -889,7 +949,12 @@ class Preprocessor extends CompilerBase
                 return $targets[$constant];
             }
         }
-        $this->fatalError($errorNode, "ExtensionProvider target must be '*', Type::*, or ClassName::class");
+        $this->fatalCompileTimeAttribute(
+            $class,
+            'MethodsFor',
+            "MethodsFor target must be '*', Type::*, or ClassName::class",
+            $errorNode,
+        );
     }
 
     protected function buildLiteralArrayInitPlan(Node\Expr\Array_ $defaultNode): ArrayInitPlan
@@ -1316,7 +1381,20 @@ class Preprocessor extends CompilerBase
 
         if (!$abstract) {
             $this->methodDef = new MethodDef($flags, $name);
+            $this->methodDef->node = $v;
             if ($this->classDef->hasMethod($name)) {
+                $generatedBy = $v->getAttribute(CompileTimeAttributeDiagnostic::GENERATED_BY);
+                $generatedTarget = $v->getAttribute(CompileTimeAttributeDiagnostic::GENERATED_TARGET);
+                if (is_string($generatedBy) && $generatedTarget instanceof Node) {
+                    $this->fatalCompileTimeAttribute(
+                        $generatedTarget,
+                        $generatedBy,
+                        "Duplicate method `{$this->method}`",
+                        $generatedTarget,
+                        null,
+                        $this->classDef->getMethod($name)->node,
+                    );
+                }
                 $this->fatalError($v, "Duplicate method `{$this->method}`");
             }
             $this->prepareFunction($v);
@@ -1330,6 +1408,7 @@ class Preprocessor extends CompilerBase
                 $this->fatalError($v, "Non-abstract class {$this->class} contains abstract method {$v->name}");
             }
             $this->methodDef = new MethodDef($flags, $name);
+            $this->methodDef->node = $v;
             $this->methodDef->functionDef = $this->parseFunctionDecl($v);
             $this->methodDef->functionDef->method = true;
             $this->checkRequiredArgNum($name, $this->methodDef, $v);
@@ -1449,6 +1528,7 @@ class Preprocessor extends CompilerBase
                 }
                 $this->method = $methodName;
                 $methodDef = new MethodDef($this->parseModifiers($stmt->flags), $methodName);
+                $methodDef->node = $stmt;
                 $methodDef->functionDef = $this->parseFunctionDecl($stmt);
                 $methodDef->functionDef->method = true;
                 $this->interfaceDef->addMethod($methodDef);

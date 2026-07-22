@@ -7,7 +7,7 @@
  */
 
 #[Attribute(Attribute::TARGET_CLASS)]
-final readonly class ExtensionProvider
+final readonly class MethodsFor
 {
     public function __construct(public string $target)
     {
@@ -37,6 +37,17 @@ final readonly class With
 #[Attribute(Attribute::TARGET_CLASS)]
 final readonly class Printer
 {
+    public function __construct(public ?array $fields = null)
+    {
+    }
+}
+
+#[Attribute(Attribute::TARGET_CLASS)]
+final readonly class Arrayable
+{
+    public function __construct(public ?array $fields = null)
+    {
+    }
 }
 
 #[Attribute(Attribute::TARGET_PARAMETER)]
@@ -44,8 +55,44 @@ final readonly class NotNull
 {
 }
 
+#[Attribute(Attribute::TARGET_PARAMETER)]
+final readonly class NotEmpty
+{
+}
+
+#[Attribute(Attribute::TARGET_PARAMETER)]
+final readonly class Validate
+{
+    public function __construct(
+        public int $filter,
+        public int|array $options = 0,
+        public ?string $message = null,
+    ) {
+    }
+}
+
+#[Attribute(Attribute::TARGET_FUNCTION | Attribute::TARGET_METHOD)]
+final readonly class MustUse
+{
+}
+
+#[Attribute(Attribute::TARGET_FUNCTION | Attribute::TARGET_METHOD)]
+final readonly class Hot
+{
+}
+
+#[Attribute(Attribute::TARGET_FUNCTION | Attribute::TARGET_METHOD)]
+final readonly class Cold
+{
+}
+
+#[Attribute(Attribute::TARGET_PROPERTY)]
+final readonly class Constructor
+{
+}
+
 /**
- * Public compile-time type symbols shared by extension providers and std containers.
+ * Public compile-time type symbols shared by MethodsFor providers and std containers.
  * This root class is deliberately distinct from the compiler-internal TypePhp\Type.
  */
 final class Type

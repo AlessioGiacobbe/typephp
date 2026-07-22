@@ -34,9 +34,15 @@ class ClassDef extends ClassLikeDef
     public bool $enum = false;
     /** Whether this class and its methods are part of the public ABI of a library build. */
     public bool $exported = true;
-    public ?string $extensionProviderTarget = null;
-    /** Whether #[Printer] generated this class's own toString() method. */
+    public ?string $methodsForTarget = null;
+    /** Whether #[Printer] generated this class's own __toString() method. */
     public bool $printerGenerated = false;
+    /** @var list<string>|null Explicit fields, or null to include every public instance property. */
+    public ?array $printerFields = null;
+    /** Whether #[Arrayable] generated this class's own toArray() method. */
+    public bool $arrayableGenerated = false;
+    /** @var list<string>|null Explicit fields, or null to include every public instance property. */
+    public ?array $arrayableFields = null;
 
     /**
      * Backing type for backed enums ('int' or 'string'), null for pure enums.
