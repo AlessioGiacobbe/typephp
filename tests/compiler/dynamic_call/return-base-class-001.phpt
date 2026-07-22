@@ -1,7 +1,6 @@
 --TEST--
 return abstract class
 --SKIPIF--
-<?php die("skip"); ?>
 --FILE--
 <?php
 class Base {
@@ -31,4 +30,4 @@ function main()
 }
 ?>
 --EXPECT--
-string(3) "foo"
+string(4) "user"
