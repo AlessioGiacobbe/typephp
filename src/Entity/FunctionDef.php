@@ -27,6 +27,10 @@ class FunctionDef
     public bool $stub = false;
     /** Whether this function is part of the public ABI of a library build. */
     public bool $exported = true;
+    /** Hidden request-time factory used to materialize a runtime attribute value. */
+    public bool $attributeFactory = false;
+    /** Original lexical class scope of an attribute factory, if any. */
+    public string $attributeFactoryScope = '';
     /** External library imported by the stub containing this function. */
     public string $importLibrary = '';
     public bool $returnTypeUndeclared = false;

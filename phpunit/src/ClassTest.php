@@ -2,6 +2,16 @@
 
 class ClassTest extends \BaseTest
 {
+    public function testRuntimeAttributesSupportLiteralAndConstantArrays(): void
+    {
+        $this->compile('preprocessor/attribute_array_argument.php');
+    }
+
+    public function testRuntimeAttributesSupportNewExpressionArguments(): void
+    {
+        $this->compile('preprocessor/attribute_new_expression_argument.php');
+    }
+
     public function testGetterGeneratesPublicMethodsForInstanceProperties(): void
     {
         $this->compile('getter.php');
@@ -756,6 +766,20 @@ class ClassTest extends \BaseTest
         // 类常量（self:: / 类名:: / 完全限定名::，含继承自内部父类的常量）
         // 作为函数/方法默认参数值应当能够在编译期正确解析。
         $this->compile('class-const-default-value.php');
+    }
+
+    public function testClassConstantRejectsNonConstantExpression(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Constant expression contains invalid operations');
+        $this->compile('class-constant-invalid-expression.php');
+    }
+
+    public function testPropertyDefaultRejectsNonConstantExpression(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Constant expression contains invalid operations');
+        $this->compile('property-default-invalid-expression.php');
     }
 
     public function testPropertyDefaultArrayForIntTypeFailsAtCompileTime()

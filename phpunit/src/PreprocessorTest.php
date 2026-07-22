@@ -5,6 +5,7 @@ namespace TypePhp\Tests;
 use PHPUnit\Framework\TestCase;
 use TypePhp\CompilerTest;
 use TypePhp\Entity\ArgInfo;
+use TypePhp\Exception\SyntaxError;
 use TypePhp\Exception\TestError;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\Function_;
@@ -402,21 +403,30 @@ class PreprocessorTest extends TestCase
         $this->compiler->prepareFile($file);
     }
 
-    public function testPrepareFileRejectsAttributeArrayArguments(): void
+    public function testPrepareFileAcceptsAttributeArrayArguments(): void
     {
-        $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Array arguments to attributes are not supported');
-
         $file = __DIR__ . '/../code/preprocessor/attribute_array_argument.php';
         $this->compiler->prepareFile($file);
+
+        $classes = $this->getProperty('classes');
+        $this->assertArrayHasKey('preprocessorattributearrayargumentcontroller', $classes);
     }
 
-    public function testPrepareFileRejectsAttributeNewExpressionArguments(): void
+    public function testPrepareFileAcceptsAttributeNewExpressionArguments(): void
     {
-        $this->expectException(TestError::class);
-        $this->expectExceptionMessage('New expressions in attribute arguments are not supported');
-
         $file = __DIR__ . '/../code/preprocessor/attribute_new_expression_argument.php';
+        $this->compiler->prepareFile($file);
+
+        $classes = $this->getProperty('classes');
+        $this->assertArrayHasKey('preprocessorattributesubscriber', $classes);
+    }
+
+    public function testPrepareFileRejectsInvalidNestedAttributeExpression(): void
+    {
+        $this->expectException(SyntaxError::class);
+        $this->expectExceptionMessage('Constant expression contains invalid operations');
+
+        $file = __DIR__ . '/../code/preprocessor/attribute_invalid_expression.php';
         $this->compiler->prepareFile($file);
     }
 

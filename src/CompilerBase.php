@@ -3834,17 +3834,24 @@ class CompilerBase implements PropertyAccessContext
 
     protected function checkAccessible(ClassDef $classDef, int $flags): bool
     {
+        $scopeClassDef = $this->classDef;
+        if ($this->functionDef !== null
+            && $this->functionDef->attributeFactoryScope !== ''
+            && $this->hasClass($this->functionDef->attributeFactoryScope)) {
+            $scopeClassDef = $this->getClass($this->functionDef->attributeFactoryScope);
+        }
         // 私有方法，只能当前的类使用
         if ($flags & Modifiers::PRIVATE) {
-            return $classDef->namespace === $this->namespace and $classDef->name == $this->class;
+            return $scopeClassDef !== null
+                && strcasecmp($classDef->getNamespacedName(false), $scopeClassDef->getNamespacedName(false)) === 0;
         }
         // 保护方法，只能当前类和子类使用
         if ($flags & Modifiers::PROTECTED) {
-            if (!$this->classDef) {
+            if (!$scopeClassDef) {
                 return false;
             }
             return $this->canAccessProtectedProperty(
-                $this->classDef->getNamespacedName(false),
+                $scopeClassDef->getNamespacedName(false),
                 $classDef->getNamespacedName(false)
             );
         }

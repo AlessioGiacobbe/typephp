@@ -24,6 +24,8 @@ use TypePhp\Transform\PrinterLowering;
 use TypePhp\Transform\ArrayableLowering;
 use TypePhp\Transform\ClassFieldSelection;
 use TypePhp\Transform\FunctionAttributeLowering;
+use TypePhp\Transform\ConstantExpressionValidationVisitor;
+use TypePhp\Transform\RuntimeAttributeFactoryLowering;
 use TypePhp\Transform\Visitor;
 use PhpParser\Modifiers;
 use PhpParser\ConstExprEvaluator;
@@ -147,8 +149,9 @@ class Preprocessor extends CompilerBase
                 fn (Node $node, string $message) => $this->warning($node, $message),
                 $this->file,
             ));
+            $traverser->addVisitor(new ConstantExpressionValidationVisitor($this->phpVersion));
+            $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
             $stmts = $traverser->traverse($ast);
-            $this->validateUnsupportedAttributeArguments($stmts);
 
             foreach ($stmts as $v) {
                 $type = $v->getType();
@@ -189,26 +192,6 @@ class Preprocessor extends CompilerBase
             }
         } finally {
             $this->restoreCompilerPhase($previousPhase);
-        }
-    }
-
-    /**
-     * @param array<Node> $stmts
-     */
-    private function validateUnsupportedAttributeArguments(array $stmts): void
-    {
-        $nodeFinder = new NodeFinder();
-        $attributes = $nodeFinder->findInstanceOf($stmts, Node\Attribute::class);
-
-        foreach ($attributes as $attribute) {
-            foreach ($attribute->args as $arg) {
-                if ($arg->value instanceof Node\Expr\Array_ && count($arg->value->items) > 0) {
-                    $this->fatalError($arg, 'Array arguments to attributes are not supported');
-                }
-                if ($arg->value instanceof Node\Expr\New_) {
-                    $this->fatalError($arg, 'New expressions in attribute arguments are not supported');
-                }
-            }
         }
     }
 
@@ -659,6 +642,17 @@ class Preprocessor extends CompilerBase
             $this->fatalError($v, "The function `{$name}` is a built-in function and cannot be redefined");
         }
         $functionDef = $this->parseFunctionDecl($v);
+        $functionDef->attributeFactory = (bool) $v->getAttribute(
+            RuntimeAttributeFactoryLowering::FACTORY_FUNCTION_ATTRIBUTE,
+            false,
+        );
+        if ($functionDef->attributeFactory) {
+            $functionDef->exported = false;
+            $functionDef->attributeFactoryScope = (string) $v->getAttribute(
+                RuntimeAttributeFactoryLowering::FACTORY_SCOPE_ATTRIBUTE,
+                '',
+            );
+        }
         $functionDef->sourceFile = $this->file;
         $functionDef->startLine = $v->getStartLine();
         $this->addFunction($name, $functionDef);

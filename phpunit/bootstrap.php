@@ -5,6 +5,7 @@ use TypePhp\CompilerTest;
 use TypePhp\Exception\TestError;
 
 require __DIR__ . '/../bin/bootstrap.php';
+require_once __DIR__ . '/../src/polyfills.php';
 require __DIR__ . '/../src/gen_stub.php';
 
 class BaseTest extends TestCase

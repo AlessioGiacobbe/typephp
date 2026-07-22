@@ -42,6 +42,8 @@ use TypePhp\Resolver\Reflection;
 use TypePhp\Resolver\ClassConstantValueTrait;
 use TypePhp\Transform\Visitor;
 use TypePhp\Transform\ConstructorLowering;
+use TypePhp\Transform\ConstantExpressionValidationVisitor;
+use TypePhp\Transform\RuntimeAttributeFactoryLowering;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
@@ -843,6 +845,9 @@ CODE;
         }
 
         foreach ($this->symbols->functions() as $functionDef) {
+            if ($functionDef->attributeFactory) {
+                continue;
+            }
             if ($this->isBuildModeExt() and $functionDef->name === self::ENTRY_FUNCTION) {
                 continue;
             }
@@ -864,6 +869,9 @@ CODE;
         $code .= 'zend_try {' . PHP_EOL;
         $code .= '// class/interface class entries' . PHP_EOL;
         $code .= 'typephp_register_fiber_generator_class();' . PHP_EOL;
+        $code .= 'if (typephp_install_reflection_attribute_handlers() != SUCCESS) {' . PHP_EOL;
+        $code .= $this->getIndent() . 'return FAILURE;' . PHP_EOL;
+        $code .= '}' . PHP_EOL;
         $code .= $this->genClassPropertyInit() . PHP_EOL;
 
         $code .= '// register symbols' . PHP_EOL;
@@ -874,6 +882,11 @@ CODE;
         $code .= 'return SUCCESS;' . PHP_EOL;
         $code .= '}' . PHP_EOL . PHP_EOL;
         // minit end
+
+        $code .= 'PHP_MSHUTDOWN_FUNCTION(' . $this->getModuleName() . ') {' . PHP_EOL;
+        $code .= 'typephp_uninstall_reflection_attribute_handlers();' . PHP_EOL;
+        $code .= 'return SUCCESS;' . PHP_EOL;
+        $code .= '}' . PHP_EOL . PHP_EOL;
 
         $code .= 'THREAD_LOCAL zval globals_array;' . PHP_EOL;
 
@@ -1045,7 +1058,7 @@ zend_module_entry {$moduleName}_module_entry = {
     "{$moduleName}",
     ext_functions,
     PHP_MINIT({$moduleName}),
-    nullptr,
+    PHP_MSHUTDOWN({$moduleName}),
     PHP_RINIT({$moduleName}),
     PHP_RSHUTDOWN({$moduleName}),
     nullptr,
@@ -1257,6 +1270,7 @@ CODE;
         $job = $this->maxJob;
 
         $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_fiber_generator.cc';
+        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_helper.cc';
 
         // embed 需要 main 函数，以及 cli 的内置函数定义
         if ($this->isBuildModeEmbed()) {
@@ -2293,6 +2307,8 @@ CODE;
         $traverser = new NodeTraverser();
         $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
         $traverser->addVisitor(new Visitor(sourceFile: $this->file));
+        $traverser->addVisitor(new ConstantExpressionValidationVisitor($this->phpVersion));
+        $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
 
         $stmts = $traverser->traverse($ast);
 
@@ -2349,6 +2365,9 @@ CODE;
         }
 
         foreach ($this->functionDefineInFile as $functionDef) {
+            if ($functionDef->attributeFactory) {
+                continue;
+            }
             $cppCode .= $this->genFunctionWrapper($functionDef);
         }
 
@@ -4580,6 +4599,20 @@ CODE;
         $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef, $functionDef->getNamespacedName());
 
         return $cppCode;
+    }
+
+    /** Return the generated C++ symbol for a hidden runtime-attribute factory. */
+    public function getRuntimeAttributeFactoryNativeName(string $fullName): string
+    {
+        $fullName = ltrim($fullName, '\\');
+        $separator = strrpos($fullName, '\\');
+        if ($separator === false) {
+            return self::PREFIX . $this->getNativeName($fullName);
+        }
+        return self::PREFIX . $this->getNativeName(
+            substr($fullName, $separator + 1),
+            substr($fullName, 0, $separator),
+        );
     }
 
     private function genClassNative(): string

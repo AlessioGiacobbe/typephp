@@ -104,7 +104,7 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
         if (!$fileInfo = $context->parsedFiles[$stubFile] ?? null) {
             initPhpParser();
             $stubContent = $stubCode ?? file_get_contents($stubFile);
-            $fileInfo = FileInfo::parseStubFile($stubContent, $context->phpVersion);
+            $fileInfo = FileInfo::parseStubFile($stubContent, $context->phpVersion, $stubFile);
             $context->parsedFiles[$stubFile] = $fileInfo;
 
             foreach ($fileInfo->dependencies as $dependency) {
@@ -3512,6 +3512,32 @@ class AttributeInfo {
      */
     public function generateCode(string $invocation, string $nameSuffix, array $allConstInfos, ?int $phpVersionIdMinimumCompatibility, array &$declaredStrings = []): string {
         $escapedAttributeName = strtr($this->class, '\\', '_');
+        $evaluatedValues = [];
+        $lazyValueFactories = [];
+        foreach ($this->args as $i => $arg) {
+            $factory = $arg->value->getAttribute(
+                TypePhp\Transform\RuntimeAttributeFactoryLowering::FACTORY_NAME_ATTRIBUTE,
+            );
+            $requiresLazyValue = $arg->value->getAttribute(
+                TypePhp\Transform\RuntimeAttributeFactoryLowering::FACTORY_LAZY_VALUE_ATTRIBUTE,
+                false,
+            );
+            if ($requiresLazyValue) {
+                if (!is_string($factory) || $factory === '') {
+                    throw new Exception("Missing runtime factory for attribute argument");
+                }
+                $lazyValueFactories[$i] = getTranslator()->getRuntimeAttributeFactoryNativeName($factory);
+                $evaluatedValues[$i] = null;
+                continue;
+            }
+            $evaluatedValues[$i] = EvaluatedValue::createFromExpression($arg->value, null, null, $allConstInfos);
+            if (is_array($evaluatedValues[$i]->value) && $evaluatedValues[$i]->value !== []) {
+                if (!is_string($factory) || $factory === '') {
+                    throw new Exception("Missing runtime factory for non-empty array attribute argument");
+                }
+                $lazyValueFactories[$i] = getTranslator()->getRuntimeAttributeFactoryNativeName($factory);
+            }
+        }
         [$stringInit, $nameCode, $stringRelease] = StringBuilder::getString(
             "attribute_name_{$escapedAttributeName}_$nameSuffix",
             addcslashes($this->class, "\\"),
@@ -3525,7 +3551,10 @@ class AttributeInfo {
 
         foreach ($this->args as $i => $arg) {
             $initValue = '';
-            if ($arg->value instanceof String_) {
+            if (isset($lazyValueFactories[$i])) {
+                $initValue = "\ttypephp_attribute_set_lazy_value_argument("
+                    . "attribute_{$escapedAttributeName}_{$nameSuffix}, $i, {$lazyValueFactories[$i]});\n";
+            } elseif ($arg->value instanceof String_) {
                 $strVal = $arg->value->value;
                 [$strInit, $strUse, $strRelease] = StringBuilder::getString(
                     'unused',
@@ -3540,10 +3569,7 @@ class AttributeInfo {
                 }
             }
             if ($initValue === '') {
-                if ($arg->value instanceof Expr\Array_ && count($arg->value->items) > 0) {
-                    getTranslator()->error("Array arguments to attributes are not supported");
-                }
-                $value = EvaluatedValue::createFromExpression($arg->value, null, null, $allConstInfos);
+                $value = $evaluatedValues[$i];
                 $code .= $value->initializeZval(
                     "attribute_{$escapedAttributeName}_{$nameSuffix}->args[$i].value",
                     true,
@@ -4504,14 +4530,16 @@ class FileInfo {
         return $legacyFileInfo;
     }
 
-    public static function parseStubFile(string $code, string $phpVersion = '8.5'): FileInfo {
+    public static function parseStubFile(string $code, string $phpVersion = '8.5', string $sourceFile = ''): FileInfo {
         $parser = (new PhpParser\ParserFactory())->createForVersion(PhpParser\PhpVersion::fromString($phpVersion));
         $nodeTraverser = new PhpParser\NodeTraverser;
         $nodeTraverser->addVisitor(new PhpParser\NodeVisitor\NameResolver(
             null,
             ['preserveOriginalNames' => true]
         ));
-        $nodeTraverser->addVisitor(new TypePhp\Transform\Visitor());
+        $nodeTraverser->addVisitor(new TypePhp\Transform\Visitor(sourceFile: $sourceFile));
+        $nodeTraverser->addVisitor(new TypePhp\Transform\ConstantExpressionValidationVisitor($phpVersion));
+        $nodeTraverser->addVisitor(new TypePhp\Transform\RuntimeAttributeFactoryLowering($sourceFile));
         $prettyPrinter = new class extends Standard {
             protected function pName_FullyQualified(PhpParser\Node\Name\FullyQualified $node): string {
                 return implode('\\', $node->getParts());
@@ -4519,7 +4547,7 @@ class FileInfo {
         };
 
         $stmts = $parser->parse($code);
-        $nodeTraverser->traverse($stmts);
+        $stmts = $nodeTraverser->traverse($stmts);
 
         $fileTags = DocCommentTag::parseDocComments(self::getFileDocComments($stmts));
         $fileInfo = new FileInfo($fileTags);
