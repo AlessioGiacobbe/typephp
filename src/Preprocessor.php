@@ -321,6 +321,8 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Interface':
                     $this->parseInterface($v2);
                     break;
+                case 'Stmt_Nop':
+                    break;
                 default:
                     $this->foundStrayCode($v2);
                     break;
