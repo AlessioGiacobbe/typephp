@@ -1602,6 +1602,12 @@ CODE;
             $list = [];
             if ($func->method) {
                 $list[] = Type::OBJECT . ' &this_';
+                // A trait method with `parent::` calls receives an implicit
+                // `trait_parent_ce` parameter right after `this_`. The definition
+                // adds it (see parseFunction); the declaration must match.
+                if ($func->traitParentCe) {
+                    $list[] = 'zend_class_entry *trait_parent_ce';
+                }
             }
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
@@ -2513,6 +2519,8 @@ CODE;
                     break;
                 case 'Stmt_Interface':
                     $this->validateInterfaceOverrideAttributes($v2);
+                    break;
+                case 'Stmt_Nop':
                     break;
                 default:
                     abort($v2);
@@ -3464,6 +3472,9 @@ CODE;
             $functionDeclCode .= Type::OBJECT . ' &this_';
             if ($this->classDef?->trait !== null && $this->methodDef?->parentMethodCalls) {
                 $functionDeclCode .= ', zend_class_entry *trait_parent_ce';
+                // Record the implicit parameter so the shared `func_decl.h`
+                // declaration (genFunctionDeclaration) emits the same signature.
+                $this->functionDef->traitParentCe = true;
             }
             if ($this->functionDef->params) {
                 $functionDeclCode .= ', ';
@@ -3717,25 +3728,162 @@ CODE;
         if ($childFuncDef->returnTypeUndeclared) {
             return false;
         }
-        if ($parentFuncDef->returnTypeCheck || $childFuncDef->returnTypeCheck) {
-            return $parentFuncDef->returnTypeStr === $childFuncDef->returnTypeStr;
-        }
+        // A parent that accepts everything (mixed/var) is compatible with any
+        // child return type.
         if ($parentFuncDef->returnType === Type::VAR) {
             return true;
         }
-        if ($childFuncDef->returnType !== $parentFuncDef->returnType) {
-            return false;
+
+        $parentTypes = $this->getReturnAcceptedTypes($parentFuncDef);
+        $childTypes = $this->getReturnAcceptedTypes($childFuncDef);
+
+        // Return type covariance: every value the child can return must also be
+        // acceptable under the parent's declared return type. This allows a
+        // child to narrow a nullable/union return type (e.g. `?Base` -> `?Child`
+        // or `int|string` -> `int`) while still satisfying the parent contract.
+        return $this->isReturnTypeSubtype($childTypes, $parentTypes);
+    }
+
+    private function getReturnAcceptedTypes(FunctionDef $functionDef): array
+    {
+        if ($functionDef->generator) {
+            // The runtime return type of a generator is neutralized to VAR because
+            // it actually returns a `\FiberGenerator`. Use the source-level declared
+            // return type so interface/abstract covariance checks still work.
+            if (!empty($functionDef->declaredReturnTypeCheck)) {
+                return $functionDef->declaredReturnTypeCheck;
+            }
+            $type = $functionDef->declaredReturnType;
+            if ($type === Type::VAR) {
+                return [['kind' => 'isMixed']];
+            }
+            if ($type === Type::OBJECT) {
+                return $functionDef->declaredReturnClass
+                    ? [['kind' => 'instanceof', 'class' => $functionDef->declaredReturnClass]]
+                    : [['kind' => 'isObject']];
+            }
+            return match ($type) {
+                Type::INT => [['kind' => 'isInt']],
+                Type::FLOAT => [['kind' => 'isFloat']],
+                Type::BOOL => [['kind' => 'isBool']],
+                Type::STR => [['kind' => 'isString']],
+                Type::ARRAY => [['kind' => 'isArray']],
+                Type::RESOURCE => [['kind' => 'isResource']],
+                default => [['kind' => 'isMixed']],
+            };
         }
-        if ($parentFuncDef->returnType !== Type::OBJECT) {
+
+        if (!empty($functionDef->returnTypeCheck)) {
+            return $functionDef->returnTypeCheck;
+        }
+        $type = $functionDef->returnType;
+        if ($type === Type::VAR) {
+            return [['kind' => 'isMixed']];
+        }
+        if ($type === Type::OBJECT) {
+            return $functionDef->returnClass
+                ? [['kind' => 'instanceof', 'class' => $functionDef->returnClass]]
+                : [['kind' => 'isObject']];
+        }
+        return match ($type) {
+            Type::INT => [['kind' => 'isInt']],
+            Type::FLOAT => [['kind' => 'isFloat']],
+            Type::BOOL => [['kind' => 'isBool']],
+            Type::STR => [['kind' => 'isString']],
+            Type::ARRAY => [['kind' => 'isArray']],
+            Type::RESOURCE => [['kind' => 'isResource']],
+            default => [['kind' => 'isMixed']],
+        };
+    }
+
+    private function isReturnTypeSubtype(array $childTypes, array $parentTypes): bool
+    {
+        foreach ($childTypes as $childType) {
+            if (!$this->isReturnTypeCoveredBy($childType, $parentTypes)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function isReturnTypeCoveredBy(array $childType, array $parentTypes): bool
+    {
+        $childKind = $childType['kind'] ?? null;
+
+        // Child is an intersection (A&B): it is a subtype only if every member
+        // is individually a subtype of the parent type.
+        if ($childKind === 'allOf') {
+            foreach ($childType['types'] as $member) {
+                if (!$this->isReturnTypeCoveredBy($member, $parentTypes)) {
+                    return false;
+                }
+            }
             return true;
         }
-        if ($childFuncDef->returnClass === $parentFuncDef->returnClass) {
-            return true;
+
+        foreach ($parentTypes as $parentType) {
+            $parentKind = $parentType['kind'] ?? null;
+
+            // Parent is an intersection (A&B): the child must be a subtype of
+            // every member of the intersection.
+            if ($parentKind === 'allOf') {
+                $ok = true;
+                foreach ($parentType['types'] as $member) {
+                    if (!$this->isReturnTypeCoveredBy($childType, [$member])) {
+                        $ok = false;
+                        break;
+                    }
+                }
+                if ($ok) {
+                    return true;
+                }
+                continue;
+            }
+
+            if ($this->isReturnTypeEntryCompatible($childKind, $childType, $parentKind, $parentType)) {
+                return true;
+            }
         }
-        if (!$childFuncDef->returnClass || !$parentFuncDef->returnClass) {
+
+        return false;
+    }
+
+    private function isReturnTypeEntryCompatible(
+        ?string $childKind,
+        array $childType,
+        ?string $parentKind,
+        array $parentType
+    ): bool {
+        if ($childKind === 'isNull') {
+            // A null value is only compatible with a nullable (isNull) parent.
+            return $parentKind === 'isNull';
+        }
+        if ($childKind === 'isObject') {
+            // Any object is compatible with a parent that accepts any object.
+            return $parentKind === 'isObject';
+        }
+        if ($childKind === 'isMixed') {
+            return $parentKind === 'isMixed';
+        }
+        if ($childKind === 'instanceof') {
+            if ($parentKind === 'isObject') {
+                return true;
+            }
+            if ($parentKind === 'instanceof') {
+                $childClass = $childType['class'] ?? '';
+                $parentClass = $parentType['class'] ?? '';
+                if ($childClass === '' || $parentClass === '' || $childClass === 'static' || $parentClass === 'static') {
+                    return false;
+                }
+                if ($childClass === $parentClass) {
+                    return true;
+                }
+                return $this->isInheritedFrom($childClass, $parentClass);
+            }
             return false;
         }
-        return $this->isInheritedFrom($childFuncDef->returnClass, $parentFuncDef->returnClass);
+        // Scalar kinds must match exactly.
+        return $childKind === $parentKind;
     }
 
     private function isParameterTypeOverrideCompatible(ArgInfo $childArg, ArgInfo $parentArg): bool
@@ -4320,6 +4468,14 @@ CODE;
         // function untouched.
         $this->reresolveTraitLateBoundTypes($classDef, $methodDef);
 
+        // The wrapper is a method of the *composing* class, not a trait method, so
+        // it must not receive the implicit `trait_parent_ce` parameter (it computes
+        // the parent class entry itself when forwarding to the trait function). The
+        // cloned FunctionDef inherited `traitParentCe` from the trait's FunctionDef;
+        // clear it so the shared `func_decl.h` declaration matches the wrapper's
+        // own (2-parameter) definition.
+        $methodDef->functionDef->traitParentCe = false;
+
         // Validate `parent::` calls emitted from this trait method against the
         // parent of the class that is composing the trait. The trait itself has
         // no parent at compile time, so this is the only place the parent class
@@ -4390,28 +4546,11 @@ CODE;
     private function reresolveTraitLateBoundTypes(ClassDef $usingClassDef, MethodDef $methodDef): void
     {
         $fn = $methodDef->functionDef;
-        $needsClone = false;
-
-        if ($fn->returnTypeKeyword !== '') {
-            $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
-            if ($resolved !== null && $resolved !== $fn->returnClass) {
-                $needsClone = true;
-            }
-        }
-        foreach ($fn->argInfoList as $arg) {
-            if ($arg->typeKeyword !== '') {
-                $resolved = $this->resolveLateBoundClass($usingClassDef, $arg->typeKeyword);
-                if ($resolved !== null && ($resolved !== $arg->class || $resolved !== $arg->declaredClass)) {
-                    $needsClone = true;
-                    break;
-                }
-            }
-        }
-
-        if (!$needsClone) {
-            return;
-        }
-
+        // Always produce a distinct FunctionDef for the composing-class wrapper.
+        // The wrapper is a separate method (different name, and no implicit
+        // `trait_parent_ce` parameter) from the trait's own function, so it must
+        // not share the trait's FunctionDef object — mutating one (e.g. clearing
+        // `traitParentCe`) would otherwise leak into the trait's declaration.
         $newFn = clone $fn;
         if ($fn->returnTypeKeyword !== '') {
             $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);

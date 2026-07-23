@@ -72,6 +72,17 @@ trait FiberGenerator
         if (!$this->generatorReturnTypeAcceptsFiber($v->returnType)) {
             $this->fatalError($v, 'Generator return type must accept \\FiberGenerator; use Iterator, Traversable, iterable, object, mixed, or omit the return type');
         }
+        // Preserve the source-level declared return type before neutralizing the
+        // runtime return type. The override compatibility check still needs it so
+        // a generator method can satisfy an interface/abstract contract such as
+        // `: \Generator` (the runtime object is a `\FiberGenerator`, not a Zend
+        // `Generator`, so the C++ return type and runtime check stay neutral).
+        if ($v->returnType !== null) {
+            $declared = $this->buildTypeCheckFromNode($v->returnType);
+            $functionDef->declaredReturnTypeCheck = $declared['check'] ?: null;
+        }
+        $functionDef->declaredReturnType = $functionDef->returnType;
+        $functionDef->declaredReturnClass = $functionDef->returnClass;
         $functionDef->generator = true;
         $functionDef->returnType = Type::VAR;
         $functionDef->returnClass = '';

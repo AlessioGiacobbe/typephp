@@ -33,6 +33,14 @@ class FunctionDef
     public string $attributeFactoryScope = '';
     /** External library imported by the stub containing this function. */
     public string $importLibrary = '';
+    /**
+     * True for a trait method whose body contains `parent::` calls. Such methods
+     * receive an implicit `zend_class_entry *trait_parent_ce` parameter (right after
+     * `this_`) so the `parent::` call can be bound to the class that composes the
+     * trait. Both the definition and the shared `func_decl.h` declaration must emit
+     * this parameter, otherwise the declaration/definition signatures disagree.
+     */
+    public bool $traitParentCe = false;
     public bool $returnTypeUndeclared = false;
     public bool $returnsByRef = false;
     public bool $generator = false;
@@ -73,6 +81,19 @@ class FunctionDef
 
     /** Original union/nullable return type AST node. */
     public ?NodeAbstract $returnTypeNode = null;
+
+    /**
+     * Source-level return type declared on a generator method, preserved after
+     * `prepareGeneratorFunction()` neutralizes the runtime return type. A
+     * generator actually returns a `\FiberGenerator` (which implements
+     * `Iterator`), so the C++ return type and runtime type check are left
+     * neutral; this copy is only used by interface/abstract return-type
+     * covariance checks so a generator method can still satisfy a contract such
+     * as `: \Generator`.
+     */
+    public ?string $declaredReturnType = null;
+    public string $declaredReturnClass = '';
+    public ?array $declaredReturnTypeCheck = null;
 
     public function __construct(string $name, string $returnType, string $namespace)
     {
