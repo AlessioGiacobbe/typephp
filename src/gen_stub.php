@@ -2515,14 +2515,20 @@ class EvaluatedValue
                 return '"' . getTranslator()->escapeString((string) $this->value) . '"';
             } elseif ($this->expr instanceof Expr\ConstFetch) {
                 return getTranslator()->getConstValue($this->expr->name->toString());
-            } elseif (!($this->expr instanceof String_)) {
+            } elseif ($this->expr instanceof String_) {
+                // Heredoc/nowdoc and quoted string literals: emit the decoded
+                // value directly. Pretty-printing a heredoc/nowdoc would leak
+                // the `<<<MARKER ... MARKER` source syntax into the generated
+                // C++, which is invalid; for quoted strings this is also the
+                // correct, simpler form.
+                return '"' . getTranslator()->escapeString((string) $this->value) . '"';
+            } else {
                 // ConstExprEvaluator has already reduced concatenations and
                 // other constant string expressions to their PHP value. Emit
                 // that value as a C string literal instead of rejecting every
                 // non-literal string expression.
                 return '"' . getTranslator()->escapeString((string) $this->value) . '"';
             }
-            $expr = preg_replace("/(^'|'$)/", '"', getTranslator()->escapeString($expr));
         } elseif ($this->type->isInt() or $this->type->isFloat()) {
             return strval($this->value);
         } elseif ($this->type->isBool()) {
@@ -5107,6 +5113,13 @@ function parseFunctionLike(
             if ($param->default instanceof Expr\ClassConstFetch && $param->default->class->toLowerString() === "self") {
                 $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name);
                 $defaultValue = var_export($defaultValue, true);
+            } elseif ($param->default instanceof String_ &&
+                in_array($param->default->getAttribute('kind'), [String_::KIND_HEREDOC, String_::KIND_NOWDOC], true)
+            ) {
+                // heredoc/nowdoc: prettyPrint 会输出 `<<<MARKER ... MARKER` 源码语法，
+                // 在 arginfo 的 C 字符串字面量中属于非法内容；改为输出解码后的字符串值
+                // （PHP 双引号字符串字面量，经 addslashes 包裹后仍可被 arginfo 正确求值）。
+                $defaultValue = '"' . getTranslator()->escapeString((string) $param->default->value) . '"';
             } else {
                 $defaultValue = $param->default ? $prettyPrinter->prettyPrintExpr($param->default) : null;
             }
