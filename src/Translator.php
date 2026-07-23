@@ -1602,6 +1602,12 @@ CODE;
             $list = [];
             if ($func->method) {
                 $list[] = Type::OBJECT . ' &this_';
+                // A trait method with `parent::` calls receives an implicit
+                // `trait_parent_ce` parameter right after `this_`. The definition
+                // adds it (see parseFunction); the declaration must match.
+                if ($func->traitParentCe) {
+                    $list[] = 'zend_class_entry *trait_parent_ce';
+                }
             }
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
@@ -3464,6 +3470,9 @@ CODE;
             $functionDeclCode .= Type::OBJECT . ' &this_';
             if ($this->classDef?->trait !== null && $this->methodDef?->parentMethodCalls) {
                 $functionDeclCode .= ', zend_class_entry *trait_parent_ce';
+                // Record the implicit parameter so the shared `func_decl.h`
+                // declaration (genFunctionDeclaration) emits the same signature.
+                $this->functionDef->traitParentCe = true;
             }
             if ($this->functionDef->params) {
                 $functionDeclCode .= ', ';
@@ -4320,6 +4329,14 @@ CODE;
         // function untouched.
         $this->reresolveTraitLateBoundTypes($classDef, $methodDef);
 
+        // The wrapper is a method of the *composing* class, not a trait method, so
+        // it must not receive the implicit `trait_parent_ce` parameter (it computes
+        // the parent class entry itself when forwarding to the trait function). The
+        // cloned FunctionDef inherited `traitParentCe` from the trait's FunctionDef;
+        // clear it so the shared `func_decl.h` declaration matches the wrapper's
+        // own (2-parameter) definition.
+        $methodDef->functionDef->traitParentCe = false;
+
         // Validate `parent::` calls emitted from this trait method against the
         // parent of the class that is composing the trait. The trait itself has
         // no parent at compile time, so this is the only place the parent class
@@ -4390,28 +4407,11 @@ CODE;
     private function reresolveTraitLateBoundTypes(ClassDef $usingClassDef, MethodDef $methodDef): void
     {
         $fn = $methodDef->functionDef;
-        $needsClone = false;
-
-        if ($fn->returnTypeKeyword !== '') {
-            $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
-            if ($resolved !== null && $resolved !== $fn->returnClass) {
-                $needsClone = true;
-            }
-        }
-        foreach ($fn->argInfoList as $arg) {
-            if ($arg->typeKeyword !== '') {
-                $resolved = $this->resolveLateBoundClass($usingClassDef, $arg->typeKeyword);
-                if ($resolved !== null && ($resolved !== $arg->class || $resolved !== $arg->declaredClass)) {
-                    $needsClone = true;
-                    break;
-                }
-            }
-        }
-
-        if (!$needsClone) {
-            return;
-        }
-
+        // Always produce a distinct FunctionDef for the composing-class wrapper.
+        // The wrapper is a separate method (different name, and no implicit
+        // `trait_parent_ce` parameter) from the trait's own function, so it must
+        // not share the trait's FunctionDef object — mutating one (e.g. clearing
+        // `traitParentCe`) would otherwise leak into the trait's declaration.
         $newFn = clone $fn;
         if ($fn->returnTypeKeyword !== '') {
             $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
