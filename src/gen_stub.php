@@ -2368,20 +2368,23 @@ class EvaluatedValue
                         return ltrim($className, '\\');
                     }
                     $class = getClassConstFetchClassName($expr);
-                    if ($class === 'self') {
-                        $constName = ClassInfo::$currentClass . "::" . $constName;
-                        if (isset($allConstInfos[$constName])) {
-                            return $allConstInfos[$constName]->getValue($allConstInfos)->value;
-                        } else {
-                            return normalizeConstExprValue(
-                                getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $constName)
-                            );
-                        }
-                    } else {
-                        return normalizeConstExprValue(
-                            getTranslator()->getClassConstValue($expr, $class, $constName, ClassInfo::$currentClass)
-                        );
+                    // Resolve the special class-name keywords to concrete classes.
+                    // Previously `self` was passed as both the class and a
+                    // `ClassName::` name prefix (yielding `B::B::A`), and `parent` /
+                    // `static` were passed verbatim (yielding `parent::A`), so the
+                    // constant lookup always failed.
+                    if (strcasecmp($class, 'self') === 0 || strcasecmp($class, 'static') === 0) {
+                        $class = ClassInfo::$currentClass;
+                    } elseif (strcasecmp($class, 'parent') === 0) {
+                        $class = getTranslator()->getParentClass(ClassInfo::$currentClass);
                     }
+                    $fqcnName = ltrim($class, '\\') . "::" . $constName;
+                    if (isset($allConstInfos[$fqcnName])) {
+                        return $allConstInfos[$fqcnName]->getValue($allConstInfos)->value;
+                    }
+                    return normalizeConstExprValue(
+                        getTranslator()->getClassConstValue($expr, $class, $constName, ClassInfo::$currentClass)
+                    );
                 } else {
                     $constName = $expr->name->__toString();
                     if (strtolower($constName) === "unknown") {
