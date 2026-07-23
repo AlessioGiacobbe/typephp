@@ -3177,6 +3177,15 @@ class CompilerBase implements PropertyAccessContext
                         if ($classDef->flags & Modifiers::ABSTRACT) {
                             $this->fatalError($expr, "abstract class `{$className}` cannot be instantiated");
                         }
+                        // 检查构造函数可见性（private/protected 在不可访问的上下文中被调用）
+                        $ctor = $this->findConstructor($className);
+                        if ($ctor !== null && !$this->checkAccessible($ctor['classDef'], $ctor['flags'])) {
+                            $this->fatalError(
+                                $expr,
+                                'Cannot call ' . $this->visibilityLabel($ctor['flags']) . ' '
+                                . $ctor['classDef']->getNamespacedName() . '::__construct()'
+                            );
+                        }
                     }
                     $cePtr = $this->getClassEntryPtr($className);
                 }
@@ -3857,6 +3866,39 @@ class CompilerBase implements PropertyAccessContext
         }
         // 类外部调用，只允许调用 public 方法
         return true;
+    }
+
+    /**
+     * 沿继承链查找定义 __construct 的类及其可见性标志。
+     * 返回 ['classDef' => ClassDef, 'flags' => int]，未找到（例如构造函数定义在内部类）时返回 null。
+     *
+     * @return array{classDef: ClassDef, flags: int}|null
+     */
+    protected function findConstructor(string $className): ?array
+    {
+        $current = $className;
+        while ($current !== '' && $current !== null) {
+            if (!$this->hasClass($current)) {
+                return null;
+            }
+            $classDef = $this->getClass($current);
+            if ($classDef->hasMethod('__construct')) {
+                return ['classDef' => $classDef, 'flags' => $classDef->getMethod('__construct')->flags];
+            }
+            $current = $classDef->extends;
+        }
+        return null;
+    }
+
+    protected function visibilityLabel(int $flags): string
+    {
+        if ($flags & Modifiers::PRIVATE) {
+            return 'private';
+        }
+        if ($flags & Modifiers::PROTECTED) {
+            return 'protected';
+        }
+        return 'public';
     }
 
     protected function genDebugInfo(?NodeAbstract $stmt = null, string $functionName = '', int $startLine = 0): string
