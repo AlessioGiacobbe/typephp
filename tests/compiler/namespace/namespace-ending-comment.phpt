@@ -6,7 +6,7 @@ A namespace block ending with a comment must not be treated as stray code
 declare(strict_types=1);
 
 namespace Test {
-    // test
+    /* named namespace trailing block comment */
 }
 
 namespace {
@@ -15,7 +15,7 @@ namespace {
         var_dump('done');
     }
 
-    // test1
+    // global namespace trailing line comment
 }
 ?>
 --EXPECT--
