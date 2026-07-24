@@ -6,18 +6,18 @@ class constants with heredoc and nowdoc syntax
 class Test
 {
     const VALUE1 = <<<ABC
-    abc
+    quote " slash \\ nul \0 tab \t ??
     ABC;
     const VALUE2 = <<<'DEF'
-    def
+    $value ?? "quoted" \n \path
     DEF;
 }
 
 function main()
 {
-    var_dump(Test::VALUE1, Test::VALUE2);
+    var_dump(bin2hex(Test::VALUE1), bin2hex(Test::VALUE2));
 }
 ?>
 --EXPECT--
-string(3) "abc"
-string(3) "def"
+string(60) "71756f7465202220736c617368205c206e756c2000207461622009203f3f"
+string(54) "2476616c7565203f3f202271756f74656422205c6e205c70617468"
