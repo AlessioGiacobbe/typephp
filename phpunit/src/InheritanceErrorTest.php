@@ -73,6 +73,11 @@ class InheritanceErrorTest extends TestCase
         $this->exec('must be compatible', 'inheritance_error_return_never_widened.php');
     }
 
+    public function testGeneratorReturnTypeCannotBeWidenedToIterable(): void
+    {
+        $this->exec('must be compatible', 'inheritance_error_generator_return_widened.php');
+    }
+
     public function testIntersectionReturnTypeCanNarrowToIntersectionOrConcreteSubtype(): void
     {
         $this->assertCompiles('return_type_covariance_intersection.php');

@@ -3745,21 +3745,34 @@ CODE;
 
     private function getReturnAcceptedTypes(FunctionDef $functionDef, string $declaringClass): array
     {
-        if (!empty($functionDef->returnTypeCheck)) {
+        $returnTypeCheck = $functionDef->generator
+            ? $functionDef->declaredReturnTypeCheck
+            : $functionDef->returnTypeCheck;
+        $returnType = $functionDef->generator
+            ? $functionDef->declaredReturnType
+            : $functionDef->returnType;
+        $returnClass = $functionDef->generator
+            ? $functionDef->declaredReturnClass
+            : $functionDef->returnClass;
+        $returnTypeStr = $functionDef->generator
+            ? $functionDef->declaredReturnTypeStr
+            : $functionDef->returnTypeStr;
+
+        if (!empty($returnTypeCheck)) {
             return array_map(
                 fn (array $type): array => $this->normalizeReturnTypeEntry($type, $declaringClass),
-                $functionDef->returnTypeCheck,
+                $returnTypeCheck,
             );
         }
 
         if ($functionDef->returnTypeKeyword === 'static') {
             return [['kind' => 'isStatic', 'class' => $declaringClass]];
         }
-        if ($functionDef->returnType === Type::OBJECT && $functionDef->returnClass !== '') {
-            return [['kind' => 'instanceof', 'class' => $functionDef->returnClass]];
+        if ($returnType === Type::OBJECT && $returnClass !== '') {
+            return [['kind' => 'instanceof', 'class' => $returnClass]];
         }
 
-        $declaredType = strtolower($functionDef->returnTypeStr);
+        $declaredType = strtolower($returnTypeStr);
         return match ($declaredType) {
             'mixed' => [['kind' => 'isMixed']],
             'never' => [['kind' => 'isNever']],
@@ -3770,7 +3783,7 @@ CODE;
             'callable' => [['kind' => 'callable']],
             'iterable' => [['kind' => 'iterable']],
             'object' => [['kind' => 'isObject']],
-            default => match ($functionDef->returnType) {
+            default => match ($returnType) {
                 Type::INT => [['kind' => 'isInt']],
                 Type::FLOAT => [['kind' => 'isFloat']],
                 Type::BOOL => [['kind' => 'isBool']],
