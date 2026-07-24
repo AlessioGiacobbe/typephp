@@ -834,7 +834,10 @@ class ArgInfo {
 
     private function getDefaultValueAsArginfoString(): string {
         if ($this->hasProperDefaultValue()) {
-            return '"' . addslashes($this->defaultValue) . '"';
+            // The default value is a PHP expression embedded in a C string.
+            // Escape for the outer C layer only; addslashes() leaves line
+            // breaks and other control bytes untouched, producing invalid C++.
+            return '"' . getTranslator()->escapeString($this->defaultValue) . '"';
         }
 
         return "NULL";
@@ -2485,7 +2488,9 @@ class EvaluatedValue
                 if ($forStringDef === '') {
                     $forStringDef = "{$zvalName}_str";
                 }
-                $code .= "\tzend_string *$forStringDef = zend_string_init($cExpr, strlen($cExpr), 1);\n";
+                // getCExpr() emits a C string literal here. sizeof() preserves
+                // embedded NUL bytes, unlike strlen().
+                $code .= "\tzend_string *$forStringDef = zend_string_init($cExpr, sizeof($cExpr) - 1, 1);\n";
                 $code .= "\tZVAL_STR(&$zvalName, $forStringDef);\n";
             }
         } elseif ($this->type->isArray()) {
@@ -2515,14 +2520,12 @@ class EvaluatedValue
                 return '"' . getTranslator()->escapeString((string) $this->value) . '"';
             } elseif ($this->expr instanceof Expr\ConstFetch) {
                 return getTranslator()->getConstValue($this->expr->name->toString());
-            } elseif (!($this->expr instanceof String_)) {
-                // ConstExprEvaluator has already reduced concatenations and
-                // other constant string expressions to their PHP value. Emit
-                // that value as a C string literal instead of rejecting every
-                // non-literal string expression.
-                return '"' . getTranslator()->escapeString((string) $this->value) . '"';
             }
-            $expr = preg_replace("/(^'|'$)/", '"', getTranslator()->escapeString($expr));
+
+            // ConstExprEvaluator has already decoded literal syntax and
+            // reduced constant string expressions. Emitting that value avoids
+            // leaking heredoc/nowdoc source syntax into generated C++.
+            return '"' . getTranslator()->escapeString((string) $this->value) . '"';
         } elseif ($this->type->isInt() or $this->type->isFloat()) {
             return strval($this->value);
         } elseif ($this->type->isBool()) {
@@ -5107,6 +5110,10 @@ function parseFunctionLike(
             if ($param->default instanceof Expr\ClassConstFetch && $param->default->class->toLowerString() === "self") {
                 $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name);
                 $defaultValue = var_export($defaultValue, true);
+            } elseif ($param->default instanceof String_) {
+                // Keep this as a PHP expression. ArgInfo escapes the expression
+                // separately when embedding it in generated C++.
+                $defaultValue = var_export($param->default->value, true);
             } else {
                 $defaultValue = $param->default ? $prettyPrinter->prettyPrintExpr($param->default) : null;
             }
