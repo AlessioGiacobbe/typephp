@@ -2514,6 +2514,8 @@ CODE;
                 case 'Stmt_Interface':
                     $this->validateInterfaceOverrideAttributes($v2);
                     break;
+                case 'Stmt_Nop':
+                    break;
                 default:
                     abort($v2);
                     break;
