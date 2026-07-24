@@ -30,10 +30,16 @@ class TraitFuncDeclTest extends \BaseTest
         $compiler->genFunctionDeclarations($headerPath);
 
         $decl = file_get_contents($headerPath);
-        $this->assertStringContainsString(
-            'trait_parent_ce',
+        $this->assertMatchesRegularExpression(
+            '/extern void php_tpdodriver____construct\([^;\n]*trait_parent_ce[^;\n]*\);/',
             $decl,
-            'func_decl.h must declare the implicit trait_parent_ce parameter for trait methods with parent:: calls'
+            'The trait function declaration must include its implicit parent scope'
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/extern void php_(?:driver__tpdodriverconstruct|directdriver____construct)'
+                . '\([^;\n]*trait_parent_ce[^;\n]*\);/',
+            $decl,
+            'Composing-class wrapper declarations must not expose the implicit parent scope'
         );
     }
 }

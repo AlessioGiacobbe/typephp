@@ -33,14 +33,8 @@ class FunctionDef
     public string $attributeFactoryScope = '';
     /** External library imported by the stub containing this function. */
     public string $importLibrary = '';
-    /**
-     * True for a trait method whose body contains `parent::` calls. Such methods
-     * receive an implicit `zend_class_entry *trait_parent_ce` parameter (right after
-     * `this_`) so the `parent::` call can be bound to the class that composes the
-     * trait. Both the definition and the shared `func_decl.h` declaration must emit
-     * this parameter, otherwise the declaration/definition signatures disagree.
-     */
-    public bool $traitParentCe = false;
+    /** Whether the native signature includes an implicit trait parent scope. */
+    public bool $hasTraitParentCeParameter = false;
     public bool $returnTypeUndeclared = false;
     public bool $returnsByRef = false;
     public bool $generator = false;

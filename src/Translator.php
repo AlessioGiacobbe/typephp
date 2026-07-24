@@ -1602,10 +1602,7 @@ CODE;
             $list = [];
             if ($func->method) {
                 $list[] = Type::OBJECT . ' &this_';
-                // A trait method with `parent::` calls receives an implicit
-                // `trait_parent_ce` parameter right after `this_`. The definition
-                // adds it (see parseFunction); the declaration must match.
-                if ($func->traitParentCe) {
+                if ($func->hasTraitParentCeParameter) {
                     $list[] = 'zend_class_entry *trait_parent_ce';
                 }
             }
@@ -3465,16 +3462,15 @@ CODE;
         $cppReturnType = $multiReturn
             ? $this->functionDef->getMultiReturnCppType()
             : ($this->functionDef->returnsByRef ? Type::REF : $this->getReturnType());
+        $this->functionDef->hasTraitParentCeParameter =
+            $this->classDef?->trait !== null && (bool) $this->methodDef?->parentMethodCalls;
         $nativeName = self::PREFIX . $name;
         $functionAttribute = $this->getFunctionOptimizationAttribute($this->functionDef);
         $functionDeclCode = $functionAttribute . $cppReturnType . ' ' . ($multiReturn ? $this->getMultiReturnImplName($name) : $nativeName) . '(';
         if ($this->class) {
             $functionDeclCode .= Type::OBJECT . ' &this_';
-            if ($this->classDef?->trait !== null && $this->methodDef?->parentMethodCalls) {
+            if ($this->functionDef->hasTraitParentCeParameter) {
                 $functionDeclCode .= ', zend_class_entry *trait_parent_ce';
-                // Record the implicit parameter so the shared `func_decl.h`
-                // declaration (genFunctionDeclaration) emits the same signature.
-                $this->functionDef->traitParentCe = true;
             }
             if ($this->functionDef->params) {
                 $functionDeclCode .= ', ';
@@ -4471,6 +4467,10 @@ CODE;
         string $traitMethodName,
         string $classMethodName
     ): string {
+        // A trait may be composed by multiple classes and aliases. Each wrapper
+        // needs independent signature metadata.
+        $methodDef = clone $methodDef;
+
         // A trait method's `self`/`static`/`parent` return and parameter types
         // refer to the class that uses the trait, not the trait itself. Re-resolve
         // them to the consuming class so signature-compatibility checks (against
@@ -4479,13 +4479,9 @@ CODE;
         // function untouched.
         $this->reresolveTraitLateBoundTypes($classDef, $methodDef);
 
-        // The wrapper is a method of the *composing* class, not a trait method, so
-        // it must not receive the implicit `trait_parent_ce` parameter (it computes
-        // the parent class entry itself when forwarding to the trait function). The
-        // cloned FunctionDef inherited `traitParentCe` from the trait's FunctionDef;
-        // clear it so the shared `func_decl.h` declaration matches the wrapper's
-        // own (2-parameter) definition.
-        $methodDef->functionDef->traitParentCe = false;
+        // The wrapper computes the composing class's parent scope and passes it
+        // to the trait function; it does not expose that scope in its signature.
+        $methodDef->functionDef->hasTraitParentCeParameter = false;
 
         // Validate `parent::` calls emitted from this trait method against the
         // parent of the class that is composing the trait. The trait itself has
@@ -4558,10 +4554,7 @@ CODE;
     {
         $fn = $methodDef->functionDef;
         // Always produce a distinct FunctionDef for the composing-class wrapper.
-        // The wrapper is a separate method (different name, and no implicit
-        // `trait_parent_ce` parameter) from the trait's own function, so it must
-        // not share the trait's FunctionDef object — mutating one (e.g. clearing
-        // `traitParentCe`) would otherwise leak into the trait's declaration.
+        // The wrapper has a separate native signature from the trait function.
         $newFn = clone $fn;
         if ($fn->returnTypeKeyword !== '') {
             $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);

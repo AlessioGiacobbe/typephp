@@ -35,3 +35,8 @@ class Driver extends Base
         $this->tPdoDriverConstruct($option);
     }
 }
+
+class DirectDriver extends Base
+{
+    use TPdoDriver;
+}
