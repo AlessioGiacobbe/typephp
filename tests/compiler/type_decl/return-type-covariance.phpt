@@ -34,6 +34,61 @@ class ObjectReturnImpl implements ObjectReturnContract
     }
 }
 
+class StaticBase
+{
+    public function copy(): ?self
+    {
+        return $this;
+    }
+}
+
+class StaticChild extends StaticBase
+{
+    public function copy(): ?static
+    {
+        return $this;
+    }
+}
+
+interface IterableContract
+{
+    public function values(): iterable;
+}
+
+class IterableImpl implements IterableContract
+{
+    public function values(): array
+    {
+        return [1, 2];
+    }
+}
+
+interface BoolContract
+{
+    public function enabled(): bool;
+}
+
+class LiteralBoolImpl implements BoolContract
+{
+    public function enabled(): true
+    {
+        return true;
+    }
+}
+
+abstract class VoidContract
+{
+    abstract public function stop(): void;
+}
+
+abstract class NeverImpl extends VoidContract
+{
+    public function stop(): never
+    {
+        throw new RuntimeException('stop');
+    }
+}
+
 function main()
 {
     $impl = new UnionReturnImpl();
@@ -43,9 +98,23 @@ function main()
     $built = $obj->build();
     var_dump($built instanceof BaseType);
     var_dump($built instanceof ChildType);
+
+    $static = new StaticChild();
+    var_dump($static->copy() instanceof StaticChild);
+
+    var_dump((new IterableImpl())->values());
+    var_dump((new LiteralBoolImpl())->enabled());
 }
 ?>
 --EXPECT--
 int(42)
 bool(true)
+bool(true)
+bool(true)
+array(2) {
+  [0]=>
+  int(1)
+  [1]=>
+  int(2)
+}
 bool(true)

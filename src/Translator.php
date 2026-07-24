@@ -3624,7 +3624,12 @@ CODE;
             ));
         }
 
-        if (!$this->isReturnTypeOverrideCompatible($childFuncDef, $parentFuncDef)) {
+        if (!$this->isReturnTypeOverrideCompatible(
+            $childFuncDef,
+            $parentFuncDef,
+            $className,
+            $parentClass,
+        )) {
             $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
         if ($childFuncDef->returnsByRef !== $parentFuncDef->returnsByRef) {
@@ -3709,57 +3714,25 @@ CODE;
         ));
     }
 
-    private function isReturnTypeOverrideCompatible(FunctionDef $childFuncDef, FunctionDef $parentFuncDef): bool
-    {
+    private function isReturnTypeOverrideCompatible(
+        FunctionDef $childFuncDef,
+        FunctionDef $parentFuncDef,
+        string $childClass,
+        string $parentClass,
+    ): bool {
         if ($parentFuncDef->returnTypeUndeclared) {
             return true;
         }
         if ($childFuncDef->returnTypeUndeclared) {
             return false;
         }
-        // A parent that accepts everything (mixed/var) is compatible with any
-        // child return type.
-        if ($parentFuncDef->returnType === Type::VAR) {
-            return true;
-        }
 
-        $parentTypes = $this->getReturnAcceptedTypes($parentFuncDef);
-        $childTypes = $this->getReturnAcceptedTypes($childFuncDef);
+        $parentTypes = $this->getReturnAcceptedTypes($parentFuncDef, $parentClass);
+        $childTypes = $this->getReturnAcceptedTypes($childFuncDef, $childClass);
 
-        // Return type covariance: every value the child can return must also be
-        // acceptable under the parent's declared return type. This allows a
-        // child to narrow a nullable/union return type (e.g. `?Base` -> `?Child`
-        // or `int|string` -> `int`) while still satisfying the parent contract.
-        return $this->isReturnTypeSubtype($childTypes, $parentTypes);
-    }
-
-    private function getReturnAcceptedTypes(FunctionDef $functionDef): array
-    {
-        if (!empty($functionDef->returnTypeCheck)) {
-            return $functionDef->returnTypeCheck;
-        }
-        $type = $functionDef->returnType;
-        if ($type === Type::VAR) {
-            return [['kind' => 'isMixed']];
-        }
-        if ($type === Type::OBJECT) {
-            return $functionDef->returnClass
-                ? [['kind' => 'instanceof', 'class' => $functionDef->returnClass]]
-                : [['kind' => 'isObject']];
-        }
-        return match ($type) {
-            Type::INT => [['kind' => 'isInt']],
-            Type::FLOAT => [['kind' => 'isFloat']],
-            Type::BOOL => [['kind' => 'isBool']],
-            Type::STR => [['kind' => 'isString']],
-            Type::ARRAY => [['kind' => 'isArray']],
-            Type::RESOURCE => [['kind' => 'isResource']],
-            default => [['kind' => 'isMixed']],
-        };
-    }
-
-    private function isReturnTypeSubtype(array $childTypes, array $parentTypes): bool
-    {
+        // Type checks are stored in disjunctive normal form: the outer list is
+        // a union, while an allOf entry is an intersection. Every child union
+        // branch must imply at least one complete parent branch.
         foreach ($childTypes as $childType) {
             if (!$this->isReturnTypeCoveredBy($childType, $parentTypes)) {
                 return false;
@@ -3768,84 +3741,136 @@ CODE;
         return true;
     }
 
-    private function isReturnTypeCoveredBy(array $childType, array $parentTypes): bool
+    private function getReturnAcceptedTypes(FunctionDef $functionDef, string $declaringClass): array
     {
-        $childKind = $childType['kind'] ?? null;
-
-        // Child is an intersection (A&B): it is a subtype only if every member
-        // is individually a subtype of the parent type.
-        if ($childKind === 'allOf') {
-            foreach ($childType['types'] as $member) {
-                if (!$this->isReturnTypeCoveredBy($member, $parentTypes)) {
-                    return false;
-                }
-            }
-            return true;
+        if (!empty($functionDef->returnTypeCheck)) {
+            return array_map(
+                fn (array $type): array => $this->normalizeReturnTypeEntry($type, $declaringClass),
+                $functionDef->returnTypeCheck,
+            );
         }
 
+        if ($functionDef->returnTypeKeyword === 'static') {
+            return [['kind' => 'isStatic', 'class' => $declaringClass]];
+        }
+        if ($functionDef->returnType === Type::OBJECT && $functionDef->returnClass !== '') {
+            return [['kind' => 'instanceof', 'class' => $functionDef->returnClass]];
+        }
+
+        $declaredType = strtolower($functionDef->returnTypeStr);
+        return match ($declaredType) {
+            'mixed' => [['kind' => 'isMixed']],
+            'never' => [['kind' => 'isNever']],
+            'void' => [['kind' => 'isVoid']],
+            'null' => [['kind' => 'isNull']],
+            'true' => [['kind' => 'isTrue']],
+            'false' => [['kind' => 'isFalse']],
+            'callable' => [['kind' => 'callable']],
+            'iterable' => [['kind' => 'iterable']],
+            'object' => [['kind' => 'isObject']],
+            default => match ($functionDef->returnType) {
+                Type::INT => [['kind' => 'isInt']],
+                Type::FLOAT => [['kind' => 'isFloat']],
+                Type::BOOL => [['kind' => 'isBool']],
+                Type::STR => [['kind' => 'isString']],
+                Type::ARRAY => [['kind' => 'isArray']],
+                Type::RESOURCE => [['kind' => 'isResource']],
+                Type::OBJECT => [['kind' => 'isObject']],
+                default => [['kind' => 'isMixed']],
+            },
+        };
+    }
+
+    private function normalizeReturnTypeEntry(array $type, string $declaringClass): array
+    {
+        if (($type['kind'] ?? null) === 'allOf') {
+            $type['types'] = array_map(
+                fn (array $member): array => $this->normalizeReturnTypeEntry($member, $declaringClass),
+                $type['types'],
+            );
+        } elseif (($type['kind'] ?? null) === 'instanceof' && ($type['class'] ?? null) === 'static') {
+            $type = ['kind' => 'isStatic', 'class' => $declaringClass];
+        }
+        return $type;
+    }
+
+    private function isReturnTypeCoveredBy(array $childType, array $parentTypes): bool
+    {
+        $childClause = ($childType['kind'] ?? null) === 'allOf'
+            ? $childType['types']
+            : [$childType];
+
         foreach ($parentTypes as $parentType) {
-            $parentKind = $parentType['kind'] ?? null;
-
-            // Parent is an intersection (A&B): the child must be a subtype of
-            // every member of the intersection.
-            if ($parentKind === 'allOf') {
-                $ok = true;
-                foreach ($parentType['types'] as $member) {
-                    if (!$this->isReturnTypeCoveredBy($childType, [$member])) {
-                        $ok = false;
-                        break;
-                    }
-                }
-                if ($ok) {
-                    return true;
-                }
-                continue;
-            }
-
-            if ($this->isReturnTypeEntryCompatible($childKind, $childType, $parentKind, $parentType)) {
+            $parentClause = ($parentType['kind'] ?? null) === 'allOf'
+                ? $parentType['types']
+                : [$parentType];
+            if ($this->isReturnTypeClauseSubtype($childClause, $parentClause)) {
                 return true;
             }
         }
-
         return false;
     }
 
-    private function isReturnTypeEntryCompatible(
-        ?string $childKind,
-        array $childType,
-        ?string $parentKind,
-        array $parentType
-    ): bool {
-        if ($childKind === 'isNull') {
-            // A null value is only compatible with a nullable (isNull) parent.
-            return $parentKind === 'isNull';
+    private function isReturnTypeClauseSubtype(array $childClause, array $parentClause): bool
+    {
+        foreach ($parentClause as $parentType) {
+            $covered = false;
+            foreach ($childClause as $childType) {
+                if ($this->isReturnTypeEntryCompatible($childType, $parentType)) {
+                    $covered = true;
+                    break;
+                }
+            }
+            if (!$covered) {
+                return false;
+            }
         }
-        if ($childKind === 'isObject') {
-            // Any object is compatible with a parent that accepts any object.
-            return $parentKind === 'isObject';
+        return true;
+    }
+
+    private function isReturnTypeEntryCompatible(array $childType, array $parentType): bool
+    {
+        $childKind = $childType['kind'] ?? null;
+        $parentKind = $parentType['kind'] ?? null;
+
+        if ($childKind === 'isNever' || $parentKind === 'isMixed') {
+            return true;
         }
-        if ($childKind === 'isMixed') {
-            return $parentKind === 'isMixed';
+        if (($childKind === 'isTrue' || $childKind === 'isFalse') && $parentKind === 'isBool') {
+            return true;
+        }
+        if ($childKind === 'isArray' && $parentKind === 'iterable') {
+            return true;
+        }
+        if ($childKind === 'isStatic') {
+            if ($parentKind === 'isObject' || $parentKind === 'isStatic') {
+                return true;
+            }
+            if ($parentKind === 'instanceof') {
+                return $this->isInheritedFrom(
+                    $childType['class'] ?? '',
+                    $parentType['class'] ?? '',
+                );
+            }
+            return false;
         }
         if ($childKind === 'instanceof') {
             if ($parentKind === 'isObject') {
                 return true;
             }
+            $childClass = $childType['class'] ?? '';
+            if ($parentKind === 'iterable') {
+                return $childClass !== '' && $this->isInheritedFrom($childClass, 'Traversable');
+            }
             if ($parentKind === 'instanceof') {
-                $childClass = $childType['class'] ?? '';
                 $parentClass = $parentType['class'] ?? '';
-                if ($childClass === '' || $parentClass === '' || $childClass === 'static' || $parentClass === 'static') {
-                    return false;
-                }
-                if ($childClass === $parentClass) {
-                    return true;
-                }
-                return $this->isInheritedFrom($childClass, $parentClass);
+                return $childClass !== ''
+                    && $parentClass !== ''
+                    && $this->isInheritedFrom($childClass, $parentClass);
             }
             return false;
         }
-        // Scalar kinds must match exactly.
-        return $childKind === $parentKind;
+        return $childKind !== null && $childKind === $parentKind;
     }
 
     private function isParameterTypeOverrideCompatible(ArgInfo $childArg, ArgInfo $parentArg): bool
