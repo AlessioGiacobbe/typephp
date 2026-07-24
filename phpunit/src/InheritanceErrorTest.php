@@ -53,6 +53,36 @@ class InheritanceErrorTest extends TestCase
         $this->exec('must be compatible', 'inheritance_error_return_contravariant_class.php');
     }
 
+    public function testUnionReturnTypeCannotBeWidenedToUnrelatedType(): void
+    {
+        $this->exec('must be compatible', 'inheritance_error_return_union_widened.php');
+    }
+
+    public function testIntersectionReturnTypeCannotDropAMember(): void
+    {
+        $this->exec('must be compatible', 'inheritance_error_return_intersection_missing.php');
+    }
+
+    public function testStaticReturnTypeCannotBeWidenedToSelf(): void
+    {
+        $this->exec('must be compatible', 'inheritance_error_return_static_widened.php');
+    }
+
+    public function testNeverReturnTypeCannotBeWidenedToVoid(): void
+    {
+        $this->exec('must be compatible', 'inheritance_error_return_never_widened.php');
+    }
+
+    public function testGeneratorReturnTypeCannotBeWidenedToIterable(): void
+    {
+        $this->exec('must be compatible', 'inheritance_error_generator_return_widened.php');
+    }
+
+    public function testIntersectionReturnTypeCanNarrowToIntersectionOrConcreteSubtype(): void
+    {
+        $this->assertCompiles('return_type_covariance_intersection.php');
+    }
+
     public function testParameterTypeCannotBeCovariant()
     {
         $this->exec('must be compatible', 'inheritance_error_param_covariant_class.php');

@@ -42,11 +42,27 @@ trait AssignOpTrait
         $tmp = $this->genTmpVarName();
         $this->addLocalVar($tmp, Type::VAR);
 
+        // item(dim, true) updates an existing reference's value, while offsetSet()
+        // replaces the array bucket and breaks the reference. Keep offsetSet() for
+        // ArrayAccess objects; dynamically typed/reference containers need a
+        // runtime array check because either representation is possible.
+        $arrayType = $this->getVarType($array);
+
         if ($left->dim === null) {
             return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet(" . self::VALUE_NULL . ", {$tmp})" . '), ' . $tmp . ')';
         }
         $dim = $this->parseIdentifier($left->dim);
 
+        if ($arrayType === Type::ARRAY) {
+            return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.item({$dim}, true) = {$tmp}" . '), ' . $tmp . ')';
+        }
+        if ($arrayType === Type::VAR || $arrayType === Type::REF) {
+            $writeArray = "static_cast<void>({$array}.item({$dim}, true) = {$tmp})";
+            $writeOther = "{$array}.offsetSet({$dim}, {$tmp})";
+            return $code . '((' . $tmp . ' = ' . $value . ', '
+                . "({$array}.isArray() ? {$writeArray} : {$writeOther})"
+                . '), ' . $tmp . ')';
+        }
         return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet({$dim}, {$tmp})" . '), ' . $tmp . ')';
     }
 
@@ -746,6 +762,9 @@ trait AssignOpTrait
         }
 
         $left = $this->parseWritableIdentifier($expr->var);
+        // Keep this write-context form for every RHS kind. Re-parsing it as a
+        // read later breaks append and missing-key targets such as
+        // `$array[] =& $source`.
 
         if ($this->isVarExpr($expr->var)) {
             if (!$this->hasVar($left)) {
@@ -822,13 +841,10 @@ trait AssignOpTrait
                 }
             }
         } elseif ($this->isPropertyFetch($expr->expr)) {
-            $left = $this->parseIdentifier($expr->var);
             $rightExpr = $tmpVar . ' = ' . $this->emitDynamicPropertyFetchRef($expr->expr, $expr);
         } elseif ($this->isStaticPropertyFetch($expr->expr)) {
-            $left = $this->parseIdentifier($expr->var);
             $rightExpr = $tmpVar . ' = ' . $this->emitStaticPropertyFetchRef($expr->expr, $expr);
         } elseif ($this->isArrayDimFetch($expr->expr)) {
-            $left = $this->parseIdentifier($expr->var);
             $array = $this->parseWritableIdentifier($expr->expr->var);
             if ($expr->expr->dim == null) {
                 $this->fatalError($expr, 'Cannot assign reference to array dim fetch without dim');

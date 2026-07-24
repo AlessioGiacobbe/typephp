@@ -50,6 +50,18 @@ function getClassConstFetchClassName(Expr\ClassConstFetch $expr): string
     return $className;
 }
 
+function resolveClassConstFetchClassName(Expr\ClassConstFetch $expr, string $currentClass): string
+{
+    $className = getClassConstFetchClassName($expr);
+    if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
+        return $currentClass;
+    }
+    if (strcasecmp($className, 'parent') === 0) {
+        return getTranslator()->getParentClass($currentClass);
+    }
+    return $className;
+}
+
 /**
  * @return FileInfo[]
  */
@@ -834,7 +846,10 @@ class ArgInfo {
 
     private function getDefaultValueAsArginfoString(): string {
         if ($this->hasProperDefaultValue()) {
-            return '"' . addslashes($this->defaultValue) . '"';
+            // The default value is a PHP expression embedded in a C string.
+            // Escape for the outer C layer only; addslashes() leaves line
+            // breaks and other control bytes untouched, producing invalid C++.
+            return '"' . getTranslator()->escapeString($this->defaultValue) . '"';
         }
 
         return "NULL";
@@ -2322,7 +2337,11 @@ class EvaluatedValue
                 }
 
                 if ($expr instanceof Expr\ClassConstFetch) {
-                    $originatingConstName = new ClassConstName($expr->class, $expr->name->toString());
+                    $className = resolveClassConstFetchClassName($expr, ClassInfo::$currentClass);
+                    $originatingConstName = new ClassConstName(
+                        new Name(ltrim($className, '\\')),
+                        $expr->name->toString()
+                    );
                 } else {
                     $originatingConstName = new ConstName($expr->name->getAttribute('namespacedName'), $expr->name->toString());
                 }
@@ -2358,30 +2377,19 @@ class EvaluatedValue
                     if (strcasecmp($constName, 'class') === 0) {
                         // `::class` is a compile-time magic constant that resolves to the
                         // fully qualified class name of the referenced class.
-                        $className = getClassConstFetchClassName($expr);
-                        if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
-                            return ClassInfo::$currentClass;
-                        }
-                        if (strcasecmp($className, 'parent') === 0) {
-                            return getTranslator()->getParentClass(ClassInfo::$currentClass);
-                        }
-                        return ltrim($className, '\\');
-                    }
-                    $class = getClassConstFetchClassName($expr);
-                    if ($class === 'self') {
-                        $constName = ClassInfo::$currentClass . "::" . $constName;
-                        if (isset($allConstInfos[$constName])) {
-                            return $allConstInfos[$constName]->getValue($allConstInfos)->value;
-                        } else {
-                            return normalizeConstExprValue(
-                                getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $constName)
-                            );
-                        }
-                    } else {
-                        return normalizeConstExprValue(
-                            getTranslator()->getClassConstValue($expr, $class, $constName, ClassInfo::$currentClass)
+                        return ltrim(
+                            resolveClassConstFetchClassName($expr, ClassInfo::$currentClass),
+                            '\\'
                         );
                     }
+                    $class = resolveClassConstFetchClassName($expr, ClassInfo::$currentClass);
+                    $fqcnName = ltrim($class, '\\') . "::" . $constName;
+                    if (isset($allConstInfos[$fqcnName])) {
+                        return $allConstInfos[$fqcnName]->getValue($allConstInfos)->value;
+                    }
+                    return normalizeConstExprValue(
+                        getTranslator()->getClassConstValue($expr, $class, $constName, ClassInfo::$currentClass)
+                    );
                 } else {
                     $constName = $expr->name->__toString();
                     if (strtolower($constName) === "unknown") {
@@ -2485,7 +2493,9 @@ class EvaluatedValue
                 if ($forStringDef === '') {
                     $forStringDef = "{$zvalName}_str";
                 }
-                $code .= "\tzend_string *$forStringDef = zend_string_init($cExpr, strlen($cExpr), 1);\n";
+                // getCExpr() emits a C string literal here. sizeof() preserves
+                // embedded NUL bytes, unlike strlen().
+                $code .= "\tzend_string *$forStringDef = zend_string_init($cExpr, sizeof($cExpr) - 1, 1);\n";
                 $code .= "\tZVAL_STR(&$zvalName, $forStringDef);\n";
             }
         } elseif ($this->type->isArray()) {
@@ -2515,14 +2525,12 @@ class EvaluatedValue
                 return '"' . getTranslator()->escapeString((string) $this->value) . '"';
             } elseif ($this->expr instanceof Expr\ConstFetch) {
                 return getTranslator()->getConstValue($this->expr->name->toString());
-            } elseif (!($this->expr instanceof String_)) {
-                // ConstExprEvaluator has already reduced concatenations and
-                // other constant string expressions to their PHP value. Emit
-                // that value as a C string literal instead of rejecting every
-                // non-literal string expression.
-                return '"' . getTranslator()->escapeString((string) $this->value) . '"';
             }
-            $expr = preg_replace("/(^'|'$)/", '"', getTranslator()->escapeString($expr));
+
+            // ConstExprEvaluator has already decoded literal syntax and
+            // reduced constant string expressions. Emitting that value avoids
+            // leaking heredoc/nowdoc source syntax into generated C++.
+            return '"' . getTranslator()->escapeString((string) $this->value) . '"';
         } elseif ($this->type->isInt() or $this->type->isFloat()) {
             return strval($this->value);
         } elseif ($this->type->isBool()) {
@@ -5107,6 +5115,10 @@ function parseFunctionLike(
             if ($param->default instanceof Expr\ClassConstFetch && $param->default->class->toLowerString() === "self") {
                 $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name);
                 $defaultValue = var_export($defaultValue, true);
+            } elseif ($param->default instanceof String_) {
+                // Keep this as a PHP expression. ArgInfo escapes the expression
+                // separately when embedding it in generated C++.
+                $defaultValue = var_export($param->default->value, true);
             } else {
                 $defaultValue = $param->default ? $prettyPrinter->prettyPrintExpr($param->default) : null;
             }

@@ -72,6 +72,18 @@ trait FiberGenerator
         if (!$this->generatorReturnTypeAcceptsFiber($v->returnType)) {
             $this->fatalError($v, 'Generator return type must accept \\FiberGenerator; use Iterator, Traversable, iterable, object, mixed, or omit the return type');
         }
+        // Preserve the source-level declared return type before neutralizing the
+        // runtime return type. The override compatibility check still needs it so
+        // a generator method can satisfy an interface/abstract contract such as
+        // `: \Generator` (the runtime object is a `\FiberGenerator`, not a Zend
+        // `Generator`, so the C++ return type and runtime check stay neutral).
+        if ($v->returnType !== null) {
+            $declared = $this->buildTypeCheckFromNode($v->returnType);
+            $functionDef->declaredReturnTypeCheck = $declared['check'] ?: null;
+        }
+        $functionDef->declaredReturnType = $functionDef->returnType;
+        $functionDef->declaredReturnClass = $functionDef->returnClass;
+        $functionDef->declaredReturnTypeStr = $functionDef->returnTypeStr;
         $functionDef->generator = true;
         $functionDef->returnType = Type::VAR;
         $functionDef->returnClass = '';
@@ -112,7 +124,11 @@ trait FiberGenerator
 
         [, $class] = $this->resolveTypeDecl($type, self::DECL_TYPE_OF_RETURN);
         $class = strtolower(ltrim($class, '\\'));
-        return in_array($class, ['iterator', 'traversable', 'fibergenerator'], true);
+        // `\Generator` is the return type PHP programmers naturally write for a
+        // generator. TypePHP generators actually return a `\FiberGenerator`, so
+        // accepting the declared `Generator` type keeps PHP source compatible
+        // while the runtime object remains a `\FiberGenerator`.
+        return in_array($class, ['iterator', 'traversable', 'fibergenerator', 'generator'], true);
     }
 
     protected function parseYieldExpr(Yield_ $expr): string

@@ -321,6 +321,8 @@ class Preprocessor extends CompilerBase
                 case 'Stmt_Interface':
                     $this->parseInterface($v2);
                     break;
+                case 'Stmt_Nop':
+                    break;
                 default:
                     $this->foundStrayCode($v2);
                     break;
@@ -542,6 +544,9 @@ class Preprocessor extends CompilerBase
         }
         $functionDef->exported = !($this->classDef?->exported === false || $this->hasNoExportAttribute($v));
         $functionDef->returnClass = $class;
+        $functionDef->returnTypeStr = $v->returnType === null
+            ? ''
+            : $this->typeCheckNodeToString($v->returnType);
         // Record late-bound return type keywords so they can be re-resolved to
         // the consuming class when a trait method is flattened into a class.
         $functionDef->returnTypeKeyword = $returnTypeKeyword;
@@ -560,7 +565,6 @@ class Preprocessor extends CompilerBase
             $typeInfo = $this->buildTypeCheckFromNode($v->returnType);
             if (!empty($typeInfo['check'])) {
                 $functionDef->returnTypeCheck = $typeInfo['check'];
-                $functionDef->returnTypeStr = $typeInfo['typeStr'];
                 $functionDef->returnTypeNode = $v->returnType;
             }
         }

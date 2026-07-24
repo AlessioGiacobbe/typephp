@@ -321,6 +321,25 @@ class PreprocessorTest extends TestCase
         $this->assertSame('App\\VERSION', $constants['_const_var_App__VERSION']->name);
     }
 
+    public function testNamespaceEndingCommentWithUnbracketedSyntaxIsIgnored(): void
+    {
+        global $translator;
+        $file = __DIR__ . '/../code/preprocessor/namespace_ending_comment_unbracketed.php';
+        $previousTranslator = $translator ?? null;
+        $translator = $this->compiler;
+
+        try {
+            $this->compiler->addFiles([$file]);
+            $this->compiler->prepareFile($file);
+            $this->compiler->convertFile($file);
+        } finally {
+            $translator = $previousTranslator;
+        }
+
+        $constants = $this->getProperty('constants');
+        $this->assertArrayHasKey('_const_var_NamespaceEndingComment__VALUE', $constants);
+    }
+
     public function testSortFilesUsesImplementsAndTraitDependencies(): void
     {
         $classFile = realpath(__DIR__ . '/../code/preprocessor/deps_class_implements.php');
