@@ -12,6 +12,8 @@ use TypePhp\CompilerBase;
 
 class Constants
 {
+    public const string EXTENSION_PREFIX = 'typephp_';
+
     public const array CPP_RESERVED_NAMES = [
         'alignas',
         'alignof',

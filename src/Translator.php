@@ -58,9 +58,8 @@ class Translator extends Preprocessor
     use ResourceCompilationTrait;
     use ClassConstantValueTrait;
 
-    public const string VERSION = '0.4.1';
+    public const string VERSION = '0.4.2';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
-    protected const string MODULE_NAME_PREFIX = 'app_';
 
     protected string $targetName = 'app';
     protected bool $hasExplicitOutput = false;
@@ -71,7 +70,6 @@ class Translator extends Preprocessor
     protected bool $verbose = false;
     protected array $phpSrcFiles = [];
     protected array $ignorePaths = [];
-    protected array $ignoreExtensions = [];
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
 
@@ -108,7 +106,14 @@ class Translator extends Preprocessor
 
         // 只读取命令行参数，不立即应用（等待 YAML 解析后再应用）
         // 这样可以确保优先级：命令行 > YAML > 默认值
-        $this->internalFunctions = array_flip(get_defined_functions()['internal']);
+        $this->internalFunctions = [];
+        foreach (get_defined_functions()['internal'] as $functionName) {
+            $function = Reflection::getFunction($functionName);
+            if ($function !== null && Reflection::isTypePhpExtension($function->getExtensionName())) {
+                continue;
+            }
+            $this->internalFunctions[$functionName] = true;
+        }
         unset($this->internalFunctions[self::ENTRY_FUNCTION]);
         $this->internalConstants = $this->loadInternalConstants();
         if ($this->climate->arguments->defined('help')) {
@@ -140,7 +145,9 @@ class Translator extends Preprocessor
         $constants = [];
         foreach ($groups as $groupName => $group) {
             // 编译器进程中的用户常量属于被编译程序的运行时状态，不能在静态阶段展开。
-            if (strcasecmp((string) $groupName, 'user') === 0 || !is_array($group)) {
+            if (strcasecmp((string) $groupName, 'user') === 0
+                || Reflection::isTypePhpExtension($groupName)
+                || !is_array($group)) {
                 continue;
             }
             foreach ($group as $name => $value) {
@@ -1086,7 +1093,7 @@ CODE;
 
     public function getModuleName(): string
     {
-        return self::MODULE_NAME_PREFIX . $this->targetName;
+        return Constants::EXTENSION_PREFIX . $this->targetName;
     }
 
     /**
@@ -2211,10 +2218,6 @@ CODE;
                 $this->error('`ignore` must be array');
             }
             foreach ($ignore as $src) {
-                if (preg_match('/ext-([a-z0-9_]+)/i', $src, $matches)) {
-                    $this->ignoreExtensions[] = $matches[1];
-                    continue;
-                }
                 $realPath = $this->getAbsolutePath($src, $projectDir);
                 if (!$realPath) {
                     $this->error('Source file not exists: `' . $src . '`');

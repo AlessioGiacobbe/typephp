@@ -8,11 +8,19 @@
 
 namespace TypePhp\Resolver;
 
+use TypePhp\Metadata\Constants;
+
 class Reflection
 {
     private static array $functions = [];
     private static array $classes = [];
     private static array $interfaces = [];
+
+    public static function isTypePhpExtension(mixed $extensionName): bool
+    {
+        return is_string($extensionName)
+            && str_starts_with($extensionName, Constants::EXTENSION_PREFIX);
+    }
 
     public static function isInternalClass(string $class): bool
     {
@@ -25,7 +33,10 @@ class Reflection
             foreach ($allClasses as $className) {
                 try {
                     $ref = new \ReflectionClass($className);
-                    if ($ref->isInternal()) {
+                    $extensionName = $ref->getExtensionName();
+                    // Classes registered by the host AOT binary are implementation
+                    // details, not built-ins of the target PHP environment.
+                    if ($ref->isInternal() && !self::isTypePhpExtension($extensionName)) {
                         $internalClasses[strtolower($className)] = true;
                     }
                 } catch (\ReflectionException) {
@@ -47,7 +58,7 @@ class Reflection
             foreach ($allInterfaces as $interfaceName) {
                 try {
                     $ref = new \ReflectionClass($interfaceName);
-                    if ($ref->isInternal()) {
+                    if ($ref->isInternal() && !self::isTypePhpExtension($ref->getExtensionName())) {
                         $internalInterfaces[strtolower($interfaceName)] = true;
                     }
                 } catch (\ReflectionException) {

@@ -437,6 +437,15 @@ YAML, 'myproject.yml', 'examples/tetris-sdl');
         $this->assertSame('demo.so', $this->invokeMethod('getTargetFileName'));
     }
 
+    public function testGeneratedZendModuleAlwaysUsesTypePhpPrefix(): void
+    {
+        $this->compiler->setTargetName('demo');
+        $this->assertSame('typephp_demo', $this->compiler->getModuleName());
+
+        $this->compiler->setTargetName('123');
+        $this->assertSame('typephp_123', $this->compiler->getModuleName());
+    }
+
     public function testParseProjectYamlResolvesRelativePathOptionsAgainstYamlDirectory(): void
     {
         $projectFile = $this->createProjectFile(<<<'YAML'
