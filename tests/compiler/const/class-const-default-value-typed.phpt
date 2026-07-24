@@ -5,14 +5,15 @@ Typed parameter default value from an unresolvable (external) class constant
 
 class TypedDefault
 {
-    // \ArrayObject is an internal (external) class whose constants cannot be folded
-    // at compile time, so the default is emitted as php::constant(...). The parameter
-    // type `int` maps to php::Int, which cannot be copy-initialized from the
-    // php::Variant returned by php::constant(...). The compiler must wrap the default
-    // in php::Int(...) so the generated C++ compiles.
-    public function run(int $value = \ArrayObject::ARRAY_AS_PROPS)
+    public function run(
+        int $value = \ArrayObject::ARRAY_AS_PROPS,
+        float $floatValue = \ArrayObject::ARRAY_AS_PROPS,
+        string $format = \DateTime::ATOM,
+        int $composite = 1 | \ArrayObject::ARRAY_AS_PROPS,
+        mixed $variant = \ArrayObject::STD_PROP_LIST,
+    )
     {
-        var_dump($value);
+        var_dump($value, $floatValue, $format, $composite, $variant);
     }
 }
 
@@ -23,3 +24,7 @@ function main()
 ?>
 --EXPECT--
 int(2)
+float(2)
+string(13) "Y-m-d\TH:i:sP"
+int(3)
+int(1)

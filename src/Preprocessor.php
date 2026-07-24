@@ -83,53 +83,6 @@ class Preprocessor extends CompilerBase
         return $type . ' ' . $argInfo->name;
     }
 
-    /**
-     * A default value that can only be resolved at runtime (e.g. a class/global
-     * constant coming from a class that is not compiled into the binary) is emitted
-     * as a `php::constant(...)` call, which returns a `php::Variant`.
-     *
-     * Copy-initializing a typed (non-Variant) parameter such as `php::Int`,
-     * `php::Float`, `php::Bool`, `php::Str`, `php::Array` or `php::Object` from a
-     * `php::Variant` is rejected by C++ because the conversion is explicit:
-     *
-     *     php::Int type = php::constant(...);   // error C2440
-     *
-     * The function body already converts such values with `php::toInt(...)` /
-     * `php::toFloat(...)` / ... (see convertExprFromType), so we wrap the default
-     * with the very same conversion here. This keeps the declaration consistent with
-     * the body and produces compilable code:
-     *
-     *     php::Int type = php::toInt(php::constant(...));   // OK
-     *
-     * Parameters whose effective type is `php::Var` (including Stream/Box, which are
-     * mapped to `php::Var`) accept a `php::Variant` directly, so they are left alone.
-     */
-    protected function wrapScalarDefaultValue(string $type, string $defaultExpr): string
-    {
-        if (!str_starts_with($defaultExpr, 'php::constant(')) {
-            return $defaultExpr;
-        }
-        $target = $type;
-        if ($target === Type::STREAM || $target === Type::BOX) {
-            $target = Type::VAR;
-        }
-        static $converters = [
-            Type::INT => 'php::toInt',
-            Type::FLOAT => 'php::toFloat',
-            Type::BOOL => 'php::toBool',
-            Type::STR => 'php::toString',
-            Type::ARRAY => 'php::toArray',
-            Type::OBJECT => 'php::toObject',
-            Type::BIGINT => 'php::toBigInt',
-            Type::DECIMAL => 'php::toDecimal',
-            Type::BIGFLOAT => 'php::toBigFloat',
-        ];
-        if (isset($converters[$target])) {
-            return $converters[$target] . '(' . $defaultExpr . ')';
-        }
-        return $defaultExpr;
-    }
-
     public function getCppFile(string $file): string
     {
         $info = pathinfo($file);
@@ -515,8 +468,7 @@ class Preprocessor extends CompilerBase
                         $argInfo->default = 'php::newReference(' . $this->parseParamDefaultValue($param->default) . ')';
                     }
                 } else {
-                    $defaultExpr = $arrayInitPlan ? $arrayInitPlan->expr : $this->parseParamDefaultValue($param->default);
-                    $argInfo->default = $this->wrapScalarDefaultValue($argInfo->type, $defaultExpr);
+                    $argInfo->default = $arrayInitPlan ? $arrayInitPlan->expr : $this->parseParamDefaultValue($param->default);
                     $argInfo->arrayInitPlan = $arrayInitPlan;
                     $argInfo->defaultValue = $param->default;
                 }
