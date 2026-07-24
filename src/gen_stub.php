@@ -50,6 +50,18 @@ function getClassConstFetchClassName(Expr\ClassConstFetch $expr): string
     return $className;
 }
 
+function resolveClassConstFetchClassName(Expr\ClassConstFetch $expr, string $currentClass): string
+{
+    $className = getClassConstFetchClassName($expr);
+    if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
+        return $currentClass;
+    }
+    if (strcasecmp($className, 'parent') === 0) {
+        return getTranslator()->getParentClass($currentClass);
+    }
+    return $className;
+}
+
 /**
  * @return FileInfo[]
  */
@@ -2325,7 +2337,11 @@ class EvaluatedValue
                 }
 
                 if ($expr instanceof Expr\ClassConstFetch) {
-                    $originatingConstName = new ClassConstName($expr->class, $expr->name->toString());
+                    $className = resolveClassConstFetchClassName($expr, ClassInfo::$currentClass);
+                    $originatingConstName = new ClassConstName(
+                        new Name(ltrim($className, '\\')),
+                        $expr->name->toString()
+                    );
                 } else {
                     $originatingConstName = new ConstName($expr->name->getAttribute('namespacedName'), $expr->name->toString());
                 }
@@ -2361,26 +2377,12 @@ class EvaluatedValue
                     if (strcasecmp($constName, 'class') === 0) {
                         // `::class` is a compile-time magic constant that resolves to the
                         // fully qualified class name of the referenced class.
-                        $className = getClassConstFetchClassName($expr);
-                        if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
-                            return ClassInfo::$currentClass;
-                        }
-                        if (strcasecmp($className, 'parent') === 0) {
-                            return getTranslator()->getParentClass(ClassInfo::$currentClass);
-                        }
-                        return ltrim($className, '\\');
+                        return ltrim(
+                            resolveClassConstFetchClassName($expr, ClassInfo::$currentClass),
+                            '\\'
+                        );
                     }
-                    $class = getClassConstFetchClassName($expr);
-                    // Resolve the special class-name keywords to concrete classes.
-                    // Previously `self` was passed as both the class and a
-                    // `ClassName::` name prefix (yielding `B::B::A`), and `parent` /
-                    // `static` were passed verbatim (yielding `parent::A`), so the
-                    // constant lookup always failed.
-                    if (strcasecmp($class, 'self') === 0 || strcasecmp($class, 'static') === 0) {
-                        $class = ClassInfo::$currentClass;
-                    } elseif (strcasecmp($class, 'parent') === 0) {
-                        $class = getTranslator()->getParentClass(ClassInfo::$currentClass);
-                    }
+                    $class = resolveClassConstFetchClassName($expr, ClassInfo::$currentClass);
                     $fqcnName = ltrim($class, '\\') . "::" . $constName;
                     if (isset($allConstInfos[$fqcnName])) {
                         return $allConstInfos[$fqcnName]->getValue($allConstInfos)->value;
