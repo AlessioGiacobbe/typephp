@@ -3172,11 +3172,17 @@ class CompilerBase implements PropertyAccessContext
                         $className = $this->getNamespacedClassName($className);
                     }
                     $ctorClassName = $className;
-                    if ($this->hasClass($className)) {
-                        $classDef = $this->getClass($className);
-                        if ($classDef->flags & Modifiers::ABSTRACT) {
-                            $this->fatalError($expr, "abstract class `{$className}` cannot be instantiated");
-                        }
+                    if ($this->isAbstractClass($className)) {
+                        $this->fatalError($expr, "abstract class `{$className}` cannot be instantiated");
+                    }
+                    $constructor = $this->findConstructor($className);
+                    if ($constructor !== null
+                        && !$this->checkAccessibleByClassName($constructor['className'], $constructor['flags'])) {
+                        $this->fatalError(
+                            $expr,
+                            'Cannot call ' . $this->visibilityLabel($constructor['flags']) . ' '
+                            . $constructor['className'] . '::__construct()'
+                        );
                     }
                     $cePtr = $this->getClassEntryPtr($className);
                 }
@@ -3834,6 +3840,11 @@ class CompilerBase implements PropertyAccessContext
 
     protected function checkAccessible(ClassDef $classDef, int $flags): bool
     {
+        return $this->checkAccessibleByClassName($classDef->getNamespacedName(false), $flags);
+    }
+
+    protected function checkAccessibleByClassName(string $declaringClass, int $flags): bool
+    {
         $scopeClassDef = $this->classDef;
         if ($this->functionDef !== null
             && $this->functionDef->attributeFactoryScope !== ''
@@ -3843,7 +3854,7 @@ class CompilerBase implements PropertyAccessContext
         // 私有方法，只能当前的类使用
         if ($flags & Modifiers::PRIVATE) {
             return $scopeClassDef !== null
-                && strcasecmp($classDef->getNamespacedName(false), $scopeClassDef->getNamespacedName(false)) === 0;
+                && $this->isSameClassName($declaringClass, $scopeClassDef->getNamespacedName(false));
         }
         // 保护方法，只能当前类和子类使用
         if ($flags & Modifiers::PROTECTED) {
@@ -3852,11 +3863,58 @@ class CompilerBase implements PropertyAccessContext
             }
             return $this->canAccessProtectedProperty(
                 $scopeClassDef->getNamespacedName(false),
-                $classDef->getNamespacedName(false)
+                $declaringClass
             );
         }
         // 类外部调用，只允许调用 public 方法
         return true;
+    }
+
+    /**
+     * 沿继承链查找实际调用的构造函数，包括项目类继承的内部类构造函数。
+     *
+     * @return array{className: string, flags: int}|null
+     */
+    protected function findConstructor(string $className): ?array
+    {
+        $current = $className;
+        while ($current !== '') {
+            if ($this->hasClass($current)) {
+                $classDef = $this->getClass($current);
+                if ($classDef->hasMethod('__construct')) {
+                    return [
+                        'className' => $classDef->getNamespacedName(false),
+                        'flags' => $classDef->getMethod('__construct')->flags,
+                    ];
+                }
+                $current = $classDef->extends;
+                continue;
+            }
+            if (!$this->isInternalClass($current)) {
+                return null;
+            }
+
+            $constructor = Reflection::getClass($current)?->getConstructor();
+            if ($constructor === null) {
+                return null;
+            }
+            return [
+                'className' => $constructor->getDeclaringClass()->getName(),
+                'flags' => $constructor->getModifiers(),
+            ];
+        }
+        return null;
+    }
+
+    protected function visibilityLabel(int $flags): string
+    {
+        if ($flags & Modifiers::PRIVATE) {
+            return 'private';
+        }
+        if ($flags & Modifiers::PROTECTED) {
+            return 'protected';
+        }
+        return 'public';
     }
 
     protected function genDebugInfo(?NodeAbstract $stmt = null, string $functionName = '', int $startLine = 0): string
