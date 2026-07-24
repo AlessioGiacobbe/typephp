@@ -116,7 +116,7 @@ trait TypeCheckGenerator
         return $class ? [['kind' => 'instanceof', 'class' => $class]] : [];
     }
 
-    private function typeCheckNodeToString(NodeAbstract $typeNode): string
+    protected function typeCheckNodeToString(NodeAbstract $typeNode): string
     {
         if ($typeNode instanceof Node\Identifier) {
             return $typeNode->name;
