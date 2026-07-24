@@ -88,7 +88,8 @@ trait DefaultArgumentGenerator
                         $code .= 'return ' . $plan->expr . ';' . PHP_EOL;
                     }
                 } else {
-                    $code .= 'return ' . $argInfo->default . ';' . PHP_EOL;
+                    $default = $this->convertRuntimeConstantDefault($type, $argInfo->default);
+                    $code .= 'return ' . $default . ';' . PHP_EOL;
                 }
 
                 $code .= '}' . PHP_EOL . PHP_EOL;
@@ -96,6 +97,28 @@ trait DefaultArgumentGenerator
         }
 
         return $code;
+    }
+
+    /**
+     * Runtime constant lookup returns Variant, but a typed default helper must
+     * return its native C++ type explicitly. Convert the complete expression so
+     * constants nested in expressions are covered as well.
+     */
+    private function convertRuntimeConstantDefault(string $type, string $default): string
+    {
+        if (!str_contains($default, 'php::constant(')) {
+            return $default;
+        }
+
+        return match ($type) {
+            Type::INT => 'php::toInt(' . $default . ')',
+            Type::FLOAT => 'php::toFloat(' . $default . ')',
+            Type::BOOL => 'php::toBool(' . $default . ')',
+            Type::STR => 'php::toString(' . $default . ')',
+            Type::ARRAY => 'php::toArray(' . $default . ')',
+            Type::OBJECT => 'php::toObject(' . $default . ')',
+            default => $default,
+        };
     }
 
     private function shouldGenerateDefaultArgumentHelper(ArgInfo $argInfo): bool
