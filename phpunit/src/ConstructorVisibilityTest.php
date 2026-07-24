@@ -12,7 +12,7 @@ class ConstructorVisibilityTest extends BaseTest
     {
         try {
             $this->compile($file);
-        } catch (TestError | \RuntimeException $exception) {
+        } catch (TestError|RuntimeException $exception) {
             $this->assertStringContainsString($expected, $exception->getMessage());
             return;
         }
@@ -35,6 +35,27 @@ class ConstructorVisibilityTest extends BaseTest
     {
         // 保护构造器不能从非子类的其它类内部调用
         $this->exec('Cannot call protected Base::__construct()', 'constructor_visibility_protected_foreign_class.php');
+    }
+
+    public function testInheritedPrivateConstructorCannotBeCalledFromChildScope(): void
+    {
+        $this->exec(
+            'Cannot call private PrivateConstructorParent::__construct()',
+            'constructor_visibility_inherited_private.php'
+        );
+    }
+
+    public function testInternalPrivateConstructorCannotBeCalled(): void
+    {
+        $this->exec('Cannot call private Closure::__construct()', 'constructor_visibility_internal_private.php');
+    }
+
+    public function testNamespacedConstructorUsesPhpClassNameInDiagnostic(): void
+    {
+        $this->exec(
+            'Cannot call private ConstructorVisibility\Hidden::__construct()',
+            'constructor_visibility_namespaced.php'
+        );
     }
 
     public function testTraitPrivateConstructorCannotBeCalledFromGlobalScope(): void

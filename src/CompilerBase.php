@@ -3172,20 +3172,17 @@ class CompilerBase implements PropertyAccessContext
                         $className = $this->getNamespacedClassName($className);
                     }
                     $ctorClassName = $className;
-                    if ($this->hasClass($className)) {
-                        $classDef = $this->getClass($className);
-                        if ($classDef->flags & Modifiers::ABSTRACT) {
-                            $this->fatalError($expr, "abstract class `{$className}` cannot be instantiated");
-                        }
-                        // 检查构造函数可见性（private/protected 在不可访问的上下文中被调用）
-                        $ctor = $this->findConstructor($className);
-                        if ($ctor !== null && !$this->checkAccessible($ctor['classDef'], $ctor['flags'])) {
-                            $this->fatalError(
-                                $expr,
-                                'Cannot call ' . $this->visibilityLabel($ctor['flags']) . ' '
-                                . $ctor['classDef']->getNamespacedName() . '::__construct()'
-                            );
-                        }
+                    if ($this->isAbstractClass($className)) {
+                        $this->fatalError($expr, "abstract class `{$className}` cannot be instantiated");
+                    }
+                    $constructor = $this->findConstructor($className);
+                    if ($constructor !== null
+                        && !$this->checkAccessibleByClassName($constructor['className'], $constructor['flags'])) {
+                        $this->fatalError(
+                            $expr,
+                            'Cannot call ' . $this->visibilityLabel($constructor['flags']) . ' '
+                            . $constructor['className'] . '::__construct()'
+                        );
                     }
                     $cePtr = $this->getClassEntryPtr($className);
                 }
@@ -3843,6 +3840,11 @@ class CompilerBase implements PropertyAccessContext
 
     protected function checkAccessible(ClassDef $classDef, int $flags): bool
     {
+        return $this->checkAccessibleByClassName($classDef->getNamespacedName(false), $flags);
+    }
+
+    protected function checkAccessibleByClassName(string $declaringClass, int $flags): bool
+    {
         $scopeClassDef = $this->classDef;
         if ($this->functionDef !== null
             && $this->functionDef->attributeFactoryScope !== ''
@@ -3852,7 +3854,7 @@ class CompilerBase implements PropertyAccessContext
         // 私有方法，只能当前的类使用
         if ($flags & Modifiers::PRIVATE) {
             return $scopeClassDef !== null
-                && strcasecmp($classDef->getNamespacedName(false), $scopeClassDef->getNamespacedName(false)) === 0;
+                && $this->isSameClassName($declaringClass, $scopeClassDef->getNamespacedName(false));
         }
         // 保护方法，只能当前类和子类使用
         if ($flags & Modifiers::PROTECTED) {
@@ -3861,7 +3863,7 @@ class CompilerBase implements PropertyAccessContext
             }
             return $this->canAccessProtectedProperty(
                 $scopeClassDef->getNamespacedName(false),
-                $classDef->getNamespacedName(false)
+                $declaringClass
             );
         }
         // 类外部调用，只允许调用 public 方法
@@ -3869,23 +3871,37 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * 沿继承链查找定义 __construct 的类及其可见性标志。
-     * 返回 ['classDef' => ClassDef, 'flags' => int]，未找到（例如构造函数定义在内部类）时返回 null。
+     * 沿继承链查找实际调用的构造函数，包括项目类继承的内部类构造函数。
      *
-     * @return array{classDef: ClassDef, flags: int}|null
+     * @return array{className: string, flags: int}|null
      */
     protected function findConstructor(string $className): ?array
     {
         $current = $className;
-        while ($current !== '' && $current !== null) {
-            if (!$this->hasClass($current)) {
+        while ($current !== '') {
+            if ($this->hasClass($current)) {
+                $classDef = $this->getClass($current);
+                if ($classDef->hasMethod('__construct')) {
+                    return [
+                        'className' => $classDef->getNamespacedName(false),
+                        'flags' => $classDef->getMethod('__construct')->flags,
+                    ];
+                }
+                $current = $classDef->extends;
+                continue;
+            }
+            if (!$this->isInternalClass($current)) {
                 return null;
             }
-            $classDef = $this->getClass($current);
-            if ($classDef->hasMethod('__construct')) {
-                return ['classDef' => $classDef, 'flags' => $classDef->getMethod('__construct')->flags];
+
+            $constructor = Reflection::getClass($current)?->getConstructor();
+            if ($constructor === null) {
+                return null;
             }
-            $current = $classDef->extends;
+            return [
+                'className' => $constructor->getDeclaringClass()->getName(),
+                'flags' => $constructor->getModifiers(),
+            ];
         }
         return null;
     }
