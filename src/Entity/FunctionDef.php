@@ -74,6 +74,20 @@ class FunctionDef
     /** Original union/nullable return type AST node. */
     public ?NodeAbstract $returnTypeNode = null;
 
+    /**
+     * Source-level return type declared on a generator method, preserved after
+     * `prepareGeneratorFunction()` neutralizes the runtime return type. A
+     * generator actually returns a `\FiberGenerator` (which implements
+     * `Iterator`), so the C++ return type and runtime type check are left
+     * neutral; this copy is only used by interface/abstract return-type
+     * covariance checks so a generator method can still satisfy a contract such
+     * as `: \Generator`.
+     */
+    public ?string $declaredReturnType = null;
+    public string $declaredReturnClass = '';
+    public ?array $declaredReturnTypeCheck = null;
+    public string $declaredReturnTypeStr = '';
+
     public function __construct(string $name, string $returnType, string $namespace)
     {
         $this->name = $name;
