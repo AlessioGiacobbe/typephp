@@ -83,6 +83,7 @@ trait FiberGenerator
         }
         $functionDef->declaredReturnType = $functionDef->returnType;
         $functionDef->declaredReturnClass = $functionDef->returnClass;
+        $functionDef->declaredReturnTypeStr = $functionDef->returnTypeStr;
         $functionDef->generator = true;
         $functionDef->returnType = Type::VAR;
         $functionDef->returnClass = '';

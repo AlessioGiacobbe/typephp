@@ -10,6 +10,8 @@ interface GenInterface
 interface IterableInterface
 {
     public function it(array $array): iterable;
+
+    public function narrowed(array $array): iterable;
 }
 
 interface NullableInterface
@@ -32,6 +34,13 @@ class Box implements GenInterface, IterableInterface, NullableInterface, UnionIn
     }
 
     public function it(array $array): iterable
+    {
+        foreach ($array as $value) {
+            yield $value;
+        }
+    }
+
+    public function narrowed(array $array): \Generator
     {
         foreach ($array as $value) {
             yield $value;
@@ -62,6 +71,9 @@ function main()
     foreach ($box->it([4, 5]) as $v) {
         var_dump($v);
     }
+    foreach ($box->narrowed([10, 11]) as $v) {
+        var_dump($v);
+    }
     foreach ($box->nullable([6, 7]) as $v) {
         var_dump($v);
     }
@@ -76,6 +88,8 @@ int(4)
 int(6)
 int(4)
 int(5)
+int(10)
+int(11)
 int(6)
 int(7)
 int(8)
