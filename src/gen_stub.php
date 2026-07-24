@@ -50,6 +50,18 @@ function getClassConstFetchClassName(Expr\ClassConstFetch $expr): string
     return $className;
 }
 
+function resolveClassConstFetchClassName(Expr\ClassConstFetch $expr, string $currentClass): string
+{
+    $className = getClassConstFetchClassName($expr);
+    if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
+        return $currentClass;
+    }
+    if (strcasecmp($className, 'parent') === 0) {
+        return getTranslator()->getParentClass($currentClass);
+    }
+    return $className;
+}
+
 /**
  * @return FileInfo[]
  */
@@ -2325,7 +2337,11 @@ class EvaluatedValue
                 }
 
                 if ($expr instanceof Expr\ClassConstFetch) {
-                    $originatingConstName = new ClassConstName($expr->class, $expr->name->toString());
+                    $className = resolveClassConstFetchClassName($expr, ClassInfo::$currentClass);
+                    $originatingConstName = new ClassConstName(
+                        new Name(ltrim($className, '\\')),
+                        $expr->name->toString()
+                    );
                 } else {
                     $originatingConstName = new ConstName($expr->name->getAttribute('namespacedName'), $expr->name->toString());
                 }
@@ -2361,30 +2377,19 @@ class EvaluatedValue
                     if (strcasecmp($constName, 'class') === 0) {
                         // `::class` is a compile-time magic constant that resolves to the
                         // fully qualified class name of the referenced class.
-                        $className = getClassConstFetchClassName($expr);
-                        if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
-                            return ClassInfo::$currentClass;
-                        }
-                        if (strcasecmp($className, 'parent') === 0) {
-                            return getTranslator()->getParentClass(ClassInfo::$currentClass);
-                        }
-                        return ltrim($className, '\\');
-                    }
-                    $class = getClassConstFetchClassName($expr);
-                    if ($class === 'self') {
-                        $constName = ClassInfo::$currentClass . "::" . $constName;
-                        if (isset($allConstInfos[$constName])) {
-                            return $allConstInfos[$constName]->getValue($allConstInfos)->value;
-                        } else {
-                            return normalizeConstExprValue(
-                                getTranslator()->getClassConstValue($expr, ClassInfo::$currentClass, $constName)
-                            );
-                        }
-                    } else {
-                        return normalizeConstExprValue(
-                            getTranslator()->getClassConstValue($expr, $class, $constName, ClassInfo::$currentClass)
+                        return ltrim(
+                            resolveClassConstFetchClassName($expr, ClassInfo::$currentClass),
+                            '\\'
                         );
                     }
+                    $class = resolveClassConstFetchClassName($expr, ClassInfo::$currentClass);
+                    $fqcnName = ltrim($class, '\\') . "::" . $constName;
+                    if (isset($allConstInfos[$fqcnName])) {
+                        return $allConstInfos[$fqcnName]->getValue($allConstInfos)->value;
+                    }
+                    return normalizeConstExprValue(
+                        getTranslator()->getClassConstValue($expr, $class, $constName, ClassInfo::$currentClass)
+                    );
                 } else {
                     $constName = $expr->name->__toString();
                     if (strtolower($constName) === "unknown") {
