@@ -33,6 +33,8 @@ class FunctionDef
     public string $attributeFactoryScope = '';
     /** External library imported by the stub containing this function. */
     public string $importLibrary = '';
+    /** Whether the native signature includes an implicit trait parent scope. */
+    public bool $hasTraitParentCeParameter = false;
     public bool $returnTypeUndeclared = false;
     public bool $returnsByRef = false;
     public bool $generator = false;
