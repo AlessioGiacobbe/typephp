@@ -1155,9 +1155,17 @@ class ReturnInfo {
         $this->setRefcount($refcount);
     }
 
-    public function equalsApartFromPhpDocAndRefcount(ReturnInfo $other): bool {
+    public function equalsApartFromRefcount(ReturnInfo $other): bool {
+        // PHPDoc types are used as the effective arginfo type for generated
+        // TypePHP stubs.  They therefore participate in arginfo equivalence:
+        // aliasing two functions that only differ in their inferred return
+        // type can expose the wrong Reflection type and may make Zend reject a
+        // magic method during class registration.
+        $effectiveType = $this->type ?? $this->phpDocType;
+        $otherEffectiveType = $other->type ?? $other->phpDocType;
+
         return $this->byRef === $other->byRef
-            && StubType::equals($this->type, $other->type)
+            && StubType::equals($effectiveType, $otherEffectiveType)
             && $this->tentativeReturnType === $other->tentativeReturnType;
     }
 
@@ -1501,7 +1509,7 @@ class FuncInfo {
             }
         }
 
-        return $this->return->equalsApartFromPhpDocAndRefcount($other->return)
+        return $this->return->equalsApartFromRefcount($other->return)
             && $this->numRequiredArgs === $other->numRequiredArgs
             && $this->cond === $other->cond;
     }

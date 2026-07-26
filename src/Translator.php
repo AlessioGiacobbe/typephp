@@ -2423,7 +2423,7 @@ CODE;
             if ($parent) {
                 // 不存在的父类，说明可能是内置类
                 $tmpCe = $this->getParentClassCe($classDef);
-                if (!$this->symbols->hasClass($parent)) {
+                if (!$this->hasClass($parent)) {
                     $sorter->add($tmpCe);
                 }
                 $deps[] = $tmpCe;
@@ -2433,7 +2433,7 @@ CODE;
             if ($implements) {
                 foreach ($implements as $interface) {
                     $tmpCe = self::PREFIX . 'class_entry_' . $this->escapeCeName($interface);
-                    if (!$this->symbols->hasInterface($interface)) {
+                    if (!$this->hasInterface($interface)) {
                         $sorter->add($tmpCe);
                     }
                     $deps[] = $tmpCe;
