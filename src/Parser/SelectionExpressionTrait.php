@@ -25,7 +25,7 @@ trait SelectionExpressionTrait
         [$cond, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($expr->cond);
         $ifBeforeStmtCount = count($this->context->beforeStmtLines);
         $ifAfterStmtCount = count($this->context->afterStmtLines);
-        $if = $this->parseExpr($expr->if);
+        $if = $this->parseExprAsValue($expr->if);
         $ifBeforeStmts = array_slice($this->context->beforeStmtLines, $ifBeforeStmtCount);
         $ifAfterStmts = array_slice($this->context->afterStmtLines, $ifAfterStmtCount);
         $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $ifBeforeStmtCount);
@@ -33,7 +33,7 @@ trait SelectionExpressionTrait
 
         $elseBeforeStmtCount = count($this->context->beforeStmtLines);
         $elseAfterStmtCount = count($this->context->afterStmtLines);
-        $else = $this->parseExpr($expr->else);
+        $else = $this->parseExprAsValue($expr->else);
         $elseBeforeStmts = array_slice($this->context->beforeStmtLines, $elseBeforeStmtCount);
         $elseAfterStmts = array_slice($this->context->afterStmtLines, $elseAfterStmtCount);
         $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $elseBeforeStmtCount);
@@ -206,4 +206,3 @@ trait SelectionExpressionTrait
     }
 
 }
-

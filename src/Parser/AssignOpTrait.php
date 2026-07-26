@@ -583,9 +583,7 @@ trait AssignOpTrait
         }
 
         if ($this->isAssignOpConcat($op)) {
-            $items = [];
-            $this->flattenConcatExpr($node->expr, $items);
-            if (count($items) === 1) {
+            if (!($node->expr instanceof Expr\BinaryOp\Concat)) {
                 return $var . '.append(' . $this->parseExprAsValue($node->expr) . ')';
             }
             return $var . ' = php::toString(' . $this->parseFlattenedConcat($node->expr, [$var]) . ')';
