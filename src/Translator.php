@@ -690,6 +690,15 @@ class Translator extends Preprocessor
     {
         $lines[] = '#include <phpx.h>';
         $lines[] = PHP_EOL;
+
+        /**
+         * 当程序启动后，PHP_SELF，SCRIPT_NAME，SCRIPT_FILENAME，PATH_TRANSLATED，DOCUMENT_ROOT
+         * 这些属性不会出现在$_SERVER中，因此我们需要手动生成。所以必须生成$_SERVER的声明。
+         */
+        if (!isset($this->globalVars['_SERVER'])) {
+            $this->globalVars['_SERVER'] = Type::ARRAY;
+        }
+
         foreach ($this->globalVars as $name => $type) {
             $lines[] = 'extern THREAD_LOCAL ' . Type::VAR . ' ' . $this->escapeGlobalVar($name) . ';';
         }
@@ -3205,6 +3214,10 @@ CODE;
             $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
         }
 
+        if (!$functionDef->method && strtolower($functionDef->name) == 'main') {
+            $cppCode .= $this->registerServerEnvironment($functionDef->sourceFile);
+        }
+
         if ($functionDef->returnType !== Type::VOID) {
             $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
             $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
@@ -3217,6 +3230,28 @@ CODE;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
         return $cppCode;
+    }
+
+    /**
+     * 在main函数中，将PHP_SELF，SCRIPT_NAME，SCRIPT_FILENAME和DOCUMENT_ROOT写入
+     * $_SERVER中，这些属性相当于初始化，所以不需要常驻内存。
+     * 默认main函数所在的文件名就是脚本文件名字。
+     */
+    private function registerServerEnvironment(string $scriptName): string
+    {
+        $cppCode  = 'php::Var &_SERVER = _global_var__SERVER;' . PHP_EOL;;
+        $cppCode .= 'php::Str php_self = "PHP_SELF";' . PHP_EOL;
+        $cppCode .= 'php::Str script_name = "SCRIPT_NAME";' . PHP_EOL;
+        $cppCode .= 'php::Str script_filename = "SCRIPT_FILENAME";' . PHP_EOL;
+        $cppCode .= 'php::Str document_root = "DOCUMENT_ROOT";' . PHP_EOL;
+        $cppCode .= 'php::Str value = "' . $scriptName . '";' . PHP_EOL;
+
+        $cppCode .= '_SERVER.item(php_self, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(script_name, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(script_filename, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(document_root, true) = "";' . PHP_EOL;
+
+        return $cppCode . PHP_EOL;
     }
 
     private function canConsumeForwardedArgument(ArgInfo $argInfo): bool
