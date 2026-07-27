@@ -248,8 +248,38 @@ class CompilerBaseApiTest extends TestCase
             new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name('ROOT_PATH'))
         );
 
-        $this->assertStringStartsWith('php::constant(nullptr, ', $code);
+        $this->assertStringStartsWith('php::constant(', $code);
         $this->assertStringNotContainsString(ROOT_PATH, $code);
+    }
+
+    public function testUnqualifiedRuntimeConstantUsesNamespaceFallback(): void
+    {
+        $this->setPropertyValue('namespace', 'App\\Worker');
+        $this->setPropertyValue('noLiteralStrings', true);
+
+        $code = $this->invokeMethod(
+            'parseConstFetch',
+            new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name('COMPOSER_PATH'))
+        );
+
+        $this->assertStringNotContainsString('php::fn::defined(', $code);
+        $this->assertStringContainsString('App\\\\Worker\\\\COMPOSER_PATH', $code);
+        $this->assertStringEndsWith(', php::ConstantLookup::UnqualifiedInNamespace)', $code);
+        $this->assertStringNotContainsString('php::constant(nullptr,', $code);
+    }
+
+    public function testQualifiedRuntimeConstantDoesNotUseGlobalFallback(): void
+    {
+        $this->setPropertyValue('namespace', 'App\\Worker');
+        $this->setPropertyValue('noLiteralStrings', true);
+
+        $code = $this->invokeMethod(
+            'parseConstFetch',
+            new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name('Config\\PATH'))
+        );
+
+        $this->assertStringNotContainsString('php::fn::defined(', $code);
+        $this->assertStringContainsString('App\\\\Worker\\\\Config\\\\PATH', $code);
     }
 
     public function testDynamicallyDefinedConstantsAreNotInternalConstants(): void

@@ -724,7 +724,7 @@ trait FuncCallOptimizer
     protected function genDefine(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
         $arg = $e->args[0]->value;
-        if ($this->isScalarString($arg) && !$this->isValidDefineName($arg->value)) {
+        if ($this->isScalarString($arg) && str_contains($arg->value, '::')) {
             $this->fatalError($e, 'Invalid define name `' . $arg->value . '`');
         }
         $args = count($e->args) >= 3 ? 3 : 2;
@@ -844,8 +844,4 @@ trait FuncCallOptimizer
     // Utility
     // =========================================================================
 
-    protected function isValidDefineName(string $name): bool
-    {
-        return preg_match('/^(?!\d)[\p{L}_][\p{L}\p{N}_]*$/u', $name) === 1;
-    }
 }

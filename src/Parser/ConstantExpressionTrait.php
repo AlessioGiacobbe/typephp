@@ -24,21 +24,6 @@ trait ConstantExpressionTrait
         }
         $name = $this->parseIdentifier($expr->name);
         $name = ltrim($name, '\\');
-        if ($this->isNameExpr($expr->name) and $this->hasConstant($name)) {
-            return $this->getConstant($name);
-        }
-        if ($this->namespace and $this->isNameExpr($expr->name) and !$expr->name instanceof Node\Name\FullyQualified) {
-            $nsName = $this->namespace . '\\' . $name;
-            if ($this->hasConstant($nsName)) {
-                return $this->getConstant($nsName);
-            }
-        }
-        if ($this->isNameExpr($expr->name) and isset($this->useConstants[$name])) {
-            $importedName = $this->useConstants[$name];
-            if ($this->hasConstant($importedName)) {
-                return $this->getConstant($importedName);
-            }
-        }
         if (strcasecmp($name, 'null') === 0) {
             return self::VALUE_NULL;
         }
@@ -48,15 +33,6 @@ trait ConstantExpressionTrait
         if (strcasecmp($name, 'false') === 0) {
             return 'false';
         }
-        if ($name === 'PHP_EOL') {
-            return '"' . $this->escapeString(PHP_EOL) . '"';
-        }
-        if ($this->isInternalScalarConstant($name)) {
-            return $this->getInternalScalarConstantValue($name);
-        }
-        if ($scalar) {
-            return constant($expr->name);
-        }
         if ($this->isNameExpr($expr->name)) {
             if (str_contains($name, '::')) {
                 $ns = explode('::', $name)[0];
@@ -64,20 +40,49 @@ trait ConstantExpressionTrait
                 $ce = $this->getClassEntryPtr($fullName);
                 return Symbol::constant() . '(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
             }
-            if ($this->isInternalConstant($name)) {
-                return Symbol::constant() . '(' . $this->getLiteralString($name) . ')';
-            }
-            if (isset($this->useAliases[$name])) {
-                $name = $this->useAliases[$name];
-            } elseif (isset($this->useConstants[$name])) {
+
+            if (isset($this->useConstants[$name])) {
                 $name = $this->useConstants[$name];
+            } elseif ($expr->name->isUnqualified()) {
+                if ($this->namespace) {
+                    $namespacedName = $this->namespace . '\\' . $name;
+                    if ($this->hasConstant($namespacedName)) {
+                        return $this->getConstant($namespacedName);
+                    }
+
+                    // PHP resolves an unqualified constant in a namespace at
+                    // runtime: first Namespace\NAME, then the global NAME. AOT
+                    // cannot select only the namespaced spelling because a
+                    // define() call may execute before this fetch.
+                    return Symbol::constant() . '('
+                        . $this->getLiteralString($namespacedName)
+                        . ', php::ConstantLookup::UnqualifiedInNamespace)';
+                }
+                // A class import with the same alias does not affect a bare
+                // constant fetch. Only `use const` participates here.
+            } elseif ($expr->name instanceof Node\Name\FullyQualified) {
+                // parseIdentifier() has already removed the leading slash.
             } else {
                 $fullName = $this->getNamespacedClassName($name);
                 if ($fullName) {
                     $name = $fullName;
                 }
             }
-            return Symbol::constant() . '(nullptr, ' . $this->getLiteralString($name) . ')';
+
+            if ($this->hasConstant($name)) {
+                return $this->getConstant($name);
+            }
+            if ($name === 'PHP_EOL') {
+                return '"' . $this->escapeString(PHP_EOL) . '"';
+            }
+            if ($this->isInternalScalarConstant($name)) {
+                return $this->getInternalScalarConstantValue($name);
+            }
+            if ($this->isInternalConstant($name)) {
+                return Symbol::constant() . '(' . $this->getLiteralString($name) . ')';
+            }
+
+            return Symbol::constant() . '(' . $this->getLiteralString($name) . ')';
         }
         return Symbol::constant() . '("' . $this->escapeString($name) . '")';
     }
