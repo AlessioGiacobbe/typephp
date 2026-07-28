@@ -24,6 +24,8 @@
 - 启动时检查全部持久化规则，未运行的隧道会自动启动。
 - JSON 配置原子写入、`fsync` 和双份备份，主配置损坏时自动恢复。
 - 使用 `QProcess(program, arguments)`，不经过 shell。
+- 应用图标内嵌到程序中，支持 Linux、macOS 和 Windows 多 DPI 显示；Windows
+  可执行文件同时携带 PE 图标资源。
 
 ## 分层
 

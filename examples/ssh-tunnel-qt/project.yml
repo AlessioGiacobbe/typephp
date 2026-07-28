@@ -8,6 +8,11 @@ sources:
   - php-src
   - cpp-src
 
+resource:
+  # Used as the Windows PE/Explorer icon. Qt's in-window icon is embedded in
+  # cpp-src/ssh_tunnel_icons.cc so it also works on Linux and macOS.
+  icon: icon/ssh_tunnel_manager.ico
+
 # Debian/Ubuntu Qt 6 development package layout. For a non-system Qt SDK,
 # replace these flags with the paths printed by:
 #   pkg-config --cflags --libs Qt6Widgets

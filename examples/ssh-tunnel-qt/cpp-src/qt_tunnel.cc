@@ -14,6 +14,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
@@ -47,6 +48,18 @@ static int qt_argc = 1;
 static char qt_program_name[] = "typephp-ssh-tunnel-manager";
 static char *qt_argv[] = {qt_program_name, nullptr};
 static QApplication *qt_application = nullptr;
+
+QIcon applicationIcon() {
+    QIcon icon;
+    icon.addFile(":/icons/icon_16.png");
+    icon.addFile(":/icons/icon_32.png");
+    icon.addFile(":/icons/icon_64.png");
+    icon.addFile(":/icons/icon_128.png");
+    icon.addFile(":/icons/icon_256.png");
+    icon.addFile(":/icons/icon_512.png");
+    icon.addFile(":/icons/icon_1024.png");
+    return icon;
+}
 
 QString toQString(const Variant &value) {
     if (value.isNull() || value.isUndef()) {
@@ -235,6 +248,7 @@ class TunnelWindowBox final : public Box {
     explicit TunnelWindowBox(const QString &title) {
         window_ = new QMainWindow();
         window_->setWindowTitle(title);
+        window_->setWindowIcon(QApplication::windowIcon());
         window_->resize(1120, 720);
 
         auto *central = new QWidget();
@@ -698,6 +712,7 @@ var php_qt_tunnel_create(String title) {
         qt_application = new QApplication(qt_argc, qt_argv);
         qt_application->setApplicationName("TypePHP SSH Tunnel Manager");
         qt_application->setOrganizationName("TypePHP");
+        qt_application->setWindowIcon(applicationIcon());
     }
     return {new TunnelWindowBox(toQString(title))};
 }
