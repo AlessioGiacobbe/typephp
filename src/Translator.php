@@ -3243,7 +3243,8 @@ CODE;
      */
     private function registerServerEnvironment(string $scriptName): string
     {
-        $cppCode  = 'php::Var &_SERVER = _global_var__SERVER;' . PHP_EOL;;
+        $cppCode  = PHP_EOL;
+        $cppCode .= 'php::Var &_SERVER = _global_var__SERVER;' . PHP_EOL;;
         $cppCode .= 'php::Str value ='  . $scriptName . ';' . PHP_EOL;
 
         $cppCode .= '_SERVER.item("PHP_SELF", true) = value;' . PHP_EOL;
