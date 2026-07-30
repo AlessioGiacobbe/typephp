@@ -1045,6 +1045,8 @@ CODE;
 
         if ($this->isBuildModeBin()) {
             $entryFunction = $this->symbols->function(self::ENTRY_FUNCTION);
+            // FunctionDef::sourceFile comes from loadFile()'s realpath(), so the
+            // CLI script fields always identify main()'s canonical absolute file.
             $entryFile = $entryFunction->sourceFile;
             $code .= $this->registerServerEnvironment($entryFile);
             $entryFileArg = $this->genCharPtr($entryFile, true);
@@ -3228,7 +3230,7 @@ CODE;
         return $cppCode;
     }
 
-    private function registerServerEnvironment(string $scriptName): string
+    private function registerServerEnvironment(string $entryFile): string
     {
         $cppCode = 'php::Var &_SERVER = _global_var__SERVER;' . PHP_EOL;
         $cppCode .= 'php::Str php_self = "PHP_SELF";' . PHP_EOL;
@@ -3236,7 +3238,7 @@ CODE;
         $cppCode .= 'php::Str script_filename = "SCRIPT_FILENAME";' . PHP_EOL;
         $cppCode .= 'php::Str path_translated = "PATH_TRANSLATED";' . PHP_EOL;
         $cppCode .= 'php::Str document_root = "DOCUMENT_ROOT";' . PHP_EOL;
-        $cppCode .= 'php::Str value = ' . $this->genCharPtr($scriptName, true) . ';' . PHP_EOL;
+        $cppCode .= 'php::Str value = ' . $this->genCharPtr($entryFile, true) . ';' . PHP_EOL;
 
         $cppCode .= '_SERVER.item(php_self, true) = value;' . PHP_EOL;
         $cppCode .= '_SERVER.item(script_name, true) = value;' . PHP_EOL;

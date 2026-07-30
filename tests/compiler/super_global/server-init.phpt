@@ -12,10 +12,12 @@ DOCUMENT_ROOT=from-environment
 function main()
 {
     require __DIR__ . '/../../../src/Assert.php';
-    Assert::eq($_SERVER['PHP_SELF'], __FILE__);
-    Assert::eq($_SERVER['SCRIPT_NAME'], __FILE__);
-    Assert::eq($_SERVER['SCRIPT_FILENAME'], __FILE__);
-    Assert::eq($_SERVER['PATH_TRANSLATED'], __FILE__);
+    $entryFile = realpath(__FILE__);
+    Assert::true(is_string($entryFile));
+    Assert::eq($_SERVER['PHP_SELF'], $entryFile);
+    Assert::eq($_SERVER['SCRIPT_NAME'], $entryFile);
+    Assert::eq($_SERVER['SCRIPT_FILENAME'], $entryFile);
+    Assert::eq($_SERVER['PATH_TRANSLATED'], $entryFile);
     Assert::eq($_SERVER['DOCUMENT_ROOT'], '');
 }
 ?>
