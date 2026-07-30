@@ -3232,7 +3232,7 @@ CODE;
 
     private function registerServerEnvironment(string $entryFile): string
     {
-        $cppCode = 'php::Var &_SERVER = _global_var__SERVER;' . PHP_EOL;
+        $cppCode = 'php::Var &_SERVER = ' . $this->escapeGlobalVar('_SERVER') . ';' . PHP_EOL;
         $cppCode .= 'php::Str php_self = "PHP_SELF";' . PHP_EOL;
         $cppCode .= 'php::Str script_name = "SCRIPT_NAME";' . PHP_EOL;
         $cppCode .= 'php::Str script_filename = "SCRIPT_FILENAME";' . PHP_EOL;

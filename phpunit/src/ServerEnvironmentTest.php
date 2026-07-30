@@ -43,6 +43,7 @@ class ServerEnvironmentTest extends TestCase
         $method = new ReflectionMethod(Translator::class, 'registerServerEnvironment');
         $code = $method->invoke($compiler, 'C:\\project\\"quoted"\\main.php');
 
+        $this->assertStringContainsString('php::Var &_SERVER = _global_var__SERVER;', $code);
         $this->assertStringContainsString('php::Str php_self = "PHP_SELF";', $code);
         $this->assertStringContainsString('php::Str script_name = "SCRIPT_NAME";', $code);
         $this->assertStringContainsString('php::Str script_filename = "SCRIPT_FILENAME";', $code);
