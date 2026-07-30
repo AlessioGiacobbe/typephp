@@ -1057,6 +1057,9 @@ CODE;
             } else {
                 $entryScript = $entryPrefix . 'main();';
             }
+
+            // 手动设置 $_SERVER 仅在 PHP 作为可运行二进制运行时才有意义；对于 .so 扩展，$_SERVER 由 SAPI 自动管理，不应在扩展层覆盖。
+            $code .= $this->registerServerEnvironment($entryFileArg);
             $code .= 'php::eval(' . $this->genCharPtr($entryScript, true) . ', ' . $entryFileArg . ');' . PHP_EOL;
         }
 
@@ -3216,10 +3219,6 @@ CODE;
             $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
         }
 
-        if (!$functionDef->method && strtolower($functionDef->name) == 'main') {
-            $cppCode .= $this->registerServerEnvironment($functionDef->sourceFile);
-        }
-
         if ($functionDef->returnType !== Type::VOID) {
             $cppCode .= $this->getIndent() . 'auto retval = ' . $fn . '(' . $callParams . ');' . PHP_EOL;
             $cppCode .= $this->getIndent() . 'php::move(retval, return_value);' . PHP_EOL;
@@ -3245,16 +3244,12 @@ CODE;
     private function registerServerEnvironment(string $scriptName): string
     {
         $cppCode  = 'php::Var &_SERVER = _global_var__SERVER;' . PHP_EOL;;
-        $cppCode .= 'php::Str php_self = "PHP_SELF";' . PHP_EOL;
-        $cppCode .= 'php::Str script_name = "SCRIPT_NAME";' . PHP_EOL;
-        $cppCode .= 'php::Str script_filename = "SCRIPT_FILENAME";' . PHP_EOL;
-        $cppCode .= 'php::Str document_root = "DOCUMENT_ROOT";' . PHP_EOL;
-        $cppCode .= 'php::Str value = "' . $scriptName . '";' . PHP_EOL;
+        $cppCode .= 'php::Str value ='  . $scriptName . ';' . PHP_EOL;
 
-        $cppCode .= '_SERVER.item(php_self, true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item(script_name, true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item(script_filename, true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item(document_root, true) = "";' . PHP_EOL;
+        $cppCode .= '_SERVER.item("PHP_SELF", true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item("SCRIPT_NAME", true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item("SCRIPT_FILENAME", true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item("DOCUMENT_ROOT", true) = "";' . PHP_EOL;
 
         return $cppCode . PHP_EOL;
     }
