@@ -65,6 +65,33 @@ class PlatformTest extends TestCase
         $this->assertStringContainsString('"php8ts.lib"', $flags);
     }
 
+    public function testWindowsMissingPhpxLibrariesAreFatalDiagnostics(): void
+    {
+        $root = sys_get_temp_dir() . '\\typephp-missing-phpx-' . bin2hex(random_bytes(6));
+        mkdir($root);
+
+        try {
+            $diagnostics = (new Windows())->getBuildLibraryWarnings($root, $root, 'bin');
+            $errors = array_column($diagnostics, 'error');
+
+            $this->assertContains(
+                'The PHPX import library was not found at: ' . $root . '\lib\phpx.lib',
+                $errors,
+            );
+            $this->assertContains(
+                'The PHPX runtime library `phpx.dll` was not found under: ' . $root,
+                $errors,
+            );
+            foreach ($diagnostics as $diagnostic) {
+                if (isset($diagnostic['error'])) {
+                    $this->assertStringContainsString('Build PHPX first', $diagnostic['info']);
+                }
+            }
+        } finally {
+            rmdir($root);
+        }
+    }
+
     /**
      * 测试 Windows 路径规范化
      */

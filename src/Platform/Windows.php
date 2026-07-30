@@ -200,8 +200,8 @@ class Windows extends PlatformBase
         $phpxLibPath = $phpxDir . '\lib\phpx.lib';
         if (!is_file($phpxLibPath)) {
             $warnings[] = [
-                'warning' => 'The PHPX import library was not found at: ' . $phpxLibPath,
-                'info' => 'Create the PHPX lib directory, reconfigure CMake if needed, then rebuild the phpx target',
+                'error' => 'The PHPX import library was not found at: ' . $phpxLibPath,
+                'info' => 'Build PHPX first (for example, run `nmake phpx` in ' . $phpxDir . '\build)',
             ];
         }
 
@@ -219,8 +219,8 @@ class Windows extends PlatformBase
         }
         if (!$hasPhpxDll) {
             $warnings[] = [
-                'warning' => 'The PHPX runtime library `phpx.dll` was not found under: ' . $phpxDir,
-                'info' => 'Reconfigure CMake if needed, then rebuild the phpx target',
+                'error' => 'The PHPX runtime library `phpx.dll` was not found under: ' . $phpxDir,
+                'info' => 'Build PHPX first (for example, run `nmake phpx` in ' . $phpxDir . '\build)',
             ];
         }
 

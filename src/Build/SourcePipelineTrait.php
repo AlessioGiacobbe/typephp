@@ -14,6 +14,7 @@ use TypePhp\Exception\Unsupported;
 use TypePhp\Installer\LibPhpInstaller;
 use TypePhp\Installer\LibPhpxInstaller;
 use TypePhp\Platform\Linux;
+use TypePhp\Platform\Windows;
 
 trait SourcePipelineTrait
 {
@@ -98,9 +99,17 @@ trait SourcePipelineTrait
 
         // shell_exec 和 define 已通过 php::fn:: 直接调用，无需动态符号表
 
-        // 根据平台检查库文件（仅在构建二进制文件时需要）
-        if ($this->isBuildModeEmbed()) {
+        // Windows 的所有构建模式都依赖 PHPX 导入库和运行库。
+        // 其他平台仅在嵌入式构建模式下执行现有检查。
+        if ($this->isBuildModeEmbed() || $this->getPlatform() instanceof Windows) {
             foreach ($this->getPlatform()->getBuildLibraryWarnings($this->getPhpDir(), $this->getPhpxDir(), $this->buildMode) as $message) {
+                if (!empty($message['error'])) {
+                    $detail = $message['error'];
+                    if (!empty($message['info'])) {
+                        $detail .= "\n" . $message['info'];
+                    }
+                    $this->error($detail);
+                }
                 $this->climate->warning($message['warning']);
                 if (!empty($message['info'])) {
                     $this->climate->info($message['info']);
