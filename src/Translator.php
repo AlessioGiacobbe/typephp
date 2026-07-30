@@ -2313,7 +2313,10 @@ CODE;
         $traverser = new NodeTraverser();
         $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
         $traverser->addVisitor(new Visitor(sourceFile: $this->file));
-        $traverser->addVisitor(new ConstantExpressionValidationVisitor($this->phpVersion));
+        $traverser->addVisitor(new ConstantExpressionValidationVisitor(
+            $this->phpVersion,
+            fn (Node $node, string $message) => $this->fatalError($node, $message),
+        ));
         $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
 
         $stmts = $traverser->traverse($ast);

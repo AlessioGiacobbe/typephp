@@ -258,6 +258,27 @@ final class ConstantExpressionValidatorTest extends PHPUnit\Framework\TestCase
         ));
     }
 
+    public function testCompilerBoundaryRoutesUnsupportedSyntaxThroughFatalDiagnostic(): void
+    {
+        $parser = (new ParserFactory())->createForVersion(PhpVersion::fromString('8.5'));
+        $statements = $parser->parse("<?php\nconst VALUE = loadValue();");
+        self::assertNotNull($statements);
+
+        $traverser = new NodeTraverser();
+        $traverser->addVisitor(new ConstantExpressionValidationVisitor(
+            '8.5',
+            static function (Node $node, string $message): never {
+                throw new \RuntimeException("fatal: {$message} at line {$node->getStartLine()}");
+            },
+        ));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(
+            'fatal: Constant expression contains invalid operations at line 2',
+        );
+        $traverser->traverse($statements);
+    }
+
     private function parseAttributeExpression(string $expression, string $phpVersion): Node\Expr
     {
         return $this->parseAttributeArguments($expression, $phpVersion)[0]->value;

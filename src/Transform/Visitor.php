@@ -54,16 +54,22 @@ class Visitor extends NodeVisitorAbstract
         $classReadonly = $node instanceof Stmt\Class_ && $node->isReadonly();
         foreach ($node->stmts as $stmt) {
             if ($stmt instanceof Stmt\Property) {
-                array_push($methods, ...PropertyHookLowering::lowerProperty($stmt));
-                array_push($methods, ...$this->guard(
+                foreach (PropertyHookLowering::lowerProperty($stmt) as $method) {
+                    $methods[] = $method;
+                }
+                foreach ($this->guard(
                     $stmt,
                     static fn () => GetterLowering::lowerProperty($stmt),
                     'Getter',
-                ));
-                array_push($methods, ...$this->guard(
+                ) as $method) {
+                    $methods[] = $method;
+                }
+                foreach ($this->guard(
                     $stmt,
                     static fn () => PropertyMethodLowering::lowerProperty($stmt, $classReadonly),
-                ));
+                ) as $method) {
+                    $methods[] = $method;
+                }
             } elseif ($stmt instanceof Stmt\ClassMethod && $stmt->name->toLowerString() === '__construct') {
                 foreach ($stmt->params as $param) {
                     $marker = PropertyHookLowering::lowerPromotedProperty($param);
@@ -78,15 +84,19 @@ class Visitor extends NodeVisitorAbstract
                     if ($getter !== null) {
                         $methods[] = $getter;
                     }
-                    array_push($methods, ...$this->guard(
+                    foreach ($this->guard(
                         $param,
                         static fn () => PropertyMethodLowering::lowerPromotedProperty($param, $classReadonly),
-                    ));
+                    ) as $method) {
+                        $methods[] = $method;
+                    }
                 }
             }
         }
         if ($methods !== []) {
-            array_push($node->stmts, ...$methods);
+            foreach ($methods as $method) {
+                $node->stmts[] = $method;
+            }
         }
         $this->guard($node, static fn () => ConstructorLowering::lowerClassLike($node), 'Constructor');
         if ($node instanceof Stmt\Class_) {

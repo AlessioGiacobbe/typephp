@@ -42,8 +42,8 @@ function rgb(int $r, int $g, int $b): int
 }
 
 // Piece colors
-const COLOR_CYAN    = 0x00FFFF; // I
-const COLOR_YELLOW  = 0x00FFFF; // O  - will override below
+const COLOR_CYAN    = 0xFFFF00; // I
+const COLOR_YELLOW  = 0x00FFFF; // O
 const COLOR_PURPLE  = 0x800080; // T
 const COLOR_GREEN   = 0x00FF00; // S
 const COLOR_RED     = 0x0000FF; // Z
@@ -51,13 +51,13 @@ const COLOR_BLUE    = 0xFF0000; // J
 const COLOR_ORANGE  = 0x00A5FF; // L
 
 const PIECE_COLORS = [
-    rgb(0, 255, 255),   // I - Cyan
-    rgb(255, 255, 0),   // O - Yellow
-    rgb(128, 0, 128),   // T - Purple
-    rgb(0, 255, 0),     // S - Green
-    rgb(255, 0, 0),     // Z - Red
-    rgb(0, 0, 255),     // J - Blue
-    rgb(255, 165, 0),   // L - Orange
+    COLOR_CYAN,
+    COLOR_YELLOW,
+    COLOR_PURPLE,
+    COLOR_GREEN,
+    COLOR_RED,
+    COLOR_BLUE,
+    COLOR_ORANGE,
 ];
 
 // 7 tetromino shapes (4 rotations each, 4x4 grid) - defined in PHP!

@@ -8,8 +8,10 @@
 
 namespace TypePhp\Transform;
 
+use Closure;
 use PhpParser\Node;
 use PhpParser\NodeVisitorAbstract;
+use TypePhp\Exception\SyntaxError;
 
 /**
  * Applies the allow_dynamic values used by php-src at each declaration site.
@@ -26,13 +28,29 @@ final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
 
     private readonly bool $supportsDynamicStaticInitializers;
 
-    public function __construct(string $phpVersion)
+    /** @param null|Closure(Node, string): never $fatalError */
+    public function __construct(
+        string $phpVersion,
+        private readonly ?Closure $fatalError = null,
+    )
     {
         $this->validator = new ConstantExpressionValidator($phpVersion);
         $this->supportsDynamicStaticInitializers = version_compare($phpVersion, '8.3', '>=');
     }
 
     public function enterNode(Node $node): null
+    {
+        try {
+            return $this->validateNode($node);
+        } catch (SyntaxError $error) {
+            if ($this->fatalError !== null) {
+                ($this->fatalError)($node, $error->getMessage());
+            }
+            throw $error;
+        }
+    }
+
+    private function validateNode(Node $node): null
     {
         if ($node instanceof Node\Attribute) {
             $this->validator->validateArguments(

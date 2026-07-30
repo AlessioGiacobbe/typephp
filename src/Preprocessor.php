@@ -40,7 +40,7 @@ use PhpParser\NodeVisitor\NameResolver;
 
 class Preprocessor extends CompilerBase
 {
-    protected function getSortedFiles(array $list): array
+    public function getSortedFiles(array $list): array
     {
         $sorter = new StringSort();
         $fileDeps = [];
@@ -149,7 +149,10 @@ class Preprocessor extends CompilerBase
                 fn (Node $node, string $message) => $this->warning($node, $message),
                 $this->file,
             ));
-            $traverser->addVisitor(new ConstantExpressionValidationVisitor($this->phpVersion));
+            $traverser->addVisitor(new ConstantExpressionValidationVisitor(
+                $this->phpVersion,
+                fn (Node $node, string $message) => $this->fatalError($node, $message),
+            ));
             $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
             $stmts = $traverser->traverse($ast);
 

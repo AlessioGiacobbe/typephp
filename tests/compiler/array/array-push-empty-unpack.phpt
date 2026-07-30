@@ -5,6 +5,7 @@ array_push retains its required array argument when an unpacked list is empty
 
 function main(): void
 {
+    // Keep the required by-reference argument before an empty unpack.
     $values = [];
     array_push($values, ...[]);
     var_dump($values);
