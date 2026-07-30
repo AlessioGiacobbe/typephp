@@ -690,6 +690,13 @@ class Translator extends Preprocessor
     {
         $lines[] = '#include <phpx.h>';
         $lines[] = PHP_EOL;
+
+        // Embedded binaries populate the CLI script fields in $_SERVER at
+        // request startup, even when the source does not reference $_SERVER.
+        if ($this->isBuildModeBin() && !$this->hasGlobalVar('_SERVER')) {
+            $this->addGlobalVar('_SERVER', Type::ARRAY);
+        }
+
         foreach ($this->globalVars as $name => $type) {
             $lines[] = 'extern THREAD_LOCAL ' . Type::VAR . ' ' . $this->escapeGlobalVar($name) . ';';
         }
@@ -1038,7 +1045,10 @@ CODE;
 
         if ($this->isBuildModeBin()) {
             $entryFunction = $this->symbols->function(self::ENTRY_FUNCTION);
+            // FunctionDef::sourceFile comes from loadFile()'s realpath(), so the
+            // CLI script fields always identify main()'s canonical absolute file.
             $entryFile = $entryFunction->sourceFile;
+            $code .= $this->registerServerEnvironment($entryFile);
             $entryFileArg = $this->genCharPtr($entryFile, true);
             $entryPrefix = str_repeat("\n", max(0, $entryFunction->startLine - 1));
             if (count($entryFunction->argInfoList) == 2) {
@@ -1046,6 +1056,7 @@ CODE;
             } else {
                 $entryScript = $entryPrefix . 'main();';
             }
+
             $code .= 'php::eval(' . $this->genCharPtr($entryScript, true) . ', ' . $entryFileArg . ');' . PHP_EOL;
         }
 
@@ -3220,6 +3231,25 @@ CODE;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
         return $cppCode;
+    }
+
+    private function registerServerEnvironment(string $entryFile): string
+    {
+        $cppCode = 'php::Var &_SERVER = ' . $this->escapeGlobalVar('_SERVER') . ';' . PHP_EOL;
+        $cppCode .= 'php::Str php_self = "PHP_SELF";' . PHP_EOL;
+        $cppCode .= 'php::Str script_name = "SCRIPT_NAME";' . PHP_EOL;
+        $cppCode .= 'php::Str script_filename = "SCRIPT_FILENAME";' . PHP_EOL;
+        $cppCode .= 'php::Str path_translated = "PATH_TRANSLATED";' . PHP_EOL;
+        $cppCode .= 'php::Str document_root = "DOCUMENT_ROOT";' . PHP_EOL;
+        $cppCode .= 'php::Str value = ' . $this->genCharPtr($entryFile, true) . ';' . PHP_EOL;
+
+        $cppCode .= '_SERVER.item(php_self, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(script_name, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(script_filename, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(path_translated, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(document_root, true) = "";' . PHP_EOL;
+
+        return $cppCode . PHP_EOL;
     }
 
     private function canConsumeForwardedArgument(ArgInfo $argInfo): bool
