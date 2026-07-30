@@ -693,8 +693,8 @@ class Translator extends Preprocessor
 
         // Embedded binaries populate the CLI script fields in $_SERVER at
         // request startup, even when the source does not reference $_SERVER.
-        if ($this->isBuildModeBin() && !isset($this->globalVars['_SERVER'])) {
-            $this->globalVars['_SERVER'] = Type::ARRAY;
+        if ($this->isBuildModeBin() && !$this->hasGlobalVar('_SERVER')) {
+            $this->addGlobalVar('_SERVER', Type::ARRAY);
         }
 
         foreach ($this->globalVars as $name => $type) {
