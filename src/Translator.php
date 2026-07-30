@@ -691,13 +691,9 @@ class Translator extends Preprocessor
         $lines[] = '#include <phpx.h>';
         $lines[] = PHP_EOL;
 
-        /**
-         * 由于编译后的PHP二进制程序无需再指定入口文件，$_SERVER 中原本依赖入口文件才能生成的超全局变量（
-         * 如 PHP_SELF、SCRIPT_NAME、SCRIPT_FILENAME 和 DOCUMENT_ROOT）将不会被自动生成。
-         * 然而，部分框架的初始化逻辑强依赖这些参数，缺失将导致启动失败。因此，我们必须在入口函数中手动为 $_SERVER 补充这些值。
-         * 但需要注意的是，$_SERVER 必须事先声明，否则无法向其写入内容。
-         */
-        if (!isset($this->globalVars['_SERVER'])) {
+        // Embedded binaries populate the CLI script fields in $_SERVER at
+        // request startup, even when the source does not reference $_SERVER.
+        if ($this->isBuildModeBin() && !isset($this->globalVars['_SERVER'])) {
             $this->globalVars['_SERVER'] = Type::ARRAY;
         }
 
@@ -1050,6 +1046,7 @@ CODE;
         if ($this->isBuildModeBin()) {
             $entryFunction = $this->symbols->function(self::ENTRY_FUNCTION);
             $entryFile = $entryFunction->sourceFile;
+            $code .= $this->registerServerEnvironment($entryFile);
             $entryFileArg = $this->genCharPtr($entryFile, true);
             $entryPrefix = str_repeat("\n", max(0, $entryFunction->startLine - 1));
             if (count($entryFunction->argInfoList) == 2) {
@@ -1058,8 +1055,6 @@ CODE;
                 $entryScript = $entryPrefix . 'main();';
             }
 
-            // 手动设置 $_SERVER 仅在 PHP 作为可运行二进制运行时才有意义；对于 .so 扩展，$_SERVER 由 SAPI 自动管理，不应在扩展层覆盖。
-            $code .= $this->registerServerEnvironment($entryFileArg);
             $code .= 'php::eval(' . $this->genCharPtr($entryScript, true) . ', ' . $entryFileArg . ');' . PHP_EOL;
         }
 
@@ -3233,24 +3228,21 @@ CODE;
         return $cppCode;
     }
 
-    /**
-     * 由于编译后的PHP二进制程序无需再指定入口文件，$_SERVER 中依赖入口文件才能生成的超全局变量
-     * （如 PHP_SELF、SCRIPT_NAME、SCRIPT_FILENAME 和 DOCUMENT_ROOT）将被忽略。
-     * 但部分PHP框架依赖这些参数完成初始化逻辑，缺少它们将导致启动失败。因此，我们需在入口函数中
-     * 手动为 $_SERVER 补充这些值，默认以 main 函数所在文件作为入口文件。
-     * @param  string  $scriptName
-     * @return string
-     */
     private function registerServerEnvironment(string $scriptName): string
     {
-        $cppCode  = PHP_EOL;
-        $cppCode .= 'php::Var &_SERVER = _global_var__SERVER;' . PHP_EOL;;
-        $cppCode .= 'php::Str value ='  . $scriptName . ';' . PHP_EOL;
+        $cppCode = 'php::Var &_SERVER = _global_var__SERVER;' . PHP_EOL;
+        $cppCode .= 'php::Str php_self = "PHP_SELF";' . PHP_EOL;
+        $cppCode .= 'php::Str script_name = "SCRIPT_NAME";' . PHP_EOL;
+        $cppCode .= 'php::Str script_filename = "SCRIPT_FILENAME";' . PHP_EOL;
+        $cppCode .= 'php::Str path_translated = "PATH_TRANSLATED";' . PHP_EOL;
+        $cppCode .= 'php::Str document_root = "DOCUMENT_ROOT";' . PHP_EOL;
+        $cppCode .= 'php::Str value = ' . $this->genCharPtr($scriptName, true) . ';' . PHP_EOL;
 
-        $cppCode .= '_SERVER.item("PHP_SELF", true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item("SCRIPT_NAME", true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item("SCRIPT_FILENAME", true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item("DOCUMENT_ROOT", true) = "";' . PHP_EOL;
+        $cppCode .= '_SERVER.item(php_self, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(script_name, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(script_filename, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(path_translated, true) = value;' . PHP_EOL;
+        $cppCode .= '_SERVER.item(document_root, true) = "";' . PHP_EOL;
 
         return $cppCode . PHP_EOL;
     }
