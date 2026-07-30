@@ -38,7 +38,7 @@ class Msvc extends CompilerBackend
     {
         $cmd = '';
 
-        $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
+        $cmd .= ' /utf-8 /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS';
 
         if (!empty($config['is_zts'])) {
             $cmd .= ' /DZTS';
@@ -288,7 +288,7 @@ class Msvc extends CompilerBackend
         $cmd = '';
         
         // 平台宏定义
-        $cmd .= ' /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0';
+        $cmd .= ' /utf-8 /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS';
         
         // ZTS
         if ($this->platform instanceof Windows && $this->platform->isZts()) {

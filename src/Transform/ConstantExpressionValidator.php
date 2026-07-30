@@ -321,11 +321,7 @@ final class ConstantExpressionValidator
     private function tryEvaluate(Expr $expression): array
     {
         try {
-            $value = (new ConstExprEvaluator(
-                static function (): never {
-                    throw new \LogicException('Expression is not statically known');
-                },
-            ))->evaluateDirectly($expression);
+            $value = (new ConstExprEvaluator())->evaluateDirectly($expression);
             return [true, $value];
         } catch (\Throwable) {
             return [false, null];

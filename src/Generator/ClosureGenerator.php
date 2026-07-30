@@ -174,7 +174,7 @@ trait ClosureGenerator
             $this->addArgument($var, Type::VAR);
         }
 
-        if ($this->methodDef) {
+        if ($this->methodDef && !$expr->static) {
             $this->addArgument('this_', Type::OBJECT);
         }
 
@@ -211,7 +211,7 @@ trait ClosureGenerator
         $this->context = $oriContext;
         $this->context->beforeStmtLines[] = $code;
 
-        if ($this->methodDef) {
+        if ($this->methodDef && !$expr->static) {
             return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' }, this_)';
         } else {
             return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';

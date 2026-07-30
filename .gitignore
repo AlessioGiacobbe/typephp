@@ -18,6 +18,8 @@
 *.exe
 *.obj
 *.pdb
+*.lib
+*.exp
 *.class
 /swoole_compiler
 /tpc

@@ -177,10 +177,6 @@ class Windows extends PlatformBase
 
     public function getBuildLibraryWarnings(string $phpDir, string $phpxDir, string $buildMode): array
     {
-        if ($buildMode !== 'bin' && $buildMode !== 'lib') {
-            return [];
-        }
-
         $warnings = [];
         $phpDirs = [
             $phpDir . '\SDK\lib',
@@ -201,10 +197,30 @@ class Windows extends PlatformBase
             ];
         }
 
-        if (!is_file($phpxDir . '\lib\phpx.lib') && !is_file($phpxDir . '\lib\phpx.dll')) {
+        $phpxLibPath = $phpxDir . '\lib\phpx.lib';
+        if (!is_file($phpxLibPath)) {
             $warnings[] = [
-                'warning' => 'The `phpx.lib` or `phpx.dll` is not found in PHX directory',
-                'info' => 'Note: If you are building an extension (-m ext), this is OK. For binary mode, please run `make` to build it',
+                'warning' => 'The PHPX import library was not found at: ' . $phpxLibPath,
+                'info' => 'Create the PHPX lib directory, reconfigure CMake if needed, then rebuild the phpx target',
+            ];
+        }
+
+        $phpxDllPaths = [
+            $phpxDir . '\build\phpx.dll',
+            $phpxDir . '\lib\phpx.dll',
+            $phpxDir . '\phpx.dll',
+        ];
+        $hasPhpxDll = false;
+        foreach ($phpxDllPaths as $phpxDllPath) {
+            if (is_file($phpxDllPath)) {
+                $hasPhpxDll = true;
+                break;
+            }
+        }
+        if (!$hasPhpxDll) {
+            $warnings[] = [
+                'warning' => 'The PHPX runtime library `phpx.dll` was not found under: ' . $phpxDir,
+                'info' => 'Reconfigure CMake if needed, then rebuild the phpx target',
             ];
         }
 
@@ -292,6 +308,7 @@ class Windows extends PlatformBase
         $phpDirs = [
             $phpDir . '\\SDK\\lib',
             $phpDir . '\\lib',
+            $phpDir,
         ];
 
         $embedLibPath = '';

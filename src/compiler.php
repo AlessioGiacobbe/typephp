@@ -3,6 +3,10 @@ use TypePhp\Translator;
 
 function main(int $argc, array $argv): void
 {
+    // Compiling a complete project keeps the parsed AST and generated sources in
+    // memory. The default CLI limit (commonly 128M) is too small for larger builds.
+    ini_set('memory_limit', '-1');
+
     if (!defined('ROOT_PATH')) {
         define("ROOT_PATH", getcwd());
     }
