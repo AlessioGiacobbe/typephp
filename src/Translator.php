@@ -692,8 +692,10 @@ class Translator extends Preprocessor
         $lines[] = PHP_EOL;
 
         /**
-         * 当程序启动后，PHP_SELF，SCRIPT_NAME，SCRIPT_FILENAME，PATH_TRANSLATED，DOCUMENT_ROOT
-         * 这些属性不会出现在$_SERVER中，因此我们需要手动生成。所以必须生成$_SERVER的声明。
+         * 由于编译后的PHP二进制程序无需再指定入口文件，$_SERVER 中原本依赖入口文件才能生成的超全局变量（
+         * 如 PHP_SELF、SCRIPT_NAME、SCRIPT_FILENAME 和 DOCUMENT_ROOT）将不会被自动生成。
+         * 然而，部分框架的初始化逻辑强依赖这些参数，缺失将导致启动失败。因此，我们必须在入口函数中手动为 $_SERVER 补充这些值。
+         * 但需要注意的是，$_SERVER 必须事先声明，否则无法向其写入内容。
          */
         if (!isset($this->globalVars['_SERVER'])) {
             $this->globalVars['_SERVER'] = Type::ARRAY;
@@ -3233,9 +3235,12 @@ CODE;
     }
 
     /**
-     * 在main函数中，将PHP_SELF，SCRIPT_NAME，SCRIPT_FILENAME和DOCUMENT_ROOT写入
-     * $_SERVER中，这些属性相当于初始化，所以不需要常驻内存。
-     * 默认main函数所在的文件名就是脚本文件名字。
+     * 由于编译后的PHP二进制程序无需再指定入口文件，$_SERVER 中依赖入口文件才能生成的超全局变量
+     * （如 PHP_SELF、SCRIPT_NAME、SCRIPT_FILENAME 和 DOCUMENT_ROOT）将被忽略。
+     * 但部分PHP框架依赖这些参数完成初始化逻辑，缺少它们将导致启动失败。因此，我们需在入口函数中
+     * 手动为 $_SERVER 补充这些值，默认以 main 函数所在文件作为入口文件。
+     * @param  string  $scriptName
+     * @return string
      */
     private function registerServerEnvironment(string $scriptName): string
     {
