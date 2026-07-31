@@ -414,9 +414,27 @@ trait BinaryOpTrait
             return null;
         }
         if ($leftType === $rightType) {
+            if ($leftType === Type::BOOL) {
+                $cppLeft = $this->nativeBoolLiteral($astLeft) ?? $cppLeft;
+                $cppRight = $this->nativeBoolLiteral($astRight) ?? $cppRight;
+            }
             return $cppLeft . ' == ' . $cppRight;
         }
         return 'false';
+    }
+
+    /**
+     * Strict comparisons between native booleans must use C++ bool literals.
+     * parseCompareExpr() normally emits php::true_/php::false_ Variants because
+     * dynamic comparisons need zvals, but those wrappers are incorrect once
+     * optimizeIdenticalOp() selects a direct primitive comparison.
+     */
+    private function nativeBoolLiteral(NodeAbstract $expr): ?string
+    {
+        if (!$this->isScalarBool($expr)) {
+            return null;
+        }
+        return strcasecmp($expr->name->toString(), 'true') === 0 ? 'true' : 'false';
     }
 
     protected function parseBinaryOpLogicalAnd(Expr\BinaryOp\LogicalAnd|Expr\BinaryOp\BooleanAnd $expr): string
