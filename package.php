@@ -1,15 +1,29 @@
 #!/usr/bin/env php
 <?php
 /**
- * Windows 打包脚本
- * 将构建好的 tpc.exe 及相关文件打包为 zip
- * 参考 package.sh，但针对 Windows 特性进行了调整
+ * TypePHP cross-platform release packager.
+ *
+ * Windows produces a self-contained PHP/PHPX SDK package. Linux and macOS
+ * retain their system-runtime package layout while sharing the same version,
+ * staging, archive verification, and cleanup rules.
  */
 
-// 检查是否在 Windows 环境下运行
+if (!chdir(__DIR__)) {
+    throw new RuntimeException('Unable to enter the project directory: ' . __DIR__);
+}
+
+if (in_array('--help', $argv ?? [], true) || in_array('-h', $argv ?? [], true)) {
+    echo "Usage: php package.php\n\n";
+    echo "Windows: requires PHP_HOME and PHPX_HOME; creates a self-contained SDK package.\n";
+    echo "Linux: requires UPX; packages the native binary and release metadata.\n";
+    echo "macOS: uses strip when available; packages the native binary and release metadata.\n";
+    echo "Supported architectures: 64-bit CPUs, including x86_64 and ARM64.\n";
+    exit(0);
+}
+
 if (PHP_OS_FAMILY !== 'Windows') {
-    echo "警告: 此脚本专为 Windows 设计，当前系统: " . PHP_OS . "\n";
-    echo "继续使用可能出现问题...\n\n";
+    packageUnixLike();
+    exit(0);
 }
 
 echo "========================================\n";
@@ -59,17 +73,12 @@ echo "当前版本: {$versionId}\n\n";
 echo "[2/7] 检测系统架构...\n";
 
 $processorArchitecture = getenv('PROCESSOR_ARCHITEW6432') ?: getenv('PROCESSOR_ARCHITECTURE');
-$arch = match (strtoupper((string)$processorArchitecture)) {
-    'AMD64' => 'x86_64',
-    'ARM64' => 'arm64',
-    default => null,
-};
-if ($arch === null || PHP_INT_SIZE !== 8) {
+if (PHP_INT_SIZE !== 8) {
     $detectedArchitecture = $processorArchitecture ?: 'unknown';
-    echo "错误: TypePHP 不支持 32 位或未知 Windows 架构 - {$detectedArchitecture}\n";
-    echo "仅支持 Windows x86_64 和 ARM64\n";
+    echo "错误: TypePHP 不支持 32 位 Windows 架构 - {$detectedArchitecture}\n";
     exit(1);
 }
+$arch = normalizeArchitecture((string)$processorArchitecture);
 
 $osType = 'windows';
 $outputFile = "tpc_v{$versionId}_{$osType}_{$arch}.zip";
@@ -186,13 +195,22 @@ if (is_dir($topLevelDir)) {
 mustCreateDirectory($topLevelDir);
 
 $cleanupStage = true;
-register_shutdown_function(static function () use (&$cleanupStage, $topLevelDir): void {
+$cleanupArchive = true;
+register_shutdown_function(static function () use (
+    &$cleanupStage,
+    &$cleanupArchive,
+    $topLevelDir,
+    $outputFile,
+): void {
     if ($cleanupStage && is_dir($topLevelDir)) {
         try {
             removeDirectory($topLevelDir);
         } catch (Throwable $error) {
             fwrite(STDERR, "警告: 无法清理临时目录 {$topLevelDir}: {$error->getMessage()}\n");
         }
+    }
+    if ($cleanupArchive && is_file($outputFile) && !unlink($outputFile)) {
+        fwrite(STDERR, "警告: 无法清理未提交的压缩包 {$outputFile}\n");
     }
 });
 
@@ -501,6 +519,7 @@ try {
     }
     throw $error;
 }
+$cleanupArchive = false;
 
 echo "\n";
 
@@ -531,6 +550,201 @@ echo "  2. set PHP_HOME=%CD%\n";
 echo "  3. set PHPX_HOME=%CD%\\phpx\n";
 echo "  4. set PATH=%CD%;%PATH%\n";
 echo "  5. 运行: tpc <your_script.php>\n\n";
+
+function normalizeArchitecture(string $architecture): string
+{
+    $architecture = strtolower(trim($architecture));
+    $normalized = match ($architecture) {
+        'x86_64', 'x86-64', 'amd64', 'x64' => 'x86_64',
+        'aarch64', 'arm64', 'arm64b', 'arm64e' => 'arm64',
+        'powerpc64', 'ppc64' => 'ppc64',
+        'powerpc64le', 'ppc64le' => 'ppc64le',
+        'riscv64' => 'riscv64',
+        's390x' => 's390x',
+        'loongarch64' => 'loongarch64',
+        'mips64' => 'mips64',
+        'mips64el' => 'mips64el',
+        'sparc64' => 'sparc64',
+        default => null,
+    };
+    if ($normalized !== null) {
+        return $normalized;
+    }
+
+    // Preserve future 64-bit architecture names while keeping archive names safe.
+    if (str_contains($architecture, '64')
+        && preg_match('/^[a-z0-9][a-z0-9._-]*$/', $architecture) === 1) {
+        return str_replace('-', '_', $architecture);
+    }
+
+    throw new RuntimeException("Unsupported or non-64-bit architecture: {$architecture}");
+}
+
+function packageUnixLike(): void
+{
+    $osType = match (PHP_OS_FAMILY) {
+        'Linux' => 'linux',
+        'Darwin' => 'macos',
+        default => throw new RuntimeException('Unsupported operating system: ' . PHP_OS_FAMILY),
+    };
+    if (PHP_INT_SIZE !== 8) {
+        throw new RuntimeException('TypePHP only supports 64-bit systems');
+    }
+
+    $arch = normalizeArchitecture(php_uname('m'));
+
+    $binary = 'tpc';
+    $versionFile = 'version.txt';
+    $requiredFiles = [
+        $binary,
+        'composer.json',
+        'README.md',
+        'LICENSE.md',
+        'examples/hello.php',
+    ];
+    foreach ($requiredFiles as $file) {
+        if (!is_file($file)) {
+            throw new RuntimeException("Required package file not found: {$file}");
+        }
+    }
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('The ZipArchive extension is required');
+    }
+
+    $versionId = is_file($versionFile) ? (int)trim((string)file_get_contents($versionFile)) : 1000;
+    $versionId++;
+    $topLevelDir = "tpc_v{$versionId}_{$osType}_{$arch}";
+    $outputFile = $topLevelDir . '.zip';
+
+    echo "========================================\n";
+    echo "TypePHP {$osType} package\n";
+    echo "========================================\n";
+    echo "Version: {$versionId}\n";
+    echo "Architecture: {$arch}\n";
+    echo "Output: {$outputFile}\n\n";
+
+    if (is_dir($topLevelDir)) {
+        removeDirectory($topLevelDir);
+    }
+    mustCreateDirectory($topLevelDir);
+
+    $cleanupStage = true;
+    $cleanupArchive = true;
+    register_shutdown_function(static function () use (
+        &$cleanupStage,
+        &$cleanupArchive,
+        $topLevelDir,
+        $outputFile,
+    ): void {
+        if ($cleanupStage && is_dir($topLevelDir)) {
+            try {
+                removeDirectory($topLevelDir);
+            } catch (Throwable $error) {
+                fwrite(STDERR, "Warning: unable to clean {$topLevelDir}: {$error->getMessage()}\n");
+            }
+        }
+        if ($cleanupArchive && is_file($outputFile) && !unlink($outputFile)) {
+            fwrite(STDERR, "Warning: unable to clean uncommitted archive {$outputFile}\n");
+        }
+    });
+
+    $stagedBinary = "{$topLevelDir}/{$binary}";
+    mustCopy($binary, $stagedBinary);
+    if (!chmod($stagedBinary, 0755)) {
+        throw new RuntimeException("Unable to mark executable: {$stagedBinary}");
+    }
+
+    if ($osType === 'linux') {
+        exec('command -v upx 2>/dev/null', $upxPath, $upxStatus);
+        if ($upxStatus !== 0) {
+            throw new RuntimeException(
+                'UPX is required for Linux packaging (for example: apt install upx-ucl)',
+            );
+        }
+        exec('upx --best ' . escapeshellarg($stagedBinary) . ' 2>&1', $upxOutput, $upxStatus);
+        if ($upxStatus !== 0) {
+            throw new RuntimeException("UPX failed:\n" . implode("\n", $upxOutput));
+        }
+    } else {
+        exec('command -v strip 2>/dev/null', $stripPath, $stripStatus);
+        if ($stripStatus === 0) {
+            exec('strip -x ' . escapeshellarg($stagedBinary) . ' 2>&1', $stripOutput, $stripStatus);
+            if ($stripStatus !== 0) {
+                throw new RuntimeException("strip failed:\n" . implode("\n", $stripOutput));
+            }
+        } else {
+            echo "Warning: strip was not found; packaging the unstripped binary\n";
+        }
+    }
+
+    mustCopy('composer.json', "{$topLevelDir}/composer.json");
+    mustCopy('README.md', "{$topLevelDir}/README.md");
+    mustCopy('LICENSE.md', "{$topLevelDir}/LICENSE.md");
+    mustCreateDirectory("{$topLevelDir}/examples");
+    mustCopy('examples/hello.php', "{$topLevelDir}/examples/hello.php");
+
+    if (is_file($outputFile) && !unlink($outputFile)) {
+        throw new RuntimeException("Unable to remove existing archive: {$outputFile}");
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($outputFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        throw new RuntimeException("Unable to create archive: {$outputFile}");
+    }
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($topLevelDir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+    foreach ($files as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+        $relativePath = str_replace('\\', '/', substr(
+            $file->getPathname(),
+            strlen($topLevelDir) + 1,
+        ));
+        if (!$zip->addFile($file->getPathname(), "{$topLevelDir}/{$relativePath}")) {
+            throw new RuntimeException("Unable to add archive entry: {$file->getPathname()}");
+        }
+    }
+    if (!$zip->close()) {
+        throw new RuntimeException("Unable to finish archive: {$outputFile}");
+    }
+
+    $requiredEntries = [
+        "{$topLevelDir}/{$binary}",
+        "{$topLevelDir}/composer.json",
+        "{$topLevelDir}/README.md",
+        "{$topLevelDir}/LICENSE.md",
+        "{$topLevelDir}/examples/hello.php",
+    ];
+    $verificationZip = new ZipArchive();
+    if ($verificationZip->open($outputFile) !== true) {
+        throw new RuntimeException("Unable to verify archive: {$outputFile}");
+    }
+    foreach ($requiredEntries as $entry) {
+        if ($verificationZip->locateName($entry) === false) {
+            $verificationZip->close();
+            throw new RuntimeException("Archive is missing required entry: {$entry}");
+        }
+    }
+    $verificationZip->close();
+
+    removeDirectory($topLevelDir);
+    $cleanupStage = false;
+    try {
+        mustWriteFile($versionFile, (string)$versionId);
+    } catch (Throwable $error) {
+        if (is_file($outputFile)) {
+            @unlink($outputFile);
+        }
+        throw $error;
+    }
+    $cleanupArchive = false;
+
+    $sizeMb = round(filesize($outputFile) / 1024 / 1024, 2);
+    echo "Package successful: {$outputFile} ({$sizeMb} MB)\n";
+}
 
 /**
  * 递归复制目录

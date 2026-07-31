@@ -70,3 +70,15 @@ vim /etc/ld.so.conf.d/swoole.conf
 /home/swoole/workspace/projects/phpx/lib
 /opt/php-8.4/lib/
 ```
+
+## Release packaging
+
+Use the same PHP entry point on Windows, Linux, and macOS:
+
+```shell
+php package.php
+```
+
+Windows packaging requires `PHP_HOME` and `PHPX_HOME`; Linux packaging requires
+UPX; macOS uses `strip` when available. TypePHP rejects 32-bit targets and
+supports common 64-bit CPU architectures, including x86-64 and ARM64.
