@@ -2427,7 +2427,8 @@ TEST $file
     global $no_aot;
     if (!$no_aot) {
         try {
-            $bin_file = compile_php_file($test_file);
+            $aot_args = $test->hasSection('AOT_ARGS') ? trim($test->getSection('AOT_ARGS')) : '';
+            $bin_file = compile_php_file($test_file, $aot_args);
         } catch (Throwable $e) {
             $compileOutput = trim($e instanceof CompilationFailureException ? $e->getCompilerOutput() : '');
             $message = $e->getMessage();
@@ -3740,7 +3741,7 @@ class TestFile
 
     private const ALLOWED_SECTIONS = [
         'EXPECT', 'EXPECTF', 'EXPECTREGEX', 'EXPECTREGEX_EXTERNAL', 'EXPECT_EXTERNAL', 'EXPECTF_EXTERNAL', 'EXPECTHEADERS',
-        'POST', 'POST_RAW', 'GZIP_POST', 'DEFLATE_POST', 'PUT', 'GET', 'COOKIE', 'ARGS',
+        'POST', 'POST_RAW', 'GZIP_POST', 'DEFLATE_POST', 'PUT', 'GET', 'COOKIE', 'ARGS', 'AOT_ARGS',
         'FILE', 'FILEEOF', 'FILE_EXTERNAL', 'REDIRECTTEST',
         'CAPTURE_STDIO', 'STDIN', 'CGI', 'PHPDBG',
         'INI', 'ENV', 'EXTENSIONS',
@@ -4240,7 +4241,7 @@ function debug()
     exit;
 }
 
-function compile_php_file(string $file): string
+function compile_php_file(string $file, string $compiler_args = ''): string
 {
     global $compiler_path;
 
@@ -4268,6 +4269,9 @@ function compile_php_file(string $file): string
     // On Windows, .php files need to be run through the PHP interpreter
     if (IS_WINDOWS && str_ends_with($cmd, '.php')) {
         $cmd = escapeshellarg(PHP_BINARY) . ' ' . $cmd;
+    }
+    if ($compiler_args !== '') {
+        $cmd .= ' ' . $compiler_args;
     }
     exec($cmd . ' ' . escapeshellarg($file) . ' 2>&1', $output, $exitCode);
     clearstatcache(true, $binary_file);
