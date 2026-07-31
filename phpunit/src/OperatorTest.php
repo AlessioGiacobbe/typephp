@@ -2,6 +2,26 @@
 
 class OperatorTest extends \BaseTest
 {
+    public function testBooleanLiteralStrictComparisonUsesNativeBoolOperands(): void
+    {
+        global $translator;
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/bool-literal-identical.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $cppFile = $compiler->convertFile($testFile);
+        $cpp = file_get_contents($cppFile);
+
+        $this->assertStringContainsString('true == pjax', $cpp);
+        $this->assertStringContainsString('pjax == true', $cpp);
+        $this->assertStringContainsString('false == pjax', $cpp);
+        $this->assertStringContainsString('pjax == false', $cpp);
+        $this->assertStringNotContainsString('php::true_ == pjax', $cpp);
+        $this->assertStringNotContainsString('php::false_ == pjax', $cpp);
+        $this->assertStringContainsString('php::same(php::true_, value)', $cpp);
+    }
+
     public function testLiteralIntDivideByZeroDoesNotCompile(): void
     {
         $this->exec('Cannot divide or modulo by zero', 'divide-by-zero-int.php');

@@ -90,9 +90,10 @@ trait SwitchTrait
             if (!$this->isReturnExpr($lastExpr)
                 and !$this->isExitExpr($lastExpr)
                 and !$this->isBreakExpr($lastExpr)
+                and !$this->isContinueExpr($lastExpr)
                 and !$this->isThrowExpr($lastExpr)
             ) {
-                $this->fatalError($case, 'switch case must end with return/break/exit/throw, ' . $lastExpr->getType() . ' given');
+                $this->fatalError($case, 'switch case must end with return/break/continue/exit/throw, ' . $lastExpr->getType() . ' given');
             }
             $target = count($caseGroups);
             if ($hasDefault) {

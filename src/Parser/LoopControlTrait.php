@@ -183,7 +183,7 @@ trait LoopControlTrait
 
     protected function parseContinue(Node\Stmt\Continue_ $v): string
     {
-        if (!$this->context->inLoop) {
+        if (!$this->context->inContinuableLoop) {
             $this->fatalError($v, 'Cannot continue outside loop');
         }
         $num = $v->num;

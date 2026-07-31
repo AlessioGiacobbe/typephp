@@ -152,6 +152,11 @@ trait AstNodeType
         return $expr instanceof Node\Stmt\Break_;
     }
 
+    protected function isContinueExpr(NodeAbstract $expr): bool
+    {
+        return $expr instanceof Node\Stmt\Continue_;
+    }
+
     protected function isThrowExpr(NodeAbstract $expr): bool
     {
         if ($expr instanceof Node\Stmt\Expression) {
