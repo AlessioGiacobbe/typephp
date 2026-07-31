@@ -381,11 +381,25 @@ class BackendTest extends TestCase
             }
         };
 
+        // getLibraries() 必须先找到 phpx 库才能走到链接失败路径。
+        // 用临时目录提供静态库占位文件，使测试不依赖本机是否已构建 phpx。
+        $phpxHome = $dir . '/phpx';
+        mkdir($phpxHome . '/lib', 0777, true);
+        touch($phpxHome . '/lib/libphpx.a');
+        $previousPhpxHome = getenv('PHPX_HOME');
+        putenv('PHPX_HOME=' . $phpxHome);
+
         try {
             $compiler->build([$dir . '/missing.o']);
             $this->fail('The failing linker command should abort the build');
         } catch (TestError $e) {
             $this->assertStringContainsString('link failed', $e->getMessage());
+        } finally {
+            if ($previousPhpxHome === false) {
+                putenv('PHPX_HOME');
+            } else {
+                putenv('PHPX_HOME=' . $previousPhpxHome);
+            }
         }
 
         $this->assertFileDoesNotExist($target . '.rsp');

@@ -95,6 +95,13 @@ trait SourcePipelineTrait
             }
         }
 
+        // 仅在 PHP 脚本入口（bin/tpc.php）前置检测 phpx 库：缺少库立即 fatal，
+        // 避免继续向下执行到文件处理/编译阶段才报错。已编译的 tpc 可执行文件
+        // 在进入 main() 前就由动态链接器加载 libphpx，无需（也无法）在此检测。
+        if (defined('TYPEPHP_PHP_SCRIPT_ENTRY')) {
+            $this->validatePhpxLibrary();
+        }
+
         $this->validateCompilerToolchain();
 
         // shell_exec 和 define 已通过 php::fn:: 直接调用，无需动态符号表

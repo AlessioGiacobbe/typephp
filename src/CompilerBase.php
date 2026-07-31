@@ -488,10 +488,15 @@ class CompilerBase implements PropertyAccessContext
 
     protected function getPhpxDir(): string
     {
-        // 优先使用环境变量 PHPX_HOME
+        // 解析 phpx 目录，优先级（macOS / Windows / Linux 通用）：
+        // 1. PHPX_HOME 环境变量指定的目录
+        // 2. vendor 目录（Composer 安装路径，或 TypePHP 源码检出下的 vendor/swoole/phpx）
         $phpxDir = getenv('PHPX_HOME');
-        if ($phpxDir && is_dir($phpxDir)) {
-            return rtrim($phpxDir, '\/');
+        if ($phpxDir !== false && $phpxDir !== '') {
+            $phpxDir = rtrim($phpxDir, '\/');
+            if (is_dir($phpxDir)) {
+                return $this->normalizePhpxDir($phpxDir);
+            }
         }
 
         // Composer-installed TypePHP and PHPX are sibling packages. Ask
@@ -500,21 +505,24 @@ class CompilerBase implements PropertyAccessContext
         if (class_exists(\Composer\InstalledVersions::class)
             && \Composer\InstalledVersions::isInstalled('swoole/phpx')) {
             $composerInstallPath = \Composer\InstalledVersions::getInstallPath('swoole/phpx');
-            if (is_string($composerInstallPath) && is_dir($composerInstallPath)) {
-                return rtrim($composerInstallPath, '\/');
+            if (is_string($composerInstallPath)) {
+                $composerInstallPath = rtrim($composerInstallPath, '\/');
+                if (is_dir($composerInstallPath)) {
+                    return $this->normalizePhpxDir($composerInstallPath);
+                }
             }
         }
 
         // TypePHP source checkout: phpx is installed below this repository.
         $composerPhpxDir = $this->rootPath . self::PHPX_VENDOR_DIR;
         if (is_dir($composerPhpxDir)) {
-            return $composerPhpxDir;
+            return $this->normalizePhpxDir($composerPhpxDir);
         }
 
         if (defined('ROOT_PATH')) {
             $rootPhpxDir = ROOT_PATH . self::PHPX_VENDOR_DIR;
             if (is_dir($rootPhpxDir)) {
-                return $rootPhpxDir;
+                return $this->normalizePhpxDir($rootPhpxDir);
             }
         }
 
@@ -524,6 +532,15 @@ class CompilerBase implements PropertyAccessContext
             '1. Set PHPX_HOME environment variable to your phpx installation path\n' .
             '2. Install phpx via Composer: composer require swoole/phpx'
         );
+    }
+
+    /**
+     * 规范化 phpx 目录路径（解析相对路径与 ..，便于错误提示和后续路径拼接）
+     */
+    private function normalizePhpxDir(string $dir): string
+    {
+        $real = realpath($dir);
+        return $real !== false ? $real : $dir;
     }
 
     protected function getPlatform(): PlatformBase

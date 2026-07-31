@@ -85,32 +85,11 @@ trait NativeBuildConfigurationTrait
         $libraries = [];
 
         // phpx 库（根据平台使用不同的文件名格式）
-        if ($platform instanceof Windows) {
-            // Windows: phpx.lib (无 lib 前缀)
-            $phpxLibPath = $this->getPhpxDir() . '\\lib\\phpx.lib';
-            if (file_exists($phpxLibPath)) {
-                $libraries[] = $phpxLibPath;  // 不添加引号，由 getLibraryFlags() 统一处理
-            } else {
-                $this->error('phpx.lib not found at: ' . $phpxLibPath);
-            }
-        } else {
-            // Linux/macOS: libphpx.so 或 libphpx.a
-            $sharedLibExt = $platform->getSharedLibraryExtension();
-            // getSharedLibraryExtension() 返回的值可能带点或不带点，需要统一处理
-            $extWithoutDot = ltrim($sharedLibExt, '.');
-            $phpxLibPath = $this->getPhpxDir() . '/lib/libphpx.' . $extWithoutDot;
-            if (file_exists($phpxLibPath)) {
-                $libraries[] = $phpxLibPath;
-            } else {
-                // 尝试静态库
-                $phpxStaticPath = $this->getPhpxDir() . '/lib/libphpx.a';
-                if (file_exists($phpxStaticPath)) {
-                    $libraries[] = $phpxStaticPath;
-                } else {
-                    $this->error('libphpx library not found');
-                }
-            }
+        $phpxLibPath = $this->findPhpxLibrary();
+        if ($phpxLibPath === null) {
+            $this->error($this->getPhpxLibraryErrorMessage());
         }
+        $libraries[] = $phpxLibPath;
 
         // extension 和 bin 模式都需要链接 PHP 库
         if ($platform instanceof Windows) {
@@ -151,6 +130,65 @@ trait NativeBuildConfigurationTrait
         }
 
         return $libraries;
+    }
+
+    /**
+     * 解析 phpx 库文件路径，库不存在时返回 null。
+     *
+     * Windows 使用 phpx.lib（无 lib 前缀）；其他平台优先使用共享库
+     * （libphpx.so / libphpx.dylib），找不到时回退到静态库 libphpx.a。
+     */
+    protected function findPhpxLibrary(): ?string
+    {
+        $platform = $this->getPlatform();
+
+        if ($platform instanceof Windows) {
+            $phpxLibPath = $this->getPhpxDir() . '\\lib\\phpx.lib';
+            return is_file($phpxLibPath) ? $phpxLibPath : null;
+        }
+
+        // Linux/macOS：共享库优先，静态库兜底
+        // getSharedLibraryExtension() 返回的值可能带点或不带点，需要统一处理
+        $sharedLibExt = ltrim($platform->getSharedLibraryExtension(), '.');
+        $phpxLibPath = $this->getPhpxDir() . '/lib/libphpx.' . $sharedLibExt;
+        if (is_file($phpxLibPath)) {
+            return $phpxLibPath;
+        }
+
+        $phpxStaticPath = $this->getPhpxDir() . '/lib/libphpx.a';
+        return is_file($phpxStaticPath) ? $phpxStaticPath : null;
+    }
+
+    /**
+     * 生成 phpx 库缺失时的错误信息
+     */
+    protected function getPhpxLibraryErrorMessage(): string
+    {
+        $platform = $this->getPlatform();
+        if ($platform instanceof Windows) {
+            $expected = $this->getPhpxDir() . '\\lib\\phpx.lib';
+            $buildHint = 'Build PHPX first (for example, run `nmake phpx` in ' . $this->getPhpxDir() . '\\build)';
+        } else {
+            $sharedLibExt = ltrim($platform->getSharedLibraryExtension(), '.');
+            $expected = $this->getPhpxDir() . '/lib/libphpx.' . $sharedLibExt
+                . ' or ' . $this->getPhpxDir() . '/lib/libphpx.a';
+            $buildHint = 'Build phpx first (e.g. run `cmake --build ' . $this->getPhpxDir() . '/build`)';
+        }
+
+        return 'phpx library not found at: ' . $expected . PHP_EOL .
+            $buildHint . PHP_EOL .
+            'or set PHPX_HOME to a phpx installation that provides the library.';
+    }
+
+    /**
+     * 前置检测 phpx 库是否可用，在编译开始前报错，
+     * 避免所有源文件编译完成后才在链接阶段失败。
+     */
+    protected function validatePhpxLibrary(): void
+    {
+        if ($this->findPhpxLibrary() === null) {
+            $this->error($this->getPhpxLibraryErrorMessage());
+        }
     }
 
     /**
