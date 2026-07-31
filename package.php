@@ -501,7 +501,7 @@ echo "[8/8] 清理临时文件...\n";
 
 // 获取文件大小
 $packageSize = filesize($outputFile);
-$packageSizeMB = round($packageSize / 1024 / 1024, 2);
+$packageSizeMB = formatMegabytes($packageSize);
 
 echo "临时目录: {$topLevelDir}\n";
 removeDirectory($topLevelDir);
@@ -742,8 +742,13 @@ function packageUnixLike(): void
     }
     $cleanupArchive = false;
 
-    $sizeMb = round(filesize($outputFile) / 1024 / 1024, 2);
+    $sizeMb = formatMegabytes(filesize($outputFile));
     echo "Package successful: {$outputFile} ({$sizeMb} MB)\n";
+}
+
+function formatMegabytes(int $bytes): string
+{
+    return number_format($bytes / 1024 / 1024, 3, '.', '');
 }
 
 /**
