@@ -77,6 +77,7 @@ class Translator extends Preprocessor
     protected array $resourceConfig = [];
     protected bool $useRegisterSymbolsFn = false;
     protected array $globalHeaders = [
+        'cstring',
         'phpx.h',
         'phpx_helper.h',
         'phpx_big_int.h',
@@ -746,8 +747,7 @@ class Translator extends Preprocessor
         $this->genClassCeList();
         $this->indentLevel++;
 
-        $code = '#include <cstring>' . PHP_EOL;
-        $code .= $this->genIncludeHeaderFiles();
+        $code = $this->genIncludeHeaderFiles();
 
         if ($this->isBuildModeLib() && !$this->isWindows()) {
             // PHPX's embedded runtime references this CLI-only symbol even when main() is disabled.

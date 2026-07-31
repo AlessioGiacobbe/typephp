@@ -6,6 +6,9 @@ use TypePhp\Backend\CompilerBackend;
 
 final readonly class PrecompiledHeaderManager
 {
+    private const int MAX_CACHE_ENTRIES = 8;
+    private const int MAX_CACHE_AGE = 30 * 86400;
+
     public function __construct(
         private CompilerBackend $backend,
         private NativeBuilder $builder,
@@ -46,6 +49,7 @@ final readonly class PrecompiledHeaderManager
         }
 
         if (is_file($artifact)) {
+            $this->markUsedAndPrune($cacheDirectory, $directory);
             return ['header' => $headerFile, 'artifact' => $artifact, 'cached' => true, 'command' => ''];
         }
 
@@ -55,7 +59,60 @@ final readonly class PrecompiledHeaderManager
             throw new \RuntimeException('Failed to build PHPX precompiled header' . ($message === '' ? '' : ': ' . $message));
         }
 
+        $this->markUsedAndPrune($cacheDirectory, $directory);
         return ['header' => $headerFile, 'artifact' => $artifact, 'cached' => false, 'command' => $result['command']];
+    }
+
+    private function markUsedAndPrune(string $cacheDirectory, string $currentDirectory): void
+    {
+        // Cache cleanup is best-effort and must never disable an otherwise
+        // usable PCH merely because an old entry cannot be removed.
+        @touch($currentDirectory);
+
+        try {
+            $entries = $this->getCacheEntries($cacheDirectory, $currentDirectory);
+            $cutoff = time() - self::MAX_CACHE_AGE;
+            foreach ($entries as $index => $entry) {
+                if ($entry['mtime'] < $cutoff || $index >= self::MAX_CACHE_ENTRIES - 1) {
+                    $this->removeCacheDirectory($entry['path']);
+                }
+            }
+        } catch (\Throwable) {
+            // Ignore cleanup errors; the active artifact is already valid.
+        }
+    }
+
+    /** @return list<array{path: string, mtime: int}> */
+    private function getCacheEntries(string $cacheDirectory, string $currentDirectory): array
+    {
+        $entries = [];
+        $iterator = new \FilesystemIterator($cacheDirectory, \FilesystemIterator::SKIP_DOTS);
+        foreach ($iterator as $entry) {
+            $path = $entry->getPathname();
+            if (!$entry->isDir() || $entry->isLink() || $path === $currentDirectory
+                || preg_match('/^[a-f0-9]{24}$/D', $entry->getFilename()) !== 1) {
+                continue;
+            }
+            $entries[] = ['path' => $path, 'mtime' => $entry->getMTime()];
+        }
+        usort($entries, static fn(array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+        return $entries;
+    }
+
+    private function removeCacheDirectory(string $directory): void
+    {
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($iterator as $entry) {
+            if ($entry->isDir() && !$entry->isLink()) {
+                @rmdir($entry->getPathname());
+            } else {
+                @unlink($entry->getPathname());
+            }
+        }
+        @rmdir($directory);
     }
 
     /** @param list<string> $headers @param list<string> $dependencyDirectories */
