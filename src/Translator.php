@@ -2230,7 +2230,10 @@ CODE;
             foreach ($ignore as $src) {
                 $realPath = $this->getAbsolutePath($src, $projectDir);
                 if (!$realPath) {
-                    $this->error('Source file not exists: `' . $src . '`');
+                    // Ignore entries describe optional exclusions. Projects often
+                    // share one configuration across dependency versions where an
+                    // excluded file or directory may not exist.
+                    continue;
                 }
                 $this->ignorePaths[] = $realPath;
             }

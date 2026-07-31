@@ -576,6 +576,35 @@ YAML);
         $this->assertNotContains(realpath($projectDir . '/skipped/nested.php'), $files);
     }
 
+    public function testParseProjectYamlAllowsMissingIgnorePaths(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+ignore:
+  - optional-missing.php
+  - optional-missing-directory
+YAML);
+
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame([realpath(dirname($projectFile) . '/main.php')], $files);
+        $this->assertSame([], $this->getPropertyValue('ignorePaths'));
+    }
+
+    public function testParseProjectYamlStillRejectsMissingSources(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - required-missing.php
+YAML);
+
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Source file not exists: `required-missing.php`');
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+    }
+
     public function testParseProjectYamlSupportsConditionalSourcesByPhpVersion(): void
     {
         $futureVersion = PHP_VERSION_ID + 10000;
