@@ -91,7 +91,12 @@ abstract class PlatformBase
     /**
      * 获取构建前的运行库检查告警
      */
-    public function getBuildLibraryWarnings(string $phpDir, string $phpxDir, string $buildMode): array
+    public function getBuildLibraryWarnings(
+        string $phpDir,
+        string $phpxDir,
+        string $buildMode,
+        bool $checkPhpxRuntime = true,
+    ): array
     {
         if ($buildMode !== 'bin' && $buildMode !== 'lib') {
             return [];

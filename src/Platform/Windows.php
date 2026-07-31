@@ -175,7 +175,12 @@ class Windows extends PlatformBase
         return '/NODEFAULTLIB:LIBCMT';
     }
 
-    public function getBuildLibraryWarnings(string $phpDir, string $phpxDir, string $buildMode): array
+    public function getBuildLibraryWarnings(
+        string $phpDir,
+        string $phpxDir,
+        string $buildMode,
+        bool $checkPhpxRuntime = true,
+    ): array
     {
         $warnings = [];
         $phpDirs = [
@@ -205,21 +210,10 @@ class Windows extends PlatformBase
             ];
         }
 
-        $phpxDllPaths = [
-            $phpxDir . '\build\phpx.dll',
-            $phpxDir . '\lib\phpx.dll',
-            $phpxDir . '\phpx.dll',
-        ];
-        $hasPhpxDll = false;
-        foreach ($phpxDllPaths as $phpxDllPath) {
-            if (is_file($phpxDllPath)) {
-                $hasPhpxDll = true;
-                break;
-            }
-        }
-        if (!$hasPhpxDll) {
+        $phpxDllPath = $phpxDir . '\build\phpx.dll';
+        if ($checkPhpxRuntime && !is_file($phpxDllPath)) {
             $warnings[] = [
-                'error' => 'The PHPX runtime library `phpx.dll` was not found under: ' . $phpxDir,
+                'error' => 'The PHPX runtime library was not found at: ' . $phpxDllPath,
                 'info' => 'Build PHPX first (for example, run `nmake phpx` in ' . $phpxDir . '\build)',
             ];
         }

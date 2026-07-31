@@ -102,7 +102,12 @@ trait SourcePipelineTrait
         // Windows 的所有构建模式都依赖 PHPX 导入库和运行库。
         // 其他平台仅在嵌入式构建模式下执行现有检查。
         if ($this->isBuildModeEmbed() || $this->getPlatform() instanceof Windows) {
-            foreach ($this->getPlatform()->getBuildLibraryWarnings($this->getPhpDir(), $this->getPhpxDir(), $this->buildMode) as $message) {
+            foreach ($this->getPlatform()->getBuildLibraryWarnings(
+                $this->getPhpDir(),
+                $this->getPhpxDir(),
+                $this->buildMode,
+                defined('TYPEPHP_PHP_SCRIPT_ENTRY'),
+            ) as $message) {
                 if (!empty($message['error'])) {
                     $detail = $message['error'];
                     if (!empty($message['info'])) {

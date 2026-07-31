@@ -78,15 +78,24 @@ class PlatformTest extends TestCase
                 'The PHPX import library was not found at: ' . $root . '\lib\phpx.lib',
                 $errors,
             );
-            $this->assertContains(
-                'The PHPX runtime library `phpx.dll` was not found under: ' . $root,
-                $errors,
-            );
+            $runtimeError = 'The PHPX runtime library was not found at: ' . $root . '\build\phpx.dll';
+            $this->assertContains($runtimeError, $errors);
             foreach ($diagnostics as $diagnostic) {
                 if (isset($diagnostic['error'])) {
                     $this->assertStringContainsString('Build PHPX first', $diagnostic['info']);
                 }
             }
+
+            $nativeExecutableDiagnostics = (new Windows())->getBuildLibraryWarnings(
+                $root,
+                $root,
+                'bin',
+                checkPhpxRuntime: false,
+            );
+            $this->assertNotContains(
+                $runtimeError,
+                array_column($nativeExecutableDiagnostics, 'error'),
+            );
         } finally {
             rmdir($root);
         }
