@@ -612,7 +612,7 @@ trait FuncCallOptimizer
 
     protected function genIsNull(string $n, Node\Expr\FuncCall $e, array $c): string
     {
-        return $this->parseIdentifier($e->args[0]->value) . '.isNull()';
+        return '(' . $this->parseExprAsValue($e->args[0]->value) . ').isNull()';
     }
 
     protected function genIsCallable(string $n, Node\Expr\FuncCall $e, array $c): string|false

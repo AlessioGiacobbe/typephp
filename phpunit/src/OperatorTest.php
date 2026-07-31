@@ -22,6 +22,23 @@ class OperatorTest extends \BaseTest
         $this->assertStringContainsString('php::same(php::true_, value)', $cpp);
     }
 
+    public function testAssignedValueNotIdenticalToNullIsParenthesized(): void
+    {
+        global $translator;
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/assign-not-identical-null.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $cppFile = $compiler->convertFile($testFile);
+        $cpp = file_get_contents($cppFile);
+
+        $this->assertMatchesRegularExpression(
+            '/!\(\(error = php::call\([^\n]+\)\)\.isNull\(\)\)/',
+            $cpp,
+        );
+    }
+
     public function testLiteralIntDivideByZeroDoesNotCompile(): void
     {
         $this->exec('Cannot divide or modulo by zero', 'divide-by-zero-int.php');

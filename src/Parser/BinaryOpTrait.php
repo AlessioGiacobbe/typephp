@@ -388,7 +388,10 @@ trait BinaryOpTrait
         $left  = $this->parseCompareExpr($expr->left);
         $right = $this->parseCompareExpr($expr->right);
         if ($right === 'nullptr') {
-            return $left . '.isNull()';
+            // The left operand may itself be an assignment or another compound
+            // expression. Parenthesize it before invoking Variant::isNull(), or
+            // C++ binds the member access to the assignment's RHS instead.
+            return '(' . $left . ').isNull()';
         }
         if ($optimized = $this->optimizeIdenticalOp($expr->left, $expr->right, $left, $right)) {
             return $optimized;
