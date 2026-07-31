@@ -2,19 +2,35 @@
 
 class FunctionTest extends \BaseTest
 {
-    public function testFunctionCallDoesNotResolveCollidingClassMethodSymbol(): void
+    public function testFunctionAndMethodNativeNameCollisionIsRejected(): void
+    {
+        $this->assertFunctionMethodNativeNameCollision('function-method-symbol-collision.php');
+    }
+
+    public function testFunctionAndMethodNativeNameCollisionIsRejectedInReverseOrder(): void
+    {
+        $this->assertFunctionMethodNativeNameCollision('function-method-symbol-collision-reversed.php');
+    }
+
+    private function assertFunctionMethodNativeNameCollision(string $filename): void
     {
         global $translator;
         $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
         $translator = $compiler;
-        $testFile = __DIR__ . '/../code/function-method-symbol-collision.php';
+        $testFile = __DIR__ . '/../code/' . $filename;
         $compiler->addFiles([$testFile]);
-        $compiler->prepareFile($testFile);
-        $cppFile = $compiler->convertFile($testFile);
-        $cpp = file_get_contents($cppFile);
 
-        $this->assertStringContainsString('php_collision__worker__NSE__validate(validater)', $cpp);
-        $this->assertStringContainsString('php_collision__NSE__worker__validate(', $cpp);
+        try {
+            $compiler->prepareFile($testFile);
+            $this->fail('Expected a native symbol collision');
+        } catch (\TypePhp\Exception\TestError $error) {
+            $message = $error->getMessage();
+            $this->assertStringContainsString('C++ symbol collision', $message);
+            $this->assertStringContainsString('Collision\\Worker::validate()', $message);
+            $this->assertStringContainsString('Collision\\Worker\\validate()', $message);
+            $this->assertStringContainsString('php_collision__worker__validate', $message);
+            $this->assertStringContainsString('rename one of them', $message);
+        }
     }
 
     public function testReturnRef(): void

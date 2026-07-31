@@ -196,7 +196,6 @@ class CompilerBase implements PropertyAccessContext
     public const string FUNC_MAP = 'func_map';
     public const string PROP_MAP = 'property_map';
     public const string NAMESPACE_SEPARATOR = '__';
-    public const string NAMESPACE_END_MARKER = 'NSE';
 
     public const string PREFIX = 'php_';
     protected const string MULTI_RETURN_NAMESPACE = 'typephp::detail';
@@ -1019,14 +1018,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function getFunctionName(FunctionLike $v): string
     {
-        if ($this->class !== '') {
-            return $this->getNativeClassMethodName(
-                $this->parseIdentifier($v->name),
-                $this->namespace,
-                $this->class,
-            );
-        }
-        return $this->getNativeFunctionName($this->parseIdentifier($v->name), $this->namespace);
+        return $this->getNativeName($this->parseIdentifier($v->name), $this->namespace, $this->class);
     }
 
     protected function getFullClassName(): string
@@ -1146,29 +1138,6 @@ class CompilerBase implements PropertyAccessContext
         if ($fn) {
             $names[] = $this->escapeName($fn);
         }
-        return implode(self::NAMESPACE_SEPARATOR, $names);
-    }
-
-    protected function getNativeFunctionName(string $function, string $namespace = ''): string
-    {
-        $names = [];
-        if ($namespace !== '') {
-            $names[] = $this->escapeNamespace($namespace);
-            $names[] = self::NAMESPACE_END_MARKER;
-        }
-        $names[] = $this->escapeName($function);
-        return implode(self::NAMESPACE_SEPARATOR, $names);
-    }
-
-    protected function getNativeClassMethodName(string $method, string $namespace, string $class): string
-    {
-        $names = [];
-        if ($namespace !== '') {
-            $names[] = $this->escapeNamespace($namespace);
-        }
-        $names[] = self::NAMESPACE_END_MARKER;
-        $names[] = $this->escapeClass($class);
-        $names[] = $this->escapeName($method);
         return implode(self::NAMESPACE_SEPARATOR, $names);
     }
 
@@ -2393,7 +2362,7 @@ class CompilerBase implements PropertyAccessContext
         if ($checkArgs) {
             $this->checkNativeCallArgs($expr, $methodDef->functionDef, $expr->args, $classDef->getNamespacedName() . '::' . $method);
         }
-        return $this->getNativeClassMethodName($method, $classDef->namespace, $classDef->name);
+        return $this->getNativeName($method, $classDef->namespace, $classDef->name);
     }
 
     protected function findNativeClassConst(NodeAbstract $expr, string $class, string $const): string|false
@@ -2845,33 +2814,17 @@ class CompilerBase implements PropertyAccessContext
         // 绝对命名空间的函数
         if ($funcName[0] == '\\') {
             $funcName = ltrim($funcName, '\\');
-            $separator = strrpos($funcName, '\\');
-            if ($separator === false) {
-                $possibleFunctionNames = [$this->getNativeFunctionName($funcName)];
-            } else {
-                $possibleFunctionNames = [$this->getNativeFunctionName(
-                    substr($funcName, $separator + 1),
-                    substr($funcName, 0, $separator),
-                )];
-            }
+            $possibleFunctionNames = [$this->escapeName($funcName)];
         } else {
-            $possibleFunctionNames = [$this->getNativeFunctionName($funcName)];
+            $possibleFunctionNames = [$this->escapeName($funcName)];
             if (isset($this->useAliases[$funcName])) {
-                $alias = $this->useAliases[$funcName];
-                $separator = strrpos($alias, '\\');
-                $possibleFunctionNames[] = $separator === false
-                    ? $this->getNativeFunctionName($alias)
-                    : $this->getNativeFunctionName(substr($alias, $separator + 1), substr($alias, 0, $separator));
+                $possibleFunctionNames[] = $this->escapeName($this->escapeNamespace($this->useAliases[$funcName]));
             }
             if ($this->namespace) {
-                $possibleFunctionNames[] = $this->getNativeFunctionName($funcName, $this->namespace);
+                $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $this->escapeName($funcName);
             }
             if (isset($this->useFunctions[$funcName])) {
-                $alias = $this->useFunctions[$funcName];
-                $separator = strrpos($alias, '\\');
-                $possibleFunctionNames[] = $separator === false
-                    ? $this->getNativeFunctionName($alias)
-                    : $this->getNativeFunctionName(substr($alias, $separator + 1), substr($alias, 0, $separator));
+                $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$funcName]);
             }
             // 复杂命名空间规则，组合命名空间
             // 例子：use foo\bar;  bar\fn();
@@ -2881,12 +2834,7 @@ class CompilerBase implements PropertyAccessContext
                 if ($ns1[array_key_last($ns1)] === $ns2[array_key_first($ns2)]) {
                     $ns = array_merge($ns1, $ns2);
                     array_splice($ns, array_key_last($ns1) + 1);
-                    $fullName = implode('\\', $ns);
-                    $separator = strrpos($fullName, '\\');
-                    $possibleFunctionNames[] = $this->getNativeFunctionName(
-                        substr($fullName, $separator + 1),
-                        substr($fullName, 0, $separator),
-                    );
+                    $possibleFunctionNames[] = $this->escapeNamespace(implode('\\', $ns));
                     break;
                 }
             }

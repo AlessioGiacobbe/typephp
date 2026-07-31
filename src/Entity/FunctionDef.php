@@ -52,6 +52,8 @@ class FunctionDef
     public string $sourceFile = '';
     /** First source line of this function definition. */
     public int $startLine = 1;
+    /** PHP-level function or Class::method name used in diagnostics. */
+    public string $displayName = '';
 
     /**
      * @var string 必须是带有命名空间的完整类名

@@ -392,7 +392,7 @@ trait UniversalMethodCall
                 }
                 $registry[$targetKey][$methodKey] = [
                     'handler' => 'provider_extension',
-                    'fn' => $this->getNativeClassMethodName($method->name, $provider->namespace, $provider->name),
+                    'fn' => $this->getNativeName($method->name, $provider->namespace, $provider->name),
                     'class' => $provider->getNamespacedName(false),
                     'return_type' => $function->returnType,
                     'min_args' => max(0, $function->argCountRequired - 1),

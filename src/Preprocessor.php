@@ -642,6 +642,24 @@ class Preprocessor extends CompilerBase
         $this->function = $this->parseIdentifier($v->name);
         $name = $this->getFunctionName($v);
         if ($this->hasFunction($name)) {
+            $existing = $this->getFunction($name);
+            $currentIsMethod = $this->methodDef !== null;
+            if ($existing->method !== $currentIsMethod) {
+                $currentDisplayName = $currentIsMethod
+                    ? $this->classDef->getNamespacedName(false) . '::' . $this->function
+                    : ltrim($this->namespace . '\\' . $this->function, '\\');
+                $existingDisplayName = $existing->displayName !== ''
+                    ? $existing->displayName
+                    : $existing->getNamespacedName();
+                $existingLocation = $existing->sourceFile !== ''
+                    ? " (previously declared in {$existing->sourceFile}:{$existing->startLine})"
+                    : '';
+                $this->fatalError(
+                    $v,
+                    "C++ symbol collision: `{$existingDisplayName}()` and `{$currentDisplayName}()` "
+                    . "both map to `" . self::PREFIX . "{$name}`{$existingLocation}; rename one of them",
+                );
+            }
             $this->fatalError($v, "Duplicate function `{$name}`");
         }
         // 禁止重定义内置函数
@@ -662,9 +680,12 @@ class Preprocessor extends CompilerBase
         }
         $functionDef->sourceFile = $this->file;
         $functionDef->startLine = $v->getStartLine();
+        $functionDef->method = $this->methodDef !== null;
+        $functionDef->displayName = $functionDef->method
+            ? $this->classDef->getNamespacedName(false) . '::' . $functionDef->name
+            : $functionDef->getNamespacedName();
         $this->addFunction($name, $functionDef);
         if ($this->methodDef) {
-            $functionDef->method = true;
             $this->methodDef->functionDef = $functionDef;
         }
     }
