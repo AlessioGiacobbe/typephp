@@ -3215,7 +3215,9 @@ CODE;
             $methodArgs = implode(', ', array_merge(['this_'], $implicitMethodArgs));
             $callParams = $functionDef->argInfoList ? $methodArgs . ', ' . rtrim($callParams, ',') : $methodArgs;
         } else {
-            if ($this->isBuildModeBin() && $functionDef->name === self::ENTRY_FUNCTION) {
+            $isEntryFunction = $this->hasFunction(self::ENTRY_FUNCTION)
+                && $functionDef === $this->getFunction(self::ENTRY_FUNCTION);
+            if ($this->isBuildModeBin() && $isEntryFunction) {
                 // $_SERVER 的初始化必须置于 main 入口函数内，以确保在其被访问前，运行环境及超全局上下文已完全就绪。
                 $cppCode .= $this->registerServerEnvironment($functionDef->sourceFile);
             }
