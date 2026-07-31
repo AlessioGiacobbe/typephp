@@ -2,6 +2,21 @@
 
 class FunctionTest extends \BaseTest
 {
+    public function testFunctionCallDoesNotResolveCollidingClassMethodSymbol(): void
+    {
+        global $translator;
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/function-method-symbol-collision.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $cppFile = $compiler->convertFile($testFile);
+        $cpp = file_get_contents($cppFile);
+
+        $this->assertStringContainsString('php::call(', $cpp);
+        $this->assertStringNotContainsString('php_collision__worker__validate(validater)', $cpp);
+    }
+
     public function testReturnRef(): void
     {
         $this->compile('function-return-ref.php');

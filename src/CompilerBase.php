@@ -2845,7 +2845,7 @@ class CompilerBase implements PropertyAccessContext
                 $nativeFunc = $this->escapeNamespace($nativeFunc);
             }
             $this->checkFunction($nativeFunc);
-            if ($this->hasFunction($nativeFunc)) {
+            if ($this->hasFunction($nativeFunc) && !$this->getFunction($nativeFunc)->method) {
                 return $nativeFunc;
             }
         }
