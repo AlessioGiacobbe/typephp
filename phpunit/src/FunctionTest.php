@@ -4,15 +4,40 @@ class FunctionTest extends \BaseTest
 {
     public function testFunctionAndMethodNativeNameCollisionIsRejected(): void
     {
-        $this->assertFunctionMethodNativeNameCollision('function-method-symbol-collision.php');
+        $this->assertFunctionMethodNativeNameCollision(
+            'function-method-symbol-collision.php',
+            'Collision\\Worker::validate()',
+            'Collision\\Worker\\validate()',
+            'php_collision__worker__validate',
+        );
     }
 
     public function testFunctionAndMethodNativeNameCollisionIsRejectedInReverseOrder(): void
     {
-        $this->assertFunctionMethodNativeNameCollision('function-method-symbol-collision-reversed.php');
+        $this->assertFunctionMethodNativeNameCollision(
+            'function-method-symbol-collision-reversed.php',
+            'Collision\\Worker::validate()',
+            'Collision\\Worker\\validate()',
+            'php_collision__worker__validate',
+        );
     }
 
-    private function assertFunctionMethodNativeNameCollision(string $filename): void
+    public function testFunctionNameContainingSeparatorCollidesWithClassMethod(): void
+    {
+        $this->assertFunctionMethodNativeNameCollision(
+            'function-method-symbol-underscore-collision.php',
+            'App\\User::test()',
+            'App\\user__test()',
+            'php_app__user__test',
+        );
+    }
+
+    private function assertFunctionMethodNativeNameCollision(
+        string $filename,
+        string $firstPhpName,
+        string $secondPhpName,
+        string $nativeName,
+    ): void
     {
         global $translator;
         $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
@@ -26,9 +51,9 @@ class FunctionTest extends \BaseTest
         } catch (\TypePhp\Exception\TestError $error) {
             $message = $error->getMessage();
             $this->assertStringContainsString('C++ symbol collision', $message);
-            $this->assertStringContainsString('Collision\\Worker::validate()', $message);
-            $this->assertStringContainsString('Collision\\Worker\\validate()', $message);
-            $this->assertStringContainsString('php_collision__worker__validate', $message);
+            $this->assertStringContainsString($firstPhpName, $message);
+            $this->assertStringContainsString($secondPhpName, $message);
+            $this->assertStringContainsString($nativeName, $message);
             $this->assertStringContainsString('rename one of them', $message);
         }
     }
