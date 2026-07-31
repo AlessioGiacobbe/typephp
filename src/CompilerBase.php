@@ -1516,6 +1516,7 @@ class CompilerBase implements PropertyAccessContext
         $this->context->enterScope();
         $lines     = [];
         $inLoopTop = $this->context->inLoop;
+        $inContinuableLoopTop = $this->context->inContinuableLoop;
         $last = array_key_last($stmts);
         foreach ($stmts as $i => $v) {
             $class                 = $v->getType();
@@ -1545,13 +1546,17 @@ class CompilerBase implements PropertyAccessContext
                     break;
                 case 'Stmt_For':
                     $this->context->inLoop = true;
+                    $this->context->inContinuableLoop = true;
                     $result       = $this->parseFor($v);
                     $this->context->inLoop = $inLoopTop;
+                    $this->context->inContinuableLoop = $inContinuableLoopTop;
                     break;
                 case 'Stmt_Foreach':
                     $this->context->inLoop = true;
+                    $this->context->inContinuableLoop = true;
                     $result       = $this->parseForeach($v);
                     $this->context->inLoop = $inLoopTop;
+                    $this->context->inContinuableLoop = $inContinuableLoopTop;
                     break;
                 case 'Stmt_Switch':
                     $this->context->inLoop = true;
@@ -1560,13 +1565,17 @@ class CompilerBase implements PropertyAccessContext
                     break;
                 case 'Stmt_While':
                     $this->context->inLoop = true;
+                    $this->context->inContinuableLoop = true;
                     $result       = $this->parseWhile($v);
                     $this->context->inLoop = $inLoopTop;
+                    $this->context->inContinuableLoop = $inContinuableLoopTop;
                     break;
                 case 'Stmt_Do':
                     $this->context->inLoop = true;
+                    $this->context->inContinuableLoop = true;
                     $result       = $this->parseDo($v);
                     $this->context->inLoop = $inLoopTop;
+                    $this->context->inContinuableLoop = $inContinuableLoopTop;
                     break;
                 case 'Stmt_If':
                     $result = $this->parseIf($v);

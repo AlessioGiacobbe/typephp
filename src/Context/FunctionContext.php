@@ -55,7 +55,10 @@ class FunctionContext
     public array $ceWrappers = [];
     public int $tmpVarIndex = 0;
     public array $arguments = [];
+    /** True while parsing a breakable loop or switch. */
     public bool $inLoop = false;
+    /** True while parsing a for/foreach/while/do-while body. */
+    public bool $inContinuableLoop = false;
     public bool $inClosure = false;
     public ?array $closureReturnTypeCheck = null;
     public string $closureReturnTypeStr = '';
@@ -97,6 +100,7 @@ class FunctionContext
         $this->scopeLayouts = [];
         $this->scopeLevel = 0;
         $this->inLoop = false;
+        $this->inContinuableLoop = false;
         $this->inClosure = false;
         $this->closureReturnTypeCheck = null;
         $this->closureReturnTypeStr = '';
@@ -127,5 +131,6 @@ class FunctionContext
         $this->scopeLayouts = [];
         $this->scopeLevel = 0;
         $this->inLoop = false;
+        $this->inContinuableLoop = false;
     }
 }
