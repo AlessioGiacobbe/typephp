@@ -10,6 +10,11 @@ namespace Collision {
 }
 
 namespace Collision\Worker {
+    function validate(mixed $validater): mixed
+    {
+        return $validater;
+    }
+
     function invoke_validate(mixed $validater): mixed
     {
         return validate($validater);

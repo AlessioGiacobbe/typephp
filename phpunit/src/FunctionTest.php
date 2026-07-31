@@ -13,8 +13,8 @@ class FunctionTest extends \BaseTest
         $cppFile = $compiler->convertFile($testFile);
         $cpp = file_get_contents($cppFile);
 
-        $this->assertStringContainsString('php::call(', $cpp);
-        $this->assertStringNotContainsString('php_collision__worker__validate(validater)', $cpp);
+        $this->assertStringContainsString('php_collision__worker__NSE__validate(validater)', $cpp);
+        $this->assertStringContainsString('php_collision__NSE__worker__validate(', $cpp);
     }
 
     public function testReturnRef(): void

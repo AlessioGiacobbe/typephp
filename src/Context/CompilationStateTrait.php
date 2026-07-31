@@ -106,7 +106,7 @@ trait CompilationStateTrait
 
     protected function addFunction(string $name, FunctionDef $functionDef): void
     {
-        $this->symbols->putFunction($this->escapeFunction($name), $functionDef);
+        $this->symbols->putFunction($this->escapeNativeFunctionKey($name), $functionDef);
     }
 
     /**
@@ -114,12 +114,32 @@ trait CompilationStateTrait
      */
     protected function hasFunction(string $name): bool
     {
-        return $this->symbols->hasFunction($this->escapeFunction($name));
+        return $this->symbols->hasFunction($this->escapeNativeFunctionKey($name));
     }
 
     protected function getFunction(string $name): FunctionDef
     {
-        return $this->symbols->function($this->escapeFunction($name));
+        return $this->symbols->function($this->escapeNativeFunctionKey($name));
+    }
+
+    /** Normalize PHP name segments without lowercasing the reserved ABI marker. */
+    private function escapeNativeFunctionKey(string $name): string
+    {
+        $placeholder = "\x00";
+        $leadingPlaceholder = "\x01";
+        $name = str_replace(
+            self::NAMESPACE_SEPARATOR . self::NAMESPACE_END_MARKER . self::NAMESPACE_SEPARATOR,
+            self::NAMESPACE_SEPARATOR . $placeholder . self::NAMESPACE_SEPARATOR,
+            $name,
+        );
+        if (str_starts_with($name, self::NAMESPACE_END_MARKER . self::NAMESPACE_SEPARATOR)) {
+            $name = $leadingPlaceholder . substr($name, strlen(self::NAMESPACE_END_MARKER));
+        }
+        return str_replace(
+            [$placeholder, $leadingPlaceholder],
+            [self::NAMESPACE_END_MARKER, self::NAMESPACE_END_MARKER],
+            $this->escapeFunction($name),
+        );
     }
 
     protected function addClass(string $name, ClassDef $classDef): void

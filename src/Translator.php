@@ -2471,7 +2471,7 @@ CODE;
 
     protected function getNativeMethodName(ClassDef $classDef, MethodDef $methodDef): string
     {
-        return $this->getNativeName($methodDef->name, $classDef->namespace, $classDef->name);
+        return $this->getNativeClassMethodName($methodDef->name, $classDef->namespace, $classDef->name);
     }
 
     protected function parseDeclare(mixed $v): void
@@ -4543,8 +4543,8 @@ CODE;
         $this->checkTraitMethodOverrideCompatibility($classDef, $methodDef, $classMethodName);
 
         $classDef->addMethod($methodDef);
-        $traitMethodNativeName = $this->getNativeName($traitMethodName, $traitDef->namespace, $traitDef->name);
-        $classMethodNativeName = $this->getNativeName($classMethodName, $classDef->namespace, $classDef->name);
+        $traitMethodNativeName = $this->getNativeClassMethodName($traitMethodName, $traitDef->namespace, $traitDef->name);
+        $classMethodNativeName = $this->getNativeClassMethodName($classMethodName, $classDef->namespace, $classDef->name);
         $argList = ['this_'];
         if ($methodDef->parentMethodCalls) {
             // Bind parent:: to the class that actually composes the trait. This
@@ -4780,7 +4780,7 @@ CODE;
     {
         $name = $this->escapeZendFnName($functionDef->getNamespacedName());
         $cppCode = 'ZEND_FUNCTION(' . $name . '){' . PHP_EOL;
-        $fn = self::PREFIX . $this->getNativeName($functionDef->name, $functionDef->namespace);
+        $fn = self::PREFIX . $this->getNativeFunctionName($functionDef->name, $functionDef->namespace);
         $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef, $functionDef->getNamespacedName());
 
         return $cppCode;
@@ -4792,9 +4792,9 @@ CODE;
         $fullName = ltrim($fullName, '\\');
         $separator = strrpos($fullName, '\\');
         if ($separator === false) {
-            return self::PREFIX . $this->getNativeName($fullName);
+            return self::PREFIX . $this->getNativeFunctionName($fullName);
         }
-        return self::PREFIX . $this->getNativeName(
+        return self::PREFIX . $this->getNativeFunctionName(
             substr($fullName, $separator + 1),
             substr($fullName, 0, $separator),
         );
