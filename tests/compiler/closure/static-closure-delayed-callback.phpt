@@ -1,5 +1,7 @@
 --TEST--
 static closure created in an instance method remains a valid delayed callback
+--ENV--
+USE_ZEND_ALLOC=0
 --FILE--
 <?php
 
