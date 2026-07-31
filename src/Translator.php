@@ -1048,7 +1048,6 @@ CODE;
             // FunctionDef::sourceFile comes from loadFile()'s realpath(), so the
             // CLI script fields always identify main()'s canonical absolute file.
             $entryFile = $entryFunction->sourceFile;
-            $code .= $this->registerServerEnvironment($entryFile);
             $entryFileArg = $this->genCharPtr($entryFile, true);
             $entryPrefix = str_repeat("\n", max(0, $entryFunction->startLine - 1));
             if (count($entryFunction->argInfoList) == 2) {
@@ -3216,6 +3215,10 @@ CODE;
             $methodArgs = implode(', ', array_merge(['this_'], $implicitMethodArgs));
             $callParams = $functionDef->argInfoList ? $methodArgs . ', ' . rtrim($callParams, ',') : $methodArgs;
         } else {
+            if ($this->isBuildModeBin() && $functionDef->name === self::ENTRY_FUNCTION) {
+                // $_SERVER 的初始化必须置于 main 入口函数内，以确保在其被访问前，运行环境及超全局上下文已完全就绪。
+                $cppCode .= $this->registerServerEnvironment($functionDef->sourceFile);
+            }
             $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
         }
 
@@ -3235,19 +3238,17 @@ CODE;
 
     private function registerServerEnvironment(string $entryFile): string
     {
-        $cppCode = 'php::Var &_SERVER = ' . $this->escapeGlobalVar('_SERVER') . ';' . PHP_EOL;
-        $cppCode .= 'php::Str php_self = "PHP_SELF";' . PHP_EOL;
-        $cppCode .= 'php::Str script_name = "SCRIPT_NAME";' . PHP_EOL;
-        $cppCode .= 'php::Str script_filename = "SCRIPT_FILENAME";' . PHP_EOL;
-        $cppCode .= 'php::Str path_translated = "PATH_TRANSLATED";' . PHP_EOL;
-        $cppCode .= 'php::Str document_root = "DOCUMENT_ROOT";' . PHP_EOL;
-        $cppCode .= 'php::Str value = ' . $this->genCharPtr($entryFile, true) . ';' . PHP_EOL;
-
-        $cppCode .= '_SERVER.item(php_self, true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item(script_name, true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item(script_filename, true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item(path_translated, true) = value;' . PHP_EOL;
-        $cppCode .= '_SERVER.item(document_root, true) = "";' . PHP_EOL;
+        /**
+         * 对于常驻内存型应用，执行完当前逻辑后，会立即进入长时间的事件循环等待。
+         * 因此，这些变量仅作为临时用途，用完后应即刻销毁，无需长期持有。
+         */
+        $cppCode = "const char *value = " . $this->genCharPtr($entryFile, true) . ';' . PHP_EOL;
+        $cppCode .= 'php::Var &_SERVER = ' . $this->escapeGlobalVar('_SERVER') . ';' . PHP_EOL;
+        $cppCode .= '_SERVER.item("PHP_SELF", true) = value;'. PHP_EOL;
+        $cppCode .= '_SERVER.item("SCRIPT_NAME", true) = value;'. PHP_EOL;
+        $cppCode .= '_SERVER.item("SCRIPT_FILENAME", true) = value;'. PHP_EOL;
+        $cppCode .= '_SERVER.item("PATH_TRANSLATED", true) = value;'. PHP_EOL;
+        $cppCode .= '_SERVER.item("DOCUMENT_ROOT", true) = "";' . PHP_EOL;
 
         return $cppCode . PHP_EOL;
     }
