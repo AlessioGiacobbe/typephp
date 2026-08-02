@@ -85,7 +85,7 @@ trait TypeConversionTrait
             return 'php::toDecimal(php::toString(' . $expr . '))';
         }
         if ($fromType === Type::INT) {
-            return 'php::toDecimal(php::toString(' . $expr . '))';
+            return 'php::toDecimal(' . $expr . ')';
         }
         if ($fromType === Type::BIGINT) {
             return 'php::toDecimal(php::BigInt::toString(' . $expr . '))';
