@@ -145,6 +145,28 @@ trait ForeachTrait
         return $code;
     }
 
+    protected function parseForeachIterableRef(Foreach_ $node): ?string
+    {
+        $expr = $node->expr;
+        if ($expr instanceof Expr\PropertyFetch) {
+            return $this->emitDynamicPropertyFetchRef($expr, $node);
+        }
+
+        if ($expr instanceof Expr\StaticPropertyFetch) {
+            return $this->emitStaticPropertyFetchRef($expr, $node);
+        }
+
+        if ($expr instanceof Expr\ArrayDimFetch) {
+            if ($expr->dim === null) {
+                $this->fatalError($expr, 'Cannot use [] for reading');
+            }
+            $array = $this->parseWritableIdentifier($expr->var);
+            return $array . '.itemRef(' . $this->parseIdentifier($expr->dim) . ')';
+        }
+
+        return null;
+    }
+
     protected function parseForeach(Foreach_ $node): string
     {
         if ($this->isVarExpr($node->expr)) {
@@ -162,11 +184,13 @@ trait ForeachTrait
         }
 
         $code = '';
-        $expr = $this->parseIdentifier($node->expr);
+        $expr = $node->byRef ? $this->parseForeachIterableRef($node) : null;
+        $iterableType = $expr === null ? Type::VAR : Type::REF;
+        $expr ??= $this->parseIdentifier($node->expr);
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
 
         $iterableVar = $this->genTmpVarName();
-        $this->addLocalVar($iterableVar, Type::VAR);
+        $this->addLocalVar($iterableVar, $iterableType);
 
         $code .= $iterableVar . ' = ' . $expr . ';' . PHP_EOL;
         $code .= $this->parseForeachIterable($node, $iterableVar);
