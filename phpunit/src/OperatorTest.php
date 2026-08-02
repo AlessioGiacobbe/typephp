@@ -34,7 +34,24 @@ class OperatorTest extends \BaseTest
         $cpp = file_get_contents($cppFile);
 
         $this->assertMatchesRegularExpression(
-            '/!\(\(error = php::call\([^\n]+\)\)\.isNull\(\)\)/',
+            '/!\(php::toBool\(\(error = php::call\([^\n]+\)\)\.isNull\(\)\)\)/',
+            $cpp,
+        );
+    }
+
+    public function testDynamicBoolCallInLogicalExpressionIsConvertedToNativeBool(): void
+    {
+        global $translator;
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/bool-dynamic-call-logical.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $cppFile = $compiler->convertFile($testFile);
+        $cpp = file_get_contents($cppFile);
+
+        $this->assertMatchesRegularExpression(
+            '/return php::toBool\(php::call\([^\n]+\)\);/',
             $cpp,
         );
     }

@@ -20,6 +20,7 @@
 - [核心重构计划](REFACTORING_PLAN.md)
 - [构建速度研究](AOT_BUILD_SPEED_RESEARCH.md)
 - [优化优先级](aot-optimization-priority.md)
+- [高精度类型原地运算优化方案](BIG_NUMBER_INPLACE_OPTIMIZATION_PLAN.md)
 - [GMP 差异](GMP_GAP.md)
 
 ## 研究与历史资料

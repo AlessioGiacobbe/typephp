@@ -162,9 +162,6 @@ trait TypeConversionTrait
 
     protected function convertBoolExpr(string $expr, string $fromType = ''): string
     {
-        if ($fromType === Type::BOOL) {
-            return $expr;
-        }
         $bigConversion = match ($fromType) {
             Type::BIGINT => 'php::BigInt::toBool',
             Type::BIGFLOAT => 'php::BigFloat::toBool',
@@ -184,10 +181,7 @@ trait TypeConversionTrait
     protected function convertConditionExpr(NodeAbstract $node, string $expr): string
     {
         $type = $this->detectTypeOfExpr($node);
-        if (in_array($type, [Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL], true)) {
-            return $this->convertBoolExpr($expr, $type);
-        }
-        return $expr;
+        return $this->convertBoolExpr($expr, $type);
     }
 
     protected function convertExprType(string $expr, $leftType, $rightType): string
