@@ -11,8 +11,8 @@
 
 ### 高精度数值类型
 4. ✅ `std::bigInt` - 任意精度整数 (基于 GMP `mpz_class`)
-5. ✅ `std::decimal` - 任意精度十进制数 (基于 libmpdec, ~50 位有效数字)
-6. ✅ `std::bigFloat` - 任意精度浮点数 (基于 MPFR)
+5. ✅ `std::decimal` - 50 位十进制数 (基于 libmpdec)
+6. ✅ `std::bigFloat` - 256 bit 高精度浮点数 (基于 MPFR，输出 64 位有效数字)
 
 ---
 
@@ -287,7 +287,7 @@ $g = std::bigFloat("3.14159265358979323846");
 
 ### 算术运算符
 
-所有标准二元运算符均已重载：`+`、`-`、`*`、`/`、`%`（取模）、`**`（幂运算）。编译器将其映射为静态方法调用。
+BigInt 支持 `+`、`-`、`*`、`/`、`%` 和 `**`；Decimal 支持除 `**` 外的前五项；BigFloat 支持 `+`、`-`、`*`、`/`。编译器将它们映射为静态方法调用。
 
 ```php
 $a = std::bigInt(100);
@@ -304,7 +304,7 @@ $pow = $a ** 3;     // → php::BigInt::pow($a, 3)
 $neg = -$a;         // → php::BigInt::neg($a)
 ```
 
-**类型提升**：当 Big* 类型与 Int/Float 混合运算时，Int/Float 自动提升为对应的高精度类型。详见下文"二元运算类型提升规则"。
+**类型提升**：Big* 可以和安全的普通标量混合运算；不同 Big* 类型之间不得隐式混合，必须先显式转换。详见下文“二元运算类型提升规则”。
 
 **BigInt 除法**：`BigInt / BigInt` 在 `parseBinaryOp` 中返回 BigInt（整数除法，同 PHP int 语义）。若需要高精度除法，应先将操作数转为 Decimal 或使用 `BigInt::div` 的 Decimal 结果。
 
@@ -343,7 +343,7 @@ BigInt、Decimal、BigFloat 支持通过 `$value->method()` 语法调用一系�
 | `gcd($x)` | 1 | BigInt | `BigInt::gcd()` | 最大公约数 |
 | `cmp($x)` | 1 | Int | `BigInt::cmp()` | 比较 |
 | `toString()` | 0 | Str | `BigInt::toString()` | 转字符串 |
-| `toInt()` | 0 | Int | `BigInt::toInt()` | 转整数 (可能截断) |
+| `toInt()` | 0 | Int | `BigInt::toInt()` | 转整数，越界抛出 ArithmeticError |
 | `toFloat()` | 0 | Float | `BigInt::toFloat()` | 转浮点 (可能丢精度) |
 
 ```php
@@ -422,7 +422,7 @@ $bf = std::bigFloat(3.14);
 $bf2 = std::bigFloat($big->toString());
 ```
 
-> **跨类型隐式转换限制**：BigFloat 与 BigInt/Decimal 之间不能隐式混合运算。编译器会报错提示使用 `std::bigFloat()` 显式转换。这是为了防止意外的精度损失。
+> **跨类型隐式转换限制**：BigInt、Decimal、BigFloat 之间不能隐式混合运算或比较。编译器会报错并要求先显式转换为同一类型，这是为了防止精度损失和底层 Box 类型误用。
 
 ### C++ API 参考
 
@@ -483,7 +483,7 @@ AOT 编译器在执行 `+`、`-`、`*`、`/`、`%` 等二元运算时，按以�
 
 ```
 BigFloat / Decimal / BigInt 参与
-  → 提升到最高精度类型进行计算
+  → 仅安全提升 Int/Float；不同 Big* 类型要求显式转换
   ↓ 未命中
 
 任一边为 Var
@@ -527,22 +527,22 @@ $f = $d + $e;   // Int + Int → int64_t 加法
 
 > **注意**：原生类型变量在运算中**不会改变自身类型**。如 `Int += Float` 在 C++ 中执行 `int64_t += double`，结果截断为 int64_t，与 PHP 行为不同（PHP 中变量会变为 float）。这是 `use native_types` 有意为之的语义。
 
-### 规则三：大数类型精度提升
+### 规则三：高精度类型的安全提升
 
-当运算数中包含 `BigInt`、`Decimal` 或 `BigFloat` 时，按精度层级提升：`BigFloat > Decimal > BigInt > Float > Int`。
+当运算数中包含 `BigInt`、`Decimal` 或 `BigFloat` 时，只对普通标量执行明确且安全的提升。不同 Big* 类型不会按所谓“精度层级”自动转换，因为三者的数值模型不同。
 
 | 左操作数 | 右操作数 | 结果类型 |
 |---------|---------|---------|
-| BigInt | BigInt | BigInt（除法 `/` 得 Decimal） |
-| BigInt | Decimal | Decimal |
+| BigInt | BigInt | BigInt（`/` 为截断整数除法） |
+| BigInt | Decimal | 编译错误，需显式转换 |
 | Decimal | Decimal | Decimal |
-| BigFloat | BigInt | BigFloat |
-| BigFloat | Decimal | BigFloat |
+| BigFloat | BigInt | 编译错误，需显式转换 |
+| BigFloat | Decimal | 编译错误，需显式转换 |
 | BigFloat | BigFloat | BigFloat |
 | BigInt | Int | BigInt |
-| BigInt | Float | Decimal |
+| BigInt | Float | 编译错误 |
 | Decimal | Int | Decimal |
-| Decimal | Float | Decimal |
+| Decimal | Float | Decimal（float 字面量按源码文本转换；变量需显式转换） |
 | BigFloat | Int | BigFloat |
 | BigFloat | Float | BigFloat |
 
@@ -551,13 +551,13 @@ $f = $d + $e;   // Int + Int → int64_t 加法
 | | Int | Float | Var | BigInt | Decimal | BigFloat |
 |------|-----|-------|-----|--------|---------|----------|
 | **Int** | Int | Float | Var | BigInt | Decimal | BigFloat |
-| **Float** | Float | Float | Var | Decimal | Decimal | BigFloat |
+| **Float** | Float | Float | Var | 错误 | Decimal* | BigFloat |
 | **Var** | Var | Var | Var | Var | Var | Var |
-| **BigInt** | BigInt | Decimal | Var | BigInt | Decimal | BigFloat |
-| **Decimal** | Decimal | Decimal | Var | Decimal | Decimal | BigFloat |
-| **BigFloat** | BigFloat | BigFloat | Var | BigFloat | BigFloat | BigFloat |
+| **BigInt** | BigInt | 错误 | Var | BigInt | 错误 | 错误 |
+| **Decimal** | Decimal | Decimal* | Var | 错误 | Decimal | 错误 |
+| **BigFloat** | BigFloat | BigFloat | Var | 错误 | 错误 | BigFloat |
 
-> **说明**：Var 行/列全部为 Var，因为 Var 主导规则优先级最高（除 Big* 类型外）。Big* 类型参与时，Var 退让，以高精度类型为准。
+> `Decimal*`：只允许编译器能够保留原始文本的 float 字面量；float 变量必须先显式转换。Var 行/列仍使用 ZendVM 运行时语义。
 
 ### 复合赋值运算符
 

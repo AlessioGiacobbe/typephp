@@ -1,6 +1,6 @@
 # AOT 编译器高精度类型使用教程
 
-本教程介绍 AOT 编译器中的三种高精度数值类型——**BigInt**（任意精度整数）、**Decimal**（任意精度十进制数）和 **BigFloat**（任意精度浮点数）——帮助你编写高精度、零开销的数值计算程序。
+本教程介绍 AOT 编译器中的三种高精度数值类型——**BigInt**（任意精度整数）、**Decimal**（50 位十进制数）和 **BigFloat**（256 bit 浮点数）。
 
 ## 目录
 
@@ -34,13 +34,13 @@ $a = 123456789012345678901234567890;  // 30 位整数 → 被转为 float，精�
 $b = 0.1 + 0.2;  // 0.30000000000000004 — 经典的浮点误差
 ```
 
-AOT 编译器提供了三种高精度类型，底层基于成熟的 C/C++ 数学库，编译为本地机器码，**零运行时开销**：
+AOT 编译器提供了三种高精度类型，底层基于成熟的 C/C++ 数学库，并直接生成本地调用。这里的“零成本抽象”是指没有 PHP 方法查找和解释器分派开销；高精度运算本身仍需要数学库计算、内存分配和装箱：
 
 | 类型 | 底层库 | 特点 |
 |------|--------|------|
 | BigInt | GMP (`libgmp`) | 任意精度整数，不会溢出 |
 | Decimal | libmpdec | 十进制小数，约 50 位有效数字，无二进制浮点误差 |
-| BigFloat | MPFR (`libmpfr`) | 任意精度浮点数，可调精度 |
+| BigFloat | MPFR (`libmpfr`) | 默认 256 bit，字符串输出 64 位有效数字 |
 
 ---
 
@@ -89,7 +89,7 @@ $a = std::bigInt("1234567890123456789012345678901234567890");  // 40 位
 $b = $a * 2;  // 80 位，不会溢出
 ```
 
-### Decimal — 任意精度十进制数
+### Decimal — 50 位十进制数
 
 适用于金融计算等需要精确十进制表示的场景。`0.1 + 0.2` 精确等于 `0.3`，不存在二进制浮点误差。
 
@@ -99,9 +99,9 @@ $quantity = 3;
 $total = $price * $quantity;  // 59.97，精确
 ```
 
-### BigFloat — 任意精度浮点数
+### BigFloat — 256 bit 高精度浮点数
 
-适用于科学计算等需要高精度浮点运算的场景。基于 MPFR，使用二进制浮点但精度远超 IEEE 754 double。
+适用于科学计算等需要高精度浮点运算的场景。基于 MPFR，当前默认精度固定为 256 bit，远高于 IEEE 754 double 的 53 bit。
 
 ```php
 $pi = std::bigFloat("3.141592653589793238462643383279502884197");
@@ -152,7 +152,7 @@ $c = std::bigFloat(3.14);      // → C++: php::Variant(new BigFloat(3.14))
 
 ### 5.1 标准运算符
 
-所有标准二元运算符都可以直接用于 Big* 类型：
+支持的运算符取决于具体类型：BigInt 支持 `+ - * / % **`，Decimal 支持 `+ - * / %`，BigFloat 支持 `+ - * /`：
 
 ```php
 $a = std::bigInt(100);
@@ -182,7 +182,7 @@ php::BigInt::pow(a, b)      // BigInt 幂运算
 
 ### 5.2 与 int / float 混合运算
 
-Big* 类型可以自由地与普通 int 和 float 混合运算，编译器自动进行类型提升：
+Big* 类型可以在安全范围内与普通 int/float 混合运算，编译器自动进行类型提升：
 
 ```php
 $a = std::bigInt(100);
@@ -315,7 +315,7 @@ $a -= 1;   // ✅ 代替 $a--
 
 ## 8. 通用方法调用
 
-Big* 类型支持通过 `$value->method()` 语法（通用方法/Universal Methods）调用方法。这些调用在编译时被翻译为对应的 C++ 静态函数，**零运行时开销**。
+Big* 类型支持通过 `$value->method()` 语法（通用方法/Universal Methods）调用方法。这些调用在编译时直接翻译为对应的 C++ 静态函数，没有动态方法分派开销；数学库运算、结果分配和装箱成本仍然存在。
 
 ### 8.1 BigInt 方法
 
@@ -343,7 +343,7 @@ if ($a->cmp(100) > 0) { /* $a > 100 */ }
 
 // 类型转换方法
 echo $a->toString();    // 转字符串："12345678901234567890"
-echo $a->toInt();       // 转 int（可能截断）
+echo $a->toInt();       // 转 int；超出 PHP int 范围时抛出 ArithmeticError
 echo $a->toFloat();     // 转 float（可能丢精度）
 ```
 
@@ -433,12 +433,17 @@ $bf3 = std::bigFloat($big->toString());
 // BigInt → 普通类型
 $a = std::bigInt("99999999999999999999");
 $s = $a->toString();  // "99999999999999999999"
-$i = $a->toInt();     // PHP_INT_MAX（超出范围时截断）
+$i = $a->toInt();     // 超出 PHP int 范围时抛出 ArithmeticError
 $f = $a->toFloat();   // 1.0E+20（可能丢失精度）
 
 // 普通类型 → BigInt（通过编译期函数）
 $b = std::bigInt(42);           // int → BigInt
 $c = std::bigInt("123456...");  // string → BigInt
+
+// 强制转换和 PHP 转换函数会按数值转换，不会读取 Box resource id
+$n = (int) std::decimal("12.75");       // 12
+$x = floatval(std::bigInt("42"));       // 42.0
+$ok = boolval(std::bigFloat("0"));      // false
 ```
 
 ### 9.3 跨类型隐式混合的限制
@@ -472,17 +477,14 @@ $c = $a + std::bigFloat($b->toString());  // ✅
 
 ## 10. 混合运算与类型提升
 
-当 Big* 类型与普通 Int/Float 混合运算时，编译器按优先级确定运算类型：
-
-```
-BigFloat  >  Decimal  >  BigInt  >  Float  >  Int
-```
+当 Big* 类型与普通 Int/Float 混合运算时，编译器只执行不会改变数值模型的安全提升。
 
 **规则**：
 
 1. 若任一操作数是 Var（非原生类型），则全部转为 Var，使用 ZendVM 运行时运算
 2. 若两操作数均为 Int/Float，则 Float 优先（Int → Float）
-3. 若任一操作数为 Big* 类型，则另一操作数自动提升为同类型（Int → BigInt 等）
+3. BigInt 可安全提升 Int；Decimal 可提升 Int 和保留源码文本的 Float 字面量；BigFloat 可提升 Int/Float
+4. 不同 Big* 类型之间，以及 BigInt 与 Float 之间，不进行隐式转换
 
 ```php
 // 类型提升示例
@@ -571,11 +573,20 @@ $c = $a + $b;  // ❌ 编译错误
 $c = $a + std::bigFloat($b->toString());  // ✅
 ```
 
-### 12.6 不能在普通 PHP 解释器中运行
+该限制同样适用于比较运算。比较前必须把两边显式转换为同一种 Big* 类型，避免编译为错误的底层资源类型。
+
+### 12.6 边界和异常
+
+- BigInt 负数右移采用算术右移，例如 `std::bigInt("-3") >> 1` 得到 `-2`。
+- 负数 bit index、负数 `popCount()`、过大的幂指数会抛出 `ValueError`。
+- 除零抛出 `DivisionByZeroError`；转为 PHP int 时超出范围抛出 `ArithmeticError`。
+- BigFloat 的绝对值指数超过 10000 时，`toString()` 自动使用科学计数法，避免构造超大字符串。
+
+### 12.7 不能在普通 PHP 解释器中运行
 
 Big* 类型是 AOT 编译器的专有特性，依赖编译期代码生成和 C++ 底层库。源码不能被 `php` 命令直接解释执行。
 
-### 12.7 启用 `use native_types`
+### 12.8 启用 `use native_types`
 
 忘记添加 `use native_types` 会导致 Big* 变量被当作 Var（通用类型），失去原生类型的大部分性能优势。
 

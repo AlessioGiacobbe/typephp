@@ -332,10 +332,17 @@ trait BinaryOpTrait
         $this->assertExprCanBeUsedAsValue($expr->left, 'binary operand');
         $this->assertExprCanBeUsedAsValue($expr->right, 'binary operand');
         $leftType = $this->detectTypeOfExpr($expr->left);
-        if ($leftType === Type::BIGINT) {
+        $rightType = $this->detectTypeOfExpr($expr->right);
+        if ($leftType === Type::DECIMAL || $rightType === Type::DECIMAL
+            || $leftType === Type::BIGFLOAT || $rightType === Type::BIGFLOAT) {
+            $this->fatalError($expr, "Operator '**' is not supported for Decimal or BigFloat; use pow() where supported");
+        }
+        if ($leftType === Type::BIGINT || $rightType === Type::BIGINT) {
             $leftExpr = $this->parseOrderedOperand($expr->left, false);
             $rightExpr = $this->parseOrderedOperand($expr->right, false);
-            $rightType = $this->detectTypeOfExpr($expr->right);
+            if ($leftType !== Type::BIGINT) {
+                $leftExpr = $this->convertBigIntExpr($leftExpr, $leftType);
+            }
             if ($rightType !== Type::BIGINT) {
                 $rightExpr = $this->convertBigIntExpr($rightExpr, $rightType);
             }
@@ -517,6 +524,15 @@ trait BinaryOpTrait
     {
         $leftType = $this->detectTypeOfExpr($expr->left);
         $rightType = $this->detectTypeOfExpr($expr->right);
+
+        $bigTypes = [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT];
+        if (in_array($leftType, $bigTypes, true) && in_array($rightType, $bigTypes, true)
+            && $leftType !== $rightType) {
+            $this->fatalError(
+                $expr,
+                'Cannot compare different Big* types implicitly; convert both operands to the same type explicitly'
+            );
+        }
 
         if ($leftType === Type::BIGFLOAT || $rightType === Type::BIGFLOAT) {
             $leftExpr = $this->parseOrderedOperand($expr->left, false);

@@ -32,8 +32,17 @@ trait TypeConversionTrait
         return $this->convertStringExpr($expr);
     }
 
-    protected function convertIntExpr(string $expr): string
+    protected function convertIntExpr(string $expr, string $fromType = ''): string
     {
+        $bigConversion = match ($fromType) {
+            Type::BIGINT => 'php::BigInt::toInt',
+            Type::BIGFLOAT => 'php::BigFloat::toInt',
+            Type::DECIMAL => 'php::Decimal::toInt',
+            default => null,
+        };
+        if ($bigConversion !== null) {
+            return $bigConversion . '(' . $expr . ')';
+        }
         if (!$this->isClosedExpr($expr, 'php::toInt')) {
             return 'php::toInt(' . $expr . ')';
         }
@@ -41,8 +50,17 @@ trait TypeConversionTrait
         return $expr;
     }
 
-    protected function convertFloatExpr(string $expr): string
+    protected function convertFloatExpr(string $expr, string $fromType = ''): string
     {
+        $bigConversion = match ($fromType) {
+            Type::BIGINT => 'php::BigInt::toFloat',
+            Type::BIGFLOAT => 'php::BigFloat::toFloat',
+            Type::DECIMAL => 'php::Decimal::toFloat',
+            default => null,
+        };
+        if ($bigConversion !== null) {
+            return $bigConversion . '(' . $expr . ')';
+        }
         if (!$this->isClosedExpr($expr, 'php::toFloat')) {
             return 'php::toFloat(' . $expr . ')';
         }
@@ -142,8 +160,17 @@ trait TypeConversionTrait
         return $expr;
     }
 
-    protected function convertBoolExpr(string $expr): string
+    protected function convertBoolExpr(string $expr, string $fromType = ''): string
     {
+        $bigConversion = match ($fromType) {
+            Type::BIGINT => 'php::BigInt::toBool',
+            Type::BIGFLOAT => 'php::BigFloat::toBool',
+            Type::DECIMAL => 'php::Decimal::toBool',
+            default => null,
+        };
+        if ($bigConversion !== null) {
+            return $bigConversion . '(' . $expr . ')';
+        }
         if (!$this->isClosedExpr($expr, 'php::toBool')) {
             return 'php::toBool(' . $expr . ')';
         }

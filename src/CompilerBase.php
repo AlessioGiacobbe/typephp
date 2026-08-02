@@ -3574,7 +3574,10 @@ class CompilerBase implements PropertyAccessContext
     protected function parseCastDouble(mixed $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'cast operand');
-        return $this->convertFloatExpr($this->parseIdentifier($expr->expr));
+        return $this->convertFloatExpr(
+            $this->parseIdentifier($expr->expr),
+            $this->detectTypeOfExpr($expr->expr)
+        );
     }
 
     protected function detectFuncCallReturnType(string $name): string

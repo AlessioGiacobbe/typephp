@@ -20,6 +20,8 @@ function main(): void {
     // Right shift truncates (integer division by 2^n)
     $c = std::bigInt("15");
     echo ($c >> 1)->toString(); echo "\n";   // 7
+    $negativeOdd = std::bigInt("-3");
+    echo ($negativeOdd >> 1)->toString(); echo "\n"; // -2, arithmetic shift
 
     // Compound shift left
     $d = std::bigInt("1");
@@ -49,6 +51,7 @@ function main(): void {
 64
 16
 7
+-2
 1024
 32
 256

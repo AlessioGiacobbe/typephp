@@ -484,9 +484,9 @@ trait FuncCallOptimizer
         }
 
         return match ($convType) {
-            self::ARG_TYPE_INT => $this->convertIntExpr($parsed),
-            self::ARG_TYPE_FLOAT => $this->convertFloatExpr($parsed),
-            self::ARG_TYPE_BOOL => $this->convertBoolExpr($parsed),
+            self::ARG_TYPE_INT => $this->convertIntExpr($parsed, $type),
+            self::ARG_TYPE_FLOAT => $this->convertFloatExpr($parsed, $type),
+            self::ARG_TYPE_BOOL => $this->convertBoolExpr($parsed, $type),
             default => $parsed,
         };
     }
