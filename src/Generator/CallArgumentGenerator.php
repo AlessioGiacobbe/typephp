@@ -65,7 +65,7 @@ trait CallArgumentGenerator
                     continue;
                 }
                 if (!isset($args[$k])) {
-                    if ($argInfo->defaultValue === null) {
+                    if ($argInfo->default === '') {
                         $errorNode = null;
                         foreach ($callArgs as $a) {
                             if ($a instanceof Node\Arg && $a->name) {
@@ -76,7 +76,10 @@ trait CallArgumentGenerator
                         $argName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
                         $this->fatalError($errorNode ?? reset($callArgs), 'Named argument `' . $argName . '` is missing default value');
                     }
-                    $args[$k] = new Node\Arg($argInfo->defaultValue);
+                    // Defaults are resolved in the declaration scope. Re-parsing
+                    // the original AST here would evaluate self/parent/private
+                    // class constants in the caller's scope instead.
+                    $args[$k] = $this->genDefaultArgumentExpr($nativeFunc, $k);
                 }
             }
             ksort($args);

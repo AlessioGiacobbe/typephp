@@ -5121,7 +5121,12 @@ function parseFunctionLike(
             }
 
             if ($param->default instanceof Expr\ClassConstFetch && $param->default->class->toLowerString() === "self") {
-                $defaultValue = getTranslator()->getClassConstValue($func, $name->className->name, $param->default->name->name);
+                $defaultValue = getTranslator()->getClassConstValue(
+                    $func,
+                    $name->className->name,
+                    $param->default->name->name,
+                    ClassInfo::$currentClass,
+                );
                 $defaultValue = var_export($defaultValue, true);
             } elseif ($param->default instanceof String_) {
                 // Keep this as a PHP expression. ArgInfo escapes the expression

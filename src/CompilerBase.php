@@ -2382,7 +2382,12 @@ class CompilerBase implements PropertyAccessContext
         return $this->getNativeName($method, $classDef->namespace, $classDef->name);
     }
 
-    protected function findNativeClassConst(NodeAbstract $expr, string $class, string $const): string|false
+    protected function findNativeClassConst(
+        NodeAbstract $expr,
+        string $class,
+        string $const,
+        ?string $accessingClass = null
+    ): string|false
     {
         if (!$this->hasClass($class)) {
             return false;
@@ -2426,7 +2431,12 @@ class CompilerBase implements PropertyAccessContext
         if ($constDef === null) {
             return false;
         }
-        if ($classDef instanceof ClassDef && !$this->checkAccessible($classDef, $constDef->flags)) {
+        if ($classDef instanceof ClassDef
+            && !$this->checkAccessibleByClassName(
+                $classDef->getNamespacedName(false),
+                $constDef->flags,
+                $accessingClass,
+            )) {
             $this->fatalError($expr, 'Constant `' . $classDef->getNamespacedName() . '::' . $const . '` is not accessible');
         }
         if ($constDef->type === Type::ARRAY) {
@@ -3869,13 +3879,24 @@ class CompilerBase implements PropertyAccessContext
         return $this->checkAccessibleByClassName($classDef->getNamespacedName(false), $flags);
     }
 
-    protected function checkAccessibleByClassName(string $declaringClass, int $flags): bool
+    protected function checkAccessibleByClassName(
+        string $declaringClass,
+        int $flags,
+        ?string $accessingClass = null
+    ): bool
     {
-        $scopeClassDef = $this->classDef;
-        if ($this->functionDef !== null
-            && $this->functionDef->attributeFactoryScope !== ''
-            && $this->hasClass($this->functionDef->attributeFactoryScope)) {
-            $scopeClassDef = $this->getClass($this->functionDef->attributeFactoryScope);
+        if ($accessingClass !== null) {
+            $accessingClass = ltrim($accessingClass, '\\');
+            $scopeClassDef = $this->hasClass($accessingClass)
+                ? $this->getClass($accessingClass)
+                : null;
+        } else {
+            $scopeClassDef = $this->classDef;
+            if ($this->functionDef !== null
+                && $this->functionDef->attributeFactoryScope !== ''
+                && $this->hasClass($this->functionDef->attributeFactoryScope)) {
+                $scopeClassDef = $this->getClass($this->functionDef->attributeFactoryScope);
+            }
         }
         // 私有方法，只能当前的类使用
         if ($flags & Modifiers::PRIVATE) {

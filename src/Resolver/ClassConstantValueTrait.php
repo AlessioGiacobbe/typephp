@@ -27,7 +27,12 @@ trait ClassConstantValueTrait
             $namespace = $this->getNamespaceOfClass($currentClass);
         }
         $class = $this->getNamespacedClassName($_class, $namespace);
-        $nativeConst = $this->findNativeClassConst($expr, $class, $name);
+        $nativeConst = $this->findNativeClassConst(
+            $expr,
+            $class,
+            $name,
+            $currentClass !== '' ? $currentClass : null,
+        );
         if ($nativeConst and $expr->hasAttribute('nativeConst')) {
             $constDef = $expr->getAttribute('nativeConst');
             if ($constDef->valueExpr !== null) {
