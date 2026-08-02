@@ -42,8 +42,8 @@ trait LoopControlTrait
             [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
             $condExpr = $this->stringifyParsedExpr($condExpr);
             $hasCondStmts = $hasCondStmts || $beforeStmts || $afterStmts;
-            $list_cond[] = [$condExpr, $beforeStmts, $afterStmts];
-            $list_cond_expr[] = $condExpr;
+            $list_cond[] = [$expr, $condExpr, $beforeStmts, $afterStmts];
+            $list_cond_expr[] = $this->convertConditionExpr($expr, $condExpr);
         }
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
@@ -55,7 +55,7 @@ trait LoopControlTrait
             } else {
                 $condResult = $this->genTmpVarName();
                 $condCode .= $this->getIndent() . 'bool ' . $condResult . ' = true;' . PHP_EOL;
-                foreach ($list_cond as [$condExpr, $beforeStmts, $afterStmts]) {
+                foreach ($list_cond as [$condNode, $condExpr, $beforeStmts, $afterStmts]) {
                     $condCode .= $this->formatCapturedStmtLines($beforeStmts);
                     if ($afterStmts) {
                         $tmpVar = $this->addTmpVar(Type::VAR);
@@ -63,7 +63,7 @@ trait LoopControlTrait
                         $condCode .= $this->formatCapturedStmtLines($afterStmts);
                         $condExpr = $tmpVar;
                     }
-                    $condCode .= $this->getIndent() . $condResult . ' = ' . $this->convertBoolExpr($condExpr) . ';' . PHP_EOL;
+                    $condCode .= $this->getIndent() . $condResult . ' = ' . $this->convertConditionExpr($condNode, $condExpr) . ';' . PHP_EOL;
                 }
                 $condCode .= $this->getIndent() . 'return ' . $condResult . ';';
             }
@@ -122,8 +122,10 @@ trait LoopControlTrait
                 $code .= $this->formatCapturedStmtLines($afterStmts);
                 $cond = $tmpVar;
             }
+            $cond = $this->convertConditionExpr($v->cond, $cond);
             $code .= $this->getIndent() . 'if (!(' . $cond . ')) { break; }' . PHP_EOL;
         } else {
+            $cond = $this->convertConditionExpr($v->cond, $cond);
             $code .= 'while (' . $cond . ') {' . PHP_EOL;
         }
         $code .= $this->parseBlockStmts($stmts);
@@ -148,9 +150,11 @@ trait LoopControlTrait
                 $condCode .= $this->formatCapturedStmtLines($afterStmts);
                 $cond = $tmpVar;
             }
-            $condCode .= $this->getIndent() . 'return ' . $this->convertBoolExpr($cond) . ';';
+            $condCode .= $this->getIndent() . 'return ' . $this->convertConditionExpr($v->cond, $cond) . ';';
             $condCode .= $this->getIndent() . '}()';
             $cond = $condCode;
+        } else {
+            $cond = $this->convertConditionExpr($v->cond, $cond);
         }
         $code  = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'do {' . PHP_EOL;

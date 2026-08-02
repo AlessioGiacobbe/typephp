@@ -149,10 +149,7 @@ class Preprocessor extends CompilerBase
                 fn (Node $node, string $message) => $this->warning($node, $message),
                 $this->file,
             ));
-            $traverser->addVisitor(new ConstantExpressionValidationVisitor(
-                $this->phpVersion,
-                fn (Node $node, string $message) => $this->fatalError($node, $message),
-            ));
+            $traverser->addVisitor(new ConstantExpressionValidationVisitor($this->phpVersion));
             $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
             $stmts = $traverser->traverse($ast);
 

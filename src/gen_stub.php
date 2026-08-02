@@ -3007,6 +3007,8 @@ class ConstInfo extends VariableLike
             return "\tZEND_ASSERT($cExpr == NULL);\n";
         }
 
+        $cValue = null;
+
         if ($value->type->isBool()) {
             $cValue = $constValue ? "true" : "false";
             return "\tZEND_ASSERT($cExpr == $cValue);\n";

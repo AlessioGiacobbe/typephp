@@ -474,9 +474,10 @@ trait BinaryOpTrait
         $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $rightAfterStmtCount);
         $this->checkVarMustExist($right, $rightExpr);
 
-        $leftBool = $this->convertBoolExpr((string) $leftExpr);
+        $leftBool = $this->convertBoolExpr((string) $leftExpr, $this->detectTypeOfExpr($left));
+        $rightBool = $this->convertBoolExpr((string) $rightExpr, $this->detectTypeOfExpr($right));
         if (!$rightBeforeStmts && !$rightAfterStmts) {
-            return '(' . $leftBool . ' ' . $op . ' ' . $this->convertBoolExpr((string) $rightExpr) . ')';
+            return '(' . $leftBool . ' ' . $op . ' ' . $rightBool . ')';
         }
 
         $shortCircuitValue = $op === '&&' ? 'false' : 'true';
@@ -490,8 +491,9 @@ trait BinaryOpTrait
             $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';';
             $code .= $this->formatCapturedStmtLines($rightAfterStmts);
             $rightExpr = $rightTmpVar;
+            $rightBool = $this->convertBoolExpr($rightExpr, $this->detectTypeOfExpr($right));
         }
-        $code .= $this->getIndent() . 'return ' . $this->convertBoolExpr((string) $rightExpr) . ';';
+        $code .= $this->getIndent() . 'return ' . $rightBool . ';';
         $code .= $this->getIndent() . '}';
         $code .= $this->getIndent() . 'return ' . $shortCircuitValue . ';';
         $code .= $this->getIndent() . '}()';
@@ -501,7 +503,13 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpLogicalXor(Expr\BinaryOp\LogicalXor $expr): string
     {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '^'));
+        $this->assertExprCanBeUsedAsCondition($expr->left, 'logical operand');
+        $this->assertExprCanBeUsedAsCondition($expr->right, 'logical operand');
+        $left = $this->parseOrderedBinaryOperand($expr->left);
+        $right = $this->parseOrderedBinaryOperand($expr->right);
+        $leftBool = $this->convertBoolExpr($left, $this->detectTypeOfExpr($expr->left));
+        $rightBool = $this->convertBoolExpr($right, $this->detectTypeOfExpr($expr->right));
+        return '(' . $leftBool . ' != ' . $rightBool . ')';
     }
 
     protected function parseBinaryOpSmallerOrEqual(Expr\BinaryOp\SmallerOrEqual $expr): string

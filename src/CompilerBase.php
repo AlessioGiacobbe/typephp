@@ -1516,6 +1516,7 @@ class CompilerBase implements PropertyAccessContext
         if ($cond instanceof Expr\Assign) {
             $condExpr = '(' . $condExpr . ')';
         }
+        $condExpr = $this->convertConditionExpr($cond, $condExpr);
         $code .= $openPrefix . '(' . $condExpr . ') {' . PHP_EOL;
         return $code;
     }
@@ -2513,7 +2514,23 @@ class CompilerBase implements PropertyAccessContext
         $exprType = $expr->getType();
         switch ($exprType) {
             case 'Expr_UnaryMinus':
+            case 'Expr_UnaryPlus':
                 return $this->detectTypeOfExpr($expr->expr);
+            case 'Expr_BooleanNot':
+            case 'Expr_BinaryOp_LogicalAnd':
+            case 'Expr_BinaryOp_BooleanAnd':
+            case 'Expr_BinaryOp_LogicalOr':
+            case 'Expr_BinaryOp_BooleanOr':
+            case 'Expr_BinaryOp_LogicalXor':
+            case 'Expr_BinaryOp_Equal':
+            case 'Expr_BinaryOp_NotEqual':
+            case 'Expr_BinaryOp_Identical':
+            case 'Expr_BinaryOp_NotIdentical':
+            case 'Expr_BinaryOp_Smaller':
+            case 'Expr_BinaryOp_SmallerOrEqual':
+            case 'Expr_BinaryOp_Greater':
+            case 'Expr_BinaryOp_GreaterOrEqual':
+                return Type::BOOL;
             case 'Expr_BitwiseNot':
                 $inner = $this->detectTypeOfExpr($expr->expr);
                 return $inner === Type::BIGINT ? Type::BIGINT : Type::INT;
@@ -2542,6 +2559,12 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_BinaryOp_Concat':
             case 'Expr_AssignOp_Concat':
                 return Type::STR;
+            case 'Expr_Ternary':
+                $ifType = $expr->if === null
+                    ? $this->detectTypeOfExpr($expr->cond)
+                    : $this->detectTypeOfExpr($expr->if);
+                $elseType = $this->detectTypeOfExpr($expr->else);
+                return $ifType === $elseType ? $ifType : Type::VAR;
             case 'Expr_BinaryOp_Plus':
             case 'Expr_BinaryOp_Minus':
             case 'Expr_BinaryOp_Mul':
@@ -2553,7 +2576,6 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_BinaryOp_BitwiseAnd':
             case 'Expr_BinaryOp_BitwiseOr':
             case 'Expr_BinaryOp_BitwiseXor':
-            case 'Expr_BinaryOp_BooleanAnd':
                 $leftType  = $this->detectTypeOfExpr($expr->left);
                 $rightType = $this->detectTypeOfExpr($expr->right);
                 if ($leftType === Type::BIGFLOAT || $rightType === Type::BIGFLOAT) {
@@ -3449,6 +3471,10 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseEmpty(Expr\Empty_ $expr): string
     {
+        $type = $this->detectTypeOfExpr($expr->expr);
+        if (in_array($type, [Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL], true)) {
+            return '!(' . $this->convertBoolExpr($this->parseExprAsValue($expr->expr), $type) . ')';
+        }
         return $this->parseChainedExpr($expr->expr, self::OP_EMPTY);
     }
 

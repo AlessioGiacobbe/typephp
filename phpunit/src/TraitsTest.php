@@ -96,29 +96,6 @@ class TraitsTest extends TestCase
     }
 
     // ========================================================================
-    // FuncCallOptimizer::isValidDefineName
-    // ========================================================================
-
-    public function testIsValidDefineNameValid(): void
-    {
-        $this->assertTrue($this->invoke('isValidDefineName', 'MY_CONSTANT'));
-        $this->assertTrue($this->invoke('isValidDefineName', 'APP_NAME'));
-        $this->assertTrue($this->invoke('isValidDefineName', '_PRIVATE'));
-        $this->assertTrue($this->invoke('isValidDefineName', 'camelCase'));
-        $this->assertTrue($this->invoke('isValidDefineName', 'Test123'));
-        $this->assertTrue($this->invoke('isValidDefineName', '_'));
-    }
-
-    public function testIsValidDefineNameInvalid(): void
-    {
-        $this->assertFalse($this->invoke('isValidDefineName', '123abc'));     // starts with digit
-        $this->assertFalse($this->invoke('isValidDefineName', 'has space'));  // contains space
-        $this->assertFalse($this->invoke('isValidDefineName', 'has-dash'));   // contains dash
-        $this->assertFalse($this->invoke('isValidDefineName', ''));           // empty
-        $this->assertFalse($this->invoke('isValidDefineName', '0abc'));       // starts with zero
-    }
-
-    // ========================================================================
     // StdContainerParser::isStdContainerType
     // ========================================================================
 

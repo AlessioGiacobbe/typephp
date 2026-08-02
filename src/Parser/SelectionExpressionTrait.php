@@ -54,6 +54,7 @@ trait SelectionExpressionTrait
                 $code .= $this->formatCapturedStmtLines($condAfterStmts);
                 $cond = $condTmpVar;
             }
+            $cond = $this->convertConditionExpr($expr->cond, $cond);
             $code .= $this->getIndent() . 'if (' . $cond . ') {';
             $code .= $this->formatTernaryReturn($if, $ifBeforeStmts, $ifAfterStmts);
             $code .= $this->getIndent() . '} else {';
@@ -62,6 +63,7 @@ trait SelectionExpressionTrait
             $code .= $this->getIndent() . '}()';
             return $code;
         }
+        $cond = $this->convertConditionExpr($expr->cond, $cond);
         return '(' . $cond . ') ? (' . $if . ') : (' . $else . ')';
     }
 
@@ -166,6 +168,11 @@ trait SelectionExpressionTrait
         $chainOpResult = $left->getAttribute('chainOpResult');
         if ($chainOpResult) {
             $leftExpr = $chainOpResult;
+        }
+        $leftType = $this->detectTypeOfExpr($left);
+        if ($op === self::OP_NOT_EMPTY
+            && in_array($leftType, [Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL], true)) {
+            $condExpr = '((' . $condExpr . '), ' . $this->convertBoolExpr($leftExpr, $leftType) . ')';
         }
 
         $rightBeforeStmtCount = count($this->context->beforeStmtLines);

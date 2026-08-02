@@ -28,7 +28,10 @@ trait UnaryExpressionTrait
     protected function parseBooleanNot(Expr\BooleanNot $expr): string
     {
         $this->assertExprCanBeUsedAsCondition($expr->expr, 'boolean operand');
-        return '!(' . $this->parseExprAsValue($expr->expr) . ')';
+        return '!(' . $this->convertBoolExpr(
+            $this->parseExprAsValue($expr->expr),
+            $this->detectTypeOfExpr($expr->expr)
+        ) . ')';
     }
 
     protected function parseCastInt(Expr\Cast\Int_ $node): string
