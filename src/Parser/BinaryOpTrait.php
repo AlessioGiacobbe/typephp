@@ -132,12 +132,117 @@ trait BinaryOpTrait
             return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
         }
 
+        if ($op === '<<' || $op === '>>') {
+            $foldedShift = $this->tryFoldConstantShift($left, $right, $op, $leftExpr, $rightExpr);
+            if ($foldedShift !== null) {
+                return $foldedShift;
+            }
+        }
+
         $folded = $this->tryFoldConstantIntArithmetic($left, $right, $op);
         if ($folded !== null) {
             return $folded;
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
+    }
+
+    /**
+     * Fold constant integer shifts to PHP semantics in non-native mode.
+     *
+     * PHP shifts by >= word size to 0 (left) or -1/0 (right, arithmetic), and
+     * throws a catchable ArithmeticError for negative shift counts. Native C++
+     * shifts are undefined for those counts, so the constant case is folded
+     * (>= word size) or routed through php::Var (negative, so the Zend shift
+     * function raises the catchable error at runtime).
+     */
+    protected function tryFoldConstantShift(
+        NodeAbstract $left,
+        NodeAbstract $right,
+        string $op,
+        string $leftExpr,
+        string $rightExpr
+    ): ?string {
+        $leftValue = $this->constantIntValue($left);
+        $shiftValue = $this->constantIntValue($right);
+        if ($leftValue === null || $shiftValue === null) {
+            return null;
+        }
+
+        $wordSize = PHP_INT_SIZE * 8;
+
+        if ($this->nativeTypes) {
+            if ($shiftValue >= $wordSize) {
+                $this->fatalError(
+                    $right,
+                    'Bit shift count ' . $shiftValue . ' is >= ' . $wordSize
+                        . ' and is not supported in native mode'
+                );
+            }
+            if ($shiftValue < 0) {
+                $this->fatalError(
+                    $right,
+                    'Bit shift by a negative number is not supported in native mode'
+                );
+            }
+            if ($op === '>>' && $leftValue < 0) {
+                $this->fatalError(
+                    $left,
+                    'Right shift of a negative value is implementation-defined in C++'
+                        . ' and is not supported in native mode'
+                );
+            }
+            if ($op === '<<' && $leftValue < 0) {
+                $this->fatalError(
+                    $left,
+                    'Left shift of a negative value is undefined behavior in C++'
+                        . ' and is not supported in native mode'
+                );
+            }
+            if ($op === '<<' && $this->leftShiftTouchesSignBit($leftValue, $shiftValue)) {
+                $this->fatalError(
+                    $left,
+                    'Left shift that changes the sign bit is undefined behavior in C++'
+                        . ' and is not supported in native mode'
+                );
+            }
+            return null;
+        }
+
+        if ($shiftValue >= $wordSize) {
+            $result = $op === '<<' ? '0LL' : ($leftValue < 0 ? '-1LL' : '0LL');
+            $this->warning(
+                $right,
+                'Bit shift count ' . $shiftValue . ' is >= ' . $wordSize
+                    . '; folding with PHP semantics (left shift to 0, right shift to -1 for negative operands, 0 otherwise)'
+            );
+            return $result;
+        }
+
+        if ($shiftValue < 0) {
+            $this->warning(
+                $right,
+                'Bit shift by a negative number throws ArithmeticError at runtime'
+            );
+            // Route through php::Var so the Zend shift function raises the catchable error.
+            return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether a constant left shift of a non-negative value would set the sign
+     * bit (overflow the signed range), which is undefined behavior in C++.
+     */
+    protected function leftShiftTouchesSignBit(int $value, int $shift): bool
+    {
+        if ($value < 0 || $shift <= 0) {
+            return false;
+        }
+        // PHP shift is performed on unsigned values; a negative result means
+        // the sign bit got set.
+        return ($value << $shift) < 0;
     }
 
     /**
@@ -181,6 +286,11 @@ trait BinaryOpTrait
             return null;
         }
 
+        $this->warning(
+            $left,
+            'Constant integer arithmetic overflows int64; folding to PHP float result ('
+                . $leftValue . ' ' . $op . ' ' . $rightValue . ')'
+        );
         return $this->genFloatLiteral($result);
     }
 
