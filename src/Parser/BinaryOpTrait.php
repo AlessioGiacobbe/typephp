@@ -132,7 +132,97 @@ trait BinaryOpTrait
             return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
         }
 
+        $folded = $this->tryFoldConstantIntArithmetic($left, $right, $op);
+        if ($folded !== null) {
+            return $folded;
+        }
+
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
+    }
+
+    /**
+     * Fold constant int arithmetic that would overflow int64 in generated C++.
+     *
+     * PHP promotes an overflowing integer operation to float; raw C++ constant
+     * expressions overflow at compile time (UB) and wrap instead. When both
+     * operands are compile-time int constants and the PHP result is no longer
+     * an int, emit the promoted float literal instead of the raw C++ expression.
+     * With native_types the intentional wrap semantics are kept.
+     */
+    protected function tryFoldConstantIntArithmetic(NodeAbstract $left, NodeAbstract $right, string $op): ?string
+    {
+        if ($this->nativeTypes) {
+            return null;
+        }
+        if (!in_array($op, ['+', '-', '*', '/'], true)) {
+            return null;
+        }
+
+        $leftValue = $this->constantIntValue($left);
+        $rightValue = $this->constantIntValue($right);
+        if ($leftValue === null || $rightValue === null) {
+            return null;
+        }
+        if ($op === '/' && $rightValue === 0) {
+            // Division by zero is rejected by guardLiteralDivisionByZero / runtime.
+            return null;
+        }
+
+        // PHP itself promotes overflowing int arithmetic to float, which is
+        // exactly the semantics we want for the generated literal.
+        $result = match ($op) {
+            '+' => $leftValue + $rightValue,
+            '-' => $leftValue - $rightValue,
+            '*' => $leftValue * $rightValue,
+            '/' => $leftValue / $rightValue,
+        };
+        if (is_int($result)) {
+            // No overflow — keep the plain C++ expression.
+            return null;
+        }
+
+        return $this->genFloatLiteral($result);
+    }
+
+    /**
+     * Resolve a compile-time integer constant value, or null when the
+     * expression is not a statically known int constant.
+     */
+    protected function constantIntValue(NodeAbstract $expr): ?int
+    {
+        if ($expr instanceof Node\Scalar\Int_) {
+            return $expr->value;
+        }
+        if ($expr instanceof Node\Expr\UnaryPlus) {
+            return $this->constantIntValue($expr->expr);
+        }
+        if ($expr instanceof Node\Expr\UnaryMinus) {
+            $value = $this->constantIntValue($expr->expr);
+            if ($value === null || $value === PHP_INT_MIN) {
+                // -PHP_INT_MIN promotes to float in PHP; not an int constant.
+                return null;
+            }
+            return -$value;
+        }
+        if ($expr instanceof Node\Expr\ConstFetch) {
+            $name = strtolower($expr->name->toString());
+            return match ($name) {
+                'php_int_max' => PHP_INT_MAX,
+                'php_int_min' => PHP_INT_MIN,
+                default => null,
+            };
+        }
+        return null;
+    }
+
+    protected function genFloatLiteral(float $value): string
+    {
+        $text = sprintf('%.17g', $value);
+        // Make sure the literal is parsed as a C++ double.
+        if (!str_contains($text, '.') && !str_contains(strtolower($text), 'e')) {
+            $text .= '.0';
+        }
+        return $text;
     }
 
     protected function shouldMaterializeOrderedOperand(NodeAbstract $expr): bool

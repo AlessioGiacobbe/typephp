@@ -243,9 +243,11 @@ class CompilerBase implements PropertyAccessContext
     protected array $propMap = [];
     protected array $zendTypeMap = [
         'int' => Type::INT,
+        'integer' => Type::INT,
         'float' => Type::FLOAT,
         'double' => Type::FLOAT,
         'bool' => Type::BOOL,
+        'boolean' => Type::BOOL,
         'false' => Type::BOOL,
         'true' => Type::BOOL,
         'void' => Type::VOID,

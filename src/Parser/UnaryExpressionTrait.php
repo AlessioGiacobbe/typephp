@@ -80,6 +80,13 @@ trait UnaryExpressionTrait
         if ($type === Type::DECIMAL) {
             return 'php::Decimal::neg(' . $this->parseExprAsValue($expr->expr) . ')';
         }
+        if (!$this->nativeTypes && $type === Type::INT) {
+            $value = $this->constantIntValue($expr->expr);
+            if ($value === PHP_INT_MIN) {
+                // -PHP_INT_MIN overflows int64 and promotes to float in PHP.
+                return $this->genFloatLiteral(-(float) PHP_INT_MIN);
+            }
+        }
         $code = $this->parseExprAsValue($expr->expr);
 
         return '-' . $code;
