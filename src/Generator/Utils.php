@@ -75,6 +75,11 @@ trait Utils
         return $bool ? 'true' : 'false';
     }
 
+    protected function escapeAttrMode(bool $update): string
+    {
+        return $update ? 'php::AttrMode::Update' : 'php::AttrMode::Get';
+    }
+
     protected function escapeVarName(string $name): string
     {
         if ($name === 'this') {

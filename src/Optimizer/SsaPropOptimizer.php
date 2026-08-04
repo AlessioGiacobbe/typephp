@@ -823,7 +823,7 @@ trait SsaPropOptimizer
         }
 
         if ($this->context->inLoop || $this->context->scopeLevel > 1) {
-            $refGetter = $objName . '.attr(' . $id . ', true)';
+            $refGetter = $objName . '.attr(' . $id . ', php::AttrMode::Update)';
             $zvalMacro = $this->getZvalValueMacroForPropType($cType);
             if ($zvalMacro !== null) {
                 return $zvalMacro . '(' . $refGetter . '.unwrap_ptr())';
@@ -831,7 +831,7 @@ trait SsaPropOptimizer
             return $refGetter;
         }
 
-        $refGetter = $objName . '.attr(' . $id . ', true)';
+        $refGetter = $objName . '.attr(' . $id . ', php::AttrMode::Update)';
         $zvalMacro = $this->getZvalValueMacroForPropType($cType);
         if ($zvalMacro !== null) {
             $this->context->beforeStmtLines[] = $cType . ' &' . $propVar . ' = ' . $zvalMacro . '(' . $refGetter . '.unwrap_ptr());';

@@ -84,7 +84,7 @@ trait NullsafeAccessTrait
                 $code .= "if ({$object}.isNull()) { return " . self::VALUE_NULL . '; }';
             }
             if ($item[0] == 'property') {
-                $update = $this->escapeBool($this->isPropertyFetchUpdate($item[2]));
+                $update = $this->escapeAttrMode($this->isPropertyFetchUpdate($item[2]));
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
             } else {
                 $beforeStmtCount = count($this->context->beforeStmtLines);

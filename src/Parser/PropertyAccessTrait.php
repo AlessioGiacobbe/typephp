@@ -163,12 +163,12 @@ trait PropertyAccessTrait
 
     protected function emitDynamicPropertyAppendArray(string $object, string $property, string $value): string
     {
-        return "{$object}.attr({$property}, true).newItem() = {$value}";
+        return "{$object}.attr({$property}, php::AttrMode::Update).newItem() = {$value}";
     }
 
     protected function emitDynamicPropertyUpdateArray(string $object, string $property, string $dim, string $value): string
     {
-        return "{$object}.attr({$property}, true).item({$dim}, true) = {$value}";
+        return "{$object}.attr({$property}, php::AttrMode::Update).item({$dim}, true) = {$value}";
     }
 
     protected function assertDynamicPropertyTarget(PropertyWriteTarget $target): void
@@ -729,7 +729,7 @@ trait PropertyAccessTrait
                             if ($this->hasObjectPropVar($propVar)) {
                                 $lines[] = $propVar . ' = ' . $restoreDefault . ';';
                             } else {
-                                $lines[] = $object . '.attr(' . $propertyId . ', true) = ' . $restoreDefault . ';';
+                                $lines[] = $object . '.attr(' . $propertyId . ', php::AttrMode::Update) = ' . $restoreDefault . ';';
                             }
                         }
                     }
@@ -839,7 +839,7 @@ trait PropertyAccessTrait
             $this->errorUndefinedVariable($object);
         }
         $objectVar = $objectName;
-        $getProperty = $objectVar . '.attr(' . $id . ', ' . $this->escapeBool($update) . ')';
+        $getProperty = $objectVar . '.attr(' . $id . ', ' . $this->escapeAttrMode($update) . ')';
         $def = $this->getNativePropertyDef($expr);
         if ($def and $this->nativeTypes) {
             $propName = $this->parseIdentifier($property);

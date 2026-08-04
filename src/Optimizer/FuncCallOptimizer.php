@@ -371,7 +371,7 @@ trait FuncCallOptimizer
         if ($this->isPropertyFetch($arg) and $this->isVarExpr($arg->var)) {
             $obj = $this->parseIdentifier($arg->var);
             $tmpRef = $this->genTmpVarName();
-            $this->context->beforeStmtLines[] = 'auto&& ' . $tmpRef . ' = ' . $obj . '.attr(' . $this->identifierToStr($arg->name) . ', true);';
+            $this->context->beforeStmtLines[] = 'auto&& ' . $tmpRef . ' = ' . $obj . '.attr(' . $this->identifierToStr($arg->name) . ', php::AttrMode::Update);';
             return $tmpRef;
         }
         return $this->getArg($expr, $i);
