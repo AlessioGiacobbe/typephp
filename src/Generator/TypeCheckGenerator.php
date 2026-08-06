@@ -19,6 +19,87 @@ use PhpParser\NodeAbstract;
 
 trait TypeCheckGenerator
 {
+    protected function isStrictScalarType(string $type): bool
+    {
+        return in_array($type, [Type::INT, Type::FLOAT, Type::BOOL, Type::STR], true);
+    }
+
+    protected function strictScalarTypeName(string $type): string
+    {
+        return match ($type) {
+            Type::INT => 'int',
+            Type::FLOAT => 'float',
+            Type::BOOL => 'bool',
+            Type::STR => 'string',
+            default => throw new \LogicException('Not a strict scalar type: ' . $type),
+        };
+    }
+
+    protected function genStrictScalarCondition(string $valueExpr, string $type): string
+    {
+        return match ($type) {
+            Type::INT => $valueExpr . '.isInt()',
+            // PHP permits int values at a float boundary even in strict mode.
+            Type::FLOAT => '(' . $valueExpr . '.isFloat() || ' . $valueExpr . '.isInt())',
+            Type::BOOL => $valueExpr . '.isBool()',
+            Type::STR => $valueExpr . '.isString()',
+            default => throw new \LogicException('Not a strict scalar type: ' . $type),
+        };
+    }
+
+    protected function genStrictScalarParamCheck(
+        ArgInfo $argInfo,
+        string $valueExpr,
+        string $callableName,
+        string $argNoExpr
+    ): string {
+        if (!$this->isStrictScalarType($argInfo->type)) {
+            return '';
+        }
+
+        $paramName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
+        $format = $this->genCharPtr($callableName . '(): Argument #', true)
+            . ' ZEND_LONG_FMT '
+            . $this->genCharPtr(
+                ' ($' . $paramName . ') must be of type ' . $this->strictScalarTypeName($argInfo->type)
+                    . ', %s given',
+                true
+            );
+        $throwExpr = 'php::throwExceptionEx(zend_ce_type_error, 0, ' . $format . ', '
+            . $argNoExpr . ', ' . $valueExpr . '.typeStr())';
+
+        $code = $this->getIndent() . 'if (UNEXPECTED(!('
+            . $this->genStrictScalarCondition($valueExpr, $argInfo->type) . '))) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $throwExpr . ';' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        return $code;
+    }
+
+    protected function genStrictScalarReturnCheck(string $valueExpr, string $returnType): string
+    {
+        if (!$this->isStrictScalarType($returnType)) {
+            return '';
+        }
+
+        $fnName = $this->getTypeCheckCallableName();
+        $format = $this->genCharPtr(
+            $fnName . '(): Return value must be of type ' . $this->strictScalarTypeName($returnType)
+                . ', %s returned',
+            true
+        );
+
+        $code = $this->getIndent() . 'if (UNEXPECTED(!('
+            . $this->genStrictScalarCondition($valueExpr, $returnType) . '))) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'php::throwExceptionEx(zend_ce_type_error, 0, '
+            . $format . ', ' . $valueExpr . '.typeStr());' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        return $code;
+    }
+
     protected function buildTypeCheckFromNode(NodeAbstract $typeNode): array
     {
         $check = [];

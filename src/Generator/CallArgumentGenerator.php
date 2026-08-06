@@ -103,7 +103,8 @@ trait CallArgumentGenerator
                 continue;
             }
             $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
-            $argList[] = $this->getTypeConvertedArg($arg, $argInfo);
+            $callableName = $functionDef->displayName ?: $functionDef->getNamespacedName();
+            $argList[] = $this->getTypeConvertedArg($arg, $argInfo, $callableName, $i);
         }
 
         return implode(', ', $argList);

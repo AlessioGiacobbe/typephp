@@ -2144,6 +2144,19 @@ class CompilerBase implements PropertyAccessContext
             $returnType = Type::VAR;
         }
 
+        if (!$this->context->inClosure
+            && ($type === Type::VAR || $type === Type::REF)
+            && $this->isStrictScalarType($returnType)) {
+            // Keep the zval type until the declared return boundary has been
+            // checked. Converting first would silently coerce invalid values.
+            $tmpVar = $this->addTmpVar(Type::VAR);
+            $code = $tmpVar . ' = (' . $expr . ');' . PHP_EOL;
+            $code .= $this->genStrictScalarReturnCheck($tmpVar, $returnType);
+            $code .= $this->getIndent() . 'return '
+                . $this->convertExprType($tmpVar, $returnType, Type::VAR) . ';';
+            return $code;
+        }
+
         $returnObjectCheckClass = '';
         // 返回值的表达式是一个类的对象
         $objectClass = $this->detectDeclaredClassOfExpr($v->expr);

@@ -3176,7 +3176,15 @@ CODE;
                 $cppCode .= $this->getIndent() . Type::ARRAY . ' ' . $var . ';' . PHP_EOL;
                 $cppCode .= $this->getIndent() . 'for (uint32_t i = ' . $k . '; i < php::getCallArgNum(); i++) {' . PHP_EOL;
                 $this->indentLevel++;
-                $cppCode .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
+                if ($this->isStrictScalarType($argInfo->type)) {
+                    $rawVar = 'raw_' . $var;
+                    $cppCode .= $this->getIndent() . Type::VAR . ' ' . $rawVar . ' = php::getCallArg(i);' . PHP_EOL;
+                    $cppCode .= $this->genStrictScalarParamCheck($argInfo, $rawVar, $displayName, 'i + 1');
+                    $cppCode .= $this->getIndent() . $var . '.append('
+                        . $this->convertExprFromType($argInfo->type, $rawVar) . ');' . PHP_EOL;
+                } else {
+                    $cppCode .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
+                }
                 $this->indentLevel--;
                 $cppCode .= '}' . PHP_EOL;
                 $cppCode .= $this->genExtraNamedVariadicArgs($var);
@@ -3200,7 +3208,17 @@ CODE;
                 }
                 $cppType = $this->getDefaultArgumentType($argInfo);
                 $declaredClass = $argInfo->declaredClass ?: $argInfo->class;
-                if ($argInfo->type === Type::OBJECT && $declaredClass !== '') {
+                if ($this->isStrictScalarType($argInfo->type)) {
+                    $rawVar = 'raw_' . $var;
+                    $cppCode .= $this->getIndent() . Type::VAR . ' ' . $rawVar . ' = ' . $argExpr . ';' . PHP_EOL;
+                    $cppCode .= $this->genStrictScalarParamCheck(
+                        $argInfo,
+                        $rawVar,
+                        $displayName,
+                        (string) ($k + 1)
+                    );
+                    $expr = $this->convertExprFromType($argInfo->type, $rawVar);
+                } elseif ($argInfo->type === Type::OBJECT && $declaredClass !== '') {
                     $expr = $this->convertObjectExpr($argExpr, $this->getClassEntryPtr($declaredClass));
                 } else {
                     $expr = $this->convertExprFromType($argInfo->type, $argExpr);

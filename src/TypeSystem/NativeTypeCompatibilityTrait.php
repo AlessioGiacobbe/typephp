@@ -139,7 +139,12 @@ trait NativeTypeCompatibilityTrait
         return false;
     }
 
-    protected function getTypeConvertedArg(Node\Arg $arg, ArgInfo $argInfo): string
+    protected function getTypeConvertedArg(
+        Node\Arg $arg,
+        ArgInfo $argInfo,
+        string $callableName = '',
+        int $argIndex = 0
+    ): string
     {
         $type = $this->detectTypeOfExpr($arg->value);
         $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
@@ -180,6 +185,20 @@ trait NativeTypeCompatibilityTrait
         $expr = $this->parseOrderedArg($arg);
         $expr = $this->materializeCallArgValue($arg->value, $expr);
 
+        if (($type === Type::VAR || $type === Type::REF) && $this->isStrictScalarType($argInfo->type)) {
+            // A native scalar ABI value has already lost its zval type. Preserve
+            // the dynamic value until strict_types validation has completed.
+            $tmpVar = $this->addTmpVar(Type::VAR);
+            $this->context->beforeStmtLines[] = $tmpVar . ' = (' . $expr . ');';
+            $this->context->beforeStmtLines[] = rtrim($this->genStrictScalarParamCheck(
+                $argInfo,
+                $tmpVar,
+                $callableName,
+                (string) ($argIndex + 1)
+            ));
+            $expr = $tmpVar;
+        }
+
         $this->checkVarAssignExpr($arg, $argInfo->type, $type);
 
         if ($argInfo->type === Type::VAR && $this->isVarExpr($arg->value)) {
@@ -215,4 +234,3 @@ trait NativeTypeCompatibilityTrait
     }
 
 }
-
