@@ -21,6 +21,21 @@ class MagicReadTest
     }
 }
 
+class MagicIssetTrueTest
+{
+    public function __isset(string $name): bool
+    {
+        echo "__isset($name)\n";
+        return true;
+    }
+
+    public function __get(string $name)
+    {
+        echo "__get($name)\n";
+        return null;
+    }
+}
+
 function main(): void
 {
     $obj = new MagicReadTest();
@@ -33,6 +48,10 @@ function main(): void
 
     echo "--- empty ---\n";
     var_dump(empty($obj->aaa));
+
+    echo "--- isset true does not read ---\n";
+    $issetTrue = new MagicIssetTrueTest();
+    var_dump(isset($issetTrue->value));
 }
 ?>
 --EXPECTF--
@@ -44,4 +63,7 @@ __isset(aaa)
 bool(false)
 --- empty ---
 __isset(aaa)
+bool(true)
+--- isset true does not read ---
+__isset(value)
 bool(true)
