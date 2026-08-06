@@ -14,6 +14,7 @@ function main(): void
     var_dump(-1 >> 63);
     var_dump(1 << 63);
     var_dump(5 >> 1);
+    var_dump(1 >> (32 + 32));
     try {
         var_dump(1 >> -1);
     } catch (ArithmeticError $e) {
@@ -30,4 +31,5 @@ int(0)
 int(-1)
 int(-9223372036854775808)
 int(2)
+int(0)
 caught: Bit shift by negative number

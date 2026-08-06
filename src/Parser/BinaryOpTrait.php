@@ -128,6 +128,16 @@ trait BinaryOpTrait
 
         $this->guardLiteralDivisionByZero($right, $op);
 
+        $constantDivisionByZero = $this->handleNestedConstantDivisionByZero(
+            $right,
+            $op,
+            $leftExpr,
+            $rightExpr
+        );
+        if ($constantDivisionByZero !== null) {
+            return $constantDivisionByZero;
+        }
+
         if ($op === '%' and !($leftType === Type::INT and $rightType === Type::INT)) {
             return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
         }
@@ -240,9 +250,13 @@ trait BinaryOpTrait
         if ($value < 0 || $shift <= 0) {
             return false;
         }
-        // PHP shift is performed on unsigned values; a negative result means
-        // the sign bit got set.
-        return ($value << $shift) < 0;
+        if ($shift >= PHP_INT_SIZE * 8) {
+            return true;
+        }
+        // Avoid performing the overflowing shift while checking it. Testing
+        // the wrapped PHP result misses cases such as 2 << 63, which becomes
+        // zero in PHP but is undefined/implementation-defined in C++17.
+        return $value > (PHP_INT_MAX >> $shift);
     }
 
     /**
@@ -338,19 +352,29 @@ trait BinaryOpTrait
      */
     protected function constantIntValue(NodeAbstract $expr): ?int
     {
+        $value = $this->constantNumericValue($expr, $this->nativeTypes);
+        return is_int($value) ? $value : null;
+    }
+
+    /**
+     * Evaluate a numeric literal tree without touching dynamic expressions.
+     * Native mode uses C++17 integer-division semantics so an enclosing
+     * operation can still be checked for undefined behavior.
+     */
+    protected function constantNumericValue(NodeAbstract $expr, bool $nativeSemantics): int|float|null
+    {
         if ($expr instanceof Node\Scalar\Int_) {
             return $expr->value;
         }
+        if ($expr instanceof Node\Scalar\Float_) {
+            return $expr->value;
+        }
         if ($expr instanceof Node\Expr\UnaryPlus) {
-            return $this->constantIntValue($expr->expr);
+            return $this->constantNumericValue($expr->expr, $nativeSemantics);
         }
         if ($expr instanceof Node\Expr\UnaryMinus) {
-            $value = $this->constantIntValue($expr->expr);
-            if ($value === null || $value === PHP_INT_MIN) {
-                // -PHP_INT_MIN promotes to float in PHP; not an int constant.
-                return null;
-            }
-            return -$value;
+            $value = $this->constantNumericValue($expr->expr, $nativeSemantics);
+            return $value === null ? null : -$value;
         }
         if ($expr instanceof Node\Expr\ConstFetch) {
             $name = strtolower($expr->name->toString());
@@ -360,7 +384,94 @@ trait BinaryOpTrait
                 default => null,
             };
         }
-        return null;
+        if (!$expr instanceof Node\Expr\BinaryOp) {
+            return null;
+        }
+
+        $left = $this->constantNumericValue($expr->left, $nativeSemantics);
+        $right = $this->constantNumericValue($expr->right, $nativeSemantics);
+        if ($left === null || $right === null) {
+            return null;
+        }
+
+        return match (true) {
+            $expr instanceof Node\Expr\BinaryOp\Plus => $left + $right,
+            $expr instanceof Node\Expr\BinaryOp\Minus => $left - $right,
+            $expr instanceof Node\Expr\BinaryOp\Mul => $left * $right,
+            $expr instanceof Node\Expr\BinaryOp\Div => $this->constantDivisionValue(
+                $left,
+                $right,
+                $nativeSemantics
+            ),
+            $expr instanceof Node\Expr\BinaryOp\Mod => is_int($left) && is_int($right) && $right !== 0
+                ? $left % $right
+                : null,
+            $expr instanceof Node\Expr\BinaryOp\BitwiseAnd => is_int($left) && is_int($right)
+                ? $left & $right
+                : null,
+            $expr instanceof Node\Expr\BinaryOp\BitwiseOr => is_int($left) && is_int($right)
+                ? $left | $right
+                : null,
+            $expr instanceof Node\Expr\BinaryOp\BitwiseXor => is_int($left) && is_int($right)
+                ? $left ^ $right
+                : null,
+            $expr instanceof Node\Expr\BinaryOp\ShiftLeft => is_int($left) && is_int($right)
+                ? $this->constantShiftValue($left, $right, true)
+                : null,
+            $expr instanceof Node\Expr\BinaryOp\ShiftRight => is_int($left) && is_int($right)
+                ? $this->constantShiftValue($left, $right, false)
+                : null,
+            default => null,
+        };
+    }
+
+    protected function constantDivisionValue(int|float $left, int|float $right, bool $nativeSemantics): int|float|null
+    {
+        if ($right == 0) {
+            return null;
+        }
+        if ($nativeSemantics && is_int($left) && is_int($right)) {
+            if ($left === PHP_INT_MIN && $right === -1) {
+                return null;
+            }
+            return intdiv($left, $right);
+        }
+        return $left / $right;
+    }
+
+    protected function constantShiftValue(int $value, int $shift, bool $left): ?int
+    {
+        if ($shift < 0) {
+            return null;
+        }
+        if ($shift >= PHP_INT_SIZE * 8) {
+            return $left ? 0 : ($value < 0 ? -1 : 0);
+        }
+        return $left ? $value << $shift : $value >> $shift;
+    }
+
+    protected function handleNestedConstantDivisionByZero(
+        NodeAbstract $right,
+        string $op,
+        string $leftExpr,
+        string $rightExpr
+    ): ?string {
+        if (($op !== '/' && $op !== '%') || $this->isZeroLiteral($right)) {
+            return null;
+        }
+
+        $rightValue = $this->constantNumericValue($right, $this->nativeTypes);
+        if ($rightValue === null || $rightValue != 0) {
+            return null;
+        }
+
+        if ($this->nativeTypes) {
+            $this->fatalError($right, 'Constant division or modulo by zero has undefined behavior in C++ native mode');
+        }
+
+        // Preserve PHP's catchable DivisionByZeroError for a nested constant
+        // zero. Literal zero keeps the compiler's established diagnostic.
+        return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
     }
 
     protected function genFloatLiteral(float $value): string

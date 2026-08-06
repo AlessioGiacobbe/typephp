@@ -22,7 +22,7 @@ class ConstantArithmeticOverflowTest extends TestCase
             $reporter->warnings,
             fn (string $message): bool => str_contains($message, 'Constant integer arithmetic overflows int64')
         ));
-        $this->assertCount(2, $overflowWarnings);
+        $this->assertCount(3, $overflowWarnings);
         $this->assertStringContainsString('9223372036854775807 + 1', $overflowWarnings[0]);
         $this->assertStringContainsString('folding to PHP float result', $overflowWarnings[0]);
     }
@@ -45,6 +45,11 @@ class ConstantArithmeticOverflowTest extends TestCase
             'constant-overflow-native-div.php' => '-9223372036854775808 / -1',
             'constant-overflow-native-mod.php' => '-9223372036854775808 % -1',
             'constant-overflow-native-neg.php' => 'Negating PHP_INT_MIN',
+            'constant-overflow-native-nested-add.php' => '9223372036854775807 + 1',
+            'constant-overflow-native-nested-div.php' => '-9223372036854775808 / -1',
+            'constant-overflow-native-nested-mod.php' => '-9223372036854775808 % -1',
+            'constant-overflow-native-nested-zero.php' => 'Constant division or modulo by zero',
+            'constant-overflow-native-div-subtree.php' => '9223372036854775807 + 2',
         ];
 
         foreach ($cases as $file => $expectedMessage) {
@@ -57,6 +62,7 @@ class ConstantArithmeticOverflowTest extends TestCase
         }
 
         $this->compileNativeFile('constant-overflow-native-ok.php');
+        $this->compileNativeFile('constant-overflow-native-nonconstant.php');
         $this->addToAssertionCount(1);
     }
 

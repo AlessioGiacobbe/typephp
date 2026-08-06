@@ -57,6 +57,13 @@ class ShiftBoundaryTest extends TestCase
         $this->compileNativeWithReporter('shift-boundary-native-overflow.php');
     }
 
+    public function testNativeModeRejectsNestedShiftCountAtLeastWordSize(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Bit shift count 64 is >= 64 and is not supported in native mode');
+        $this->compileNativeWithReporter('shift-boundary-native-nested-overflow.php');
+    }
+
     public function testNativeModeRejectsNegativeShiftCount(): void
     {
         $this->expectException(TestError::class);
@@ -71,11 +78,25 @@ class ShiftBoundaryTest extends TestCase
         $this->compileNativeWithReporter('shift-boundary-native-neg-right.php');
     }
 
+    public function testNativeModeRejectsNestedNegativeRightShift(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Right shift of a negative value is implementation-defined in C++');
+        $this->compileNativeWithReporter('shift-boundary-native-nested-neg-right.php');
+    }
+
     public function testNativeModeRejectsLeftShiftChangingSignBit(): void
     {
         $this->expectException(TestError::class);
         $this->expectExceptionMessage('Left shift that changes the sign bit is undefined behavior in C++');
         $this->compileNativeWithReporter('shift-boundary-native-sign-bit.php');
+    }
+
+    public function testNativeModeRejectsLeftShiftThatWrapsPastSignBit(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Left shift that changes the sign bit is undefined behavior in C++');
+        $this->compileNativeWithReporter('shift-boundary-native-wrapped-overflow.php');
     }
 
     public function testNativeModeRejectsNegativeLeftShift(): void
