@@ -241,13 +241,15 @@ class CompilerBase implements PropertyAccessContext
     protected array $funcMap = [];
     protected int $propIndex = 0;
     protected array $propMap = [];
+    protected const array PHP_RUNTIME_TYPE_MAP = [
+        'integer' => Type::INT,
+        'double' => Type::FLOAT,
+        'boolean' => Type::BOOL,
+    ];
     protected array $zendTypeMap = [
         'int' => Type::INT,
-        'integer' => Type::INT,
         'float' => Type::FLOAT,
-        'double' => Type::FLOAT,
         'bool' => Type::BOOL,
-        'boolean' => Type::BOOL,
         'false' => Type::BOOL,
         'true' => Type::BOOL,
         'void' => Type::VOID,
@@ -625,7 +627,7 @@ class CompilerBase implements PropertyAccessContext
 
     public function getTypeFromZendType(string $type): string
     {
-        return $this->zendTypeMap[$type] ?? Type::VAR;
+        return $this->zendTypeMap[$type] ?? self::PHP_RUNTIME_TYPE_MAP[$type] ?? Type::VAR;
     }
 
     public function getObjectType(string $object): string
@@ -2517,7 +2519,16 @@ class CompilerBase implements PropertyAccessContext
         switch ($exprType) {
             case 'Expr_UnaryMinus':
             case 'Expr_UnaryPlus':
-                return $this->detectTypeOfExpr($expr->expr);
+                $innerType = $this->detectTypeOfExpr($expr->expr);
+                if (
+                    !$this->nativeTypes
+                    && $exprType === 'Expr_UnaryMinus'
+                    && $innerType === Type::INT
+                    && $this->constantIntValue($expr->expr) === PHP_INT_MIN
+                ) {
+                    return Type::FLOAT;
+                }
+                return $innerType;
             case 'Expr_BooleanNot':
             case 'Expr_BinaryOp_LogicalAnd':
             case 'Expr_BinaryOp_BooleanAnd':
@@ -2595,6 +2606,22 @@ class CompilerBase implements PropertyAccessContext
                 }
                 if ($leftType === Type::FLOAT || $rightType === Type::FLOAT) {
                     return Type::FLOAT;
+                }
+                if (!$this->nativeTypes && $leftType === Type::INT && $rightType === Type::INT) {
+                    $op = match ($exprType) {
+                        'Expr_BinaryOp_Plus' => '+',
+                        'Expr_BinaryOp_Minus' => '-',
+                        'Expr_BinaryOp_Mul' => '*',
+                        'Expr_BinaryOp_Div' => '/',
+                        'Expr_BinaryOp_Mod' => '%',
+                        default => null,
+                    };
+                    if ($op !== null) {
+                        $evaluation = $this->evaluateConstantIntArithmetic($expr->left, $expr->right, $op);
+                        if ($evaluation !== null && is_float($evaluation['result'])) {
+                            return Type::FLOAT;
+                        }
+                    }
                 }
                 if ($leftType === Type::INT || $rightType === Type::INT) {
                     return Type::INT;

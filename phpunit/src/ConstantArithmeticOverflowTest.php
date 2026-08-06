@@ -36,6 +36,30 @@ class ConstantArithmeticOverflowTest extends TestCase
         }
     }
 
+    public function testNativeModeRejectsConstantUndefinedBehavior(): void
+    {
+        $cases = [
+            'constant-overflow-native-add.php' => '9223372036854775807 + 1',
+            'constant-overflow-native-sub.php' => '-9223372036854775808 - 1',
+            'constant-overflow-native-mul.php' => '9223372036854775807 * 2',
+            'constant-overflow-native-div.php' => '-9223372036854775808 / -1',
+            'constant-overflow-native-mod.php' => '-9223372036854775808 % -1',
+            'constant-overflow-native-neg.php' => 'Negating PHP_INT_MIN',
+        ];
+
+        foreach ($cases as $file => $expectedMessage) {
+            try {
+                $this->compileNativeFile($file);
+                $this->fail("Expected native constant overflow in {$file} to be rejected");
+            } catch (TestError $e) {
+                $this->assertStringContainsString($expectedMessage, $e->getMessage());
+            }
+        }
+
+        $this->compileNativeFile('constant-overflow-native-ok.php');
+        $this->addToAssertionCount(1);
+    }
+
     /**
      * @return object{warnings: list<string>}
      */
@@ -66,5 +90,27 @@ class ConstantArithmeticOverflowTest extends TestCase
         $compiler->convertFile($testFile);
 
         return $reporter;
+    }
+
+    private function compileNativeFile(string $file): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $compiler->setDiagnosticReporter(new class implements DiagnosticReporter {
+            public function fatal(string $message): never
+            {
+                throw new TestError($message);
+            }
+
+            public function warning(Node $node, string $file, string $message): void
+            {
+            }
+        });
+
+        $testFile = __DIR__ . '/../code/' . $file;
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $compiler->convertFile($testFile);
     }
 }

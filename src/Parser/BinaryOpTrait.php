@@ -246,20 +246,59 @@ trait BinaryOpTrait
     }
 
     /**
-     * Fold constant int arithmetic that would overflow int64 in generated C++.
+     * Fold constant int arithmetic that cannot be emitted as a plain C++
+     * signed-integer expression.
      *
-     * PHP promotes an overflowing integer operation to float; raw C++ constant
-     * expressions overflow at compile time (UB) and wrap instead. When both
-     * operands are compile-time int constants and the PHP result is no longer
-     * an int, emit the promoted float literal instead of the raw C++ expression.
-     * With native_types the intentional wrap semantics are kept.
+     * PHP promotes overflowing arithmetic to float. It also defines
+     * PHP_INT_MIN % -1 as zero, while the equivalent C++ remainder expression
+     * has undefined behavior. Native mode rejects every statically detectable
+     * undefined operation instead of relying on compiler-specific behavior.
      */
     protected function tryFoldConstantIntArithmetic(NodeAbstract $left, NodeAbstract $right, string $op): ?string
     {
-        if ($this->nativeTypes) {
+        $evaluation = $this->evaluateConstantIntArithmetic($left, $right, $op);
+        if ($evaluation === null) {
             return null;
         }
-        if (!in_array($op, ['+', '-', '*', '/'], true)) {
+
+        if ($this->nativeTypes) {
+            if ($evaluation['cppUndefined']) {
+                $this->fatalError(
+                    $left,
+                    'Constant integer operation ' . $evaluation['left'] . ' ' . $op . ' '
+                        . $evaluation['right'] . ' has undefined behavior in C++ native mode'
+                );
+            }
+            return null;
+        }
+
+        if ($op === '%' && $evaluation['cppUndefined']) {
+            return $this->genIntegerLiteral($evaluation['result']);
+        }
+
+        if (is_int($evaluation['result'])) {
+            return null;
+        }
+
+        if ($evaluation['cppUndefined']) {
+            $this->warning(
+                $left,
+                'Constant integer arithmetic overflows int64; folding to PHP float result ('
+                    . $evaluation['left'] . ' ' . $op . ' ' . $evaluation['right'] . ')'
+            );
+        }
+        return $this->genFloatLiteral($evaluation['result']);
+    }
+
+    /**
+     * @return array{left: int, right: int, result: int|float, cppUndefined: bool}|null
+     */
+    protected function evaluateConstantIntArithmetic(
+        NodeAbstract $left,
+        NodeAbstract $right,
+        string $op
+    ): ?array {
+        if (!in_array($op, ['+', '-', '*', '/', '%'], true)) {
             return null;
         }
 
@@ -268,30 +307,29 @@ trait BinaryOpTrait
         if ($leftValue === null || $rightValue === null) {
             return null;
         }
-        if ($op === '/' && $rightValue === 0) {
-            // Division by zero is rejected by guardLiteralDivisionByZero / runtime.
+        if (($op === '/' || $op === '%') && $rightValue === 0) {
+            // Division by zero is rejected by guardLiteralDivisionByZero.
             return null;
         }
 
-        // PHP itself promotes overflowing int arithmetic to float, which is
-        // exactly the semantics we want for the generated literal.
         $result = match ($op) {
             '+' => $leftValue + $rightValue,
             '-' => $leftValue - $rightValue,
             '*' => $leftValue * $rightValue,
             '/' => $leftValue / $rightValue,
+            '%' => $leftValue % $rightValue,
         };
-        if (is_int($result)) {
-            // No overflow — keep the plain C++ expression.
-            return null;
-        }
+        $cppUndefined = match ($op) {
+            '+', '-', '*' => is_float($result),
+            '/', '%' => $leftValue === PHP_INT_MIN && $rightValue === -1,
+        };
 
-        $this->warning(
-            $left,
-            'Constant integer arithmetic overflows int64; folding to PHP float result ('
-                . $leftValue . ' ' . $op . ' ' . $rightValue . ')'
-        );
-        return $this->genFloatLiteral($result);
+        return [
+            'left' => $leftValue,
+            'right' => $rightValue,
+            'result' => $result,
+            'cppUndefined' => $cppUndefined,
+        ];
     }
 
     /**
