@@ -164,6 +164,21 @@ class BackendTest extends TestCase
         $this->assertStringNotContainsString('/std:', $cmd);
     }
 
+    public function testMsvcDebugPdbOptionsApplyToCppAndCCommands(): void
+    {
+        $compiler = new Msvc(new Windows());
+        $pdb = 'C:\\build output\\cache\\msvc\\app.compile.pdb';
+        $options = ['debug' => true, 'compiler_pdb' => $pdb];
+
+        $cpp = $compiler->buildCompileCommand('app.cpp', 'app.obj', $options);
+        $c = $compiler->buildCCompileCommand('helper.c', 'helper.obj', $options);
+
+        foreach ([$cpp, $c] as $command) {
+            $this->assertStringContainsString('/Fd' . escapeshellarg($pdb), $command);
+            $this->assertStringContainsString('/FS', $command);
+        }
+    }
+
     /**
      * 测试 MSVC 完整链接命令
      */
@@ -184,8 +199,23 @@ class BackendTest extends TestCase
         $this->assertStringContainsString('link', $cmd);
         $this->assertStringContainsString('/OUT:', $cmd);
         $this->assertStringContainsString('/DEBUG', $cmd);
+        $this->assertStringContainsString('/PDB:' . escapeshellarg('output.pdb'), $cmd);
         $this->assertStringContainsString('/NODEFAULTLIB:LIBCMT', $cmd);
         $this->assertStringContainsString('/nologo', $cmd);
+        $compiler->cleanupResponseFile();
+    }
+
+    public function testMsvcDebugLinkPdbFollowsOutputPath(): void
+    {
+        $compiler = new Msvc(new Windows());
+        $output = 'C:\\build output\\app.dll';
+
+        $cmd = $compiler->buildLinkCommand(['app.obj'], $output, ['debug' => true]);
+
+        $this->assertStringContainsString(
+            '/PDB:' . escapeshellarg('C:\\build output\\app.pdb'),
+            $cmd
+        );
         $compiler->cleanupResponseFile();
     }
 

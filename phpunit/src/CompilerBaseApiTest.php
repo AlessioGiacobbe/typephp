@@ -1269,6 +1269,21 @@ YAML);
         $this->assertSame('-Wl,--as-needed', $options['ldflags']);
     }
 
+    public function testWindowsDebugCompilerPdbFollowsBuildDirectory(): void
+    {
+        $this->compiler->setTargetName('pdb_app');
+
+        $pdb = $this->invokeMethod('getMsvcCompilerPdbFile');
+        $expectedDirectory = $this->compiler->getBuildDir()
+            . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR . 'msvc';
+
+        $this->assertSame(
+            $expectedDirectory . DIRECTORY_SEPARATOR . 'pdb_app.compile.pdb',
+            $pdb
+        );
+        $this->assertDirectoryExists($expectedDirectory);
+    }
+
     public function testFormatCppCodeEscapesPathsWithSpaces(): void
     {
         $spaceDir = sys_get_temp_dir() . '/compiler api format ' . uniqid();

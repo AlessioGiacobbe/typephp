@@ -123,6 +123,7 @@ abstract class CompilerBackend
      *   - enable_profiler: 是否启用性能分析
      *   - suppressed_warnings: 需要屏蔽的警告代码数组
      *   - cxxflags: 用户自定义编译标志
+     *   - compiler_pdb: MSVC 编译器 PDB 输出路径
      */
     abstract public function buildCompileOptions(array $config = []): string;
 

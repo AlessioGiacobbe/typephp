@@ -62,10 +62,28 @@ class BackendOptionsTest extends TestCase
         
         $options = $compiler->buildCompileOptions([
             'debug' => true,
+            'compiler_pdb' => 'C:\\build output\\cache\\msvc\\app.compile.pdb',
         ]);
         
         $this->assertStringContainsString('/Od', $options); // 禁用优化
         $this->assertStringContainsString('/Zi', $options); // 生成调试信息
+        $this->assertStringContainsString(
+            '/Fd' . escapeshellarg('C:\\build output\\cache\\msvc\\app.compile.pdb'),
+            $options
+        );
+        $this->assertStringContainsString('/FS', $options);
+    }
+
+    public function testMsvcReleaseCompileOptionsDoNotCreatePdb(): void
+    {
+        $compiler = new Msvc(new Windows());
+        $options = $compiler->buildCompileOptions([
+            'debug' => false,
+            'compiler_pdb' => 'C:\\build\\app.compile.pdb',
+        ]);
+
+        $this->assertStringNotContainsString('/Fd', $options);
+        $this->assertStringNotContainsString('/FS', $options);
     }
 
     /**

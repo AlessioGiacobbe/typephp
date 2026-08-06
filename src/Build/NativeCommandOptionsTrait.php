@@ -28,7 +28,7 @@ trait NativeCommandOptionsTrait
             $userDefines[] = $this->getLibraryExportsMacroName() . '=1';
         }
 
-        return new CompileOptions([
+        $values = [
             'include_paths' => $includePaths,
             'optimize' => $this->optimizeLevel,
             'debug' => $this->debug,
@@ -41,7 +41,22 @@ trait NativeCommandOptionsTrait
             'prof_output' => $this->targetName . '.prof',
             'user_defines' => $userDefines,
             'lto' => $this->enableLto,
-        ]);
+        ];
+
+        if ($this->debug && $this->isWindows()) {
+            $values['compiler_pdb'] = $this->getMsvcCompilerPdbFile();
+        }
+
+        return new CompileOptions($values);
+    }
+
+    protected function getMsvcCompilerPdbFile(): string
+    {
+        $directory = $this->getBuildDir() . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR . 'msvc';
+        if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
+            throw new \RuntimeException('Cannot create MSVC PDB directory: ' . $directory);
+        }
+        return $directory . DIRECTORY_SEPARATOR . $this->targetName . '.compile.pdb';
     }
 
     protected function getCompileCommandOptions(): CompileOptions

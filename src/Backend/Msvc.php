@@ -52,6 +52,12 @@ class Msvc extends CompilerBackend
 
         if (!empty($config['debug'])) {
             $cmd .= ' /Od /Zi';
+            if (!empty($config['compiler_pdb'])) {
+                $cmd .= ' /Fd' . escapeshellarg($config['compiler_pdb']);
+                // All translation units of one target share this compiler PDB.
+                // Serialize writes within the target while /Fd isolates apps.
+                $cmd .= ' /FS';
+            }
         } else {
             $optimizeLevel = $config['optimize'] ?? 2;
             $optMap = [0 => '/Od', 1 => '/O1', 2 => '/O2', 3 => '/Ox'];
@@ -233,6 +239,10 @@ class Msvc extends CompilerBackend
         $cmd .= ' ' . $this->createResponseFile($objectFiles, $outputFile);
         $cmd .= ' /OUT:' . escapeshellarg($outputFile);
 
+        if (!empty($options['debug'])) {
+            $cmd .= ' /PDB:' . escapeshellarg($this->getLinkPdbFile($outputFile));
+        }
+
         if (!empty($options['library_paths'])) {
             $cmd .= ' ' . $this->formatLibraryPaths($options['library_paths']);
         }
@@ -248,6 +258,21 @@ class Msvc extends CompilerBackend
         }
 
         return $cmd;
+    }
+
+    private function getLinkPdbFile(string $outputFile): string
+    {
+        $forwardSlash = strrpos($outputFile, '/');
+        $backslash = strrpos($outputFile, '\\');
+        $lastSlash = max(
+            $forwardSlash === false ? -1 : $forwardSlash,
+            $backslash === false ? -1 : $backslash,
+        );
+        $lastDot = strrpos($outputFile, '.');
+        $base = $lastDot !== false && $lastDot > $lastSlash
+            ? substr($outputFile, 0, $lastDot)
+            : $outputFile;
+        return $base . '.pdb';
     }
 
     /**
@@ -305,6 +330,10 @@ class Msvc extends CompilerBackend
         // 优化和调试
         if (!empty($options['debug'])) {
             $cmd .= ' /Od /Zi';
+            if (!empty($options['compiler_pdb'])) {
+                $cmd .= ' /Fd' . escapeshellarg($options['compiler_pdb']);
+                $cmd .= ' /FS';
+            }
         } else {
             $optimizeLevel = $options['optimize'] ?? 2;
             $optMap = [0 => '/Od', 1 => '/O1', 2 => '/O2', 3 => '/Ox'];
