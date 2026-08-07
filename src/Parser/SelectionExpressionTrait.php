@@ -46,7 +46,11 @@ trait SelectionExpressionTrait
             $else = 'php::Var(' . $else . ')';
         }
         if ($hasBranchStmts) {
-            $code = '[&]() -> ' . Type::VAR . '{';
+            // The materialized temporary (see getOrderedOperandTmpType) is
+            // declared with the ternary's static type, so the lambda return
+            // type must match it instead of always being php::Var.
+            $ternaryType = $this->detectTypeOfExpr($expr);
+            $code = '[&]() -> ' . $ternaryType . '{';
             $code .= $this->formatCapturedStmtLines($condBeforeStmts);
             if ($condAfterStmts) {
                 $condTmpVar = $this->addTmpVar(Type::VAR);
@@ -56,9 +60,9 @@ trait SelectionExpressionTrait
             }
             $cond = $this->convertConditionExpr($expr->cond, $cond);
             $code .= $this->getIndent() . 'if (' . $cond . ') {';
-            $code .= $this->formatTernaryReturn($if, $ifBeforeStmts, $ifAfterStmts);
+            $code .= $this->formatTernaryReturn($if, $ifBeforeStmts, $ifAfterStmts, $ternaryType);
             $code .= $this->getIndent() . '} else {';
-            $code .= $this->formatTernaryReturn($else, $elseBeforeStmts, $elseAfterStmts);
+            $code .= $this->formatTernaryReturn($else, $elseBeforeStmts, $elseAfterStmts, $ternaryType);
             $code .= $this->getIndent() . '}';
             $code .= $this->getIndent() . '}()';
             return $code;
@@ -67,16 +71,18 @@ trait SelectionExpressionTrait
         return '(' . $cond . ') ? (' . $if . ') : (' . $else . ')';
     }
 
-    protected function formatTernaryReturn(string $value, array $beforeStmts, array $afterStmts): string
+    protected function formatTernaryReturn(string $value, array $beforeStmts, array $afterStmts, string $returnType): string
     {
         $code = $this->formatCapturedStmtLines($beforeStmts);
         if ($afterStmts) {
-            $tmpVar = $this->addTmpVar(Type::VAR);
+            $tmpVar = $this->addTmpVar($returnType);
             $code .= $this->getIndent() . "{$tmpVar} = {$value};";
             $code .= $this->formatCapturedStmtLines($afterStmts);
             $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
         } else {
-            $code .= $this->getIndent() . 'return php::Var(' . $value . ');';
+            $code .= $returnType === Type::VAR
+                ? $this->getIndent() . 'return php::Var(' . $value . ');'
+                : $this->getIndent() . 'return ' . $value . ';';
         }
         return $code;
     }
