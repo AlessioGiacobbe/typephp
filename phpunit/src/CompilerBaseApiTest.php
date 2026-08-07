@@ -230,6 +230,22 @@ class CompilerBaseApiTest extends TestCase
         $this->assertSame((string) M_E, $code);
     }
 
+    public function testNumericStringIdentifiersGenerateSourceCodeStrings(): void
+    {
+        $this->assertSame(
+            (string) floatval('0.2'),
+            $this->invokeMethod('parseNumericIdentifier', new \PhpParser\Node\Scalar\String_('0.2'))
+        );
+        $this->assertSame(
+            '42',
+            $this->invokeMethod('parseNumericIdentifier', new \PhpParser\Node\Scalar\String_('42'))
+        );
+        $this->assertSame(
+            '0',
+            $this->invokeMethod('parseNumericIdentifier', new \PhpParser\Node\Scalar\String_('0'))
+        );
+    }
+
     public function testWindowsIntegerLiteralSuffixForInternalConstants(): void
     {
         $this->setPropertyValue('platform', new Windows());

@@ -516,12 +516,12 @@ trait BinaryOpTrait
             || $expr instanceof Expr\Eval_;
     }
 
-    protected function parseOrderedBinaryOperand(NodeAbstract $expr): float|int|string
+    protected function parseOrderedBinaryOperand(NodeAbstract $expr): string
     {
         return $this->parseOrderedOperand($expr, true);
     }
 
-    protected function parseOrderedOperand(NodeAbstract $expr, bool $numeric): float|int|string
+    protected function parseOrderedOperand(NodeAbstract $expr, bool $numeric): string
     {
         $this->assertExprCanBeUsedAsValue($expr, 'operand');
         if (!$this->shouldMaterializeOrderedOperand($expr)) {

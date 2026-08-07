@@ -68,4 +68,10 @@ class SymbolTest extends TestCase
         $result = Symbol::safeIndex('i', 'count');
         $this->assertEquals('php::safeIndex(i, count)', $result);
     }
+
+    public function testSafeIndexWithFixedIntegerSize(): void
+    {
+        $result = Symbol::safeIndex('i', 10);
+        $this->assertEquals('php::safeIndex(i, 10)', $result);
+    }
 }

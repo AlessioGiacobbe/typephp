@@ -1730,17 +1730,17 @@ class CompilerBase implements PropertyAccessContext
     /**
      * 尽可能转为数字，优先级 浮点 > 整数 > 字符串.
      */
-    protected function parseNumericIdentifier(NodeAbstract $expr): float|int|string
+    protected function parseNumericIdentifier(NodeAbstract $expr): string
     {
         if ($expr->getType() === 'Scalar_String') {
             if ($this->isFloatStr($expr->value)) {
-                return floatval($expr->value);
+                return (string) floatval($expr->value);
             }
             if ($this->isIntStr($expr->value)) {
-                return intval($expr->value);
+                return (string) intval($expr->value);
             }
             if ($expr->value === '0') {
-                return 0;
+                return '0';
             }
         }
 
