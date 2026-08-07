@@ -174,6 +174,41 @@ class CompilerBase implements PropertyAccessContext
         'stream_socket_accept',
         'popen',
     ];
+
+    /**
+     * APIs which cannot have the same semantics in Wasmtime and a browser.
+     * Keep this list at the language boundary so a WASI build never degrades
+     * into a link error or a browser-only implementation.
+     */
+    private const array WASI_UNSUPPORTED_FUNCTIONS = [
+        'exec',
+        'passthru',
+        'popen',
+        'proc_close',
+        'proc_get_status',
+        'proc_nice',
+        'proc_open',
+        'proc_terminate',
+        'shell_exec',
+        'system',
+        'fsockopen',
+        'pfsockopen',
+        'stream_socket_accept',
+        'stream_socket_client',
+        'stream_socket_enable_crypto',
+        'stream_socket_get_name',
+        'stream_socket_pair',
+        'stream_socket_recvfrom',
+        'stream_socket_sendto',
+        'stream_socket_server',
+        'stream_socket_shutdown',
+    ];
+
+    private const array WASI_UNSUPPORTED_FUNCTION_PREFIXES = [
+        'pcntl_',
+        'posix_',
+        'socket_',
+    ];
     public const int DECL_TYPE_OF_RETURN = 1;
     public const int DECL_TYPE_OF_PROPERTY = 2;
     public const int DECL_TYPE_OF_CONST = 3;
@@ -584,7 +619,24 @@ class CompilerBase implements PropertyAccessContext
     public function isWasiTarget(): bool
     {
         $target = strtolower($this->targetPlatform);
-        return str_starts_with($target, 'wasm32-wasi') || str_starts_with($target, 'wasm32-wasip1');
+        return $target === 'wasm32-unknown-wasip2' || $target === 'wasm32-wasip2';
+    }
+
+    protected function assertWasiFunctionSupported(NodeAbstract $expr, string $name): void
+    {
+        if (!$this->isWasiTarget()) {
+            return;
+        }
+
+        $name = strtolower(ltrim($name, '\\'));
+        if (in_array($name, self::WASI_UNSUPPORTED_FUNCTIONS, true)) {
+            $this->fatalError($expr, "Function `{$name}` is not supported by the WASI target");
+        }
+        foreach (self::WASI_UNSUPPORTED_FUNCTION_PREFIXES as $prefix) {
+            if (str_starts_with($name, $prefix)) {
+                $this->fatalError($expr, "Function `{$name}` is not supported by the WASI target");
+            }
+        }
     }
 
     public function isBuildModeBin(): bool

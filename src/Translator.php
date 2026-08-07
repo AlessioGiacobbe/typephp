@@ -168,7 +168,10 @@ class Translator extends Preprocessor
             $targetPlatform = $this->climate->arguments->defined('target-platform')
                 ? (string) $this->climate->arguments->get('target-platform')
                 : '';
-            if (str_starts_with($targetPlatform, 'wasm32-wasi') || str_starts_with($targetPlatform, 'wasm32-wasip1')) {
+            if ($targetPlatform === 'wasm32-wasip1' || $targetPlatform === 'wasm32-wasi') {
+                throw new \RuntimeException('WASI Preview 1 is not supported; use wasm32-wasip2');
+            }
+            if ($targetPlatform === 'wasm32-wasip2' || $targetPlatform === 'wasm32-unknown-wasip2') {
                 $detectedTarget = getenv('TYPEPHP_WASI_TARGET');
                 $this->platform = new Wasi(
                     is_string($detectedTarget) && $detectedTarget !== '' ? $detectedTarget : $targetPlatform,

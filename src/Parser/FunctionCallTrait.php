@@ -78,6 +78,9 @@ trait FunctionCallTrait
         } elseif ($expr->name->getType() === 'Name' or $expr->name->getType() === 'Name_FullyQualified') {
             $name = $this->parseIdentifier($expr->name);
             $globalName = ltrim($name, '\\');
+            if ($this->isInternalFunction($globalName)) {
+                $this->assertWasiFunctionSupported($expr, $globalName);
+            }
             if (in_array($name, Constants::UNSUPPORTED_FUNCTIONS)) {
                 $this->fatalError($expr, 'Unsupported function: `' . $name . '`');
             }

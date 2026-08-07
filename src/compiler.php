@@ -140,9 +140,11 @@ function compileWasmProgram(array $argv): void
     $environment['TYPEPHP_WASI_NM'] = $tools['llvm-nm'];
     $environment['TYPEPHP_WASI_LD'] = $tools['wasm-ld'];
     $environment['TYPEPHP_WASMTIME'] = $tools['wasmtime'];
+    $environment['TYPEPHP_JCO'] = $tools['jco'];
     $environment['TYPEPHP_WASI_TARGET'] = $tools['target'];
     $environment['TYPEPHP_WASI_CLANG_VERSION'] = $tools['clang-version'];
     $environment['TYPEPHP_WASMTIME_VERSION'] = $tools['wasmtime-version'];
+    $environment['TYPEPHP_JCO_VERSION'] = $tools['jco-version'];
     $environment['TYPEPHP_WASM_PROGRAM_BUILD_DIR'] = $buildDir;
 
     $process = proc_open(

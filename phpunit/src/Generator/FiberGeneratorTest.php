@@ -12,7 +12,7 @@ class FiberGeneratorTest extends TestCase
     {
         $compiler = CompilerTest::create(ROOT_PATH);
         $reflection = new \ReflectionClass($compiler);
-        $reflection->getProperty('targetPlatform')->setValue($compiler, 'wasm32-wasi');
+        $reflection->getProperty('targetPlatform')->setValue($compiler, 'wasm32-wasip2');
         $file = __DIR__ . '/../../code/generator-conversion-error.php';
         $compiler->addFiles([$file]);
 

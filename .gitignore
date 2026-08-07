@@ -22,7 +22,6 @@
 *.exp
 *.class
 *.wasm
-/swoole_compiler
 /tpc
 tests/**/*.diff
 tests/**/*.exp
@@ -30,3 +29,4 @@ tests/**/*.log
 tests/**/*.out
 tests/**/*.php
 tests/**/*.sh
+/browser/node_modules/

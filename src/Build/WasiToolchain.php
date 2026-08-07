@@ -8,34 +8,50 @@ final class WasiToolchain
 {
     public const MIN_LLVM_MAJOR = 22;
     public const MIN_WASMTIME_MAJOR = 47;
+    public const MIN_JCO_MAJOR = 1;
 
     /** @return array<string, string> */
     public function detect(): array
     {
         $tools = [];
-        foreach (['clang', 'clang++', 'llvm-ar', 'llvm-ranlib', 'llvm-nm', 'wasm-ld', 'wasmtime'] as $name) {
+        foreach ([
+            'wasm32-wasip2-clang',
+            'wasm32-wasip2-clang++',
+            'llvm-ar',
+            'llvm-ranlib',
+            'llvm-nm',
+            'wasm-component-ld',
+            'wasmtime',
+            'jco',
+        ] as $name) {
             $tools[$name] = $this->findExecutable($name);
         }
 
         $versions = [];
-        foreach (['clang', 'clang++', 'llvm-ar', 'llvm-ranlib', 'llvm-nm', 'wasm-ld'] as $name) {
+        foreach (['wasm32-wasip2-clang', 'wasm32-wasip2-clang++', 'llvm-ar', 'llvm-ranlib', 'llvm-nm'] as $name) {
             $versions[$name] = $this->requireVersion($name, $tools[$name], self::MIN_LLVM_MAJOR);
         }
+        $this->requireVersion('wasm-component-ld', $tools['wasm-component-ld'], 0);
         $versions['wasmtime'] = $this->requireVersion('wasmtime', $tools['wasmtime'], self::MIN_WASMTIME_MAJOR);
+        $versions['jco'] = $this->requireVersion('jco', $tools['jco'], self::MIN_JCO_MAJOR);
 
-        [$exitCode, $target, $error] = $this->run([$tools['clang++'], '--print-target-triple']);
+        [$exitCode, $target, $error] = $this->run([$tools['wasm32-wasip2-clang++'], '--print-target-triple']);
         $target = trim($target);
-        if ($exitCode !== 0 || preg_match('/^wasm32-(?:unknown-)?wasi(?:p1)?$/', $target) !== 1) {
+        if ($exitCode !== 0 || $target !== 'wasm32-unknown-wasip2') {
             $detail = trim($error) !== '' ? ': ' . trim($error) : '';
             throw new RuntimeException(
-                "clang++ from PATH is not configured for wasm32-wasi (reported target: "
+                "wasm32-wasip2-clang++ from PATH is not configured for wasm32-unknown-wasip2 (reported target: "
                 . ($target !== '' ? $target : 'unknown') . "){$detail}",
             );
         }
 
+        $tools['clang'] = $tools['wasm32-wasip2-clang'];
+        $tools['clang++'] = $tools['wasm32-wasip2-clang++'];
+        $tools['wasm-ld'] = $tools['wasm-component-ld'];
         $tools['target'] = $target;
-        $tools['clang-version'] = $versions['clang++'];
+        $tools['clang-version'] = $versions['wasm32-wasip2-clang++'];
         $tools['wasmtime-version'] = $versions['wasmtime'];
+        $tools['jco-version'] = $versions['jco'];
         return $tools;
     }
 
@@ -62,7 +78,7 @@ final class WasiToolchain
     {
         [$exitCode, $output, $error] = $this->run([$executable, '--version']);
         $versionText = trim($output . "\n" . $error);
-        if ($exitCode !== 0 || preg_match('/(?:version|wasmtime|LLD)\s+((\d+)(?:\.\d+)+)/i', $versionText, $match) !== 1) {
+        if ($exitCode !== 0 || preg_match('/\bv?((\d+)(?:\.\d+)+)\b/i', $versionText, $match) !== 1) {
             throw new RuntimeException("Unable to determine the version of WASI tool `{$name}` from PATH");
         }
         $major = (int) $match[2];

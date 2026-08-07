@@ -4,7 +4,7 @@ namespace TypePhp\Platform;
 
 final class Wasi extends UnixPlatform
 {
-    public function __construct(private readonly string $target = 'wasm32-wasi')
+    public function __construct(private readonly string $target = 'wasm32-unknown-wasip2')
     {
     }
 

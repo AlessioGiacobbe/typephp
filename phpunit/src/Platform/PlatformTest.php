@@ -12,9 +12,9 @@ class PlatformTest extends TestCase
 {
     public function testWasiTargetProperties(): void
     {
-        $platform = new Wasi('wasm32-unknown-wasip1');
+        $platform = new Wasi('wasm32-unknown-wasip2');
 
-        $this->assertSame('WASI SDK (wasm32-unknown-wasip1)', $platform->getName());
+        $this->assertSame('WASI SDK (wasm32-unknown-wasip2)', $platform->getName());
         $this->assertSame('.o', $platform->getObjectExtension());
         $this->assertSame('.wasm', $platform->getExecutableExtension());
         $this->assertSame('.a', $platform->getSharedLibraryExtension());

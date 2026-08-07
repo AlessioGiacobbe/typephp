@@ -29,16 +29,18 @@ final class WasiToolchainTest extends TestCase
 
     public function testDetectsSupportedToolsOnlyFromPath(): void
     {
-        $this->installFakeTools(22, 47, 'wasm32-unknown-wasip1');
+        $this->installFakeTools(22, 47, 1, 'wasm32-unknown-wasip2');
         putenv('PATH=' . $this->directory);
 
         $tools = (new WasiToolchain())->detect();
 
-        $this->assertSame($this->directory . '/clang++', $tools['clang++']);
+        $this->assertSame($this->directory . '/wasm32-wasip2-clang++', $tools['clang++']);
         $this->assertSame($this->directory . '/wasmtime', $tools['wasmtime']);
-        $this->assertSame('wasm32-unknown-wasip1', $tools['target']);
+        $this->assertSame($this->directory . '/jco', $tools['jco']);
+        $this->assertSame('wasm32-unknown-wasip2', $tools['target']);
         $this->assertSame('22.0.0', $tools['clang-version']);
         $this->assertSame('47.0.0', $tools['wasmtime-version']);
+        $this->assertSame('1.0.0', $tools['jco-version']);
     }
 
     public function testRejectsMissingTool(): void
@@ -46,40 +48,42 @@ final class WasiToolchainTest extends TestCase
         putenv('PATH=' . $this->directory);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('`clang` was not found in PATH');
+        $this->expectExceptionMessage('`wasm32-wasip2-clang` was not found in PATH');
         (new WasiToolchain())->detect();
     }
 
     public function testRejectsOldLlvm(): void
     {
-        $this->installFakeTools(21, 47, 'wasm32-unknown-wasip1');
+        $this->installFakeTools(21, 47, 1, 'wasm32-unknown-wasip2');
         putenv('PATH=' . $this->directory);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('`clang` 21 is too old');
+        $this->expectExceptionMessage('`wasm32-wasip2-clang` 21 is too old');
         (new WasiToolchain())->detect();
     }
 
     public function testRejectsNonWasiClangTarget(): void
     {
-        $this->installFakeTools(22, 47, 'x86_64-unknown-linux-gnu');
+        $this->installFakeTools(22, 47, 1, 'x86_64-unknown-linux-gnu');
         putenv('PATH=' . $this->directory);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('not configured for wasm32-wasi');
+        $this->expectExceptionMessage('not configured for wasm32-unknown-wasip2');
         (new WasiToolchain())->detect();
     }
 
-    private function installFakeTools(int $llvmMajor, int $wasmtimeMajor, string $target): void
+    private function installFakeTools(int $llvmMajor, int $wasmtimeMajor, int $jcoMajor, string $target): void
     {
-        foreach (['clang', 'llvm-ar', 'llvm-ranlib', 'llvm-nm', 'wasm-ld'] as $tool) {
+        foreach (['wasm32-wasip2-clang', 'llvm-ar', 'llvm-ranlib', 'llvm-nm'] as $tool) {
             $this->writeExecutable($tool, "#!/bin/sh\necho 'LLVM version {$llvmMajor}.0.0'\n");
         }
+        $this->writeExecutable('wasm-component-ld', "#!/bin/sh\necho 'wasm-component-ld version 0.5.22'\n");
         $this->writeExecutable(
-            'clang++',
+            'wasm32-wasip2-clang++',
             "#!/bin/sh\nif [ \"\$1\" = '--print-target-triple' ]; then echo '{$target}'; else echo 'clang version {$llvmMajor}.0.0'; fi\n",
         );
         $this->writeExecutable('wasmtime', "#!/bin/sh\necho 'wasmtime {$wasmtimeMajor}.0.0'\n");
+        $this->writeExecutable('jco', "#!/bin/sh\necho 'jco {$jcoMajor}.0.0'\n");
     }
 
     private function writeExecutable(string $name, string $contents): void
