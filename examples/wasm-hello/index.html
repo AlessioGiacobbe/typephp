@@ -102,6 +102,17 @@
             </article>
         </section>
 
+        <section class="panel extensions-panel">
+            <div>
+                <p class="section-label">PHP runtime</p>
+                <h2>静态编译的 PHP 扩展</h2>
+            </div>
+            <strong id="extension-count">等待运行</strong>
+            <div id="extension-list" class="extension-list" aria-live="polite">
+                <span>由 get_loaded_extensions() 动态读取</span>
+            </div>
+        </section>
+
         <details class="console panel">
             <summary><span>Raw component output</span><kbd>stdout / stderr</kbd></summary>
             <pre id="output">尚未运行。</pre>

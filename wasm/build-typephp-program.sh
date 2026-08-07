@@ -171,7 +171,7 @@ done
 
 echo "Built TypePHP/WASI program: ${output}"
 
-if [[ "${TYPEPHP_WASM_BROWSER:-1}" == 1 ]]; then
+if [[ "${TYPEPHP_WASM_BROWSER:-0}" == 1 ]]; then
     # Chrome does not yet load components natively, so Jco lowers the same
     # WASI 0.2 component to core Wasm + ESM.
     jco_bin=${TYPEPHP_JCO:-jco}

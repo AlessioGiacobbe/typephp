@@ -35,7 +35,7 @@ build-dir: cache/build
 output: dist/demo.wasm
 sources:
   - src
-wasm: true
+wasm: browser
 wasm-browser-dir: web/generated
 YAML);
 
@@ -66,14 +66,14 @@ YAML);
         self::assertSame($this->directory . '/custom-build', $config->buildDir);
         self::assertNull($config->output);
         self::assertNull($config->browserDir);
-        self::assertSame('browser', $config->profile);
+        self::assertSame('component', $config->profile);
     }
 
-    public function testCliCanSelectComponentOnlyOutput(): void
+    public function testComponentDoesNotRequireTargetPlatform(): void
     {
         file_put_contents($this->directory . '/project.yml', <<<'YAML'
 name: demo
-wasm: true
+wasm: component
 wasm-browser-dir: generated
 sources:
   - src
@@ -84,11 +84,32 @@ YAML);
             null,
             $this->directory,
             '/default-build',
-            'component',
         );
 
         self::assertSame('component', $config->profile);
         self::assertNull($config->browserDir);
+    }
+
+    public function testCliCanSelectBrowserOutput(): void
+    {
+        file_put_contents($this->directory . '/project.yml', <<<'YAML'
+name: demo
+wasm: component
+wasm-browser-dir: generated
+sources:
+  - src
+YAML);
+
+        $config = WasiProjectConfig::load(
+            'project.yml',
+            null,
+            $this->directory,
+            '/default-build',
+            'browser',
+        );
+
+        self::assertSame('browser', $config->profile);
+        self::assertSame($this->directory . '/generated', $config->browserDir);
     }
 
     public function testPreviewOneProjectIsRejected(): void
@@ -101,6 +122,33 @@ YAML);
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('must target wasm32-wasip2');
+        WasiProjectConfig::load('project.yml', null, $this->directory, '/default-build');
+    }
+
+    public function testBooleanWasmProfileIsRejected(): void
+    {
+        file_put_contents($this->directory . '/project.yml', <<<'YAML'
+wasm: true
+sources:
+  - src
+YAML);
+
+        self::assertTrue(WasiProjectConfig::isWasmEnabled($this->directory . '/project.yml'));
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('must be `component` or `browser`');
+        WasiProjectConfig::load('project.yml', null, $this->directory, '/default-build');
+    }
+
+    public function testUnsupportedWasmProfileAliasIsRejected(): void
+    {
+        file_put_contents($this->directory . '/project.yml', <<<'YAML'
+wasm: web
+sources:
+  - src
+YAML);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('expected browser or component');
         WasiProjectConfig::load('project.yml', null, $this->directory, '/default-build');
     }
 }

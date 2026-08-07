@@ -10,6 +10,7 @@ Demo 展示以下已支持能力：
 - 内存文件系统，以及可选的 OPFS 快照持久化
 - 通过同步 `file_get_contents()` 发起 HTTP/HTTPS GET；浏览器等待期间由 JSPI 挂起 Wasm 调用栈
 - PHP 8.5 runtime 信息
+- 由 `get_loaded_extensions()` 动态读取的 PHP/WASI 内置扩展列表
 - TypePHP 语言级 BigInt、Decimal、BigFloat 高精度计算
 
 原始 socket、进程、shell、信号、Fiber 和 Generator 明确不支持。
@@ -39,7 +40,8 @@ php bin/tpc.php examples/wasm-hello/project.yml
 - `sources: src`：TypePHP 源码
 - `build-dir: build`：生成的 C++ 与目标文件
 - `output: component/wasm-hello.wasm`：WASI 0.2 Component
-- `wasm: true`：项目自动进入 WASI browser 构建，无需命令行 `--wasm`
+- `wasm: browser`：显式生成浏览器模块；简单项目使用 `wasm: component` 只生成 Component
+- 未配置 `target-platform` 时，WASM 项目默认使用 `wasm32-wasip2`
 - `wasm-browser-dir: generated`：Jco 浏览器模块
 
 Jco 是本项目的开发依赖。先执行 `npm ci`，之后通过 `npm run wasm` 构建时，npm 会自动把本地 `node_modules/.bin/jco` 加入 `PATH`。

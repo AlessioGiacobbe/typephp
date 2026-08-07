@@ -18,6 +18,7 @@ final class WasiDemo
                 'php' => PHP_VERSION,
                 'platform' => php_uname(),
                 'integerBits' => PHP_INT_SIZE * 8,
+                'extensions' => get_loaded_extensions(),
             ],
             'clock' => [
                 'timestamp' => time(),

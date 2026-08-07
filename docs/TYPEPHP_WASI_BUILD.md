@@ -38,30 +38,28 @@ function main(): void
 php bin/tpc.php --wasm hello.php
 ```
 
-单文件输入默认生成当前目录下的 `hello.wasm` 和 `hello.browser/` Jco 模块。生成的 `.cc` 与 host 模式使用相同的 build 目录规则，默认位于 TypePHP 根目录的 `build/`；可以使用 `--build-dir <directory>` 覆盖。
+单文件输入默认只生成当前目录下可由 Wasmtime 执行的 `hello.wasm` Component，不要求安装 Jco。生成的 `.cc` 与 host 模式使用相同的 build 目录规则，默认位于 TypePHP 根目录的 `build/`；可以使用 `--build-dir <directory>` 覆盖。
 
 项目可以直接使用 `project.yml`：
 
 ```yaml
 name: wasm-hello
 mode: bin
-target-platform: wasm32-wasip2
-wasm: true
+wasm: component
 build-dir: build
 output: component/wasm-hello.wasm
 sources:
   - src
-wasm-browser-dir: generated
 ```
 
-配置 `wasm: true` 后，直接执行 `php bin/tpc.php project.yml` 即可进入 WASI browser 构建，无需重复传入 `--wasm`。`build-dir`、`output` 和 `wasm-browser-dir` 都相对于项目文件解析。完整浏览器应用见 `examples/wasm-hello/`。
+`wasm` 只接受 `component` 或 `browser`，不接受布尔值。配置后直接执行 `php bin/tpc.php project.yml` 即可进入 WASI 构建，无需重复传入 `--wasm`。WASM 项目未配置 `target-platform` 时默认使用 `wasm32-wasip2`；`build-dir`、`output` 和 `wasm-browser-dir` 都相对于项目文件解析。完整浏览器应用见 `examples/wasm-hello/`，它显式使用 `wasm: browser`。
 
-若项目永久只生成 Component，也可以直接配置 `wasm: component`。
+需要生成浏览器模块时，配置 `wasm: browser` 和 `wasm-browser-dir`，并确保 Jco 位于 `PATH`。
 
 命令行也可以显式选择产物：
 
-- `--wasm` 或 `--wasm=browser`：生成 Component 和 Jco 浏览器模块，需要 `jco` 位于 `PATH`。
-- `--wasm=component`：仅生成可由 Wasmtime 运行的 Component，不检测 Jco。
+- `--wasm` 或 `--wasm=component`：仅生成可由 Wasmtime 运行的 Component，不检测 Jco。
+- `--wasm=browser`：生成 Component 和 Jco 浏览器模块，需要 `jco` 位于 `PATH`。
 
 路径、sources 等详细配置继续放在 `project.yml`，不通过 `--wasm=` 传递。
 

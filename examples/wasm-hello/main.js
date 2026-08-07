@@ -4,6 +4,7 @@ const elements = Object.fromEntries([
     'runtime-value', 'platform-value', 'clock-value', 'random-value', 'token-value',
     'filesystem-value', 'files-value', 'argv-value', 'env-value', 'stdin-value',
     'http-value', 'http-detail', 'bigint-value', 'decimal-value', 'bigfloat-value',
+    'extension-count', 'extension-list',
 ].map((id) => [id, document.getElementById(id)]));
 
 let worker = null;
@@ -36,6 +37,12 @@ function value(id, content) {
 function renderReport(report) {
     value('runtime-value', `PHP ${report.runtime.php}`);
     value('platform-value', report.runtime.platform);
+    value('extension-count', `${report.runtime.extensions.length} 个内置扩展`);
+    elements['extension-list'].replaceChildren(...report.runtime.extensions.map((extension) => {
+        const badge = document.createElement('span');
+        badge.textContent = extension;
+        return badge;
+    }));
     value('clock-value', report.clock.iso8601);
     value('random-value', report.random.integer);
     value('token-value', report.random.token);

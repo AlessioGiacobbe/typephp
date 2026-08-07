@@ -47,7 +47,7 @@ final readonly class WasiProjectConfig
         $buildDir = self::absolutePath($buildDir, $workingDirectory);
 
         if (!is_array($config)) {
-            return new self($realInput, $buildDir, null, null, self::normalizeProfile($cliProfile ?? 'browser'));
+            return new self($realInput, $buildDir, null, null, self::normalizeProfile($cliProfile ?? 'component'));
         }
 
         $target = (string) ($config['target-platform'] ?? 'wasm32-wasip2');
@@ -76,21 +76,16 @@ final readonly class WasiProjectConfig
             $output = $projectDir . DIRECTORY_SEPARATOR . $name . '.wasm';
         }
 
-        $wasm = $config['wasm'] ?? true;
-        $configProfile = 'browser';
-        if (is_string($wasm)) {
-            $configProfile = $wasm;
-        } elseif (is_array($wasm) && !empty($wasm['profile'])) {
-            $configProfile = (string) $wasm['profile'];
-        } elseif (!is_bool($wasm) && !is_array($wasm)) {
-            throw new RuntimeException('The `wasm` project option must be a boolean, profile name, or map');
+        $configProfile = 'component';
+        if (array_key_exists('wasm', $config)) {
+            if (!is_string($config['wasm'])) {
+                throw new RuntimeException('The `wasm` project option must be `component` or `browser`');
+            }
+            $configProfile = $config['wasm'];
         }
         $profile = self::normalizeProfile($cliProfile ?? $configProfile);
 
         $browserPath = $config['wasm-browser-dir'] ?? null;
-        if (is_array($wasm) && !empty($wasm['browser-dir'])) {
-            $browserPath = $wasm['browser-dir'];
-        }
         $browserDir = $profile === 'browser' && !empty($browserPath)
             ? self::absolutePath((string) $browserPath, $projectDir)
             : null;
@@ -111,20 +106,12 @@ final readonly class WasiProjectConfig
         if (!is_array($config) || !array_key_exists('wasm', $config)) {
             return false;
         }
-        $wasm = $config['wasm'];
-        if ($wasm === false || $wasm === null) {
-            return false;
-        }
-        return !is_array($wasm) || ($wasm['enabled'] ?? true) !== false;
+        return true;
     }
 
     private static function normalizeProfile(string $profile): string
     {
         $profile = strtolower(trim($profile));
-        $profile = match ($profile) {
-            '', 'web' => 'browser',
-            default => $profile,
-        };
         if (!in_array($profile, ['browser', 'component'], true)) {
             throw new RuntimeException("Unsupported WASI output profile `{$profile}`; expected browser or component");
         }
