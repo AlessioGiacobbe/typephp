@@ -301,9 +301,7 @@ trait FiberGenerator
 
         $code .= $this->getIndent() . '};' . PHP_EOL;
         $args = $uses ? '{ ' . implode(', ', $uses) . ' }' : '{}';
-        $closureExpr = $this->class
-            ? 'php::newClosure(' . $closureVar . ', ' . $args . ', this_)'
-            : 'php::newClosure(' . $closureVar . ', ' . $args . ')';
+        $closureExpr = $this->genNewClosure($closureVar, $args, $this->class !== '');
         $code .= $this->getIndent() . 'return typephp_new_fiber_generator(' . $closureExpr . ');' . PHP_EOL;
         $this->indentLevel--;
         $code .= '}' . PHP_EOL;

@@ -188,15 +188,20 @@ trait NativeTypeCompatibilityTrait
         if (($type === Type::VAR || $type === Type::REF) && $this->isStrictScalarType($argInfo->type)) {
             // A native scalar ABI value has already lost its zval type. Preserve
             // the dynamic value until strict_types validation has completed.
-            $tmpVar = $this->addTmpVar(Type::VAR);
-            $this->context->beforeStmtLines[] = $tmpVar . ' = (' . $expr . ');';
-            $this->context->beforeStmtLines[] = rtrim($this->genStrictScalarParamCheck(
+            // Keep the check inside the argument expression: beforeStmtLines
+            // may run before an enclosing assignment or comma expression has
+            // initialized a compiler-generated argument temporary.
+            $checkedArg = 'typephp_checked_arg';
+            $check = rtrim($this->genStrictScalarParamCheck(
                 $argInfo,
-                $tmpVar,
+                $checkedArg,
                 $callableName,
                 (string) ($argIndex + 1)
             ));
-            $expr = $tmpVar;
+            $expr = '([&](php::Var ' . $checkedArg . ') -> php::Var {' . PHP_EOL
+                . $check . PHP_EOL
+                . $this->getIndent() . 'return ' . $checkedArg . ';' . PHP_EOL
+                . $this->getIndent() . '})(' . $expr . ')';
         }
 
         $this->checkVarAssignExpr($arg, $argInfo->type, $type);

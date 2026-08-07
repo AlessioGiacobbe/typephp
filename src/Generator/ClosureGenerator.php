@@ -23,6 +23,22 @@ use PhpParser\Node\Expr\Variable;
 
 trait ClosureGenerator
 {
+    protected function genNewClosure(string $callback, string $uses, bool $hasThis): string
+    {
+        $thisArg = $hasThis ? 'this_' : '{}';
+        if ($this->classDef?->trait !== null) {
+            // PHP flattens a trait method into the consuming class. A closure
+            // declared in that method therefore uses the consuming class as
+            // its lexical scope, never the trait's own class entry.
+            $scope = 'php_get_called_ce(this_)';
+        } else {
+            $scope = $this->class
+                ? $this->getClassEntryPtr($this->getFullClassName())
+                : 'nullptr';
+        }
+        return 'php::newClosure(' . $callback . ', ' . $uses . ', ' . $thisArg . ', ' . $scope . ')';
+    }
+
     protected function parseArrowFunction(Expr\ArrowFunction $expr): string
     {
         $nodeFinder = new NodeFinder();
@@ -211,11 +227,14 @@ trait ClosureGenerator
         $this->context = $oriContext;
         $this->context->beforeStmtLines[] = $code;
 
-        if ($this->methodDef && !$expr->static) {
-            return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' }, this_)';
-        } else {
-            return 'php::newClosure(' . $tmpVar . ', { ' . implode(', ', $useVars) . ' })';
-        }
+        // Even a static closure inherits the outer called scope for late
+        // static binding. It still cannot access $this because it was not
+        // registered in the closure compilation context above.
+        return $this->genNewClosure(
+            $tmpVar,
+            '{ ' . implode(', ', $useVars) . ' }',
+            $this->methodDef !== null
+        );
     }
 
     protected function closureContainsYield(Expr\ArrowFunction|Expr\Closure $expr): bool
@@ -325,9 +344,7 @@ trait ClosureGenerator
 
         $code .= $this->getIndent() . '};' . PHP_EOL;
         $args = $capturedArgs ? '{ ' . implode(', ', $capturedArgs) . ' }' : '{}';
-        $callback = $this->methodDef
-            ? 'php::newClosure(' . $callbackVar . ', ' . $args . ', this_)'
-            : 'php::newClosure(' . $callbackVar . ', ' . $args . ')';
+        $callback = $this->genNewClosure($callbackVar, $args, $this->methodDef !== null);
         $code .= $this->getIndent() . 'return typephp_new_fiber_generator(' . $callback . ');' . PHP_EOL;
         return $code;
     }

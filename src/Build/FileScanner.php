@@ -90,9 +90,8 @@ class FileScanner
 
         foreach ($iterator as $file) {
             if ($file->isFile()) {
-                if (self::isPhpFile($file) || self::isNativeSourceFile($file)) {
-                    $filePath = $file->getPathname();
-                } else {
+                $filePath = $file->getPathname();
+                if (!self::isPhpFile($filePath) && !self::isNativeSourceFile($filePath)) {
                     continue;
                 }
                 if (!$this->isExcluded($filePath)) {
