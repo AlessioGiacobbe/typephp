@@ -595,13 +595,34 @@ function packageUnixLike(): void
 
     $binary = 'tpc';
     $versionFile = 'version.txt';
+    $phpxSourceDir = getenv('PHPX_HOME');
+    if (!is_string($phpxSourceDir) || $phpxSourceDir === '' || !is_dir($phpxSourceDir)) {
+        $phpxSourceDir = 'vendor/swoole/phpx';
+    }
+    $phpxSourceDir = realpath($phpxSourceDir) ?: rtrim($phpxSourceDir, '/\\');
+    $wasiSdkSourceRoot = $phpxSourceDir . '/wasm/wasm32-wasip2';
+    $wasiSdkPackageRoot = 'vendor/swoole/phpx/wasm/wasm32-wasip2';
     $requiredFiles = [
         $binary,
         'composer.json',
         'README.md',
         'LICENSE.md',
         'examples/hello.php',
+        'wasm/build-typephp-program.sh',
+        "{$wasiSdkSourceRoot}/.typephp-wasi-sdk-abi",
+        "{$wasiSdkSourceRoot}/include/php/main/php.h",
+        "{$wasiSdkSourceRoot}/include/php/main/php_config.h",
+        "{$wasiSdkSourceRoot}/include/php/Zend/zend_config.h",
+        "{$wasiSdkSourceRoot}/include/php/ext/date/lib/timelib_config.h",
+        "{$wasiSdkSourceRoot}/include/phpx/phpx.h",
+        "{$wasiSdkSourceRoot}/include/phpx/typephp_helper.h",
+        "{$wasiSdkSourceRoot}/include/gmp.h",
+        "{$wasiSdkSourceRoot}/include/mpfr.h",
+        "{$wasiSdkSourceRoot}/include/decimal.hh",
     ];
+    foreach (['libphp.a', 'libphpx.a', 'libgmp.a', 'libgmpxx.a', 'libmpfr.a', 'libmpdec.a', 'libmpdec++.a'] as $library) {
+        $requiredFiles[] = "{$wasiSdkSourceRoot}/lib/{$library}";
+    }
     foreach ($requiredFiles as $file) {
         if (!is_file($file)) {
             throw new RuntimeException("Required package file not found: {$file}");
@@ -682,6 +703,8 @@ function packageUnixLike(): void
     mustCopy('LICENSE.md', "{$topLevelDir}/LICENSE.md");
     mustCreateDirectory("{$topLevelDir}/examples");
     mustCopy('examples/hello.php', "{$topLevelDir}/examples/hello.php");
+    copyDirectory('wasm', "{$topLevelDir}/wasm");
+    copyDirectory("{$phpxSourceDir}/wasm", "{$topLevelDir}/vendor/swoole/phpx/wasm");
 
     if (is_file($outputFile) && !unlink($outputFile)) {
         throw new RuntimeException("Unable to remove existing archive: {$outputFile}");
@@ -717,7 +740,14 @@ function packageUnixLike(): void
         "{$topLevelDir}/README.md",
         "{$topLevelDir}/LICENSE.md",
         "{$topLevelDir}/examples/hello.php",
+        "{$topLevelDir}/wasm/build-typephp-program.sh",
+        "{$topLevelDir}/{$wasiSdkPackageRoot}/.typephp-wasi-sdk-abi",
+        "{$topLevelDir}/{$wasiSdkPackageRoot}/include/php/main/php.h",
+        "{$topLevelDir}/{$wasiSdkPackageRoot}/include/phpx/phpx.h",
     ];
+    foreach (['libphp.a', 'libphpx.a', 'libgmp.a', 'libgmpxx.a', 'libmpfr.a', 'libmpdec.a', 'libmpdec++.a'] as $library) {
+        $requiredEntries[] = "{$topLevelDir}/{$wasiSdkPackageRoot}/lib/{$library}";
+    }
     $verificationZip = new ZipArchive();
     if ($verificationZip->open($outputFile) !== true) {
         throw new RuntimeException("Unable to verify archive: {$outputFile}");

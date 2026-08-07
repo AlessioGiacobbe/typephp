@@ -20,14 +20,13 @@ h1 { margin: 0; font-size: clamp(4rem, 8vw, 7rem); font-weight: 760; letter-spac
 h1 span { color: transparent; background: linear-gradient(90deg, #77eaff, #a789ff 62%, #f7a95c); background-clip: text; }
 .lede { max-width: 620px; margin: 28px 0 0; color: #9fb1ca; font-size: 1.08rem; line-height: 1.8; }
 .runtime-orbit { position: relative; width: 280px; height: 280px; margin: auto; display: grid; place-items: center; }
-.orbit-ring { position: absolute; inset: 18px; border: 1px solid #83e9ff40; border-radius: 50%; box-shadow: inset 0 0 60px #558cff0c; animation: spin 22s linear infinite; }
+.orbit-ring { position: absolute; inset: 18px; border: 1px solid #83e9ff40; border-radius: 50%; box-shadow: inset 0 0 60px #558cff0c; }
 .orbit-ring::before, .orbit-ring::after { content: ""; position: absolute; inset: 34px; border: 1px dashed #a789ff38; border-radius: 50%; }
 .orbit-ring::after { inset: -15px; border-style: solid; border-color: #ffffff0d; }
 .runtime-core { z-index: 1; display: grid; place-items: center; width: 120px; height: 120px; border: 1px solid #79e8ff55; border-radius: 32px; background: linear-gradient(145deg, #163552, #0b1b2c); color: #87ecff; text-align: center; box-shadow: 0 26px 80px #0008, inset 0 1px #ffffff18; transform: rotate(-5deg); }
 .runtime-core strong { color: #fff; font-size: 2rem; }
 .satellite { position: absolute; padding: 7px 11px; border: 1px solid #ffffff18; border-radius: 99px; background: #0c1929dd; color: #aebed3; font: 700 .66rem ui-monospace, monospace; }
 .satellite.one { top: 20px; left: 31px; }.satellite.two { right: 3px; top: 108px; }.satellite.three { bottom: 22px; left: 16px; }
-@keyframes spin { to { transform: rotate(360deg); } }
 .panel { border: 1px solid #ffffff12; border-radius: 24px; background: linear-gradient(145deg, #0d1c2dcc, #091522d9); box-shadow: 0 25px 70px #00000035, inset 0 1px #ffffff09; backdrop-filter: blur(18px); }
 .control-panel { padding: 30px; }
 .panel-heading, .actions { display: flex; align-items: center; justify-content: space-between; gap: 24px; }

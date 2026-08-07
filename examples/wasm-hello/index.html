@@ -76,6 +76,9 @@
             <article class="feature-card accent-green">
                 <div class="icon">▱</div><p>Filesystem</p><h3 id="filesystem-value">—</h3><small id="files-value">Memory FS + OPFS snapshot</small>
             </article>
+            <article class="feature-card accent-cyan">
+                <div class="icon">⇄</div><p>HTTP fetch</p><h3 id="http-value">—</h3><small id="http-detail">file_get_contents() + WASI HTTP</small>
+            </article>
         </section>
 
         <section class="detail-grid">
@@ -106,7 +109,7 @@
 
         <footer>
             <span>TypePHP → C++17 → WASI 0.2 Component</span>
-            <span>运行于独立 ES module Worker · 网络能力关闭</span>
+            <span>运行于独立 ES module Worker · HTTP 通过 JSPI 挂起等待</span>
         </footer>
     </main>
     <script type="module" src="/main.js"></script>

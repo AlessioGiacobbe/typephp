@@ -96,6 +96,10 @@ self.onmessage = async ({ data }) => {
     const persistent = data.persistent === true;
     const storageName = String(data.storageName || 'typephp-wasi-filesystem.json');
     try {
+        if (typeof WebAssembly.Suspending !== 'function'
+            || typeof WebAssembly.promising !== 'function') {
+            throw new Error('This browser does not support WebAssembly JSPI, which is required for blocking WASI I/O');
+        }
         fileData = persistent ? await loadFileData(storageName) : { dir: {} };
         _setFileData(fileData);
         _setStdin(inputHandler(String(data.stdin || '')));
@@ -103,12 +107,13 @@ self.onmessage = async ({ data }) => {
         _setStderr(outputHandler('stderr'));
 
         const args = ['typephp.wasm', ...(Array.isArray(data.args) ? data.args.map(String) : [])];
-        const env = data.env && typeof data.env === 'object' ? data.env : {};
+        const env = data.env && typeof data.env === 'object' ? { ...data.env } : {};
+        env.TYPEPHP_FETCH_URL ??= new URL('/fetch-demo.json', self.location.href).href;
         const wasi = new WASIShim({
             sandbox: {
                 args,
                 env,
-                enableNetwork: false,
+                enableNetwork: true,
             },
         });
         const { instantiate } = await import('./generated/program.js');
@@ -131,5 +136,6 @@ self.onmessage = async ({ data }) => {
             }
         }
         self.postMessage({ type: 'exit', code: exitCode });
+        self.close();
     }
 };

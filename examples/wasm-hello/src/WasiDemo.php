@@ -35,11 +35,32 @@ final class WasiDemo
                 'stdin' => trim($stdin),
             ],
             'filesystem' => self::filesystemReport(),
+            'http' => self::httpReport(),
             'precision' => self::precisionReport(),
             'capabilities' => [
-                'supported' => ['arguments', 'environment', 'stdin/stdout/stderr', 'clock', 'random', 'filesystem'],
-                'disabled' => ['network', 'process', 'signals', 'shell', 'Fiber', 'Generator'],
+                'supported' => ['arguments', 'environment', 'stdin/stdout/stderr', 'clock', 'random', 'filesystem', 'HTTP GET'],
+                'disabled' => ['raw sockets', 'process', 'signals', 'shell', 'Fiber', 'Generator'],
             ],
+        ];
+    }
+
+    private static function httpReport(): array
+    {
+        $url = getenv('TYPEPHP_FETCH_URL');
+        if ($url === false || $url === '') {
+            return ['ok' => false, 'url' => '', 'bytes' => 0, 'preview' => 'No URL configured'];
+        }
+
+        $body = file_get_contents($url);
+        if ($body === false) {
+            return ['ok' => false, 'url' => $url, 'bytes' => 0, 'preview' => 'Request failed'];
+        }
+
+        return [
+            'ok' => true,
+            'url' => $url,
+            'bytes' => strlen($body),
+            'preview' => trim(substr($body, 0, 80)),
         ];
     }
 

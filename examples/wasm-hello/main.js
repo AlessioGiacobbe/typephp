@@ -3,7 +3,7 @@ const elements = Object.fromEntries([
     'args', 'env', 'stdin', 'persistent', 'run', 'reset', 'status', 'output',
     'runtime-value', 'platform-value', 'clock-value', 'random-value', 'token-value',
     'filesystem-value', 'files-value', 'argv-value', 'env-value', 'stdin-value',
-    'bigint-value', 'decimal-value', 'bigfloat-value',
+    'http-value', 'http-detail', 'bigint-value', 'decimal-value', 'bigfloat-value',
 ].map((id) => [id, document.getElementById(id)]));
 
 let worker = null;
@@ -41,6 +41,8 @@ function renderReport(report) {
     value('token-value', report.random.token);
     value('filesystem-value', `第 ${report.filesystem.run} 次运行`);
     value('files-value', report.filesystem.files.join(' · '));
+    value('http-value', report.http.ok ? `${report.http.bytes} bytes` : '请求失败');
+    value('http-detail', report.http.preview);
     value('argv-value', report.input.argv.join('  '));
     value('env-value', report.input.greeting);
     value('stdin-value', report.input.stdin);

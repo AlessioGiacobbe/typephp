@@ -8,10 +8,16 @@ Demo 展示以下已支持能力：
 - WASI wall clock 和 PHP `time()` / `date()`
 - 安全随机数 `random_int()` / `random_bytes()`
 - 内存文件系统，以及可选的 OPFS 快照持久化
+- 通过同步 `file_get_contents()` 发起 HTTP/HTTPS GET；浏览器等待期间由 JSPI 挂起 Wasm 调用栈
 - PHP 8.5 runtime 信息
 - TypePHP 语言级 BigInt、Decimal、BigFloat 高精度计算
 
-网络、进程、shell、信号、Fiber 和 Generator 明确不支持。
+原始 socket、进程、shell、信号、Fiber 和 Generator 明确不支持。
+
+浏览器构建要求支持 `WebAssembly.Suspending` 和 `WebAssembly.promising`
+的 JSPI 实现。HTTP 请求仍受浏览器 CORS、CSP 和 Mixed Content 策略约束。
+`file_get_contents()` 当前支持 GET、`http.timeout` 和
+`http.ignore_errors`；不提供 Curl API，也不会退化为忙等待。
 
 ## 构建
 
@@ -59,3 +65,5 @@ npm run build
 ```
 
 `src/` 是 TypePHP 应用，`typephp-worker.mjs` 是浏览器 WASI host，`main.js` 和 `style.css` 负责交互界面。`build/`、`component/`、`dist/`、`generated/` 均为可重新生成的输出。
+
+WASI 运行库、PHPX 和生成的 C++ 均使用 `-O2` 编译。最终链接会移除调试与符号段，以减少浏览器下载、解析和编译 Wasm 的开销；构建过程不会自动调用系统中的 `wasm-opt`，避免旧版 Binaryen 与 WASI SDK 生成的 Wasm 异常指令不兼容。

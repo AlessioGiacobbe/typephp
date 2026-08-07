@@ -6,18 +6,17 @@ TypePHP 使用稳定的 WASI 0.2（Preview 2）和 Component Model。TypePHP 生
 
 - WASI SDK 33 或更高版本（LLVM/Clang/LLD 22 或更高）
 - PHP 8.4 或更高版本，用于运行 TypePHP 编译器
-- Autoconf、Automake、Libtool、Bison、re2c 和常规 C/C++ 构建工具
 - Wasmtime 47 或更高版本，用于运行和测试产物
 - Jco 1 或更高版本，用于 browser profile；component profile 不需要 Jco
+- 与当前 TypePHP 版本绑定的 `wasm32-wasip2` 集成 SDK
 
-WASI SDK 的 `bin` 目录和 Wasmtime 必须加入系统 `PATH`。编译器不会探测或使用 `/opt` 等约定安装目录，也不接受专用的工具目录配置。可以继续通过环境变量覆盖缓存位置：
+WASI SDK 的 `bin` 目录和 Wasmtime 必须加入系统 `PATH`。编译器不会探测或使用 `/opt` 等约定安装目录，也不接受专用的工具目录配置。WASI 静态库和头文件统一安装到 PHPX 的 `wasm/wasm32-wasip2/`：
 
 ```bash
 export PATH="<wasi-sdk-bin>:<wasmtime-bin>:$PATH"
-export PHP_WASM_BUILD_DIR=/tmp/php-8.5.9-wasip2-build
-export TYPEPHP_WASM_DEPS_PREFIX=/tmp/typephp-wasip2-numeric/prefix
-export TYPEPHP_WASM_RUNTIME_PREFIX=/tmp/typephp-wasip2-runtime
 ```
+
+TypePHP 使用现有的 PHPX 定位规则：优先读取 `PHPX_HOME`，其次读取 Composer 的 `swoole/phpx` 安装位置，最后使用 `vendor/swoole/phpx`。不新增 WASI 专用环境变量。
 
 WASI 构建会检查 `wasm32-wasip2-clang`、`wasm32-wasip2-clang++`、`llvm-ar`、`llvm-ranlib`、`llvm-nm`、`wasm-component-ld` 和 `wasmtime`，并确认目标是 `wasm32-unknown-wasip2`。browser profile 另外检查 `jco`。所有工具只从 `PATH` 查找；npm script 会自动将项目本地的 `node_modules/.bin` 加入 `PATH`。
 
@@ -66,7 +65,9 @@ wasm-browser-dir: generated
 
 路径、sources 等详细配置继续放在 `project.yml`，不通过 `--wasm=` 传递。
 
-PHP、PHPX、TypePHP runtime、GMP、MPFR 和 mpdecimal 会预编译并缓存为 WASI 静态库；正常的应用构建只编译 TypePHP 为当前程序生成的 C++，然后链接这些 `.a`。源码开发环境首次执行时会自动建立缺失的运行时缓存，发行包可直接携带预编译静态库。
+PHP、PHPX、TypePHP runtime、GMP、MPFR 和 mpdecimal 由 SDK 发布阶段预编译为 WASI 静态库。应用构建只编译 TypePHP 为当前程序生成的 C++，然后链接这些 `.a`。`tpc --wasm` 不会下载源码、运行 `wit-bindgen`，也不会调用 PHP、PHPX 或高精度库的构建脚本。
+
+PHP/WASI 当前静态内建 `date`、`pcre`、`hash`、`json`、`lexbor`、`random`、`Reflection`、`SPL`、`standard`、`uri`、`ctype`、`calendar`、`bcmath`、`filter` 和 `tokenizer` 扩展。
 
 每个 C/C++ 翻译单元统一使用标准 Wasm C++ exceptions 和 WASI SJLJ；链接阶段将 ABI 警告视为错误，旧的 32 位 `zend_long` 缓存也会自动失效。
 
@@ -123,8 +124,25 @@ wasm32 使用 32 位指针，但 PHP 的 `zend_long` 保持 64 位，以维持 T
 
 PHPX Facade 只是为 PHP 可选扩展生成的便捷包装，并非 TypePHP ABI 的组成部分。WASI 下整体关闭它，可以避免把不存在的 curl、socket、Swoole、PDO 等 API 暴露为“可编译但链接失败”的接口。
 
-## 内部构建层次
+## WASI SDK 目录
 
-编译器内部会分别建立 PHP 8.5 NTS、GMP/MPFR/mpdecimal，以及 PHPX core/TypePHP runtime 的静态库缓存。内部构建脚本不是用户接口，不需要也不应由用户手动执行。发行包可直接附带目标平台对应的预编译 `.a` 文件。
+集成 SDK 使用唯一、完整的前缀，位于 PHPX 根目录的 `wasm/wasm32-wasip2/`：
 
-用户始终通过 `php bin/tpc.php --wasm program.php` 构建最终程序，避免 PHP、PHPX 和生成代码使用不一致的 `zend_long`、异常或 SJLJ ABI。
+```text
+phpx/wasm/wasm32-wasip2/
+├── include/php/             # PHP 安装头文件
+├── include/phpx/            # PHPX 和 TypePHP runtime 头文件
+├── include/gmp.h ...
+├── lib/libphp.a
+├── lib/libphpx.a
+├── lib/libgmp.a
+├── lib/libgmpxx.a
+├── lib/libmpfr.a
+├── lib/libmpdec.a
+├── lib/libmpdec++.a
+└── .typephp-wasi-sdk-abi
+```
+
+普通用户通过 TypePHP/PHPX 集成安装包获得该目录。TypePHP 开发者需要自行 clone 与当前版本绑定的 `php-8.5.9-wasm` 和 PHPX 源码，分别构建 PHP、PHPX、GMP、MPFR 与 mpdecimal，再按上述结构安装到 PHPX checkout。若 PHPX 不在 `vendor/swoole/phpx`，继续使用已有的 `PHPX_HOME` 指向该 checkout。
+
+不提供单独覆盖 `libphp.a`、`libphpx.a` 或数值库的路径；所有库、头文件和 `.typephp-wasi-sdk-abi` 必须来自同一次兼容构建，避免混用不同的 `zend_long`、C++ exceptions、SJLJ 或 Component Model ABI。

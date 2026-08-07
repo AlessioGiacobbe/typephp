@@ -2,6 +2,7 @@
 use TypePhp\Translator;
 use TypePhp\Build\WasiToolchain;
 use TypePhp\Build\WasiProjectConfig;
+use TypePhp\Build\PhpxLocator;
 
 function main(int $argc, array $argv): void
 {
@@ -137,7 +138,7 @@ function compileWasmProgram(array $argv): void
         exit(1);
     }
 
-    $builder = dirname(__DIR__) . '/projects/php-8.5.9/wasm/build-typephp-program.sh';
+    $builder = dirname(__DIR__) . '/wasm/build-typephp-program.sh';
     if (!is_executable($builder)) {
         fwrite(STDERR, "TypePHP WASI builder is not executable: {$builder}\n");
         exit(1);
@@ -176,14 +177,22 @@ function compileWasmProgram(array $argv): void
     $environment['TYPEPHP_WASI_CLANG_VERSION'] = $tools['clang-version'];
     $environment['TYPEPHP_WASMTIME_VERSION'] = $tools['wasmtime-version'];
     $environment['TYPEPHP_WASM_PROGRAM_BUILD_DIR'] = $project->buildDir;
+    $compilerExecutable = realpath($argv[0]);
+    if ($compilerExecutable === false || !is_executable($compilerExecutable)) {
+        fwrite(STDERR, "Unable to resolve the current TypePHP compiler executable: {$argv[0]}\n");
+        exit(1);
+    }
     if ($project->browserDir !== null) {
         $environment['TYPEPHP_WASM_BROWSER_DIR'] = $project->browserDir;
     }
 
-    $command = [$builder, $project->input];
-    if ($project->output !== null) {
-        $command[] = $project->output;
+    try {
+        $phpxDir = PhpxLocator::resolve(ROOT_PATH);
+    } catch (RuntimeException $exception) {
+        fwrite(STDERR, "Unable to locate PHPX: {$exception->getMessage()}\n");
+        exit(1);
     }
+    $command = [$builder, $project->input, $project->output ?? '-', $phpxDir, $compilerExecutable];
 
     $process = proc_open(
         $command,
