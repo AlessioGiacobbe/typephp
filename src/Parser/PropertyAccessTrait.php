@@ -717,14 +717,11 @@ trait PropertyAccessTrait
                 if ($var->dim === null) {
                     $this->fatalError($var, 'Cannot use [] for array unset');
                 }
-                $array = $this->parseIdentifier($var->var);
-                if ($this->isStdVector($array) or $this->isStdMap($array) or $this->isStdOrderedMap($array)) {
-                    $this->assertStdContainerStructureMutable($var, $array);
-                }
-                $dim = $this->parseIdentifier($var->dim);
-                if ($this->isStdContainer($array)) {
-                    $lines[] = $array . '_ref.offsetUnset(' . $dim . ');';
+                if ($this->isStdContainerExpr($var)) {
+                    $lines[] = $this->parseStdContainerOffsetUnset($var) . ';';
                 } else {
+                    $array = $this->parseIdentifier($var->var);
+                    $dim = $this->parseIdentifier($var->dim);
                     $lines[] = $array . '.offsetUnset(' . $dim . ');';
                 }
             } elseif ($this->isPropertyFetch($var)) {

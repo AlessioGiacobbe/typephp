@@ -284,7 +284,6 @@ trait StdContainerTrait
             $this->fatalError($left, 'std map expects a key');
         }
 
-        $this->assertStdContainerStructureMutable($left, $container);
         return $this->parseStdContainerOffsetSet($left, $this->convertStdValueExpr($info, $right));
     }
 
@@ -301,7 +300,23 @@ trait StdContainerTrait
         if ($attr['accessLevel'] < $attr['totalLevel']) {
             $this->fatalError($expr, 'Cannot use assign operator on nested std::array');
         }
-        return $arrayDimFetch . ' ' . $binaryOp . '= ' . $this->convertExprFromType($info['type'], $this->parseExpr($expr->expr));
+        $rightExpr = $this->parseExpr($expr->expr);
+        if (in_array($info['type'], [Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL], true)) {
+            $rightType = $this->detectTypeOfExpr($expr->expr);
+            $item = $this->genTmpVarName();
+            $bigExpr = $this->parseBigAssignOpExpr(
+                $item,
+                $info['type'],
+                $rightExpr,
+                $rightType,
+                $binaryOp,
+                $expr->var,
+                $expr->expr
+            );
+            return '([&](php::Var &' . $item . ') -> php::Var & { return ' . $item . ' = ' . $bigExpr . '; })('
+                . $arrayDimFetch . ')';
+        }
+        return $arrayDimFetch . ' ' . $binaryOp . '= ' . $this->convertExprFromType($info['type'], $rightExpr);
     }
 
     protected function parseStdContainerAssignOp(Expr\AssignOp $expr, string $op): string
@@ -316,8 +331,24 @@ trait StdContainerTrait
         }
 
         $info = $this->getStdContainerInfo($expr->var);
-        $containerDimFetch = $this->parseStdContainerDimFetch($expr->var);
-        return $containerDimFetch . ' ' . $binaryOp . '= ' . $this->convertExprFromType($info['type'], $this->parseExpr($expr->expr));
+        $containerDimFetch = $this->parseStdContainerDimFetch($expr->var, true);
+        $rightExpr = $this->parseExpr($expr->expr);
+        if (in_array($info['type'], [Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL], true)) {
+            $rightType = $this->detectTypeOfExpr($expr->expr);
+            $item = $this->genTmpVarName();
+            $bigExpr = $this->parseBigAssignOpExpr(
+                $item,
+                $info['type'],
+                $rightExpr,
+                $rightType,
+                $binaryOp,
+                $expr->var,
+                $expr->expr
+            );
+            return '([&](php::Var &' . $item . ') -> php::Var & { return ' . $item . ' = ' . $bigExpr . '; })('
+                . $containerDimFetch . ')';
+        }
+        return $containerDimFetch . ' ' . $binaryOp . '= ' . $this->convertExprFromType($info['type'], $rightExpr);
     }
 
     protected function parseStdArrayDimFetch(Expr\ArrayDimFetch $expr): string
@@ -373,7 +404,15 @@ trait StdContainerTrait
                 ($this->context->stdContainers[$container]['iterationDepth'] ?? 0) + 1;
         }
         $iterator = $this->genTmpVarName();
-        $code = "for (auto $iterator = {$container}_ref.begin(); $iterator != {$container}_ref.end(); ++$iterator) {" . PHP_EOL;
+        $code = '';
+        if ($mutableContainer) {
+            $guard = $this->genTmpVarName();
+            $code .= '{' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . "auto $guard = {$container}_ref.iterationGuard();" . PHP_EOL;
+            $code .= $this->getIndent();
+        }
+        $code .= "for (auto $iterator = {$container}_ref.begin(); $iterator != {$container}_ref.end(); ++$iterator) {" . PHP_EOL;
         $this->indentLevel++;
         if ($node->keyVar) {
             $keyVar = $this->parseIdentifier($node->keyVar);
@@ -415,11 +454,15 @@ trait StdContainerTrait
         $code .= $body . PHP_EOL;
 
         $code .= $this->getIndent() . '}';
+        if ($mutableContainer) {
+            $this->indentLevel--;
+            $code .= PHP_EOL . $this->getIndent() . '}';
+        }
         unset($this->context->objects[$valueVar]);
         return $code;
     }
 
-    protected function parseStdContainerDimFetch(Expr\ArrayDimFetch $expr): string
+    protected function parseStdContainerDimFetch(Expr\ArrayDimFetch $expr, bool $forUpdate = false): string
     {
         if ($this->isStdArrayExpr($expr)) {
             return $this->parseStdArrayDimFetch($expr);
@@ -450,7 +493,18 @@ trait StdContainerTrait
         $container = $this->parseVariable($tmp);
         $index = $this->parseExpr($dim);
         $key = $info['kind'] === 'vector' ? $this->convertIntExpr($index) : $this->convertStdContainerKey($info, $index);
-        $access = $container . '_ref.offsetGet(' . $key . ')';
+        $method = $forUpdate && ($info['kind'] === 'map' || $info['kind'] === 'ordered_map')
+            ? 'offsetGetForUpdate'
+            : 'offsetGet';
+        $args = $key;
+        if ($method === 'offsetGetForUpdate') {
+            $defaultValue = $this->getStdContainerDefaultValueExpr($info['type']);
+            if ($defaultValue !== null) {
+                $method = 'offsetGetForUpdateLazy';
+                $args .= ', []() { return ' . $defaultValue . '; }';
+            }
+        }
+        $access = $container . '_ref.' . $method . '(' . $args . ')';
         $expr->setAttribute('stdContainerDimFetch', ['var' => $container, 'accessLevel' => 1, 'totalLevel' => 1]);
 
         return $access;
@@ -477,6 +531,57 @@ trait StdContainerTrait
             return $this->convertStringExpr($index);
         }
         return $this->convertIntExpr($index);
+    }
+
+    protected function getStdContainerDefaultValueExpr(string $type): ?string
+    {
+        return match ($type) {
+            Type::BIGINT => 'php::BigInt::newInstance(0)',
+            Type::BIGFLOAT => 'php::BigFloat::newInstance(0)',
+            Type::DECIMAL => 'php::Decimal::newInstance(0)',
+            default => null,
+        };
+    }
+
+    protected function parseStdContainerOffsetUnset(Expr\ArrayDimFetch $expr): string
+    {
+        if ($expr->dim === null) {
+            $this->fatalError($expr, 'std container expects an index');
+        }
+
+        if ($this->isStdArrayExpr($expr)) {
+            $info = $this->getStdArrayInfo($expr);
+            $target = $this->parseStdArrayDimFetch($expr);
+            $defaultValue = $this->getStdContainerDefaultValueExpr($info['type']);
+            if ($defaultValue !== null) {
+                return $target . ' = ' . $defaultValue;
+            }
+
+            if ($this->isVarExpr($expr->var)) {
+                $parent = $this->parseVariable($expr->var) . '_ref';
+            } elseif ($this->isArrayDimFetch($expr->var)) {
+                $parent = $this->parseStdArrayDimFetch($expr->var);
+            } else {
+                $this->fatalError($expr, 'std::array expects a variable');
+            }
+            $index = $this->convertIntExpr($this->parseExpr($expr->dim));
+            return $parent . '.offsetUnset(' . $index . ')';
+        }
+
+        $info = $this->getStdContainerInfo($expr);
+        if ($info === null || !$this->isVarExpr($expr->var)) {
+            $this->fatalError($expr, 'std container expects a variable');
+        }
+        $container = $this->parseVariable($expr->var);
+        $indexExpr = $this->parseExpr($expr->dim);
+        $index = $info['kind'] === 'vector'
+            ? $this->convertIntExpr($indexExpr)
+            : $this->convertStdContainerKey($info, $indexExpr);
+        $defaultValue = $this->getStdContainerDefaultValueExpr($info['type']);
+        if ($defaultValue !== null && $info['kind'] === 'vector') {
+            return $container . '_ref.offsetSet(' . $index . ', ' . $defaultValue . ')';
+        }
+        return $container . '_ref.offsetUnset(' . $index . ')';
     }
 
     protected function getStdContainerElementType(string $type): string
@@ -783,10 +888,6 @@ trait StdContainerTrait
                 return $sizes[0] . $this->getPlatform()->getIntegerLiteralSuffix();
             }
             if ($this->isStdVector($var)) {
-                $info = $this->context->stdContainers[$var];
-                if ($info['size'] !== null) {
-                    return $info['size'] . $this->getPlatform()->getIntegerLiteralSuffix();
-                }
                 return $var . '_ref.size()';
             }
             if ($this->isStdContainer($var)) {
@@ -814,19 +915,6 @@ trait StdContainerTrait
                 }
             }
 
-            if ($this->isVarExpr($tmp)) {
-                $var = $this->parseVariable($tmp);
-                if ($this->isStdVector($var)) {
-                    $info = $this->context->stdContainers[$var];
-                    if ($info['size'] !== null) {
-                        return $info['size'] . $this->getPlatform()->getIntegerLiteralSuffix();
-                    }
-                    return $var . '_ref.size()';
-                }
-                if ($this->isStdMap($var) || $this->isStdOrderedMap($var)) {
-                    return $var . '_ref.size()';
-                }
-            }
         }
 
         return false;

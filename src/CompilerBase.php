@@ -4072,6 +4072,9 @@ class CompilerBase implements PropertyAccessContext
                     $code .= 'php::Var ' . $name . ' = php::Var(new ' . $containerType . '(' . $info['typeId'] . '));' . PHP_EOL;
                     $code .= $this->getIndent() . 'auto &' . $name . '_ref = ' . $name . '.toBox<' . $containerType . '>()->container;';
                 }
+                if (!isset($info['boxExpr']) && ($defaultValue = $this->getStdContainerDefaultValueExpr($info['type'])) !== null) {
+                    $code .= PHP_EOL . $this->getIndent() . 'php::initializeStdContainer(' . $name . '_ref, ' . $defaultValue . ');';
+                }
             } elseif ($type === Type::STD_VECTOR) {
                 $info = $this->context->stdContainers[$name];
                 if (isset($info['boxExpr'])) {
@@ -4085,6 +4088,10 @@ class CompilerBase implements PropertyAccessContext
                     }
                     $code .= 'php::Var ' . $name . ' = php::Var(' . $boxCtor . ');' . PHP_EOL;
                     $code .= $this->getIndent() . 'auto &' . $name . '_ref = ' . $name . '.toBox<' . $containerType . '>()->container;';
+                }
+                if (!isset($info['boxExpr']) && $info['size'] !== null
+                    && ($defaultValue = $this->getStdContainerDefaultValueExpr($info['type'])) !== null) {
+                    $code .= PHP_EOL . $this->getIndent() . 'php::initializeStdContainer(' . $name . '_ref, ' . $defaultValue . ');';
                 }
             } elseif ($type === Type::STD_MAP || $type === Type::STD_ORDERED_MAP) {
                 $info = $this->context->stdContainers[$name];

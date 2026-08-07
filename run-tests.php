@@ -36,9 +36,9 @@ Synopsis:
     php run-tests.php [options] [files] [directories]
 
 Options:
-    -j<workers> Run up to <workers> simultaneous testing processes in parallel for
-                quicker testing on systems with multiple logical processors.
-                Note that this is experimental feature.
+    -j<workers>, -j <workers>, --job <workers>
+                Run up to <workers> simultaneous testing processes in parallel
+                for quicker testing on systems with multiple logical processors.
 
     -l <file>   Read the testfiles to be executed from <file>. After the test
                 has finished all failed tests are written to the same <file>.
@@ -161,7 +161,7 @@ function main(): void
            $temp_source, $temp_target, $test_cnt,
            $test_files, $test_idx, $test_results, $testfile,
            $valgrind, $sum_results, $shuffle, $file_cache, $num_repeats,
-           $show_progress;
+           $show_progress, $aot_parallel_root;
     // Parallel testing
     global $workers, $workerID;
     global $context_line_count;
@@ -357,6 +357,7 @@ function main(): void
     $shuffle = false;
     $bless = false;
     $workers = null;
+    $aot_parallel_root = null;
     $context_line_count = 3;
     $num_repeats = 1;
     $show_progress = true;
@@ -418,15 +419,14 @@ function main(): void
 
             switch ($switch) {
                 case 'j':
-                    $workers = substr($argv[$i], 2);
-                    if ($workers == 0 || !preg_match('/^\d+$/', $workers)) {
-                        error("'$workers' is not a valid number of workers, try e.g. -j16 for 16 workers");
+                    $worker_count = substr($argv[$i], 2);
+                    if ($worker_count === '') {
+                        $worker_count = $argv[++$i] ?? '';
                     }
-                    $workers = intval($workers, 10);
-                    // Don't use parallel testing infrastructure if there is only one worker.
-                    if ($workers === 1) {
-                        $workers = null;
-                    }
+                    $workers = parse_worker_count($worker_count);
+                    break;
+                case '--job':
+                    $workers = parse_worker_count($argv[++$i] ?? '');
                     break;
                 case 'r':
                 case 'l':
@@ -617,6 +617,10 @@ function main(): void
                     exit(1);
 
                 default:
+                    if (str_starts_with($switch, '--job=')) {
+                        $workers = parse_worker_count(substr($switch, strlen('--job=')));
+                        break;
+                    }
                     echo "Illegal switch '$switch' specified!\n";
                     // no break
                 case 'h':
@@ -817,6 +821,17 @@ function verify_config(string $php): void
     if (!is_executable($php)) {
         error("invalid PHP executable specified by TEST_PHP_EXECUTABLE  = $php");
     }
+}
+
+function parse_worker_count(string $value): ?int
+{
+    if (!preg_match('/^[1-9]\d*$/', $value)) {
+        error("'$value' is not a valid number of workers, try e.g. -j16 or --job 16");
+    }
+
+    $workers = intval($value, 10);
+    // Don't use parallel testing infrastructure if there is only one worker.
+    return $workers === 1 ? null : $workers;
 }
 
 /**
@@ -1323,6 +1338,7 @@ function run_all_tests(array $test_files, array $env, ?string $redir_tested = nu
 function run_all_tests_parallel(array $test_files, array $env, ?string $redir_tested): void
 {
     global $workers, $test_idx, $test_results, $failed_tests_file, $result_tests_file, $PHP_FAILED_TESTS, $shuffle, $valgrind, $show_progress;
+    global $aot_parallel_root;
 
     global $junit;
 
@@ -1377,6 +1393,14 @@ function run_all_tests_parallel(array $test_files, array $env, ?string $redir_te
 
     // Don't start more workers than test files.
     $workers = max(1, min($workers, count($test_files)));
+
+    $aot_parallel_root = create_aot_parallel_root();
+    register_shutdown_function(static function () use (&$aot_parallel_root): void {
+        if ($aot_parallel_root !== null) {
+            remove_directory($aot_parallel_root);
+            $aot_parallel_root = null;
+        }
+    });
 
     echo "Spawning $workers workers... ";
 
@@ -1633,6 +1657,9 @@ escape:
     if ($testsInProgress < 0) {
         error("$testsInProgress test batches “in progress”, which is less than zero. THIS SHOULD NOT HAPPEN.");
     }
+
+    remove_directory($aot_parallel_root);
+    $aot_parallel_root = null;
 }
 
 /**
@@ -2462,7 +2489,10 @@ $message
             return 'FAILED';
         }
         $args = substr($args, strlen(' -- '));
-        $cmd = (IS_WINDOWS ? '.\\' : './') . $bin_file . ' ' . $args . $cmdRedirect;
+        $executable = str_contains($bin_file, DIRECTORY_SEPARATOR)
+            ? $bin_file
+            : (IS_WINDOWS ? '.\\' : './') . $bin_file;
+        $cmd = escapeshellarg($executable) . ' ' . $args . $cmdRedirect;
     } else {
         $content = file_get_contents($test_file);
         if (preg_match('/function main\(\)/', $content)) {
@@ -4243,15 +4273,30 @@ function debug()
 
 function compile_php_file(string $file, string $compiler_args = ''): string
 {
-    global $compiler_path;
+    global $compiler_path, $workerID, $aot_parallel_root;
 
     $data = trim(file_get_contents($file));
     if (!str_starts_with($data, '<?php') or !str_ends_with($data, '?>')) {
         throw new CompilationFailureException('Invalid PHP file');
     }
-    $binary_file = str_replace('-', '_', basename($file, '.php'));
+    $binary_name = str_replace('-', '_', basename($file, '.php'));
     if (IS_WINDOWS) {
-        $binary_file .= '.exe';
+        $binary_name .= '.exe';
+    }
+
+    $compiler_output_args = '';
+    if ($workerID && $aot_parallel_root !== null) {
+        $worker_dir = $aot_parallel_root . DIRECTORY_SEPARATOR . 'worker-' . $workerID;
+        $build_dir = $worker_dir . DIRECTORY_SEPARATOR . 'build';
+        $output_dir = $worker_dir . DIRECTORY_SEPARATOR . 'output';
+        ensure_directory_exists($build_dir);
+        ensure_directory_exists($output_dir);
+
+        $binary_file = $output_dir . DIRECTORY_SEPARATOR . $binary_name;
+        $compiler_output_args = ' --build-dir ' . escapeshellarg($build_dir)
+            . ' --output ' . escapeshellarg($binary_file);
+    } else {
+        $binary_file = $binary_name;
     }
 
     if (!str_contains($data, 'function main()')) {
@@ -4270,10 +4315,11 @@ function compile_php_file(string $file, string $compiler_args = ''): string
     if (IS_WINDOWS && str_ends_with($cmd, '.php')) {
         $cmd = escapeshellarg(PHP_BINARY) . ' ' . $cmd;
     }
+    $cmd .= ' ' . escapeshellarg($file);
     if ($compiler_args !== '') {
         $cmd .= ' ' . $compiler_args;
     }
-    exec($cmd . ' ' . escapeshellarg($file) . ' 2>&1', $output, $exitCode);
+    exec($cmd . $compiler_output_args . ' 2>&1', $output, $exitCode);
     clearstatcache(true, $binary_file);
 
     if ($exitCode !== 0 || !file_exists($binary_file)) {
@@ -4281,6 +4327,41 @@ function compile_php_file(string $file, string $compiler_args = ''): string
     }
 
     return $binary_file;
+}
+
+function create_aot_parallel_root(): string
+{
+    $suffix = getmypid() . '-' . bin2hex(random_bytes(6));
+    $directory = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'typephp-run-tests-' . $suffix;
+    ensure_directory_exists($directory);
+    return $directory;
+}
+
+function ensure_directory_exists(string $directory): void
+{
+    if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
+        throw new RuntimeException('Cannot create directory: ' . $directory);
+    }
+}
+
+function remove_directory(string $directory): void
+{
+    if (!is_dir($directory)) {
+        return;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($iterator as $entry) {
+        if ($entry->isDir() && !$entry->isLink()) {
+            @rmdir($entry->getPathname());
+        } else {
+            @unlink($entry->getPathname());
+        }
+    }
+    @rmdir($directory);
 }
 
 main();
