@@ -1,0 +1,61 @@
+# TypePHP WASI Browser Lab
+
+这是一个由 `project.yml` 构建的完整 TypePHP/WASI 0.2 浏览器应用。PHP 代码编译成一个自包含的 Component，Jco 将同一个 Component 转译为浏览器 ESM，页面通过 module Worker 加载它。
+
+Demo 展示以下已支持能力：
+
+- 命令行参数、环境变量与标准输入/输出
+- WASI wall clock 和 PHP `time()` / `date()`
+- 安全随机数 `random_int()` / `random_bytes()`
+- 内存文件系统，以及可选的 OPFS 快照持久化
+- PHP 8.5 runtime 信息
+- TypePHP 语言级 BigInt、Decimal、BigFloat 高精度计算
+
+网络、进程、shell、信号、Fiber 和 Generator 明确不支持。
+
+## 构建
+
+先确保 WASI SDK 和 Wasmtime 已加入 `PATH`，然后在本目录执行：
+
+```bash
+npm ci
+npm run wasm
+```
+
+等价的仓库根目录命令是：
+
+```bash
+php bin/tpc.php examples/wasm-hello/project.yml
+```
+
+`project.yml` 控制全部项目路径：
+
+- `sources: src`：TypePHP 源码
+- `build-dir: build`：生成的 C++ 与目标文件
+- `output: component/wasm-hello.wasm`：WASI 0.2 Component
+- `wasm: true`：项目自动进入 WASI browser 构建，无需命令行 `--wasm`
+- `wasm-browser-dir: generated`：Jco 浏览器模块
+
+Jco 是本项目的开发依赖。先执行 `npm ci`，之后通过 `npm run wasm` 构建时，npm 会自动把本地 `node_modules/.bin/jco` 加入 `PATH`。
+
+若只需要供 Wasmtime 使用的 Component，可以绕过 Jco：
+
+```bash
+php ../../bin/tpc.php project.yml --wasm=component
+```
+
+## 浏览器运行
+
+```bash
+npm run dev
+```
+
+打开终端显示的本地地址。可以修改参数、环境变量和 stdin 后重复运行；勾选 OPFS 后，PHP 写入虚拟文件系统的运行次数会跨页面刷新保存。
+
+生产构建：
+
+```bash
+npm run build
+```
+
+`src/` 是 TypePHP 应用，`typephp-worker.mjs` 是浏览器 WASI host，`main.js` 和 `style.css` 负责交互界面。`build/`、`component/`、`dist/`、`generated/` 均为可重新生成的输出。

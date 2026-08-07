@@ -1,6 +1,7 @@
 <?php
 use TypePhp\Translator;
 use TypePhp\Build\WasiToolchain;
+use TypePhp\Build\WasiProjectConfig;
 
 function main(int $argc, array $argv): void
 {
@@ -12,7 +13,7 @@ function main(int $argc, array $argv): void
         define("ROOT_PATH", getcwd());
     }
 
-    if (in_array('--wasm', $argv, true)) {
+    if (getenv('TYPEPHP_WASM_INTERNAL_COMPILE') !== '1' && shouldCompileWasm($argv)) {
         compileWasmProgram($argv);
         return;
     }
@@ -62,7 +63,7 @@ function main(int $argc, array $argv): void
 }
 
 /**
- * Build a self-contained WASI command module through the compiler's public CLI.
+ * Build a self-contained WASI 0.2 command component through the public CLI.
  * The lower-level build scripts are implementation details and are not part of
  * the user-facing workflow.
  */
@@ -70,10 +71,24 @@ function compileWasmProgram(array $argv): void
 {
     $input = null;
     $buildDir = null;
+    $profile = null;
     $arguments = array_slice($argv, 1);
     for ($i = 0, $count = count($arguments); $i < $count; $i++) {
         $argument = $arguments[$i];
         if ($argument === '--wasm') {
+            continue;
+        }
+        if (str_starts_with($argument, '--wasm=')) {
+            $value = substr($argument, strlen('--wasm='));
+            if ($value === '') {
+                fwrite(STDERR, "Option --wasm requires browser or component after `=`\n");
+                exit(1);
+            }
+            if ($profile !== null && $profile !== $value) {
+                fwrite(STDERR, "Option --wasm was specified with conflicting profiles\n");
+                exit(1);
+            }
+            $profile = $value;
             continue;
         }
         if ($argument === '--build-dir') {
@@ -97,22 +112,29 @@ function compileWasmProgram(array $argv): void
             exit(1);
         }
         if ($input !== null) {
-            fwrite(STDERR, "The --wasm mode accepts exactly one PHP input file\n");
+            fwrite(STDERR, "The --wasm mode accepts exactly one PHP file or project.yml\n");
             exit(1);
         }
         $input = $argument;
     }
 
     if ($input === null) {
-        fwrite(STDERR, "Usage: php bin/tpc.php <program.php> --wasm [--build-dir <directory>]\n");
+        fwrite(STDERR, "Usage: php bin/tpc.php <program.php|project.yml> [--wasm[=browser|component]] [--build-dir <directory>]\n");
         exit(1);
     }
 
     $workingDirectory = getcwd();
-    $buildDir ??= ROOT_PATH . DIRECTORY_SEPARATOR . 'build';
-    if (!str_starts_with($buildDir, DIRECTORY_SEPARATOR)
-        && preg_match('/^[A-Za-z]:[\\\\\/]/', $buildDir) !== 1) {
-        $buildDir = $workingDirectory . DIRECTORY_SEPARATOR . $buildDir;
+    try {
+        $project = WasiProjectConfig::load(
+            $input,
+            $buildDir,
+            $workingDirectory,
+            ROOT_PATH . DIRECTORY_SEPARATOR . 'build',
+            $profile,
+        );
+    } catch (RuntimeException $exception) {
+        fwrite(STDERR, "Invalid WASI project: {$exception->getMessage()}\n");
+        exit(1);
     }
 
     $builder = dirname(__DIR__) . '/projects/php-8.5.9/wasm/build-typephp-program.sh';
@@ -122,10 +144,15 @@ function compileWasmProgram(array $argv): void
     }
 
     try {
-        $tools = (new WasiToolchain())->detect();
+        $tools = (new WasiToolchain())->detect($project->profile === 'browser');
     } catch (RuntimeException $exception) {
         fwrite(STDERR, "WASI toolchain check failed: {$exception->getMessage()}\n");
-        fwrite(STDERR, "Add WASI SDK and Wasmtime bin directories to PATH, then try again.\n");
+        fwrite(STDERR, "Add WASI SDK and Wasmtime bin directories to PATH");
+        if ($project->profile === 'browser') {
+            fwrite(STDERR, ", and install Jco (`npm install -g @bytecodealliance/jco`)"
+                . " or use --wasm=component");
+        }
+        fwrite(STDERR, ", then try again.\n");
         exit(1);
     }
 
@@ -140,15 +167,26 @@ function compileWasmProgram(array $argv): void
     $environment['TYPEPHP_WASI_NM'] = $tools['llvm-nm'];
     $environment['TYPEPHP_WASI_LD'] = $tools['wasm-ld'];
     $environment['TYPEPHP_WASMTIME'] = $tools['wasmtime'];
-    $environment['TYPEPHP_JCO'] = $tools['jco'];
+    $environment['TYPEPHP_WASM_BROWSER'] = $project->profile === 'browser' ? '1' : '0';
+    if ($project->profile === 'browser') {
+        $environment['TYPEPHP_JCO'] = $tools['jco'];
+        $environment['TYPEPHP_JCO_VERSION'] = $tools['jco-version'];
+    }
     $environment['TYPEPHP_WASI_TARGET'] = $tools['target'];
     $environment['TYPEPHP_WASI_CLANG_VERSION'] = $tools['clang-version'];
     $environment['TYPEPHP_WASMTIME_VERSION'] = $tools['wasmtime-version'];
-    $environment['TYPEPHP_JCO_VERSION'] = $tools['jco-version'];
-    $environment['TYPEPHP_WASM_PROGRAM_BUILD_DIR'] = $buildDir;
+    $environment['TYPEPHP_WASM_PROGRAM_BUILD_DIR'] = $project->buildDir;
+    if ($project->browserDir !== null) {
+        $environment['TYPEPHP_WASM_BROWSER_DIR'] = $project->browserDir;
+    }
+
+    $command = [$builder, $project->input];
+    if ($project->output !== null) {
+        $command[] = $project->output;
+    }
 
     $process = proc_open(
-        [$builder, $input],
+        $command,
         [STDIN, STDOUT, STDERR],
         $pipes,
         getcwd(),
@@ -163,6 +201,30 @@ function compileWasmProgram(array $argv): void
     if ($exitCode !== 0) {
         exit($exitCode);
     }
+}
+
+function shouldCompileWasm(array $argv): bool
+{
+    foreach (array_slice($argv, 1) as $argument) {
+        if ($argument === '--wasm' || str_starts_with($argument, '--wasm=')) {
+            return true;
+        }
+    }
+
+    $workingDirectory = getcwd();
+    foreach (array_slice($argv, 1) as $argument) {
+        if ($argument === '' || $argument[0] === '-') {
+            continue;
+        }
+        $path = $argument;
+        if ($path[0] !== '/' && preg_match('/^[A-Za-z]:[\\\\\/]/', $path) !== 1) {
+            $path = $workingDirectory . DIRECTORY_SEPARATOR . $path;
+        }
+        if (WasiProjectConfig::isWasmEnabled($path)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function profileAnalyze(int $argc, array $argv): void

@@ -11,10 +11,10 @@ final class WasiToolchain
     public const MIN_JCO_MAJOR = 1;
 
     /** @return array<string, string> */
-    public function detect(): array
+    public function detect(bool $requireBrowserTools = true): array
     {
         $tools = [];
-        foreach ([
+        $requiredTools = [
             'wasm32-wasip2-clang',
             'wasm32-wasip2-clang++',
             'llvm-ar',
@@ -22,8 +22,11 @@ final class WasiToolchain
             'llvm-nm',
             'wasm-component-ld',
             'wasmtime',
-            'jco',
-        ] as $name) {
+        ];
+        if ($requireBrowserTools) {
+            $requiredTools[] = 'jco';
+        }
+        foreach ($requiredTools as $name) {
             $tools[$name] = $this->findExecutable($name);
         }
 
@@ -33,7 +36,9 @@ final class WasiToolchain
         }
         $this->requireVersion('wasm-component-ld', $tools['wasm-component-ld'], 0);
         $versions['wasmtime'] = $this->requireVersion('wasmtime', $tools['wasmtime'], self::MIN_WASMTIME_MAJOR);
-        $versions['jco'] = $this->requireVersion('jco', $tools['jco'], self::MIN_JCO_MAJOR);
+        if ($requireBrowserTools) {
+            $versions['jco'] = $this->requireVersion('jco', $tools['jco'], self::MIN_JCO_MAJOR);
+        }
 
         [$exitCode, $target, $error] = $this->run([$tools['wasm32-wasip2-clang++'], '--print-target-triple']);
         $target = trim($target);
@@ -51,7 +56,9 @@ final class WasiToolchain
         $tools['target'] = $target;
         $tools['clang-version'] = $versions['wasm32-wasip2-clang++'];
         $tools['wasmtime-version'] = $versions['wasmtime'];
-        $tools['jco-version'] = $versions['jco'];
+        if ($requireBrowserTools) {
+            $tools['jco-version'] = $versions['jco'];
+        }
         return $tools;
     }
 

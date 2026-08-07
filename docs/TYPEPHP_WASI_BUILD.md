@@ -1,6 +1,6 @@
 # 构建 TypePHP WASI 程序
 
-TypePHP 已有一个可运行的 WASI Preview 1 原型。它将 TypePHP 生成的 C++、PHPX 核心、精简的 PHP 8.5 NTS、GMP、MPFR 和 mpdecimal 静态链接为单个 `.wasm` command 模块。
+TypePHP 使用稳定的 WASI 0.2（Preview 2）和 Component Model。TypePHP 生成的 C++、PHPX 核心、精简的 PHP 8.5 NTS、GMP、MPFR 和 mpdecimal 会静态链接为单个 `.wasm` command component。WASI 0.1（Preview 1）不受支持。
 
 ## 环境要求
 
@@ -8,17 +8,18 @@ TypePHP 已有一个可运行的 WASI Preview 1 原型。它将 TypePHP 生成�
 - PHP 8.4 或更高版本，用于运行 TypePHP 编译器
 - Autoconf、Automake、Libtool、Bison、re2c 和常规 C/C++ 构建工具
 - Wasmtime 47 或更高版本，用于运行和测试产物
+- Jco 1 或更高版本，用于 browser profile；component profile 不需要 Jco
 
 WASI SDK 的 `bin` 目录和 Wasmtime 必须加入系统 `PATH`。编译器不会探测或使用 `/opt` 等约定安装目录，也不接受专用的工具目录配置。可以继续通过环境变量覆盖缓存位置：
 
 ```bash
 export PATH="<wasi-sdk-bin>:<wasmtime-bin>:$PATH"
-export PHP_WASM_BUILD_DIR=/tmp/php-8.5.9-wasm-build
-export TYPEPHP_WASM_DEPS_PREFIX=/tmp/typephp-wasm-numeric/prefix
-export TYPEPHP_WASM_RUNTIME_PREFIX=/tmp/typephp-wasm-runtime
+export PHP_WASM_BUILD_DIR=/tmp/php-8.5.9-wasip2-build
+export TYPEPHP_WASM_DEPS_PREFIX=/tmp/typephp-wasip2-numeric/prefix
+export TYPEPHP_WASM_RUNTIME_PREFIX=/tmp/typephp-wasip2-runtime
 ```
 
-执行 `--wasm` 时会先检查 `clang`、`clang++`、`llvm-ar`、`llvm-ranlib`、`llvm-nm`、`wasm-ld` 和 `wasmtime` 是否都能从 `PATH` 找到，检查最低版本，并确认 `clang++` 的默认目标是 `wasm32-wasi`。检测失败时不会进入代码生成或编译阶段。
+WASI 构建会检查 `wasm32-wasip2-clang`、`wasm32-wasip2-clang++`、`llvm-ar`、`llvm-ranlib`、`llvm-nm`、`wasm-component-ld` 和 `wasmtime`，并确认目标是 `wasm32-unknown-wasip2`。browser profile 另外检查 `jco`。所有工具只从 `PATH` 查找；npm script 会自动将项目本地的 `node_modules/.bin` 加入 `PATH`。
 
 ## 一条命令构建
 
@@ -38,7 +39,32 @@ function main(): void
 php bin/tpc.php --wasm hello.php
 ```
 
-输出文件默认为当前目录下的 `hello.wasm`。生成的 `.cc` 与 host 模式使用相同的 build 目录规则，默认位于 TypePHP 根目录的 `build/`；可以使用 `--build-dir <directory>` 覆盖。每个 `.o` 与对应 `.cc` 放在同一目录并在下次构建时直接覆盖，不建立 WASM 专用的深层对象目录。编译器用于传递本次源码列表的临时清单会在链接结束后自动清理。
+单文件输入默认生成当前目录下的 `hello.wasm` 和 `hello.browser/` Jco 模块。生成的 `.cc` 与 host 模式使用相同的 build 目录规则，默认位于 TypePHP 根目录的 `build/`；可以使用 `--build-dir <directory>` 覆盖。
+
+项目可以直接使用 `project.yml`：
+
+```yaml
+name: wasm-hello
+mode: bin
+target-platform: wasm32-wasip2
+wasm: true
+build-dir: build
+output: component/wasm-hello.wasm
+sources:
+  - src
+wasm-browser-dir: generated
+```
+
+配置 `wasm: true` 后，直接执行 `php bin/tpc.php project.yml` 即可进入 WASI browser 构建，无需重复传入 `--wasm`。`build-dir`、`output` 和 `wasm-browser-dir` 都相对于项目文件解析。完整浏览器应用见 `examples/wasm-hello/`。
+
+若项目永久只生成 Component，也可以直接配置 `wasm: component`。
+
+命令行也可以显式选择产物：
+
+- `--wasm` 或 `--wasm=browser`：生成 Component 和 Jco 浏览器模块，需要 `jco` 位于 `PATH`。
+- `--wasm=component`：仅生成可由 Wasmtime 运行的 Component，不检测 Jco。
+
+路径、sources 等详细配置继续放在 `project.yml`，不通过 `--wasm=` 传递。
 
 PHP、PHPX、TypePHP runtime、GMP、MPFR 和 mpdecimal 会预编译并缓存为 WASI 静态库；正常的应用构建只编译 TypePHP 为当前程序生成的 C++，然后链接这些 `.a`。源码开发环境首次执行时会自动建立缺失的运行时缓存，发行包可直接携带预编译静态库。
 
@@ -49,6 +75,17 @@ PHP、PHPX、TypePHP runtime、GMP、MPFR 和 mpdecimal 会预编译并缓存为
 ```bash
 wasmtime hello.wasm
 ```
+
+Chrome Demo：
+
+```bash
+cd examples/wasm-hello
+npm run wasm
+npm ci
+npm run dev
+```
+
+浏览器端始终在专用 Worker 中执行 Component。默认使用内存文件系统；发送给 Worker 的启动消息设置 `persistent: true` 后，会在启动和退出时通过 OPFS 恢复、保存文件系统快照。程序执行期间仍使用同步内存文件系统，避免每次 PHP 文件访问跨越异步 JS 边界。
 
 ## 高精度类型
 
@@ -78,11 +115,11 @@ wasm32 使用 32 位指针，但 PHP 的 `zend_long` 保持 64 位，以维持 T
 ## 当前平台边界
 
 - 仅支持 NTS、单线程。
-- Fiber 和 TypePHP Generator 被禁用；编译器在发现 `yield` 时直接报致命错误。
+- Fiber 和 Generator 被禁用；编译器在发现 `yield` 时直接报致命错误。
 - PHPX Facade API 在 `__wasi__` 下整体禁用。PHPX 核心类型和 `phpx_std` 仍可使用。
-- 不支持动态扩展、网络 socket、进程控制和依赖操作系统服务的扩展。
+- 不支持动态扩展、网络 socket、进程、shell 和信号。静态可识别的调用会在编译期报致命错误。
 - 保留 PHP stream 框架、本地文件能力以及由 WASI host 提供的时间和随机数能力。
-- 当前产物是 WASI command module，适用于 Wasmtime 等 WASI 运行时，不能不经宿主适配直接放入浏览器运行。
+- `.wasm` 是同一份 WASI 0.2 command component：Wasmtime 直接运行；Chrome 使用 Jco 生成的 ESM 和 `examples/wasm-hello/typephp-worker.mjs` 中的 Worker host。
 
 PHPX Facade 只是为 PHP 可选扩展生成的便捷包装，并非 TypePHP ABI 的组成部分。WASI 下整体关闭它，可以避免把不存在的 curl、socket、Swoole、PDO 等 API 暴露为“可编译但链接失败”的接口。
 

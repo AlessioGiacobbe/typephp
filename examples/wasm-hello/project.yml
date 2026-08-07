@@ -1,0 +1,9 @@
+name: wasm-hello
+mode: bin
+target-platform: wasm32-wasip2
+build-dir: build
+output: component/wasm-hello.wasm
+sources:
+  - src
+wasm: true
+wasm-browser-dir: generated

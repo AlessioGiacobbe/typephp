@@ -52,6 +52,19 @@ final class WasiToolchainTest extends TestCase
         (new WasiToolchain())->detect();
     }
 
+    public function testComponentOnlyProfileDoesNotRequireJco(): void
+    {
+        $this->installFakeTools(22, 47, 1, 'wasm32-unknown-wasip2');
+        unlink($this->directory . '/jco');
+        putenv('PATH=' . $this->directory);
+
+        $tools = (new WasiToolchain())->detect(false);
+
+        $this->assertArrayNotHasKey('jco', $tools);
+        $this->assertArrayNotHasKey('jco-version', $tools);
+        $this->assertSame('wasm32-unknown-wasip2', $tools['target']);
+    }
+
     public function testRejectsOldLlvm(): void
     {
         $this->installFakeTools(21, 47, 1, 'wasm32-unknown-wasip2');

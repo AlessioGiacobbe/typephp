@@ -1,8 +1,8 @@
 # TypePHP WASM 技术方案与实施计划
 
-> 状态：WASI 命令行原型已实现，浏览器阶段待实现
+> 状态：WASI 0.2 Component 与 Chrome Worker 原型已实现
 > 调研日期：2026-08-07  
-> 当前目标：WASI Preview 1，NTS，单线程；后续适配浏览器
+> 当前目标：WASI 0.2（Preview 2），NTS，单线程；不支持 WASI 0.1
 
 ## 1. 文档目的
 
@@ -24,17 +24,17 @@ PHP 源码
        + TypePHP runtime
        + GMP / MPFR / mpdecimal
        + PHP embed/WASI 运行时
-    -> typephp.wasm（WASI command module）
+    -> typephp.wasm（WASI 0.2 command component）
 ```
 
 具体决策如下：
 
 1. 第一版复用当前 C++/Zend 后端，不直接生成 WAT/WASM，也不重新实现 PHP 运行时。
-2. 先使用 WASI SDK 建立最小、可测试的命令行目标；浏览器阶段再选择 Emscripten 或 WASI adapter。
+2. 使用 WASI SDK 的 `wasm32-wasip2` sysroot 直接生成 Component；Chrome 由 Jco 转译为 ESM，不维护第二套 Emscripten ABI。
 3. PHP、PHPX、TypePHP 生成代码和高精度库全部静态链接到一个 `.wasm` 模块。
-4. 当前由 WASI host 提供 stdout、clocks、随机数和受控文件系统；浏览器阶段也保持 WASI 接口，由浏览器中的 WASI host/adapter 实现这些能力。
+4. Wasmtime 和 Chrome 共同提供 CLI、stdio、exit、clocks、random 和受控文件系统；Chrome host 固定运行在 Worker 中。
 5. 仅支持 PHP NTS，不支持线程。
-6. 禁用 Fiber 和 TypePHP Generator。
+6. 禁用 Fiber 和 Generator。
 7. 必须支持 C++ 异常以及 Zend bailout 所需的 `setjmp/longjmp`。
 8. 保留 PHP stream 框架和本地 stream，禁用网络 transport 和依赖操作系统进程能力的功能。
 9. WordPress Playground 和其他 PHP-WASM 项目只作为补丁与移植经验来源，不作为 TypePHP 的依赖或代码基础。
@@ -82,7 +82,7 @@ TypePHP 无法直接复用 Playground 发布的 PHP-WASM 二进制，因为 Type
 
 - 无宿主适配的浏览器直接运行。
 - pthread、Web Worker 并行 PHP 或共享内存。
-- Fiber 和 TypePHP Generator。
+- Fiber 和 Generator。
 - 动态扩展加载。
 - PHP 源码的运行时编译或通用 `eval()`。
 - TCP、UDP、Unix socket 和监听端口。
@@ -107,14 +107,9 @@ TypePHP 无法直接复用 Playground 发布的 PHP-WASM 二进制，因为 Type
 
 PHP、PHPX 和所有 TypePHP C++ 翻译单元必须使用一致的 Wasm EH/SJLJ 参数。链接器必须将函数签名不一致视为致命错误。
 
-### 5.2 浏览器阶段
+### 5.2 Chrome Component host
 
-WASI command module 不能不经适配直接在浏览器运行。后续浏览器阶段需要在以下两种路线中选择：
-
-- 使用 Emscripten 重建同一套静态运行时；
-- 为已验证的 WASI 模块提供浏览器 WASI adapter/component host。
-
-选择应以异常语义、文件系统、模块体积和 JavaScript 宿主接口的实测结果为依据。浏览器适配不得改变 TypePHP、PHPX 或高精度类型的语言语义。
+Chrome 当前不能原生实例化 Component。构建器使用 Jco 将同一份 WASI 0.2 Component 转译为 core Wasm 与 ESM，并由 `examples/wasm-hello/typephp-worker.mjs` 演示宿主入口。浏览器适配不包含 PHP、PHPX 或高精度类型语义。
 
 ## 6. 产物和运行模型
 
@@ -234,7 +229,7 @@ PHP 标准库大量依赖 stream。完全关闭 stream 会破坏文件读写、`
 | 信号 | 不支持 |
 | 用户、组、权限 | 固定值或明确报错 |
 | 文件锁 | 首期不支持跨实例锁；单实例内按需降级 |
-| 持久化 | 首期不提供；后续可选 IDBFS/OPFS |
+| 持久化 | 默认关闭；Chrome 可显式启用 OPFS 文件系统快照 |
 
 编译器应逐步增加 WASM target capability 检查：静态可识别的不支持函数在编译期报错；动态调用无法静态判断时，由运行时返回确定错误。禁止让这些调用表现为链接期缺失符号、空函数或未定义行为。
 
