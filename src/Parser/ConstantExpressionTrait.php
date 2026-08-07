@@ -147,7 +147,7 @@ trait ConstantExpressionTrait
         return $this->isInternalConstant($name) && is_scalar($this->internalConstants[$name]);
     }
 
-    protected function getInternalScalarConstantValue(string $name): string|int|float
+    protected function getInternalScalarConstantValue(string $name): string
     {
         $value = $this->internalConstants[$name];
         if (is_int($value)) {

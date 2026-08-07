@@ -216,6 +216,20 @@ class CompilerBaseApiTest extends TestCase
         $this->assertSame('ZEND_LONG_MIN', $this->invokeMethod('genCValue', PHP_INT_MIN));
     }
 
+    public function testGeneratedCValuesAreAlwaysSourceCodeStrings(): void
+    {
+        $this->assertSame((string) M_E, $this->invokeMethod('genCValue', M_E));
+        $this->assertSame('1', $this->invokeMethod('genCValue', true));
+        $this->assertSame('0', $this->invokeMethod('genCValue', false));
+
+        $code = $this->invokeMethod(
+            'parseConstFetch',
+            new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name('M_E'))
+        );
+        $this->assertIsString($code);
+        $this->assertSame((string) M_E, $code);
+    }
+
     public function testWindowsIntegerLiteralSuffixForInternalConstants(): void
     {
         $this->setPropertyValue('platform', new Windows());

@@ -822,7 +822,10 @@ CODE;
         if ($this->literalStrings) {
             $code .= Type::STR . ' ' . self::LITERAL_STRINGS . '[] = {' . PHP_EOL;
             foreach ($this->literalStrings as $str => $index) {
-                $code .= Type::STR . '{ZEND_STRL("' . $this->escapeString($str) . '"), true}, // [' . $index . ']' . PHP_EOL;
+                // PHP converts canonical integer-string array keys (for
+                // example "0" and "-1") to int. literalStrings only accepts
+                // strings, so restore the original key type at this boundary.
+                $code .= Type::STR . '{ZEND_STRL("' . $this->escapeString((string) $str) . '"), true}, // [' . $index . ']' . PHP_EOL;
             }
             $code .= '};' . PHP_EOL . PHP_EOL;
         } else {

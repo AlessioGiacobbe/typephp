@@ -25,16 +25,16 @@ trait Utils
         return $value . $this->getPlatform()->getIntegerLiteralSuffix();
     }
 
-    protected function genCValue(mixed $value): mixed
+    protected function genCValue(mixed $value): string
     {
         if (is_int($value)) {
             return $this->genIntegerLiteral($value);
         }
         if (is_float($value)) {
-            return $value;
+            return (string) $value;
         }
         if (is_bool($value)) {
-            return $value ? 1 : 0;
+            return $value ? '1' : '0';
         }
         if (is_string($value)) {
             return $this->genCharPtr($value);
