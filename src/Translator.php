@@ -4588,6 +4588,11 @@ CODE;
         $code .= $methodDef->functionDef->params . ')';
         $code .= '{' . PHP_EOL;
         $this->indentLevel++;
+        // The trait body is compiled once, but its private/protected property
+        // scope is the class that composes it. Keep that lexical scope fixed
+        // when this wrapper is inherited by a child class.
+        $scope = $this->getClassEntryPtr($classDef->getNamespacedName(false));
+        $code .= $this->getIndent() . 'php::FakeScopeGuard fake_scope_guard{' . $scope . '};' . PHP_EOL;
         $methodCall = self::PREFIX . $traitMethodNativeName . '(' . $argv . ')';
         if ($cppReturnType !== Type::VOID) {
             $methodCall = 'return ' . $methodCall;

@@ -23,14 +23,25 @@ use TypePhp\Generator\Symbol;
 
 trait PropertyAccessTrait
 {
+    protected function usesTraitPropertyScope(string $object): bool
+    {
+        return $this->classDef?->trait && $object === 'this_';
+    }
+
     protected function emitDynamicPropertyRead(string $object, string $property): string
     {
+        if ($this->usesTraitPropertyScope($object)) {
+            return 'typephp_read_property_scoped('
+                . $object . ', ' . $property . ', php::FakeScopeGuard::current(), php::AttrMode::Get)';
+        }
         return "{$object}.getProperty({$property})";
     }
 
     protected function emitDynamicPropertyWrite(string $object, string $property, string $value): string
     {
-        $scope = $this->class ? $this->getClassEntryPtr($this->getFullClassName()) : 'nullptr';
+        $scope = $this->usesTraitPropertyScope($object)
+            ? 'php::FakeScopeGuard::current()'
+            : ($this->class ? $this->getClassEntryPtr($this->getFullClassName()) : 'nullptr');
         return 'typephp_write_property_scoped('
             . $object . ', ' . $property . ', ' . $value . ', ' . $scope . ')';
     }
@@ -163,11 +174,21 @@ trait PropertyAccessTrait
 
     protected function emitDynamicPropertyAppendArray(string $object, string $property, string $value): string
     {
+        if ($this->usesTraitPropertyScope($object)) {
+            return 'typephp_read_property_scoped('
+                . $object . ', ' . $property . ', php::FakeScopeGuard::current(), php::AttrMode::Update)'
+                . ".newItem() = {$value}";
+        }
         return "{$object}.attr({$property}, php::AttrMode::Update).newItem() = {$value}";
     }
 
     protected function emitDynamicPropertyUpdateArray(string $object, string $property, string $dim, string $value): string
     {
+        if ($this->usesTraitPropertyScope($object)) {
+            return 'typephp_read_property_scoped('
+                . $object . ', ' . $property . ', php::FakeScopeGuard::current(), php::AttrMode::Update)'
+                . ".item({$dim}, true) = {$value}";
+        }
         return "{$object}.attr({$property}, php::AttrMode::Update).item({$dim}, true) = {$value}";
     }
 
@@ -839,7 +860,12 @@ trait PropertyAccessTrait
             $this->errorUndefinedVariable($object);
         }
         $objectVar = $objectName;
-        $getProperty = $objectVar . '.attr(' . $id . ', ' . $this->escapeAttrMode($update) . ')';
+        if ($this->usesTraitPropertyScope($objectVar)) {
+            $getProperty = 'typephp_read_property_scoped('
+                . $objectVar . ', ' . $id . ', php::FakeScopeGuard::current(), ' . $this->escapeAttrMode($update) . ')';
+        } else {
+            $getProperty = $objectVar . '.attr(' . $id . ', ' . $this->escapeAttrMode($update) . ')';
+        }
         $def = $this->getNativePropertyDef($expr);
         if ($def and $this->nativeTypes) {
             $propName = $this->parseIdentifier($property);

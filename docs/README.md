@@ -17,6 +17,7 @@
 ## 架构与维护
 
 - [后端中立 IR](BACKEND_NEUTRAL_IR.md)
+- [TypePHP WASM 技术方案与实施计划](TYPEPHP_WASM_IMPLEMENTATION_PLAN.md)
 - [核心重构计划](REFACTORING_PLAN.md)
 - [构建速度研究](AOT_BUILD_SPEED_RESEARCH.md)
 - [优化优先级](aot-optimization-priority.md)

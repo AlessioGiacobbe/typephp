@@ -117,6 +117,7 @@ class Constants
         'pipe',
         'errno', // Linux error code
         'this_', // phpx keywords
+        'fake_scope_guard',
     ];
 
     public const array UNSUPPORTED_FUNCTIONS = [
