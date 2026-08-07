@@ -21,6 +21,7 @@
 *.lib
 *.exp
 *.class
+*.wasm
 /swoole_compiler
 /tpc
 tests/**/*.diff

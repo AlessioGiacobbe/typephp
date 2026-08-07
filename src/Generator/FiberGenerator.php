@@ -61,6 +61,9 @@ trait FiberGenerator
 
     protected function prepareGeneratorFunction(Function_|ClassMethod $v, FunctionDef $functionDef): void
     {
+        if ($this->isWasiTarget()) {
+            $this->fatalError($v, 'Fiber and Generator are not supported by the WASI target');
+        }
         if ($v->byRef) {
             $this->fatalError($v, 'Generators returning by reference are not supported yet');
         }

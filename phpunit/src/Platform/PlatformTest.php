@@ -6,9 +6,22 @@ use PHPUnit\Framework\TestCase;
 use TypePhp\Platform\Windows;
 use TypePhp\Platform\Linux;
 use TypePhp\Platform\Macos;
+use TypePhp\Platform\Wasi;
 
 class PlatformTest extends TestCase
 {
+    public function testWasiTargetProperties(): void
+    {
+        $platform = new Wasi('wasm32-unknown-wasip1');
+
+        $this->assertSame('WASI SDK (wasm32-unknown-wasip1)', $platform->getName());
+        $this->assertSame('.o', $platform->getObjectExtension());
+        $this->assertSame('.wasm', $platform->getExecutableExtension());
+        $this->assertSame('.a', $platform->getSharedLibraryExtension());
+        $this->assertSame('LL', $platform->getIntegerLiteralSuffix());
+        $this->assertSame([], $platform->getBuildLibraryWarnings('', '', 'bin'));
+    }
+
     /**
      * 测试 Windows 平台基本功能
      */

@@ -581,6 +581,12 @@ class CompilerBase implements PropertyAccessContext
         return $this->getPlatform() instanceof Macos;
     }
 
+    public function isWasiTarget(): bool
+    {
+        $target = strtolower($this->targetPlatform);
+        return str_starts_with($target, 'wasm32-wasi') || str_starts_with($target, 'wasm32-wasip1');
+    }
+
     public function isBuildModeBin(): bool
     {
         return $this->buildMode === self::BUILD_MODE_BIN;
@@ -3804,6 +3810,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseShellExec(Expr\ShellExec $expr): string
     {
+        if ($this->isWasiTarget()) {
+            $this->fatalError($expr, 'Backtick shell execution is not supported by the WASI target');
+        }
         $list = [];
         foreach ($expr->parts as $part) {
             $list[] = $this->identifierToStr($part);

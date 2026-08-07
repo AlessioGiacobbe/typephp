@@ -7,4 +7,7 @@ function main(): void
     var_dump(php_uname());
     global $argv;
     var_dump($argv);
+
+    $date = date('Y-m-d H:i:s', time());
+    var_dump($date);
 }

@@ -1,14 +1,14 @@
 # TypePHP WASM 技术方案与实施计划
 
-> 状态：技术预研结论，供后续实现使用  
+> 状态：WASI 命令行原型已实现，浏览器阶段待实现
 > 调研日期：2026-08-07  
-> 首期目标：浏览器中的 Emscripten/WASM，NTS，单线程
+> 当前目标：WASI Preview 1，NTS，单线程；后续适配浏览器
 
 ## 1. 文档目的
 
 本文记录 TypePHP 支持 WebAssembly 的技术决策、功能边界、运行时架构、主要风险、验证方法和分阶段实施计划。
 
-本文不是当前功能说明。TypePHP 尚未承诺已经支持 WASM，后续实现应以本文作为设计起点，并根据原型验证结果更新决策。
+2026-08-07 的实现验证已经证明：精简 PHP 8.5、PHPX 核心、TypePHP 生成代码、GMP、MPFR 和 mpdecimal 可以通过 WASI SDK 静态链接为单个模块，并在 Wasmtime 中运行。可复现构建方法见 [构建 TypePHP WASI 程序](TYPEPHP_WASI_BUILD.md)。本文余下内容同时保留浏览器阶段的设计目标。
 
 ## 2. 核心结论
 
@@ -18,28 +18,28 @@
 PHP 源码
     -> TypePHP 编译器
     -> TypePHP 生成的 C++
-    -> Emscripten 编译和静态链接
+    -> WASI SDK 编译和静态链接
        + PHP NTS
        + PHPX
        + TypePHP runtime
        + GMP / MPFR / mpdecimal
-       + 最小 TypePHP WASM SAPI
-    -> typephp.wasm + 薄 JavaScript loader
+       + PHP embed/WASI 运行时
+    -> typephp.wasm（WASI command module）
 ```
 
 具体决策如下：
 
 1. 第一版复用当前 C++/Zend 后端，不直接生成 WAT/WASM，也不重新实现 PHP 运行时。
-2. 使用 Emscripten，而不是把 WASI 作为首期目标。
+2. 先使用 WASI SDK 建立最小、可测试的命令行目标；浏览器阶段再选择 Emscripten 或 WASI adapter。
 3. PHP、PHPX、TypePHP 生成代码和高精度库全部静态链接到一个 `.wasm` 模块。
-4. 浏览器侧保留一个很薄的 JavaScript loader，用于实例化模块和提供必要的宿主能力。
+4. 当前由 WASI host 提供 stdout、clocks、随机数和受控文件系统；浏览器阶段也保持 WASI 接口，由浏览器中的 WASI host/adapter 实现这些能力。
 5. 仅支持 PHP NTS，不支持线程。
 6. 禁用 Fiber 和 TypePHP Generator。
 7. 必须支持 C++ 异常以及 Zend bailout 所需的 `setjmp/longjmp`。
 8. 保留 PHP stream 框架和本地 stream，禁用网络 transport 和依赖操作系统进程能力的功能。
 9. WordPress Playground 和其他 PHP-WASM 项目只作为补丁与移植经验来源，不作为 TypePHP 的依赖或代码基础。
 
-本文描述的是最短可落地路径。长期的后端中立方案参见 [BACKEND_NEUTRAL_IR.md](BACKEND_NEUTRAL_IR.md)。在首期原型成功前，不应为了 WASM 重写 TypePHP 前端和语义层。
+本文描述的是最短可落地路径。长期的后端中立方案参见 [BACKEND_NEUTRAL_IR.md](BACKEND_NEUTRAL_IR.md)。WASI 原型证明无需为了 WASM 重写 TypePHP 前端和语义层。
 
 ## 3. 为什么不采用 WordPress Playground
 
@@ -67,20 +67,20 @@ TypePHP 无法直接复用 Playground 发布的 PHP-WASM 二进制，因为 Type
 
 ## 4. 目标与非目标
 
-### 4.1 首期目标
+### 4.1 当前 WASI 目标
 
-- 在主流浏览器中加载 TypePHP 编译产物。
+- 在 Wasmtime 等 WASI runtime 中加载 TypePHP 编译产物。
 - 执行静态编译的 TypePHP 应用入口。
 - 保持 TypePHP 当前基于 Zend 和 PHPX 的主要语言语义。
 - 正确处理 PHP request 生命周期、C++ 异常和 Zend bailout。
 - 支持 GMP、MPFR 和 mpdecimal 高精度类型。
-- 支持内存文件系统和必要的本地 PHP stream。
+- 支持 WASI 文件系统和必要的本地 PHP stream。
 - 对不支持的功能给出确定、可测试的错误，而不是链接失败或运行时崩溃。
-- 构建过程可复现，php-src 和 Emscripten 版本固定。
+- 构建过程可复现，php-src、WASI SDK 和数值库版本固定。
 
 ### 4.2 首期非目标
 
-- WASI 独立运行时。
+- 无宿主适配的浏览器直接运行。
 - pthread、Web Worker 并行 PHP 或共享内存。
 - Fiber 和 TypePHP Generator。
 - 动态扩展加载。
@@ -95,31 +95,26 @@ TypePHP 无法直接复用 Playground 发布的 PHP-WASM 二进制，因为 Type
 
 ## 5. 目标平台选择
 
-### 5.1 首期使用 Emscripten
+### 5.1 当前使用 WASI SDK
 
-首期目标是浏览器，且 PHP 依赖 `setjmp/longjmp`，PHPX 和 TypePHP 依赖 C++ 异常。Emscripten 已经提供：
+当前先建立命令行可验证基线。WASI SDK 已经验证可以同时提供：
 
 - C/C++ 到 WebAssembly 的完整工具链；
-- C++ exception handling；
-- `setjmp/longjmp` 支持；
-- 浏览器文件系统；
-- JavaScript import/export 和模块加载；
-- libc、时间、随机数和常见 POSIX 接口的兼容层。
+- 标准 Wasm C++ exception handling；
+- Zend bailout 所需的 SJLJ；
+- capability-based 文件系统；
+- libc、时间和随机数接口。
 
-这些能力可以显著减少 PHP 移植工作。
+PHP、PHPX 和所有 TypePHP C++ 翻译单元必须使用一致的 Wasm EH/SJLJ 参数。链接器必须将函数签名不一致视为致命错误。
 
-### 5.2 暂不以 WASI 为目标
+### 5.2 浏览器阶段
 
-WASI 更适合非浏览器运行时和能力安全模型，但首期采用 WASI 会同时引入以下变量：
+WASI command module 不能不经适配直接在浏览器运行。后续浏览器阶段需要在以下两种路线中选择：
 
-- PHP 和 Zend bailout 的兼容性；
-- C++ 异常实现；
-- 浏览器侧 WASI shim；
-- 文件系统和异步 I/O；
-- GMP、MPFR、mpdecimal 的 WASI 构建；
-- 不同 WASI runtime 的实现差异。
+- 使用 Emscripten 重建同一套静态运行时；
+- 为已验证的 WASI 模块提供浏览器 WASI adapter/component host。
 
-在 Emscripten 原型稳定前，不同时维护第二套平台。后续如需支持 Wasmtime、Wasmer 或边缘运行时，应建立独立的 WASI 可行性项目，而不是把兼容层混入首期实现。
+选择应以异常语义、文件系统、模块体积和 JavaScript 宿主接口的实测结果为依据。浏览器适配不得改变 TypePHP、PHPX 或高精度类型的语言语义。
 
 ## 6. 产物和运行模型
 
@@ -133,12 +128,12 @@ dist/
 └── typephp-wasm.mjs
 ```
 
-所有 C/C++ 代码进入 `typephp.wasm`。`typephp-wasm.mjs` 只负责：
+所有 C/C++ 代码进入 `typephp.wasm`。浏览器自身不会自动提供 WASI imports；`typephp-wasm.mjs` 作为 WASI host/adapter 的装载入口，只负责：
 
 - 获取和实例化 `.wasm`；
 - 提供 stdout/stderr；
 - 初始化内存文件系统；
-- 注入时间、随机数等宿主能力；
+- 实现或接入 WASI clocks、随机数等宿主能力；
 - 调用导出的 TypePHP 生命周期接口；
 - 把状态码和错误信息转换为 JavaScript 结果。
 
@@ -232,8 +227,8 @@ PHP 标准库大量依赖 stream。完全关闭 stream 会破坏文件读写、`
 | 文件系统 | MEMFS；可选只读预加载文件 |
 | 当前目录和路径 | 虚拟根目录，禁止泄漏宿主路径 |
 | 环境变量 | loader 注入白名单 |
-| 时间 | Emscripten/JavaScript host clock |
-| 随机数 | 浏览器安全随机源，不使用弱伪随机替代 |
+| 时间 | WASI clocks；浏览器宿主使用浏览器时钟实现该接口 |
+| 随机数 | WASI random；浏览器宿主使用安全随机源实现，不使用弱伪随机替代 |
 | DNS、socket | 不支持 |
 | 进程、shell | 不支持 |
 | 信号 | 不支持 |
