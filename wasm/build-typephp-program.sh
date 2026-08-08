@@ -47,6 +47,12 @@ mkdir -p "${build_root}"
 build_root=$(cd "${build_root}" && pwd)
 generated_dir=${build_root}
 generated_source_list=${build_root}/.typephp-wasm-sources
+wasm_mode=${TYPEPHP_WASM_MODE:-command}
+interface_dir=${build_root}/wasm-interface
+interface_manifest=${interface_dir}/typephp-wasm-interface.json
+interface_wit=${interface_dir}/world.wit
+interface_adapter=${interface_dir}/typephp_wasm_adapter.cc
+interface_async_exports=${interface_dir}/jco-async-exports
 cleanup_generated_source_list() {
     rm -f -- "${generated_source_list}"
 }
@@ -65,10 +71,28 @@ mkdir -p "${generated_dir}" "$(dirname "${output}")"
 
 # Convert first so target-specific source errors are reported before validating
 # and linking the separately installed WASI SDK.
-TYPEPHP_WASM_INTERNAL_COMPILE=1 TYPEPHP_GENERATED_SOURCE_LIST="${generated_source_list}" "${typephp_compiler}" "${input}" \
+internal_compile_env=(
+    TYPEPHP_WASM_INTERNAL_COMPILE=1
+    TYPEPHP_GENERATED_SOURCE_LIST="${generated_source_list}"
+)
+internal_compile_args=()
+if [[ "${wasm_mode}" == library ]]; then
+    mkdir -p "${interface_dir}"
+    internal_compile_env+=(
+        TYPEPHP_WASM_INTERFACE_MANIFEST="${interface_manifest}"
+        TYPEPHP_WASM_INTERFACE_WIT="${interface_wit}"
+        TYPEPHP_WASM_INTERFACE_ADAPTER="${interface_adapter}"
+        TYPEPHP_WASM_INTERFACE_ASYNC_EXPORTS="${interface_async_exports}"
+        TYPEPHP_WASM_PACKAGE="${TYPEPHP_WASM_PACKAGE:?TYPEPHP_WASM_PACKAGE is required in library mode}"
+        TYPEPHP_WASM_WORLD="${TYPEPHP_WASM_WORLD:?TYPEPHP_WASM_WORLD is required in library mode}"
+    )
+    internal_compile_args+=(-m lib)
+fi
+env "${internal_compile_env[@]}" "${typephp_compiler}" "${input}" \
     --dry \
     --target-platform wasm32-wasip2 \
     --build-dir "${generated_dir}" \
+    "${internal_compile_args[@]}" \
     --no-progress \
     --no-color
 
@@ -132,6 +156,33 @@ include_flags=(
     -I"${generated_dir}/include"
 )
 
+# WIT is application-specific, but its generator is a host build tool. PHPX
+# packages a pinned wit-bindgen binary per host so users never install it or a
+# Rust toolchain. It is not linked into PHPX or the resulting component.
+binding_objects=()
+if [[ "${wasm_mode}" == library ]]; then
+    bindgen=${TYPEPHP_WIT_BINDGEN:?TYPEPHP_WIT_BINDGEN is required in library mode}
+    if [[ ! -x "${bindgen}" ]]; then
+        fatal_error \
+            "PHPX bundled WIT binding generator is missing: ${bindgen}" \
+            "Install the matching PHPX package; installing wit-bindgen separately is not required."
+    fi
+    bindgen_version=$("${bindgen}" --version 2>/dev/null || true)
+    if [[ "${bindgen_version}" != 'wit-bindgen-cli 0.60.0' ]]; then
+        fatal_error \
+            "PHPX bundled WIT binding generator has an incompatible version: ${bindgen_version:-unknown}" \
+            "Expected wit-bindgen-cli 0.60.0 from the matching PHPX package."
+    fi
+    binding_world=${TYPEPHP_WASM_WORLD//-/_}
+    "${bindgen}" c \
+        --world "${TYPEPHP_WASM_WORLD}" \
+        --rename-world "${binding_world}" \
+        --out-dir "${interface_dir}" \
+        "${interface_wit}"
+    generated_sources+=("${interface_dir}/${binding_world}.c")
+    binding_objects+=("${interface_dir}/${binding_world}_component_type.o")
+fi
+
 generated_objects=()
 for source in "${generated_sources[@]}"; do
     if [[ ! -f "${source}" ]]; then
@@ -139,9 +190,18 @@ for source in "${generated_sources[@]}"; do
         exit 1
     fi
     object=${source%.cc}.o
-    "${wasi_cxx}" "${compile_flags[@]}" "${include_flags[@]}" -c "${source}" -o "${object}"
+    if [[ "${source}" == *.c ]]; then
+        "${TYPEPHP_WASI_CC:?TYPEPHP_WASI_CC is required}" -O2 -c "${source}" -o "${object}"
+    else
+        "${wasi_cxx}" "${compile_flags[@]}" "${include_flags[@]}" -I"${interface_dir}" -c "${source}" -o "${object}"
+    fi
     generated_objects+=("${object}")
 done
+
+link_mode_flags=()
+if [[ "${wasm_mode}" == library ]]; then
+    link_mode_flags+=(-mexec-model=reactor)
+fi
 
 # Every generated object and runtime archive is already built with -O2. Keep
 # the final driver invocation optimized as well, but do not let Clang discover
@@ -155,6 +215,7 @@ done
     -std=c++17 \
     -fwasm-exceptions \
     "${generated_objects[@]}" \
+    "${binding_objects[@]}" \
     -Wl,--whole-archive \
     "${wasi_library_dir}/libphpx.a" \
     -Wl,--no-whole-archive \
@@ -165,6 +226,7 @@ done
     "${wasi_library_dir}/libgmpxx.a" \
     "${wasi_library_dir}/libgmp.a" \
     -lwasi-emulated-signal -lsetjmp -lunwind -ldl -lm \
+    "${link_mode_flags[@]}" \
     -Wl,--strip-all \
     -Wl,--fatal-warnings \
     -o "${output}"
@@ -186,6 +248,16 @@ if [[ "${TYPEPHP_WASM_BROWSER:-0}" == 1 ]]; then
         exit 1
     fi
     jco_flags+=(--async-mode jspi --async-wasi-imports --async-wasi-exports)
+    if [[ "${wasm_mode}" == library ]]; then
+        if ! "${jco_bin}" transpile --help 2>&1 | grep -q -- '--async-exports'; then
+            fatal_error "Jco does not support JSPI-backed TypePHP exports; upgrade Jco"
+        fi
+        if [[ ! -s "${interface_async_exports}" ]]; then
+            fatal_error "TypePHP did not generate the Jco async export list: ${interface_async_exports}"
+        fi
+        mapfile -t jco_async_exports < "${interface_async_exports}"
+        jco_flags+=(--async-exports "${jco_async_exports[@]}")
+    fi
     "${jco_bin}" transpile "${output}" \
         -o "${browser_dir}" \
         --name program \

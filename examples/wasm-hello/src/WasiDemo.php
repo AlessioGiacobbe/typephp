@@ -6,16 +6,17 @@ use native_types;
 
 final class WasiDemo
 {
-    public static function report(int $argc, array $argv, string $stdin): array
+    public static function report(array $arguments, string $greeting, string $stdin): array
     {
-        $greeting = getenv('DEMO_GREETING');
-        if ($greeting === false) {
+        if ($greeting === '') {
             $greeting = 'Hello from the WASI environment';
         }
 
+        $argv = array_merge(['typephp.wasm'], $arguments);
+
         return [
             'runtime' => [
-                'php' => PHP_VERSION,
+                'php' => phpversion(),
                 'platform' => php_uname(),
                 'integerBits' => PHP_INT_SIZE * 8,
                 'extensions' => get_loaded_extensions(),
@@ -30,7 +31,7 @@ final class WasiDemo
                 'token' => bin2hex(random_bytes(8)),
             ],
             'input' => [
-                'argc' => $argc,
+                'argc' => count($argv),
                 'argv' => $argv,
                 'greeting' => $greeting,
                 'stdin' => trim($stdin),
@@ -42,6 +43,31 @@ final class WasiDemo
                 'supported' => ['arguments', 'environment', 'stdin/stdout/stderr', 'clock', 'random', 'filesystem', 'HTTP GET'],
                 'disabled' => ['raw sockets', 'process', 'signals', 'shell', 'Fiber', 'Generator'],
             ],
+        ];
+    }
+
+    public static function extensionInfo(string $name): array
+    {
+        if (!extension_loaded($name)) {
+            throw new InvalidArgumentException("PHP extension '{$name}' is not loaded");
+        }
+
+        $extension = new ReflectionExtension($name);
+        $functions = get_extension_funcs($name);
+        if ($functions === false) {
+            $functions = [];
+        }
+
+        return [
+            'name' => $extension->getName(),
+            'version' => $extension->getVersion() ?: 'built-in',
+            'persistent' => $extension->isPersistent(),
+            'temporary' => $extension->isTemporary(),
+            'dependencies' => $extension->getDependencies(),
+            'iniEntries' => $extension->getINIEntries(),
+            'constants' => array_keys($extension->getConstants()),
+            'functions' => array_values($functions),
+            'classes' => $extension->getClassNames(),
         ];
     }
 

@@ -35,6 +35,31 @@ function main(int $argc, array $argv): void
     // 生成 C++ 文件
     $sourceFiles = $translator->convert($files);
 
+    $wasmManifest = getenv('TYPEPHP_WASM_INTERFACE_MANIFEST');
+    if (is_string($wasmManifest) && $wasmManifest !== '') {
+        $wasmWit = getenv('TYPEPHP_WASM_INTERFACE_WIT');
+        $wasmAdapter = getenv('TYPEPHP_WASM_INTERFACE_ADAPTER');
+        $wasmAsyncExports = getenv('TYPEPHP_WASM_INTERFACE_ASYNC_EXPORTS');
+        $wasmPackage = getenv('TYPEPHP_WASM_PACKAGE');
+        $wasmWorld = getenv('TYPEPHP_WASM_WORLD');
+        if (!is_string($wasmWit) || $wasmWit === ''
+            || !is_string($wasmAdapter) || $wasmAdapter === ''
+            || !is_string($wasmAsyncExports) || $wasmAsyncExports === ''
+            || !is_string($wasmPackage) || $wasmPackage === ''
+            || !is_string($wasmWorld) || $wasmWorld === '') {
+            throw new RuntimeException('Incomplete internal WASM interface configuration');
+        }
+        $translator->writeWasmInterface(
+            $wasmManifest,
+            $wasmWit,
+            $wasmAdapter,
+            $wasmAsyncExports,
+            $wasmPackage,
+            $wasmWorld,
+        );
+        $sourceFiles[] = $wasmAdapter;
+    }
+
     // --dry 模式：仅生成 C++ 代码，不执行编译
     if ($translator->isDryRun()) {
         $buildDir = $translator->getBuildDir();
@@ -177,6 +202,9 @@ function compileWasmProgram(array $argv): void
     $environment['TYPEPHP_WASI_CLANG_VERSION'] = $tools['clang-version'];
     $environment['TYPEPHP_WASMTIME_VERSION'] = $tools['wasmtime-version'];
     $environment['TYPEPHP_WASM_PROGRAM_BUILD_DIR'] = $project->buildDir;
+    $environment['TYPEPHP_WASM_MODE'] = $project->mode;
+    $environment['TYPEPHP_WASM_PACKAGE'] = $project->package;
+    $environment['TYPEPHP_WASM_WORLD'] = $project->world;
     $compilerExecutable = realpath($argv[0]);
     if ($compilerExecutable === false || !is_executable($compilerExecutable)) {
         fwrite(STDERR, "Unable to resolve the current TypePHP compiler executable: {$argv[0]}\n");
@@ -191,6 +219,29 @@ function compileWasmProgram(array $argv): void
     } catch (RuntimeException $exception) {
         fwrite(STDERR, "Unable to locate PHPX: {$exception->getMessage()}\n");
         exit(1);
+    }
+    if ($project->mode === 'library') {
+        $hostOs = match (PHP_OS_FAMILY) {
+            'Linux' => 'linux',
+            'Darwin' => 'macos',
+            'Windows' => 'windows',
+            default => strtolower(PHP_OS_FAMILY),
+        };
+        $hostArch = strtolower(php_uname('m'));
+        $hostArch = match ($hostArch) {
+            'amd64', 'x64' => 'x86_64',
+            'arm64' => $hostOs === 'linux' ? 'aarch64' : 'arm64',
+            default => $hostArch,
+        };
+        $bindgen = $phpxDir . DIRECTORY_SEPARATOR . 'wasm' . DIRECTORY_SEPARATOR . 'bin'
+            . DIRECTORY_SEPARATOR . $hostOs . '-' . $hostArch . DIRECTORY_SEPARATOR . 'wit-bindgen'
+            . ($hostOs === 'windows' ? '.exe' : '');
+        if (!is_file($bindgen)) {
+            fwrite(STDERR, "PHPX bundled WIT binding generator is missing: {$bindgen}\n");
+            fwrite(STDERR, "Install the matching PHPX package; installing wit-bindgen separately is not required.\n");
+            exit(1);
+        }
+        $environment['TYPEPHP_WIT_BINDGEN'] = $bindgen;
     }
     $command = [$builder, $project->input, $project->output ?? '-', $phpxDir, $compilerExecutable];
 

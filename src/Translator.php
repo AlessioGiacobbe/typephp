@@ -18,6 +18,7 @@ use TypePhp\Build\NativeCommandOptionsTrait;
 use TypePhp\Build\NativeBuilder;
 use TypePhp\Build\PrecompiledHeaderManager;
 use TypePhp\Build\SourcePipelineTrait;
+use TypePhp\Build\WasmInterfaceGenerator;
 use TypePhp\Config\ProjectYamlLoader;
 use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 use TypePhp\Build\ResourceCompilationTrait;
@@ -1754,6 +1755,50 @@ CODE;
     public function getBuildMode(): string
     {
         return $this->buildMode;
+    }
+
+    /** Write the public WIT contract and PHPX host-bindgen manifest. */
+    public function writeWasmInterface(
+        string $manifestFile,
+        string $witFile,
+        string $adapterFile,
+        string $asyncExportsFile,
+        string $package,
+        string $world,
+    ): void
+    {
+        if (!$this->isWasiTarget() || !$this->isBuildModeLib()) {
+            $this->error('WIT interfaces can only be generated for a WASI library build');
+        }
+        try {
+            $generator = new WasmInterfaceGenerator();
+            $manifest = $generator->buildManifest(
+                $this->symbols->functions(),
+                $package,
+                $world,
+                fn (FunctionDef $function): string => self::PREFIX
+                    . $this->getNativeName($function->name, $function->namespace),
+            );
+            foreach (array_unique([
+                dirname($manifestFile),
+                dirname($witFile),
+                dirname($adapterFile),
+                dirname($asyncExportsFile),
+            ]) as $directory) {
+                if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
+                    throw new \RuntimeException("Unable to create WASM interface directory: {$directory}");
+                }
+            }
+            $json = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            if (file_put_contents($manifestFile, $json . PHP_EOL) === false
+                || file_put_contents($witFile, $generator->renderWit($manifest)) === false
+                || file_put_contents($adapterFile, $generator->renderCppAdapter($manifest)) === false
+                || file_put_contents($asyncExportsFile, $generator->renderJcoAsyncExports($manifest)) === false) {
+                throw new \RuntimeException('Unable to write the generated WASM interface');
+            }
+        } catch (\Throwable $exception) {
+            $this->error($exception->getMessage());
+        }
     }
 
     public function getArgInfoStubFilename(string $stubFile): string

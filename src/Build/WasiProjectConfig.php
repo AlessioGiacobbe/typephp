@@ -13,6 +13,9 @@ final readonly class WasiProjectConfig
         public ?string $output,
         public ?string $browserDir,
         public string $profile,
+        public string $mode,
+        public string $package,
+        public string $world,
     ) {
     }
 
@@ -47,7 +50,16 @@ final readonly class WasiProjectConfig
         $buildDir = self::absolutePath($buildDir, $workingDirectory);
 
         if (!is_array($config)) {
-            return new self($realInput, $buildDir, null, null, self::normalizeProfile($cliProfile ?? 'component'));
+            return new self(
+                $realInput,
+                $buildDir,
+                null,
+                null,
+                self::normalizeProfile($cliProfile ?? 'component'),
+                'command',
+                'typephp:app@1.0.0',
+                'app',
+            );
         }
 
         $target = (string) ($config['target-platform'] ?? 'wasm32-wasip2');
@@ -55,11 +67,20 @@ final readonly class WasiProjectConfig
             throw new RuntimeException('A WASI project must target wasm32-wasip2');
         }
 
-        $mode = strtolower((string) ($config['mode'] ?? $config['build-mode'] ?? $config['type'] ?? 'bin'));
-        if (!in_array($mode, ['bin', 'binary', 'cli'], true)) {
-            throw new RuntimeException('A WASI project must use bin mode');
+        $mode = strtolower((string) ($config['wasm-mode'] ?? $config['mode'] ?? $config['build-mode'] ?? $config['type'] ?? 'command'));
+        $mode = match ($mode) {
+            'bin', 'binary', 'cli' => 'command',
+            'lib', 'library', 'reactor' => 'library',
+            default => $mode,
+        };
+        if (!in_array($mode, ['command', 'library'], true)) {
+            throw new RuntimeException('A WASI project mode must be `command` or `library`');
         }
 
+        $name = trim((string) ($config['name'] ?? 'app'));
+        if ($name === '' || str_contains($name, '/') || str_contains($name, '\\')) {
+            throw new RuntimeException('A WASI project name must be a non-empty file name');
+        }
         if (!empty($config['output'])) {
             $output = self::absolutePath((string) $config['output'], $projectDir);
             $extension = pathinfo($output, PATHINFO_EXTENSION);
@@ -69,10 +90,6 @@ final readonly class WasiProjectConfig
                 throw new RuntimeException('A WASI project output must use the .wasm extension');
             }
         } else {
-            $name = trim((string) ($config['name'] ?? 'app'));
-            if ($name === '' || str_contains($name, '/') || str_contains($name, '\\')) {
-                throw new RuntimeException('A WASI project name must be a non-empty file name');
-            }
             $output = $projectDir . DIRECTORY_SEPARATOR . $name . '.wasm';
         }
 
@@ -90,7 +107,17 @@ final readonly class WasiProjectConfig
             ? self::absolutePath((string) $browserPath, $projectDir)
             : null;
 
-        return new self($realInput, $buildDir, $output, $browserDir, $profile);
+        $package = strtolower(trim((string) ($config['wasm-package'] ?? 'typephp:' . $name . '@1.0.0')));
+        if (preg_match('/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*@[0-9]+\.[0-9]+\.[0-9]+$/', $package) !== 1) {
+            throw new RuntimeException('`wasm-package` must use the WIT form namespace:name@major.minor.patch');
+        }
+        $world = strtolower(trim((string) ($config['wasm-world'] ?? $name)));
+        $world = str_replace('_', '-', $world);
+        if (preg_match('/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/', $world) !== 1) {
+            throw new RuntimeException('`wasm-world` must be a lowercase WIT identifier');
+        }
+
+        return new self($realInput, $buildDir, $output, $browserDir, $profile, $mode, $package, $world);
     }
 
     public static function isWasmEnabled(string $path): bool

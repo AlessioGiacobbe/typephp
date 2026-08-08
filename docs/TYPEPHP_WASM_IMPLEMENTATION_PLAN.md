@@ -8,7 +8,7 @@
 
 本文记录 TypePHP 支持 WebAssembly 的技术决策、功能边界、运行时架构、主要风险、验证方法和分阶段实施计划。
 
-2026-08-07 的实现验证已经证明：精简 PHP 8.5、PHPX 核心、TypePHP 生成代码、GMP、MPFR 和 mpdecimal 可以通过 WASI SDK 静态链接为单个模块，并在 Wasmtime 中运行。可复现构建方法见 [构建 TypePHP WASI 程序](TYPEPHP_WASI_BUILD.md)。本文余下内容同时保留浏览器阶段的设计目标。
+2026-08-07 的实现验证已经证明：精简 PHP 8.5、PHPX 核心、TypePHP 生成代码、GMP、MPFR 和 mpdecimal 可以通过 WASI SDK 静态链接为单个模块，并在 Wasmtime 中运行。可复现构建方法见 [构建 TypePHP WASI 程序](WASI_BUILD.md)。本文余下内容同时保留浏览器阶段的设计目标。
 
 ## 2. 核心结论
 

@@ -8,6 +8,7 @@ const elements = Object.fromEntries([
 ].map((id) => [id, document.getElementById(id)]));
 
 let worker = null;
+let selectedExtension = '';
 
 function parseArguments(source) {
     const args = [];
@@ -39,9 +40,13 @@ function renderReport(report) {
     value('platform-value', report.runtime.platform);
     value('extension-count', `${report.runtime.extensions.length} 个内置扩展`);
     elements['extension-list'].replaceChildren(...report.runtime.extensions.map((extension) => {
-        const badge = document.createElement('span');
-        badge.textContent = extension;
-        return badge;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'extension-button';
+        button.dataset.extension = extension;
+        button.textContent = extension;
+        button.title = `查看 ${extension} 扩展信息`;
+        return button;
     }));
     value('clock-value', report.clock.iso8601);
     value('random-value', report.random.integer);
@@ -58,11 +63,98 @@ function renderReport(report) {
     value('bigfloat-value', report.precision.bigfloat);
 }
 
+function appendCodeList(container, values, emptyLabel = '无') {
+    if (!Array.isArray(values) || values.length === 0) {
+        const empty = document.createElement('span');
+        empty.textContent = emptyLabel;
+        container.append(empty);
+        return;
+    }
+    for (const item of values) {
+        const code = document.createElement('code');
+        code.textContent = String(item);
+        code.title = String(item);
+        container.append(code);
+    }
+}
+
+function extensionGroup(title, content) {
+    const group = document.createElement('section');
+    group.className = 'extension-group';
+    const heading = document.createElement('h4');
+    heading.textContent = title;
+    const items = document.createElement('div');
+    items.className = 'extension-items';
+    content(items);
+    group.append(heading, items);
+    return group;
+}
+
+function keyValueList(container, values) {
+    const entries = values && typeof values === 'object' ? Object.entries(values) : [];
+    if (entries.length === 0) {
+        appendCodeList(container, []);
+        return;
+    }
+    const list = document.createElement('dl');
+    for (const [key, item] of entries) {
+        const row = document.createElement('div');
+        const term = document.createElement('dt');
+        const value = document.createElement('dd');
+        term.textContent = key;
+        value.textContent = typeof item === 'string' ? item : JSON.stringify(item);
+        row.append(term, value);
+        list.append(row);
+    }
+    container.append(list);
+}
+
+function renderExtensionInfo(info) {
+    const heading = document.createElement('div');
+    heading.className = 'extension-detail-header';
+    const identity = document.createElement('div');
+    const name = document.createElement('h3');
+    name.textContent = info.name;
+    const version = document.createElement('p');
+    version.textContent = `version ${info.version}`;
+    identity.append(name, version);
+    const flags = document.createElement('div');
+    flags.className = 'extension-flags';
+    for (const label of [info.persistent ? 'persistent' : 'non-persistent', info.temporary ? 'temporary' : 'built-in']) {
+        const flag = document.createElement('span');
+        flag.textContent = label;
+        flags.append(flag);
+    }
+    heading.append(identity, flags);
+
+    const groups = document.createElement('div');
+    groups.className = 'extension-groups';
+    groups.append(
+        extensionGroup(`Functions · ${info.functions.length}`, (node) => appendCodeList(node, info.functions)),
+        extensionGroup(`Classes · ${info.classes.length}`, (node) => appendCodeList(node, info.classes)),
+        extensionGroup(`Constants · ${info.constants.length}`, (node) => appendCodeList(node, info.constants)),
+        extensionGroup('INI entries', (node) => keyValueList(node, info.iniEntries)),
+        extensionGroup('Dependencies', (node) => keyValueList(node, info.dependencies)),
+    );
+    document.getElementById('extension-detail').replaceChildren(heading, groups);
+}
+
+function loadExtensionInfo(extension) {
+    if (!worker) return;
+    selectedExtension = extension;
+    for (const button of elements['extension-list'].querySelectorAll('.extension-button')) {
+        button.classList.toggle('active', button.dataset.extension === extension);
+    }
+    document.getElementById('extension-detail').innerHTML = '<span class="extension-loading">正在调用 Wasm 导出函数…</span>';
+    worker.postMessage({ type: 'extension-info', extension });
+}
+
 function run() {
     worker?.terminate();
     worker = new Worker(new URL('./typephp-worker.mjs', import.meta.url), { type: 'module' });
     let stdout = '';
     let stderr = '';
+    selectedExtension = '';
 
     elements.run.disabled = true;
     elements.output.textContent = '正在实例化 WASI 0.2 Component…';
@@ -75,18 +167,29 @@ function run() {
             stderr += data.data;
         } else if (data.type === 'error') {
             stderr += `${data.error}\n`;
-        } else if (data.type === 'exit') {
             elements.run.disabled = false;
+            setStatus('error', 'Wasm error');
             elements.output.textContent = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n');
+        } else if (data.type === 'report') {
+            elements.run.disabled = false;
+            elements.output.textContent = [data.json, stdout, stderr].filter(Boolean).join('\n--- component output ---\n');
             try {
-                renderReport(JSON.parse(stdout));
-                setStatus(data.code === 0 ? 'success' : 'error', data.code === 0 ? 'Completed' : `Exit ${data.code}`);
+                renderReport(JSON.parse(data.json));
+                setStatus('success', 'Ready for JS calls');
             } catch (error) {
-                setStatus('error', `Invalid output · ${data.code}`);
+                setStatus('error', 'Invalid export result');
                 elements.output.textContent += `\n\nUI parse error: ${error.message}`;
             }
-            worker.terminate();
-            worker = null;
+        } else if (data.type === 'extension-info') {
+            if (data.extension === selectedExtension) {
+                try {
+                    renderExtensionInfo(JSON.parse(data.json));
+                } catch (error) {
+                    document.getElementById('extension-detail').textContent = `无法解析扩展信息：${error.message}`;
+                }
+            }
+        } else if (data.type === 'extension-error' && data.extension === selectedExtension) {
+            document.getElementById('extension-detail').textContent = data.error;
         }
     };
 
@@ -121,4 +224,8 @@ async function resetStorage() {
 
 elements.run.addEventListener('click', run);
 elements.reset.addEventListener('click', () => resetStorage().catch((error) => setStatus('error', error.message)));
+elements['extension-list'].addEventListener('click', (event) => {
+    const button = event.target.closest('.extension-button');
+    if (button) loadExtensionInfo(button.dataset.extension);
+});
 run();

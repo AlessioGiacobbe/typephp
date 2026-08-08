@@ -8,6 +8,11 @@ import { WASIShim } from '@bytecodealliance/preview2-shim/instantiation';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+let runtime = null;
+let fileData = null;
+let persistent = false;
+let storageName = 'typephp-wasi-filesystem.json';
+let extensionQueue = Promise.resolve();
 
 function outputHandler(stream) {
     return {
@@ -86,20 +91,14 @@ async function saveFileData(storageName, fileData) {
     }
 }
 
-self.onmessage = async ({ data }) => {
-    if (data?.type !== 'run') {
-        return;
-    }
-
-    let exitCode = 0;
-    let fileData;
-    const persistent = data.persistent === true;
-    const storageName = String(data.storageName || 'typephp-wasi-filesystem.json');
+async function start(data) {
     try {
         if (typeof WebAssembly.Suspending !== 'function'
             || typeof WebAssembly.promising !== 'function') {
             throw new Error('This browser does not support WebAssembly JSPI, which is required for blocking WASI I/O');
         }
+        persistent = data.persistent === true;
+        storageName = String(data.storageName || 'typephp-wasi-filesystem.json');
         fileData = persistent ? await loadFileData(storageName) : { dir: {} };
         _setFileData(fileData);
         _setStdin(inputHandler(String(data.stdin || '')));
@@ -118,24 +117,38 @@ self.onmessage = async ({ data }) => {
         });
         const { instantiate } = await import('./generated/program.js');
         const component = await instantiate(null, wasi.getImportObject());
-        await component.run.run();
+        runtime = await component.api.createRuntime();
+        const json = await runtime.getDemoReport(
+            JSON.stringify(Array.isArray(data.args) ? data.args.map(String) : []),
+            String(env.DEMO_GREETING || ''),
+            String(data.stdin || ''),
+        );
+        if (persistent) {
+            await saveFileData(storageName, fileData);
+        }
+        self.postMessage({ type: 'report', json });
     } catch (error) {
-        if (error?.exitError) {
-            exitCode = Number(error.code || 0);
-        } else {
-            self.postMessage({ type: 'error', error: error?.stack || String(error) });
-            exitCode = 1;
-        }
-    } finally {
-        if (persistent && fileData) {
-            try {
-                await saveFileData(storageName, fileData);
-            } catch (error) {
-                self.postMessage({ type: 'error', error: error?.stack || String(error) });
-                exitCode = 1;
-            }
-        }
-        self.postMessage({ type: 'exit', code: exitCode });
-        self.close();
+        self.postMessage({ type: 'error', error: error?.stack || String(error) });
+    }
+}
+
+async function getExtensionInfo(extension) {
+    if (!runtime) {
+        throw new Error('TypePHP runtime is not ready');
+    }
+    const json = await runtime.getExtensionInfo(extension);
+    self.postMessage({ type: 'extension-info', extension, json });
+}
+
+self.onmessage = ({ data }) => {
+    if (data?.type === 'run') {
+        start(data);
+    } else if (data?.type === 'extension-info') {
+        const extension = String(data.extension || '');
+        extensionQueue = extensionQueue
+            .then(() => getExtensionInfo(extension))
+            .catch((error) => {
+                self.postMessage({ type: 'extension-error', extension, error: error?.stack || String(error) });
+            });
     }
 };

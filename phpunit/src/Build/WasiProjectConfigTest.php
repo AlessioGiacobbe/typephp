@@ -51,6 +51,9 @@ YAML);
         self::assertSame($this->directory . '/dist/demo.wasm', $config->output);
         self::assertSame($this->directory . '/web/generated', $config->browserDir);
         self::assertSame('browser', $config->profile);
+        self::assertSame('command', $config->mode);
+        self::assertSame('typephp:demo@1.0.0', $config->package);
+        self::assertSame('demo', $config->world);
         self::assertTrue(WasiProjectConfig::isWasmEnabled($this->directory . '/project.yml'));
     }
 
@@ -67,6 +70,26 @@ YAML);
         self::assertNull($config->output);
         self::assertNull($config->browserDir);
         self::assertSame('component', $config->profile);
+        self::assertSame('command', $config->mode);
+    }
+
+    public function testLibraryModeAndWitIdentityAreAccepted(): void
+    {
+        file_put_contents($this->directory . '/project.yml', <<<'YAML'
+name: calculator
+mode: library
+wasm: component
+wasm-package: acme:calculator@2.1.0
+wasm-world: calculator-api
+sources:
+  - src
+YAML);
+
+        $config = WasiProjectConfig::load('project.yml', null, $this->directory, '/default-build');
+
+        self::assertSame('library', $config->mode);
+        self::assertSame('acme:calculator@2.1.0', $config->package);
+        self::assertSame('calculator-api', $config->world);
     }
 
     public function testComponentDoesNotRequireTargetPlatform(): void

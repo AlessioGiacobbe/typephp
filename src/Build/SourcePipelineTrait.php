@@ -228,7 +228,9 @@ trait SourcePipelineTrait
             $this->stop('No valid source file found');
         }
 
-        if ($this->isBuildModeLib()) {
+        // A WASI library publishes WIT/Component exports rather than a native
+        // TypePHP shared-library ABI, so a PHP import stub would be misleading.
+        if ($this->isBuildModeLib() && !$this->isWasiTarget()) {
             $this->genLibraryImportStub($files);
         }
 

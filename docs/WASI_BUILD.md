@@ -1,6 +1,6 @@
 # 构建 TypePHP WASI 程序
 
-TypePHP 使用稳定的 WASI 0.2（Preview 2）和 Component Model。TypePHP 生成的 C++、PHPX 核心、精简的 PHP 8.5 NTS、GMP、MPFR 和 mpdecimal 会静态链接为单个 `.wasm` command component。WASI 0.1（Preview 1）不受支持。
+TypePHP 使用稳定的 WASI 0.2（Preview 2）和 Component Model。TypePHP 生成的 C++、PHPX 核心、精简的 PHP 8.5 NTS、GMP、MPFR 和 mpdecimal 会静态链接为单个 `.wasm` command 或 library component。WASI 0.1（Preview 1）不受支持。
 
 ## 环境要求
 
@@ -22,7 +22,7 @@ WASI 构建会检查 `wasm32-wasip2-clang`、`wasm32-wasip2-clang++`、`llvm-ar`
 
 ## 一条命令构建
 
-源文件必须提供 `main(): void`：
+command 模式的源文件必须提供 `main(): void`：
 
 ```php
 <?php
@@ -63,7 +63,7 @@ sources:
 
 路径、sources 等详细配置继续放在 `project.yml`，不通过 `--wasm=` 传递。
 
-PHP、PHPX、TypePHP runtime、GMP、MPFR 和 mpdecimal 由 SDK 发布阶段预编译为 WASI 静态库。应用构建只编译 TypePHP 为当前程序生成的 C++，然后链接这些 `.a`。`tpc --wasm` 不会下载源码、运行 `wit-bindgen`，也不会调用 PHP、PHPX 或高精度库的构建脚本。
+PHP、PHPX、TypePHP runtime、GMP、MPFR 和 mpdecimal 由 SDK 发布阶段预编译为 WASI 静态库。应用构建只编译 TypePHP 为当前程序生成的 C++，然后链接这些 `.a`。`tpc --wasm` 不会下载源码，也不会调用 PHP、PHPX 或高精度库的构建脚本。library 模式会调用 PHPX 包内固定版本的 `wit-bindgen` 生成当前应用的 Canonical ABI 绑定；普通用户不需要从 `PATH` 安装它。
 
 PHP/WASI 当前静态内建 `date`、`pcre`、`hash`、`json`、`lexbor`、`random`、`Reflection`、`SPL`、`standard`、`uri`、`ctype`、`calendar`、`bcmath`、`filter` 和 `tokenizer` 扩展。
 
@@ -79,12 +79,92 @@ Chrome Demo：
 
 ```bash
 cd examples/wasm-hello
-npm run wasm
 npm ci
+npm run wasm
 npm run dev
 ```
 
 浏览器端始终在专用 Worker 中执行 Component。默认使用内存文件系统；发送给 Worker 的启动消息设置 `persistent: true` 后，会在启动和退出时通过 OPFS 恢复、保存文件系统快照。程序执行期间仍使用同步内存文件系统，避免每次 PHP 文件访问跨越异步 JS 边界。
+
+## Command 与 Library 的 ZendVM 生命周期
+
+### Command 模式
+
+command 模式具有生成的 C++ `main()` 入口。入口依次调用：
+
+```text
+typephp_runtime_init(argc, argv)
+    → php_embed_init()
+    → PHP/SAPI module startup 与 MINIT
+    → PHP request startup 与 RINIT
+    → 注册并启动当前 TypePHP 应用模块
+    → 当前应用的 MINIT 与 RINIT
+
+执行 TypePHP main()
+
+typephp_runtime_shutdown()
+    → 当前应用的 RSHUTDOWN 与模块清理
+    → php_embed_shutdown()
+    → PHP request/module/SAPI shutdown
+```
+
+调用者不需要感知这些步骤，因为生成的原生 `main()` 会自动包围整个程序生命周期。
+
+### Library 模式必须先创建 runtime resource
+
+library component 没有可自动执行的 `main()`，单纯实例化 `.wasm` 只完成 Component 和 C/C++ Runtime 的实例化，不代表 ZendVM request 已经可用。Host 必须先调用生成的 WIT 函数：
+
+```wit
+create-runtime: func() -> result<runtime, typephp-error>;
+```
+
+浏览器中对应的调用为：
+
+```js
+const component = await instantiate(null, wasi.getImportObject());
+const runtime = await component.api.createRuntime();
+
+try {
+    const result = await runtime.someExportedFunction();
+} finally {
+    runtime[Symbol.dispose]();
+}
+```
+
+`createRuntime()` 内部调用 `typephp_runtime_init(1, argv)`。Host 只需要调用这一层稳定接口，不应直接调用 `php_embed_init()`、MINIT、RINIT 或任何 Zend C API。
+
+当前初始化顺序如下：
+
+1. `php_embed_init()` 初始化 Embed SAPI、PHP 核心和静态扩展，并启动 PHP request；PHP 核心与已经注册的静态扩展在这里完成 MINIT/RINIT。
+2. 设置 PHPX 的异常桥接，使 PHP 异常可以安全返回到生成的 WIT `result`。
+3. 取得当前 TypePHP 应用的 `zend_module_entry`，调用 `zend_register_module_ex()` 和 `zend_startup_module_ex()`，完成应用模块注册与 MINIT。
+4. 注册标准流并设置请求路径等 SAPI 请求信息。
+5. 因为 Embed request 和请求内存池此时已经启动，生成代码会显式调用当前应用模块的 `request_startup_func`，补做该模块的 RINIT；RINIT 再初始化 TypePHP 请求级全局变量和类静态数据，完成后才返回 `runtime` resource。
+
+这里“手动”调用的是 Host 可见的 `create-runtime()`，而不是让用户手动拼装 ZendVM 生命周期。MINIT/RINIT 的具体调用及其先后顺序全部封装在 PHPX 和生成的 Component adapter 中。
+
+### 导出调用共享同一个 request
+
+同一 `runtime` resource 上的所有 `#[WasmExport]` 调用共享一次 RINIT 建立的 Zend request：
+
+- 不会在每次函数调用前后重复执行 RINIT/RSHUTDOWN。
+- PHP request 内存池、请求级全局变量和静态状态会持续到 resource 被释放。
+- 当前仅支持 NTS；同一个 runtime 上的调用必须串行，生成的 adapter 会拒绝并发或重入调用。
+- 普通 PHP 异常会被转换为 WIT `result` 错误，runtime 仍然可以继续使用。
+- Zend bailout 表示请求状态可能已经损坏，adapter 会将 runtime 标记为 failed，后续调用会被拒绝，直到 resource 被释放。
+
+### 释放 resource 才会执行 RSHUTDOWN
+
+释放 WIT `runtime` resource 会调用 `typephp_runtime_shutdown()`：
+
+1. 调用当前 TypePHP 应用模块的 RSHUTDOWN，清理 TypePHP 请求级对象和全局数据。
+2. 注销并关闭当前应用模块，执行相应模块清理。
+3. 调用 `php_embed_shutdown()`，完成其余扩展的 request shutdown、module shutdown 和 SAPI shutdown。
+4. 最后释放 request 内存池，避免 PHP/CPP 包装对象在内存池消失后继续析构。
+
+不要只依赖 JavaScript GC 触发 resource finalizer。浏览器和 Node Host 应在 `finally` 中显式调用 `runtime[Symbol.dispose]()`；Wasmtime 或其他 Host binding 也应显式 drop resource。直接终止 Worker 或进程会回收整个 Wasm 实例，但不保证 PHP 的 RSHUTDOWN/MSHUTDOWN 回调得到执行，因此不能把必须持久化的数据只放在关闭回调中。
+
+一个 Component 实例当前只允许同时存在一个活动的 runtime resource。释放完成后可以重新创建；初始化失败或发生 Zend bailout 时，应先释放旧 resource，而不是继续调用导出函数。
 
 ## 高精度类型
 
@@ -118,7 +198,7 @@ wasm32 使用 32 位指针，但 PHP 的 `zend_long` 保持 64 位，以维持 T
 - PHPX Facade API 在 `__wasi__` 下整体禁用。PHPX 核心类型和 `phpx_std` 仍可使用。
 - 不支持动态扩展、网络 socket、进程、shell 和信号。静态可识别的调用会在编译期报致命错误。
 - 保留 PHP stream 框架、本地文件能力以及由 WASI host 提供的时间和随机数能力。
-- `.wasm` 是同一份 WASI 0.2 command component：Wasmtime 直接运行；Chrome 使用 Jco 生成的 ESM 和 `examples/wasm-hello/typephp-worker.mjs` 中的 Worker host。
+- command component 可由 Wasmtime 直接运行；library component 需要 Host 按 WIT 接口调用 `create-runtime()` 和导出函数。Chrome 使用 Jco 生成的 ESM 和 `examples/wasm-hello/typephp-worker.mjs` 中的 Worker host。
 
 PHPX Facade 只是为 PHP 可选扩展生成的便捷包装，并非 TypePHP ABI 的组成部分。WASI 下整体关闭它，可以避免把不存在的 curl、socket、Swoole、PDO 等 API 暴露为“可编译但链接失败”的接口。
 
