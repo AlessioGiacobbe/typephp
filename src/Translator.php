@@ -18,6 +18,7 @@ use TypePhp\Build\NativeCommandOptionsTrait;
 use TypePhp\Build\NativeBuilder;
 use TypePhp\Build\PrecompiledHeaderManager;
 use TypePhp\Build\SourcePipelineTrait;
+use TypePhp\Build\WasmInterfaceGenerator;
 use TypePhp\Config\ProjectYamlLoader;
 use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 use TypePhp\Build\ResourceCompilationTrait;
@@ -37,6 +38,7 @@ use TypePhp\Generator\LibraryImportStubGenerator;
 use TypePhp\Generator\Symbol;
 use TypePhp\Metadata\Constants;
 use TypePhp\Platform\PlatformFactory;
+use TypePhp\Platform\Wasi;
 use TypePhp\Platform\Windows;
 use TypePhp\Resolver\Reflection;
 use TypePhp\Resolver\ClassConstantValueTrait;
@@ -164,8 +166,23 @@ class Translator extends Preprocessor
     protected function detectPlatform(): void
     {
         try {
-            $this->platform = PlatformFactory::create();
-            $this->cppCompiler = CompilerFactory::detectCompilerName($this->platform);
+            $targetPlatform = $this->climate->arguments->defined('target-platform')
+                ? (string) $this->climate->arguments->get('target-platform')
+                : '';
+            if ($targetPlatform === 'wasm32-wasip1' || $targetPlatform === 'wasm32-wasi') {
+                throw new \RuntimeException('WASI Preview 1 is not supported; use wasm32-wasip2');
+            }
+            if ($targetPlatform === 'wasm32-wasip2' || $targetPlatform === 'wasm32-unknown-wasip2') {
+                $detectedTarget = getenv('TYPEPHP_WASI_TARGET');
+                $this->platform = new Wasi(
+                    is_string($detectedTarget) && $detectedTarget !== '' ? $detectedTarget : $targetPlatform,
+                );
+            } else {
+                $this->platform = PlatformFactory::create();
+            }
+            $this->cppCompiler = $this->platform instanceof Wasi
+                ? $this->platform->getDefaultCompiler()
+                : CompilerFactory::detectCompilerName($this->platform);
 
             if ($this->platform instanceof Windows) {
                 $libInfo = $this->platform->detectPhpLibs($this->getPhpDir());
@@ -181,8 +198,15 @@ class Translator extends Preprocessor
             }
 
             $this->compilerBackend = CompilerFactory::createByName($this->cppCompiler, $this->platform);
+            $backendName = $this->compilerBackend->getName();
+            if ($this->platform instanceof Wasi) {
+                $clangVersion = getenv('TYPEPHP_WASI_CLANG_VERSION');
+                $backendName = 'LLVM Clang'
+                    . (is_string($clangVersion) && $clangVersion !== '' ? " {$clangVersion}" : '');
+            }
+            $label = $this->platform instanceof Wasi ? 'Initialized target/toolchain' : 'Initialized platform/backend';
             $this->climate->info(
-                "Initialized platform/backend: {$this->platform->getName()} + {$this->compilerBackend->getName()} ({$this->compilerBackend->getCompilerCommand()})"
+                "{$label}: {$this->platform->getName()} + {$backendName} ({$this->compilerBackend->getCompilerCommand()})"
             );
         } catch (\Throwable $e) {
             $this->error($e->getMessage());
@@ -244,6 +268,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('--cxx-std <ver>      C++ standard version (c++17, c++20, etc., default: c++17)');
         $climate->tab()->out('--march <arch>       Target CPU instruction set (e.g. native, x86-64-v3, armv8-a)');
         $climate->tab()->out('--target-platform <triple> Cross-compilation target triple (e.g. aarch64-linux-gnu)');
+        $climate->tab()->out('--wasm[=profile]     Build WASI component (default) or browser output');
         $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->tab()->out('--php-version <ver>  PHP language version to accept (8.2-8.5, default: 8.5)');
@@ -754,7 +779,7 @@ class Translator extends Preprocessor
             $code .= 'extern "C" void save_ps_args(int, char **) {}' . PHP_EOL;
         }
 
-        if ($this->isBuildModeBin()) {
+        if ($this->isBuildModeBin() && !$this->isWasiTarget()) {
             $cliHeaders = [
                 '#include "php_cli_process_title.h"',
                 '#include "php_cli_process_title_arginfo.h"',
@@ -856,7 +881,7 @@ CODE;
 
         $code .= "// clang-format off\n";
         $code .= "static const zend_function_entry ext_functions[] = {\n";
-        if ($this->isBuildModeBin()) {
+        if ($this->isBuildModeBin() && !$this->isWasiTarget()) {
             $code .= $this->getIndent() . "PHP_FE(cli_set_process_title,        arginfo_cli_set_process_title)\n";
             $code .= $this->getIndent() . "PHP_FE(cli_get_process_title,        arginfo_cli_get_process_title)\n";
         }
@@ -885,7 +910,9 @@ CODE;
         $code .= 'PHP_MINIT_FUNCTION(' . $this->getModuleName() . ') {' . PHP_EOL;
         $code .= 'zend_try {' . PHP_EOL;
         $code .= '// class/interface class entries' . PHP_EOL;
-        $code .= 'typephp_register_fiber_generator_class();' . PHP_EOL;
+        if (!$this->isWasiTarget()) {
+            $code .= 'typephp_register_fiber_generator_class();' . PHP_EOL;
+        }
         $code .= 'if (typephp_install_reflection_attribute_handlers() != SUCCESS) {' . PHP_EOL;
         $code .= $this->getIndent() . 'return FAILURE;' . PHP_EOL;
         $code .= '}' . PHP_EOL;
@@ -1289,7 +1316,9 @@ CODE;
     {
         $job = $this->maxJob;
 
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_fiber_generator.cc';
+        if (!$this->isWasiTarget()) {
+            $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_fiber_generator.cc';
+        }
         $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_helper.cc';
 
         // embed 需要 main 函数，以及 cli 的内置函数定义
@@ -1297,7 +1326,7 @@ CODE;
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_main.cc';
         }
 
-        if ($this->isBuildModeBin()) {
+        if ($this->isBuildModeBin() && !$this->isWasiTarget()) {
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/php_cli_process_title.c';
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/ps_title.c';
         }
@@ -1726,6 +1755,50 @@ CODE;
     public function getBuildMode(): string
     {
         return $this->buildMode;
+    }
+
+    /** Write the public WIT contract and PHPX host-bindgen manifest. */
+    public function writeWasmInterface(
+        string $manifestFile,
+        string $witFile,
+        string $adapterFile,
+        string $asyncExportsFile,
+        string $package,
+        string $world,
+    ): void
+    {
+        if (!$this->isWasiTarget() || !$this->isBuildModeLib()) {
+            $this->error('WIT interfaces can only be generated for a WASI library build');
+        }
+        try {
+            $generator = new WasmInterfaceGenerator();
+            $manifest = $generator->buildManifest(
+                $this->symbols->functions(),
+                $package,
+                $world,
+                fn (FunctionDef $function): string => self::PREFIX
+                    . $this->getNativeName($function->name, $function->namespace),
+            );
+            foreach (array_unique([
+                dirname($manifestFile),
+                dirname($witFile),
+                dirname($adapterFile),
+                dirname($asyncExportsFile),
+            ]) as $directory) {
+                if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
+                    throw new \RuntimeException("Unable to create WASM interface directory: {$directory}");
+                }
+            }
+            $json = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            if (file_put_contents($manifestFile, $json . PHP_EOL) === false
+                || file_put_contents($witFile, $generator->renderWit($manifest)) === false
+                || file_put_contents($adapterFile, $generator->renderCppAdapter($manifest)) === false
+                || file_put_contents($asyncExportsFile, $generator->renderJcoAsyncExports($manifest)) === false) {
+                throw new \RuntimeException('Unable to write the generated WASM interface');
+            }
+        } catch (\Throwable $exception) {
+            $this->error($exception->getMessage());
+        }
     }
 
     public function getArgInfoStubFilename(string $stubFile): string

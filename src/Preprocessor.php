@@ -231,6 +231,65 @@ class Preprocessor extends CompilerBase
         return false;
     }
 
+    private function parseWasmExportAttribute(Node\Stmt\Function_|Node\Stmt\ClassMethod $node): ?string
+    {
+        foreach ($node->attrGroups as $group) {
+            foreach ($group->attrs as $attribute) {
+                if (!$this->isRootCompileTimeAttribute($attribute, 'WasmExport')) {
+                    continue;
+                }
+                if ($node instanceof Node\Stmt\ClassMethod) {
+                    $this->fatalCompileTimeAttribute(
+                        $node,
+                        'WasmExport',
+                        'WasmExport can only be applied to named functions',
+                        $attribute,
+                    );
+                }
+                if (count($attribute->args) > 1) {
+                    $this->fatalCompileTimeAttribute(
+                        $node,
+                        'WasmExport',
+                        'WasmExport accepts at most one string name',
+                        $attribute,
+                    );
+                }
+                if ($attribute->args === []) {
+                    return '';
+                }
+                $argument = $attribute->args[0];
+                if ($argument->name !== null && strcasecmp($argument->name->toString(), 'name') !== 0) {
+                    $this->fatalCompileTimeAttribute(
+                        $node,
+                        'WasmExport',
+                        'WasmExport only accepts the named argument `name`',
+                        $attribute,
+                    );
+                }
+                if (!$argument->value instanceof Node\Scalar\String_) {
+                    $this->fatalCompileTimeAttribute(
+                        $node,
+                        'WasmExport',
+                        'WasmExport name must be a constant string',
+                        $attribute,
+                    );
+                }
+                $name = $argument->value->value;
+                if ($name === '') {
+                    $this->fatalCompileTimeAttribute(
+                        $node,
+                        'WasmExport',
+                        'WasmExport name must not be empty',
+                        $attribute,
+                    );
+                }
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
     private function isRootCompileTimeAttribute(Node\Attribute $attribute, string $name): bool
     {
         return strcasecmp($this->getResolvedPhpName($attribute->name), $name) === 0;
@@ -535,6 +594,9 @@ class Preprocessor extends CompilerBase
         $functionDef->overrideRequired = (bool) $v->getAttribute(FunctionAttributeLowering::OVERRIDE_ATTRIBUTE, false);
         $functionDef->hot = (bool) $v->getAttribute(FunctionAttributeLowering::HOT_ATTRIBUTE, false);
         $functionDef->cold = (bool) $v->getAttribute(FunctionAttributeLowering::COLD_ATTRIBUTE, false);
+        $wasmExportName = $this->parseWasmExportAttribute($v);
+        $functionDef->wasmExport = $wasmExportName !== null;
+        $functionDef->wasmExportName = $wasmExportName ?? '';
         if ($functionDef->mustUse && $returnType === Type::VOID) {
             $this->fatalCompileTimeAttribute(
                 $v,

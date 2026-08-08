@@ -19,6 +19,20 @@ final readonly class NoExport
 {
 }
 
+/**
+ * Expose a statically typed function through a WASI 0.2 component interface.
+ *
+ * This is a compile-time attribute. It is never instantiated by the PHP
+ * runtime and therefore adds no reflection or dispatch overhead.
+ */
+#[Attribute(Attribute::TARGET_FUNCTION)]
+final readonly class WasmExport
+{
+    public function __construct(public ?string $name = null)
+    {
+    }
+}
+
 #[Attribute(Attribute::TARGET_PROPERTY)]
 final readonly class Getter
 {

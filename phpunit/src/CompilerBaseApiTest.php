@@ -99,6 +99,19 @@ class CompilerBaseApiTest extends TestCase
         return $projectFile;
     }
 
+    public function testWasiTargetDetection(): void
+    {
+        foreach (['wasm32-wasip2', 'wasm32-unknown-wasip2'] as $target) {
+            $this->setPropertyValue('targetPlatform', $target);
+            $this->assertTrue($this->compiler->isWasiTarget(), $target);
+        }
+
+        foreach (['', 'wasm32-wasi', 'wasm32-wasip1', 'wasm32-wasip1-threads', 'wasm32-unknown-unknown', 'aarch64-linux-gnu'] as $target) {
+            $this->setPropertyValue('targetPlatform', $target);
+            $this->assertFalse($this->compiler->isWasiTarget(), $target);
+        }
+    }
+
     private function createFakeClangFormat(string $binDir, string $logFile): void
     {
         mkdir($binDir, 0777, true);

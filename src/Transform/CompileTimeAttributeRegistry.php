@@ -23,6 +23,7 @@ final class CompileTimeAttributeRegistry
     public const ARGUMENTS_METHODS_FOR = 'methods_for';
     public const ARGUMENTS_FIELDS = 'fields';
     public const ARGUMENTS_VALIDATE = 'validate';
+    public const ARGUMENTS_WASM_EXPORT = 'wasm_export';
 
     public const PHASE_PREPROCESS = 'preprocess';
     public const PHASE_ENTER = 'enter';
@@ -73,6 +74,7 @@ final class CompileTimeAttributeRegistry
 
         $add('MethodsFor', [self::TARGET_NAMED_CLASS], 'MethodsFor can only be applied to classes', self::ARGUMENTS_METHODS_FOR, self::PHASE_PREPROCESS);
         $add('NoExport', [self::TARGET_CLASS_LIKE, self::TARGET_FUNCTION, self::TARGET_METHOD], 'NoExport can only be applied to classes, functions, or methods', self::ARGUMENTS_NONE, self::PHASE_PREPROCESS, false);
+        $add('WasmExport', [self::TARGET_FUNCTION], 'WasmExport can only be applied to named functions', self::ARGUMENTS_WASM_EXPORT, self::PHASE_PREPROCESS, false);
         foreach (['Getter', 'Setter', 'With'] as $name) {
             $add($name, [self::TARGET_PROPERTY], $name . ' can only be applied to instance properties', self::ARGUMENTS_NONE, self::PHASE_CLASS_LEAVE);
         }

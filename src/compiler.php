@@ -1,5 +1,8 @@
 <?php
 use TypePhp\Translator;
+use TypePhp\Build\WasiToolchain;
+use TypePhp\Build\WasiProjectConfig;
+use TypePhp\Build\PhpxLocator;
 
 function main(int $argc, array $argv): void
 {
@@ -9,6 +12,11 @@ function main(int $argc, array $argv): void
 
     if (!defined('ROOT_PATH')) {
         define("ROOT_PATH", getcwd());
+    }
+
+    if (getenv('TYPEPHP_WASM_INTERNAL_COMPILE') !== '1' && shouldCompileWasm($argv)) {
+        compileWasmProgram($argv);
+        return;
     }
 
     // .prof 文件分析模式：./tpc app.prof
@@ -27,10 +35,45 @@ function main(int $argc, array $argv): void
     // 生成 C++ 文件
     $sourceFiles = $translator->convert($files);
 
+    $wasmManifest = getenv('TYPEPHP_WASM_INTERFACE_MANIFEST');
+    if (is_string($wasmManifest) && $wasmManifest !== '') {
+        $wasmWit = getenv('TYPEPHP_WASM_INTERFACE_WIT');
+        $wasmAdapter = getenv('TYPEPHP_WASM_INTERFACE_ADAPTER');
+        $wasmAsyncExports = getenv('TYPEPHP_WASM_INTERFACE_ASYNC_EXPORTS');
+        $wasmPackage = getenv('TYPEPHP_WASM_PACKAGE');
+        $wasmWorld = getenv('TYPEPHP_WASM_WORLD');
+        if (!is_string($wasmWit) || $wasmWit === ''
+            || !is_string($wasmAdapter) || $wasmAdapter === ''
+            || !is_string($wasmAsyncExports) || $wasmAsyncExports === ''
+            || !is_string($wasmPackage) || $wasmPackage === ''
+            || !is_string($wasmWorld) || $wasmWorld === '') {
+            throw new RuntimeException('Incomplete internal WASM interface configuration');
+        }
+        $translator->writeWasmInterface(
+            $wasmManifest,
+            $wasmWit,
+            $wasmAdapter,
+            $wasmAsyncExports,
+            $wasmPackage,
+            $wasmWorld,
+        );
+        $sourceFiles[] = $wasmAdapter;
+    }
+
     // --dry 模式：仅生成 C++ 代码，不执行编译
     if ($translator->isDryRun()) {
         $buildDir = $translator->getBuildDir();
         $count = count($sourceFiles);
+        $sourceListFile = getenv('TYPEPHP_GENERATED_SOURCE_LIST');
+        if (is_string($sourceListFile) && $sourceListFile !== '') {
+            $sourceListDir = dirname($sourceListFile);
+            if (!is_dir($sourceListDir) && !mkdir($sourceListDir, 0777, true) && !is_dir($sourceListDir)) {
+                throw new RuntimeException("Unable to create generated source manifest directory: {$sourceListDir}");
+            }
+            if (file_put_contents($sourceListFile, implode(PHP_EOL, $sourceFiles) . PHP_EOL) === false) {
+                throw new RuntimeException("Unable to write generated source manifest: {$sourceListFile}");
+            }
+        }
         $translator->output("Dry run completed: {$count} C++ source file(s) generated in {$buildDir}", 'lightBlue');
         return;
     }
@@ -43,6 +86,205 @@ function main(int $argc, array $argv): void
     if ($translator->isRunRequested()) {
         $translator->run($binaryFile); // never returns
     }
+}
+
+/**
+ * Build a self-contained WASI 0.2 command component through the public CLI.
+ * The lower-level build scripts are implementation details and are not part of
+ * the user-facing workflow.
+ */
+function compileWasmProgram(array $argv): void
+{
+    $input = null;
+    $buildDir = null;
+    $profile = null;
+    $arguments = array_slice($argv, 1);
+    for ($i = 0, $count = count($arguments); $i < $count; $i++) {
+        $argument = $arguments[$i];
+        if ($argument === '--wasm') {
+            continue;
+        }
+        if (str_starts_with($argument, '--wasm=')) {
+            $value = substr($argument, strlen('--wasm='));
+            if ($value === '') {
+                fwrite(STDERR, "Option --wasm requires browser or component after `=`\n");
+                exit(1);
+            }
+            if ($profile !== null && $profile !== $value) {
+                fwrite(STDERR, "Option --wasm was specified with conflicting profiles\n");
+                exit(1);
+            }
+            $profile = $value;
+            continue;
+        }
+        if ($argument === '--build-dir') {
+            if (!isset($arguments[$i + 1]) || $arguments[$i + 1] === '') {
+                fwrite(STDERR, "Option --build-dir requires a directory\n");
+                exit(1);
+            }
+            $buildDir = $arguments[++$i];
+            continue;
+        }
+        if (str_starts_with($argument, '--build-dir=')) {
+            $buildDir = substr($argument, strlen('--build-dir='));
+            if ($buildDir === '') {
+                fwrite(STDERR, "Option --build-dir requires a directory\n");
+                exit(1);
+            }
+            continue;
+        }
+        if (str_starts_with($argument, '-')) {
+            fwrite(STDERR, "Unsupported option in --wasm mode: {$argument}\n");
+            exit(1);
+        }
+        if ($input !== null) {
+            fwrite(STDERR, "The --wasm mode accepts exactly one PHP file or project.yml\n");
+            exit(1);
+        }
+        $input = $argument;
+    }
+
+    if ($input === null) {
+        fwrite(STDERR, "Usage: php bin/tpc.php <program.php|project.yml> [--wasm[=browser|component]] [--build-dir <directory>]\n");
+        exit(1);
+    }
+
+    $workingDirectory = getcwd();
+    try {
+        $project = WasiProjectConfig::load(
+            $input,
+            $buildDir,
+            $workingDirectory,
+            ROOT_PATH . DIRECTORY_SEPARATOR . 'build',
+            $profile,
+        );
+    } catch (RuntimeException $exception) {
+        fwrite(STDERR, "Invalid WASI project: {$exception->getMessage()}\n");
+        exit(1);
+    }
+
+    $builder = dirname(__DIR__) . '/wasm/build-typephp-program.sh';
+    if (!is_executable($builder)) {
+        fwrite(STDERR, "TypePHP WASI builder is not executable: {$builder}\n");
+        exit(1);
+    }
+
+    try {
+        $tools = (new WasiToolchain())->detect($project->profile === 'browser');
+    } catch (RuntimeException $exception) {
+        fwrite(STDERR, "WASI toolchain check failed: {$exception->getMessage()}\n");
+        fwrite(STDERR, "Add WASI SDK and Wasmtime bin directories to PATH");
+        if ($project->profile === 'browser') {
+            fwrite(STDERR, ", and install Jco (`npm install -g @bytecodealliance/jco`)"
+                . " or use --wasm=component");
+        }
+        fwrite(STDERR, ", then try again.\n");
+        exit(1);
+    }
+
+    $environment = getenv();
+    if (!is_array($environment)) {
+        $environment = [];
+    }
+    $environment['TYPEPHP_WASI_CC'] = $tools['clang'];
+    $environment['TYPEPHP_WASI_CXX'] = $tools['clang++'];
+    $environment['TYPEPHP_WASI_AR'] = $tools['llvm-ar'];
+    $environment['TYPEPHP_WASI_RANLIB'] = $tools['llvm-ranlib'];
+    $environment['TYPEPHP_WASI_NM'] = $tools['llvm-nm'];
+    $environment['TYPEPHP_WASI_LD'] = $tools['wasm-ld'];
+    $environment['TYPEPHP_WASMTIME'] = $tools['wasmtime'];
+    $environment['TYPEPHP_WASM_BROWSER'] = $project->profile === 'browser' ? '1' : '0';
+    if ($project->profile === 'browser') {
+        $environment['TYPEPHP_JCO'] = $tools['jco'];
+        $environment['TYPEPHP_JCO_VERSION'] = $tools['jco-version'];
+    }
+    $environment['TYPEPHP_WASI_TARGET'] = $tools['target'];
+    $environment['TYPEPHP_WASI_CLANG_VERSION'] = $tools['clang-version'];
+    $environment['TYPEPHP_WASMTIME_VERSION'] = $tools['wasmtime-version'];
+    $environment['TYPEPHP_WASM_PROGRAM_BUILD_DIR'] = $project->buildDir;
+    $environment['TYPEPHP_WASM_MODE'] = $project->mode;
+    $environment['TYPEPHP_WASM_PACKAGE'] = $project->package;
+    $environment['TYPEPHP_WASM_WORLD'] = $project->world;
+    $compilerExecutable = realpath($argv[0]);
+    if ($compilerExecutable === false || !is_executable($compilerExecutable)) {
+        fwrite(STDERR, "Unable to resolve the current TypePHP compiler executable: {$argv[0]}\n");
+        exit(1);
+    }
+    if ($project->browserDir !== null) {
+        $environment['TYPEPHP_WASM_BROWSER_DIR'] = $project->browserDir;
+    }
+
+    try {
+        $phpxDir = PhpxLocator::resolve(ROOT_PATH);
+    } catch (RuntimeException $exception) {
+        fwrite(STDERR, "Unable to locate PHPX: {$exception->getMessage()}\n");
+        exit(1);
+    }
+    if ($project->mode === 'library') {
+        $hostOs = match (PHP_OS_FAMILY) {
+            'Linux' => 'linux',
+            'Darwin' => 'macos',
+            'Windows' => 'windows',
+            default => strtolower(PHP_OS_FAMILY),
+        };
+        $hostArch = strtolower(php_uname('m'));
+        $hostArch = match ($hostArch) {
+            'amd64', 'x64' => 'x86_64',
+            'arm64' => $hostOs === 'linux' ? 'aarch64' : 'arm64',
+            default => $hostArch,
+        };
+        $bindgen = $phpxDir . DIRECTORY_SEPARATOR . 'wasm' . DIRECTORY_SEPARATOR . 'bin'
+            . DIRECTORY_SEPARATOR . $hostOs . '-' . $hostArch . DIRECTORY_SEPARATOR . 'wit-bindgen'
+            . ($hostOs === 'windows' ? '.exe' : '');
+        if (!is_file($bindgen)) {
+            fwrite(STDERR, "PHPX bundled WIT binding generator is missing: {$bindgen}\n");
+            fwrite(STDERR, "Install the matching PHPX package; installing wit-bindgen separately is not required.\n");
+            exit(1);
+        }
+        $environment['TYPEPHP_WIT_BINDGEN'] = $bindgen;
+    }
+    $command = [$builder, $project->input, $project->output ?? '-', $phpxDir, $compilerExecutable];
+
+    $process = proc_open(
+        $command,
+        [STDIN, STDOUT, STDERR],
+        $pipes,
+        getcwd(),
+        $environment,
+    );
+    if (!is_resource($process)) {
+        fwrite(STDERR, "Failed to start the TypePHP WASI builder\n");
+        exit(1);
+    }
+
+    $exitCode = proc_close($process);
+    if ($exitCode !== 0) {
+        exit($exitCode);
+    }
+}
+
+function shouldCompileWasm(array $argv): bool
+{
+    foreach (array_slice($argv, 1) as $argument) {
+        if ($argument === '--wasm' || str_starts_with($argument, '--wasm=')) {
+            return true;
+        }
+    }
+
+    $workingDirectory = getcwd();
+    foreach (array_slice($argv, 1) as $argument) {
+        if ($argument === '' || $argument[0] === '-') {
+            continue;
+        }
+        $path = $argument;
+        if ($path[0] !== '/' && preg_match('/^[A-Za-z]:[\\\\\/]/', $path) !== 1) {
+            $path = $workingDirectory . DIRECTORY_SEPARATOR . $path;
+        }
+        if (WasiProjectConfig::isWasmEnabled($path)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function profileAnalyze(int $argc, array $argv): void

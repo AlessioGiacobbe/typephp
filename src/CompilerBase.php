@@ -8,6 +8,8 @@
 
 namespace TypePhp;
 
+use TypePhp\Build\PhpxLocator;
+
 use League\CLImate\CLImate;
 use TypePhp\Backend\CompilerBackend;
 use TypePhp\Backend\CompilerFactory;
@@ -173,6 +175,41 @@ class CompilerBase implements PropertyAccessContext
         'stream_socket_client',
         'stream_socket_accept',
         'popen',
+    ];
+
+    /**
+     * APIs which cannot have the same semantics in Wasmtime and a browser.
+     * Keep this list at the language boundary so a WASI build never degrades
+     * into a link error or a browser-only implementation.
+     */
+    private const array WASI_UNSUPPORTED_FUNCTIONS = [
+        'exec',
+        'passthru',
+        'popen',
+        'proc_close',
+        'proc_get_status',
+        'proc_nice',
+        'proc_open',
+        'proc_terminate',
+        'shell_exec',
+        'system',
+        'fsockopen',
+        'pfsockopen',
+        'stream_socket_accept',
+        'stream_socket_client',
+        'stream_socket_enable_crypto',
+        'stream_socket_get_name',
+        'stream_socket_pair',
+        'stream_socket_recvfrom',
+        'stream_socket_sendto',
+        'stream_socket_server',
+        'stream_socket_shutdown',
+    ];
+
+    private const array WASI_UNSUPPORTED_FUNCTION_PREFIXES = [
+        'pcntl_',
+        'posix_',
+        'socket_',
     ];
     public const int DECL_TYPE_OF_RETURN = 1;
     public const int DECL_TYPE_OF_PROPERTY = 2;
@@ -492,59 +529,11 @@ class CompilerBase implements PropertyAccessContext
 
     protected function getPhpxDir(): string
     {
-        // 解析 phpx 目录，优先级（macOS / Windows / Linux 通用）：
-        // 1. PHPX_HOME 环境变量指定的目录
-        // 2. vendor 目录（Composer 安装路径，或 TypePHP 源码检出下的 vendor/swoole/phpx）
-        $phpxDir = getenv('PHPX_HOME');
-        if ($phpxDir !== false && $phpxDir !== '') {
-            $phpxDir = rtrim($phpxDir, '\/');
-            if (is_dir($phpxDir)) {
-                return $this->normalizePhpxDir($phpxDir);
-            }
+        try {
+            return PhpxLocator::resolve($this->rootPath);
+        } catch (\RuntimeException $exception) {
+            $this->error($exception->getMessage());
         }
-
-        // Composer-installed TypePHP and PHPX are sibling packages. Ask
-        // Composer for the actual package path instead of assuming a nested
-        // vendor directory inside the TypePHP package.
-        if (class_exists(\Composer\InstalledVersions::class)
-            && \Composer\InstalledVersions::isInstalled('swoole/phpx')) {
-            $composerInstallPath = \Composer\InstalledVersions::getInstallPath('swoole/phpx');
-            if (is_string($composerInstallPath)) {
-                $composerInstallPath = rtrim($composerInstallPath, '\/');
-                if (is_dir($composerInstallPath)) {
-                    return $this->normalizePhpxDir($composerInstallPath);
-                }
-            }
-        }
-
-        // TypePHP source checkout: phpx is installed below this repository.
-        $composerPhpxDir = $this->rootPath . self::PHPX_VENDOR_DIR;
-        if (is_dir($composerPhpxDir)) {
-            return $this->normalizePhpxDir($composerPhpxDir);
-        }
-
-        if (defined('ROOT_PATH')) {
-            $rootPhpxDir = ROOT_PATH . self::PHPX_VENDOR_DIR;
-            if (is_dir($rootPhpxDir)) {
-                return $this->normalizePhpxDir($rootPhpxDir);
-            }
-        }
-
-        // 两个路径都不存在，报错
-        $this->error(
-            'phpx directory not found. Please either:\n' .
-            '1. Set PHPX_HOME environment variable to your phpx installation path\n' .
-            '2. Install phpx via Composer: composer require swoole/phpx'
-        );
-    }
-
-    /**
-     * 规范化 phpx 目录路径（解析相对路径与 ..，便于错误提示和后续路径拼接）
-     */
-    private function normalizePhpxDir(string $dir): string
-    {
-        $real = realpath($dir);
-        return $real !== false ? $real : $dir;
     }
 
     protected function getPlatform(): PlatformBase
@@ -579,6 +568,29 @@ class CompilerBase implements PropertyAccessContext
     public function isMacos(): bool
     {
         return $this->getPlatform() instanceof Macos;
+    }
+
+    public function isWasiTarget(): bool
+    {
+        $target = strtolower($this->targetPlatform);
+        return $target === 'wasm32-unknown-wasip2' || $target === 'wasm32-wasip2';
+    }
+
+    protected function assertWasiFunctionSupported(NodeAbstract $expr, string $name): void
+    {
+        if (!$this->isWasiTarget()) {
+            return;
+        }
+
+        $name = strtolower(ltrim($name, '\\'));
+        if (in_array($name, self::WASI_UNSUPPORTED_FUNCTIONS, true)) {
+            $this->fatalError($expr, "Function `{$name}` is not supported by the WASI target");
+        }
+        foreach (self::WASI_UNSUPPORTED_FUNCTION_PREFIXES as $prefix) {
+            if (str_starts_with($name, $prefix)) {
+                $this->fatalError($expr, "Function `{$name}` is not supported by the WASI target");
+            }
+        }
     }
 
     public function isBuildModeBin(): bool
@@ -3804,6 +3816,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseShellExec(Expr\ShellExec $expr): string
     {
+        if ($this->isWasiTarget()) {
+            $this->fatalError($expr, 'Backtick shell execution is not supported by the WASI target');
+        }
         $list = [];
         foreach ($expr->parts as $part) {
             $list[] = $this->identifierToStr($part);

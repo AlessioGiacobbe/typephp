@@ -8,6 +8,19 @@ use TypePhp\Exception\TestError;
 
 class FiberGeneratorTest extends TestCase
 {
+    public function testWasiTargetRejectsGeneratorDuringPreparation(): void
+    {
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $reflection = new \ReflectionClass($compiler);
+        $reflection->getProperty('targetPlatform')->setValue($compiler, 'wasm32-wasip2');
+        $file = __DIR__ . '/../../code/generator-conversion-error.php';
+        $compiler->addFiles([$file]);
+
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Fiber and Generator are not supported by the WASI target');
+        $compiler->prepareFile($file);
+    }
+
     public function testCompilerStateIsRestoredAfterGeneratorConversionError(): void
     {
         $compiler = CompilerTest::create(ROOT_PATH);

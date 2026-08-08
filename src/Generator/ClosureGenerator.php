@@ -247,6 +247,9 @@ trait ClosureGenerator
 
     protected function validateGeneratorClosure(Expr\ArrowFunction|Expr\Closure $expr, array $params): void
     {
+        if ($this->isWasiTarget()) {
+            $this->fatalError($expr, 'Fiber and Generator are not supported by the WASI target');
+        }
         if ($expr->byRef) {
             $this->fatalError($expr, 'Generator closures returning by reference are not supported yet');
         }

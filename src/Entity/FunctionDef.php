@@ -46,6 +46,10 @@ class FunctionDef
     public bool $hot = false;
     /** Prefer optimizing this function for rarely executed paths. */
     public bool $cold = false;
+    /** Whether this function is part of the public WIT component interface. */
+    public bool $wasmExport = false;
+    /** Explicit WIT export name, or an empty string when it is derived from the PHP name. */
+    public string $wasmExportName = '';
     /** Number of fixed positional values returned through the internal tuple fast path. */
     public int $multiReturnCount = 0;
     /** Source file containing this function definition. */
