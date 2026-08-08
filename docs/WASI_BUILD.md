@@ -65,7 +65,7 @@ sources:
 
 PHP、PHPX、TypePHP runtime、GMP、MPFR 和 mpdecimal 由 SDK 发布阶段预编译为 WASI 静态库。应用构建只编译 TypePHP 为当前程序生成的 C++，然后链接这些 `.a`。`tpc --wasm` 不会下载源码，也不会调用 PHP、PHPX 或高精度库的构建脚本。library 模式会调用 PHPX 包内固定版本的 `wit-bindgen` 生成当前应用的 Canonical ABI 绑定；普通用户不需要从 `PATH` 安装它。
 
-PHP/WASI 当前静态内建 `date`、`pcre`、`hash`、`json`、`lexbor`、`random`、`Reflection`、`SPL`、`standard`、`uri`、`ctype`、`calendar`、`bcmath`、`filter` 和 `tokenizer` 扩展。
+PHP/WASI 当前静态内建 `date`、`pcre`、`hash`、`json`、`lexbor`、`random`、`Reflection`、`SPL`、`standard`、`uri`、`ctype`、`calendar`、`bcmath`、`filter`、`tokenizer`、`mbstring`、`zlib`、`fileinfo`、`sodium`、`openssl`、`libxml`、`dom`、`SimpleXML`、`xml`、`xmlreader`、`xmlwriter`、`PDO`、`pdo_sqlite`、`zip`、`bz2` 和 `exif` 扩展。OpenSSL 采用 crypto-only 构建，不包含 TLS stream transport；HTTP/HTTPS 仍由 WASI HTTP Component 提供。
 
 每个 C/C++ 翻译单元统一使用标准 Wasm C++ exceptions 和 WASI SJLJ；链接阶段将 ABI 警告视为错误，旧的 32 位 `zend_long` 缓存也会自动失效。
 
@@ -174,11 +174,11 @@ WASI 产物包含 TypePHP 的三种语言级高精度类型：
 - `BigFloat`：MPFR 4.2.2
 - `Decimal`：mpdecimal 4.0.1
 
-完整示例位于 [high-precision.php](../projects/php-8.5.9/wasm/examples/high-precision.php)。构建并运行：
+完整示例位于 [high-precision.php](../wasm/examples/high-precision.php)。构建并运行：
 
 ```bash
-php bin/tpc.php --wasm projects/php-8.5.9/wasm/examples/high-precision.php
-wasmtime high-precision.wasm
+php bin/tpc.php --wasm wasm/examples/high-precision.php
+wasmtime -S http high-precision.wasm
 ```
 
 预期输出：
@@ -200,7 +200,7 @@ wasm32 使用 32 位指针，但 PHP 的 `zend_long` 保持 64 位，以维持 T
 - 保留 PHP stream 框架、本地文件能力以及由 WASI host 提供的时间和随机数能力。
 - command component 可由 Wasmtime 直接运行；library component 需要 Host 按 WIT 接口调用 `create-runtime()` 和导出函数。Chrome 使用 Jco 生成的 ESM 和 `examples/wasm-hello/typephp-worker.mjs` 中的 Worker host。
 
-PHPX Facade 只是为 PHP 可选扩展生成的便捷包装，并非 TypePHP ABI 的组成部分。WASI 下整体关闭它，可以避免把不存在的 curl、socket、Swoole、PDO 等 API 暴露为“可编译但链接失败”的接口。
+PHPX Facade 只是为 PHP 可选扩展生成的便捷包装，并非 TypePHP ABI 的组成部分。WASI 下整体关闭它，可以避免把 curl、socket、Swoole 等不可用 API 暴露为“可编译但链接失败”的接口；PHP/WASI 静态内建扩展本身不受 Facade 开关影响。
 
 ## WASI SDK 目录
 
@@ -221,6 +221,6 @@ phpx/wasm/wasm32-wasip2/
 └── .typephp-wasi-sdk-abi
 ```
 
-普通用户通过 TypePHP/PHPX 集成安装包获得该目录。TypePHP 开发者需要自行 clone 与当前版本绑定的 `php-8.5.9-wasm` 和 PHPX 源码，分别构建 PHP、PHPX、GMP、MPFR 与 mpdecimal，再按上述结构安装到 PHPX checkout。若 PHPX 不在 `vendor/swoole/phpx`，继续使用已有的 `PHPX_HOME` 指向该 checkout。
+普通用户通过 TypePHP/PHPX 集成安装包获得该目录。TypePHP 开发者需要自行 clone 与当前版本绑定的 `php-8.5.9-wasm` 和 PHPX 源码，并通过 `wasm/build-sdk.sh` 组装完整 SDK。PHP/WASI 只负责 PHP；PHPX 负责 GMP、MPFR、其专属的 mpdecimal 以及 PHPX runtime。所有产物安装到同一个 PHPX checkout。若 PHPX 不在 `vendor/swoole/phpx`，继续使用已有的 `PHPX_HOME` 指向该 checkout。
 
 不提供单独覆盖 `libphp.a`、`libphpx.a` 或数值库的路径；所有库、头文件和 `.typephp-wasi-sdk-abi` 必须来自同一次兼容构建，避免混用不同的 `zend_long`、C++ exceptions、SJLJ 或 Component Model ABI。

@@ -8,6 +8,14 @@ The integrated PHPX installer places their prebuilt `wasm32-wasip2` SDK at:
 ├── include/
 │   ├── php/                 PHP installed and generated headers
 │   ├── phpx/                PHPX public and TypePHP runtime headers
+│   ├── zlib.h               zlib API used by PHP's static zlib extension
+│   ├── zconf.h
+│   ├── sodium.h
+│   ├── openssl/             OpenSSL crypto-only public headers
+│   ├── libxml2/             libxml2 public headers
+│   ├── sqlite3.h
+│   ├── zip.h
+│   ├── bzlib.h
 │   ├── gmp.h
 │   ├── gmpxx.h
 │   ├── mpfr.h
@@ -24,10 +32,14 @@ The integrated PHPX installer places their prebuilt `wasm32-wasip2` SDK at:
 └── .typephp-wasi-sdk-abi
 ```
 
+The zlib, bzip2, libsodium, libcrypto, libxml2, SQLite, and libzip objects are
+embedded in `libphp.a`; the SDK intentionally does not ship or link their
+dependency archives separately.
+
 The ABI file must contain exactly:
 
 ```text
-typephp-wasip2-sdk-abi-v2
+typephp-wasip2-sdk-abi-v4
 ```
 
 TypePHP locates PHPX through the existing `PHPX_HOME` setting, Composer's
@@ -38,11 +50,35 @@ additional WASI SDK environment variable and no set of per-library search
 paths: all headers, archives, and the ABI marker must be installed together so
 an application cannot accidentally mix incompatible builds.
 
+TypePHP owns complete SDK orchestration. From the compiler repository, build
+and install the matching PHP and PHPX portions with:
+
+```shell
+./wasm/build-sdk.sh \
+    --prefix "${PHPX_HOME}/wasm/wasm32-wasip2" \
+    --jobs 16
+```
+
+The PHP build produces only `libphp.a` and PHP headers. The PHPX build owns
+GMP, MPFR, the vendored mpdecimal, `libphpx.a`, and their headers. The
+orchestrator validates the combined installation before writing
+`.typephp-wasi-sdk-abi`.
+
 Autoconf, Bison, re2c, Rust, upstream `wit-bindgen`, and the PHP/PHPX source
 trees are SDK producer dependencies only. They are never searched for by an
 application build. PHPX release packages include the pinned host-side
 `phpx-wit-bindgen` needed for application-specific exports below
 `<phpx>/wasm/bin/<host-os>-<host-arch>/`.
+
+SDK producer and TypePHP integration checks are kept with the TypePHP WASM
+backend rather than php-src:
+
+```text
+wasm/link-numeric-smoke-test.sh  GMP, MPFR, and mpdecimal link check
+wasm/test-typephp-program.sh     TypePHP high-precision integration check
+wasm/numeric-smoke-test.cc       Native numeric test program
+wasm/examples/high-precision.php TypePHP integration example
+```
 
 ## Language-level component exports
 

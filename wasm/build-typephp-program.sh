@@ -108,7 +108,7 @@ fi
 
 wasi_sdk_stamp=${wasi_sdk_dir}/.typephp-wasi-sdk-abi
 if [[ ! -f "${wasi_sdk_stamp}" ]] \
-    || ! grep -qx 'typephp-wasip2-sdk-abi-v2' "${wasi_sdk_stamp}"; then
+    || ! grep -qx 'typephp-wasip2-sdk-abi-v4' "${wasi_sdk_stamp}"; then
     fatal_error \
         "TypePHP WASI SDK is missing or ABI-incompatible: ${wasi_sdk_dir}" \
         "Install the matching PHPX package or set PHPX_HOME to its installation directory."
@@ -127,6 +127,8 @@ required_headers=(
     php/ext/date/lib/timelib_config.h
     phpx/phpx.h
     phpx/typephp_helper.h
+    zlib.h
+    zconf.h
     gmp.h
     mpfr.h
     decimal.hh
