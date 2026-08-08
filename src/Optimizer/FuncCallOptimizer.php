@@ -688,7 +688,11 @@ trait FuncCallOptimizer
 
     protected function genArrayKeyExists(string $n, Node\Expr\FuncCall $e, array $c): string
     {
-        return $this->getArg($e, 1) . '.offsetExists(' . $this->getArg($e, 0) . ')';
+        // The C++ receiver is PHP's second argument, but PHP still evaluates
+        // the key first. Resolve both in source order before rearranging them.
+        $key = $this->getArg($e, 0);
+        $array = $this->getArg($e, 1);
+        return $array . '.offsetExists(' . $key . ')';
     }
 
     protected function genRound(string $n, Node\Expr\FuncCall $e, array $c): string

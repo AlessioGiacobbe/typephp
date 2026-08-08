@@ -3376,6 +3376,9 @@ class CompilerBase implements PropertyAccessContext
             if (!$part instanceof Node\InterpolatedStringPart) {
                 $this->assertExprCanBeUsedAsValue($part, 'string interpolation value');
             }
+            // Although C++17 orders the braced-list elements, materializing an
+            // expression prevents captured statements from a later part from
+            // being hoisted ahead of an earlier Call.
             $list[] = $part instanceof Node\InterpolatedStringPart
                 ? $this->parseExpr($part)
                 : $this->parseOrderedOperand($part, false);

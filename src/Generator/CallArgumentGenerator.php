@@ -24,10 +24,11 @@ trait CallArgumentGenerator
 {
     protected function parseNativeCallArgs(array $callArgs, string $nativeFunc, int $parameterOffset = 0): string
     {
-        $argList = [];
         $functionDef = $this->getFunction($nativeFunc);
-        $args = [];
-        $variadicArgs = [];
+        $providedArgs = [];
+        $defaultArgs = [];
+        $sourceArgs = [];
+        $variadicArgCount = 0;
         $hasNamedArg = false;
         $argNameIndex = $this->getFunctionArgNameIndex($functionDef);
         $variadicArgIndex = $this->getVariadicArgIndex($functionDef);
@@ -43,18 +44,28 @@ trait CallArgumentGenerator
                     if ($k < $parameterOffset) {
                         $this->fatalError($arg, 'Named argument cannot target the extension receiver');
                     }
-                    $args[$k] = $arg;
+                    $providedArgs[$k] = true;
+                    $sourceArgs[] = [$k, null, $arg];
                 } else {
-                    $variadicArgs[] = [$argName, $arg];
+                    if ($variadicArgIndex === null) {
+                        $this->fatalError($arg, "Unknown named argument `{$argName}`");
+                    }
+                    $sourceArgs[] = [$variadicArgIndex, $argName, $arg];
+                    $variadicArgCount++;
                 }
                 $hasNamedArg = true;
             } elseif ($variadicArgIndex !== null and $i + $parameterOffset >= $variadicArgIndex) {
-                $variadicArgs[] = [null, $arg];
+                $sourceArgs[] = [$variadicArgIndex, null, $arg];
+                $variadicArgCount++;
             } else {
-                $args[$i + $parameterOffset] = $arg;
+                $argIndex = $i + $parameterOffset;
+                $providedArgs[$argIndex] = true;
+                $sourceArgs[] = [$argIndex, null, $arg];
             }
         }
-        // 对 key 进行排序，确保参数顺序正确
+        // Fill ABI holes first, but do not sort yet. User expressions must be
+        // lowered in source order; sorting raw AST arguments here would also
+        // reorder their side effects.
         if ($hasNamedArg) {
             // 命名参数中间存在空洞，需要使用默认参数填充
             foreach ($functionDef->argInfoList as $k => $argInfo) {
@@ -64,7 +75,7 @@ trait CallArgumentGenerator
                 if ($variadicArgIndex !== null and $k === $variadicArgIndex) {
                     continue;
                 }
-                if (!isset($args[$k])) {
+                if (!isset($providedArgs[$k])) {
                     if ($argInfo->default === '') {
                         $errorNode = null;
                         foreach ($callArgs as $a) {
@@ -79,61 +90,71 @@ trait CallArgumentGenerator
                     // Defaults are resolved in the declaration scope. Re-parsing
                     // the original AST here would evaluate self/parent/private
                     // class constants in the caller's scope instead.
-                    $args[$k] = $this->genDefaultArgumentExpr($nativeFunc, $k);
+                    $defaultArgs[$k] = $this->genDefaultArgumentExpr($nativeFunc, $k);
                 }
             }
-            ksort($args);
-        }
-
-        if ($variadicArgIndex !== null and $variadicArgs) {
-            $args[$variadicArgIndex] = $this->buildNativeVariadicArg($variadicArgs, $functionDef->argInfoList[$variadicArgIndex]);
-            ksort($args);
         }
 
         // 函数只接受一个变长参数，且调用参数为空，直接传入空数组
-        if (count($args) === 0
+        if (count($sourceArgs) === 0
             and count($functionDef->argInfoList) === $parameterOffset + 1
             and $functionDef->argInfoList[$parameterOffset]->variadic) {
             return '{}';
         }
 
-        foreach ($args as $i => $arg) {
-            if (is_string($arg)) {
-                $argList[] = $arg;
+        $resolvedArgs = [];
+        $variadicVar = null;
+        $callableName = $functionDef->displayName ?: $functionDef->getNamespacedName();
+
+        // Evaluate every supplied argument in PHP source order. The resulting
+        // expressions/temporaries may then be rearranged safely for the native
+        // C++ ABI without changing observable call order.
+        foreach ($sourceArgs as [$argIndex, $variadicName, $arg]) {
+            if ($argIndex !== $variadicArgIndex) {
+                $argInfo = $this->getArgInfo($arg, $nativeFunc, $argIndex);
+                $resolvedArgs[$argIndex] = $this->getTypeConvertedArg(
+                    $arg,
+                    $argInfo,
+                    $callableName,
+                    $argIndex
+                );
                 continue;
             }
-            $argInfo = $this->getArgInfo($arg, $nativeFunc, $i);
-            $callableName = $functionDef->displayName ?: $functionDef->getNamespacedName();
-            $argList[] = $this->getTypeConvertedArg($arg, $argInfo, $callableName, $i);
-        }
 
-        return implode(', ', $argList);
-    }
-
-    protected function buildNativeVariadicArg(array $variadicArgs, ArgInfo $argInfo): string
-    {
-        if (count($variadicArgs) === 1 and $variadicArgs[0][0] === null and $variadicArgs[0][1]->unpack) {
-            $arg = $variadicArgs[0][1];
-            if ($this->isVarExpr($arg->value)) {
+            // A single unpacked native array is already the ABI value. Reuse
+            // it directly instead of allocating and merging a temporary array.
+            if ($variadicArgCount === 1 && $arg->unpack && $this->isVarExpr($arg->value)) {
                 $var = $this->parseIdentifier($arg->value);
                 if ($this->getVarType($var) === Type::ARRAY) {
-                    return $var;
+                    $resolvedArgs[$variadicArgIndex] = $var;
+                    continue;
                 }
             }
-            return $this->convertArrayExpr($this->parseExpr($arg->value));
-        }
 
-        $tmpVar = $this->addTmpVar(Type::ARRAY);
-        foreach ($variadicArgs as [$name, $arg]) {
+            $variadicVar ??= $this->addTmpVar(Type::ARRAY);
+            $argInfo = $functionDef->argInfoList[$variadicArgIndex];
             if ($arg->unpack) {
-                $this->context->beforeStmtLines[] = $tmpVar . '.merge(' . $this->parseArrayArg($arg) . ');';
-            } elseif ($name !== null) {
-                $this->context->beforeStmtLines[] = $tmpVar . '.set(' . $this->getLiteralString($name) . ', ' . $this->getTypeConvertedArg($arg, $argInfo) . ');';
+                $this->context->beforeStmtLines[] = $variadicVar . '.merge(' . $this->parseArrayArg($arg) . ');';
+            } elseif ($variadicName !== null) {
+                $value = $this->getTypeConvertedArg($arg, $argInfo, $callableName, $variadicArgIndex);
+                $this->context->beforeStmtLines[] = $variadicVar . '.set('
+                    . $this->getLiteralString($variadicName) . ', ' . $value . ');';
             } else {
-                $this->context->beforeStmtLines[] = $tmpVar . '.append(' . $this->getTypeConvertedArg($arg, $argInfo) . ');';
+                $value = $this->getTypeConvertedArg($arg, $argInfo, $callableName, $variadicArgIndex);
+                $this->context->beforeStmtLines[] = $variadicVar . '.append(' . $value . ');';
             }
         }
-        return $tmpVar;
+
+        // Defaults have no caller-side evaluation. Add them after user
+        // arguments, then sort only the already-lowered values for the ABI.
+        foreach ($defaultArgs as $i => $defaultArg) {
+            $resolvedArgs[$i] = $defaultArg;
+        }
+        if ($variadicVar !== null) {
+            $resolvedArgs[$variadicArgIndex] = $variadicVar;
+        }
+        ksort($resolvedArgs);
+        return implode(', ', $resolvedArgs);
     }
 
     protected function parseNamedCallArgs(array $args, int $firstIndex, array $listArgs): string
@@ -597,10 +618,11 @@ trait CallArgumentGenerator
     protected function parseCallArgValue(Node\Arg $arg): string
     {
         $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
-        // C++17 does not define the evaluation order of function arguments.
-        // PHP does, so a nested call must be completed and stored before the
-        // next argument is lowered. Do not materialize unrelated expressions
-        // here: their native/reference types are handled by parseArg().
+        // C++17 evaluates php::ArgList{...} elements from left to right, but a
+        // later argument may emit captured beforeStmtLines while being lowered.
+        // Those statements are placed before the whole outer call and would
+        // overtake an earlier Call left inside the initializer list. Complete
+        // each direct Call in a temporary before lowering the next argument.
         $expr = $arg->value instanceof Expr\FuncCall
             || $arg->value instanceof Expr\MethodCall
             || $arg->value instanceof Expr\StaticCall

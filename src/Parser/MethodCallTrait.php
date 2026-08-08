@@ -296,9 +296,9 @@ trait MethodCallTrait
         }
 
         $class = '';
-        // PHP evaluates the receiver before method arguments. Materializing an
-        // effectful receiver here prevents an ordered nested-call argument from
-        // being hoisted ahead of expressions such as `new $class(...$args)`.
+        // C++17 sequences a member-call receiver before its arguments, but
+        // lowering an argument may hoist captured beforeStmtLines ahead of the
+        // whole call. Materialize an effectful receiver before parsing args.
         $object = empty($expr->args)
             ? $this->parseIdentifier($expr->var)
             : $this->parseOrderedOperand($expr->var, false);
