@@ -22,6 +22,9 @@ trait SelectionExpressionTrait
         $this->assertExprCanBeUsedAsCondition($expr->cond, 'ternary condition');
         $this->assertExprCanBeUsedAsValue($expr->if, 'ternary branch');
         $this->assertExprCanBeUsedAsValue($expr->else, 'ternary branch');
+        $ifType = $this->detectTypeOfExpr($expr->if);
+        $elseType = $this->detectTypeOfExpr($expr->else);
+        $typeChanged = $ifType !== $elseType;
         [$cond, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($expr->cond);
         $ifBeforeStmtCount = count($this->context->beforeStmtLines);
         $ifAfterStmtCount = count($this->context->afterStmtLines);
@@ -40,13 +43,15 @@ trait SelectionExpressionTrait
         $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $elseAfterStmtCount);
 
         $hasBranchStmts = $condBeforeStmts || $condAfterStmts || $ifBeforeStmts || $ifAfterStmts || $elseBeforeStmts || $elseAfterStmts;
-        $typeChanged = $this->detectTypeOfExpr($expr->if) !== $this->detectTypeOfExpr($expr->else);
         if (!$hasBranchStmts && $typeChanged) {
             $if = 'php::Var(' . $if . ')';
             $else = 'php::Var(' . $else . ')';
         }
         if ($hasBranchStmts) {
-            $code = '[&]() -> ' . Type::VAR . '{';
+            // REF and VOID are expression implementation types, not valid
+            // by-value result types for the materializing lambda.
+            $ternaryType = $this->getNormalAssignType($typeChanged ? Type::VAR : $ifType);
+            $code = '[&]() -> ' . $ternaryType . '{';
             $code .= $this->formatCapturedStmtLines($condBeforeStmts);
             if ($condAfterStmts) {
                 $condTmpVar = $this->addTmpVar(Type::VAR);
@@ -56,9 +61,9 @@ trait SelectionExpressionTrait
             }
             $cond = $this->convertConditionExpr($expr->cond, $cond);
             $code .= $this->getIndent() . 'if (' . $cond . ') {';
-            $code .= $this->formatTernaryReturn($if, $ifBeforeStmts, $ifAfterStmts);
+            $code .= $this->formatTernaryReturn($expr->if, $if, $ifBeforeStmts, $ifAfterStmts, $ternaryType, $ifType);
             $code .= $this->getIndent() . '} else {';
-            $code .= $this->formatTernaryReturn($else, $elseBeforeStmts, $elseAfterStmts);
+            $code .= $this->formatTernaryReturn($expr->else, $else, $elseBeforeStmts, $elseAfterStmts, $ternaryType, $elseType);
             $code .= $this->getIndent() . '}';
             $code .= $this->getIndent() . '}()';
             return $code;
@@ -67,16 +72,30 @@ trait SelectionExpressionTrait
         return '(' . $cond . ') ? (' . $if . ') : (' . $else . ')';
     }
 
-    protected function formatTernaryReturn(string $value, array $beforeStmts, array $afterStmts): string
+    protected function formatTernaryReturn(
+        NodeAbstract $valueExpr,
+        string $value,
+        array $beforeStmts,
+        array $afterStmts,
+        string $returnType,
+        string $valueType,
+    ): string
     {
         $code = $this->formatCapturedStmtLines($beforeStmts);
-        if ($afterStmts) {
-            $tmpVar = $this->addTmpVar(Type::VAR);
+        $returnsReference = $valueType === Type::REF
+            || ($valueExpr instanceof Expr\CallLike && $this->resolveRefReturningCall($valueExpr) !== false);
+        if ($returnType !== Type::VAR && ($beforeStmts || $afterStmts)) {
+            $value = $this->convertExprFromType($returnType, $value);
+        }
+        if ($afterStmts || $returnsReference) {
+            $tmpVar = $this->addTmpVar($returnType);
             $code .= $this->getIndent() . "{$tmpVar} = {$value};";
             $code .= $this->formatCapturedStmtLines($afterStmts);
             $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
         } else {
-            $code .= $this->getIndent() . 'return php::Var(' . $value . ');';
+            $code .= $returnType === Type::VAR
+                ? $this->getIndent() . 'return php::Var(' . $value . ');'
+                : $this->getIndent() . 'return ' . $value . ';';
         }
         return $code;
     }
