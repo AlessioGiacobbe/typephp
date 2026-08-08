@@ -4,6 +4,6 @@ static calls
 <?php
 $cls = 'DateTime';
 $method = 'createFromFormat';
-$now = $cls::$method('U', time());
+$date = $cls::$method('Y-m-d H:i:s', '2024-02-03 04:05:06');
 ?>
 --EXPECTF--

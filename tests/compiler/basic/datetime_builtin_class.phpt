@@ -35,9 +35,9 @@ $date4 = new DateTime('2023-12-31');
 $interval = $date3->diff($date4);
 echo $interval->days . " days\n";
 
-// Test static create methods
-$now = DateTime::createFromFormat('U', time());
-echo $now->format('Y-m-d H:i:s') . "\n";
+// Test parsing a datetime string with an explicit format.
+$parsed = DateTime::createFromFormat('Y-m-d H:i:s', '2024-02-03 04:05:06');
+echo $parsed->format('Y-m-d H:i:s') . "\n";
 
 // Test add/subtract intervals
 $date->add(new DateInterval('P1D')); // Add 1 day
@@ -57,7 +57,7 @@ echo $date->format('r') . "\n"; // RFC 2822 format
 2024-01-01 12:00:00
 2024-01-01 12:00:00 UTC
 364 days
-%d-%d-%d %d:%d:%d
+2024-02-03 04:05:06
 2024-01-02 12:00:00
 2024-01-01 12:00:00
 2024-01-01T12:00:00+00:00

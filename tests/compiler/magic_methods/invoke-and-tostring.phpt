@@ -41,7 +41,9 @@ function main(): void {
     echo $greet("World") . "\n";
     echo $greet . "\n";
 
-    echo strlen($double) . "\n";
+    // TypePHP is always strict; Stringable objects require an explicit cast
+    // when passed to an internal function with a string parameter.
+    echo strlen((string) $double) . "\n";
 }
 ?>
 --EXPECT--
