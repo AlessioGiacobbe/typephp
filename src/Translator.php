@@ -94,6 +94,7 @@ class Translator extends Preprocessor
      */
     protected array $classCeList = [];
     protected array $classCeInfo = [];
+    private int $strictTypes = 0;
 
     protected function isConstructorNativeFunction(FunctionDef $func): bool
     {
@@ -2416,6 +2417,12 @@ CODE;
         $this->resetMethod();
         $this->resetFunction();
 
+        /**
+         * Here, the value of strict_types needs to be reset,
+         * as not every file has declare(strict_types=1); set.
+         */
+        $this->setStrictTypes(0);
+
         $cppCode = '';
         foreach ($stmts as $v) {
             $type = $v->getType();
@@ -2569,6 +2576,8 @@ CODE;
             } elseif ($key === 'strict_types') {
                 if (!($declare->value instanceof Node\Scalar\Int_) or $declare->value->value !== 1) {
                     $this->fatalError($v, 'declare(strict_types=0) is not allowed, only strict_types=1 is supported');
+                } else {
+                    $this->setStrictTypes(1);
                 }
             } else {
                 $this->fatalError($v, 'declare(' . $key . '=' . $value . ') is not supported');
@@ -3246,6 +3255,18 @@ CODE;
         if ($functionDef->argCountRequired > 0) {
             $cppCode .= $this->genWrapperRequiredArgCountCheck($functionDef, $displayName);
         }
+
+        /**
+         * If the current file declares `declare(strict_types=1);`, the current function must be marked with the `ZEND_ACC_STRICT_TYPES` flag.
+         * This flag is used to ensure that when the function calls other functions through the ZendVM, it strictly validates argument types
+         * according to the declared mode.
+         *
+         * It is important to note that this mechanism only applies to functions dynamically invoked by the ZendVM.
+         * If the target function is compiled native code, type checking will not be triggered—this is by design in the ZendVM,
+         * whose philosophy is to trust the C code implementation of compiled internal functions.
+         */
+        $cppCode .= $this->genStrictTypesCode();
+
         foreach ($functionDef->argInfoList as $k => $argInfo) {
             $var = 'arg_' . $argInfo->name;
             if ($argInfo->variadic) {
@@ -4980,5 +5001,24 @@ CODE;
         $code .= '};' . PHP_EOL . PHP_EOL;
 
         return $code;
+    }
+
+    private function genStrictTypesCode(): string
+    {
+        /**
+         * Type checking is enabled only in binary mode. Since binary mode runs as a standalone executable,
+         * it must preserve behavioral semantics consistent with directly executed PHP code,
+         * so type checking must be retained to ensure safety.
+         * Conversely, when compiled as an extension (e.g., ext/curl), the compilation side does not need to
+         * enforce built-in type checking; whether it is enabled should be left to the calling PHP code to decide.
+         */
+        return $this->strictTypes == 1 && $this->isBuildModeBin() && !$this->isWasiTarget()
+            ? "execute_data->func->common.fn_flags |= ZEND_ACC_STRICT_TYPES;" . PHP_EOL
+            : '';
+    }
+
+    private function setStrictTypes(int $value): void
+    {
+        $this->strictTypes = $value;
     }
 }
