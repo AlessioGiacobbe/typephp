@@ -796,6 +796,13 @@ class Preprocessor extends CompilerBase
             $this->classDef->implements = $this->parseImplements($class->implements);
         } else {
             $this->classDef->trait = $class;
+            // Trait members are compiled later in the consuming class, but
+            // names inside them retain the lexical imports of the trait
+            // declaration.
+            $this->classDef->traitUseNamespaces = $this->useNamespaces;
+            $this->classDef->traitUseAliases = $this->useAliases;
+            $this->classDef->traitUseFunctions = $this->useFunctions;
+            $this->classDef->traitUseConstants = $this->useConstants;
         }
         $this->symbolDeclInFile[$fullClassNameLower] = $this->file;
 
@@ -1463,6 +1470,10 @@ class Preprocessor extends CompilerBase
         if (!$abstract) {
             $this->methodDef = new MethodDef($flags, $name);
             $this->methodDef->node = $v;
+            $traitOrigin = $v->getAttribute('typephp_trait_origin');
+            if (is_string($traitOrigin)) {
+                $this->methodDef->traitOrigin = $traitOrigin;
+            }
             if ($this->classDef->hasMethod($name)) {
                 $generatedBy = $v->getAttribute(CompileTimeAttributeDiagnostic::GENERATED_BY);
                 $generatedTarget = $v->getAttribute(CompileTimeAttributeDiagnostic::GENERATED_TARGET);
@@ -1479,6 +1490,12 @@ class Preprocessor extends CompilerBase
                 $this->fatalError($v, "Duplicate method `{$this->method}`");
             }
             $this->prepareFunction($v);
+            if ($class instanceof Node\Stmt\Trait_) {
+                // Trait functions are templates, not native symbols. The
+                // FunctionDef remains owned by MethodDef and is cloned into
+                // every class that composes the trait.
+                $this->symbols->removeFunction($this->getFunctionName($v));
+            }
             $this->checkRequiredArgNum($name, $this->methodDef, $v);
             $this->classDef->addMethod($this->methodDef);
         } else {
@@ -1490,6 +1507,10 @@ class Preprocessor extends CompilerBase
             }
             $this->methodDef = new MethodDef($flags, $name);
             $this->methodDef->node = $v;
+            $traitOrigin = $v->getAttribute('typephp_trait_origin');
+            if (is_string($traitOrigin)) {
+                $this->methodDef->traitOrigin = $traitOrigin;
+            }
             $this->methodDef->functionDef = $this->parseFunctionDecl($v);
             $this->methodDef->functionDef->method = true;
             $this->checkRequiredArgNum($name, $this->methodDef, $v);

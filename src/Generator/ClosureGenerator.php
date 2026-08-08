@@ -302,9 +302,9 @@ trait ClosureGenerator
         $this->indentLevel++;
 
         try {
-            foreach ($capturedNames as $i => $name) {
-                $code .= $this->getIndent() . Type::VAR . ' ' . $name . ' = vars_.get(' . $i . ');' . PHP_EOL;
-                $this->addArgument($name, Type::VAR);
+            foreach ($capturedNames as $i => $capturedName) {
+                $code .= $this->getIndent() . Type::VAR . ' ' . $capturedName . ' = vars_.get(' . $i . ');' . PHP_EOL;
+                $this->addArgument($capturedName, Type::VAR);
             }
             if ($this->methodDef) {
                 $this->addArgument('this_', Type::OBJECT);

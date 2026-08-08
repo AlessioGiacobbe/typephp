@@ -10,7 +10,7 @@ trait HelloTrait {
 }
 
 function main() {
-    eval("(new class { use HelloTrait;})->hello();");
+    (new class { use HelloTrait; })->hello();
 }
 ?>
 --EXPECT--

@@ -89,7 +89,8 @@ trait ConstantExpressionTrait
 
     protected function parseMagicConst(MagicConst $expr): string
     {
-        $class = ($this->namespace ? $this->namespace . '\\' : '') . $this->class;
+        $class = $this->classDef?->getNamespacedName(false)
+            ?? (($this->namespace ? $this->namespace . '\\' : '') . $this->class);
         $function = ($this->namespace ? $this->namespace . '\\' : '') . $this->function;
         switch ($expr->getType()) {
             case 'Scalar_MagicConst_Dir':
@@ -109,6 +110,9 @@ trait ConstantExpressionTrait
                 }
                 return '"' . $this->escapeString($class) . '"';
             case 'Scalar_MagicConst_Trait':
+                if ($this->methodDef?->traitOrigin !== '') {
+                    return '"' . $this->escapeString($this->methodDef->traitOrigin) . '"';
+                }
                 if (!$this->classDef or !$this->classDef->trait) {
                     $this->fatalError($expr, 'The magic constant `__TRAIT__` is not allowed in global scope');
                 }

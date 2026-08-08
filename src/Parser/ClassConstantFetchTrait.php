@@ -29,7 +29,11 @@ trait ClassConstantFetchTrait
                 $class = 'static';
             } else {
                 $self = true;
-                $class = $this->class;
+                // Trait-composed methods are parsed under the trait's lexical
+                // namespace, while `self` still denotes the consuming class.
+                // Keep it fully qualified so the lexical namespace is not
+                // applied to the class identity below.
+                $class = '\\' . $this->getFullClassName();
             }
         } elseif ($class === 'parent') {
             if (!$this->classDef || !$this->classDef->extends) {

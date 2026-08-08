@@ -1051,16 +1051,29 @@ class CompilerBase implements PropertyAccessContext
 
     protected function getFunctionName(FunctionLike $v): string
     {
+        if ($this->methodDef !== null && $this->classDef !== null) {
+            return $this->getNativeName(
+                $this->parseIdentifier($v->name),
+                $this->classDef->namespace,
+                $this->classDef->name,
+            );
+        }
         return $this->getNativeName($this->parseIdentifier($v->name), $this->namespace, $this->class);
     }
 
     protected function getFullClassName(): string
     {
+        if ($this->classDef !== null) {
+            return $this->classDef->getNamespacedName(false);
+        }
         return ltrim($this->namespace . '\\' . $this->class, '\\');
     }
 
     protected function getFullClassLikeName(): string
     {
+        if ($this->classDef !== null) {
+            return $this->classDef->getNamespacedName(false);
+        }
         $name = $this->class !== '' ? $this->class : $this->interface;
         return ltrim($this->namespace . '\\' . $name, '\\');
     }
@@ -3254,6 +3267,7 @@ class CompilerBase implements PropertyAccessContext
                         $classDef->implements[$i] = new Node\Name\FullyQualified($ifaceName);
                     }
                 }
+                $this->flattenEmbeddedClassTraits($classDef);
                 // 将匿名类内部的类型引用（方法参数、返回值、属性等）转为全限定名称
                 $this->resolveAnonClassTypeNames($classDef);
                 $this->context->beforeStmtLines[] = 'static THREAD_LOCAL bool ' . $className . '_defined = false;';

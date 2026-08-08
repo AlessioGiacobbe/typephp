@@ -640,9 +640,12 @@ class ClassTest extends \BaseTest
         $this->exec('Cannot access private method `BaseSecret::secret()`', 'trait-parent-method-private.php');
     }
 
-    public function testTraitMethodMayShadowPrivateParentMethod()
+    public function testComposedTraitMethodCannotShadowPrivateParentMethod()
     {
-        $this->compile('trait-method-shadows-private.php');
+        $this->exec(
+            'Cannot override private method `PrivateMethodParent::execute()`',
+            'trait-method-shadows-private.php'
+        );
     }
 
     public function testSelfCanBePartOfUnionType()

@@ -157,9 +157,9 @@ trait AssignOpTrait
             $variables[] = $name;
         }
 
-        foreach ($variables as $name) {
-            if (!$this->hasVar($name)) {
-                $this->addLocalVar($name, Type::VAR);
+        foreach ($variables as $variableName) {
+            if (!$this->hasVar($variableName)) {
+                $this->addLocalVar($variableName, Type::VAR);
             }
         }
         $tieItems = array_merge(

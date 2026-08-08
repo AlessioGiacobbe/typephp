@@ -22,14 +22,8 @@ class MethodDef
      */
     public ?\PhpParser\Node\Stmt\ClassMethod $node = null;
 
-    /**
-     * For methods defined inside a trait, records `parent::method()` calls so
-     * the compiler can validate their visibility against the parent of each
-     * class that uses the trait (the trait itself has no parent at compile time).
-     *
-     * @var array<int, array{method: string, node: \PhpParser\NodeAbstract}>
-     */
-    public array $parentMethodCalls = [];
+    /** Source trait, retained only for diagnostics and the __TRAIT__ constant. */
+    public string $traitOrigin = '';
 
     public function __construct(int $flags, string $name)
     {

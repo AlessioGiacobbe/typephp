@@ -21,6 +21,7 @@ use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\ClassConst;
 use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\Property;
+use PhpParser\Node\Stmt\TraitUse;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitorAbstract;
 use TypePhp\Resolver\Reflection;
@@ -30,6 +31,49 @@ trait AnonClassGenerator
     public function genAnonClassName(): string
     {
         return self::ANON_CLASS . $this->anonClassIndex++;
+    }
+
+    /** Flatten trait templates before an anonymous class is evaluated by ZendVM. */
+    protected function flattenEmbeddedClassTraits(Class_ $class): void
+    {
+        $declaredMethods = [];
+        foreach ($class->stmts as $stmt) {
+            if ($stmt instanceof ClassMethod) {
+                $declaredMethods[strtolower($stmt->name->toString())] = true;
+            }
+        }
+
+        $injected = [];
+        foreach ($class->stmts as $stmt) {
+            if (!$stmt instanceof TraitUse) {
+                continue;
+            }
+            foreach ($stmt->traits as $traitName) {
+                $fullName = $this->getNamespacedClassName($traitName->toString());
+                if (!$this->hasClass($fullName)) {
+                    $this->fatalError($stmt, "Trait `{$fullName}` not found");
+                }
+                $traitDef = $this->getClass($fullName);
+                $traitAst = clone $traitDef->trait;
+                foreach ($traitAst->stmts as $traitStmt) {
+                    if ($traitStmt instanceof ClassMethod) {
+                        $name = strtolower($traitStmt->name->toString());
+                        if (isset($declaredMethods[$name])) {
+                            continue;
+                        }
+                        $declaredMethods[$name] = true;
+                    }
+                    if (!$traitStmt instanceof TraitUse) {
+                        $injected[] = $traitStmt;
+                    }
+                }
+            }
+        }
+        $class->stmts = array_values(array_filter(
+            $class->stmts,
+            static fn (Node $stmt): bool => !$stmt instanceof TraitUse,
+        ));
+        array_push($class->stmts, ...$injected);
     }
 
     /**

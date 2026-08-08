@@ -363,6 +363,6 @@ class InheritanceErrorTest extends TestCase
 
     public function testTraitParentCallRequiresParentClass()
     {
-        $this->exec('has no parent', 'trait-parent-without-parent.php');
+        $this->exec('does not extend any class', 'trait-parent-without-parent.php');
     }
 }

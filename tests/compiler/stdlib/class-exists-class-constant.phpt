@@ -40,7 +40,7 @@ bool(true)
 pick:interface
 bool(true)
 pick:trait
-bool(true)
+bool(false)
 pick:enum
 bool(true)
 bool(false)

@@ -20,7 +20,7 @@ function main() {
     var_dump(interface_exists("MyInterface"));
     var_dump(interface_exists("NonexistentInterface"));
 
-    // trait_exists
+    // TypePHP traits are compile-time-only AST templates.
     var_dump(trait_exists("MyTrait"));
     var_dump(trait_exists("NonexistentTrait"));
 
@@ -40,7 +40,7 @@ bool(false)
 bool(false)
 bool(true)
 bool(false)
-bool(true)
+bool(false)
 bool(false)
 bool(true)
 bool(false)

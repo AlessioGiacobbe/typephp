@@ -4637,6 +4637,12 @@ class FileInfo {
                 continue;
             }
 
+            // TypePHP traits are compile-time AST templates and must not become
+            // Zend class entries in the generated arginfo registration code.
+            if ($stmt instanceof Trait_) {
+                continue;
+            }
+
             if ($stmt instanceof Stmt\ClassLike) {
                 $className = $stmt->namespacedName;
                 $constInfos = [];
@@ -4645,7 +4651,7 @@ class FileInfo {
                 $enumCaseInfos = [];
 
                 if (!$stmt instanceof PhpParser\Node\Stmt\Interface_) {
-                    getTranslator()->parseTraitUseForStub($stmt, $className);
+                    getTranslator()->composeTraitAst($stmt, $className);
                 }
                 ClassInfo::$currentClass = $className->toString();
 

@@ -18,7 +18,7 @@ function main() {
     echo interface_exists("NonExistentInterface") ? "fail\n" : "ok-false\n";
 
     echo "trait_exists:\n";
-    echo trait_exists("MyTrait") ? "ok-true\n" : "fail\n";
+    echo trait_exists("MyTrait") ? "fail\n" : "ok-false\n";
     echo trait_exists("NonExistentTrait") ? "fail\n" : "ok-false\n";
 
     echo "enum_exists:\n";
@@ -36,7 +36,7 @@ interface_exists:
 ok-true
 ok-false
 trait_exists:
-ok-true
+ok-false
 ok-false
 enum_exists:
 ok-true
