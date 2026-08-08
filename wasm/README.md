@@ -70,15 +70,9 @@ application build. PHPX release packages include the pinned host-side
 `phpx-wit-bindgen` needed for application-specific exports below
 `<phpx>/wasm/bin/<host-os>-<host-arch>/`.
 
-SDK producer and TypePHP integration checks are kept with the TypePHP WASM
-backend rather than php-src:
-
-```text
-wasm/link-numeric-smoke-test.sh  GMP, MPFR, and mpdecimal link check
-wasm/test-typephp-program.sh     TypePHP high-precision integration check
-wasm/numeric-smoke-test.cc       Native numeric test program
-wasm/examples/high-precision.php TypePHP integration example
-```
+WASM integration checks live in `tests/wasm` and run through `run-tests.php`.
+The target-independent high-precision TypePHP example lives at
+`examples/high-precision.php`.
 
 ## Language-level component exports
 

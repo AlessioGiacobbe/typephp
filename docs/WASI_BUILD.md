@@ -174,10 +174,10 @@ WASI 产物包含 TypePHP 的三种语言级高精度类型：
 - `BigFloat`：MPFR 4.2.2
 - `Decimal`：mpdecimal 4.0.1
 
-完整示例位于 [high-precision.php](../wasm/examples/high-precision.php)。构建并运行：
+完整示例位于 [high-precision.php](../examples/high-precision.php)。构建并运行：
 
 ```bash
-php bin/tpc.php --wasm wasm/examples/high-precision.php
+php bin/tpc.php --wasm examples/high-precision.php
 wasmtime -S http high-precision.wasm
 ```
 

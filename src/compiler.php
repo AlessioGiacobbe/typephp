@@ -163,7 +163,7 @@ function compileWasmProgram(array $argv): void
         exit(1);
     }
 
-    $builder = dirname(__DIR__) . '/wasm/build-typephp-program.sh';
+    $builder = dirname(__DIR__) . '/wasm/build-program.sh';
     if (!is_executable($builder)) {
         fwrite(STDERR, "TypePHP WASI builder is not executable: {$builder}\n");
         exit(1);

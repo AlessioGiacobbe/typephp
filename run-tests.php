@@ -134,6 +134,12 @@ Options:
                 Use specified compiler binary (default: ./bin/tpc.php).
                 For bootstrap testing, use: --compiler ./swoole_compiler
 
+    --target <target>
+                Select the execution backend: native (default), wasm-component,
+                wasm-browser, or wasm-all.
+
+    --wasm      Shorthand for --target wasm-component.
+
     --bless     Bless failed tests using scripts/dev/bless_tests.php.
 
 HELP;
@@ -161,7 +167,7 @@ function main(): void
            $temp_source, $temp_target, $test_cnt,
            $test_files, $test_idx, $test_results, $testfile,
            $valgrind, $sum_results, $shuffle, $file_cache, $num_repeats,
-           $show_progress, $aot_parallel_root;
+           $show_progress, $aot_parallel_root, $test_target;
     // Parallel testing
     global $workers, $workerID;
     global $context_line_count;
@@ -358,6 +364,7 @@ function main(): void
     $bless = false;
     $workers = null;
     $aot_parallel_root = null;
+    $test_target = 'native';
     $context_line_count = 3;
     $num_repeats = 1;
     $show_progress = true;
@@ -502,6 +509,15 @@ function main(): void
                     break;
                 case '--compiler':
                     $compiler_path = $argv[++$i];
+                    break;
+                case '--wasm':
+                    $test_target = 'wasm-component';
+                    break;
+                case '--target':
+                    $test_target = strtolower($argv[++$i] ?? '');
+                    if (!in_array($test_target, ['native', 'wasm-component', 'wasm-browser', 'wasm-all'], true)) {
+                        error("Unsupported test target '$test_target'; expected native, wasm-component, wasm-browser, or wasm-all");
+                    }
                     break;
                 case '--color':
                     $colorize = true;
@@ -680,6 +696,16 @@ function main(): void
     }
     if (!$compiler_path) {
         $compiler_path = './bin/tpc.php';
+    }
+    if ($test_target !== 'native' && $no_aot) {
+        error('--no-aot cannot be combined with a WASM test target');
+    }
+    if (in_array($test_target, ['wasm-browser', 'wasm-all'], true)) {
+        $harnessBin = __DIR__ . '/tests/wasm/harness/node_modules/.bin';
+        if (is_dir($harnessBin)) {
+            $environment['PATH'] = $harnessBin . PATH_SEPARATOR . ($environment['PATH'] ?? getenv('PATH') ?: '');
+            putenv('PATH=' . $environment['PATH']);
+        }
     }
 
     $php_cgi = getenv('TEST_PHP_CGI_EXECUTABLE') ?: get_binary($php, 'php-cgi', 'sapi/cgi/php-cgi');
@@ -1832,7 +1858,7 @@ function run_test(string $php, $file, array $env): string
     global $slow_min_ms;
     global $preload, $file_cache;
     global $num_repeats;
-    global $compiler_path;
+    global $compiler_path, $test_target;
     // Parallel testing
     global $workerID;
     global $show_progress;
@@ -1854,6 +1880,7 @@ function run_test(string $php, $file, array $env): string
 retry:
 
     $org_file = $file;
+    $wasmCommands = [];
 
     $php_cgi = $env['TEST_PHP_CGI_EXECUTABLE'] ?? null;
     $phpdbg = $env['TEST_PHPDBG_EXECUTABLE'] ?? null;
@@ -1889,6 +1916,16 @@ TEST $file
     }
 
     $tested = $test->getName();
+
+    if ($test_target !== 'native' && $test->hasSection('WASM_TARGETS')) {
+        $targets = preg_split('/[\s,]+/', trim($test->getSection('WASM_TARGETS')), -1, PREG_SPLIT_NO_EMPTY);
+        $selectedTargets = $test_target === 'wasm-all'
+            ? ['wasm-component', 'wasm-browser']
+            : [$test_target];
+        if (array_intersect($selectedTargets, $targets) === []) {
+            return skip_test($tested, $tested_file, $shortname, "not enabled for $test_target");
+        }
+    }
 
     if ($test->hasSection('FILE_EXTERNAL')) {
         if ($num_repeats > 1) {
@@ -2455,7 +2492,19 @@ TEST $file
     if (!$no_aot) {
         try {
             $aot_args = $test->hasSection('AOT_ARGS') ? trim($test->getSection('AOT_ARGS')) : '';
-            $bin_file = compile_php_file($test_file, $aot_args);
+            if ($test_target === 'native') {
+                $bin_file = compile_php_file($test_file, $aot_args);
+            } else {
+                $guestArgs = parse_wasm_test_args($test->hasSection('ARGS') ? $test->getSection('ARGS') : '');
+                $guestEnv = parse_wasm_test_env($test, $file);
+                foreach (get_wasm_test_profiles($test_target, $test) as $profile) {
+                    $artifact = compile_wasm_php_file($test_file, $profile, $aot_args);
+                    $wasmCommands[] = $profile === 'component'
+                        ? create_wasmtime_test_command($artifact, $guestArgs, $guestEnv)
+                        : create_wasm_browser_test_command($artifact, $guestArgs, $guestEnv);
+                }
+                $bin_file = $artifact['wasm'];
+            }
         } catch (Throwable $e) {
             $compileOutput = trim($e instanceof CompilationFailureException ? $e->getCompilerOutput() : '');
             $message = $e->getMessage();
@@ -2488,11 +2537,15 @@ $message
             $junit->markTestAs('FAIL', $shortname, $tested, null, $message, $compileOutput);
             return 'FAILED';
         }
-        $args = substr($args, strlen(' -- '));
-        $executable = str_contains($bin_file, DIRECTORY_SEPARATOR)
-            ? $bin_file
-            : (IS_WINDOWS ? '.\\' : './') . $bin_file;
-        $cmd = escapeshellarg($executable) . ' ' . $args . $cmdRedirect;
+        if ($test_target === 'native') {
+            $args = substr($args, strlen(' -- '));
+            $executable = str_contains($bin_file, DIRECTORY_SEPARATOR)
+                ? $bin_file
+                : (IS_WINDOWS ? '.\\' : './') . $bin_file;
+            $cmd = escapeshellarg($executable) . ' ' . $args . $cmdRedirect;
+        } else {
+            $cmd = $wasmCommands[0] . $cmdRedirect;
+        }
     } else {
         $content = file_get_contents($test_file);
         if (preg_match('/function main\(\)/', $content)) {
@@ -2536,7 +2589,30 @@ COMMAND $cmd
     $startTime = $hrtime[0] * 1000000000 + $hrtime[1];
 
     $stdin = $test->hasSection('STDIN') ? $test->getSection('STDIN') : null;
-    $out = system_with_timeout($cmd, $env, $stdin, $captureStdIn, $captureStdOut, $captureStdErr);
+    if (count($wasmCommands) > 1) {
+        $wasmOutputs = [];
+        foreach ($wasmCommands as $wasmCommand) {
+            $wasmOutputs[] = system_with_timeout(
+                $wasmCommand . $cmdRedirect,
+                $env,
+                $stdin,
+                $captureStdIn,
+                $captureStdOut,
+                $captureStdErr
+            );
+        }
+        $out = array_shift($wasmOutputs);
+        foreach ($wasmOutputs as $wasmOutput) {
+            if (normalize_wasm_test_output($wasmOutput) !== normalize_wasm_test_output($out)) {
+                $out = "WASM backend output mismatch\n"
+                    . "--- wasm-component ---\n" . $out
+                    . "--- wasm-browser ---\n" . $wasmOutput;
+                break;
+            }
+        }
+    } else {
+        $out = system_with_timeout($cmd, $env, $stdin, $captureStdIn, $captureStdOut, $captureStdErr);
+    }
 
     $junit->stopTimer($shortname);
     $hrtime = hrtime();
@@ -3771,7 +3847,7 @@ class TestFile
 
     private const ALLOWED_SECTIONS = [
         'EXPECT', 'EXPECTF', 'EXPECTREGEX', 'EXPECTREGEX_EXTERNAL', 'EXPECT_EXTERNAL', 'EXPECTF_EXTERNAL', 'EXPECTHEADERS',
-        'POST', 'POST_RAW', 'GZIP_POST', 'DEFLATE_POST', 'PUT', 'GET', 'COOKIE', 'ARGS', 'AOT_ARGS',
+        'POST', 'POST_RAW', 'GZIP_POST', 'DEFLATE_POST', 'PUT', 'GET', 'COOKIE', 'ARGS', 'AOT_ARGS', 'WASM_TARGETS',
         'FILE', 'FILEEOF', 'FILE_EXTERNAL', 'REDIRECTTEST',
         'CAPTURE_STDIO', 'STDIN', 'CGI', 'PHPDBG',
         'INI', 'ENV', 'EXTENSIONS',
@@ -4269,6 +4345,187 @@ function debug()
         var_dump($arg);
     }
     exit;
+}
+
+/** @return string[] */
+function get_wasm_test_profiles(string $target, TestFile $test): array
+{
+    $profiles = match ($target) {
+        'wasm-component' => ['component'],
+        'wasm-browser' => ['browser'],
+        'wasm-all' => ['component', 'browser'],
+        default => [],
+    };
+    if (!$test->hasSection('WASM_TARGETS')) {
+        return $profiles;
+    }
+
+    $enabled = preg_split('/[\s,]+/', trim($test->getSection('WASM_TARGETS')), -1, PREG_SPLIT_NO_EMPTY);
+    return array_values(array_filter(
+        $profiles,
+        static fn(string $profile): bool => in_array('wasm-' . $profile, $enabled, true)
+    ));
+}
+
+/** @return string[] */
+function parse_wasm_test_args(string $args): array
+{
+    if (trim($args) === '') {
+        return [];
+    }
+    preg_match_all('/"((?:\\\\.|[^"\\\\])*)"|\'((?:\\\\.|[^\'\\\\])*)\'|([^\s]+)/', trim($args), $matches, PREG_SET_ORDER);
+    $result = [];
+    foreach ($matches as $match) {
+        $value = $match[1] !== '' ? $match[1] : ($match[2] !== '' ? $match[2] : $match[3]);
+        $result[] = preg_replace('/\\\\([\\\\"\'])/', '$1', $value);
+    }
+    return $result;
+}
+
+/** @return array<string, string> */
+function parse_wasm_test_env(TestFile $test, string $file): array
+{
+    if (!$test->sectionNotEmpty('ENV')) {
+        return [];
+    }
+    $result = [];
+    $env = str_replace('{PWD}', dirname($file), $test->getSection('ENV'));
+    foreach (preg_split('/\r?\n/', trim($env)) as $line) {
+        $parts = explode('=', trim($line), 2);
+        if ($parts[0] !== '' && isset($parts[1])) {
+            $result[$parts[0]] = $parts[1];
+        }
+    }
+    return $result;
+}
+
+/** @return array{wasm:string,browser:string,root:string,sandbox:string} */
+function compile_wasm_php_file(string $file, string $profile, string $compilerArgs = ''): array
+{
+    global $compiler_path, $workerID, $aot_parallel_root;
+
+    if ($aot_parallel_root === null) {
+        $aot_parallel_root = create_aot_parallel_root();
+        register_shutdown_function(static function () use (&$aot_parallel_root): void {
+            if ($aot_parallel_root !== null) {
+                remove_directory($aot_parallel_root);
+                $aot_parallel_root = null;
+            }
+        });
+    }
+
+    $case = preg_replace('/[^A-Za-z0-9_.-]+/', '-', basename($file, '.php'))
+        . '-' . substr(sha1((string) realpath($file)), 0, 12);
+    $root = $aot_parallel_root . DIRECTORY_SEPARATOR . 'worker-' . $workerID
+        . DIRECTORY_SEPARATOR . $case . DIRECTORY_SEPARATOR . $profile;
+    $build = $root . DIRECTORY_SEPARATOR . 'build';
+    $output = $root . DIRECTORY_SEPARATOR . 'output';
+    $sandbox = $root . DIRECTORY_SEPARATOR . 'sandbox';
+    ensure_directory_exists($build);
+    ensure_directory_exists($output);
+    ensure_directory_exists($sandbox);
+
+    $compiler = $compiler_path;
+    if (!str_starts_with($compiler, DIRECTORY_SEPARATOR)) {
+        $resolved = realpath(INIT_DIR . DIRECTORY_SEPARATOR . $compiler);
+        if ($resolved !== false) {
+            $compiler = $resolved;
+        }
+    }
+    $command = str_ends_with($compiler, '.php')
+        ? [PHP_BINARY, $compiler]
+        : [$compiler];
+    array_push($command, $file, '--wasm=' . $profile, '--build-dir', $build);
+    if ($compilerArgs !== '') {
+        array_push($command, ...parse_wasm_test_args($compilerArgs));
+    }
+
+    $log = $root . DIRECTORY_SEPARATOR . 'compile.log';
+    $process = proc_open(
+        $command,
+        [STDIN, ['file', $log, 'w'], ['file', $log, 'a']],
+        $pipes,
+        $output,
+        null,
+    );
+    if (!is_resource($process)) {
+        throw new CompilationFailureException('Unable to start the WASM compiler');
+    }
+    $exitCode = proc_close($process);
+    $compilerOutput = is_file($log) ? trim((string) file_get_contents($log)) : '';
+
+    $stem = preg_replace('/[^A-Za-z0-9_-]+/', '_', basename($file, '.php'));
+    $wasm = $output . DIRECTORY_SEPARATOR . $stem . '.wasm';
+    $browser = $output . DIRECTORY_SEPARATOR . $stem . '.browser';
+    if ($exitCode !== 0 || !is_file($wasm) || ($profile === 'browser' && !is_file($browser . '/program.js'))) {
+        throw new CompilationFailureException('WASM compilation failed', $compilerOutput);
+    }
+
+    return ['wasm' => $wasm, 'browser' => $browser, 'root' => $root, 'sandbox' => $sandbox];
+}
+
+/** @param string[] $args @param array<string, string> $env */
+function create_wasmtime_test_command(array $artifact, array $args, array $env): string
+{
+    $wasmtime = find_test_executable('TYPEPHP_WASMTIME', ['wasmtime']);
+    if ($wasmtime === null) {
+        throw new CompilationFailureException("Required WASI runtime 'wasmtime' was not found in PATH");
+    }
+    $command = escapeshellarg($wasmtime) . ' run -S http --dir '
+        . escapeshellarg($artifact['sandbox'] . '::/sandbox');
+    foreach ($env as $name => $value) {
+        $command .= ' --env ' . escapeshellarg($name . '=' . $value);
+    }
+    $command .= ' ' . escapeshellarg($artifact['wasm']);
+    foreach ($args as $arg) {
+        $command .= ' ' . escapeshellarg($arg);
+    }
+    return $command;
+}
+
+/** @param string[] $args @param array<string, string> $env */
+function create_wasm_browser_test_command(array $artifact, array $args, array $env): string
+{
+    $node = find_test_executable('TYPEPHP_NODE', ['node']);
+    $chrome = find_test_executable('TYPEPHP_CHROME', ['google-chrome', 'chromium', 'chromium-browser']);
+    $runner = __DIR__ . '/tests/wasm/harness/browser-runner.mjs';
+    if ($node === null || $chrome === null || !is_file($runner)) {
+        throw new CompilationFailureException('WASM browser test requires Node.js, Chrome, and the browser harness');
+    }
+    $optionsFile = $artifact['root'] . DIRECTORY_SEPARATOR . 'browser-options.json';
+    file_put_contents($optionsFile, json_encode([
+        'args' => $args,
+        'env' => $env,
+        'argv0' => basename($artifact['wasm']),
+    ], JSON_THROW_ON_ERROR));
+
+    return escapeshellarg($node) . ' ' . escapeshellarg($runner)
+        . ' ' . escapeshellarg($artifact['browser'])
+        . ' ' . escapeshellarg($chrome)
+        . ' ' . escapeshellarg($optionsFile);
+}
+
+function find_test_executable(string $environmentName, array $names): ?string
+{
+    $configured = getenv($environmentName);
+    if (is_string($configured) && $configured !== '' && is_executable($configured)) {
+        return realpath($configured) ?: $configured;
+    }
+    $path = getenv('PATH') ?: '';
+    foreach (explode(PATH_SEPARATOR, $path) as $directory) {
+        foreach ($names as $name) {
+            $candidate = rtrim($directory, '/\\') . DIRECTORY_SEPARATOR . $name . (IS_WINDOWS ? '.exe' : '');
+            if (is_file($candidate) && is_executable($candidate)) {
+                return realpath($candidate) ?: $candidate;
+            }
+        }
+    }
+    return null;
+}
+
+function normalize_wasm_test_output(string $output): string
+{
+    return str_replace("\r\n", "\n", trim($output));
 }
 
 function compile_php_file(string $file, string $compiler_args = ''): string
