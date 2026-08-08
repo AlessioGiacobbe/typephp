@@ -898,11 +898,11 @@ CODE;
             }
             $fullName = $functionDef->getNamespacedName();
             $zifName = $this->escapeZendFnName($fullName);
-            if ($functionDef->namespace) {
-                $code .= $this->getIndent() . 'ZEND_NAMED_FE("' . $this->escapeString($fullName) . '", ZEND_FN(' . $zifName . '), arginfo_' . $zifName . ')' . PHP_EOL;
-            } else {
-                $code .= $this->getIndent() . 'ZEND_FE(' . $zifName . ', arginfo_' . $zifName . ')' . PHP_EOL;
-            }
+            // TypePHP is always strict. Store the flag in the registered
+            // zend_function instead of rewriting shared metadata on every call.
+            $code .= $this->getIndent() . 'ZEND_RAW_FENTRY("' . $this->escapeString($fullName)
+                . '", ZEND_FN(' . $zifName . '), arginfo_' . $zifName
+                . ', ZEND_ACC_STRICT_TYPES, NULL, NULL)' . PHP_EOL;
         }
         $code .= $this->getIndent() . "ZEND_FE_END\n};\n// clang-format on" . PHP_EOL . PHP_EOL;
 
@@ -2569,8 +2569,6 @@ CODE;
             } elseif ($key === 'strict_types') {
                 if (!($declare->value instanceof Node\Scalar\Int_) or $declare->value->value !== 1) {
                     $this->fatalError($v, 'declare(strict_types=0) is not allowed, only strict_types=1 is supported');
-                } else {
-                    $this->setStrictTypes(1);
                 }
             } else {
                 $this->fatalError($v, 'declare(' . $key . '=' . $value . ') is not supported');
@@ -3248,17 +3246,6 @@ CODE;
         if ($functionDef->argCountRequired > 0) {
             $cppCode .= $this->genWrapperRequiredArgCountCheck($functionDef, $displayName);
         }
-
-        /**
-         * Tthe current function must be marked with the `ZEND_ACC_STRICT_TYPES` flag.
-         * This flag is used to ensure that when the function calls other functions through the ZendVM,
-         * it strictly validates argument types according to the declared mode.
-         *
-         * It is important to note that this mechanism only applies to functions dynamically invoked by the ZendVM.
-         * If the target function is compiled native code, type checking will not be triggered—this is by design in the ZendVM,
-         * whose philosophy is to trust the C code implementation of compiled internal functions.
-         */
-        $cppCode .= $this->genStrictTypesCode();
 
         foreach ($functionDef->argInfoList as $k => $argInfo) {
             $var = 'arg_' . $argInfo->name;
@@ -4996,8 +4983,4 @@ CODE;
         return $code;
     }
 
-    private function genStrictTypesCode(): string
-    {
-        return "execute_data->func->common.fn_flags |= ZEND_ACC_STRICT_TYPES;" . PHP_EOL;
-    }
 }

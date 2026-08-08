@@ -1688,7 +1688,9 @@ class FuncInfo {
 
     private function getArginfoFlagsByPhpVersions(): VersionFlags
     {
-        $flags = [];
+        // TypePHP is always strict. Register functions and methods with the
+        // flag once so dynamic calls made by native bodies inherit that mode.
+        $flags = ["ZEND_ACC_STRICT_TYPES"];
 
         if ($this->isMethod()) {
             if ($this->flags & Modifiers::PROTECTED) {
