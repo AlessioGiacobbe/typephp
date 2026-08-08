@@ -901,11 +901,11 @@ CODE;
             }
             $fullName = $functionDef->getNamespacedName();
             $zifName = $this->escapeZendFnName($fullName);
-            if ($functionDef->namespace) {
-                $code .= $this->getIndent() . 'ZEND_NAMED_FE("' . $this->escapeString($fullName) . '", ZEND_FN(' . $zifName . '), arginfo_' . $zifName . ')' . PHP_EOL;
-            } else {
-                $code .= $this->getIndent() . 'ZEND_FE(' . $zifName . ', arginfo_' . $zifName . ')' . PHP_EOL;
-            }
+            // TypePHP is always strict. Store the flag in the registered
+            // zend_function instead of rewriting shared metadata on every call.
+            $code .= $this->getIndent() . 'ZEND_RAW_FENTRY("' . $this->escapeString($fullName)
+                . '", ZEND_FN(' . $zifName . '), arginfo_' . $zifName
+                . ', ZEND_ACC_STRICT_TYPES, NULL, NULL)' . PHP_EOL;
         }
         $code .= $this->getIndent() . "ZEND_FE_END\n};\n// clang-format on" . PHP_EOL . PHP_EOL;
 
@@ -3308,6 +3308,7 @@ CODE;
         if ($functionDef->argCountRequired > 0) {
             $cppCode .= $this->genWrapperRequiredArgCountCheck($functionDef, $displayName);
         }
+
         foreach ($functionDef->argInfoList as $k => $argInfo) {
             $var = 'arg_' . $argInfo->name;
             if ($argInfo->variadic) {
@@ -4821,4 +4822,5 @@ CODE;
 
         return $code;
     }
+
 }
