@@ -296,7 +296,12 @@ trait MethodCallTrait
         }
 
         $class = '';
-        $object = $this->parseIdentifier($expr->var);
+        // PHP evaluates the receiver before method arguments. Materializing an
+        // effectful receiver here prevents an ordered nested-call argument from
+        // being hoisted ahead of expressions such as `new $class(...$args)`.
+        $object = empty($expr->args)
+            ? $this->parseIdentifier($expr->var)
+            : $this->parseOrderedOperand($expr->var, false);
         if ($this->isVarExpr($expr->var)) {
             if (!$this->hasVar($object)) {
                 $this->errorUndefinedVariable($expr->var);

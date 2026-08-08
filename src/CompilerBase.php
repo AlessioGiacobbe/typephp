@@ -3376,7 +3376,9 @@ class CompilerBase implements PropertyAccessContext
             if (!$part instanceof Node\InterpolatedStringPart) {
                 $this->assertExprCanBeUsedAsValue($part, 'string interpolation value');
             }
-            $list[] = $this->parseExpr($part);
+            $list[] = $part instanceof Node\InterpolatedStringPart
+                ? $this->parseExpr($part)
+                : $this->parseOrderedOperand($part, false);
         }
 
         return 'php::concat({' . implode(', ', $list) . '})';

@@ -622,7 +622,13 @@ trait BinaryOpTrait
             }
 
             $type = $this->detectTypeOfExpr($item);
-            $parsed = $this->parseExprAsValue($item);
+            // concat() is emitted as one C++ call with every PHP operand as an
+            // argument. C++17 does not prescribe the evaluation order of
+            // function arguments, whereas PHP evaluates these operands from
+            // left to right. In particular, materialize nested FuncCall,
+            // MethodCall and StaticCall expressions before assembling the
+            // outer concat() call.
+            $parsed = $this->parseOrderedOperand($item, false);
             $argList[] = $this->prepareConcatOperand($parsed, $type);
         }
 

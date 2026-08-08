@@ -597,7 +597,16 @@ trait CallArgumentGenerator
     protected function parseCallArgValue(Node\Arg $arg): string
     {
         $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
-        return $this->materializeCallArgValue($arg->value, $this->parseArg($arg));
+        // C++17 does not define the evaluation order of function arguments.
+        // PHP does, so a nested call must be completed and stored before the
+        // next argument is lowered. Do not materialize unrelated expressions
+        // here: their native/reference types are handled by parseArg().
+        $expr = $arg->value instanceof Expr\FuncCall
+            || $arg->value instanceof Expr\MethodCall
+            || $arg->value instanceof Expr\StaticCall
+            ? $this->parseOrderedArg($arg)
+            : $this->parseArg($arg);
+        return $this->materializeCallArgValue($arg->value, $expr);
     }
 
     protected function materializeCallArgValue(NodeAbstract $value, string $expr): string

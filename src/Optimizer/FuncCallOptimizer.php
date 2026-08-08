@@ -702,21 +702,13 @@ trait FuncCallOptimizer
             return 'php::Decimal::round(' . $a0 . ')';
         }
         $args = count($e->args);
-        // Keep PHP's left-to-right argument evaluation explicit here. This
-        // optimizer is itself compiled by TypePHP, and embedding several
-        // getArg() calls in one C++ string-concatenation expression would let
-        // the host C++ compiler choose a different evaluation order.
-        $a0 = $this->getArg($e, 0);
         if ($args >= 3) {
-            $a1 = $this->convertIntExpr($this->getArg($e, 1));
-            $a2 = $this->convertIntExpr($this->getArg($e, 2));
-            return 'php::fn::round(' . $a0 . ', ' . $a1 . ', ' . $a2 . ')';
+            return 'php::fn::round(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ', ' . $this->convertIntExpr($this->getArg($e, 2)) . ')';
         }
         if ($args >= 2) {
-            $a1 = $this->convertIntExpr($this->getArg($e, 1));
-            return 'php::fn::round(' . $a0 . ', ' . $a1 . ')';
+            return 'php::fn::round(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ')';
         }
-        return 'php::fn::round(' . $a0 . ')';
+        return 'php::fn::round(' . $this->getArg($e, 0) . ')';
     }
 
     protected function genCount(string $n, Node\Expr\FuncCall $e, array $c): string
