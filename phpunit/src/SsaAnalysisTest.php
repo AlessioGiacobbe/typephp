@@ -655,7 +655,7 @@ class SsaAnalysisTest extends TestCase
         ));
 
         $result = $this->invoke('hasDangerousPropOps', 'obj', [$unset, $read]);
-        $this->assertFalse($result, 'unset($obj->prop) is blocked by the object handlers and cannot invalidate a hoisted reference');
+        $this->assertTrue($result, 'unset($obj->prop) must disable property slot hoisting');
     }
 
     public function testHasDangerousPropOpsUnsetDifferentObj(): void
@@ -933,7 +933,7 @@ class SsaAnalysisTest extends TestCase
         $this->assertSame([], $result);
     }
 
-    public function testCollectDangerousPropOpsUnsetAfterLastAccessIsSafe(): void
+    public function testCollectDangerousPropOpsUnsetAfterLastAccessIsAlwaysUnsafe(): void
     {
         $read = new Stmt\Expression(new Expr\Assign(
             new Expr\Variable('value'),
@@ -942,7 +942,7 @@ class SsaAnalysisTest extends TestCase
         $unset = new Stmt\Unset_([new Expr\PropertyFetch(new Expr\Variable('obj'), 'a')]);
 
         $result = $this->invoke('collectDangerousPropOps', 'obj', [$read, $unset]);
-        $this->assertSame([], $result);
+        $this->assertSame(['a' => true], $result);
     }
 
     public function testCollectDangerousPropOpsAssignRefToPropertyIsAlwaysUnsafe(): void

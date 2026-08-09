@@ -1,5 +1,5 @@
 --TEST--
-SSA object prop: unset typed this property keeps AOT native slot semantics
+SSA object prop: unset typed this property disables property slot hoisting
 --FILE--
 <?php
 use native_types;

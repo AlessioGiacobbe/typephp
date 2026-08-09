@@ -236,6 +236,12 @@ trait AssignOpTrait
             if ($var === 'this_') {
                 $this->fatalError($left, 'Cannot re-assign $this');
             }
+            if ($this->hasVar($var)
+                && $this->getVarType($var) === Type::OBJECT
+                && $this->isNull($right)) {
+                $class = $this->getDeclaredObjectType($var) ?: 'object';
+                $this->fatalError($right, "Cannot assign null to typed object `\${$var}` of type `{$class}`; use unset() to clear it");
+            }
             if ($this->isStdContainer($var)) {
                 $copyAssign = $this->parseStdContainerCopyAssign($var, $right);
                 if ($copyAssign !== null) {

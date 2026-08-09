@@ -223,6 +223,10 @@ trait NativeTypeCompatibilityTrait
                     // 如果无法证明，但右值是已知 concrete object，说明一定不兼容，直接编译期 fatal；
                     // 其他动态/外部库/any 场景保留 php::toObject() 作为运行时兜底。
                     if ($this->isObjectClassStaticallyAssignableTo($class, $declaredClass)) {
+                        if ($this->isVarExpr($arg->value)
+                            && $this->requiresRuntimeObjectCheck($this->parseIdentifier($arg->value))) {
+                            return $this->convertObjectExpr($expr, $this->getClassEntryPtr($declaredClass));
+                        }
                         return $type === Type::OBJECT ? $expr : $this->convertObjectExpr($expr);
                     }
                     if ($this->isKnownConcreteObjectExpr($arg->value, $class)) {

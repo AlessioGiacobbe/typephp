@@ -100,6 +100,19 @@ class NativePropertyTest extends \BaseTest
         $this->assertStringContainsString('_object_prop_this___value = php::toIntExact(dynamicValue, "NativePropertyThisWriteConversionBox::$value");', $code);
     }
 
+    public function testUnsetTypedPropertyDisablesSlotHoisting(): void
+    {
+        try {
+            $outputFile = $this->compileNativeProperty('native-property-unset-disables-hoist.php');
+        } catch (TestError $e) {
+            $this->fail($e->getMessage());
+        }
+
+        $code = file_get_contents($outputFile);
+        $this->assertStringNotContainsString('_object_prop_this___value', $code);
+        $this->assertStringContainsString('this_.attr(', $code);
+    }
+
     public function testNativePropertyStaticScalarTypeMismatchFailsAtCompileTime(): void
     {
         $this->exec(

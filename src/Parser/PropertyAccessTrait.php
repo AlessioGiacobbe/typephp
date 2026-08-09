@@ -765,6 +765,19 @@ trait PropertyAccessTrait
                 $type = $this->getVarType($name);
                 if ($this->isNativeType($type)) {
                     $this->warning($var, "Variable of native type `\${$name}` cannot be unset");
+                } elseif ($type === Type::OBJECT) {
+                    // A PHP local read after unset() evaluates to null (and may
+                    // emit an undefined-variable warning). Keep the Object
+                    // wrapper so later object assignments remain valid, but
+                    // store NULL rather than IS_UNDEF so strict null checks
+                    // retain PHP value semantics.
+                    //
+                    // Keep the declared class: unset() changes only the value
+                    // state and does not make null or another class assignable.
+                    // Native operations must validate the current value before
+                    // using the retained class declaration.
+                    $this->context->runtimeCheckedObjects[$name] = true;
+                    $lines[] = "{$name} = php::null;";
                 } else {
                     $lines[] = "{$name}.unset();";
                 }

@@ -273,6 +273,11 @@ trait TypeCheckGenerator
             && !$this->compositeTypeContainsKind($typeCheck, 'isInt');
     }
 
+    protected function typeCheckAllowsNull(array $typeCheck): bool
+    {
+        return $this->compositeTypeContainsKind($typeCheck, 'isNull');
+    }
+
     private function compositeTypeContainsKind(array $typeCheck, string $kind): bool
     {
         foreach ($typeCheck as $entry) {
