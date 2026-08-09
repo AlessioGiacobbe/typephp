@@ -247,6 +247,7 @@ trait MethodCallTrait
             $this->fatalError($expr, 'Cannot call parent method because class `' . $this->classDef->name . '` does not extend any class');
         }
         $parentClass = $this->classDef->extends;
+        $staticCall = false;
         if ($this->isIdExpr($expr->name)) {
             $method = $this->parseIdentifier($expr->name);
             $this->guardAbstractMethod($parentClass, $method, $expr);
@@ -255,14 +256,25 @@ trait MethodCallTrait
             if ($this->getMethodFlags($parentClass, $method) & Modifiers::PRIVATE) {
                 $this->fatalError($expr, "Cannot access private method `{$parentClass}::{$method}()` via parent::");
             }
+            $staticCall = (bool) ($this->getMethodFlags($parentClass, $method) & Modifiers::STATIC);
             $methodPtr = $this->getMethodPtr($parentClass, $method);
         } else {
             $method = '';
             // parent:: is bound to the lexical parent class, not the runtime
-            // object's parent. Look the method up on that class, then invoke it
-            // through this_ so Zend receives the current call scope.
+            // object's parent. Resolve the method there; the receiver below is
+            // selected from the current static/instance context.
             $methodPtr = 'php::getMethod(' . $this->getClassEntryPtr($parentClass) . ', '
                 . $this->identifierToStr($expr->name) . ')';
+            // A dynamic parent call made from a static method cannot have an
+            // object receiver. Zend validates the resolved method at runtime.
+            $staticCall = (bool) ($this->methodDef->flags & Modifiers::STATIC);
+        }
+        if ($staticCall) {
+            $callable = Symbol::getCalledCe() . ', ' . $methodPtr;
+            if (empty($expr->args)) {
+                return 'php::call(' . $callable . ')';
+            }
+            return $this->genRuntimeFunctionCall($callable, $expr->args, $method, $parentClass);
         }
         if (empty($expr->args)) {
             return 'this_.call(' . $methodPtr . ')';
@@ -525,6 +537,11 @@ trait MethodCallTrait
 
     protected function parseStaticCall(Expr\StaticCall $expr): string
     {
+        $pythonCall = $this->parsePythonModuleStaticCall($expr);
+        if ($pythonCall !== null) {
+            return $pythonCall;
+        }
+
         $self = false;
         $callScope = [];
         $rtFunc = '';
