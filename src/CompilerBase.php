@@ -69,6 +69,7 @@ use TypePhp\Platform\Macos;
 use TypePhp\Platform\PlatformBase;
 use TypePhp\Platform\PlatformFactory;
 use TypePhp\Platform\Windows;
+use TypePhp\Python\PythonModuleTrait;
 use TypePhp\Resolver\DeclarationSymbolTrait;
 use TypePhp\Resolver\MagicMethodDetector;
 use TypePhp\Resolver\PropertyAccessContext;
@@ -101,6 +102,7 @@ class CompilerBase implements PropertyAccessContext
     use CompilationStateTrait;
     use NativeTypeCompatibilityTrait;
     use NativeBuildConfigurationTrait;
+    use PythonModuleTrait;
     use DeclarationSymbolTrait;
     use NameResolutionTrait;
     use AstNodeType;
@@ -154,18 +156,24 @@ class CompilerBase implements PropertyAccessContext
      * Use findKeywordMethod() for unified lookup including keyword extension methods.
      */
     public const array KEYWORD_METHOD_MAP = [
-        'toInt'      => Type::INT,
-        'toFloat'    => Type::FLOAT,
-        'toString'   => Type::STR,
-        'toBool'     => Type::BOOL,
-        'toArray'    => Type::ARRAY,
-        'toStream'   => Type::STREAM,
-        'toBigInt'   => Type::BIGINT,
-        'toBigFloat' => Type::BIGFLOAT,
-        'toDecimal'  => Type::DECIMAL,
-        'toObject'   => Type::OBJECT,
-        'toAny'      => Type::VAR,
-        'toRef'      => Type::REF,
+        'toInt'        => Type::INT,
+        'toFloat'      => Type::FLOAT,
+        'toString'     => Type::STR,
+        'toBool'       => Type::BOOL,
+        'toArray'      => Type::ARRAY,
+        'toStream'     => Type::STREAM,
+        'toBigInt'     => Type::BIGINT,
+        'toBigFloat'   => Type::BIGFLOAT,
+        'toDecimal'    => Type::DECIMAL,
+        'toObject'     => Type::OBJECT,
+        'toAny'        => Type::VAR,
+        'toPlainValue' => Type::VAR,
+        'toRef'        => Type::REF,
+    ];
+
+    /** Keyword methods not listed here accept no arguments. */
+    public const array KEYWORD_METHOD_WITH_ARGUMENTS = [
+        'toObject' => true,
     ];
 
     private const array STREAM_FUNCTIONS = [
@@ -1046,6 +1054,7 @@ class CompilerBase implements PropertyAccessContext
         $this->useAliases = [];
         $this->useFunctions = [];
         $this->useConstants = [];
+        $this->resetPythonModuleAliases();
         $this->namespace = '';
     }
 
@@ -1774,6 +1783,21 @@ class CompilerBase implements PropertyAccessContext
 
     protected function detectClassOfExpr(NodeAbstract $expr): string
     {
+        if ($expr instanceof Expr\MethodCall && $this->isNamedMethod($expr->name)) {
+            $keywordType = $this->findKeywordMethod($this->parseIdentifier($expr->name));
+            if ($keywordType !== null && $keywordType !== Type::OBJECT) {
+                return '';
+            }
+        }
+        $pythonOperatorClass = $this->detectPythonOperatorReturnClass($expr);
+        if ($pythonOperatorClass !== null) {
+            return $pythonOperatorClass;
+        }
+        $pythonClass = $this->detectPythonExpressionReturnClass($expr);
+        if ($pythonClass !== null) {
+            return $pythonClass;
+        }
+
         if ($this->isNewExpr($expr) and $this->isNameExpr($expr->class)) {
             $class = $this->parseIdentifier($expr->class);
             if ($class === 'self') {
@@ -2553,6 +2577,21 @@ class CompilerBase implements PropertyAccessContext
 
     protected function detectTypeOfExpr($expr): string
     {
+        if ($expr instanceof Expr\MethodCall && $this->isNamedMethod($expr->name)) {
+            $keywordType = $this->findKeywordMethod($this->parseIdentifier($expr->name));
+            if ($keywordType !== null) {
+                return $keywordType;
+            }
+        }
+        $pythonOperatorType = $this->detectPythonOperatorReturnType($expr);
+        if ($pythonOperatorType !== null) {
+            return $pythonOperatorType;
+        }
+        $pythonType = $this->detectPythonExpressionReturnType($expr);
+        if ($pythonType !== null) {
+            return $pythonType;
+        }
+
         $exprType = $expr->getType();
         switch ($exprType) {
             case 'Expr_UnaryMinus':
@@ -2709,11 +2748,6 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_MethodCall':
                 if ($this->isNamedMethod($expr->name)) {
                     $method = $this->parseIdentifier($expr->name);
-                    // keyword methods (to* builtins + __ extensions) — return type is known regardless of receiver
-                    $kwType = $this->findKeywordMethod($method);
-                    if ($kwType !== null) {
-                        return $kwType;
-                    }
                     // Class definition resolution (handles this_, typed VarExpr)
                     $classDef = $this->resolveObjectClassDef($expr->var);
                     if ($classDef !== null && $classDef->hasMethod($method)) {

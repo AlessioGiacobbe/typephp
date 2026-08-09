@@ -332,23 +332,23 @@ trait MethodCallTrait
         $magicMethod = false;
         $method = $this->identifierToStr($expr->name, literal: true);
 
-        // keyword methods (to* builtins + __ extensions) — dispatched before type-specific logic
+        // Keyword methods are dispatched before all receiver-specific logic.
         if ($this->isNamedMethod($expr->name)) {
             $methodName = $expr->name->toString();
             $receiverType = $this->isVarExpr($expr->var) ? $this->getVarType($object) : $this->detectTypeOfExpr($expr->var);
             if ($receiverType === Type::VOID) {
                 $receiverType = Type::VAR;
             }
-            // to* builtins
-            if (isset(self::KEYWORD_METHOD_MAP[$methodName])) {
+            $keywordType = $this->findKeywordMethod($methodName);
+            if ($keywordType !== null && isset(self::KEYWORD_METHOD_MAP[$methodName])) {
+                if (!isset(self::KEYWORD_METHOD_WITH_ARGUMENTS[$methodName]) && $expr->args !== []) {
+                    $this->fatalError($expr, "The {$methodName} method does not accept parameters");
+                }
                 if ($methodName === 'toObject') {
                     return $this->genToObjectCall($expr, $object);
                 }
                 if ($methodName === 'toRef') {
                     return $this->genToRefCall($expr);
-                }
-                if ($methodName === 'toAny' && !empty($expr->args)) {
-                    $this->fatalError($expr, 'The toAny method does not accept parameters');
                 }
                 return $this->genToConvertCall($object, $methodName, $receiverType);
             }
@@ -413,6 +413,9 @@ trait MethodCallTrait
                 $magicMethod = true;
             }
             if (!$nativeFunc) {
+                if ($this->isPythonDynamicMethodCall($expr->var, $methodName)) {
+                    $magicMethod = true;
+                }
                 $extension = $this->findObjectExtensionMethod(
                     $class,
                     $methodName,

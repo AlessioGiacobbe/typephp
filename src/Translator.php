@@ -746,6 +746,11 @@ class Translator extends Preprocessor
         $funcCount = max(1, count($this->funcMap));
         $lines[] = 'extern THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
 
+        $pythonModuleDeclarations = $this->genPythonModuleDataDeclarations();
+        if ($pythonModuleDeclarations !== '') {
+            $lines[] = $pythonModuleDeclarations;
+        }
+
         $propCount = max(1, count($this->propMap));
         $lines[] = 'extern THREAD_LOCAL uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . $propCount . '];' . PHP_EOL;
 
@@ -809,6 +814,8 @@ class Translator extends Preprocessor
         $code .= "// func \n";
         $code .= 'THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . max(1, count($this->funcMap)) . '];' . PHP_EOL;
 
+        $code .= $this->genPythonModuleStorage();
+
         $code .= "// property \n";
         $code .= 'THREAD_LOCAL uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . max(1, count($this->propMap)) . '];' . PHP_EOL;
 
@@ -845,6 +852,8 @@ uint32_t php_get_prop(int prop_id, const php::Str &prop_name, int class_id, cons
 }
 CODE;
         $code .= "\n\n";
+
+        $code .= $this->genPythonModuleGetter();
 
         $code .= "// literal strings \n";
         if ($this->literalStrings) {
@@ -1006,6 +1015,8 @@ CODE;
             }
             $code .= $name . '.unset();' . PHP_EOL;
         }
+
+        $code .= $this->genPythonModuleCleanup();
 
         $code .= '// class array constants' . PHP_EOL;
         foreach ($this->getClassLikesWithConstants() as $classDef) {

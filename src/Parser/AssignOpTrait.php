@@ -216,6 +216,7 @@ trait AssignOpTrait
         $type = $this->detectTypeOfExpr($right);
         $finalVarType = $this->getNormalAssignType($type);
         $runtimeObjectAssignClass = '';
+        $assigningNullToTypedObject = false;
         if ($type === Type::VOID) {
             $type = Type::VAR;
         }
@@ -236,12 +237,9 @@ trait AssignOpTrait
             if ($var === 'this_') {
                 $this->fatalError($left, 'Cannot re-assign $this');
             }
-            if ($this->hasVar($var)
+            $assigningNullToTypedObject = $this->hasVar($var)
                 && $this->getVarType($var) === Type::OBJECT
-                && $this->isNull($right)) {
-                $class = $this->getDeclaredObjectType($var) ?: 'object';
-                $this->fatalError($right, "Cannot assign null to typed object `\${$var}` of type `{$class}`; use unset() to clear it");
-            }
+                && $this->isNull($right);
             if ($this->isStdContainer($var)) {
                 $copyAssign = $this->parseStdContainerCopyAssign($var, $right);
                 if ($copyAssign !== null) {
@@ -343,7 +341,10 @@ trait AssignOpTrait
                     $finalVarType = $this->getVarType($var);
                     $this->checkVarAssignExpr($left, $finalVarType, $type);
                     $declaredObjectClass = $this->getDeclaredObjectType($var);
-                    if ($finalVarType === Type::OBJECT && $declaredObjectClass !== '' && ($type === Type::VAR || $type === Type::OBJECT)) {
+                    if (!$assigningNullToTypedObject
+                        && $finalVarType === Type::OBJECT
+                        && $declaredObjectClass !== ''
+                        && ($type === Type::VAR || $type === Type::OBJECT)) {
                         $runtimeObjectAssignClass = $declaredObjectClass;
                     }
                 }
@@ -372,8 +373,20 @@ trait AssignOpTrait
         if ($propertyWriteTarget !== null) {
             $rightExpr = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $right, $rightExpr);
         }
+        if ($assigningNullToTypedObject) {
+            // php::Object intentionally keeps the inferred class as its C++ type,
+            // while an empty/null value represents the same state as unset($var).
+            $rightExpr = 'php::Object{' . $rightExpr . '}';
+        }
         if ($runtimeObjectAssignClass !== '') {
-            $rightExpr = 'php::toObject(' . $rightExpr . ', ' . $this->getClassEntryPtr($runtimeObjectAssignClass) . ')';
+            // A typed object has two valid runtime states: the declared class or
+            // null. Evaluate a dynamic RHS once, preserve null, and validate only
+            // actual objects against the inferred class constraint.
+            $checkedValue = 'typephp_nullable_object_value';
+            $rightExpr = '([&](php::Var ' . $checkedValue . ') -> php::Object {'
+                . ' if (' . $checkedValue . '.isNull()) { return php::Object{' . $checkedValue . '}; }'
+                . ' return php::toObject(' . $checkedValue . ', ' . $this->getClassEntryPtr($runtimeObjectAssignClass) . ');'
+                . ' })(' . $rightExpr . ')';
         }
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
@@ -463,6 +476,10 @@ trait AssignOpTrait
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
         $this->assertNotNullsafeWriteContext($node->var);
+        $pythonOperator = $this->parsePythonAssignOperator($node);
+        if ($pythonOperator !== null) {
+            return $pythonOperator;
+        }
         $propertyWriteTarget = $this->preparePropertyWriteTarget($node->var);
         $this->guardLiteralDivisionByZero($node->expr, $op);
 

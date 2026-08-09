@@ -17,6 +17,8 @@ trait ClassConstantFetchTrait
 {
     protected function parseClassConstFetch(Expr\ClassConstFetch $expr): string
     {
+        $this->rejectPythonModuleClassConstantFetch($expr);
+
         if (!$this->isNameExpr($expr->class)) {
             return $this->parseDynamicClassConstFetch($expr);
         }
@@ -24,17 +26,14 @@ trait ClassConstantFetchTrait
         $class = $this->parseIdentifier($expr->class);
         $self = false;
         if ($class === 'self' or $class === 'this_') {
-            // Trait 读取常量，必须动态获取类名
-            if ($this->classDef->trait) {
-                $class = 'static';
-            } else {
-                $self = true;
-                // Trait-composed methods are parsed under the trait's lexical
-                // namespace, while `self` still denotes the consuming class.
-                // Keep it fully qualified so the lexical namespace is not
-                // applied to the class identity below.
-                $class = '\\' . $this->getFullClassName();
-            }
+            $self = true;
+            // Trait methods are compiled only after their AST is composed into
+            // the consuming class. During trait preprocessing, however, class
+            // constant initializers still belong to the trait itself. Resolve
+            // `self` lexically in both cases; rewriting it to `static` would
+            // incorrectly require a method scope for expressions such as
+            // `const B = [...self::A]`.
+            $class = '\\' . $this->getFullClassName();
         } elseif ($class === 'parent') {
             if (!$this->classDef || !$this->classDef->extends) {
                 $this->fatalError($expr, 'Cannot use "parent" outside a class or class does not extend any class');

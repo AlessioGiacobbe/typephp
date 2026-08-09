@@ -16,6 +16,10 @@ trait UnaryExpressionTrait
 {
     protected function parseBitwiseNot(Expr\BitwiseNot $expr): string
     {
+        $pythonOperator = $this->parsePythonUnaryOperator($expr);
+        if ($pythonOperator !== null) {
+            return $pythonOperator;
+        }
         $type = $this->detectTypeOfExpr($expr->expr);
         $this->assertExprCanBeUsedAsValue($expr->expr, 'bitwise operand');
         if ($type === Type::BIGINT) {
@@ -27,6 +31,10 @@ trait UnaryExpressionTrait
 
     protected function parseBooleanNot(Expr\BooleanNot $expr): string
     {
+        $pythonOperator = $this->parsePythonUnaryOperator($expr);
+        if ($pythonOperator !== null) {
+            return $pythonOperator;
+        }
         $this->assertExprCanBeUsedAsCondition($expr->expr, 'boolean operand');
         return '!(' . $this->convertBoolExpr(
             $this->parseExprAsValue($expr->expr),
@@ -69,6 +77,10 @@ trait UnaryExpressionTrait
 
     protected function parseUnaryMinus(Expr\UnaryMinus $expr): string
     {
+        $pythonOperator = $this->parsePythonUnaryOperator($expr);
+        if ($pythonOperator !== null) {
+            return $pythonOperator;
+        }
         $type = $this->detectTypeOfExpr($expr->expr);
         $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
         if ($type === Type::BIGFLOAT) {
@@ -100,6 +112,10 @@ trait UnaryExpressionTrait
 
     protected function parseUnaryPlus(Expr\UnaryPlus $expr): string
     {
+        $pythonOperator = $this->parsePythonUnaryOperator($expr);
+        if ($pythonOperator !== null) {
+            return $pythonOperator;
+        }
         $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
         return $this->parseExprAsValue($expr->expr);
     }

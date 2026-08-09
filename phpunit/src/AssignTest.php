@@ -22,12 +22,9 @@ class AssignTest extends \BaseTest
         );
     }
 
-    public function testCannotAssignNullToTypedObjectAfterUnset()
+    public function testCanAssignNullToTypedObject()
     {
-        $this->exec(
-            'Cannot assign null to typed object `$value` of type `TypedObjectUnsetNullValue`; use unset() to clear it',
-            'typed-object-unset-assign-null.php'
-        );
+        $this->compile('typed-object-unset-assign-null.php');
     }
 
     public function testCannotAssignUnrelatedObjectToInterfaceDeclaredObject()

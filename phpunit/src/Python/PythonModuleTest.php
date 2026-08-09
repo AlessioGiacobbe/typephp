@@ -1,0 +1,238 @@
+<?php
+
+namespace TypePhp\Tests\Python;
+
+use PHPUnit\Framework\TestCase;
+use PhpParser\Error;
+use TypePhp\CompilerTest;
+use TypePhp\Exception\TestError;
+
+final class PythonModuleTest extends TestCase
+{
+    public function testUsedModuleGeneratesLazyZendBindingWithoutPhpyLinkage(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/module-access.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cppFile = $compiler->convertFile($source);
+        $cpp = file_get_contents($cppFile);
+        $extensionFile = $compiler->genExtension();
+        $extension = file_get_contents($extensionFile);
+
+        $this->assertStringContainsString('php_get_python_module(', $cpp);
+        $this->assertStringContainsString('.attr(', $cpp);
+        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[1]', $extension);
+        $this->assertStringContainsString('php::Object php_get_python_module(', $extension);
+        $this->assertStringContainsString('zval_ptr_dtor(', $extension);
+        $this->assertStringContainsString('PyCore', $extension);
+        $this->assertStringContainsString('import', $extension);
+        $this->assertStringNotContainsString('#include <phpy', $extension);
+        $this->assertStringNotContainsString('phpy::', $extension);
+        $this->assertStringNotContainsString('module_that_does_not_exist', $extension);
+    }
+
+    public function testUnusedPythonUseDoesNotGenerateModuleRuntimeState(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/unused-module.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $compiler->convertFile($source);
+        $extensionFile = $compiler->genExtension();
+        $extension = file_get_contents($extensionFile);
+
+        $this->assertStringNotContainsString('php_python_module_map', $extension);
+        $this->assertStringNotContainsString('php_get_python_module', $extension);
+        $this->assertStringNotContainsString('module_that_does_not_exist', $extension);
+    }
+
+    public function testModuleValueCannotUsePhpClassConstantSyntax(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Python module value `math::pi` must use `math::$pi`');
+
+        $this->compileFixture('module-constant.php');
+    }
+
+    public function testPythonModuleAliasConflictsCaseInsensitivelyWithClassAlias(): void
+    {
+        $this->expectException(Error::class);
+        $this->expectExceptionMessage('the name is already in use');
+
+        $this->compileFixture('alias-conflict.php');
+    }
+
+    public function testNestedModuleUsesPythonDottedImportName(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/nested-module.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $compiler->convertFile($source);
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringContainsString('numpy.linalg', $extension);
+        $this->assertStringNotContainsString('numpy\\\\linalg', $extension);
+    }
+
+    public function testSameModuleAcrossFilesUsesOneRuntimeSlot(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $sources = [
+            ROOT_PATH . '/phpunit/code/python/module-access.php',
+            ROOT_PATH . '/phpunit/code/python/duplicate-module.php',
+        ];
+        $compiler->addFiles($sources);
+        foreach ($sources as $source) {
+            $compiler->prepareFile($source);
+            $compiler->convertFile($source);
+        }
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[1]', $extension);
+    }
+
+    public function testPythonBuiltinsUseBuiltinsModuleAndPreserveKnownObjectTypes(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/builtins.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringContainsString('php_get_python_module(', $cpp);
+        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('php::Object list;', $cpp);
+        $this->assertStringContainsString('php::Object dict;', $cpp);
+        $this->assertStringContainsString('php::Object tuple;', $cpp);
+        $this->assertStringContainsString('php::Object set;', $cpp);
+        $this->assertStringContainsString('php::Object str;', $cpp);
+        $this->assertStringContainsString('php::Object _php__var__int;', $cpp);
+        $this->assertStringContainsString('php::Object object;', $cpp);
+        $this->assertStringContainsString('php::Object bytes;', $cpp);
+        $this->assertStringContainsString('scalar = php::toInt(', $cpp);
+        $this->assertStringContainsString('php::newObject(', $cpp);
+        $this->assertStringContainsString('PyList', $extension);
+        $this->assertStringContainsString('PyDict', $extension);
+        $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[1]', $extension);
+        $this->assertStringContainsString('builtins', $extension);
+        $this->assertStringContainsString('PyCore::setOptions', $extension);
+        $this->assertStringContainsString('return_as_object', $extension);
+        $this->assertStringContainsString('php_python_runtime_configured = false;', $extension);
+        $this->assertStringNotContainsString('python\\\\list', $extension);
+    }
+
+    public function testPythonBuiltinRejectsNestedModuleSyntax(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Python builtins must use the form `python\\name()`');
+
+        $this->compileFixture('invalid-builtin-path.php');
+    }
+
+    public function testConstructorOnlyProgramConfiguresObjectPreservingRuntimeLazily(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/constructor-only.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringContainsString('php_configure_python_runtime()', $cpp);
+        $this->assertStringContainsString('void php_configure_python_runtime()', $extension);
+        $this->assertStringContainsString('return_as_object', $extension);
+    }
+
+    public function testPythonOperatorsLowerToTheOperatorModule(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/operators.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringContainsString('operator', $extension);
+        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('add', $extension);
+        $this->assertStringContainsString('iadd', $extension);
+        $this->assertStringContainsString('is_', $extension);
+        $this->assertStringContainsString('is_not', $extension);
+    }
+
+    public function testPythonObjectProtocolStaysOnZendDynamicDispatch(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/object-protocol.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('.attr(', $cpp);
+        $this->assertStringContainsString('.item(', $cpp);
+        $this->assertStringContainsString('php::ForeachIterator', $cpp);
+        $this->assertStringContainsString('integer = php::toInt(object);', $cpp);
+        $this->assertStringContainsString('iadd', $extension);
+        $this->assertStringNotContainsString('phpy::', $cpp);
+    }
+
+    public function testToPlainValueUsesTheZendScalarFacade(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/plain-value.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringContainsString('php::Var plain;', $cpp);
+        $this->assertStringContainsString('php::Var dynamic;', $cpp);
+        $this->assertStringContainsString('php::toPlainValue(', $cpp);
+        $this->assertStringContainsString('php::Var value', $cpp);
+        $this->assertStringNotContainsString('.call("toPlainValue"', $cpp);
+        $this->assertStringNotContainsString('phpy::', $cpp);
+    }
+
+    public function testToPlainValueRejectsArguments(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('The toPlainValue method does not accept parameters');
+
+        $this->compileFixture('plain-value-arguments.php');
+    }
+
+    private function compileFixture(string $file): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/' . $file;
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $compiler->convertFile($source);
+    }
+}

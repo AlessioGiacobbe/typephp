@@ -355,6 +355,11 @@ trait PropertyAccessTrait
 
     protected function parseStaticPropertyFetch(Expr\StaticPropertyFetch $expr): string
     {
+        $pythonProperty = $this->parsePythonModuleStaticPropertyFetch($expr);
+        if ($pythonProperty !== null) {
+            return $pythonProperty;
+        }
+
         $native = $this->parseNativeStaticPropertyFetch($expr);
         if ($native !== null) {
             return $native;

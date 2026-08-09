@@ -23,7 +23,7 @@ use PhpParser\Node\Expr\Variable;
 
 trait ClosureGenerator
 {
-    protected function genNewClosure(string $callback, string $uses, bool $hasThis): string
+    protected function genNewClosure(string $callback, string $uses, bool $hasThis, array $params = []): string
     {
         $thisArg = $hasThis ? 'this_' : '{}';
         if ($this->classDef?->trait !== null) {
@@ -36,7 +36,15 @@ trait ClosureGenerator
                 ? $this->getClassEntryPtr($this->getFullClassName())
                 : 'nullptr';
         }
-        return 'php::newClosure(' . $callback . ', ' . $uses . ', ' . $thisArg . ', ' . $scope . ')';
+        $parameterNames = [];
+        foreach ($params as $param) {
+            $name = is_string($param->var->name)
+                ? $param->var->name
+                : $this->unescapeVarName($this->parseIdentifier($param->var));
+            $parameterNames[] = $this->genCharPtr($name, true);
+        }
+        return 'php::newClosure(' . $callback . ', ' . $uses . ', ' . $thisArg . ', ' . $scope
+            . ', { ' . implode(', ', $parameterNames) . ' })';
     }
 
     protected function parseArrowFunction(Expr\ArrowFunction $expr): string
@@ -233,7 +241,8 @@ trait ClosureGenerator
         return $this->genNewClosure(
             $tmpVar,
             '{ ' . implode(', ', $useVars) . ' }',
-            $this->methodDef !== null
+            $this->methodDef !== null,
+            $params
         );
     }
 
@@ -347,7 +356,7 @@ trait ClosureGenerator
 
         $code .= $this->getIndent() . '};' . PHP_EOL;
         $args = $capturedArgs ? '{ ' . implode(', ', $capturedArgs) . ' }' : '{}';
-        $callback = $this->genNewClosure($callbackVar, $args, $this->methodDef !== null);
+        $callback = $this->genNewClosure($callbackVar, $args, $this->methodDef !== null, $params);
         $code .= $this->getIndent() . 'return typephp_new_fiber_generator(' . $callback . ');' . PHP_EOL;
         return $code;
     }

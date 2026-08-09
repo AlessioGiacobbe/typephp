@@ -180,6 +180,10 @@ trait TypeConversionTrait
 
     protected function convertConditionExpr(NodeAbstract $node, string $expr): string
     {
+        $pythonBool = $this->convertPythonObjectToBool($node, $expr);
+        if ($pythonBool !== null) {
+            return $pythonBool;
+        }
         $type = $this->detectTypeOfExpr($node);
         return $this->convertBoolExpr($expr, $type);
     }

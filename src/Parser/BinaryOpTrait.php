@@ -594,12 +594,14 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpPlus(Expr\BinaryOp\Plus $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '+');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '+');
     }
 
     protected function parseBinaryOpMul(Expr\BinaryOp\Mul $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '*');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '*');
     }
 
     protected function parseBinaryOpConcat(Expr\BinaryOp\Concat $expr): string
@@ -657,31 +659,40 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpSmaller(Expr\BinaryOp\Smaller $expr): string
     {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '<'));
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '<'));
     }
 
     protected function parseBinaryOpShiftLeft(Expr\BinaryOp\ShiftLeft $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '<<');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '<<');
     }
 
     protected function parseBinaryOpShiftRight(Expr\BinaryOp\ShiftRight $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '>>');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '>>');
     }
 
     protected function parseBinaryOpMod(Expr\BinaryOp\Mod $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '%');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '%');
     }
 
     protected function parseBinaryOpGreater(Expr\BinaryOp\Greater $expr): string
     {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>'));
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>'));
     }
 
     protected function parseBinaryOpPow(Expr\BinaryOp\Pow $expr): string
     {
+        $pythonOperator = $this->parsePythonBinaryOperator($expr);
+        if ($pythonOperator !== null) {
+            return $pythonOperator;
+        }
         $this->assertExprCanBeUsedAsValue($expr->left, 'binary operand');
         $this->assertExprCanBeUsedAsValue($expr->right, 'binary operand');
         $leftType = $this->detectTypeOfExpr($expr->left);
@@ -708,17 +719,20 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpBitwiseAnd(Expr\BinaryOp\BitwiseAnd $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '&');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '&');
     }
 
     protected function parseBinaryOpBitwiseOr(Expr\BinaryOp\BitwiseOr $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '|');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '|');
     }
 
     protected function parseBinaryOpBitwiseXor(Expr\BinaryOp\BitwiseXor $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '^');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '^');
     }
 
     protected function parseCompareExpr(NodeAbstract $expr): string
@@ -733,18 +747,30 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpEqual(Expr\BinaryOp\Equal $expr): string
     {
+        $pythonOperator = $this->parsePythonBinaryOperator($expr);
+        if ($pythonOperator !== null) {
+            return $pythonOperator;
+        }
         return $this->genBigNumericCmp($expr, ' == 0')
             ?? 'php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
     }
 
     protected function parseBinaryOpNotEqual(Expr\BinaryOp\NotEqual $expr): string
     {
+        $pythonOperator = $this->parsePythonBinaryOperator($expr);
+        if ($pythonOperator !== null) {
+            return $pythonOperator;
+        }
         return $this->genBigNumericCmp($expr, ' != 0')
             ?? '!php::equals(' . $this->parseCompareExpr($expr->left) . ', ' . $this->parseCompareExpr($expr->right) . ')';
     }
 
     protected function parseBinaryOpIdentical(Expr\BinaryOp $expr): string
     {
+        $pythonOperator = $this->parsePythonBinaryOperator($expr);
+        if ($pythonOperator !== null) {
+            return $pythonOperator;
+        }
         $left  = $this->parseCompareExpr($expr->left);
         $right = $this->parseCompareExpr($expr->right);
         if ($right === 'nullptr') {
@@ -827,8 +853,10 @@ trait BinaryOpTrait
         $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $rightAfterStmtCount);
         $this->checkVarMustExist($right, $rightExpr);
 
-        $leftBool = $this->convertBoolExpr((string) $leftExpr, $this->detectTypeOfExpr($left));
-        $rightBool = $this->convertBoolExpr((string) $rightExpr, $this->detectTypeOfExpr($right));
+        $leftBool = $this->convertPythonObjectToBool($left, (string) $leftExpr)
+            ?? $this->convertBoolExpr((string) $leftExpr, $this->detectTypeOfExpr($left));
+        $rightBool = $this->convertPythonObjectToBool($right, (string) $rightExpr)
+            ?? $this->convertBoolExpr((string) $rightExpr, $this->detectTypeOfExpr($right));
         if (!$rightBeforeStmts && !$rightAfterStmts) {
             return '(' . $leftBool . ' ' . $op . ' ' . $rightBool . ')';
         }
@@ -844,7 +872,8 @@ trait BinaryOpTrait
             $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';';
             $code .= $this->formatCapturedStmtLines($rightAfterStmts);
             $rightExpr = $rightTmpVar;
-            $rightBool = $this->convertBoolExpr($rightExpr, $this->detectTypeOfExpr($right));
+            $rightBool = $this->convertPythonObjectToBool($right, $rightExpr)
+                ?? $this->convertBoolExpr($rightExpr, $this->detectTypeOfExpr($right));
         }
         $code .= $this->getIndent() . 'return ' . $rightBool . ';';
         $code .= $this->getIndent() . '}';
@@ -860,19 +889,23 @@ trait BinaryOpTrait
         $this->assertExprCanBeUsedAsCondition($expr->right, 'logical operand');
         $left = $this->parseOrderedBinaryOperand($expr->left);
         $right = $this->parseOrderedBinaryOperand($expr->right);
-        $leftBool = $this->convertBoolExpr($left, $this->detectTypeOfExpr($expr->left));
-        $rightBool = $this->convertBoolExpr($right, $this->detectTypeOfExpr($expr->right));
+        $leftBool = $this->convertPythonObjectToBool($expr->left, $left)
+            ?? $this->convertBoolExpr($left, $this->detectTypeOfExpr($expr->left));
+        $rightBool = $this->convertPythonObjectToBool($expr->right, $right)
+            ?? $this->convertBoolExpr($right, $this->detectTypeOfExpr($expr->right));
         return '(' . $leftBool . ' != ' . $rightBool . ')';
     }
 
     protected function parseBinaryOpSmallerOrEqual(Expr\BinaryOp\SmallerOrEqual $expr): string
     {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '<='));
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '<='));
     }
 
     protected function parseBinaryOpGreaterOrEqual(Expr\BinaryOp\GreaterOrEqual $expr): string
     {
-        return $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>='));
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->convertBoolExpr($this->parseBinaryOp($expr->left, $expr->right, '>='));
     }
 
     protected function parseBinaryOpSpaceship(Expr\BinaryOp\Spaceship $expr): string
@@ -939,12 +972,14 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpNotIdentical(Expr\BinaryOp $expr): string
     {
-        return '!(' . $this->parseBinaryOpIdentical($expr) . ')';
+        return $this->parsePythonBinaryOperator($expr)
+            ?? '!(' . $this->parseBinaryOpIdentical($expr) . ')';
     }
 
     protected function parseBinaryOpDiv(Expr\BinaryOp\Div $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '/');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '/');
     }
 
     protected function guardLiteralDivisionByZero(NodeAbstract $right, string $op): void
@@ -956,7 +991,8 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpMinus(Expr\BinaryOp\Minus $expr): string
     {
-        return $this->parseBinaryOp($expr->left, $expr->right, '-');
+        return $this->parsePythonBinaryOperator($expr)
+            ?? $this->parseBinaryOp($expr->left, $expr->right, '-');
     }
 
 }

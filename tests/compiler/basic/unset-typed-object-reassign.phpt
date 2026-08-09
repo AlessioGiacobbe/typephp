@@ -48,11 +48,19 @@ function main()
         echo $error::class, "\n";
     }
 
+    try {
+        $value = makeUnsetReassignOtherDynamic();
+        echo "invalid assignment after null accepted\n";
+    } catch (Throwable $error) {
+        echo $error::class, "\n";
+    }
+
     $value = makeUnsetReassignExpected();
     var_dump($value->value());
 }
 ?>
 --EXPECT--
 TypeError
+null assignment accepted
 TypeError
 string(8) "expected"
