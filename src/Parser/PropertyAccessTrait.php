@@ -774,9 +774,6 @@ trait PropertyAccessTrait
                     //
                     // Keep the declared class: unset() changes only the value
                     // state and does not make null or another class assignable.
-                    // Native operations must validate the current value before
-                    // using the retained class declaration.
-                    $this->context->runtimeCheckedObjects[$name] = true;
                     $lines[] = "{$name} = php::null;";
                 } else {
                     $lines[] = "{$name}.unset();";

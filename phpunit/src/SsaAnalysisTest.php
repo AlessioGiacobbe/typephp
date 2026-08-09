@@ -668,6 +668,30 @@ class SsaAnalysisTest extends TestCase
         $this->assertFalse($result, 'unset on different object should not match');
     }
 
+    public function testHasDangerousPropOpsUnsetObject(): void
+    {
+        $unset = new Stmt\Unset_([new Expr\Variable('obj')]);
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$unset]);
+        $this->assertSame(['*' => true], $result, 'unset($obj) must disable every property slot');
+    }
+
+    public function testUnsetObjectInElseifDisablesSlotsForAllBranches(): void
+    {
+        $if = new Stmt\If_(new Expr\Variable('first'), [
+            'stmts' => [new Stmt\Expression(new Expr\PropertyFetch(new Expr\Variable('obj'), 'a'))],
+            'elseifs' => [new Stmt\ElseIf_(new Expr\Variable('second'), [
+                new Stmt\Unset_([new Expr\Variable('obj')]),
+            ])],
+            'else' => new Stmt\Else_([
+                new Stmt\Expression(new Expr\PropertyFetch(new Expr\Variable('obj'), 'b')),
+            ]),
+        ]);
+
+        $result = $this->invoke('collectDangerousPropOps', 'obj', [$if]);
+        $this->assertSame(['*' => true], $result);
+    }
+
     public function testHasDangerousPropOpsAssignRef(): void
     {
         $objVar = new Expr\Variable('obj');

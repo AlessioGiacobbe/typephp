@@ -19,8 +19,9 @@
  *  8. First access is not inside a loop or nested block scope
  *  9. Property is not readonly (including properties of a readonly class)
  *
- * Direct unset($o->prop) invalidates the property slot assumption. Any property
- * observed in an unset operation must use dynamic attr() access.
+ * Direct unset($o->prop) invalidates that property slot; unset($o) invalidates
+ * every property slot associated with the object. These properties must use
+ * dynamic attr() access for the whole function, independent of branch order.
  */
 
 namespace TypePhp\Optimizer;
@@ -361,8 +362,8 @@ trait SsaPropOptimizer
      *  - mutate($o) or $o->method() — dynamic code may turn the property slot
      *    into a reference through the exposed object
      *
-     * Direct unset($o->prop) invalidates the property slot and disables
-     * hoisting for that property.
+     * Direct unset($o->prop) disables hoisting for that property. unset($o)
+     * disables all property hoisting for the object.
      */
     protected function hasDangerousPropOps(string $objName, array $stmts): bool
     {
@@ -412,6 +413,11 @@ trait SsaPropOptimizer
                 if ($propName !== null) {
                     $events[] = ['kind' => 'danger_always', 'prop' => $propName];
                     $this->collectPropEventsInDynamicParts($var, $objName, $events);
+                } elseif ($this->isVarNamedAny($var, $objName)) {
+                    // Object lifetime is no longer continuous. A reference to
+                    // any property slot could outlive the object in one branch,
+                    // so disable slot hoisting for every branch of the function.
+                    $events[] = ['kind' => 'danger_always', 'prop' => '*'];
                 } else {
                     $this->collectPropEvents($var, $objName, $events);
                 }

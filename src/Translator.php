@@ -3603,9 +3603,6 @@ CODE;
             $this->addArgument($argInfo->name, $argInfo->variadic ? Type::ARRAY : $argInfo->type);
             if (!$argInfo->variadic and $argInfo->declaredClass) {
                 $this->addObject($argInfo->name, $argInfo->declaredClass);
-                if ($argInfo->nullable || $this->typeCheckAllowsNull($argInfo->typeCheck ?? [])) {
-                    $this->context->runtimeCheckedObjects[$argInfo->name] = true;
-                }
             }
         }
 

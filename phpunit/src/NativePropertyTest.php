@@ -113,6 +113,20 @@ class NativePropertyTest extends \BaseTest
         $this->assertStringContainsString('this_.attr(', $code);
     }
 
+    public function testUnsetObjectDisablesPropertySlotsButKeepsNativeMethodCall(): void
+    {
+        try {
+            $outputFile = $this->compileNativeProperty('native-method-unset-keeps-optimization.php');
+        } catch (TestError $e) {
+            $this->fail($e->getMessage());
+        }
+
+        $code = file_get_contents($outputFile);
+        $this->assertStringNotContainsString('_object_prop_object__value', $code);
+        $this->assertStringContainsString('object.attr(', $code);
+        $this->assertStringContainsString('php_nativemethodunsetkeepsoptimization__read(object)', $code);
+    }
+
     public function testNativePropertyStaticScalarTypeMismatchFailsAtCompileTime(): void
     {
         $this->exec(

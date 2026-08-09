@@ -19,13 +19,7 @@ trait TypeDetectionTrait
 {
     public function isTypedObject(string $object): bool
     {
-        return !isset($this->context->runtimeCheckedObjects[$object])
-            && (isset($this->context->objects[$object]) || isset($this->context->stableObjects[$object]));
-    }
-
-    protected function requiresRuntimeObjectCheck(string $object): bool
-    {
-        return isset($this->context->runtimeCheckedObjects[$object]);
+        return isset($this->context->objects[$object]) || isset($this->context->stableObjects[$object]);
     }
 
     protected function isSuperGlobal(string $var): bool

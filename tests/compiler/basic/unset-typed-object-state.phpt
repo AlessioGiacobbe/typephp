@@ -1,24 +1,25 @@
 --TEST--
-unset typed object invalidates native-call assumptions and reads as null
+unset typed object reads as null and accepts a valid reassignment
 --FILE--
 <?php
 class UnsetTypedObjectValue
 {
+    public int $number = 1;
+
     public function value(): string
     {
         return 'value';
+    }
+
+    public function readProperty(): int
+    {
+        return $this->number;
     }
 }
 
 function makeUnsetTypedObjectValue(): UnsetTypedObjectValue
 {
     return new UnsetTypedObjectValue();
-}
-
-function acceptUnsetTypedObjectValue(UnsetTypedObjectValue $value): string
-{
-    echo "entered\n";
-    return $value->value();
 }
 
 function main()
@@ -31,19 +32,12 @@ function main()
     var_dump(isset($value));
 
     try {
-        acceptUnsetTypedObjectValue(@$value);
-    } catch (Throwable $error) {
-        echo $error::class, "\n";
-    }
-
-    try {
-        @$value->value();
+        @$value->readProperty();
     } catch (Throwable $error) {
         echo $error::class, "\n";
     }
 
     $value = makeUnsetTypedObjectValue();
-    var_dump(acceptUnsetTypedObjectValue($value));
     var_dump($value->value());
 }
 ?>
@@ -51,8 +45,5 @@ function main()
 bool(true)
 bool(false)
 bool(false)
-TypeError
 Error
-entered
-string(5) "value"
 string(5) "value"

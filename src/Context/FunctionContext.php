@@ -30,15 +30,6 @@ class FunctionContext
     public array $objects = [];
 
     /**
-     * Object variables that require a runtime value check before use. This
-     * includes nullable declarations and typed objects cleared by unset().
-     * Their class constraint remains in objects/declaredObjects.
-     *
-     * @var array<string, bool>
-     */
-    public array $runtimeCheckedObjects = [];
-
-    /**
      * Declared object constraints that are not used for native-call dispatch.
      *
      * @var array<string, string>
@@ -95,7 +86,6 @@ class FunctionContext
         $this->staticVars = [];
         $this->arguments = [];
         $this->objects = [];
-        $this->runtimeCheckedObjects = [];
         $this->declaredObjects = [];
         $this->stdArrays = [];
         $this->stdContainers = [];

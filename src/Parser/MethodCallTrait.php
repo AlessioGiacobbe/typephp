@@ -120,10 +120,6 @@ trait MethodCallTrait
 
     protected function findNativeMethod(CallLike $expr, string $object, string $method): string|false
     {
-        if ($object !== 'this_' && $this->requiresRuntimeObjectCheck($object)) {
-            return false;
-        }
-
         $classDef = null;
         if ($object === 'this_') {
             $class = $this->getFullClassName();
