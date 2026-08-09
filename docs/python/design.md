@@ -669,6 +669,8 @@ $native = $pyInt->toPlainValue()->toInt() + 10; // 已显式转为 TypePHP int�
 
 phpy 作为普通 PHP 扩展时，可以继续使用 Zend opcode handler 提供运算符重载兼容性；TypePHP 不依赖这些 handler。
 
+动态 ZendVM 代码存在一个明确保留的限制：Zend 会把 `-$value` / `+$value` 编译为乘以 `-1` / `1`，phpy 的 opcode handler 无法再识别源码中的一元运算。因此动态代码保持 `$value * -1` / `$value * 1` 的协议行为，不通过全局 AST hook 改写普通 PHP 代码；自定义 Python 对象的 `__neg__()` / `__pos__()` 与 `__mul__()` 不一致时，结果可能不同。TypePHP AOT 仍按照上表生成 `operator.neg()` / `operator.pos()`。外部用户文档 `python.md` 已明确说明这一限制。
+
 TypePHP 编译器在识别到静态类型为 `PyObject`、`PyDict` 等 phpy 对象时，把运算符改写为普通 Python module callable 调用：
 
 ```text

@@ -68,7 +68,7 @@ phpy 同步完成了对象协议加固：`__set()` 转换引用释放、`__unset
 5. 基准测试动态 Zend call、module map、参数转换和 `operator` module 调用；只优化被数据证明的热点。
 6. 完整 PHPUnit、pytest、PHPT 和现有 TypePHP compiler 回归。
 
-实现状态：进行中。第一轮 CPython 失败路径审计已覆盖通用对象、list、dict、tuple、set 的构造和下标写入，以及 sequence/set 的 `contains()`。PHP 到 Python 的 key/value 转换失败现在会立即映射为 `PyError`，所有已取得的新引用均由作用域守卫释放；构造失败不再留下未处理的 CPython error indicator，`contains()` 的 `-1` 错误结果也不再被误判为 `true`。无效 UTF-8、unhashable set member、失败后容器仍可继续使用等路径已有 phpy PHPUnit 回归测试。
+实现状态：已完成。第一轮 CPython 失败路径审计已覆盖通用对象、list、dict、tuple、set 的构造和下标写入，以及 sequence/set 的 `contains()`。PHP 到 Python 的 key/value 转换失败现在会立即映射为 `PyError`，所有已取得的新引用均由作用域守卫释放；构造失败不再留下未处理的 CPython error indicator，`contains()` 的 `-1` 错误结果也不再被误判为 `true`。无效 UTF-8、unhashable set member、失败后容器仍可继续使用等路径已有 phpy PHPUnit 回归测试。
 
 第二轮审计覆盖 module import、异常转换、callable 检查和显式 iterator API。`PyImport_ImportModule()`、`PyErr_Fetch()` 和 `PyIter_Next()` 转移给调用方的新引用现在都会在 Zend wrapper 取得独立引用后统一释放；重复 import、Python 异常或显式 iterator next 不再持续增加引用计数。调用非 callable 的 Python 属性或 `PyObject` 会稳定抛出 `PyError(TypeError)`，不再因为 `PyCallable_Check()` 未设置 error indicator 而静默返回 `null`。`PyCore::next()` 也会区分正常迭代结束和 iterator 异常。上述路径均先建立失败的 phpy PHPUnit 回归测试，其中对象调用行为另有 TypePHP PHPT 集成覆盖。
 
@@ -80,7 +80,17 @@ phpy 同步完成了对象协议加固：`__set()` 转换引用释放、`__unset
 
 第六轮引用审计修复了 `PySequence::slice()` 的 new-reference 泄漏。切片在包装为 Zend `PyObject` 后会释放 CPython API 返回的原始所有权，同时保留 wrapper 自己持有的引用；由 `sys.getrefcount()` 压力测试验证重复创建并销毁切片不会继续增加元素引用计数。切片创建失败也会在接触空指针前转换为 `PyError`。
 
+第七轮审计覆盖动态 PHP 的 Python 运算符协议。phpy opcode handler 现在使用 CPython `PyNumber_*` / `PyObject_RichCompareBool()`，`/` 与 `/=` 使用 true division，复合赋值会用 in-place API 返回的对象更新 Zend 左值，并正确处理不可变 Python 对象、Zend 引用变量、表达式结果和失败后左值状态。`===` / `!==` 使用 Python object identity，bool cast、`!` 和条件分支使用 Python truth protocol；PHP 操作数转换、结果和异常路径的新引用统一由 RAII 守卫管理。TypePHP 的 `operators.phpt` 同时以 ZendPHP + opcode handler 和 AOT + `operator` module 运行，因此是两条实现的输出一致性门禁。
+
+动态代码的一元正负运算已确定为兼容性边界：PHP 会把 `-$value` / `+$value` 编译成乘以 `-1` / `1`，opcode handler 无法区分它与源码中的显式乘法。动态 ZendVM 代码不再尝试改写 AST，而是明确保留 `$value * -1` / `$value * 1` 的行为。Python 内置数值和 NumPy 等常见对象的结果通常一致，但自定义对象的 `__neg__()` / `__pos__()` 可能与 `__mul__()` 不同。AOT TypePHP 保留原始 AST，仍分别 lowering 为 `operator.neg()` / `operator.pos()`，语义不受影响。外部用户文档 `python.md` 已将这一差异列入兼容性限制。
+
+性能基准分别覆盖 module property、operator module call、已有 `PyObject` 参数和 PHP 标量参数转换。在当前未优化构建中，module property 约为 0.7–0.9 μs/op，operator call 约为 1.8–2.5 μs/op；参数是否预先包装为 `PyObject` 没有呈现稳定差异。尝试以 indirect zval wrapper 消除 module map 每次访问的引用计数后，A/B 中位数仍处于同一噪声区间，因此没有保留生命周期更敏感且收益未经证明的优化。
+
+phpy 的 CMake Python-extension 目标同时完成了 out-of-tree 构建修复，并通过从 Zend 标准 cast handler 推导返回类型来兼容旧版 PHP 的 `int` ABI 与新版 PHP 的 `zend_result` ABI。PHP 8.1 和 PHP 8.4 均已完成全新构建验证。
+
 内存门禁使用 Valgrind Memcheck 执行。测试关闭 Zend allocator 与 PCRE JIT，在最小独立进程中分别循环 100 次 PHP Closure kwargs 回调、可调用 PHP 对象 kwargs 回调、sequence slice 创建销毁、无效 Unicode 的对象字符串化、字典键转换和异常格式化。结果为 0 invalid-access、0 definite leak、0 indirect leak；进程退出时由 PHP/CPython 保留的 493,106 bytes 均为 still-reachable，不计为泄漏。ASan 扩展无法安全 `dlopen` 到当前启用了 `RTLD_DEEPBIND` 的非 ASan PHP，因此本轮采用不要求 PHP 同步重编译的 Valgrind 作为内存检查工具。
+
+阶段 6 最终门禁结果：phpy PHPUnit 135 tests / 469 assertions 通过（1 个既有 warning、1 个环境相关 skip），pytest 26/26 通过，TypePHP Python PHPT 14/14 通过，TypePHP PHPUnit 1103 tests / 2729 assertions 通过；TypePHP compiler 全量 PHPT 共 934 项，其中 932 PASS、2 SKIP、0 FAIL、0 WARN。动态 operator 压力测试在 Valgrind 下为 0 invalid access、0 definite leak、0 indirect leak。
 
 ## 阶段门禁
 
