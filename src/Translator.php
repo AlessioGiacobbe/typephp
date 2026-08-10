@@ -3707,7 +3707,9 @@ CODE;
         }
         $code .= $this->genDebugInfo(null, $debugName, $v->getStartLine());
 
-        // 函数中存在动态调用的函数，需要在运行时动态切换作用域
+        // AOT methods containing a Zend dynamic object call must expose their
+        // class scope to callable visibility checks. Pure native methods avoid
+        // this frame traversal and scope mutation entirely.
         if ($this->methodDef and $this->methodDef->hasDynamicCall) {
             $code .= $this->genScopeSwitchCode();
         }

@@ -3084,9 +3084,125 @@ class CompilerBase implements PropertyAccessContext
         string $method,
         array $args,
         string $funcName = '',
-        string $className = ''
+        string $className = '',
+        bool $requiresDynamicScope = true,
     ): string {
+        if ($requiresDynamicScope) {
+            $this->markRuntimeObjectMethodCall();
+        }
         return $object . '.call(' . $method . ', ' . $this->parseCallArgs($args, $funcName, $className) . ')';
+    }
+
+    /** Mark methods that need Zend user-frame scope for dynamic visibility checks. */
+    protected function markRuntimeObjectMethodCall(): void
+    {
+        if ($this->methodDef) {
+            $this->methodDef->hasDynamicCall = true;
+        }
+    }
+
+    /**
+     * Mark PHP internal functions that synchronously invoke a user callback.
+     * Closures and first-class callables already retain their creation scope.
+     *
+     * @param array<Node\Arg> $args
+     */
+    protected function markInternalFunctionCallbackCall(string $function, array $args): void
+    {
+        if (!$this->methodDef || $args === []) {
+            return;
+        }
+
+        /**
+         * Reflection metadata is deliberately not used here. This code is also
+         * compiled by TypePHP itself, so the result must not depend on how a
+         * particular PHP build exposes callable parameter types.
+         *
+         * Each entry identifies callback arguments by their positional index
+         * and PHP named-argument name. Negative indexes count from the end.
+         * The boolean flag marks containers whose values are callbacks.
+         */
+        static $callbackArgs = [
+            'array_map' => [[0, 'callback']],
+            'array_filter' => [[1, 'callback']],
+            'array_reduce' => [[1, 'callback']],
+            'array_all' => [[1, 'callback']],
+            'array_any' => [[1, 'callback']],
+            'array_find' => [[1, 'callback']],
+            'array_find_key' => [[1, 'callback']],
+            'array_walk' => [[1, 'callback']],
+            'array_walk_recursive' => [[1, 'callback']],
+            'usort' => [[1, 'callback']],
+            'uasort' => [[1, 'callback']],
+            'uksort' => [[1, 'callback']],
+            'call_user_func' => [[0, 'callback']],
+            'call_user_func_array' => [[0, 'callback']],
+            'forward_static_call' => [[0, 'callback']],
+            'forward_static_call_array' => [[0, 'callback']],
+            'preg_replace_callback' => [[1, 'callback']],
+            'preg_replace_callback_array' => [[0, 'pattern', true]],
+            'iterator_apply' => [[1, 'callback']],
+            'array_udiff' => [[-1, 'value_compare_func']],
+            'array_udiff_assoc' => [[-1, 'value_compare_func']],
+            'array_uintersect' => [[-1, 'value_compare_func']],
+            'array_uintersect_assoc' => [[-1, 'value_compare_func']],
+            'array_diff_uassoc' => [[-1, 'key_compare_func']],
+            'array_diff_ukey' => [[-1, 'key_compare_func']],
+            'array_intersect_uassoc' => [[-1, 'key_compare_func']],
+            'array_intersect_ukey' => [[-1, 'key_compare_func']],
+            'array_udiff_uassoc' => [
+                [-2, 'value_compare_func'],
+                [-1, 'key_compare_func'],
+            ],
+            'array_uintersect_uassoc' => [
+                [-2, 'value_compare_func'],
+                [-1, 'key_compare_func'],
+            ],
+        ];
+
+        $descriptors = $callbackArgs[strtolower(ltrim($function, '\\'))] ?? null;
+        if ($descriptors === null) {
+            return;
+        }
+
+        $argCount = count($args);
+        foreach ($args as $index => $arg) {
+            if ($arg->unpack) {
+                // An unpacked argument can occupy any remaining callback slot.
+                $this->markRuntimeObjectMethodCall();
+                return;
+            }
+
+            foreach ($descriptors as $descriptor) {
+                [$position, $name] = $descriptor;
+                $container = $descriptor[2] ?? false;
+                $callbackPosition = $position < 0 ? $argCount + $position : $position;
+                $matches = $arg->name === null
+                    ? $index === $callbackPosition
+                    : $arg->name->toString() === $name;
+                if ($matches && ($container || !$this->isScopeIndependentCallableExpr($arg->value))) {
+                    $this->markRuntimeObjectMethodCall();
+                    return;
+                }
+            }
+        }
+    }
+
+    private function isScopeIndependentCallableExpr(Expr $expr): bool
+    {
+        return $expr instanceof Expr\Closure
+            || $expr instanceof Expr\ArrowFunction
+            || ($expr instanceof CallLike && $expr->isFirstClassCallable())
+            || $this->isNull($expr);
+    }
+
+    protected function internalMethodMayInvokeCallback(string $class, string $method): bool
+    {
+        static $methods = [
+            'reflectionmethod::invoke' => true,
+            'reflectionmethod::invokeargs' => true,
+        ];
+        return isset($methods[strtolower(ltrim($class, '\\') . '::' . $method)]);
     }
 
     protected function validateInternalNamedCallArgs(\ReflectionFunctionAbstract $ref, array $callArgs): void

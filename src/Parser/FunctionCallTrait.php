@@ -85,6 +85,7 @@ trait FunctionCallTrait
             $globalName = ltrim($name, '\\');
             if ($this->isInternalFunction($globalName)) {
                 $this->assertWasiFunctionSupported($expr, $globalName);
+                $this->markInternalFunctionCallbackCall($globalName, $expr->args);
             }
             if (in_array($name, Constants::UNSUPPORTED_FUNCTIONS)) {
                 $this->fatalError($expr, 'Unsupported function: `' . $name . '`');

@@ -478,22 +478,33 @@ trait MethodCallTrait
             $funcName = '';
         }
 
+        $requiresDynamicScope = true;
         if ($class && $funcName && !$magicMethod && $this->isInternalClass($class)) {
             $methodPtr = $this->getMethodPtr($class, $funcName);
+            // Calling a resolved public internal method does not require
+            // callback visibility scope. A small set of invoker methods is
+            // intentionally exempt because it executes another PHP method.
+            $requiresDynamicScope = $this->internalMethodMayInvokeCallback($class, $funcName);
         } else {
             $methodPtr = $method;
         }
 
-        if ($object === 'this_' or $object === 'self' or $object === 'static') {
-            $this->methodDef->hasDynamicCall = true;
-        }
-
         if (empty($expr->args)) {
+            if ($requiresDynamicScope) {
+                $this->markRuntimeObjectMethodCall();
+            }
             return $object . '.call(' . $methodPtr . ')';
         }
         try {
             $class = empty($class) ? self::DYNAMIC_CALLED_CLASS : $class;
-            return $this->genRuntimeObjectMethodCall($object, $methodPtr, $expr->args, $funcName, $class);
+            return $this->genRuntimeObjectMethodCall(
+                $object,
+                $methodPtr,
+                $expr->args,
+                $funcName,
+                $class,
+                $requiresDynamicScope,
+            );
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($this->genArray([$object, $method]));
         }

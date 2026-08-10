@@ -87,6 +87,7 @@ trait NullsafeAccessTrait
                 $update = $this->escapeAttrMode($this->isPropertyFetchUpdate($item[2]));
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
             } else {
+                $this->markRuntimeObjectMethodCall();
                 $beforeStmtCount = count($this->context->beforeStmtLines);
                 $afterStmtCount = count($this->context->afterStmtLines);
                 $args = $this->parseCallArgs($item[2]);
