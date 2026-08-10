@@ -32,3 +32,4 @@ tests/**/*.sh
 /*.browser/
 /tests/wasm/harness/node_modules/
 /ide-helper/
+/debug/

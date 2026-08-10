@@ -133,17 +133,36 @@ trait ConstantExpressionTrait
     protected function detectConstType($expr): string
     {
         $name = $this->parseIdentifier($expr->name);
+        $name = ltrim($name, '\\');
+
+        // true and false are language constants and never participate in
+        // namespace fallback. Keep type resolution consistent with
+        // parseConstFetch(), which handles them before resolving the name.
+        if (strcasecmp($name, 'true') === 0 || strcasecmp($name, 'false') === 0) {
+            return Type::BOOL;
+        }
+
+        if (isset($this->useConstants[$name])) {
+            $name = $this->useConstants[$name];
+        } elseif ($expr->name->isUnqualified() && $this->namespace) {
+            $namespacedName = $this->namespace . '\\' . $name;
+            if ($this->hasConstant($namespacedName)) {
+                return $this->getConstantType($namespacedName);
+            }
+
+            // PHP checks Namespace\NAME before falling back to global NAME.
+            // A runtime define() can therefore shadow even an internal global
+            // constant, so its type cannot be inferred statically here.
+            return Type::VAR;
+        } elseif (!($expr->name instanceof Node\Name\FullyQualified)) {
+            $name = $this->getNamespacedClassName($name);
+        }
+
         if ($this->hasConstant($name)) {
             return $this->getConstantType($name);
         }
         if ($this->isInternalConstant($name)) {
             return $this->getTypeFromZendType(gettype($this->internalConstants[$name]));
-        }
-        if (strcasecmp($name, 'true') === 0) {
-            return Type::BOOL;
-        }
-        if (strcasecmp($name, 'false') === 0) {
-            return Type::BOOL;
         }
         if ($name === 'NAN' or $name === 'INF') {
             return Type::FLOAT;
