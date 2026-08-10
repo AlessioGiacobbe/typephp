@@ -3,6 +3,7 @@ use TypePhp\Translator;
 use TypePhp\Build\WasiToolchain;
 use TypePhp\Build\WasiProjectConfig;
 use TypePhp\Build\PhpxLocator;
+use TypePhp\PythonTools\Command as PythonToolsCommand;
 
 function main(int $argc, array $argv): void
 {
@@ -12,6 +13,14 @@ function main(int $argc, array $argv): void
 
     if (!defined('ROOT_PATH')) {
         define("ROOT_PATH", getcwd());
+    }
+
+    $pythonToolStatus = PythonToolsCommand::execute($argv);
+    if ($pythonToolStatus !== null) {
+        if ($pythonToolStatus !== 0) {
+            exit($pythonToolStatus);
+        }
+        return;
     }
 
     if (getenv('TYPEPHP_WASM_INTERNAL_COMPILE') !== '1' && shouldCompileWasm($argv)) {

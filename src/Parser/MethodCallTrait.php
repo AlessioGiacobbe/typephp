@@ -350,7 +350,18 @@ trait MethodCallTrait
                 if ($methodName === 'toRef') {
                     return $this->genToRefCall($expr);
                 }
-                return $this->genToConvertCall($object, $methodName, $receiverType);
+                $receiverClass = $class;
+                if ($receiverClass === '' && !$this->isVarExpr($expr->var)) {
+                    $receiverClass = $this->detectClassOfExpr($expr->var);
+                }
+                // A statically known object method preserves keyword priority
+                // while avoiding the generic PHPX conversion helper.
+                $useDeclaredToArray = $methodName === 'toArray'
+                    && $receiverClass !== ''
+                    && $this->objectTypeDeclaresMethod($receiverClass, $methodName);
+                if (!$useDeclaredToArray) {
+                    return $this->genToConvertCall($object, $methodName, $receiverType);
+                }
             }
             // MethodsFor('*') extensions apply to every receiver type.
             $kwExt = $this->findKeywordExtensionMethod($methodName);

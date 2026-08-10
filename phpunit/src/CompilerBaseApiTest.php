@@ -953,7 +953,8 @@ YAML);
         $cppFile = $this->compiler->convertFile($testFile);
         $cpp = file_get_contents($cppFile);
 
-        $this->assertStringContainsString('data = php::toArray(user);', $cpp);
+        $this->assertStringContainsString('data = php_arrayableuser__toarray(user);', $cpp);
+        $this->assertStringNotContainsString('php::toArray(', $cpp);
         $this->assertStringContainsString('php::Array php_arrayableuser__toarray(', $cpp);
         $this->assertStringContainsString('php::Str php_arrayableuser____tostring(', $cpp);
     }

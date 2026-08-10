@@ -26,6 +26,16 @@ bin/tpc.php project.yml
 
 Linux 环境缺少 `libphp.so` 时，`tpc.php` 可以交互式下载 PHP 源码并自动构建，详见 [自动构建 libphp.so](docs/LIBPHP_INSTALLER.md)。
 
+Python namespace IDE helper 与 Python 源码转换也使用同一入口：
+
+```shell
+./tpc --gen-python-helper math
+./tpc --gen-python-helper numpy --output-dir .ide-helper
+./tpc --convert-python-to-php script.py > script.php
+```
+
+详细说明见 [Python 工具子模块](docs/python/tools.md)。
+
 ```shell
 # Ubuntu/Debian
 sudo apt install libgmp-dev libmpfr-dev libmpdec-dev

@@ -167,7 +167,6 @@ class CompilerBase implements PropertyAccessContext
         'toDecimal'    => Type::DECIMAL,
         'toObject'     => Type::OBJECT,
         'toAny'        => Type::VAR,
-        'toPlainValue' => Type::VAR,
         'toRef'        => Type::REF,
     ];
 

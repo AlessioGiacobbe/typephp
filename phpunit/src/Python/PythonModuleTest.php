@@ -293,31 +293,24 @@ final class PythonModuleTest extends TestCase
         $this->assertStringNotContainsString('phpy::', $cpp);
     }
 
-    public function testToPlainValueUsesTheZendScalarFacade(): void
+    public function testPyObjectConversionMethodsUseThePhpyFacade(): void
     {
         global $translator;
         $compiler = CompilerTest::create(ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/plain-value.php';
+        $source = ROOT_PATH . '/phpunit/code/python/object-conversion-methods.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
         $extension = file_get_contents($compiler->genExtension());
 
-        $this->assertStringContainsString('php::Var plain;', $cpp);
-        $this->assertStringContainsString('php::Var dynamic;', $cpp);
-        $this->assertStringContainsString('php::toPlainValue(', $cpp);
-        $this->assertStringContainsString('php::Var value', $cpp);
-        $this->assertStringNotContainsString('.call("toPlainValue"', $cpp);
+        $this->assertStringContainsString('php::Array array;', $cpp);
+        $this->assertStringContainsString('php::Var value;', $cpp);
+        $this->assertStringNotContainsString('php::toArray(', $cpp);
+        $this->assertStringContainsString('toArray', $extension);
+        $this->assertStringContainsString('toValue', $extension);
+        $this->assertStringNotContainsString('php::toPlainValue(', $cpp);
         $this->assertStringNotContainsString('phpy::', $cpp);
-    }
-
-    public function testToPlainValueRejectsArguments(): void
-    {
-        $this->expectException(TestError::class);
-        $this->expectExceptionMessage('The toPlainValue method does not accept parameters');
-
-        $this->compileFixture('plain-value-arguments.php');
     }
 
     private function compileFixture(string $file): void

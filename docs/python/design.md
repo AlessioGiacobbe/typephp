@@ -398,7 +398,7 @@ python\setattr($os, 'name', $value);
 
 ```php
 python\print('hello'); // 等价于 PyCore::print('hello')
-$length = python\len($value)->toPlainValue()->toInt();
+$length = python\len($value)->toValue()->toInt();
 $range = python\range(0, 10);
 $type = python\type($value);
 ```
@@ -445,8 +445,8 @@ $dict2 = python\dict();
 - `$dict1` 与 `$dict2` 都是 `PyDict` typed object。
 - 两种写法必须使用相同的类型检查、方法解析和 Native Call 优化。
 - 语法糖不能退化成 `mixed`、`var` 或只有基础类型 `PyObject`。
-- Python builtin 调用同样遵守对象保持规则，例如 `python\len()` 返回包装 Python int 的 `PyObject`；需要先以 `toPlainValue()`（或兼容入口 `python\scalar()`）离开 Python 对象规则，再使用普通 TypePHP 转换得到确定类型。`python\print()` 的 Python `None` 结果也保持为 `PyObject`，作为独立语句使用时可直接丢弃。
-- `toPlainValue()` 和 `python\scalar()` 都不是普通 Python builtin 调用，而是明确要求退出 Python 类型规则的转换边界，因此返回 TypePHP `var`。
+- Python builtin 调用同样遵守对象保持规则，例如 `python\len()` 返回包装 Python int 的 `PyObject`；需要先以 `toValue()`（或函数入口 `python\scalar()`）离开 Python 对象规则，再使用普通 TypePHP 转换得到确定类型。`python\print()` 的 Python `None` 结果也保持为 `PyObject`，作为独立语句使用时可直接丢弃。
+- `PyObject::toValue()` 和 `python\scalar()` 都不是普通 Python builtin 调用，而是明确要求退出 Python 类型规则的转换边界，因此返回 TypePHP `var`。
 - 动态 Python module 成员调用统一返回 `PyObject`。
 
 ## 9. Python 对象类型
@@ -477,16 +477,16 @@ unset($object->name);
 
 分别映射为 Python 的 `getattr`、call、`setattr` 和 `delattr` 协议。
 
-`PyObject` 与普通 Object 遵循相同的方法解析规则。TypePHP 不为它保留或注入 `toInt()`、`toFloat()`、`toBool()`、`toString()`、`toArray()` 等特殊转换方法；同名 Python 成员仍按正常的动态成员规则调用。
-
-`toPlainValue()` 是与 `toArray()`、`toString()` 同级的 TypePHP 全局关键词方法，用于把扩展对象转换为 PHP 内置值；当前第一个受支持的扩展对象是 `PyObject`。从 Python 对象进入 TypePHP 原生值时，推荐使用这个可保持链式调用的入口。`python\scalar()` 保留为等价的函数式入口。其返回值再使用普通 TypePHP 转换方法确定类型：
+`PyObject` 明确提供 `toValue()` 和 `toArray()` 两个 PHP Facade 方法。`toValue()` 等价于 `PyCore::scalar()` / `python\scalar()`，把 Python 值递归转换为 PHP 内置值。其返回值再使用普通 TypePHP 转换方法确定类型：
 
 ```php
 $pyValue = np\int64(42); // PyObject
-$value = $pyValue->toPlainValue()->toInt(); // TypePHP int
+$value = $pyValue->toValue()->toInt(); // TypePHP int
 ```
 
-这里的 `toInt()` 作用于 `toPlainValue()` 已返回的 TypePHP 值，并非作用于 `PyObject`。
+这里的 `toInt()` 作用于 `toValue()` 已返回的 TypePHP 值，并非作用于 `PyObject`。
+
+`toArray()` 仅转换 Python `list`、`tuple`、`set`、`dict` 以及 iterator。容器元素递归转换为 PHP 值；iterator 会被消费，后续再次转换只能得到其剩余元素。不支持转换的 Python 类型返回空数组。`toArray()` 同时是 TypePHP 关键词方法，但 PHPX 的对象转换路径会调用 `PyObject::toArray()`；`toString()` 则继续通过关键词方法调用 `PyObject::__toString()`，phpy 不重复声明 `toString()`。
 
 ### 10.2 下标
 
@@ -630,7 +630,7 @@ TypePHP 的 Python 专用调用路径必须关闭 phpy 的返回值隐式转换�
 
 编译器已知的 phpy 构造语法糖仍保留精确子类，例如 `python\list()` 返回 `PyList`、`python\dict()` 返回 `PyDict`；这些类型本身都是 `PyObject` 子类，不构成返回值隐式转换。
 
-phpy Zend Facade 应提供相互独立的“保持 Python 对象”和“显式转换为 TypePHP”入口。不能通过修改进程级全局函数指针或全局转换模式来临时切换，否则嵌套调用、同步重入和异常路径可能把错误策略泄漏给后续调用。TypePHP 生成的普通 Python 调用只动态调用对象保持入口；`toPlainValue()` 与 `python\scalar()` 最终都调用明确的标量转换入口。
+phpy Zend Facade 应提供相互独立的“保持 Python 对象”和“显式转换为 TypePHP”入口。不能通过修改进程级全局函数指针或全局转换模式来临时切换，否则嵌套调用、同步重入和异常路径可能把错误策略泄漏给后续调用。TypePHP 生成的普通 Python 调用只动态调用对象保持入口；`PyObject::toValue()` 与 `python\scalar()` 最终都调用明确的标量转换入口。
 
 phpy 内部已使用 `PythonToPhpConverter` 与 `PhpToPythonConverter` 实现这一约束。每次顶层转换拥有独立实例，递归子值复用同一实例；容器进入与退出由 RAII guard 管理，循环容器和超过深度限制的输入会抛出 `PyError`，不会污染后续转换或导致进程崩溃。
 
@@ -644,28 +644,28 @@ phpy 内部已使用 `PythonToPhpConverter` 与 `PhpToPythonConverter` 实现这
 
 ### 14.2 显式转换
 
-Python 对象只有通过 `toPlainValue()`、`python\scalar()`（或手写等价的 `PyCore::scalar()`）才能进入 TypePHP 类型规则：
+Python 对象只有通过 `toValue()`、`python\scalar()`（或手写等价的 `PyCore::scalar()`）才能进入 TypePHP 类型规则：
 
 ```php
 $nativeValue1 = PyCore::scalar($value);
 $nativeValue2 = python\scalar($value); // 完全等价的语法糖
-$nativeValue3 = $value->toPlainValue(); // 推荐的链式关键词方法
-$integer = $value->toPlainValue()->toInt();
-$float = $value->toPlainValue()->toFloat();
-$boolean = $value->toPlainValue()->toBool();
-$string = $value->toPlainValue()->toString();
-$array = $value->toPlainValue()->toArray();
+$nativeValue3 = $value->toValue();
+$integer = $value->toValue()->toInt();
+$float = $value->toValue()->toFloat();
+$boolean = $value->toValue()->toBool();
+$string = $value->toValue()->toString();
+$array = $value->toArray();
 ```
 
 规则：
 
-- 编译器把 `toPlainValue()` 与 `python\scalar()` 识别为 Python/TypePHP 边界；其后的 `toInt()` 等调用是 TypePHP 原生值已有的普通转换能力。
-- `toPlainValue()` 注册在 TypePHP 全局 `KEYWORD_METHOD_MAP`，不属于 Python module 语法。它按 `toArray()` / `toString()` 的 PHPX 自由函数模式生成 `php::toPlainValue(value)`。参数可以是 `php::Object` 或 `php::Var`；当前 PHPX 在运行时确认对象是 `PyObject`，再通过 Zend API 调用 `PyCore::scalar()`，不链接 phpy C++ 符号。后续其他扩展类可继续在 PHPX 中增加适配。
+- `toValue()` 是 `PyObject` 的普通公开方法，不注册为 TypePHP 关键词方法；它在 phpy 内部复用与 `PyCore::scalar()` 相同的转换器。
+- `toArray()` 保留 TypePHP 全局关键词方法语义。PHPX 对对象执行数组转换时优先调用其公开的 `toArray()`，因此会进入 phpy 实现。
 - 显式转换完成后，结果完全进入 TypePHP 的静态类型、运算符和参数传递规则，不再采用 Python protocol。
 - 容器转换属于显式深转换，并检测递归引用。
 - Python 大整数不能静默溢出；现有转换规则需要 review 后再确定与 TypePHP `BigInt` 的精确映射。
 - Python `str` 与 `bytes` 必须区分，不能都无条件转换为 TypePHP string。
-- phpy 只负责 `PyCore::scalar()` 的 Python 到 PHP 值转换；后续 `toInt/toFloat/toBool/toString/toArray` 不属于 phpy，也不应在 `PyObject` 上重复实现。
+- phpy 负责 `PyObject::toValue()` / `PyCore::scalar()` 的通用值转换，以及受限的 `PyObject::toArray()` 容器转换。`toInt/toFloat/toBool` 属于转换后的 PHP 值；`toString()` 仍由 TypePHP 关键词方法调用 `PyObject::__toString()`。
 
 现有 phpy 的 PHP 用户仍可保留兼容行为；TypePHP 调用 phpy 的对象保持型 Zend API。为此可以重构或新增 phpy internal class method，但不增加 TypePHP 到 phpy 的 C++ 链接依赖。
 
@@ -714,7 +714,7 @@ identity 比较调用 `operator\is_()` / `operator\is_not()`。即使两个对�
 ```php
 $result1 = $pyInt + 10;          // 10 转为 Python int，由 Python 执行加法
 $result2 = $pyList * getCount(); // 先求值 getCount()，再转为 Python int
-$native = $pyInt->toPlainValue()->toInt() + 10; // 已显式转为 TypePHP int，使用 TypePHP 加法
+$native = $pyInt->toValue()->toInt() + 10; // 已显式转为 TypePHP int，使用 TypePHP 加法
 ```
 
 `operator` 调用结果仍为 `PyObject`，以保留 Python 自定义运算符可能返回的任意对象。`===` / `!==` 和条件分支是例外：`operator.is_/is_not/truth()` 的 Python bool 结果随后通过显式 phpy 转换入口得到 TypePHP `bool`。两侧操作数必须严格从左到右各求值一次，转换过程不得导致表达式重复执行。
@@ -889,7 +889,7 @@ phpy 仓库现有 PHPUnit 用于验证 ZendVM/PHP Facade 与共享 Runtime：
 - TypePHP 参数到 Python 的转换，以及 Python 返回值的显式转换。
 - 空 TypePHP 数组默认转换为 Python list，以及数组递归深拷贝、异常中止和重复转换行为。
 - Python builtin、模块函数、方法和运算结果不会隐式变成 TypePHP 标量。
-- `$obj->toPlainValue()->toInt()`、`python\scalar($obj)->toInt()` 等显式边界及其后的普通 TypePHP 转换恢复静态类型和运算规则。
+- `$obj->toValue()->toInt()`、`$obj->toArray()`、`python\scalar($obj)->toInt()` 等显式边界及其后的普通 TypePHP 转换恢复静态类型和运算规则。
 - Python 异常到 TypePHP 异常。
 - phpy 未加载时首次 Python 调用抛出 PHP `Error`，而仅声明未使用的 Python `use` 不报错。
 - TypePHP callable 被 Python 回调。
@@ -972,7 +972,7 @@ pytest 用于 phpy 自身已有 Python-facing bridge 的回归测试；它不表
 16. `np\array()` 表示读取并调用 Python 包成员；该成员可以是函数、class 或其他 callable，具体类型由 Python 运行时决定。
 17. `PyObject` 可以与 TypePHP 值混合运算；TypePHP 操作数转换为 Python 对象后，整个运算由 CPython protocol 执行，结果保持为 `PyObject`。
 18. Python 函数、方法、class 构造和 builtin 调用的结果一律保持为 `PyObject` 或已知的 phpy 子类；禁用 phpy 返回值隐式转换。
-19. `PyObject::toPlainValue()` 是推荐的链式显式转换关键词；`python\scalar()` 保留为等价入口。两者退出 Python 类型规则后均可继续使用普通 TypePHP 转换，例如 `$obj->toPlainValue()->toInt()`。
+19. `PyObject::toValue()` 是显式标量/容器转换方法，等价于 `python\scalar()`；`PyObject::toArray()` 只接受可转换容器和 iterator，不支持的类型返回空数组。转换后可继续使用普通 TypePHP 转换，例如 `$obj->toValue()->toInt()`。
 20. TypePHP 调用 Python 时，所有参数自动转换为 Python 类型；TypePHP 数组递归深拷贝，空数组默认转换为 Python list。
 21. 性能敏感代码应复用 `PyDict`、`PyList`、`PyStr` 等代理对象，避免同一 TypePHP 值反复转换和深拷贝。
 22. TypePHP 的主要语言增量是 `use python\...` 和模块别名；使用别名时通过与 `funcMap` 同类的 lazy indexed map 调用 phpy import，其他运行时能力优先直接复用 phpy。

@@ -32,11 +32,11 @@
 
 1. TypePHP 参数从左到右求值后自动转换为 Python 值。
 2. 标量、数组、空数组、嵌套容器及 TypePHP callable 转换。
-3. 通过 `$py->toPlainValue()` 或兼容入口 `python\scalar($py)` 离开 Python 对象规则；需要确定原生类型时继续使用普通 TypePHP 转换，例如 `$py->toPlainValue()->toInt()`。
+3. 通过 `$py->toValue()` 或 `python\scalar($py)` 离开 Python 对象规则；需要确定原生类型时继续使用普通 TypePHP 转换，例如 `$py->toValue()->toInt()`。容器和 iterator 可直接使用 `$py->toArray()`。
 4. 深拷贝、递归容器、溢出、Unicode/bytes 和异常路径测试。
 5. review 并重构 phpy 转换策略，移除影响同步重入的全局临时转换状态。
 
-实现状态：核心边界已完成。TypePHP 参数严格从左到右求值，支持标量、空数组、嵌套 list/dict 与 callable；`toPlainValue()` 是推荐的链式显式转换入口，`python\scalar()` 保留为等价兼容入口。PHPX 在运行时确认 `php::Var` 确实持有 `PyObject`，再通过 Zend Facade 调用 `PyCore::scalar()`；不依赖 phpy C++ 符号。phpy 已移除进程级转换函数指针，改为局部有状态转换器、RAII 递归保护和 128 层深度限制，并覆盖无效 UTF-8、PHP 自引用数组及 Python 循环容器错误路径。Python 大整数与 bytes 的最终语言映射仍保留在本阶段后续工作中。
+实现状态：核心边界已完成。TypePHP 参数严格从左到右求值，支持标量、空数组、嵌套 list/dict 与 callable；`PyObject::toValue()` 与 `python\scalar()` 复用 phpy 的显式转换入口，`PyObject::toArray()` 转换受支持的容器和 iterator。phpy 已移除进程级转换函数指针，改为局部有状态转换器、RAII 递归保护和 128 层深度限制，并覆盖无效 UTF-8、PHP 自引用数组及 Python 循环容器错误路径。Python 大整数与 bytes 的最终语言映射仍保留在本阶段后续工作中。
 
 ## 阶段 4：运算符
 
