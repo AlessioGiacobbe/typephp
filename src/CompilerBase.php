@@ -239,6 +239,9 @@ class CompilerBase implements PropertyAccessContext
     public const string CLASS_MAP = 'class_map';
     public const string FUNC_MAP = 'func_map';
     public const string PROP_MAP = 'property_map';
+    public const string INTERNAL_CLASS_MAP = 'internal_class_map';
+    public const string INTERNAL_FUNC_MAP = 'internal_func_map';
+    public const string INTERNAL_PROP_MAP = 'internal_property_map';
     public const string NAMESPACE_SEPARATOR = '__';
 
     public const string PREFIX = 'php_';
@@ -270,9 +273,16 @@ class CompilerBase implements PropertyAccessContext
     protected int $classIndex = 0;
 
     /**
+     * 用户定义（请求生命周期）类名 → ID，运行期为 THREAD_LOCAL 缓存，RSHUTDOWN 清理
      * @var array<string, int>
      */
     protected array $classMap = [];
+    /**
+     * 内置/编译产物（进程生命周期）类名 → ID，运行期为全局缓存，MINIT 填充，永不清理
+     * @var array<string, int>
+     */
+    protected array $internalClassMap = [];
+    protected int $internalClassIndex = 0;
     /**
      * @var array<string, int>
      */
@@ -280,11 +290,28 @@ class CompilerBase implements PropertyAccessContext
     protected int $funcIndex = 0;
 
     /**
+     * 用户定义（请求生命周期）函数/方法 → ID，运行期为 THREAD_LOCAL 缓存，RSHUTDOWN 清理
+     * key 为函数名或 `Class::method`
      * @var array<string, int>
      */
     protected array $funcMap = [];
+    /**
+     * 内置/编译产物（进程生命周期）函数/方法 → ID，运行期为全局缓存，MINIT 填充，永不清理
+     * key 为函数名或 `Class::method`
+     * @var array<string, int>
+     */
+    protected array $internalFuncMap = [];
+    protected int $internalFuncIndex = 0;
     protected int $propIndex = 0;
+    /**
+     * 用户定义类的属性 offset 缓存，key 为 `Class::prop`，RSHUTDOWN 清理
+     */
     protected array $propMap = [];
+    /**
+     * 内置/编译产物类的属性 offset 缓存，key 为 `Class::prop`，MINIT 填充，永不清理
+     */
+    protected array $internalPropMap = [];
+    protected int $internalPropIndex = 0;
     protected const array PHP_RUNTIME_TYPE_MAP = [
         'integer' => Type::INT,
         'double' => Type::FLOAT,
@@ -884,6 +911,7 @@ class CompilerBase implements PropertyAccessContext
                 abort($expr);
                 break;
         }
+        return '';
     }
 
     public function stop(string $string): never
@@ -1194,10 +1222,47 @@ class CompilerBase implements PropertyAccessContext
         return implode(self::NAMESPACE_SEPARATOR, $names);
     }
 
+    /**
+     * 判断类的符号指针是否进程级稳定（MINIT 注册，跨请求缓存安全）。
+     * 编译产物（本单元编译的类/接口）与 PHP 内置类/接口均满足条件。
+     */
+    protected function isProcessStableClass(string $className): bool
+    {
+        if ($this->hasClass($className) || $this->hasInterface($className)) {
+            return true;
+        }
+        $ref = Reflection::getClass(ltrim($className, '\\'));
+        return $ref !== null && $ref->isInternal();
+    }
+
+    /**
+     * 判断函数/方法符号指针是否进程级稳定。
+     * `Class::method` 形式的 key 以其所属类的稳定性为准。
+     */
+    protected function isProcessStableFunction(string $funcName): bool
+    {
+        if (str_contains($funcName, '::')) {
+            [$class] = explode('::', $funcName, 2);
+            return $this->isProcessStableClass($class);
+        }
+        if ($this->hasFunction($funcName)) {
+            return true;
+        }
+        $ref = Reflection::getFunction(ltrim($funcName, '\\'));
+        return $ref !== null && $ref->isInternal();
+    }
+
     protected function getClassId(string $className): int
     {
         if (isset($this->classMap[$className])) {
-            $id = $this->classMap[$className];
+            return $this->classMap[$className];
+        }
+        if (isset($this->internalClassMap[$className])) {
+            return $this->internalClassMap[$className];
+        }
+        if ($this->isProcessStableClass($className)) {
+            $id = $this->internalClassIndex++;
+            $this->internalClassMap[$className] = $id;
         } else {
             $id = $this->classIndex++;
             $this->classMap[$className] = $id;
@@ -1208,7 +1273,14 @@ class CompilerBase implements PropertyAccessContext
     protected function getFuncId(string $funcName): int
     {
         if (isset($this->funcMap[$funcName])) {
-            $id = $this->funcMap[$funcName];
+            return $this->funcMap[$funcName];
+        }
+        if (isset($this->internalFuncMap[$funcName])) {
+            return $this->internalFuncMap[$funcName];
+        }
+        if ($this->isProcessStableFunction($funcName)) {
+            $id = $this->internalFuncIndex++;
+            $this->internalFuncMap[$funcName] = $id;
         } else {
             $id = $this->funcIndex++;
             $this->funcMap[$funcName] = $id;
@@ -1223,7 +1295,14 @@ class CompilerBase implements PropertyAccessContext
     {
         $key = $className . '::' . $propName;
         if (isset($this->propMap[$key])) {
-            $id = $this->propMap[$key];
+            return $this->propMap[$key];
+        }
+        if (isset($this->internalPropMap[$key])) {
+            return $this->internalPropMap[$key];
+        }
+        if ($this->isProcessStableClass($className)) {
+            $id = $this->internalPropIndex++;
+            $this->internalPropMap[$key] = $id;
         } else {
             $id = $this->propIndex++;
             $this->propMap[$key] = $id;
@@ -1234,7 +1313,8 @@ class CompilerBase implements PropertyAccessContext
     protected function getClassEntryPtr(string $className): string
     {
         $id = $this->getClassId($className);
-        return 'php_get_class(' . $id . ', ' . $this->getLiteralString($className) . ')';
+        $helper = isset($this->internalClassMap[$className]) ? 'php_get_internal_class' : 'php_get_class';
+        return $helper . '(' . $id . ', ' . $this->getLiteralString($className) . ')';
     }
 
     protected function getCeWrapper(string $className): string
@@ -1243,28 +1323,32 @@ class CompilerBase implements PropertyAccessContext
             return $this->context->ceWrappers[$className];
         }
         $object = $this->addTmpVar(Type::OBJECT);
-        $this->context->beforeStmtLines[] = 'Z_PTR_P(' . $object . '.ptr()) = ' . $this->getClassEntryPtr($className) . ';';
         $this->context->ceWrappers[$className] = $object;
         return $object;
     }
 
     protected function getFuncPtr(string $funcName): string
     {
-        return 'php_get_func(' . $this->getFuncId($funcName) . ', ' . $this->getLiteralString($funcName) . ')';
+        $id = $this->getFuncId($funcName);
+        $helper = isset($this->internalFuncMap[$funcName]) ? 'php_get_internal_func' : 'php_get_func';
+        return $helper . '(' . $id . ', ' . $this->getLiteralString($funcName) . ')';
     }
 
     protected function getMethodPtr(string $class, string $method): string
     {
         $funcId = $this->getFuncId($class . '::' . $method);
         $classId = $this->getClassId($class);
-        return 'php_get_method(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
+        // 方法的稳定性与所属类一致，因此 class_id 必定落在同一张表中
+        $helper = isset($this->internalFuncMap[$class . '::' . $method]) ? 'php_get_internal_method' : 'php_get_method';
+        return $helper . '(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
     protected function getPropertyOffset(string $class, string $prop): string
     {
-        $funcId = $this->getPropertyId($class, $prop);
+        $propId = $this->getPropertyId($class, $prop);
         $classId = $this->getClassId($class);
-        return 'php_get_prop(' . $funcId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
+        $helper = isset($this->internalPropMap[$class . '::' . $prop]) ? 'php_get_internal_prop' : 'php_get_prop';
+        return $helper . '(' . $propId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
     protected function writeLog($msg): void
@@ -1319,6 +1403,7 @@ class CompilerBase implements PropertyAccessContext
                 abort($expr);
                 break;
         }
+        return '';
     }
 
     /**
@@ -4313,6 +4398,15 @@ class CompilerBase implements PropertyAccessContext
             $code .= $this->getIndent() . 'int _cnt_flag = 0;' . PHP_EOL;
         }
         $code .= $this->genLocalVarDecl($this->context->localVars);
+        // Native static calls pass a lightweight Object containing the called
+        // class entry. A wrapper can be shared by all calls to the same class,
+        // but its initialization must dominate every control-flow branch that
+        // may use it. Emitting it at the first call site is unsafe when that
+        // site belongs to an if/switch/loop branch that is not executed.
+        foreach ($this->context->ceWrappers as $className => $object) {
+            $code .= $this->getIndent() . 'Z_PTR_P(' . $object . '.ptr()) = '
+                . $this->getClassEntryPtr($className) . ';' . PHP_EOL;
+        }
         foreach ($this->context->globalVars as $name => $type) {
             // $GLOBALS is handled via php_globals_array() at each read site
             if ($name === 'GLOBALS') {
