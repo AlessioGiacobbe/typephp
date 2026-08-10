@@ -418,6 +418,9 @@ trait CallArgumentGenerator
                 $namedArgs[$arg->name->name] = true;
                 $byRef = ($funcName && $this->isReferenceNamedArgument($funcName, $className, $arg->name->name))
                     || ($preserveExistingReferences && $this->isExistingReferenceCallArg($arg));
+                if ($byRef) {
+                    $this->assertReadonlyPropertyReferenceForbidden($arg->value, $arg, false);
+                }
                 $value = ($byRef || $this->isRefvalCall($arg->value) || $this->isToRefCall($arg->value))
                     ? $this->parseReferenceCallArgValue($arg)
                     : $this->parseCallArgValue($arg);
@@ -438,6 +441,9 @@ trait CallArgumentGenerator
             }
             $byRef = ($funcName && $this->isReferenceArgument($funcName, $className, $i))
                 || ($preserveExistingReferences && $this->isExistingReferenceCallArg($arg));
+            if ($byRef) {
+                $this->assertReadonlyPropertyReferenceForbidden($arg->value, $arg, false);
+            }
             if (($funcName === 'call_user_func' || $funcName === 'call_user_func_array') && $i === 0) {
                 $callback = $this->parseScopedCallbackArg($arg);
                 if ($callback !== null) {

@@ -162,6 +162,7 @@ trait NativeTypeCompatibilityTrait
         if ($argInfo->byRef) {
             if ($this->isReferenceWrapperCall($arg->value)) {
                 $inner = $this->unwrapReferenceWrapperCall($arg->value, $arg);
+                $this->assertReadonlyPropertyReferenceForbidden($inner, $arg, false);
                 if ($this->isVarExpr($inner)) {
                     $arg->value = $inner;
                 } else {
@@ -171,6 +172,8 @@ trait NativeTypeCompatibilityTrait
                     }
                     $this->fatalError($arg, 'The refval function only accepts a variable, array element, or object property');
                 }
+            } else {
+                $this->assertReadonlyPropertyReferenceForbidden($arg->value, $arg, false);
             }
             if ($this->isVarExpr($arg->value)) {
                 $var = $this->parseVariable($arg->value);

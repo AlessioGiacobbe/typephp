@@ -106,6 +106,11 @@ trait ArrayExpressionTrait
         }
 
         if ($expr instanceof Expr\PropertyFetch) {
+            // Keep the write-policy check at the common writable-expression
+            // boundary as well as at assignment lowering sites. This covers
+            // destructuring, foreach targets, and future write forms that use
+            // parseWritableIdentifier() directly.
+            $this->preparePropertyWriteTarget($expr);
             return $this->parsePropertyFetchUpdate($expr);
         }
 

@@ -1095,6 +1095,11 @@ class CompilerBase implements PropertyAccessContext
         return $this->method === '__construct';
     }
 
+    protected function isCurrentCloneMethod(): bool
+    {
+        return $this->method === '__clone';
+    }
+
     protected function getCurrentMethodDisplayName(): string
     {
         return $this->getFullClassName() . '::' . $this->method;

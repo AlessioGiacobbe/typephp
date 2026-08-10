@@ -147,6 +147,9 @@ trait PropertyAccessTrait
 
     protected function emitDynamicPropertyFetchAppendArray(Expr\PropertyFetch $expr, string $value, ?PropertyWriteTarget $target = null): string
     {
+        if ($this->isNativePropertyAccess($expr)) {
+            return $this->parseWritableIdentifier($expr) . ".newItem() = {$value}";
+        }
         if ($this->canEmitDynamicPropertyTarget($target)) {
             return $this->emitDynamicPropertyTargetAppendArray($target, $value);
         }
@@ -160,6 +163,9 @@ trait PropertyAccessTrait
 
     protected function emitDynamicPropertyFetchUpdateArray(Expr\PropertyFetch $expr, string $dim, string $value, ?PropertyWriteTarget $target = null): string
     {
+        if ($this->isNativePropertyAccess($expr)) {
+            return $this->parseWritableIdentifier($expr) . ".item({$dim}, true) = {$value}";
+        }
         if ($this->canEmitDynamicPropertyTarget($target)) {
             return $this->emitDynamicPropertyTargetUpdateArray($target, $dim, $value);
         }
@@ -437,7 +443,7 @@ trait PropertyAccessTrait
         $this->assertCanAssignObjectProperty($left, $right, 'static property');
     }
 
-    protected function preparePropertyWriteTarget(NodeAbstract $left): ?PropertyWriteTarget
+    protected function preparePropertyWriteTarget(NodeAbstract $left, bool $checkReadonlyWrite = true): ?PropertyWriteTarget
     {
         if ($left instanceof Expr\PropertyFetch) {
             $objectExpr = null;
@@ -449,6 +455,9 @@ trait PropertyAccessTrait
             if ($this->isIdExpr($left->name)) {
                 $this->getPropertyIdentifier($left, $left->var, $left->name);
                 $this->assertPropertySetVisibility($left);
+                if ($checkReadonlyWrite) {
+                    $this->assertReadonlyPropertyWriteContext($left);
+                }
             }
             return new PropertyWriteTarget($left, 'object property', $objectExpr, $propertyExpr);
         }
@@ -462,6 +471,71 @@ trait PropertyAccessTrait
         }
 
         return null;
+    }
+
+    /**
+     * TypePHP intentionally gives readonly an initialization-phase meaning:
+     * only the declaring class' __construct or __clone body may write its own
+     * property. This check is lexical; a nested closure is a different
+     * function and must not inherit the write privilege.
+     */
+    private function assertReadonlyPropertyWriteContext(Expr\PropertyFetch $property): void
+    {
+        $access = $this->getNativePropertyAccess($property);
+        if ($access === null || !$access->getPropertyDef()->isReadonly()) {
+            return;
+        }
+
+        $declaringClass = $access->resolution->declaringClass;
+        $propertyName = $this->parseIdentifier($property->name);
+        $display = $declaringClass . '::$' . $propertyName;
+
+        if ($this->context->inClosure) {
+            $this->fatalError(
+                $property,
+                "Readonly property `{$display}` can only be modified directly in `__construct` or `__clone`"
+            );
+        }
+
+        if ((!$this->isCurrentConstructor() && !$this->isCurrentCloneMethod())
+            || !$this->isSameClassName($this->getFullClassName(), $declaringClass)) {
+            $this->fatalError(
+                $property,
+                "Readonly property `{$display}` can only be modified in its declaring `__construct` or `__clone` method"
+            );
+        }
+
+        if (!$this->isVarExpr($property->var) || $this->parseIdentifier($property->var) !== 'this_') {
+            $this->fatalError(
+                $property,
+                "Readonly property `{$display}` can only be modified on `\$this`"
+            );
+        }
+    }
+
+    protected function assertReadonlyPropertyReferenceForbidden(
+        NodeAbstract $expr,
+        NodeAbstract $errorNode,
+        bool $assignmentTarget,
+    ): void {
+        while ($expr instanceof Expr\ArrayDimFetch) {
+            $expr = $expr->var;
+        }
+        if (!$expr instanceof Expr\PropertyFetch || !$this->isIdExpr($expr->name)) {
+            return;
+        }
+
+        $this->getPropertyIdentifier($expr, $expr->var, $expr->name);
+        $access = $this->getNativePropertyAccess($expr);
+        if ($access === null || !$access->getPropertyDef()->isReadonly()) {
+            return;
+        }
+
+        $display = $access->resolution->declaringClass . '::$' . $this->parseIdentifier($expr->name);
+        $message = $assignmentTarget
+            ? "Cannot assign readonly property `{$display}` by reference"
+            : "Cannot take reference to readonly property `{$display}`";
+        $this->fatalError($errorNode, $message);
     }
 
     private function assertPropertySetVisibility(NodeAbstract $property): void
@@ -730,7 +804,9 @@ trait PropertyAccessTrait
                     $lines[] = $array . '.offsetUnset(' . $dim . ');';
                 }
             } elseif ($this->isPropertyFetch($var)) {
-                $propertyWriteTarget = $this->preparePropertyWriteTarget($var);
+                // unset has its own unconditional readonly diagnostic below;
+                // it is forbidden even while __construct is running.
+                $propertyWriteTarget = $this->preparePropertyWriteTarget($var, false);
                 $object = $this->getDynamicPropertyFetchObjectExpr($var, $propertyWriteTarget);
                 $restoreDefault = null;
                 if ($this->isIdExpr($var->name)) {

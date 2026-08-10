@@ -48,6 +48,7 @@
 - 禁止子类用同名 `private` 属性隐藏父类私有属性；`public` / `protected` 同名声明视为同一个继承 property slot，仍须满足类型、可见性和 `readonly` 兼容性要求。
 - 为避免 typed property 写入路径引入额外动态检查，native typed property 在右值类型不确定或与属性类型不一致时会退化为 `setProperty()`；部分标量赋值可能遵循 Zend 弱类型转换，而不是 AOT 默认 strict 语义。
 - constructor property promotion 的运行时属性可用，但 `ReflectionProperty::isPromoted()` 目前不返回标准 PHP 结果。
+- `readonly` 使用“初始化窗口”语义，而不是 PHP 的“一次赋值”语义：属性只能在声明类自己的 `__construct()` 或 `__clone()` 中通过直接 `$this` 写入，且窗口内允许重复修改；其他方法、子类初始化方法、嵌套闭包、其他对象、引用和 `unset()` 均不可写。`__construct()` / `__clone()` 不能作为普通方法调用，合法的 `parent::__construct()` / `parent::__clone()` 初始化链除外。
 
 ## 表达式与控制流
 

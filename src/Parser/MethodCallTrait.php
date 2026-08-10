@@ -276,6 +276,25 @@ trait MethodCallTrait
             }
             return $this->genRuntimeFunctionCall($callable, $expr->args, $method, $parentClass);
         }
+        if ($method === '__construct') {
+            if (!$this->isConstructorImplementationContext() || $this->context->inClosure) {
+                $this->fatalError($expr, 'Constructor __construct() can only be invoked by new');
+            }
+            if (empty($expr->args)) {
+                return 'typephp_call_parent_constructor(this_, ' . $methodPtr . ')';
+            }
+            return 'typephp_call_parent_constructor(this_, ' . $methodPtr . ', '
+                . $this->parseCallArgs($expr->args, $method, $parentClass) . ')';
+        }
+        if ($method === '__clone') {
+            if (!$this->isCurrentCloneMethod() || $this->context->inClosure) {
+                $this->fatalError($expr, 'Clone method __clone() can only be invoked by clone');
+            }
+            if (!empty($expr->args)) {
+                $this->fatalError($expr, 'Clone method __clone() does not accept arguments');
+            }
+            return 'typephp_call_parent_clone(this_, ' . $methodPtr . ')';
+        }
         if (empty($expr->args)) {
             return 'this_.call(' . $methodPtr . ')';
         }
@@ -303,6 +322,15 @@ trait MethodCallTrait
 
     protected function parseMethodCall(Expr\MethodCall $expr): string
     {
+        if ($this->isNamedMethod($expr->name)) {
+            $methodName = strtolower($expr->name->toString());
+            if ($methodName === '__construct') {
+                $this->fatalError($expr, 'Constructor __construct() can only be invoked by new');
+            }
+            if ($methodName === '__clone') {
+                $this->fatalError($expr, 'Clone method __clone() can only be invoked by clone');
+            }
+        }
         if ($this->containsNullsafeChain($expr->var)) {
             return $this->parseNullsafeExpr($expr);
         }
@@ -510,6 +538,12 @@ trait MethodCallTrait
         }
     }
 
+    private function isConstructorImplementationContext(): bool
+    {
+        return $this->isCurrentConstructor()
+            || strtolower($this->methodDef?->traitMethod ?? '') === '__construct';
+    }
+
     private function isDefinitelyObjectReceiver(
         Expr $receiver,
         string $object,
@@ -572,6 +606,25 @@ trait MethodCallTrait
         $rtFunc = '';
         $rtClass = '';
         $class = $this->parseIdentifier($expr->class);
+
+        if ($this->isIdExpr($expr->name) && strtolower($expr->name->toString()) === '__construct') {
+            $isParentConstructor = $this->isNameExpr($expr->class)
+                && $class === 'parent'
+                && $this->isConstructorImplementationContext()
+                && !$this->context->inClosure;
+            if (!$isParentConstructor) {
+                $this->fatalError($expr, 'Constructor __construct() can only be invoked by new');
+            }
+        }
+        if ($this->isIdExpr($expr->name) && strtolower($expr->name->toString()) === '__clone') {
+            $isParentClone = $this->isNameExpr($expr->class)
+                && $class === 'parent'
+                && $this->isCurrentCloneMethod()
+                && !$this->context->inClosure;
+            if (!$isParentClone) {
+                $this->fatalError($expr, 'Clone method __clone() can only be invoked by clone');
+            }
+        }
 
         // parent::$method() still has a lexical parent class even when the
         // method name itself is dynamic. Handle it before the generic dynamic

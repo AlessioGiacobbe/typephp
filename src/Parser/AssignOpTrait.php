@@ -624,6 +624,12 @@ trait AssignOpTrait
         if ($def === null) {
             return null;
         }
+        if ($def->isReadonly()) {
+            // A native scalar reference mutates the property zval directly and
+            // bypasses Zend's readonly checks. Keep readonly properties on the
+            // normal attr() path so no raw scalar reference escapes the wrapper.
+            return null;
+        }
 
         $rightType = $this->detectTypeOfExpr($node->expr);
         if ($this->isFixedObjectProp($def) && $rightType !== Type::VAR && !$this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
@@ -781,6 +787,12 @@ trait AssignOpTrait
         if ($expr->expr instanceof Expr\NullsafePropertyFetch) {
             $this->fatalError($expr->expr, 'Cannot take reference of a nullsafe chain');
         }
+
+        // A reference would outlive the constructor-only write window and
+        // make later mutations invisible to the compiler. It is therefore
+        // forbidden on either side even inside the declaring constructor.
+        $this->assertReadonlyPropertyReferenceForbidden($expr->var, $expr, true);
+        $this->assertReadonlyPropertyReferenceForbidden($expr->expr, $expr, false);
 
         $left = $this->parseWritableIdentifier($expr->var);
         // Keep this write-context form for every RHS kind. Re-parsing it as a

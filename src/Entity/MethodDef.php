@@ -25,6 +25,9 @@ class MethodDef
     /** Source trait, retained only for diagnostics and the __TRAIT__ constant. */
     public string $traitOrigin = '';
 
+    /** Original trait method name before a use-site alias is applied. */
+    public string $traitMethod = '';
+
     public function __construct(int $flags, string $name)
     {
         $this->flags = $flags;

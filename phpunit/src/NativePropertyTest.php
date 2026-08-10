@@ -60,6 +60,21 @@ class NativePropertyTest extends \BaseTest
         $this->assertStringNotContainsString('box.attr(php_get_prop(0, _literal_strings[0], 0, _literal_strings[1]), true) +=', $code);
     }
 
+    public function testReadonlyPropertiesDoNotUseNativeScalarReferences(): void
+    {
+        try {
+            $outputFile = $this->compileNativeProperty('readonly-property-no-native-ref.php');
+        } catch (TestError $e) {
+            $this->fail($e->getMessage());
+        }
+
+        $code = file_get_contents($outputFile);
+        $this->assertStringNotContainsString('typephp_static_int_ref(', $code);
+        $this->assertStringNotContainsString('typephp_static_float_ref(', $code);
+        $this->assertStringNotContainsString('_object_prop_', $code);
+        $this->assertStringContainsString('.attr(', $code);
+    }
+
     public function testNativeIntPropertyAssignOpConvertsBitwiseNotClassConst(): void
     {
         try {

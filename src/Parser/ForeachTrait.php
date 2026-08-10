@@ -91,7 +91,9 @@ trait ForeachTrait
             return $this->getIndent() . "{$array}.offsetSet({$dim}, {$valueExpr});";
         }
 
-        $valueVar = $this->parseIdentifier($node->valueVar);
+        $valueVar = $this->isPropertyFetch($node->valueVar)
+            ? $this->parseWritableIdentifier($node->valueVar)
+            : $this->parseIdentifier($node->valueVar);
         if ($node->byRef) {
             if (!$this->hasVar($valueVar)) {
                 $this->addLocalVar($valueVar, Type::REF);
