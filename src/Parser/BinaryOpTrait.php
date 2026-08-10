@@ -535,6 +535,13 @@ trait BinaryOpTrait
         $tmpVar = $this->addTmpVar($type);
         $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
         $this->appendCapturedStmtLinesToContext($afterStmts);
+        if ($type === Type::VAR) {
+            // The declaration is function-scoped, but PHP releases an owned
+            // expression temporary after the statement that consumes it.
+            // Keeping the value here would extend object lifetimes (notably
+            // WeakReference targets) until the native function returns.
+            $this->context->afterStmtLines[] = $tmpVar . '.unset();';
+        }
         return $tmpVar;
     }
 
