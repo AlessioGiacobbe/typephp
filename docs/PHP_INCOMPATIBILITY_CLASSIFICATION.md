@@ -76,7 +76,6 @@ These items should be documented with the exact boundary.
 | Reserved keyword methods such as `toArray()` | Intentional Rule | Conversion keywords are resolved before ordinary object methods to keep conversion lowering static and predictable. |
 | Zero-initialized fixed typed property slots | Intentional Rule / Partial | Native fixed-layout slots use their type's zero value instead of preserving every Zend uninitialized-property transition. |
 | Structural mutation of `std` containers during `foreach` | Intentional Rule | Native C++ iterators may be invalidated by append, insertion, erase or whole-container replacement. TypePHP rejects these operations inside the active loop while allowing non-structural element updates. |
-| `readonly` initialization window | Intentional Rule | A readonly property is writable only through direct `$this` access in its declaring class' `__construct()` or `__clone()`. Repeated initialization writes are allowed there; after either initialization path it is frozen. Ordinary calls to these lifecycle methods are rejected, while lexical parent initialization chains remain valid. |
 
 ## Implementable but Currently Unsupported
 

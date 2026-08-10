@@ -11,7 +11,5 @@ class ReadonlyPropertyNoNativeRef
     {
         $this->integer = $integer;
         $this->floating = $floating;
-        $this->integer += 1;
-        $this->floating += 1.5;
     }
 }

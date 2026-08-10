@@ -2,7 +2,7 @@
 
 use TypePhp\CompilerTest;
 
-class ClosureTest extends \PHPUnit\Framework\TestCase
+class ClosureTest extends \BaseTest
 {
     public function testUseReferenceCaptureCompiles(): void
     {
@@ -16,5 +16,25 @@ class ClosureTest extends \PHPUnit\Framework\TestCase
         $compiler->convertFile($testFile);
 
         $this->assertTrue(true);
+    }
+
+    public function testClosureRebindingIsRejectedAtCompileTime(): void
+    {
+        $this->exec(
+            'Closure::call() is not supported',
+            'closure/closure-call-unsupported.php'
+        );
+        $this->exec(
+            'Closure::call() is not supported',
+            'closure/closure-call-typed-unsupported.php'
+        );
+        $this->exec(
+            'Closure::bindTo() is not supported',
+            'closure/closure-bind-to-unsupported.php'
+        );
+        $this->exec(
+            'Closure::bind() is not supported',
+            'closure/closure-bind-unsupported.php'
+        );
     }
 }

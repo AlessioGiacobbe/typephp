@@ -212,7 +212,9 @@ trait AssignOpTrait
             return $this->parseAssignToList($left, $right);
         }
 
-        $propertyWriteTarget = $this->preparePropertyWriteTarget($left);
+        // A direct assignment to readonly must go through write_property so
+        // Zend can enforce scope, initialization state, type and clone rules.
+        $propertyWriteTarget = $this->preparePropertyWriteTarget($left, true);
         $type = $this->detectTypeOfExpr($right);
         $finalVarType = $this->getNormalAssignType($type);
         $runtimeObjectAssignClass = '';
@@ -431,6 +433,10 @@ trait AssignOpTrait
         $def = $this->getNativePropertyDef($left);
         if ($def === null) {
             return false;
+        }
+
+        if ($def->isReadonly()) {
+            return true;
         }
 
         return !in_array($def->type, [Type::INT, Type::FLOAT, Type::BOOL, Type::STR, Type::ARRAY], true)

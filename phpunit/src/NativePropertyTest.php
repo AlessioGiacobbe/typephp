@@ -72,7 +72,8 @@ class NativePropertyTest extends \BaseTest
         $this->assertStringNotContainsString('typephp_static_int_ref(', $code);
         $this->assertStringNotContainsString('typephp_static_float_ref(', $code);
         $this->assertStringNotContainsString('_object_prop_', $code);
-        $this->assertStringContainsString('.attr(', $code);
+        $this->assertStringNotContainsString('AttrMode::Update', $code);
+        $this->assertSame(2, substr_count($code, 'typephp_write_property_scoped('));
     }
 
     public function testNativeIntPropertyAssignOpConvertsBitwiseNotClassConst(): void

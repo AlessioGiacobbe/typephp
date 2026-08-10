@@ -1,5 +1,5 @@
 --TEST--
-TypePHP readonly properties may be updated while cloning
+readonly properties may be reinitialized once while cloning
 --FILE--
 <?php
 
@@ -16,8 +16,7 @@ class ReadonlyCloneBase
 
     public function __clone(): void
     {
-        $this->base++;
-        $this->base += 3;
+        $this->base = 5;
     }
 }
 
@@ -36,10 +35,13 @@ class ReadonlyCloneValue extends ReadonlyCloneBase
     public function __clone(): void
     {
         parent::__clone();
-        $this->name = 'clone';
-        $this->name .= 'd';
-        $this->items[] = 2;
-        $this->items[0] = 10;
+        $this->name = 'cloned';
+        $this->items = [10, 2];
+        try {
+            $this->name = 'again';
+        } catch (Error $error) {
+            echo $error->getMessage(), "\n";
+        }
     }
 }
 
@@ -52,6 +54,7 @@ function main(): void
 }
 ?>
 --EXPECT--
+Cannot modify readonly property ReadonlyCloneValue::$name
 int(1)
 string(8) "original"
 array(1) {

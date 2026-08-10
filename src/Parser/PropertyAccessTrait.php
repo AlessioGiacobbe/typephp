@@ -207,7 +207,9 @@ trait PropertyAccessTrait
 
     protected function emitDynamicPropertyFetchRef(Expr\PropertyFetch $expr, NodeAbstract $errorNode): string
     {
-        $target = $this->preparePropertyWriteTarget($expr);
+        // Reference diagnostics are more specific than the generic readonly
+        // mutation error emitted by preparePropertyWriteTarget().
+        $target = $this->preparePropertyWriteTarget($expr, true);
         if ($this->canEmitDynamicPropertyTarget($target)) {
             $objectExpr = $target->getDynamicObjectExpr();
             if (!$this->hasVar($objectExpr)) {
@@ -443,7 +445,7 @@ trait PropertyAccessTrait
         $this->assertCanAssignObjectProperty($left, $right, 'static property');
     }
 
-    protected function preparePropertyWriteTarget(NodeAbstract $left, bool $checkReadonlyWrite = true): ?PropertyWriteTarget
+    protected function preparePropertyWriteTarget(NodeAbstract $left, bool $allowReadonlyAssignment = false): ?PropertyWriteTarget
     {
         if ($left instanceof Expr\PropertyFetch) {
             $objectExpr = null;
@@ -455,8 +457,8 @@ trait PropertyAccessTrait
             if ($this->isIdExpr($left->name)) {
                 $this->getPropertyIdentifier($left, $left->var, $left->name);
                 $this->assertPropertySetVisibility($left);
-                if ($checkReadonlyWrite) {
-                    $this->assertReadonlyPropertyWriteContext($left);
+                if (!$allowReadonlyAssignment) {
+                    $this->assertReadonlyPropertyDirectAssignmentOnly($left);
                 }
             }
             return new PropertyWriteTarget($left, 'object property', $objectExpr, $propertyExpr);
@@ -473,13 +475,7 @@ trait PropertyAccessTrait
         return null;
     }
 
-    /**
-     * TypePHP intentionally gives readonly an initialization-phase meaning:
-     * only the declaring class' __construct or __clone body may write its own
-     * property. This check is lexical; a nested closure is a different
-     * function and must not inherit the write privilege.
-     */
-    private function assertReadonlyPropertyWriteContext(Expr\PropertyFetch $property): void
+    private function assertReadonlyPropertyDirectAssignmentOnly(Expr\PropertyFetch $property): void
     {
         $access = $this->getNativePropertyAccess($property);
         if ($access === null || !$access->getPropertyDef()->isReadonly()) {
@@ -490,27 +486,7 @@ trait PropertyAccessTrait
         $propertyName = $this->parseIdentifier($property->name);
         $display = $declaringClass . '::$' . $propertyName;
 
-        if ($this->context->inClosure) {
-            $this->fatalError(
-                $property,
-                "Readonly property `{$display}` can only be modified directly in `__construct` or `__clone`"
-            );
-        }
-
-        if ((!$this->isCurrentConstructor() && !$this->isCurrentCloneMethod())
-            || !$this->isSameClassName($this->getFullClassName(), $declaringClass)) {
-            $this->fatalError(
-                $property,
-                "Readonly property `{$display}` can only be modified in its declaring `__construct` or `__clone` method"
-            );
-        }
-
-        if (!$this->isVarExpr($property->var) || $this->parseIdentifier($property->var) !== 'this_') {
-            $this->fatalError(
-                $property,
-                "Readonly property `{$display}` can only be modified on `\$this`"
-            );
-        }
+        $this->fatalError($property, "Readonly property `{$display}` only supports direct assignment");
     }
 
     protected function assertReadonlyPropertyReferenceForbidden(
@@ -806,7 +782,7 @@ trait PropertyAccessTrait
             } elseif ($this->isPropertyFetch($var)) {
                 // unset has its own unconditional readonly diagnostic below;
                 // it is forbidden even while __construct is running.
-                $propertyWriteTarget = $this->preparePropertyWriteTarget($var, false);
+                $propertyWriteTarget = $this->preparePropertyWriteTarget($var, true);
                 $object = $this->getDynamicPropertyFetchObjectExpr($var, $propertyWriteTarget);
                 $restoreDefault = null;
                 if ($this->isIdExpr($var->name)) {

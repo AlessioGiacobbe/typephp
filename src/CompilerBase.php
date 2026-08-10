@@ -1095,11 +1095,6 @@ class CompilerBase implements PropertyAccessContext
         return $this->method === '__construct';
     }
 
-    protected function isCurrentCloneMethod(): bool
-    {
-        return $this->method === '__clone';
-    }
-
     protected function getCurrentMethodDisplayName(): string
     {
         return $this->getFullClassName() . '::' . $this->method;
@@ -1786,6 +1781,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function detectClassOfExpr(NodeAbstract $expr): string
     {
+        if ($expr instanceof Expr\Closure || $expr instanceof Expr\ArrowFunction) {
+            return 'Closure';
+        }
         if ($expr instanceof Expr\MethodCall && $this->isNamedMethod($expr->name)) {
             $keywordType = $this->findKeywordMethod($this->parseIdentifier($expr->name));
             if ($keywordType !== null && $keywordType !== Type::OBJECT) {

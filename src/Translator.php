@@ -4630,7 +4630,6 @@ CODE;
         $methodDef = new MethodDef($flags, $name);
         $methodDef->node = $methodStmt;
         $methodDef->traitOrigin = (string) $methodStmt->getAttribute(self::TRAIT_ORIGIN_ATTRIBUTE, '');
-        $methodDef->traitMethod = (string) $methodStmt->getAttribute(self::TRAIT_METHOD_ATTRIBUTE, '');
 
         $this->method = $name;
         $this->methodDef = $methodDef;
