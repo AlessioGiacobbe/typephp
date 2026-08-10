@@ -18,6 +18,19 @@ class UndefineTest extends \BaseTest
         $this->exec('Attempt to unset static property', 'unset-static-prop.php');
     }
 
+    public function testUnsetReadonlyPropertyIsRejected(): void
+    {
+        $this->exec('Cannot unset readonly property `ReadonlyPropertyUnset::$value`', 'unset-readonly-property.php');
+    }
+
+    public function testUnsetReadonlyClassPropertyIsRejected(): void
+    {
+        $this->exec(
+            'Cannot unset readonly property `ReadonlyClassPropertyUnset::$value`',
+            'unset-readonly-class-property.php'
+        );
+    }
+
     public function testPropertyAccessOnUndefinedVar(): void
     {
         $this->compile('undefined-prop-access.php');

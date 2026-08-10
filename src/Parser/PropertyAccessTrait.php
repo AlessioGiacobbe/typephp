@@ -737,6 +737,14 @@ trait PropertyAccessTrait
                     $propertyId = $this->getPropertyIdentifier($var, $var->var, $var->name);
                     $def = $this->getNativePropertyDef($var);
                     if ($def) {
+                        if ($def->isReadonly()) {
+                            $this->fatalError(
+                                $var,
+                                'Cannot unset readonly property `'
+                                . $this->getObjectPropertyTypeCheckDisplayName($var)
+                                . '`'
+                            );
+                        }
                         // Object typed properties are backed by Zend object
                         // properties, so PHP can represent their uninitialized
                         // state after unset(). Keep that behavior instead of
