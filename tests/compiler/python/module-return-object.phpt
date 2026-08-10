@@ -13,7 +13,7 @@ use python\math;
 
 function main(): void
 {
-    $result = math::sqrt(4);
+    $result = math\sqrt(4);
     var_dump(get_class($result));
     var_dump(python\scalar($result)->toFloat());
 }

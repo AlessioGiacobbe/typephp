@@ -19,6 +19,11 @@ trait ConstantExpressionTrait
 {
     protected function parseConstFetch(Expr\ConstFetch $expr, bool $scalar = false): string
     {
+        $pythonAttribute = $this->parsePythonModuleAttributeFetch($expr, $scalar);
+        if ($pythonAttribute !== null) {
+            return $pythonAttribute;
+        }
+
         if ($expr->name->getType() != 'Name' and !($expr->name instanceof Node\Name\FullyQualified)) {
             abort($expr);
         }

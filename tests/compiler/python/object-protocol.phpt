@@ -25,8 +25,8 @@ function mark(string $name, int $value): int
 
 function main(): void
 {
-    sys::$path->append(__DIR__ . '/lib');
-    $object = protocol::protocol_object();
+    sys\path->append(__DIR__ . '/lib');
+    $object = protocol\protocol_object();
 
     var_dump(scalarValue($object->name));
     $object->name = 'changed';

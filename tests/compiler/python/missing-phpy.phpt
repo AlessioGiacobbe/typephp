@@ -9,7 +9,7 @@ use python\math;
 function main(): void
 {
     try {
-        var_dump(math::$pi);
+        var_dump(math\pi);
     } catch (Error $error) {
         echo get_class($error), "\n";
     }

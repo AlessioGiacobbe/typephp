@@ -16,7 +16,7 @@ TypePHP 应在语言层面提供从 TypePHP 调用 Python 包的能力：
 6. 语法面向普通 TypePHP/PHP 开发者，常规调用不要求理解 CPython C API、GIL 或引用计数。
 7. 本功能是可选的扩展级能力；不使用 Python 语法的项目不依赖 phpy。
 
-其中最主要的语言变化是 `use python\...`：它把 phpy 原本需要手写的 `PyCore::import('module')` 和返回变量提升为编译期可识别的模块别名。Python 对象的属性、方法、下标、迭代、参数转换、返回包装和异常等能力原则上复用 phpy 已有实现，不在 TypePHP 中重新建立一套运行时。
+其中最主要的语言变化是 Python 特殊根命名空间。全局命名空间中的 `python\module\member()`，或其他命名空间中的 `\python\module\member()`，可以直接访问模块成员；`use python\module` 完全按照 PHP 的普通 namespace alias 规则工作，编译器不对 `use` 语句进行 Python 特殊处理。两种形式都把 phpy 原本需要手写的 `PyCore::import('module')` 和返回变量提升为编译期可识别的 lazy module binding。Python 对象的属性、方法、下标、迭代、参数转换、返回包装和异常等能力原则上复用 phpy 已有实现，不在 TypePHP 中重新建立一套运行时。
 
 非目标：
 
@@ -102,7 +102,7 @@ TypePHP 通过 ZendVM 动态调用 phpy 扩展公开的 `PyCore`、`PyObject`、
 最小适配原则：
 
 - TypePHP 的核心新增能力是 Python `use` 解析、模块别名符号和对应代码生成。
-- `python\name()`、`module::$name`、`module::name()` 和运算符 lowering 都应落到 phpy 的 Zend Facade；Python 运算符通过标准库 `operator` module 调用完整的 CPython 运算协议。
+- `python\name()`、`module\name`、`module\name()` 和运算符 lowering 都应落到 phpy 的 Zend Facade；Python 运算符通过标准库 `operator` module 调用完整的 CPython 运算协议。
 - phpy 已正确解决的行为只补测试并复用；只有 review 或测试证明存在 BUG、隐式转换不符合 TypePHP 规则，或者缺少 Zend 动态入口时，才修改 phpy。
 - TypePHP 不实现 CPython 协议细节，不在生成代码中复制 `PyCore`、`PyObject` 或 `PyModule` 的逻辑。
 
@@ -164,15 +164,54 @@ tests/compiler/python/
 
 解释器关闭前必须先释放所有由 TypePHP 持有的 Python 对象。不能依赖 `Py_Finalize()` 自动修复错误的生命周期。
 
-## 6. 导入语法
+## 6. 模块名称与导入语法
 
 `python` 是编译器识别的保留根命名空间：
 
 ```php
+python\math\sqrt(16);
+python\os\path\join('/tmp', 'file.txt');
+
 use python\sys;
 use Python\numpy as np;
 use python\numpy\linalg as linalg;
 ```
+
+完整名称不要求先写 `use`：
+
+```php
+$root = python\math\sqrt(16);
+$pi = Python\math\pi;
+```
+
+最后一个 `\` 之前、Python 根之后的所有片段均构成 Python module path，最后一个片段是模块成员。PHP 的 `\` 在导入时转换为 Python 的 `.`。因此全局命名空间中的 `python\os\path\join()` 明确表示 module `os.path` 的 `join` callable。
+
+Python module 名称仍严格服从 PHP 的 namespace 解析规则。位于普通 PHP namespace 内时，完整模块名必须使用前导 `\`：
+
+```php
+namespace App;
+
+\python\math\sqrt(16); // Python module math
+python\math\sqrt(16);  // 普通 PHP 名称 App\python\math\sqrt，不是 Python module
+```
+
+这是 PHP 语法的一部分，`python` 不作为例外绕过当前 namespace。`use python\math;` 与其他 PHP `use` 声明一样从根名称导入，因此在 namespace 内也可以使用 alias 简写。
+
+`use` 仅用于缩短完整名称，不是访问 Python module 的前置条件：
+
+PHP 的 `use function` 和 `use const` 同样适用，并支持普通的 `as` alias：
+
+```php
+use function python\len;
+use function python\math\sqrt as py_sqrt;
+use const python\math\pi as py_pi;
+
+$length = len([1, 2, 3]);
+$root = py_sqrt(16);
+$pi = py_pi;
+```
+
+这些声明仍完全由 PHP 名称解析处理。TypePHP 只在 `FuncCall` 或 `ConstFetch` 的最终完整名称位于根命名空间 `python\...` 时进入 Python lowering；`use` 声明本身不会导入 Python module。
 
 分别等价于：
 
@@ -190,9 +229,9 @@ $np = PyCore::import('numpy');
 $linalg = PyCore::import('numpy.linalg');
 ```
 
-`PyCore::import()` 返回一个 `PyModule`/`PyObject` 变量，后续属性和方法均通过该变量访问。TypePHP 的 `use python\module` 本身只建立“别名 → Python module 完整名称”的 namespace 标记，不立即执行导入，也不生成 ZendVM class、namespace 或用户可见变量。
+`PyCore::import()` 返回一个 `PyModule`/`PyObject` 变量，后续属性和方法均通过该变量访问。`use python\module` 只是普通 PHP namespace alias，不立即执行导入，也不生成 ZendVM class、namespace 或用户可见变量。编译器仅在处理函数调用或常量读取时检查 PHP 已解析的完整名称。
 
-当编译器在函数代码中发现 `module::$attr` 或 `module::func()` 时，采用与现有 `funcMap` 相同的编译器结构：为实际使用的完整 module 名称分配整数 ID，生成统一的 `THREAD_LOCAL` zval array，并通过 lazy getter 动态调用 `PyCore::import()`。下列名称只是设计示意：
+当编译器在函数代码中发现 `module\attr` 或 `module\func()` 时，采用与现有 `funcMap` 相同的编译器结构：为实际使用的完整 module 名称分配整数 ID，生成统一的 `THREAD_LOCAL` zval array，并通过 lazy getter 动态调用 `PyCore::import()`。下列名称只是设计示意：
 
 ```cpp
 THREAD_LOCAL zval php_python_module_map[module_count];
@@ -216,14 +255,20 @@ use Python\numpy as np
     -> compile-time namespace marker: np => "numpy"
     -> module id allocated only when np is actually referenced
 
-np::$version
+np\version
     -> php::Object(php_get_python_module(module_id, "numpy")).attr("version")
 
-np::array($value)
+np\array($value)
     -> php::Object(php_get_python_module(module_id, "numpy")).call("array", converted($value))
+
+python\numpy\array($value)
+    -> the same module id and lowering as np\array($value)
+
+python\os\path\join($left, $right)
+    -> php::Object(php_get_python_module(module_id, "os.path")).call("join", ...)
 ```
 
-同一完整 module 名称在整个 TypePHP 构建中只分配一个 ID。如果当前 `.php` 文件只有 `use python\sys`，但没有出现任何 `sys::$attr`、`sys::func()` 或其他 `sys` 符号访问，则编译器不为它分配 module ID，运行时不调用 `import('sys')`，也不会因为 Python 环境缺少该 module 而报错。
+同一完整 module 名称在整个 TypePHP 构建中只分配一个 ID；完整名称和任意 `use` 别名引用同一 module 时也共享该 ID。如果当前 `.php` 文件只有 `use python\sys`，但没有出现任何 `sys\attr`、`sys\func()` 或其他 `sys` 符号访问，则编译器不为它分配 module ID，运行时不调用 `import('sys')`，也不会因为 Python 环境缺少该 module 而报错。
 
 未使用 module 不触发任何 phpy 运行时解析。`tpc` 只检查 `use python\sys` 本身的语法和别名冲突，不检查 phpy SDK/ABI，也不增加 phpy 链接依赖。
 
@@ -275,13 +320,15 @@ php_get_python_module(id, "numpy")
 
 - `python` 根命名空间的大小写不敏感，`python`、`Python`、`PYTHON` 均识别为同一个语言符号。
 - 只有根命名空间不区分大小写。后续模块路径、成员、方法和关键字参数名称严格区分大小写。
+- 全局 namespace 中的 `python\package\module\member`，以及其他 namespace 中的 `\python\package\module\member`，是完整 module 访问，不需要 `use`，并按首次实际执行进行 lazy import。
+- namespace 内没有前导 `\` 的 `python\...` 是相对 PHP 名称，必须按 PHP 规则加上当前 namespace，不能识别为 Python module。
 - `use python\...` 只能导入 Python 模块。
 - 是否存在该模块只能在运行时由 CPython 判断。
 - 不支持 `from package import *`。
 - 初版不设计单独的 `from package import name` 语法，成员统一通过模块别名访问。
-- `python` 根命名空间本身不可作为普通 TypePHP/PHP 命名空间声明。
+- 根命名空间 `\python` 保留给语言互调用；例如 `App\python` 仍是普通 PHP namespace。
 - 模块别名不能与当前文件中的 TypePHP 类、命名空间导入或其他 Python 模块别名冲突。
-- 用户仍可直接调用 `PyCore::import()` 并把返回的 `PyModule` 保存到普通变量；`use python\...` 是使用 `pythonModuleMap` lazy binding 的语言级 namespace 标记。
+- 用户仍可直接调用 `PyCore::import()` 并把返回的 `PyModule` 保存到普通变量；完整名称和经 PHP 普通 `use` 解析后的名称都使用 `pythonModuleMap` lazy binding。
 
 示例：
 
@@ -292,38 +339,42 @@ python\Len($value); // 错误，Python builtin 名称大小写错误
 Python\Len($value); // 错误
 ```
 
-`python` 不是普通运行时命名空间。它由 TypePHP 编译器识别并转换为 Python 语言符号，因此不会进行普通 PHP 命名空间函数或类查找。
+解析结果位于根命名空间 `\python` 时，它由 TypePHP 编译器转换为 Python 语言符号；解析为 `App\python` 等其他名称时，仍进行普通 PHP 函数或类查找。
 
 ## 7. 模块成员
 
-Python 不区分“类常量”“静态属性”和“模块变量”。模块中的所有名称本质上都是属性。
+Python module 在 TypePHP 中表现为 namespace，而不是 class。模块中的名称仍由 Python VM 作为属性动态解析。
 
 ### 7.1 包变量
 
-读取 Python 包变量使用 PHP 静态属性形式 `module::$name`：
+读取 Python 包变量使用 PHP namespace constant 的语法形式 `module\name`：
 
 ```php
 use python\math;
 use python\os;
 use python\numpy as np;
 
-$pi = math::$pi;
-$environ = os::$environ;
-$arrayType = np::$ndarray;
+$pi = math\pi;
+$environ = os\environ;
+$arrayType = np\ndarray;
+$directPi = python\math\pi;
+$text = math\pi->__str__();
 ```
 
-这里的 `$pi`、`$environ` 和 `$ndarray` 是静态成员语法中的成员名，不是读取同名 TypePHP 局部变量。编译器将其 lowering 为 Python module attribute lookup。
+这里使用的是 PHP 合法的 namespace constant 表达式，但 TypePHP 不会把它注册为 Zend constant，也不会进行常量折叠。编译器将每次读取 lowering 为 Python module attribute lookup，结果保持为 `PyObject`，因此可以继续调用对象方法。
 
-不允许使用 `math::pi` 读取包变量。PHP 语法会把它理解为常量访问，而 Python module 没有与 PHP class constant 对应的常量概念。编译器发现 Python module alias 后使用 `module::name` 时，应给出有针对性的 FatalError，并提示改用 `module::$name`。
+不允许使用 `math::pi` 或 `math::$pi` 读取包变量；两者都是 class member 语法，会错误地把 module 表达为 class。编译器发现这类旧语法时给出有针对性的 FatalError，并提示改用 `math\pi`。
 
 ### 7.2 包函数和类构造
 
-调用 Python 包中的 callable 使用 `module::name(...)`：
+调用 Python 包中的 callable 使用 PHP namespace function 语法 `module\name(...)`：
 
 ```php
-$a = np::array([1, 2, 3]);
-$b = np::array([4, 5, 6]);
-$c = np::add($a, $b);
+$a = np\array([1, 2, 3]);
+$b = np\array([4, 5, 6]);
+$c = np\add($a, $b);
+$root = python\math\sqrt(16);
+$joined = python\os\path\join('/tmp', 'file.txt');
 ```
 
 编译器读取 module 的 `name` 属性，并调用得到的 Python 对象。该对象可以是：
@@ -332,12 +383,13 @@ $c = np::add($a, $b);
 - Python class，此时调用执行该类的构造过程并返回实例。
 - 实现 `__call__` 的其他 Python 对象。
 
-TypePHP 不需要也不能仅根据 `np::array()` 的语法判断它是函数还是类构造；可调用性由 Python 在运行时判断。成员不存在时产生 Python `AttributeError`，成员不可调用时产生 Python `TypeError`，并统一映射为 `PyError`。
+TypePHP 不需要也不能仅根据 `np\array()` 的语法判断它是函数还是类构造；可调用性由 Python 在运行时判断。成员不存在时产生 Python `AttributeError`，成员不可调用时产生 Python `TypeError`，并统一映射为 `PyError`。
 
-待确认：初版是否允许对模块属性赋值，例如 `module::$name = $value`。建议初版只支持读取；需要写入时使用：
+初版只支持读取模块属性。PHP namespace constant 语法本身不能作为赋值目标；需要写入时应通过 Python 对象 API 显式完成：
 
 ```php
-python\setattr(os, 'name', $value); // 伪代码，具体模块值语法仍需确定
+$os = PyCore::import('os');
+python\setattr($os, 'name', $value);
 ```
 
 ## 8. Python 内置函数与 phpy 语法糖
@@ -416,7 +468,7 @@ Python 的 `None` 也是一个合法 Python 对象。它与 TypePHP `null` 的�
 ### 10.1 属性和方法
 
 ```php
-$env = os::$environ;
+$env = os\environ;
 $items = $env->items();
 $name = $object->name;
 $object->name = 'new value';
@@ -430,7 +482,7 @@ unset($object->name);
 `toPlainValue()` 是与 `toArray()`、`toString()` 同级的 TypePHP 全局关键词方法，用于把扩展对象转换为 PHP 内置值；当前第一个受支持的扩展对象是 `PyObject`。从 Python 对象进入 TypePHP 原生值时，推荐使用这个可保持链式调用的入口。`python\scalar()` 保留为等价的函数式入口。其返回值再使用普通 TypePHP 转换方法确定类型：
 
 ```php
-$pyValue = np::int64(42); // PyObject
+$pyValue = np\int64(42); // PyObject
 $value = $pyValue->toPlainValue()->toInt(); // TypePHP int
 ```
 
@@ -479,7 +531,7 @@ foreach ($pythonIterable as $index => $value) {
 普通参数按从左到右顺序求值，然后构造 Python positional args：
 
 ```php
-$model = AutoModel::from_pretrained(
+$model = AutoModel\from_pretrained(
     'model-name',
     trust_remote_code: true,
     device_map: 'auto',
@@ -504,7 +556,7 @@ TypePHP 不继承 phpy 在 ZendVM Facade/opcode 层面的返回值隐式转换�
 允许自动转换的场景必须由语法明确指出正在进入 Python：
 
 - `python\name(...)`。
-- Python module 调用，例如 `np::array(...)`。
+- Python module 调用，例如 `np\array(...)`。
 - `PyObject` 的方法或 callable 调用。
 - 显式 Python 容器构造，例如 `new PyList(...)` 或 `python\list(...)`。
 - 参数声明要求 `PyObject`、`PyDict` 等 phpy 类型。
@@ -552,7 +604,7 @@ use python\processor;
 
 $pyItems = python\list($items);
 for ($i = 0; $i < 1000; $i++) {
-    processor::consume($pyItems);
+    processor\consume($pyItems);
 }
 ```
 
@@ -560,7 +612,7 @@ for ($i = 0; $i < 1000; $i++) {
 
 ```php
 for ($i = 0; $i < 1000; $i++) {
-    processor::consume($items);
+    processor\consume($items);
 }
 ```
 
@@ -633,27 +685,27 @@ $array = $value->toPlainValue()->toArray();
 
 | TypePHP | 生成的动态调用 |
 |---|---|
-| `$a + $b` | `operator::add($a, $b)` |
-| `$a - $b` | `operator::sub($a, $b)` |
-| `$a * $b` | `operator::mul($a, $b)` |
-| `$a / $b` | `operator::truediv($a, $b)` |
-| `$a % $b` | `operator::mod($a, $b)` |
-| `$a ** $b` | `operator::pow($a, $b)` |
-| `$a << $b` | `operator::lshift($a, $b)` |
-| `$a >> $b` | `operator::rshift($a, $b)` |
-| `$a & $b` | `operator::and_($a, $b)` |
-| bitwise OR | `operator::or_($a, $b)` |
-| `$a ^ $b` | `operator::xor($a, $b)` |
-| `-$a` | `operator::neg($a)` |
-| `+$a` | `operator::pos($a)` |
-| `~$a` | `operator::invert($a)` |
-| `$a += $b` | `$a = operator::iadd($a, $b)` |
+| `$a + $b` | `operator\add($a, $b)` |
+| `$a - $b` | `operator\sub($a, $b)` |
+| `$a * $b` | `operator\mul($a, $b)` |
+| `$a / $b` | `operator\truediv($a, $b)` |
+| `$a % $b` | `operator\mod($a, $b)` |
+| `$a ** $b` | `operator\pow($a, $b)` |
+| `$a << $b` | `operator\lshift($a, $b)` |
+| `$a >> $b` | `operator\rshift($a, $b)` |
+| `$a & $b` | `operator\and_($a, $b)` |
+| bitwise OR | `operator\or_($a, $b)` |
+| `$a ^ $b` | `operator\xor($a, $b)` |
+| `-$a` | `operator\neg($a)` |
+| `+$a` | `operator\pos($a)` |
+| `~$a` | `operator\invert($a)` |
+| `$a += $b` | `$a = operator\iadd($a, $b)` |
 
 所有操作数必须严格从左到右求值。
 
 即使源码没有显式写出 `use python\operator`，出现 Python 运算符时，编译器也将其视为一个仅供内部 lowering 使用的隐式 module binding，并通过同一 `pythonModuleMap` 取得 `operator` module。它不向用户文件注入可见别名，因此不会与用户自己定义的 `operator` class 或 use alias 冲突。用户显式 `use python\operator` 时，内部 lowering 和用户访问复用同一个 module ID。
 
-identity 比较调用 `operator::is_()` / `operator::is_not()`。即使两个对象的 `operator::eq()` 结果为真，只要不是同一个 Python object，`===` 仍为假。
+identity 比较调用 `operator\is_()` / `operator\is_not()`。即使两个对象的 `operator\eq()` 结果为真，只要不是同一个 Python object，`===` 仍为假。
 
 允许 Python 对象与 TypePHP 值直接混合运算。只要当前运算节点的一侧静态类型为 `PyObject` 或其子类，另一侧的 TypePHP 表达式先完整地按 TypePHP 规则求值，再把所得值转换为 Python 对象，最后由 CPython 执行当前运算节点对应的 protocol。
 
@@ -677,7 +729,7 @@ TypePHP 编译器在识别到静态类型为 `PyObject`、`PyDict` 等 phpy 对�
 TypePHP operator
     -> compile-time lowering
     -> implicit python\operator module binding
-    -> operator::add/sub/... dynamic call
+    -> operator\add/sub/... dynamic call
     -> CPython complete operator protocol
 ```
 
@@ -712,7 +764,7 @@ PyError
 
 ```php
 try {
-    np::array('invalid')->reshape(2, 2);
+    np\array('invalid')->reshape(2, 2);
 } catch (PyError $error) {
     echo $error->pythonType();
     echo $error->pythonTraceback();
@@ -824,15 +876,15 @@ phpy 仓库现有 PHPUnit 用于验证 ZendVM/PHP Facade 与共享 Runtime：
 
 用于从 TypePHP 用户视角验证语言和运行时的端到端行为：
 
-- 导入、`module::$name` 包变量读取、`module::name()` callable 调用和关键字参数。
+- 导入、`module\name` 包变量读取、`module\name()` callable 调用和关键字参数。
 - `use python\module as alias` 与手写 `$alias = PyCore::import('module')` 的结果、异常和对象 identity 等价。
 - 多个别名、嵌套模块和跨 `.cc` 重复导入。
-- 只有 `use python\module` 而未访问任何别名符号时，不生成 helper、不调用 import，也不检查该 Python module 是否存在。
+- 只有 `use python\module` 而未访问任何相关符号时，不生成 helper、不调用 import，也不检查该 Python module 是否存在。
 - 同一完整 module 名称跨函数、跨 `.cc` 只分配一个 ID，并只在首次访问时调用 import API。
 - import 失败保持 map slot 为 `UNDEF`；异常被捕获后，下一次访问可以重新尝试。
 - request clean 对 module zval 逐项执行 `zval_ptr_dtor()` 并恢复为 `UNDEF`，不得直接 `memset` 有效 Zend object。
-- 删除或替换 `sys.modules` 条目不会改变已经完成的 TypePHP module alias binding。
-- `module::name` 常量式访问的编译期 FatalError，以及不存在成员和不可调用成员的运行时异常。
+- 删除或替换 `sys.modules` 条目不会改变已经缓存的 TypePHP module binding。
+- `module::name` / `module::$name` 旧 class member 语法的编译期 FatalError，以及不存在成员和不可调用成员的运行时异常。
 - 属性、下标、迭代、运算符和 truthiness。
 - TypePHP 参数到 Python 的转换，以及 Python 返回值的显式转换。
 - 空 TypePHP 数组默认转换为 Python list，以及数组递归深拷贝、异常中止和重复转换行为。
@@ -904,7 +956,7 @@ pytest 用于 phpy 自身已有 Python-facing bridge 的回归测试；它不表
 
 1. Python 互调用是可选的扩展级特性；TypePHP 不链接或在编译期检查 `libphpy.so`，首次实际调用时若 phpy 未加载则由 Zend 抛出 PHP `Error`。
 2. TypePHP 尽可能采用显式转换，不继承 phpy 的全部隐式转换行为。
-3. TypePHP 运算符在编译期改写为 `operator::add($left, $right)` 一类 Python 标准库调用，不使用 phpy opcode handler，也不生成 phpy C++ 符号调用。
+3. TypePHP 运算符在编译期改写为 `operator\add($left, $right)` 一类 Python 标准库调用，不使用 phpy opcode handler，也不生成 phpy C++ 符号调用。
 4. `python` 根命名空间大小写不敏感，其后的所有 Python 符号大小写敏感。
 5. `python` 是编译器处理的特殊语言命名空间。
 6. 运行时类继续使用 `PyObject`、`PyDict` 等 phpy 公开名称。
@@ -916,23 +968,19 @@ pytest 用于 phpy 自身已有 Python-facing bridge 的回归测试；它不表
 12. `===` / `!==` 分别映射 Python identity 的 `is` / `is not`；`==` / `!=` 使用 Python 值比较。
 13. 仅支持 TypePHP 主动调用 Python；不生成 Python extension，不提供 `#[PythonExport]`，不向 Python 注册 TypePHP 符号。
 14. CPython 和 bridge 生命周期完全复用 phpy 的 `MINIT/RINIT/RSHUTDOWN/MSHUTDOWN` 入口。
-15. Python 包变量使用 `math::$pi` 形式读取；`math::pi` 保持 PHP 常量访问含义，不被重新解释。
-16. `np::array()` 表示读取并调用 Python 包成员；该成员可以是函数、class 或其他 callable，具体类型由 Python 运行时决定。
+15. Python 包变量使用 PHP namespace constant 语法 `math\pi` 读取，但在运行时执行动态 Python attribute lookup；`math::pi` 和 `math::$pi` 是错误的 class member 表达法。
+16. `np\array()` 表示读取并调用 Python 包成员；该成员可以是函数、class 或其他 callable，具体类型由 Python 运行时决定。
 17. `PyObject` 可以与 TypePHP 值混合运算；TypePHP 操作数转换为 Python 对象后，整个运算由 CPython protocol 执行，结果保持为 `PyObject`。
 18. Python 函数、方法、class 构造和 builtin 调用的结果一律保持为 `PyObject` 或已知的 phpy 子类；禁用 phpy 返回值隐式转换。
 19. `PyObject::toPlainValue()` 是推荐的链式显式转换关键词；`python\scalar()` 保留为等价入口。两者退出 Python 类型规则后均可继续使用普通 TypePHP 转换，例如 `$obj->toPlainValue()->toInt()`。
 20. TypePHP 调用 Python 时，所有参数自动转换为 Python 类型；TypePHP 数组递归深拷贝，空数组默认转换为 Python list。
 21. 性能敏感代码应复用 `PyDict`、`PyList`、`PyStr` 等代理对象，避免同一 TypePHP 值反复转换和深拷贝。
 22. TypePHP 的主要语言增量是 `use python\...` 和模块别名；使用别名时通过与 `funcMap` 同类的 lazy indexed map 调用 phpy import，其他运行时能力优先直接复用 phpy。
-23. `use python\module` 只登记 namespace 标记；当前 `.php` 文件没有使用该别名的任何符号时，不生成 helper，也不执行运行时 import。
-24. 发现 `module::$attr` 或 `module::func()` 时，才为完整 module 名称分配 ID；未使用的 `use` 不占 map slot，也不执行 import。
+23. `use python\module` 完全交由 PHP namespace 解析处理；当前 `.php` 文件没有实际访问解析到该 module 的符号时，不生成 helper，也不执行运行时 import。
+24. 发现 `module\attr` 或 `module\func()` 时，才为完整 module 名称分配 ID；未使用的 `use` 不占 map slot，也不执行 import。
 25. `pythonModuleMap` 与 `funcMap` 一样集中声明、按 ID lazy lookup；区别是 module 保存为拥有引用的 Zend object zval，必须在 request clean 中逐项 `zval_ptr_dtor()` 并恢复为 `UNDEF`。
-26. `sys.modules` 负责全局加载状态和 identity，`pythonModuleMap` 只表示 TypePHP 已经完成的 module alias binding。
+26. `sys.modules` 负责全局加载状态和 identity，`pythonModuleMap` 只表示 TypePHP 已经完成并缓存的 module binding。
 27. TypePHP 生成代码只依赖 PHPX/ZendVM；`PyCore::import()`、builtin、对象方法和转换均解析为 `zend_function*` 动态调用。
 28. Python 运算符隐式使用 `python\operator` module；完整运算协议由 CPython `operator` 函数处理，不直接调用 dunder，也不由 TypePHP 实现 reflected fallback。
 
-仍待确认：
-
-1. 初版是否需要模块属性赋值？如果需要，是否使用 `module::$name = $value`？
-
-该待确认项不阻塞只读 module binding 等已确认阶段的实施；属性写入必须在语义确认并先补测试后才能实现。
+模块 namespace attribute 初版只读。PHP namespace constant 表达式不能作为赋值目标；后续若增加写入能力，应采用显式 API，并在确定语义后先补测试。

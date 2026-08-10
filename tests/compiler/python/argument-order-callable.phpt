@@ -26,8 +26,8 @@ function main(): void
     $mapped = python\map(fn (int $value): int => $value * 2, [1, 2, 3]);
     var_dump(python\scalar(python\sum($mapped))->toInt());
 
-    sys::$path->append(__DIR__ . '/lib');
-    $callbackResult = protocol::callback_with_kwargs(
+    sys\path->append(__DIR__ . '/lib');
+    $callbackResult = protocol\callback_with_kwargs(
         fn (string $left, int $right): string => "$left:$right"
     );
     var_dump(python\scalar($callbackResult)->toString());

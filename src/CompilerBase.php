@@ -1054,7 +1054,6 @@ class CompilerBase implements PropertyAccessContext
         $this->useAliases = [];
         $this->useFunctions = [];
         $this->useConstants = [];
-        $this->resetPythonModuleAliases();
         $this->namespace = '';
     }
 

@@ -55,12 +55,42 @@ final class PythonModuleTest extends TestCase
     public function testModuleValueCannotUsePhpClassConstantSyntax(): void
     {
         $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Python module value `math::pi` must use `math::$pi`');
+        $this->expectExceptionMessage('Python module member `math::pi` must use `math\pi`');
 
         $this->compileFixture('module-constant.php');
     }
 
-    public function testPythonModuleAliasConflictsCaseInsensitivelyWithClassAlias(): void
+    public function testFullyQualifiedModuleAttributeUsesNamespaceConstantSyntax(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/fully-qualified-module-constant.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+
+        $this->assertStringContainsString('php_get_python_module(', $cpp);
+        $this->assertStringContainsString('.attr(', $cpp);
+    }
+
+    public function testModuleStaticCallSyntaxIsRejected(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Python module callable `math::sqrt()` must use `math\sqrt()`');
+
+        $this->compileFixture('obsolete-module-static-call.php');
+    }
+
+    public function testModuleStaticPropertySyntaxIsRejected(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Python module attribute `math::$pi` must use `math\pi`');
+
+        $this->compileFixture('obsolete-module-static-property.php');
+    }
+
+    public function testModuleAliasUsesPhpCaseInsensitiveConflictRules(): void
     {
         $this->expectException(Error::class);
         $this->expectExceptionMessage('the name is already in use');
@@ -81,6 +111,63 @@ final class PythonModuleTest extends TestCase
 
         $this->assertStringContainsString('numpy.linalg', $extension);
         $this->assertStringNotContainsString('numpy\\\\linalg', $extension);
+    }
+
+    public function testPhpFunctionAndConstantImportsResolvePythonSymbols(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/imported-symbols.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertSame(4, substr_count($cpp, 'php_get_python_module('));
+        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('.attr(', $cpp);
+        $this->assertStringContainsString('builtins', $extension);
+        $this->assertStringContainsString('math', $extension);
+        $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[2]', $extension);
+    }
+
+    public function testFullyQualifiedModuleAccessDoesNotRequireUseDeclaration(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/fully-qualified-module.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('.attr(', $cpp);
+        $this->assertStringContainsString('math', $extension);
+        $this->assertStringContainsString('os.path', $extension);
+        $this->assertStringContainsString('builtins', $extension);
+        $this->assertStringContainsString('__str__', $extension);
+        $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[3]', $extension);
+        $this->assertStringNotContainsString('App.python.math', $extension);
+    }
+
+    public function testRelativePythonNameInsideNamespaceRemainsPhpName(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/relative-module-name.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringNotContainsString('php_get_python_module(', $cpp);
+        $this->assertStringNotContainsString('php_python_module_map', $extension);
+        $this->assertStringContainsString('php_app__python__math__sqrt', $cpp);
+        $this->assertStringContainsString('php_app__python__len', $cpp);
     }
 
     public function testSameModuleAcrossFilesUsesOneRuntimeSlot(): void
@@ -135,12 +222,20 @@ final class PythonModuleTest extends TestCase
         $this->assertStringNotContainsString('python\\\\list', $extension);
     }
 
-    public function testPythonBuiltinRejectsNestedModuleSyntax(): void
+    public function testNestedPythonNameUsesModuleCallableSyntax(): void
     {
-        $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Python builtins must use the form `python\\name()`');
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/invalid-builtin-path.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
 
-        $this->compileFixture('invalid-builtin-path.php');
+        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('collections', $extension);
+        $this->assertStringContainsString('deque', $extension);
     }
 
     public function testConstructorOnlyProgramConfiguresObjectPreservingRuntimeLazily(): void

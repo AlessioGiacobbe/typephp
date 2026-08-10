@@ -71,7 +71,7 @@ trait FunctionCallTrait
 
     protected function parseFuncCall(Expr\FuncCall $expr): string
     {
-        $pythonCall = $this->parsePythonBuiltinCall($expr);
+        $pythonCall = $this->parsePythonFunctionCall($expr);
         if ($pythonCall !== null) {
             return $pythonCall;
         }

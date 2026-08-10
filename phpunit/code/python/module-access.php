@@ -5,12 +5,12 @@ use python\unused;
 
 function pythonModuleVersion()
 {
-    return np::$version;
+    return np\version;
 }
 
 function pythonModuleArray()
 {
-    return np::array([1, 2, 3]);
+    return np\array([1, 2, 3]);
 }
 
 function main(): void

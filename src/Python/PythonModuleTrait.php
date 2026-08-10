@@ -36,9 +36,6 @@ trait PythonModuleTrait
         'scalar' => true,
     ];
 
-    /** @var array<string, string> Lowercase alias to case-sensitive Python module name. */
-    protected array $pythonModuleAliases = [];
-
     /** @var array<string, int> Case-sensitive Python module name to generated slot ID. */
     protected array $pythonModuleMap = [];
 
@@ -273,53 +270,53 @@ trait PythonModuleTrait
         return '((' . $result . ' = ' . $call . ', ' . $writeBack($result) . '), ' . $result . ')';
     }
 
-    protected function resetPythonModuleAliases(): void
-    {
-        $this->pythonModuleAliases = [];
-    }
-
-    protected function parsePythonUse(Node\UseItem $use, string $name, NodeAbstract $statement): bool
-    {
-        $parts = explode('\\', trim($name, '\\'));
-        if (strcasecmp($parts[0] ?? '', 'python') !== 0) {
-            return false;
-        }
-        if (count($parts) < 2) {
-            $this->fatalError($statement, 'The special `python` namespace must be followed by a module name');
-        }
-
-        // PHP namespace separators express Python's dotted module path only
-        // in source syntax; PyCore::import() expects the canonical Python name.
-        $module = implode('.', array_slice($parts, 1));
-        $alias = $use->alias?->toString() ?? $parts[array_key_last($parts)];
-        $aliasKey = strtolower($alias);
-
-        if (isset($this->pythonModuleAliases[$aliasKey]) && $this->pythonModuleAliases[$aliasKey] !== $module) {
-            $this->fatalError($use, "Python module alias `{$alias}` is already used");
-        }
-        if (isset($this->useAliases[$alias]) || isset($this->useFunctions[$alias]) || isset($this->useConstants[$alias])) {
-            $this->fatalError($use, "Python module alias `{$alias}` conflicts with an existing use symbol");
-        }
-
-        $this->pythonModuleAliases[$aliasKey] = $module;
-        return true;
-    }
-
-    protected function hasPythonModuleAlias(string $alias): bool
-    {
-        return isset($this->pythonModuleAliases[strtolower($alias)]);
-    }
-
-    protected function resolvePythonModuleAlias(NodeAbstract $class): ?string
+    /**
+     * Resolve a PHP name as a Python module only after normal namespace resolution.
+     */
+    protected function resolvePythonModule(NodeAbstract $class): ?string
     {
         if (!$this->isNameExpr($class)) {
             return null;
         }
-        $alias = $this->parseIdentifier($class);
-        if (str_contains($alias, '\\')) {
+
+        $parts = $this->resolvePythonRootNameParts($class);
+        if ($parts === null) {
             return null;
         }
-        return $this->pythonModuleAliases[strtolower($alias)] ?? null;
+        if (count($parts) < 2 || $parts[1] === '') {
+            $this->fatalError($class, 'The special `python` namespace must be followed by a module name');
+        }
+
+        // Preserve the case of every Python symbol after the special root.
+        return implode('.', array_slice($parts, 1));
+    }
+
+    /**
+     * Resolve a source name according to PHP namespace rules before checking the Python root.
+     *
+     * @return list<string>|null
+     */
+    protected function resolvePythonRootNameParts(NodeAbstract $name): ?array
+    {
+        if (!$this->isNameExpr($name)) {
+            return null;
+        }
+
+        $sourceName = trim($this->parseIdentifier($name), '\\');
+        $resolvedName = $name->getAttribute('resolvedName');
+        if ($resolvedName instanceof Node\Name) {
+            $resolved = $resolvedName->toString();
+        } elseif ($name instanceof Node\Name\FullyQualified || $this->namespace === '') {
+            $resolved = $sourceName;
+        } else {
+            $resolved = $this->namespace . '\\' . $sourceName;
+        }
+
+        $parts = explode('\\', trim($resolved, '\\'));
+        if (strcasecmp($parts[0] ?? '', 'python') !== 0) {
+            return null;
+        }
+        return $parts;
     }
 
     protected function getPythonModuleId(string $module): int
@@ -371,18 +368,55 @@ trait PythonModuleTrait
         if (!$this->isNameExpr($name) && !$this->isFullNameExpr($name)) {
             return null;
         }
-        $parts = explode('\\', trim($this->parseIdentifier($name), '\\'));
-        if (strcasecmp($parts[0] ?? '', 'python') !== 0) {
+        $parts = $this->resolvePythonRootNameParts($name);
+        if ($parts === null) {
             return null;
         }
         if (count($parts) !== 2 || $parts[1] === '') {
-            $this->fatalError($name, 'Python builtins must use the form `python\\name()`');
+            return null;
         }
         return $parts[1];
     }
 
-    protected function parsePythonBuiltinCall(Expr\FuncCall $expr): ?string
+    /**
+     * Resolve namespace syntax into a Python module and one of its members.
+     *
+     * @return array{module: string, member: string}|null
+     */
+    protected function resolvePythonModuleMember(NodeAbstract $name): ?array
     {
+        if (!$this->isNameExpr($name)) {
+            return null;
+        }
+
+        $parts = $this->resolvePythonRootNameParts($name);
+        if ($parts === null || count($parts) < 3) {
+            return null;
+        }
+
+        $member = array_pop($parts);
+        return [
+            'module' => implode('.', array_slice($parts, 1)),
+            'member' => $member,
+        ];
+    }
+
+    protected function parsePythonFunctionCall(Expr\FuncCall $expr): ?string
+    {
+        $moduleMember = $this->resolvePythonModuleMember($expr->name);
+        if ($moduleMember !== null) {
+            if ($expr->isFirstClassCallable()) {
+                $this->fatalError($expr, 'Python module callables do not support first-class callable syntax yet');
+            }
+
+            $target = $this->getPythonModuleExpression($moduleMember['module']);
+            $member = $this->getLiteralString($moduleMember['member']);
+            if ($expr->args === []) {
+                return $target . '.call(' . $member . ')';
+            }
+            return $target . '.call(' . $member . ', ' . $this->parseCallArgs($expr->args) . ')';
+        }
+
         $builtin = $this->resolvePythonBuiltinName($expr->name);
         if ($builtin === null) {
             return null;
@@ -427,12 +461,23 @@ trait PythonModuleTrait
         return $target . '.call(' . $name . ', ' . $this->parseCallArgs($expr->args) . ')';
     }
 
+    protected function parsePythonModuleAttributeFetch(Expr\ConstFetch $expr, bool $constantExpression): ?string
+    {
+        $moduleMember = $this->resolvePythonModuleMember($expr->name);
+        if ($moduleMember === null) {
+            return null;
+        }
+        if ($constantExpression) {
+            $this->fatalError($expr, 'Python module attributes cannot be used in constant expressions');
+        }
+
+        return $this->getPythonModuleExpression($moduleMember['module'])
+            . '.attr(' . $this->getLiteralString($moduleMember['member']) . ')';
+    }
+
     protected function detectPythonExpressionReturnType(NodeAbstract $expr): ?string
     {
-        if ($expr instanceof Expr\StaticCall && $this->resolvePythonModuleAlias($expr->class) !== null) {
-            return Type::OBJECT;
-        }
-        if ($expr instanceof Expr\StaticPropertyFetch && $this->resolvePythonModuleAlias($expr->class) !== null) {
+        if ($expr instanceof Expr\ConstFetch && $this->resolvePythonModuleMember($expr->name) !== null) {
             return Type::OBJECT;
         }
         if ($expr instanceof Expr\MethodCall && $this->isPythonObjectExpr($expr->var)) {
@@ -459,6 +504,9 @@ trait PythonModuleTrait
         if (!$expr instanceof Expr\FuncCall) {
             return null;
         }
+        if ($this->resolvePythonModuleMember($expr->name) !== null) {
+            return Type::OBJECT;
+        }
         $builtin = $this->resolvePythonBuiltinName($expr->name);
         if ($builtin === null) {
             return null;
@@ -471,10 +519,7 @@ trait PythonModuleTrait
 
     protected function detectPythonExpressionReturnClass(NodeAbstract $expr): ?string
     {
-        if ($expr instanceof Expr\StaticCall && $this->resolvePythonModuleAlias($expr->class) !== null) {
-            return 'PyObject';
-        }
-        if ($expr instanceof Expr\StaticPropertyFetch && $this->resolvePythonModuleAlias($expr->class) !== null) {
+        if ($expr instanceof Expr\ConstFetch && $this->resolvePythonModuleMember($expr->name) !== null) {
             return 'PyObject';
         }
         if ($expr instanceof Expr\MethodCall && $this->isPythonObjectExpr($expr->var)) {
@@ -501,6 +546,9 @@ trait PythonModuleTrait
         if (!$expr instanceof Expr\FuncCall) {
             return null;
         }
+        if ($this->resolvePythonModuleMember($expr->name) !== null) {
+            return 'PyObject';
+        }
         $builtin = $this->resolvePythonBuiltinName($expr->name);
         if ($builtin === null) {
             return null;
@@ -516,18 +564,17 @@ trait PythonModuleTrait
         if (!$this->isIdExpr($expr->name)) {
             return null;
         }
-        $module = $this->resolvePythonModuleAlias($expr->class);
+        $module = $this->resolvePythonModule($expr->class);
         if ($module === null) {
             return null;
         }
 
+        $alias = $this->parseIdentifier($expr->class);
         $method = $this->parseIdentifier($expr->name);
-        $target = $this->getPythonModuleExpression($module);
-        $methodName = $this->getLiteralString($method);
-        if ($expr->args === []) {
-            return $target . '.call(' . $methodName . ')';
-        }
-        return $target . '.call(' . $methodName . ', ' . $this->parseCallArgs($expr->args) . ')';
+        $this->fatalError(
+            $expr,
+            "Python module callable `{$alias}::{$method}()` must use `{$alias}\\{$method}()`",
+        );
     }
 
     protected function parsePythonModuleStaticPropertyFetch(Expr\StaticPropertyFetch $expr): ?string
@@ -535,18 +582,22 @@ trait PythonModuleTrait
         if (!$this->isIdExpr($expr->name)) {
             return null;
         }
-        $module = $this->resolvePythonModuleAlias($expr->class);
+        $module = $this->resolvePythonModule($expr->class);
         if ($module === null) {
             return null;
         }
 
-        return $this->getPythonModuleExpression($module)
-            . '.attr(' . $this->getLiteralString($this->parseIdentifier($expr->name)) . ')';
+        $alias = $this->parseIdentifier($expr->class);
+        $attribute = $this->parseIdentifier($expr->name);
+        $this->fatalError(
+            $expr,
+            "Python module attribute `{$alias}::\${$attribute}` must use `{$alias}\\{$attribute}`",
+        );
     }
 
     protected function rejectPythonModuleClassConstantFetch(Expr\ClassConstFetch $expr): void
     {
-        if (!$this->isIdExpr($expr->name) || $this->resolvePythonModuleAlias($expr->class) === null) {
+        if (!$this->isIdExpr($expr->name) || $this->resolvePythonModule($expr->class) === null) {
             return;
         }
 
@@ -554,7 +605,7 @@ trait PythonModuleTrait
         $member = $this->parseIdentifier($expr->name);
         $this->fatalError(
             $expr,
-            "Python module value `{$alias}::{$member}` must use `{$alias}::\${$member}`",
+            "Python module member `{$alias}::{$member}` must use `{$alias}\\{$member}`",
         );
     }
 

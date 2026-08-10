@@ -5,8 +5,8 @@ use Python\protocol;
 
 function main(): void
 {
-    sys::$path->append('/tmp');
-    $object = protocol::make();
+    sys\path->append('/tmp');
+    $object = protocol\make();
     $object->name = 'value';
     $value = $object->child->method(suffix: '!');
     $integer = $object->toInt();

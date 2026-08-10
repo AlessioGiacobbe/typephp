@@ -12,7 +12,7 @@ use Python\math;
 
 function main(): void
 {
-    var_dump(python\scalar(math::$pi)->toFloat() > 3.14);
+    var_dump(python\scalar(math\pi)->toFloat() > 3.14);
 }
 ?>
 --EXPECT--

@@ -2,19 +2,21 @@
 
 > 本计划以 `python/design.md` 为规范。每个阶段严格执行：先增加 PHPUnit/PHPT/pytest 测试并确认失败，再实现，再运行相关测试和完整回归。
 
-## 阶段 1：Python use 与 module binding
+## 阶段 1：Python module name、use 与 lazy binding
 
 目标是完成最小可运行闭环，不实现运算符和通用转换：
 
-1. 识别 `use python\module`、根名称大小写不敏感和 Python 后续名称大小写敏感。
-2. 建立文件级 Python module alias 表，并与普通 class/function/constant use 检查冲突。
-3. 仅在出现 `module::$attr` 或 `module::func()` 时分配 module ID。
+1. 识别全局 namespace 中的 `python\module\member()` / `python\module\member`、其他 namespace 中的 `\python\module\member()` / `\python\module\member`、可选的 `use python\module` 简写、根名称大小写不敏感和 Python 后续名称大小写敏感。
+2. 不建立 Python 专用 alias 表，也不特殊处理 `use`；使用 PHP 的普通 namespace、`use function`、`use const`、`as` alias、冲突检查和完整名称解析。在 namespace 内必须写成 `\python\module`，相对的 `python\module` 仍解析为当前 PHP namespace 下的名称。
+3. 仅在出现 `python\module\attr`、`python\module\func()` 或其 alias 形式时分配 module ID。
 4. 生成与 `funcMap` 同类的 `pythonModuleMap`、lazy getter 和 request-clean 代码。
 5. 使用 Zend class/function map 动态调用 `PyCore::import()`；不 include、link 或检测 phpy。
 6. 使用 Zend object API 读取 module 属性及调用 module callable。
 7. phpy 未加载时在首次实际使用处抛出 PHP `Error`；未使用的 Python use 不触发错误。
 
 测试顺序：PHPUnit 代码生成与诊断测试 → PHPT 运行时测试 → 现有 compiler 回归。
+
+实现状态：已完成。完整名称与任意 alias 按 Python dotted module name 共享同一个 runtime slot；完整名称不要求 `use`，两种语法都在首次实际执行时 lazy import。识别前严格采用 PHP namespace resolution：例如在 `namespace App` 中，相对名称 `python\math\sqrt()` 是普通的 `App\python\math\sqrt()`，只有 `\python\math\sqrt()` 指向 Python 根命名空间。
 
 ## 阶段 2：builtins、构造语法糖与静态类型
 

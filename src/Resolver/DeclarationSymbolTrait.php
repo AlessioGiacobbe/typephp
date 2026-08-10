@@ -72,9 +72,6 @@ trait DeclarationSymbolTrait
         foreach ($v2->uses as $use) {
             $id = $this->parseIdentifier($use->name);
             $type = $use->type !== Node\Stmt\Use_::TYPE_UNKNOWN ? $use->type : $v2->type;
-            if ($type === Node\Stmt\Use_::TYPE_NORMAL && $this->parsePythonUse($use, $id, $v2)) {
-                continue;
-            }
             if ($type === Node\Stmt\Use_::TYPE_FUNCTION) {
                 $lastIndex = strrpos($id, '\\');
                 $fn = substr($id, $lastIndex + 1);
@@ -102,10 +99,6 @@ trait DeclarationSymbolTrait
                 } elseif ($idLower === 'bigint_types') {
                     $this->bigintTypes = true;
                 } else {
-                    $alias = $use->alias?->toString() ?? substr($id, (int) strrpos('\\' . $id, '\\'));
-                    if ($this->hasPythonModuleAlias($alias)) {
-                        $this->fatalError($use, "Use alias `{$alias}` conflicts with a Python module alias");
-                    }
                     $this->useNamespaces[] = $id;
                     if ($use->alias) {
                         $this->useAliases[$use->alias->toString()] = $id;

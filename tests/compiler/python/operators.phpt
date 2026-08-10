@@ -43,7 +43,7 @@ function main(): void
     echo asInt($seven & $three), "\n";
     echo asInt($seven | $three), "\n";
     echo asInt($seven ^ $three), "\n";
-    echo asInt(math::sqrt(9) + 1), "\n";
+    echo asInt(math\sqrt(9) + 1), "\n";
 
     // The Python reflected protocol handles the native left operand.
     echo python\scalar(python\repr(1 + python\complex(2, 3)))->toString(), "\n";
