@@ -73,4 +73,57 @@ PYTHON, 'globals.py');
         self::assertStringContainsString('function scale($value)' . "\n{\n" . '    global $factor;', $php);
         self::assertStringContainsString("function main(): void\n{\n" . '    global $factor;', $php);
     }
+
+    public function testOnlyTheFirstAttributeAfterAModuleAliasIsAModuleMember(): void
+    {
+        $php = (new PythonToTypePhpConverter())->convertSource(<<<'PYTHON'
+import sys
+
+print(sys.version_info.major)
+sys.stdout.write("hello")
+print(f"{sys.version_info.minor}")
+PYTHON, 'module-attribute.py');
+
+        self::assertStringContainsString(
+            "echo sys\\version_info->major, \"\\n\";",
+            $php,
+        );
+        self::assertStringContainsString(
+            "sys\\stdout->write('hello');",
+            $php,
+        );
+        self::assertStringContainsString(
+            'echo sys\\version_info->minor->toString(), "\\n";',
+            $php,
+        );
+        self::assertStringNotContainsString('sys\\version_info\\major', $php);
+        self::assertStringNotContainsString('sys\\stdout\\write', $php);
+    }
+
+    public function testLowersPrintAndSysExitOnlyWhenPhpHasTheSameBehavior(): void
+    {
+        $php = (new PythonToTypePhpConverter())->convertSource(<<<'PYTHON'
+import sys
+
+print()
+print("hello")
+print(f"version: {sys.version_info.major}")
+print(True)
+print("same line", end="")
+sys.exit()
+sys.exit(2)
+sys.exit("failure")
+PYTHON, 'native-statements.py');
+
+        self::assertStringContainsString('echo "\\n";', $php);
+        self::assertStringContainsString('echo \'hello\', "\\n";', $php);
+        self::assertStringContainsString(
+            'echo \'version: \' . sys\\version_info->major->toString(), "\\n";',
+            $php,
+        );
+        self::assertStringContainsString('python\\print(true);', $php);
+        self::assertStringContainsString("python\\print('same line', end: '');", $php);
+        self::assertStringContainsString("exit;\n    exit(2);", $php);
+        self::assertStringContainsString("sys\\exit('failure');", $php);
+    }
 }

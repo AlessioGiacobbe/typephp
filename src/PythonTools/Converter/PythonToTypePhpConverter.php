@@ -232,7 +232,113 @@ final class PythonToTypePhpConverter
         if (($value['_type'] ?? '') === 'Constant' && is_string($value['value'] ?? null)) {
             return [$this->line('/** ' . $this->safeComment($value['value']) . ' */')];
         }
+        if (($value['_type'] ?? '') === 'Call') {
+            $native = $this->nativeCallStatement($value);
+            if ($native !== null) {
+                return [$this->line($native)];
+            }
+        }
         return [$this->line($this->expression($value) . ';')];
+    }
+
+    /** @param array<string, mixed> $node */
+    private function nativeCallStatement(array $node): ?string
+    {
+        if ($this->isBuiltinPrintCall($node)) {
+            $arguments = $node['args'] ?? [];
+            if (($node['keywords'] ?? []) !== []) {
+                return null;
+            }
+            foreach ($arguments as $argument) {
+                if (!$this->isEchoCompatiblePythonValue($argument)) {
+                    return null;
+                }
+            }
+            if ($arguments === []) {
+                return 'echo "\\n";';
+            }
+            $parts = [];
+            foreach ($arguments as $index => $argument) {
+                if ($index !== 0) {
+                    $parts[] = "' '";
+                }
+                $parts[] = $this->expression($argument);
+            }
+            $parts[] = '"\\n"';
+            return 'echo ' . implode(', ', $parts) . ';';
+        }
+
+        if ($this->isSysExitCall($node) && ($node['keywords'] ?? []) === []) {
+            $arguments = $node['args'] ?? [];
+            if ($arguments === []) {
+                return 'exit;';
+            }
+            if (count($arguments) === 1 && $this->isIntegerLiteral($arguments[0])) {
+                return 'exit(' . $this->expression($arguments[0]) . ');';
+            }
+        }
+        return null;
+    }
+
+    /** @param array<string, mixed> $node */
+    private function isBuiltinPrintCall(array $node): bool
+    {
+        $function = $node['func'] ?? [];
+        return ($function['_type'] ?? '') === 'Name'
+            && ($function['id'] ?? '') === 'print'
+            && !isset($this->definedFunctions['print'])
+            && !isset($this->importedSymbols['print'])
+            && !isset($this->moduleGlobals['print']);
+    }
+
+    /** @param array<string, mixed> $node */
+    private function isSysExitCall(array $node): bool
+    {
+        $function = $node['func'] ?? [];
+        if (($function['_type'] ?? '') === 'Name') {
+            $symbol = $this->importedSymbols[(string) ($function['id'] ?? '')] ?? null;
+            return $symbol !== null && $symbol['module'] === 'sys' && $symbol['member'] === 'exit';
+        }
+        if (($function['_type'] ?? '') !== 'Attribute' || ($function['attr'] ?? '') !== 'exit') {
+            return false;
+        }
+        $owner = $function['value'] ?? [];
+        if (($owner['_type'] ?? '') !== 'Name') {
+            return false;
+        }
+        return ($this->moduleAliases[(string) ($owner['id'] ?? '')] ?? null) === 'sys';
+    }
+
+    /** @param array<string, mixed> $node */
+    private function isEchoCompatiblePythonValue(array $node): bool
+    {
+        $type = $node['_type'] ?? '';
+        if ($type === 'Constant') {
+            $value = $node['value'] ?? null;
+            return is_string($value) || is_int($value);
+        }
+        if ($type === 'Attribute') {
+            $cursor = $node;
+            while (($cursor['_type'] ?? '') === 'Attribute') {
+                $cursor = $cursor['value'];
+            }
+            return $this->attributeStartsWithModuleAlias($node)
+                || (($cursor['_type'] ?? '') === 'Name'
+                    && isset($this->importedSymbols[(string) ($cursor['id'] ?? '')]));
+        }
+        return in_array($type, ['JoinedStr', 'List', 'Tuple', 'Set', 'Dict'], true);
+    }
+
+    /** @param array<string, mixed> $node */
+    private function isIntegerLiteral(array $node): bool
+    {
+        if (($node['_type'] ?? '') === 'Constant') {
+            return is_int($node['value'] ?? null);
+        }
+        return ($node['_type'] ?? '') === 'UnaryOp'
+            && in_array($node['op']['_type'] ?? '', ['USub', 'UAdd'], true)
+            && ($node['operand']['_type'] ?? '') === 'Constant'
+            && is_int($node['operand']['value'] ?? null);
     }
 
     /** @param array<string, mixed> $node @return list<string> */
@@ -379,7 +485,16 @@ final class PythonToTypePhpConverter
             $cursor = $cursor['value'];
         }
         if (($cursor['_type'] ?? '') === 'Name' && isset($this->moduleAliases[$cursor['id']])) {
-            return $cursor['id'] . '\\' . implode('\\', $parts);
+            // A Python module is represented by a TypePHP namespace, but only
+            // the first attribute is a member of that module. Any remaining
+            // attributes belong to the PyObject returned by that member.
+            // For example, sys.version_info.major becomes
+            // sys\version_info->major, not sys\version_info\major.
+            $result = $cursor['id'] . '\\' . array_shift($parts);
+            foreach ($parts as $part) {
+                $result .= '->' . $part;
+            }
+            return $result;
         }
         $result = $this->expression($cursor);
         foreach ($parts as $part) {
@@ -540,7 +655,16 @@ final class PythonToTypePhpConverter
                 if (($value['format_spec'] ?? null) !== null || ($value['conversion'] ?? -1) !== -1) {
                     $this->unsupported($value, 'formatted f-string conversions are not supported yet');
                 }
-                $parts[] = '(' . $this->expression($value['value']) . ')->toString()';
+                $expression = $this->expression($value['value']);
+                // PHP permits direct dereferencing of these expressions. Keep
+                // parentheses for operators and other precedence-sensitive
+                // expressions, whose result must be converted as a whole.
+                if (!in_array($value['value']['_type'] ?? '', [
+                    'Name', 'Attribute', 'Call', 'Subscript', 'List', 'Tuple', 'Set', 'Dict',
+                ], true)) {
+                    $expression = '(' . $expression . ')';
+                }
+                $parts[] = $expression . '->toString()';
             } else {
                 $parts[] = $this->expression($value);
             }

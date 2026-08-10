@@ -33,8 +33,9 @@ final class Command
                     throw new RuntimeException('Unable to determine the working directory');
                 }
                 [$module, $outputDirectory] = self::helperArguments($argv, $helperIndex, $root);
-                $metadata = (new PhpyModuleScanner())->scan($module);
-                $code = (new HelperRenderer())->render($metadata);
+                $scanner = new PhpyModuleScanner();
+                $renderer = new HelperRenderer();
+                $metadata = $scanner->scan($module);
                 $relative = str_replace('.', DIRECTORY_SEPARATOR, $module) . '.php';
                 $file = $outputDirectory . DIRECTORY_SEPARATOR . 'python' . DIRECTORY_SEPARATOR . $relative;
                 $pyObjectFile = $outputDirectory . DIRECTORY_SEPARATOR . 'PyObject.php';
@@ -42,8 +43,14 @@ final class Command
                     self::writeFile($pyObjectFile, (new PyObjectHelperRenderer())->render());
                     fwrite(STDOUT, "Generated PyObject IDE helper: {$pyObjectFile}" . PHP_EOL);
                 }
-                self::writeFile($file, $code);
-                fwrite(STDOUT, "Generated Python IDE helper: {$file}" . PHP_EOL);
+                $builtins = $module === 'builtins' ? $metadata : $scanner->scan('builtins');
+                $builtinsFile = $outputDirectory . DIRECTORY_SEPARATOR . 'python.php';
+                self::writeFile($builtinsFile, $renderer->render($builtins));
+                fwrite(STDOUT, "Generated Python builtins IDE helper: {$builtinsFile}" . PHP_EOL);
+                if ($module !== 'builtins') {
+                    self::writeFile($file, $renderer->render($metadata));
+                    fwrite(STDOUT, "Generated Python IDE helper: {$file}" . PHP_EOL);
+                }
                 return 0;
             }
 

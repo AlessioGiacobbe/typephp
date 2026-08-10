@@ -20,10 +20,15 @@ module attribute。PHPy 扩展以及目标 Python module 必须安装在执行 `
 ```text
 ide-helper/python/math.php
 ide-helper/python/numpy/linalg.php
+ide-helper/python.php
 ide-helper/PyObject.php
 ```
 
-首次生成 module helper 时，会同时生成公共的 `PyObject.php`。它包含 `PyObject` 的动态访问、调用、
+每次生成 module helper 时，会同时扫描 Python `builtins` 并生成根命名空间文件
+`python.php`，为 `python\tuple()`、`python\len()` 等内置符号提供 IDE 补全。该文件会
+随当前 Python 环境重新生成。
+
+首次生成 module helper 时，还会生成公共的 `PyObject.php`。它包含 `PyObject` 的动态访问、调用、
 数组访问、迭代以及 `toArray()`、`toValue()` 等方法提示，供所有 Python module helper 共享。若该文件
 已经存在，生成器会保留原文件，不进行覆盖。
 
@@ -54,6 +59,9 @@ Python class 的构造函数会显式调用 `parent::__construct()`。Python 对
 
 PHP function/class 名称大小写不敏感，而 Python 名称大小写敏感；PHP 保留字也不能声明为普通
 stub symbol。生成器会以注释报告无法用合法 PHP 声明表达的符号，不会擅自重命名 Python API。
+`python\print()` 的调用语法合法，但 PHP 禁止声明名为 `print` 的函数，因此单纯的
+PHP helper 文件无法为它提供无语法错误的符号声明。`list`、`int`、`float` 等 PHP
+保留字存在同样的限制。
 
 ## Python 转 TypePHP
 
@@ -80,6 +88,10 @@ function main(): void
 
 当前支持普通 import、函数、赋值、调用、容器字面量、基础运算、单项比较、if/while/for、
 lambda 和基础 f-string。module 顶层变量会转换为 PHP global，以保持函数读取 module 变量的能力。
+当语义可以严格保持时，转换器会直接使用 PHP 原生语法：无参数或可安全转换的
+`print()` 生成带换行的 `echo`，`sys.exit()` 和整数字面量退出码生成 `exit`。具有
+`sep`、`end`、`file`、`flush` 参数的 `print()`，以及字符串或对象形式的 `sys.exit()`
+与 PHP 行为不完全一致，仍保留为 Python 调用。
 
 转换器遵循“不能可靠保持语义就拒绝”的原则。class、async、generator、try/with、decorator、
 destructuring assignment、chained comparison、嵌套函数以及 loop-else 等尚未完成的语法会抛出带

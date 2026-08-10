@@ -24,10 +24,20 @@ final class PythonToolsCommandTest extends TestCase
 
             self::assertSame(0, $status);
             self::assertFileExists($output . '/python/math.php');
+            self::assertFileExists($output . '/python.php');
+            $builtins = file_get_contents($output . '/python.php');
+            self::assertIsString($builtins);
+            self::assertStringContainsString('namespace python;', $builtins);
+            self::assertStringContainsString('function tuple(', $builtins);
+            self::assertStringContainsString(
+                '// Omitted Python callable not representable as a PHP function: print',
+                $builtins,
+            );
             self::assertSame('keep-me', file_get_contents($output . '/PyObject.php'));
         } finally {
             @unlink($output . '/python/math.php');
             @rmdir($output . '/python');
+            @unlink($output . '/python.php');
             @unlink($output . '/PyObject.php');
             @rmdir($output);
             @rmdir($root);
