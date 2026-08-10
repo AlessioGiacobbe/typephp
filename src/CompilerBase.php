@@ -3544,7 +3544,9 @@ class CompilerBase implements PropertyAccessContext
                 break;
         }
 
-        return 'php::include(' . $this->parseIdentifier($expr->expr) . ', ' . $type . ')';
+        $fileName = $this->parseIdentifier($expr->expr);
+
+        return "php::include(php::Var($fileName), $type)";
     }
 
     protected function parseScalarFloat(Node\Scalar\Float_ $expr): string
