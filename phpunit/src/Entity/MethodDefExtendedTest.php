@@ -10,19 +10,6 @@ use PhpParser\Modifiers;
 
 class MethodDefExtendedTest extends TestCase
 {
-    public function testUnpackedCallbackScopeDefaultsToFalse(): void
-    {
-        $method = new MethodDef(Modifiers::PUBLIC, 'test');
-        $this->assertFalse($method->needsUnpackedCallbackScope);
-    }
-
-    public function testUnpackedCallbackScopeCanBeSet(): void
-    {
-        $method = new MethodDef(Modifiers::PUBLIC, 'test');
-        $method->needsUnpackedCallbackScope = true;
-        $this->assertTrue($method->needsUnpackedCallbackScope);
-    }
-
     public function testStaticMethod(): void
     {
         $method = new MethodDef(Modifiers::PUBLIC | Modifiers::STATIC, 'factory');

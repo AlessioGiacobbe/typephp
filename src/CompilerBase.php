@@ -3186,11 +3186,17 @@ class CompilerBase implements PropertyAccessContext
         return $object . '.call(' . $method . ', ' . $callArgs . ')';
     }
 
-    /** Retain the legacy frame scope when an unpacked value may contain a callback. */
-    protected function markUnpackedCallbackScopeFallback(): void
+    /** Reserve one reusable Zend user-code frame for scoped dynamic callbacks. */
+    protected function markUserCodeCallableScope(): void
     {
         if ($this->methodDef) {
-            $this->methodDef->needsUnpackedCallbackScope = true;
+            // This state belongs to the generated function body, not to its
+            // MethodDef. A method and each nested Closure have independent
+            // FunctionContext instances and therefore independent guards.
+            $this->context->needsUserCodeCallableScope = true;
+            // Reserve the declaration before the generated function prologue
+            // is emitted. The guard itself is inserted after parsing the body.
+            $this->getCallableScopeExpr();
         }
     }
 
@@ -3211,9 +3217,9 @@ class CompilerBase implements PropertyAccessContext
          * compiled by TypePHP itself, so the result must not depend on how a
          * particular PHP build exposes callable parameter types.
          *
-         * Each entry identifies callback arguments by their positional index
-         * and PHP named-argument name. Negative indexes count from the end.
-         * The boolean flag marks containers whose values are callbacks.
+         * Each entry identifies callback arguments by their positional index,
+         * PHP named-argument name and optional handling strategy. Negative
+         * indexes count from the end. The default strategy is `callable`.
          */
         static $callbackArgs = [
             'array_map' => [[0, 'callback']],
@@ -3228,12 +3234,12 @@ class CompilerBase implements PropertyAccessContext
             'usort' => [[1, 'callback']],
             'uasort' => [[1, 'callback']],
             'uksort' => [[1, 'callback']],
-            'call_user_func' => [[0, 'callback']],
-            'call_user_func_array' => [[0, 'callback']],
+            'call_user_func' => [[0, 'callback', 'dynamic']],
+            'call_user_func_array' => [[0, 'callback', 'dynamic']],
             'forward_static_call' => [[0, 'callback']],
             'forward_static_call_array' => [[0, 'callback']],
             'preg_replace_callback' => [[1, 'callback']],
-            'preg_replace_callback_array' => [[0, 'pattern', true]],
+            'preg_replace_callback_array' => [[0, 'pattern', 'map']],
             'iterator_apply' => [[1, 'callback']],
             'array_udiff' => [[-1, 'value_compare_func']],
             'array_udiff_assoc' => [[-1, 'value_compare_func']],
@@ -3258,18 +3264,26 @@ class CompilerBase implements PropertyAccessContext
             return;
         }
 
+        $fullyDynamic = ($descriptors[0][2] ?? 'callable') === 'dynamic';
+        if ($fullyDynamic) {
+            $this->markUserCodeCallableScope();
+        }
         $argCount = count($args);
         $matchedCallbacks = [];
         $hasUnpackedArg = false;
         foreach ($args as $index => $arg) {
             if ($arg->unpack) {
                 $hasUnpackedArg = true;
+                if ($fullyDynamic) {
+                    $arg->setAttribute(self::ATTR_SCOPED_CALLBACK, 'normalize-unpacked');
+                }
                 continue;
             }
 
             foreach ($descriptors as $descriptorIndex => $descriptor) {
                 [$position, $name] = $descriptor;
-                $container = $descriptor[2] ?? false;
+                $strategy = $descriptor[2] ?? 'callable';
+                $container = $strategy === 'map';
                 $callbackPosition = $position < 0 ? $argCount + $position : $position;
                 $matches = $arg->name === null
                     ? $index === $callbackPosition
@@ -3277,7 +3291,8 @@ class CompilerBase implements PropertyAccessContext
                 if ($matches) {
                     $matchedCallbacks[$descriptorIndex] = true;
                     if ($container || !$this->isScopeIndependentCallableExpr($arg->value)) {
-                        $arg->setAttribute(self::ATTR_SCOPED_CALLBACK, $container ? 'map' : 'callable');
+                        $mode = $strategy === 'dynamic' ? 'normalize' : $strategy;
+                        $arg->setAttribute(self::ATTR_SCOPED_CALLBACK, $mode);
                     }
                     // Some functions accept more than one callback (for
                     // example array_udiff_uassoc()). Mark every matching
@@ -3287,12 +3302,12 @@ class CompilerBase implements PropertyAccessContext
             }
         }
 
-        if ($hasUnpackedArg && count($matchedCallbacks) !== count($descriptors)) {
+        if (!$fullyDynamic && $hasUnpackedArg && count($matchedCallbacks) !== count($descriptors)) {
             // If the unpacked value itself supplies a callback, its runtime
-            // position is not known here. Keep the legacy frame scope only
-            // for this remaining case; ordinary callback arguments no longer
-            // mutate the executing Zend frame.
-            $this->markUnpackedCallbackScopeFallback();
+            // position is not known here. Retain a reusable user-code scope
+            // guard for this complex case; ordinary callback arguments use
+            // an explicit CallableScope instead.
+            $this->markUserCodeCallableScope();
         }
     }
 
@@ -3422,7 +3437,7 @@ class CompilerBase implements PropertyAccessContext
             }
 
             $class = $this->identifierToStr($expr->var->class);
-            $prop = $this->identifierToStr($expr->var->name);
+            $prop = $this->propertyNameToStr($expr->var->name);
             $tmpVar = $this->genTmpVarName();
             $this->addLocalVar($tmpVar, Type::VAR);
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . Symbol::getStaticProperty() . '(' . $class . ', ' . $prop . ');';
@@ -3869,7 +3884,7 @@ class CompilerBase implements PropertyAccessContext
                 $dim = $this->parseIdentifier($expr->dim);
                 $list[] = '{php::ArrayDimFetch, ' . Type::VAR . '(' . $dim . ')}';
             } elseif ($this->isPropertyFetch($expr)) {
-                $name = $this->identifierToStr($expr->name, literal: true);
+                $name = $this->propertyNameToStr($expr->name, literal: true);
                 $list[] = '{php::PropertyFetch, ' . Type::VAR . '(' . $name . ')}';
             } elseif ($this->isVarExpr($expr)) {
                 $var = $this->parseIdentifier($expr);
@@ -3979,6 +3994,20 @@ class CompilerBase implements PropertyAccessContext
             return self::VALUE_ZERO;
         }
         return $id;
+    }
+
+    /**
+     * Convert an object/static property name without interpreting `self` or
+     * `static` as a class-name keyword. Those words are valid PHP property
+     * names and only have special meaning in class-name positions.
+     */
+    protected function propertyNameToStr(NodeAbstract $node, bool $require = true, bool $literal = false): string
+    {
+        if ($this->isIdExpr($node)) {
+            $name = $this->parseIdentifier($node);
+            return $literal ? $this->getLiteralString($name) : $this->genCharPtr($name, true);
+        }
+        return $this->identifierToStr($node, $require, $literal);
     }
 
     protected function requireVar($node, string $var): void

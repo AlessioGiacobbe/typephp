@@ -3754,8 +3754,8 @@ CODE;
         // Argument unpacking can hide a callback position from the compiler.
         // Only that fallback exposes the called class through the user frame;
         // ordinary callback resolution uses the explicit CallableScope above.
-        if ($this->methodDef and $this->methodDef->needsUnpackedCallbackScope) {
-            $code .= $this->genUnpackedCallbackScopeGuard();
+        if ($this->context->needsUserCodeCallableScope) {
+            $code .= $this->genUserCodeCallableScopeGuard();
         }
 
         $code .= $stmts;

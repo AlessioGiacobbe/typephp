@@ -16,7 +16,6 @@ class MethodDefTest extends TestCase
         $this->assertEquals('handle', $method->name);
         $this->assertSame(Modifiers::PUBLIC, $method->flags);
         $this->assertNull($method->functionDef);
-        $this->assertFalse($method->needsUnpackedCallbackScope);
     }
 
     public function testGetReturnType(): void

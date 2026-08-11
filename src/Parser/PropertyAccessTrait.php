@@ -110,7 +110,7 @@ trait PropertyAccessTrait
 
         return $this->emitDynamicPropertyRead(
             $this->parseIdentifier($expr->var),
-            $this->identifierToStr($expr->name, literal: true)
+            $this->propertyNameToStr($expr->name, literal: true)
         );
     }
 
@@ -122,7 +122,7 @@ trait PropertyAccessTrait
 
         return $this->emitDynamicPropertyWrite(
             $this->parseIdentifier($expr->var),
-            $this->identifierToStr($expr->name, literal: true),
+            $this->propertyNameToStr($expr->name, literal: true),
             $value
         );
     }
@@ -142,7 +142,7 @@ trait PropertyAccessTrait
             return $this->emitDynamicPropertyTargetUnset($target);
         }
 
-        return $this->parseIdentifier($expr->var) . '.unsetProperty(' . $this->identifierToStr($expr->name, literal: true) . ')';
+        return $this->parseIdentifier($expr->var) . '.unsetProperty(' . $this->propertyNameToStr($expr->name, literal: true) . ')';
     }
 
     protected function emitDynamicPropertyFetchAppendArray(Expr\PropertyFetch $expr, string $value, ?PropertyWriteTarget $target = null): string
@@ -156,7 +156,7 @@ trait PropertyAccessTrait
 
         return $this->emitDynamicPropertyAppendArray(
             $this->parseIdentifier($expr->var),
-            $this->identifierToStr($expr->name, literal: true),
+            $this->propertyNameToStr($expr->name, literal: true),
             $value
         );
     }
@@ -172,7 +172,7 @@ trait PropertyAccessTrait
 
         return $this->emitDynamicPropertyUpdateArray(
             $this->parseIdentifier($expr->var),
-            $this->identifierToStr($expr->name, literal: true),
+            $this->propertyNameToStr($expr->name, literal: true),
             $dim,
             $value
         );
@@ -219,7 +219,7 @@ trait PropertyAccessTrait
         }
 
         if (!$this->isVarExpr($expr->var)) {
-            return $this->parseExpr($expr->var) . '.attrRef(' . $this->identifierToStr($expr->name) . ')';
+            return $this->parseExpr($expr->var) . '.attrRef(' . $this->propertyNameToStr($expr->name) . ')';
         }
 
         $objectExpr = $this->parseIdentifier($expr->var);
@@ -227,7 +227,7 @@ trait PropertyAccessTrait
             $this->fatalError($errorNode, 'Undefined variable `$' . $objectExpr . '`');
         }
 
-        return $objectExpr . '.attrRef(' . $this->identifierToStr($expr->name) . ')';
+        return $objectExpr . '.attrRef(' . $this->propertyNameToStr($expr->name) . ')';
     }
 
     protected function emitStaticPropertyFetchRef(Expr\StaticPropertyFetch $expr, NodeAbstract $errorNode): string
@@ -238,7 +238,7 @@ trait PropertyAccessTrait
         }
 
         if ($resolution !== null) {
-            $property = $this->identifierToStr($expr->name, literal: true);
+            $property = $this->propertyNameToStr($expr->name, literal: true);
             if ($resolution->class !== null) {
                 $classPtr = $this->getClassEntryPtr($resolution->class);
                 return Symbol::getStaticPropertyRef() . '(' . $classPtr . ', ' . $property . ')';
@@ -386,7 +386,7 @@ trait PropertyAccessTrait
     private function parseDynamicStaticPropertyFetch(Expr\StaticPropertyFetch $expr, bool $reference = false): string
     {
         $classValue = $this->getDynamicStaticClassValue($expr->class);
-        $propertyValue = $this->identifierToStr($expr->name, literal: true);
+        $propertyValue = $this->propertyNameToStr($expr->name, literal: true);
 
         $classVar = $this->addTmpVar(Type::VAR);
         $propertyVar = $this->addTmpVar(Type::VAR);
@@ -452,7 +452,7 @@ trait PropertyAccessTrait
             $propertyExpr = null;
             if (!$this->isNativePropertyAccess($left) && $this->isVarExpr($left->var)) {
                 $objectExpr = $this->parseIdentifier($left->var);
-                $propertyExpr = $this->identifierToStr($left->name, literal: true);
+                $propertyExpr = $this->propertyNameToStr($left->name, literal: true);
             }
             if ($this->isIdExpr($left->name)) {
                 $this->getPropertyIdentifier($left, $left->var, $left->name);
@@ -861,7 +861,7 @@ trait PropertyAccessTrait
             }
         }
 
-        return $this->identifierToStr($property, literal: true);
+        return $this->propertyNameToStr($property, literal: true);
     }
 
     private function resolveInstancePropertyFetchTarget(

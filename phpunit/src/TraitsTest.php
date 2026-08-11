@@ -215,16 +215,16 @@ class TraitsTest extends TestCase
     }
 
     // ========================================================================
-    // ClosureGenerator::genUnpackedCallbackScopeGuard
+    // ClosureGenerator::genUserCodeCallableScopeGuard
     // ========================================================================
 
     public function testGenUnpackedCallbackScopeGuard(): void
     {
         $this->invoke('resetFunction');
 
-        $result = $this->invoke('genUnpackedCallbackScopeGuard');
+        $result = $this->invoke('genUserCodeCallableScopeGuard');
         $this->assertStringContainsString('php::UserCodeScopeGuard', $result);
-        $this->assertStringContainsString('php_get_called_ce(this_)', $result);
+        $this->assertStringContainsString('php::CallableScope(nullptr, nullptr, nullptr)', $result);
         $this->assertStringNotContainsString('ON_SCOPE_EXIT', $result);
     }
 
@@ -232,9 +232,9 @@ class TraitsTest extends TestCase
     {
         $this->invoke('resetFunction');
 
-        $result = $this->invoke('genUnpackedCallbackScopeGuard');
+        $result = $this->invoke('genUserCodeCallableScopeGuard');
         $this->assertMatchesRegularExpression(
-            '/php::UserCodeScopeGuard tmp_var_\d+\{php_get_called_ce\(this_\)\};/',
+            '/php::UserCodeScopeGuard tmp_var_\d+\{php::CallableScope\(nullptr, nullptr, nullptr\)\};/',
             $result,
         );
     }

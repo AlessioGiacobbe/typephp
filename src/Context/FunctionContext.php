@@ -55,6 +55,8 @@ class FunctionContext
     public array $ceWrappers = [];
     /** Reusable php::CallableScope local, created only when this function performs scoped calls. */
     public ?string $callableScopeVar = null;
+    /** This generated body needs a temporary lexical scope on the nearest user-code frame. */
+    public bool $needsUserCodeCallableScope = false;
     public int $tmpVarIndex = 0;
     public array $arguments = [];
     /** True while parsing a breakable loop or switch. */

@@ -34,7 +34,10 @@ final class PropertyAccessResolver
             if ($class === $parent) {
                 return true;
             }
-            $class = $this->compiler->getParentClass($class);
+
+            // Parent names retain declaration casing. Normalize every hop,
+            // not only the initial class name.
+            $class = strtolower(ltrim($this->compiler->getParentClass($class), '\\'));
         }
         return false;
     }

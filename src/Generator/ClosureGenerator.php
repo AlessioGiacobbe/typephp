@@ -91,10 +91,10 @@ trait ClosureGenerator
         return $stmts[array_key_last($stmts)] instanceof Node\Stmt\Return_;
     }
 
-    protected function genUnpackedCallbackScopeGuard(): string
+    protected function genUserCodeCallableScopeGuard(): string
     {
         $tmpScope = $this->genTmpVarName();
-        return "php::UserCodeScopeGuard {$tmpScope}{php_get_called_ce(this_)};" . PHP_EOL;
+        return 'php::UserCodeScopeGuard ' . $tmpScope . '{' . $this->getCallableScopeExpr() . '};' . PHP_EOL;
     }
 
     protected function genClosure(Expr\ArrowFunction|Expr\Closure $expr, array $params, array $uses = []): string
@@ -203,6 +203,9 @@ trait ClosureGenerator
         $body = $isGenerator
             ? $this->genGeneratorClosureFactoryBody($expr, $params, $uses)
             : $this->genClosureBody($expr);
+        if ($this->context->needsUserCodeCallableScope) {
+            $body = $this->genUserCodeCallableScopeGuard() . $body;
+        }
         $code .= $this->genScopeVarDecl() . $body;
 
         $this->indentLevel--;
@@ -319,9 +322,6 @@ trait ClosureGenerator
 
             $this->indentLevel++;
             $body = '';
-            if ($this->methodDef && $this->methodDef->needsUnpackedCallbackScope) {
-                $body .= $this->genUnpackedCallbackScopeGuard();
-            }
             if ($expr instanceof Expr\ArrowFunction) {
                 [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr->expr);
                 $body .= $this->formatCapturedStmtLines($beforeStmts);
@@ -337,6 +337,9 @@ trait ClosureGenerator
                 if (!$this->isReturnStmtInLastLine($expr->stmts)) {
                     $body .= $this->getIndent() . 'return php::null;' . PHP_EOL;
                 }
+            }
+            if ($this->context->needsUserCodeCallableScope) {
+                $body = $this->genUserCodeCallableScopeGuard() . $body;
             }
             $this->indentLevel--;
 

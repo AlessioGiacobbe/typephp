@@ -283,13 +283,13 @@ trait FiberGenerator
 
         $body = '';
         $this->indentLevel++;
-        if ($this->methodDef && $this->methodDef->needsUnpackedCallbackScope) {
-            $body .= $this->genUnpackedCallbackScopeGuard();
-        }
         if ($v->stmts) {
             $body .= $this->parseStmts($v->stmts);
         }
         $body .= $this->getIndent() . 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
+        if ($this->context->needsUserCodeCallableScope) {
+            $body = $this->genUserCodeCallableScopeGuard() . $body;
+        }
         $this->indentLevel--;
         $code .= $this->genScopeVarDecl();
         $code .= $this->getIndent() . 'try {' . PHP_EOL;

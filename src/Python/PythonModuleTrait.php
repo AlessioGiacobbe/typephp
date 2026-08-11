@@ -250,7 +250,7 @@ trait PythonModuleTrait
             $writeBack = static fn(string $value): string => $container . '.offsetSet(' . $key . ', ' . $value . ')';
         } elseif ($expr->var instanceof Expr\PropertyFetch && $this->isIdExpr($expr->var->name)) {
             $receiver = $this->parseOrderedOperand($expr->var->var, false);
-            $property = $this->identifierToStr($expr->var->name, literal: true);
+            $property = $this->propertyNameToStr($expr->var->name, literal: true);
             $left = $receiver . '.attr(' . $property . ', php::AttrMode::Get)';
             $writeBack = static fn(string $value): string => 'typephp_write_property_scoped('
                 . $receiver . ', ' . $property . ', ' . $value . ', nullptr)';

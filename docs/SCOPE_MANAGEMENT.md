@@ -24,13 +24,13 @@ Scope 设计遵循以下原则：
 | 管理器 | 管理的状态 | 主要用途 | 是否修改 Zend 当前状态 |
 | --- | --- | --- | --- |
 | `php::CallableScope` | synthetic `zend_execute_data`，包含 lexical scope、called scope 和 `$this` | 动态方法调用、first-class callable、内置函数 callback | 否 |
-| `php::UserCodeScopeGuard` | 最近 user-code frame 的 `zend_function::common.scope` | callback 隐藏在参数展开中的兜底路径 | 是，析构时恢复 |
+| `php::UserCodeScopeGuard` | 最近 user-code frame 的 `zend_function::common.scope` | `call_user_func*` 及 callback 隐藏在参数展开中的动态调用路径 | 是，析构时恢复 |
 | `php::FakeScopeGuard` | `EG(fake_scope)` | Zend 属性、对象、异常等读取 fake scope 的 API | 是，析构或显式 `restore()` 时恢复 |
 
 选择规则可以简化为：
 
 - 能拿到明确 callable 值：使用 `CallableScope`。
-- callback 藏在 `...$args` 中，编译期无法知道最终参数位置：使用 `UserCodeScopeGuard`。
+- 调用 `call_user_func*`，或其他内置函数的 callback 藏在 `...$args` 中：使用 `UserCodeScopeGuard`。
 - 调用的 Zend API 明确读取 `EG(fake_scope)`：使用 `FakeScopeGuard`。
 - 纯 native 调用或不依赖调用者可见性的操作：不创建任何 Scope 管理器。
 
@@ -153,7 +153,7 @@ $callback = [$class, 'method'];
 
 ### 4.1 职责与适用范围
 
-`UserCodeScopeGuard` 只处理一种编译器无法静态改写 callback 的情况：callback 位于参数展开中。
+`UserCodeScopeGuard` 服务于完全动态的 `call_user_func()` / `call_user_func_array()`，以及编译器无法静态改写 callback 的参数展开场景。
 
 ```php
 $args = [[$this, 'privateMethod'], 1];
@@ -162,7 +162,15 @@ call_user_func(...$args);
 
 内置函数 callback 可能位于固定位置、倒数位置、命名参数中，甚至一个函数有多个 callback。执行 `...$args` 展开前，编译器并不知道最终的 positional/named 参数布局，无法只对对应值调用 `prepareScopedCallback()`。
 
-普通 callback 参数不得使用此 guard；只要 callback 的 AST 参数位置已知，就应使用 `CallableScope` 路径。
+`call_user_func*` 本身就是 ZendVM 的完全动态调用边界，无论 callback 是否显式出现，都不创建 fake Closure。如果 callable 数组使用 `self`、`parent` 或 `static`，则先由 `normalizeCallableClass()` 将 class 部分转换为真实类名：
+
+- `self` 转为 `CallableScope::lexicalScope()`；
+- `parent` 转为 lexical scope 的父类；
+- `static` 转为 `CallableScope::calledScope()`。
+
+规范化只复制需要修改的 callback 数组。绝对类名、对象 callback、Closure 和普通函数名保持原值。
+
+除 `call_user_func*` 外，普通 callback 参数不得使用此 guard；只要 callback 的 AST 参数位置已知，就应使用 `CallableScope` 路径。
 
 ### 4.2 实现方式
 
@@ -174,18 +182,18 @@ while (frame && (!frame->func || !ZEND_USER_CODE(frame->func->type))) {
 }
 ```
 
-找到后保存：
+找到后保存，并使用 `CallableScope::lexicalScope()` 设置可见性作用域：
 
 ```cpp
 function_ = frame->func;
 previous_scope_ = function_->common.scope;
-function_->common.scope = requested_scope;
+function_->common.scope = callable_scope.lexicalScope();
 ```
 
 析构函数恢复 `previous_scope_`。类不可复制、不可移动，保证一次构造对应一次恢复。如果没有可用的 user-code frame，会抛出：
 
 ```text
-A user-code frame is required for scoped callback argument unpacking
+A user-code frame is required for scoped dynamic callback calls
 ```
 
 该 guard 操作的是从当前请求执行链找到的 user-code frame，不是 TypePHP 注册在 MINIT 的 persistent internal method。`EG(current_execute_data)` 本身属于当前 executor 上下文。其影响窗口被限制在当前 AOT 方法调用的 RAII 生命周期内。
@@ -195,16 +203,21 @@ A user-code frame is required for scoped callback argument unpacking
 编译器维护语义明确的标记：
 
 ```php
-MethodDef::$needsUnpackedCallbackScope
+FunctionContext::$needsUserCodeCallableScope
 ```
 
-当一个已知会同步调用 callback 的 PHP 内置函数存在参数展开，且 callback 无法从显式参数中完整匹配时，`markUnpackedCallbackScopeFallback()` 设置该标记。方法、Closure 或 Fiber 入口只生成一个：
+当编译器遇到 `call_user_func*` 的动态 callback，或一个已知会同步调用 callback 的内置函数存在无法匹配的参数展开时，`markUserCodeCallableScope()` 设置该标记。状态属于当前 `FunctionContext`，因此普通方法、嵌套 Closure 和 Fiber 各自独立，不会把 guard 错误泄漏到外层函数。每个函数体入口只生成一个：
 
 ```cpp
-php::UserCodeScopeGuard tmp_var_2{php_get_called_ce(this_)};
+php::CallableScope tmp_var_1 = php_get_callable_scope(..., this_);
+php::UserCodeScopeGuard tmp_var_2{tmp_var_1};
 ```
 
-它不是按 call site 或循环迭代创建的。没有 unpack callback 的方法不会产生此成本。
+即使调用形态是 `call_user_func($closure)`，且 Closure 内部再次通过
+`call_user_func(['self', 'method'])` 调用，每一层也只读取自己的
+`FunctionContext`、lexical scope 和 `$this`，不能复用或污染外层 guard。
+
+它不是按 call site 或循环迭代创建的。没有上述动态 callback 的方法不会产生此成本。
 
 ### 4.4 为什么当前保留该兜底
 
@@ -340,7 +353,7 @@ save EG(fake_scope)
 | `prepareScopedCallback()` | 一次 callable 解析 | public 绝对 callback 不创建 Closure |
 | `makeScopedCallable()` | callable 解析及 Closure 分配 | 仅 first-class callable 使用 |
 | `makeScopedCallableMap()` | O(N) 检查 | COW；只包装需要作用域的元素 |
-| `UserCodeScopeGuard` | 方法入口一次指针查找、写入和退出恢复 | 只为未解析的 unpack callback 生成 |
+| `UserCodeScopeGuard` | 方法入口一次指针查找、写入和退出恢复 | 只为 `call_user_func*` 或未解析的 unpack callback 生成 |
 | `FakeScopeGuard` | 两次 executor-global 指针赋值 | 仅包围确实读取 fake scope 的 Zend API |
 
 这套设计刻意让常见的纯 Native Call、无 callback 方法和 public callback 保持最短路径。不要为了统一表面形式而把低频 fallback 下沉到所有调用中。
@@ -381,11 +394,13 @@ Scope 修改至少应覆盖以下层次：
 | callback 参数包装 | `src/Generator/CallArgumentGenerator.php` |
 | Closure/Fiber fallback guard | `src/Generator/ClosureGenerator.php`、`FiberGenerator.php` |
 | 方法 fallback guard | `src/Translator.php` |
-| Scope 状态 | `src/Context/FunctionContext.php`、`src/Entity/MethodDef.php` |
+| Scope 状态 | `src/Context/FunctionContext.php` |
 | 属性访问中的 fake scope | `src/Parser/PropertyAccessTrait.php` |
 
 ## 11. 后续演进原则
 
-只有当编译器具备统一的“参数展开后绑定”中间表示，并能完整处理 positional、named、negative-position 和 callback map 时，才考虑删除 `UserCodeScopeGuard`。删除它的目标应是让所有 callback 都走显式 `CallableScope`，而不是重新扩大 `EG(fake_scope)` 或真实 frame 修改的范围。
+`UserCodeScopeGuard` 是复杂动态调用的长期保留机制，不以删除为目标。它修改的是当前线程、当前请求中的 user-code frame，并通过 RAII 恢复；ZTS 下不同线程拥有各自的执行上下文，因此不会共享被修改的 frame 状态。
+
+`CallableScope` 用于编译器能够确定 callback 位置与调用边界的单一场景，以减少 frame 修改和 Closure 包装；它是一条更快、更明确的路径，而不是要求覆盖 unpack、多层动态 callback 等所有场景。遇到难以静态证明安全的组合时，应优先保留 `UserCodeScopeGuard`，不要为了形式上的统一强行改写为 `CallableScope`。
 
 未来新增 Scope 抽象前，应先确认 Zend API 依赖的是 synthetic call frame、真实 user-code frame，还是 `EG(fake_scope)`。名称和类型应直接表达所管理的 Zend 状态，避免再次出现一个含义过宽的通用 `Scope` 类。

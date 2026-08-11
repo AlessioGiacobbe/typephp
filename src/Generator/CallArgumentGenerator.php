@@ -399,6 +399,10 @@ trait CallArgumentGenerator
                 if (!$forceArrayArgs && $separateNamedArgs) {
                     $callArgs = $this->ensureCallArgs($argsVar, $list_args);
                     $this->context->beforeStmtLines[] = $callArgs . '.appendUnpacked(' . $this->parseArrayArg($arg) . ');';
+                    if ($arg->getAttribute(self::ATTR_SCOPED_CALLBACK) === 'normalize-unpacked') {
+                        $this->context->beforeStmtLines[] = 'php::normalizeCallableClass('
+                            . $callArgs . ', 0, ' . $this->getCallableScopeExpr() . ');';
+                    }
                 } else {
                     $arrayArgs = $this->ensureCallArrayArgs($arrayArgsVar, $list_args);
                     $this->context->beforeStmtLines[] = $arrayArgs . '.merge(' . $this->parseArrayArg($arg) . ');';
@@ -553,7 +557,11 @@ trait CallArgumentGenerator
             return $value;
         }
 
-        $helper = $mode === 'map' ? 'makeScopedCallableMap' : 'prepareScopedCallback';
+        $helper = match ($mode) {
+            'map' => 'makeScopedCallableMap',
+            'normalize' => 'normalizeCallableClass',
+            default => 'prepareScopedCallback',
+        };
         return 'php::' . $helper . '(' . $value . ', ' . $this->getCallableScopeExpr() . ')';
     }
 
