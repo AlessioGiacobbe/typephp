@@ -10,17 +10,17 @@ use PhpParser\Modifiers;
 
 class MethodDefExtendedTest extends TestCase
 {
-    public function testHasDynamicCallDefaultsToFalse(): void
+    public function testUnpackedCallbackScopeDefaultsToFalse(): void
     {
         $method = new MethodDef(Modifiers::PUBLIC, 'test');
-        $this->assertFalse($method->hasDynamicCall);
+        $this->assertFalse($method->needsUnpackedCallbackScope);
     }
 
-    public function testHasDynamicCallCanBeSet(): void
+    public function testUnpackedCallbackScopeCanBeSet(): void
     {
         $method = new MethodDef(Modifiers::PUBLIC, 'test');
-        $method->hasDynamicCall = true;
-        $this->assertTrue($method->hasDynamicCall);
+        $method->needsUnpackedCallbackScope = true;
+        $this->assertTrue($method->needsUnpackedCallbackScope);
     }
 
     public function testStaticMethod(): void

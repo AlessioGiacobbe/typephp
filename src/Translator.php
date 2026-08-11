@@ -3751,11 +3751,11 @@ CODE;
         }
         $code .= $this->genDebugInfo(null, $debugName, $v->getStartLine());
 
-        // AOT methods containing a Zend dynamic object call must expose their
-        // class scope to callable visibility checks. Pure native methods avoid
-        // this frame traversal and scope mutation entirely.
-        if ($this->methodDef and $this->methodDef->hasDynamicCall) {
-            $code .= $this->genScopeSwitchCode();
+        // Argument unpacking can hide a callback position from the compiler.
+        // Only that fallback exposes the called class through the user frame;
+        // ordinary callback resolution uses the explicit CallableScope above.
+        if ($this->methodDef and $this->methodDef->needsUnpackedCallbackScope) {
+            $code .= $this->genUnpackedCallbackScopeGuard();
         }
 
         $code .= $stmts;

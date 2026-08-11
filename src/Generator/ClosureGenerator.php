@@ -91,12 +91,10 @@ trait ClosureGenerator
         return $stmts[array_key_last($stmts)] instanceof Node\Stmt\Return_;
     }
 
-    protected function genScopeSwitchCode(): string
+    protected function genUnpackedCallbackScopeGuard(): string
     {
         $tmpScope = $this->genTmpVarName();
-        $code = "auto {$tmpScope} = php_switch_scope(this_);" . PHP_EOL;
-        $code .= "ON_SCOPE_EXIT({ php_restore_scope({$tmpScope}); });" . PHP_EOL;
-        return $code;
+        return "php::UserCodeScopeGuard {$tmpScope}{php_get_called_ce(this_)};" . PHP_EOL;
     }
 
     protected function genClosure(Expr\ArrowFunction|Expr\Closure $expr, array $params, array $uses = []): string
@@ -321,8 +319,8 @@ trait ClosureGenerator
 
             $this->indentLevel++;
             $body = '';
-            if ($this->methodDef && $this->methodDef->hasDynamicCall) {
-                $body .= $this->genScopeSwitchCode();
+            if ($this->methodDef && $this->methodDef->needsUnpackedCallbackScope) {
+                $body .= $this->genUnpackedCallbackScopeGuard();
             }
             if ($expr instanceof Expr\ArrowFunction) {
                 [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr->expr);

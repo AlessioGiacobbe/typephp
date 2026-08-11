@@ -215,27 +215,28 @@ class TraitsTest extends TestCase
     }
 
     // ========================================================================
-    // ClosureGenerator::genScopeSwitchCode
+    // ClosureGenerator::genUnpackedCallbackScopeGuard
     // ========================================================================
 
-    public function testGenScopeSwitchCode(): void
+    public function testGenUnpackedCallbackScopeGuard(): void
     {
         $this->invoke('resetFunction');
 
-        $result = $this->invoke('genScopeSwitchCode');
-        $this->assertStringContainsString('php_switch_scope', $result);
-        $this->assertStringContainsString('ON_SCOPE_EXIT', $result);
-        $this->assertStringContainsString('php_restore_scope', $result);
+        $result = $this->invoke('genUnpackedCallbackScopeGuard');
+        $this->assertStringContainsString('php::UserCodeScopeGuard', $result);
+        $this->assertStringContainsString('php_get_called_ce(this_)', $result);
+        $this->assertStringNotContainsString('ON_SCOPE_EXIT', $result);
     }
 
-    public function testGenScopeSwitchCodeTemplate(): void
+    public function testGenUnpackedCallbackScopeGuardUsesOneRaiiObject(): void
     {
         $this->invoke('resetFunction');
 
-        $result = $this->invoke('genScopeSwitchCode');
-        // Should have the pattern: auto tmp_var_X = php_switch_scope(this_);
-        $this->assertStringContainsString('auto', $result);
-        $this->assertStringContainsString('= php_switch_scope(this_)', $result);
+        $result = $this->invoke('genUnpackedCallbackScopeGuard');
+        $this->assertMatchesRegularExpression(
+            '/php::UserCodeScopeGuard tmp_var_\d+\{php_get_called_ce\(this_\)\};/',
+            $result,
+        );
     }
 
     // ========================================================================

@@ -53,6 +53,8 @@ class FunctionContext
      * @var array<string, string>
      */
     public array $ceWrappers = [];
+    /** Reusable php::CallableScope local, created only when this function performs scoped calls. */
+    public ?string $callableScopeVar = null;
     public int $tmpVarIndex = 0;
     public array $arguments = [];
     /** True while parsing a breakable loop or switch. */
@@ -96,8 +98,10 @@ class FunctionContext
         $this->unsafeObjectProps = [];
         $this->staticPropRefs = [];
         $this->ceWrappers = [];
+        $this->callableScopeVar = null;
         $this->tmpVarIndex = 0;
         $this->scopeLayouts = [];
+        $this->callableScopeVar = null;
         $this->scopeLevel = 0;
         $this->inLoop = false;
         $this->inContinuableLoop = false;

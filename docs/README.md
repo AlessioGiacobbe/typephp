@@ -20,6 +20,7 @@
 - [TypePHP WASM 技术方案与实施计划](TYPEPHP_WASM_IMPLEMENTATION_PLAN.md)
 - [构建 TypePHP WASI 程序](WASI_BUILD.md)
 - [核心重构计划](REFACTORING_PLAN.md)
+- [作用域管理设计](SCOPE_MANAGEMENT.md)：`CallableScope`、`UserCodeScopeGuard` 与 `FakeScopeGuard` 的职责和使用边界。
 - [构建速度研究](AOT_BUILD_SPEED_RESEARCH.md)
 - [优化优先级](aot-optimization-priority.md)
 - [高精度类型原地运算优化方案](BIG_NUMBER_INPLACE_OPTIMIZATION_PLAN.md)

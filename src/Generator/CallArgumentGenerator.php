@@ -553,7 +553,7 @@ trait CallArgumentGenerator
             return $value;
         }
 
-        $helper = $mode === 'map' ? 'makeScopedCallableMap' : 'makeScopedCallable';
+        $helper = $mode === 'map' ? 'makeScopedCallableMap' : 'prepareScopedCallback';
         return 'php::' . $helper . '(' . $value . ', ' . $this->getCallableScopeExpr() . ')';
     }
 

@@ -1316,9 +1316,10 @@ class CompilerBase implements PropertyAccessContext
         if (!$this->classDef || !$this->methodDef) {
             return 'php::CallableScope(nullptr, nullptr, nullptr)';
         }
-        return 'php_get_callable_scope('
-            . $this->getMethodPtr($this->getFullClassName(), $this->methodDef->name)
-            . ', this_)';
+        if ($this->context->callableScopeVar === null) {
+            $this->context->callableScopeVar = $this->genTmpVarName();
+        }
+        return $this->context->callableScopeVar;
     }
 
     protected function getCeWrapper(string $className): string
@@ -3186,10 +3187,10 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /** Retain the legacy frame scope when an unpacked value may contain a callback. */
-    protected function markUnpackedScopedCallbackCall(): void
+    protected function markUnpackedCallbackScopeFallback(): void
     {
         if ($this->methodDef) {
-            $this->methodDef->hasDynamicCall = true;
+            $this->methodDef->needsUnpackedCallbackScope = true;
         }
     }
 
@@ -3291,7 +3292,7 @@ class CompilerBase implements PropertyAccessContext
             // position is not known here. Keep the legacy frame scope only
             // for this remaining case; ordinary callback arguments no longer
             // mutate the executing Zend frame.
-            $this->markUnpackedScopedCallbackCall();
+            $this->markUnpackedCallbackScopeFallback();
         }
     }
 
@@ -4406,6 +4407,12 @@ class CompilerBase implements PropertyAccessContext
         }
         if ($this->context->hasMultiLevelContinue) {
             $code .= $this->getIndent() . 'int _cnt_flag = 0;' . PHP_EOL;
+        }
+        if ($this->context->callableScopeVar !== null) {
+            $code .= $this->getIndent() . 'php::CallableScope '
+                . $this->context->callableScopeVar . ' = php_get_callable_scope('
+                . $this->getMethodPtr($this->getFullClassName(), $this->methodDef->name)
+                . ', this_);' . PHP_EOL;
         }
         $code .= $this->genLocalVarDecl($this->context->localVars);
         // Native static calls pass a lightweight Object containing the called

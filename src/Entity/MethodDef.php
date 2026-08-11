@@ -13,7 +13,8 @@ class MethodDef
     public int $flags;
     public string $name;
     public ?FunctionDef $functionDef = null;
-    public bool $hasDynamicCall = false;
+    /** An unpacked argument may supply a callback whose lexical scope is only known at runtime. */
+    public bool $needsUnpackedCallbackScope = false;
 
     /**
      * The original `ClassMethod` AST node this definition was parsed from.

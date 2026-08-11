@@ -283,8 +283,8 @@ trait FiberGenerator
 
         $body = '';
         $this->indentLevel++;
-        if ($this->methodDef && $this->methodDef->hasDynamicCall) {
-            $body .= $this->genScopeSwitchCode();
+        if ($this->methodDef && $this->methodDef->needsUnpackedCallbackScope) {
+            $body .= $this->genUnpackedCallbackScopeGuard();
         }
         if ($v->stmts) {
             $body .= $this->parseStmts($v->stmts);
