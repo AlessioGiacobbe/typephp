@@ -3359,7 +3359,13 @@ CODE;
         array $implicitMethodArgs = []
     ): string
     {
-        $cppCode = '';
+        // A generated ZEND_FUNCTION/ZEND_METHOD is a callback boundary owned by
+        // ZendVM. Native TypePHP code uses C++ exceptions so its local RAII
+        // objects unwind correctly, but that exception must not escape through
+        // Zend's C frames: those frames perform their cleanup after the handler
+        // returns with EG(exception) set. Convert back to normal Zend exception
+        // propagation at the outermost wrapper.
+        $cppCode = 'try {' . PHP_EOL;
         $callParams = '';
         if ($functionDef->argCountRequired > 0) {
             $cppCode .= $this->genWrapperRequiredArgCountCheck($functionDef, $displayName);
@@ -3449,6 +3455,10 @@ CODE;
         } else {
             $cppCode .= $this->getIndent() . $fn . '(' . $callParams . ');' . PHP_EOL;
         }
+        $cppCode .= '}' . PHP_EOL;
+        $cppCode .= 'catch (zend_object *) {' . PHP_EOL;
+        $cppCode .= $this->getIndent() . '/* EG(exception) is already set; return control to ZendVM for frame cleanup. */' . PHP_EOL;
+        $cppCode .= '}' . PHP_EOL;
         $cppCode .= '}' . PHP_EOL . PHP_EOL;
 
         return $cppCode;
