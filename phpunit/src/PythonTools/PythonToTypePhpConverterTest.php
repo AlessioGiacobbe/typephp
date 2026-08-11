@@ -240,6 +240,43 @@ PYTHON, 'native-statements.py');
                 "import os.path as ospath\n",
                 ['use python\\os\\path as ospath;'],
             ],
+            '链式赋值' => [
+                "x = y = 1\n",
+                ['global $x, $y;', '$x = $y = 1;'],
+            ],
+            '解构赋值转 toArray' => [
+                "a, b = x\n",
+                ['global $a, $b;', '[$a, $b] = $x->toArray();'],
+            ],
+            '解构元组字面量' => [
+                "a, b = (1, 2)\n",
+                ['[$a, $b] = python\\tuple([1, 2])->toArray();'],
+            ],
+            '解构到属性与下标' => [
+                "o.a, d['k'] = pair\n",
+                ["[\$o->a, \$d['k']] = \$pair->toArray();"],
+            ],
+            '整除增强赋值展开为函数调用' => [
+                "x = 7\nx //= 2\n",
+                ['$x = python\\operator\\floordiv($x, 2);'],
+            ],
+            '矩阵乘增强赋值展开为函数调用' => [
+                "x = a\nx @= b\n",
+                ['$x = python\\operator\\matmul($x, $b);'],
+            ],
+            'del 元组目标逐项展开' => [
+                "x = 1\ny = 2\ndel (x, y)\n",
+                ['unset($x);', 'unset($y);'],
+            ],
+            '纯注解声明转为注释且不登记全局' => [
+                "x: int\ny = 1\n",
+                ['// annotation-only declaration: x', 'global $y;'],
+                ['global $x'],
+            ],
+            'main 函数重命名为 main_' => [
+                "def main():\n    return 1\n\nprint(main())\n",
+                ['function main_()', 'python\\print(main_());'],
+            ],
         ];
     }
 
@@ -319,7 +356,99 @@ PYTHON, 'native-statements.py');
             'f-string 名称插值' => ['x = 1' . "\n" . 'print(f"{x}")' . "\n", ['echo $x->toString(), "\\n";']],
             'f-string 文本与插值拼接' => ['x = 1' . "\n" . 'print(f"v={x}")' . "\n", ["echo 'v=' . \$x->toString(), \"\\n\";"]],
             'f-string 运算符整体加括号' => ['x = 1' . "\n" . 'print(f"{x + 1}")' . "\n", ['echo ($x + 1)->toString(), "\\n";']],
+            '海象运算符' => ["if (n := 10):\n    print(n)\n", ['if (($n = 10))', 'python\\print($n);']],
         ];
+    }
+
+    // ---------------------------------------------------------------
+    // 函数装饰器
+    // ---------------------------------------------------------------
+
+    public function testSimpleDecoratorRebindsModuleVariable(): void
+    {
+        $php = $this->convert(<<<'PYTHON'
+def dec(f):
+    return f
+
+@dec
+def greet():
+    return 1
+
+greet()
+PYTHON);
+
+        self::assertStringContainsString('$greet = dec(\'greet\');', $php);
+        // 调用点经变量间接调用装饰结果，而不是直连原函数
+        self::assertStringContainsString('$greet();', $php);
+        self::assertStringNotContainsString('    greet();', $php);
+    }
+
+    public function testDecoratorFactoryEvaluatesBeforeRebinding(): void
+    {
+        $php = $this->convert(<<<'PYTHON'
+def dec(prefix):
+    return lambda f: f
+
+@dec('x')
+def greet():
+    return 1
+PYTHON);
+
+        self::assertStringContainsString('$greet = dec(\'x\')(\'greet\');', $php);
+    }
+
+    public function testStackedDecoratorsApplyBottomUp(): void
+    {
+        $php = $this->convert(<<<'PYTHON'
+def a(f):
+    return f
+
+def b(f):
+    return f
+
+@a
+@b
+def greet():
+    return 1
+PYTHON);
+
+        self::assertStringContainsString('$greet = b(\'greet\');', $php);
+        self::assertStringContainsString('$greet = a(\'greet\');', $php);
+        self::assertLessThan(
+            strpos($php, '$greet = a(\'greet\');'),
+            strpos($php, '$greet = b(\'greet\');'),
+        );
+    }
+
+    public function testImportedSymbolDecorator(): void
+    {
+        $php = $this->convert(<<<'PYTHON'
+from functools import cache
+
+@cache
+def compute():
+    return 1
+PYTHON);
+
+        self::assertStringContainsString('$compute = python\\functools\\cache(\'compute\');', $php);
+    }
+
+    /** 被装饰函数进入模块全局，函数内调用点经 global + 变量间接调用。 */
+    public function testDecoratedFunctionCallInsideAnotherFunction(): void
+    {
+        $php = $this->convert(<<<'PYTHON'
+def dec(f):
+    return f
+
+@dec
+def greet():
+    return 1
+
+def run():
+    return greet()
+PYTHON);
+
+        self::assertStringContainsString("function run()\n{\n    global \$greet;\n    return \$greet();", $php);
     }
 
     // ---------------------------------------------------------------
@@ -464,24 +593,20 @@ PYTHON, 'native-statements.py');
             'yield' => ["def f():\n    yield 1\n", 'case.py:2: unsupported Python syntax Yield'],
             'nonlocal' => ["def f():\n    x = 1\n    nonlocal x\n", 'case.py:3: unsupported Python syntax Nonlocal'],
             'and/or 布尔运算' => ["x = a and b\n", 'case.py:1: unsupported Python syntax BoolOp'],
-            '海象运算符' => ["if (n := 10):\n    pass\n", 'case.py:1: unsupported Python syntax NamedExpr'],
             '列表推导式' => ["x = [i for i in range(3)]\n", 'case.py:1: unsupported Python syntax ListComp'],
             '字典推导式' => ["x = {k: v for k, v in d}\n", 'case.py:1: unsupported Python syntax DictComp'],
             '生成器表达式' => ["x = sum(i for i in range(3))\n", 'case.py:1: unsupported Python syntax GeneratorExp'],
-            '链式赋值' => ["x = y = 1\n", 'case.py:1: unsupported Python syntax Assign: chained assignments'],
-            '解构赋值' => ["a, b = x\n", 'case.py:1: unsupported Python syntax Assign: destructuring assignments'],
-            '纯注解赋值' => ["x: int\n", 'case.py:1: unsupported Python syntax AnnAssign: annotation-only'],
-            '整除增强赋值' => ["x = 1\nx //= 2\n", 'case.py:2: unsupported Python syntax AugAssign: unsupported binary operator FloorDiv'],
+            '非名称目标的链式赋值' => ["a.b = c = 1\n", 'case.py:1: unsupported Python syntax Assign: chained assignments are only supported for plain name targets'],
+            '嵌套解构' => ["a, (b, c) = x\n", 'case.py:1: unsupported Python syntax Assign: nested destructuring'],
+            '星号解构' => ["a, *b = x\n", 'case.py:1: unsupported Python syntax Assign: starred destructuring'],
+            '链式解构' => ["a, b = c = x\n", 'case.py:1: unsupported Python syntax Assign: destructuring with chained targets'],
             'while/else' => ["while True:\n    pass\nelse:\n    pass\n", 'case.py:1: unsupported Python syntax While: while/else'],
             'for/else' => ["for i in x:\n    pass\nelse:\n    pass\n", 'case.py:1: unsupported Python syntax For: for/else'],
             'for 元组目标' => ["for a, b in x:\n    pass\n", 'case.py:1: unsupported Python syntax For: only a simple for-loop target'],
-            'del 不支持的元组目标' => ["x = (1, 2)\ndel (x)\n", 'case.py:2: unsupported Python syntax Delete: unsupported del target'],
             '模块属性赋值' => ["import sys\nsys.stdout = None\n", 'case.py:2: unsupported Python syntax Attribute: Python module attributes cannot be assigned'],
             '相对导入' => ["from . import mod\n", 'case.py:1: unsupported Python syntax ImportFrom: relative imports'],
             '星号导入' => ["from os import *\n", 'case.py:1: unsupported Python syntax ImportFrom: star imports'],
-            'main 函数名冲突' => ["def main():\n    pass\n", 'case.py:1: unsupported Python syntax FunctionDef: a Python function named main conflicts'],
             '嵌套函数' => ["def f():\n    def g():\n        pass\n", 'case.py:2: unsupported Python syntax FunctionDef: nested functions'],
-            '函数装饰器' => ["@decorator\ndef f():\n    pass\n", 'case.py:2: unsupported Python syntax FunctionDef: function decorators'],
             '同时变长与关键字变长' => ["def f(*a, **kw):\n    pass\n", 'case.py:1: unsupported Python syntax FunctionDef: simultaneous *args and **kwargs'],
             '链式比较' => ["x = 1 < 2 < 3\n", 'case.py:1: unsupported Python syntax Compare: chained comparisons'],
             'f-string 转换符' => ['x = 1' . "\n" . 'print(f"{x!r}")' . "\n", 'case.py:2: unsupported Python syntax FormattedValue'],

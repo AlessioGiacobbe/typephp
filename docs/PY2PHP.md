@@ -26,21 +26,21 @@
 | Python 语法 | 状态 | 转换规则 / 报错 |
 |---|---|---|
 | `x = expr` | ✅ | `$x = expr;`，模块级变量自动注入 `global` |
-| `x += expr` 等增强赋值 | ✅ | 支持 `+ - * / % ** << >> | ^ &` 系列；`//=` 不支持 |
+| `x = y = 1`（链式赋值） | ✅ | `$x = $y = 1;`（仅限名称目标；含属性/下标目标时报错） |
+| `x += expr` 等增强赋值 | ✅ | 支持 `+ - * / % ** << >> \| ^ &` 系列；`//=` `@=` 展开为 `python\operator\floordiv/matmul($x, ...)` 调用 |
 | `x: int = expr` | ✅ | 忽略注解，转换为普通赋值 |
-| `x: int`（纯注解） | ❌ | `AnnAssign: annotation-only assignments have no TypePHP runtime value` |
-| `x = y = 1` | ❌ | `Assign: chained assignments are not supported yet` |
-| `a, b = x`（解构） | ❌ | `Assign: destructuring assignments are not supported yet` |
-| `def f(...)` | ✅ | 见「函数签名」；函数名为 `main` 报错（与 TypePHP 入口冲突） |
+| `x: int`（纯注解） | ✅ | 转为注释 `// annotation-only declaration: x`，不登记为模块全局 |
+| `a, b = x`（解构） | ✅ | `[$a, $b] = $x->toArray();`（PyObject 转 PHP 数组后解构；元素允许名称/属性/下标。嵌套解构、星号解构 `a, *b = x`、链式解构不支持。元素个数不匹配时按 PHP 语义补 null，不报 Python 的 ValueError） |
+| `def f(...)` | ✅ | 见「函数签名」；名为 `main` 的函数重命名为 `main_`（避免与 TypePHP 入口冲突），调用点同步改写 |
 | 嵌套 `def` | ❌ | `FunctionDef: nested functions require Python closure scope analysis` |
-| `@decorator` | ❌ | `FunctionDef: function decorators are not supported yet` |
+| `@decorator` | ✅ | 见「函数装饰器」 |
 | `return [expr]` | ✅ | `return [expr];` |
 | `if / elif / else` | ✅ | 同构转换 |
 | `while` | ✅ | 同构转换；`while/else` 不支持 |
 | `for i in iter` | ✅ | `foreach (iter as $i)`；`for/else`、元组目标不支持 |
 | `break` / `continue` / `pass` | ✅ | `pass` → `// pass` 注释 |
 | `global x` | ✅ | `global $x;`（与自动注入的 global 并存时会重复出现，冗余但合法，属已知行为） |
-| `del x` / `del o.a` / `del d[k]` | ✅ | `unset(...)`；其他目标类型报错 `Delete: unsupported del target` |
+| `del x` / `del o.a` / `del d[k]` | ✅ | `unset(...)`；`del (a, b)` 元组/列表目标逐项展开；非法 del 目标（如 `del f()`）由 Python 解析器先行拒绝 |
 | 模块级字符串字面量（docstring） | ✅ | 转为 `/** ... */` 注释（`*/` 转义为 `* /`） |
 | `import a.b` | ✅ | `use python\a;`（仅首段作为别名，见「已知行为」） |
 | `import a.b as x` | ✅ | `use python\a\b as x;`（别名等于末段时省略 `as`） |
@@ -90,9 +90,35 @@
 | 下标 `a[i]` / 切片 `a[l:u:s]` | ✅ | `$a[$i]` / `$a[python\slice(l, u, s)]`（缺省为 `null`） |
 | f-string | ✅ | 拼接 + `->toString()`；运算符等优先级敏感表达式整体加括号 |
 | f-string 的 `!r` 转换 / `:03d` 格式说明 | ❌ | `FormattedValue: formatted f-string conversions are not supported yet` |
-| 海象 `:=` | ❌ | `NamedExpr` |
+| 海象 `:=` | ✅ | 表达式内赋值 `($n = 10)` |
 | 推导式 / 生成器表达式 | ❌ | `ListComp` / `SetComp` / `DictComp` / `GeneratorExp` |
 | `yield` / `yield from` | ❌ | `Yield` / `YieldFrom` |
+
+## 函数装饰器
+
+装饰器在 `main()` 起始处（其他顶层语句之前）按 Python 语义**自底向上**重绑定到同名模块变量：
+
+```python
+@a
+@b
+def greet(): ...
+```
+
+```php
+function greet() { ... }
+
+function main(): void
+{
+    global $greet;
+    $greet = b('greet');
+    $greet = a('greet');
+    ...
+}
+```
+
+- 装饰器可以是已定义函数、`from m import f` 导入符号、模块属性或装饰器工厂（`@dec('x')` → `$greet = dec('x')('greet');`）
+- 被装饰函数名登记为模块全局，所有调用点（包括其他函数体内）经 `global` + 变量间接调用装饰结果：`$greet()`
+- 被装饰函数体内的递归调用同样解析到装饰后的变量，与 Python 语义一致
 
 ## print / sys.exit 降级规则
 
@@ -113,6 +139,8 @@
 2. 函数内显式 `global x` 与按模块全局自动注入的 `global x` 会重复出现（合法 PHP）。
 3. `print = str` 这类把内置名赋给变量的写法，右侧按变量处理（`$print = $str;`），不做内置名解析。
 4. bytes/complex 字面量的报错没有行号（常量在 AST 加载阶段编码，位置信息未传递）。
+5. 装饰器重绑定统一在 `main()` 起始处执行，与 Python "def 处即装饰" 的精确位置略有差异；装饰器表达式若依赖顶层语句后段的赋值，求值时机可能不同。
+6. 被装饰函数名会登记为模块全局，导致所有函数的自动 `global` 注入清单中出现该名字（冗余但合法）。
 
 ## 运行测试
 

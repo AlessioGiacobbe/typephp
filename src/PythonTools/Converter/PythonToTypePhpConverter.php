@@ -15,6 +15,9 @@ final class PythonToTypePhpConverter
     /** @var array<string, true> */
     private array $definedFunctions = [];
 
+    /** @var array<string, true> 被装饰的函数：调用点必须经变量间接调用装饰结果 */
+    private array $decoratedFunctions = [];
+
     /** @var array<string, true> */
     private array $moduleGlobals = [];
 
@@ -41,6 +44,7 @@ final class PythonToTypePhpConverter
         $this->moduleAliases = [];
         $this->importedSymbols = [];
         $this->definedFunctions = [];
+        $this->decoratedFunctions = [];
         $this->moduleGlobals = [];
         $this->indent = 0;
         $tree = $this->loader->parse($source, $filename);
@@ -49,10 +53,20 @@ final class PythonToTypePhpConverter
 
         foreach ($tree['body'] ?? [] as $node) {
             if (in_array($node['_type'] ?? '', ['Assign', 'AnnAssign', 'AugAssign'], true)) {
-                $targets = ($node['_type'] ?? '') === 'Assign' ? ($node['targets'] ?? []) : [$node['target'] ?? []];
-                foreach ($targets as $target) {
-                    if (($target['_type'] ?? '') === 'Name') {
-                        $this->moduleGlobals[(string) $target['id']] = true;
+                // 纯注解声明没有运行期值，不登记为模块全局变量
+                $annotationOnly = ($node['_type'] ?? '') === 'AnnAssign' && ($node['value'] ?? null) === null;
+                if (!$annotationOnly) {
+                    $targets = ($node['_type'] ?? '') === 'Assign' ? ($node['targets'] ?? []) : [$node['target'] ?? []];
+                    foreach ($targets as $target) {
+                        // 解构赋值展开为其中的名称元素
+                        $elements = in_array($target['_type'] ?? '', ['Tuple', 'List'], true)
+                            ? ($target['elts'] ?? [])
+                            : [$target];
+                        foreach ($elements as $element) {
+                            if (($element['_type'] ?? '') === 'Name') {
+                                $this->moduleGlobals[(string) $element['id']] = true;
+                            }
+                        }
                     }
                 }
             }
@@ -61,10 +75,12 @@ final class PythonToTypePhpConverter
                 $this->collectImport($node);
             } elseif ($type === 'FunctionDef') {
                 $name = (string) $node['name'];
-                if ($name === 'main') {
-                    $this->unsupported($node, 'a Python function named main conflicts with the TypePHP entry point');
-                }
                 $this->definedFunctions[$name] = true;
+                if (($node['decorator_list'] ?? []) !== []) {
+                    // 装饰结果绑定到模块级变量，函数内调用需要 global 注入
+                    $this->decoratedFunctions[$name] = true;
+                    $this->moduleGlobals[$name] = true;
+                }
                 $functions[] = $node;
             } else {
                 $main[] = $node;
@@ -91,6 +107,12 @@ final class PythonToTypePhpConverter
         $this->indent = 1;
         if ($this->moduleGlobals !== []) {
             $lines[] = $this->line('global ' . implode(', ', $this->variables(array_keys($this->moduleGlobals))) . ';');
+        }
+        // 装饰器重绑定先于其他顶层语句执行，使后续调用拿到装饰结果
+        foreach ($functions as $function) {
+            foreach ($this->decoratorRebindings($function) as $rebinding) {
+                $lines[] = $this->line($rebinding);
+            }
         }
         foreach ($main as $node) {
             array_push($lines, ...$this->statement($node));
@@ -139,10 +161,9 @@ final class PythonToTypePhpConverter
             'FunctionDef' => $this->functionDefinition($node),
             'Assign' => $this->assignment($node),
             'AnnAssign' => ($node['value'] ?? null) === null
-                ? $this->unsupported($node, 'annotation-only assignments have no TypePHP runtime value')
+                ? [$this->line('// annotation-only declaration: ' . $this->safeComment((string) ($node['target']['id'] ?? '?')))]
                 : [$this->line($this->target($node['target']) . ' = ' . $this->expression($node['value']) . ';')],
-            'AugAssign' => [$this->line($this->target($node['target']) . ' ' . $this->binaryOperator($node['op'], $node)
-                . '= ' . $this->expression($node['value']) . ';')],
+            'AugAssign' => $this->augAssignment($node),
             'Expr' => $this->expressionStatement($node),
             'Return' => [$this->line('return' . (($node['value'] ?? null) === null ? '' : ' ' . $this->expression($node['value'])) . ';')],
             'If' => $this->ifStatement($node),
@@ -164,11 +185,8 @@ final class PythonToTypePhpConverter
         if ($this->indent !== 0) {
             $this->unsupported($node, 'nested functions require Python closure scope analysis');
         }
-        if (($node['decorator_list'] ?? []) !== []) {
-            $this->unsupported($node, 'function decorators are not supported yet');
-        }
         $parameters = $this->parameters($node['args'], $node);
-        $lines = [$this->line('function ' . $node['name'] . '(' . $parameters . ')'), $this->line('{')];
+        $lines = [$this->line('function ' . $this->functionName((string) $node['name']) . '(' . $parameters . ')'), $this->line('{')];
         $this->indent++;
         $locals = $this->functionLocalNames($node);
         $globals = array_values(array_diff(array_keys($this->moduleGlobals), array_keys($locals)));
@@ -181,6 +199,59 @@ final class PythonToTypePhpConverter
         $this->indent--;
         $lines[] = $this->line('}');
         return $lines;
+    }
+
+    /**
+     * Python 的 main 函数与 TypePHP 入口点冲突，重命名为 main_。
+     */
+    private function functionName(string $name): string
+    {
+        return $name === 'main' ? 'main_' : $name;
+    }
+
+    /**
+     * 生成装饰器的重绑定语句（Python 自底向上应用装饰器）。
+     * 装饰结果存入同名模块变量，调用点经变量间接调用。
+     *
+     * @param array<string, mixed> $function @return list<string>
+     */
+    private function decoratorRebindings(array $function): array
+    {
+        $decorators = $function['decorator_list'] ?? [];
+        if ($decorators === []) {
+            return [];
+        }
+        $name = (string) $function['name'];
+        $lines = [];
+        foreach (array_reverse($decorators) as $decorator) {
+            $lines[] = $this->variable($name) . ' = ' . $this->decoratorCallable($decorator) . '('
+                . var_export($this->functionName($name), true) . ');';
+        }
+        return $lines;
+    }
+
+    /** @param array<string, mixed> $node */
+    private function decoratorCallable(array $node): string
+    {
+        // @dec(args)：装饰器工厂，先求值再调用其返回值
+        if (($node['_type'] ?? '') === 'Call') {
+            return $this->call($node);
+        }
+        if (($node['_type'] ?? '') === 'Name') {
+            $name = (string) $node['id'];
+            if (isset($this->importedSymbols[$name])) {
+                $symbol = $this->importedSymbols[$name];
+                return 'python\\' . str_replace('.', '\\', $symbol['module']) . '\\' . $symbol['member'];
+            }
+            if (isset($this->definedFunctions[$name])) {
+                return $this->functionName($name);
+            }
+            return $this->variable($name);
+        }
+        if (($node['_type'] ?? '') === 'Attribute') {
+            return $this->attribute($node);
+        }
+        return '(' . $this->expression($node) . ')';
     }
 
     /** @param array<string, mixed> $arguments @param array<string, mixed> $owner */
@@ -215,14 +286,63 @@ final class PythonToTypePhpConverter
     /** @param array<string, mixed> $node @return list<string> */
     private function assignment(array $node): array
     {
-        if (count($node['targets'] ?? []) !== 1) {
-            $this->unsupported($node, 'chained assignments are not supported yet');
+        $targets = $node['targets'] ?? [];
+        foreach ($targets as $target) {
+            if (in_array($target['_type'] ?? '', ['Tuple', 'List'], true)) {
+                if (count($targets) > 1) {
+                    $this->unsupported($node, 'destructuring with chained targets is not supported');
+                }
+                // a, b = x → [$a, $b] = $x->toArray();
+                return [$this->line($this->destructuringTarget($target, $node) . ' = '
+                    . $this->iterableValue($node['value']) . ';')];
+            }
+            if (count($targets) > 1 && ($target['_type'] ?? '') !== 'Name') {
+                $this->unsupported($node, 'chained assignments are only supported for plain name targets');
+            }
         }
-        $target = $node['targets'][0];
-        if (in_array($target['_type'] ?? '', ['Tuple', 'List'], true)) {
-            $this->unsupported($node, 'destructuring assignments are not supported yet');
+        $left = implode(' = ', array_map(fn(array $target) => $this->target($target), $targets));
+        return [$this->line($left . ' = ' . $this->expression($node['value']) . ';')];
+    }
+
+    /** @param array<string, mixed> $node @param array<string, mixed> $owner */
+    private function destructuringTarget(array $node, array $owner): string
+    {
+        $parts = [];
+        foreach ($node['elts'] ?? [] as $element) {
+            $parts[] = match ($element['_type'] ?? '') {
+                'Name' => $this->variable((string) $element['id']),
+                'Attribute', 'Subscript' => $this->target($element),
+                // PHP 的 list 赋值不支持展开，嵌套元组的元素仍是 PyObject 无法直接解构
+                'Starred' => $this->unsupported($owner, 'starred destructuring is not supported'),
+                default => $this->unsupported($owner, 'nested destructuring is not supported'),
+            };
         }
-        return [$this->line($this->target($target) . ' = ' . $this->expression($node['value']) . ';')];
+        return '[' . implode(', ', $parts) . ']';
+    }
+
+    /** @param array<string, mixed> $node */
+    private function iterableValue(array $node): string
+    {
+        $expression = $this->expression($node);
+        if (!in_array($node['_type'] ?? '', [
+            'Name', 'Attribute', 'Call', 'Subscript', 'List', 'Tuple', 'Set', 'Dict',
+        ], true)) {
+            $expression = '(' . $expression . ')';
+        }
+        return $expression . '->toArray()';
+    }
+
+    /** @param array<string, mixed> $node @return list<string> */
+    private function augAssignment(array $node): array
+    {
+        $target = $this->target($node['target']);
+        $operator = $node['op']['_type'] ?? '';
+        // PHP 没有 //= 与 @=，展开为对应的运算符函数调用
+        if ($operator === 'FloorDiv' || $operator === 'MatMult') {
+            $function = $operator === 'FloorDiv' ? 'python\\operator\\floordiv' : 'python\\operator\\matmul';
+            return [$this->line($target . ' = ' . $function . '(' . $target . ', ' . $this->expression($node['value']) . ');')];
+        }
+        return [$this->line($target . ' ' . $this->binaryOperator($node['op'], $node) . '= ' . $this->expression($node['value']) . ';')];
     }
 
     /** @param array<string, mixed> $node @return list<string> */
@@ -408,11 +528,25 @@ final class PythonToTypePhpConverter
     /** @param array<string, mixed> $node @return list<string> */
     private function deleteStatement(array $node): array
     {
-        $lines = [];
-        foreach ($node['targets'] ?? [] as $target) {
+        $targets = [];
+        $walk = function (array $target) use (&$walk, &$targets, $node): void {
+            // del (a, b) / del [a, b] 逐项展开
+            if (in_array($target['_type'] ?? '', ['Tuple', 'List'], true)) {
+                foreach ($target['elts'] ?? [] as $element) {
+                    $walk($element);
+                }
+                return;
+            }
             if (!in_array($target['_type'] ?? '', ['Name', 'Attribute', 'Subscript'], true)) {
                 $this->unsupported($node, 'unsupported del target');
             }
+            $targets[] = $target;
+        };
+        foreach ($node['targets'] ?? [] as $target) {
+            $walk($target);
+        }
+        $lines = [];
+        foreach ($targets as $target) {
             $lines[] = $this->line('unset(' . $this->target($target) . ');');
         }
         return $lines;
@@ -439,6 +573,7 @@ final class PythonToTypePhpConverter
             'Lambda' => 'fn (' . $this->parameters($node['args'], $node) . ') => ' . $this->expression($node['body']),
             'JoinedStr' => $this->joinedString($node),
             'Starred' => '...' . $this->expression($node['value']),
+            'NamedExpr' => '(' . $this->variable((string) $node['target']['id']) . ' = ' . $this->expression($node['value']) . ')',
             default => $this->unsupported($node),
         };
     }
@@ -449,11 +584,14 @@ final class PythonToTypePhpConverter
         $function = $node['func'];
         if (($function['_type'] ?? '') === 'Name') {
             $name = (string) $function['id'];
-            if (isset($this->importedSymbols[$name])) {
+            if (isset($this->decoratedFunctions[$name])) {
+                // 装饰结果绑定在同名变量上，必须经变量间接调用
+                $callable = $this->variable($name);
+            } elseif (isset($this->importedSymbols[$name])) {
                 $symbol = $this->importedSymbols[$name];
                 $callable = 'python\\' . str_replace('.', '\\', $symbol['module']) . '\\' . $symbol['member'];
             } elseif (isset($this->definedFunctions[$name])) {
-                $callable = $name;
+                $callable = $this->functionName($name);
             } elseif ($this->isPythonBuiltin($name)) {
                 $callable = 'python\\' . $name;
             } else {
