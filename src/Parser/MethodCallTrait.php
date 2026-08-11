@@ -683,7 +683,6 @@ trait MethodCallTrait
             $method = $this->parseIdentifier($expr->name);
             $rtFunc = $method;
             $rtClass = $class;
-            $dynamicCall = false;
             $this->context->beforeStmtLines[] = $this->formatCppLineComment(
                 'Static Method Call: ',
                 $class . '::' . $method . '()'
@@ -695,16 +694,11 @@ trait MethodCallTrait
 
             if ($callScope) {
                 $nativeFunc = $this->getNativeMethod($expr, $class, $method);
-                // 存在 Native 类，但是没有找到方法，可能是动态调用
-                if (!$nativeFunc and $this->hasClass($class) and $this->getNativeMethod($expr, $class, '__callStatic', false)) {
-                    $dynamicCall = true;
-                }
-
                 if ($nativeFunc) {
                     try {
                         if ($this->shouldUseDynamicCallForNativeArgs($nativeFunc, $expr->args)) {
                             return $this->genRuntimeFunctionCall(
-                                $this->getClassEntryPtr($class) . ', ' . $this->getFuncPtr($class . '::' . $method),
+                                $this->getClassEntryPtr($class) . ', ' . $this->getMethodPtr($class, $method),
                                 $expr->args,
                                 $method,
                                 $class
@@ -729,12 +723,11 @@ trait MethodCallTrait
                 }
             }
 
-            if ($dynamicCall) {
-                $fn = $this->getLiteralString($class . '::' . $method);
-            } else {
-                $ce = $this->getClassEntryPtr($class);
-                $fn = $ce . ', ' . $this->getFuncPtr($class . '::' . $method);
-            }
+            // Reaching this fallback means no concrete native method was
+            // proven above. Keep the callable dynamic so Zend can resolve a
+            // runtime-defined method or __callStatic(). PHPX only caches real,
+            // reusable handlers and never stores transient trampolines.
+            $fn = $this->getLiteralString($class . '::' . $method);
             $placeHolder = $this->genArray($callScope);
         } else {
             $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';

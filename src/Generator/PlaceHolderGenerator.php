@@ -17,7 +17,7 @@ trait PlaceHolderGenerator
         }
 
         $ce = $this->getClassEntryPtr(\Closure::class);
-        $fn = $ce . ', ' . $this->getFuncPtr('Closure::fromCallable');
+        $fn = $ce . ', ' . $this->getMethodPtr('Closure', 'fromCallable');
         return 'php::call(' . $fn . ', {' . $callable . '})';
     }
 }

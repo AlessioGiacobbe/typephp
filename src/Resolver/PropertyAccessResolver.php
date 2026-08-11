@@ -35,9 +35,15 @@ final class PropertyAccessResolver
                 return true;
             }
 
+            // The conversion snapshot may not retain every user-to-internal
+            // edge in the parent index. A compiled class still carries its
+            // declared parent, so prefer that value when it is available.
+            $classDef = $this->compiler->getClassDef($class);
+            $next = $classDef?->extends ?: $this->compiler->getParentClass($class);
+
             // Parent names retain declaration casing. Normalize every hop,
             // not only the initial class name.
-            $class = strtolower(ltrim($this->compiler->getParentClass($class), '\\'));
+            $class = strtolower(ltrim($next, '\\'));
         }
         return false;
     }
@@ -189,7 +195,12 @@ final class PropertyAccessResolver
 
         $declaringClass = $propRef->getDeclaringClass()->getName();
         if ($propRef->isProtected()) {
-            if (!$this->canAccessProtectedProperty($scope, $declaringClass)) {
+            // Reaching an internal declaration by walking requestedClass's
+            // compiled parent chain already proves that requestedClass may
+            // access the inherited protected slot. Avoid rebuilding that
+            // relationship from a conversion-time parent index here.
+            if (!$this->isSameClassName($scope, $requestedClass)
+                && !$this->canAccessProtectedProperty($scope, $declaringClass)) {
                 $displayClass = ltrim($requestedClass, '\\');
                 $this->fatal($expr, "Cannot access protected property `{$property}` of class `{$displayClass}`");
             }

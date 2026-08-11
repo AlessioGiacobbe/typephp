@@ -1334,6 +1334,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function getFuncPtr(string $funcName): string
     {
+        if (str_contains($funcName, '::')) {
+            throw new \LogicException('Class methods must be resolved through getMethodPtr()');
+        }
         $id = $this->getFuncId($funcName);
         $helper = isset($this->persistentFuncMap[$funcName]) ? 'php_get_persistent_func' : 'php_get_func';
         return $helper . '(' . $id . ', ' . $this->getLiteralString($funcName) . ')';

@@ -216,7 +216,8 @@ final class PythonModuleTest extends TestCase
         $this->assertStringContainsString('PyDict', $extension);
         $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[1]', $extension);
         $this->assertStringContainsString('builtins', $extension);
-        $this->assertStringContainsString('PyCore::setOptions', $extension);
+        $this->assertStringContainsString('php_get_persistent_method(', $extension);
+        $this->assertStringContainsString('setOptions', $extension);
         $this->assertStringContainsString('return_as_object', $extension);
         $this->assertStringContainsString('php_python_runtime_configured = false;', $extension);
         $this->assertStringNotContainsString('python\\\\list', $extension);

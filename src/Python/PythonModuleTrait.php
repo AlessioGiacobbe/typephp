@@ -140,7 +140,7 @@ trait PythonModuleTrait
     {
         $this->markPythonRuntimeUsed();
         $scalar = 'php::call(' . $this->getClassEntryPtr('PyCore') . ', '
-            . $this->getFuncPtr('PyCore::scalar') . ', php::ArgList{' . $expression . '})';
+            . $this->getMethodPtr('PyCore', 'scalar') . ', php::ArgList{' . $expression . '})';
         return 'php::toBool(' . $scalar . ')';
     }
 
@@ -330,7 +330,7 @@ trait PythonModuleTrait
 
         $this->markPythonRuntimeUsed();
         $this->getFuncId('PyCore::import');
-        $this->getLiteralString('PyCore::import');
+        $this->getLiteralString('import');
         $this->getLiteralString($module);
 
         return $id;
@@ -348,7 +348,7 @@ trait PythonModuleTrait
         $this->getClassId('PyCore');
         $this->getFuncId('PyCore::setOptions');
         $this->getLiteralString('PyCore');
-        $this->getLiteralString('PyCore::setOptions');
+        $this->getLiteralString('setOptions');
         $this->getLiteralString('return_as_object');
     }
 
@@ -444,7 +444,7 @@ trait PythonModuleTrait
         // or (`scalar`) explicitly leave Python's object-preserving rules.
         if (isset(self::PYTHON_CORE_FUNCTIONS[$builtin])) {
             $callable = $this->getClassEntryPtr('PyCore') . ', '
-                . $this->getFuncPtr('PyCore::' . $builtin);
+                . $this->getMethodPtr('PyCore', $builtin);
             if ($expr->args === []) {
                 return $this->withPythonRuntimeConfigured('php::call(' . $callable . ')');
             }
@@ -648,7 +648,7 @@ trait PythonModuleTrait
         }
 
         $pyCoreClass = $this->getClassEntryPtr('PyCore');
-        $setOptionsFunction = $this->getFuncPtr('PyCore::setOptions');
+        $setOptionsFunction = $this->getMethodPtr('PyCore', 'setOptions');
         $returnAsObject = $this->getLiteralString('return_as_object');
 
         $code = 'void ' . self::PREFIX . 'configure_python_runtime() {' . PHP_EOL
@@ -665,7 +665,7 @@ trait PythonModuleTrait
             return $code;
         }
 
-        $importFunction = $this->getFuncPtr('PyCore::import');
+        $importFunction = $this->getMethodPtr('PyCore', 'import');
 
         return $code
             . 'php::Object ' . self::PREFIX

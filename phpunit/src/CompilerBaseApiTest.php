@@ -916,30 +916,44 @@ YAML);
         $this->assertContains('/usr/local/lib', $libraryPaths);
     }
 
-    public function testExtensionCleanClearsRuntimeMapsWithValidCpp(): void
+    public function testRequestShutdownClearsRuntimeMapsInEveryBuildMode(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
-        $translator = $compiler;
-        $ref = new \ReflectionClass($compiler);
-        $buildMode = $ref->getProperty('buildMode');
-        $buildMode->setAccessible(true);
-        $buildMode->setValue($compiler, CompilerBase::BUILD_MODE_EXT);
+        foreach ([CompilerBase::BUILD_MODE_BIN, CompilerBase::BUILD_MODE_LIB, CompilerBase::BUILD_MODE_EXT] as $mode) {
+            $compiler = CompilerTest::create(ROOT_PATH);
+            $translator = $compiler;
+            $compiler->setBuildMode($mode);
 
-        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/extension_clean_maps.php';
-        $compiler->addFiles([$testFile]);
-        $compiler->prepareFile($testFile);
-        $compiler->convertFile($testFile);
-        $extensionFile = $compiler->genExtension();
-        $code = file_get_contents($extensionFile);
+            $testFile = ROOT_PATH . '/phpunit/code/compiler_api/extension_clean_maps.php';
+            $compiler->addFiles([$testFile]);
+            $compiler->prepareFile($testFile);
+            $compiler->convertFile($testFile);
+            $code = file_get_contents($compiler->genExtension());
 
-        $this->assertStringContainsString('#include <cstring>', $code);
-        $this->assertStringContainsString('std::memset(php_func_map, 0, sizeof(php_func_map));', $code);
-        $this->assertStringContainsString('std::memset(php_class_map, 0, sizeof(php_class_map));', $code);
-        $this->assertStringNotContainsString('php_property_map', $code);
-        $this->assertStringNotContainsString('func_map = {}', $code);
-        $this->assertStringNotContainsString('class_map = {}', $code);
-        $this->assertStringNotContainsString('property_map = {}', $code);
+            $this->assertStringContainsString('#include <cstring>', $code, $mode);
+            $this->assertStringContainsString(
+                'std::memset(php_func_map, 0, sizeof(php_func_map));',
+                $code,
+                $mode,
+            );
+            $this->assertStringContainsString(
+                'std::memset(php_class_map, 0, sizeof(php_class_map));',
+                $code,
+                $mode,
+            );
+            $this->assertStringNotContainsString('php_property_map', $code, $mode);
+            $this->assertStringNotContainsString('func_map = {}', $code, $mode);
+            $this->assertStringNotContainsString('class_map = {}', $code, $mode);
+            $this->assertStringNotContainsString('property_map = {}', $code, $mode);
+        }
+    }
+
+    public function testFunctionPointerCacheRejectsClassMethodNames(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Class methods must be resolved through getMethodPtr()');
+
+        $this->invokeMethod('getFuncPtr', 'RuntimeClass::method');
     }
 
     public function testPersistentSymbolCachesAreLazyAndZtsSafe(): void

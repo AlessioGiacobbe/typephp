@@ -1116,13 +1116,12 @@ CODE;
             }
         }
 
-        // 扩展模式，需要在 RSHUTDOWN 阶段中清理用户定义的函数、类缓存；
-        // 内置/编译产物符号在 persistent_*_map 中，跨请求存活，无需清理；
-        // 无动态 propMap（属性 offset 缓存仅含进程级稳定的声明属性），无需清理
-        if ($this->isBuildModeExt()) {
-            $code .= 'std::memset(' . self::PREFIX . self::FUNC_MAP . ', 0, sizeof(' . self::PREFIX . self::FUNC_MAP . '));' . PHP_EOL;
-            $code .= 'std::memset(' . self::PREFIX . self::CLASS_MAP . ', 0, sizeof(' . self::PREFIX . self::CLASS_MAP . '));' . PHP_EOL;
-        }
+        // User-code symbols have request lifetime regardless of the build mode.
+        // Embedded/library hosts may start more than one Zend request in the
+        // same process, so never let these pointers survive RSHUTDOWN.
+        // Internal/compiled symbols remain in the module-lifetime persistent maps.
+        $code .= 'std::memset(' . self::PREFIX . self::FUNC_MAP . ', 0, sizeof(' . self::PREFIX . self::FUNC_MAP . '));' . PHP_EOL;
+        $code .= 'std::memset(' . self::PREFIX . self::CLASS_MAP . ', 0, sizeof(' . self::PREFIX . self::CLASS_MAP . '));' . PHP_EOL;
 
         $code .= '}' . PHP_EOL . PHP_EOL;
         // php_app_clean end
