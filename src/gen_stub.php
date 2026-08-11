@@ -3251,6 +3251,8 @@ class PropertyInfo extends VariableLike
     private /* readonly */ ?string $defaultValueString;
     private /* readonly */ bool $isDocReadonly;
     private /* readonly */ bool $isVirtual;
+    /** @var array{get?: string, set?: string} */
+    private /* readonly */ array $hooks;
     private /* readonly */ bool $isPromoted;
 
     /**
@@ -3266,6 +3268,7 @@ class PropertyInfo extends VariableLike
         ?string $defaultValueString,
         bool $isDocReadonly,
         bool $isVirtual,
+        array $hooks,
         bool $isPromoted,
         ?string $link,
         ?int $phpVersionIdMinimumCompatibility,
@@ -3278,6 +3281,7 @@ class PropertyInfo extends VariableLike
         $this->defaultValueString = $defaultValueString;
         $this->isDocReadonly = $isDocReadonly;
         $this->isVirtual = $isVirtual;
+        $this->hooks = $hooks;
         $this->isPromoted = $isPromoted;
         parent::__construct($flags, $type, $phpDocType, $link, $phpVersionIdMinimumCompatibility, $attributes, $exposedDocComment);
     }
@@ -3347,7 +3351,12 @@ class PropertyInfo extends VariableLike
         }
 
         $zvalName = "property_{$propertyName}_default_value";
-        if ($useEmptyArrayDefault) {
+        if ($this->isVirtual) {
+            // Zend only assigns ZEND_VIRTUAL_PROPERTY_OFFSET when a virtual
+            // property's declaration value is IS_UNDEF.
+            $code .= "\tzval $zvalName;\n";
+            $code .= "\tZVAL_UNDEF(&$zvalName);\n";
+        } elseif ($useEmptyArrayDefault) {
             $code .= "\tzval $zvalName;\n";
             $code .= "\tZVAL_EMPTY_ARRAY(&$zvalName);\n";
         } elseif ($this->defaultValue === null && $this->type !== null) {
@@ -3376,7 +3385,7 @@ class PropertyInfo extends VariableLike
             $commentCode = "NULL";
         }
 
-        if (!empty($this->attributes)) {
+        if (!empty($this->attributes) || $this->hooks !== []) {
             $template = "\tzend_property_info *property_" . $this->name->getDeclarationName() . " = ";
         } else {
             $template = "\t";
@@ -3400,6 +3409,16 @@ class PropertyInfo extends VariableLike
         );
 
         $code .= $stringRelease;
+
+        if ($this->hooks !== []) {
+            $getter = isset($this->hooks['get'])
+                ? 'std::string_view{"' . addslashes($this->hooks['get']) . '"}'
+                : 'std::string_view{}';
+            $setter = isset($this->hooks['set'])
+                ? 'std::string_view{"' . addslashes($this->hooks['set']) . '"}'
+                : 'std::string_view{}';
+            $code .= "\tphp::registerPropertyHooks(class_entry, property_{$propertyName}, {$getter}, {$setter});\n";
+        }
 
         return $code;
     }
@@ -4695,7 +4714,12 @@ class FileInfo {
                                 $classStmt->getComments(),
                                 $prettyPrinter,
                                 $this->getMinimumPhpVersionIdCompatibility(),
-                                AttributeInfo::createFromGroups($classStmt->attrGroups)
+                                AttributeInfo::createFromGroups($classStmt->attrGroups),
+                                false,
+                                $classStmt->getAttribute(
+                                    TypePhp\Transform\PropertyHookLowering::PROPERTY_ATTRIBUTE,
+                                    [],
+                                ),
                             );
                         }
                     } else if ($classStmt instanceof Stmt\ClassMethod) {
@@ -5309,7 +5333,8 @@ function parseProperty(
     PrettyPrinterAbstract $prettyPrinter,
     ?int $phpVersionIdMinimumCompatibility,
     array $attributes,
-    bool $isPromoted = false
+    bool $isPromoted = false,
+    array $hookMetadata = [],
 ): PropertyInfo {
     $phpDocType = null;
 
@@ -5318,7 +5343,8 @@ function parseProperty(
 
     $isDocReadonly = array_key_exists('readonly', $tagMap);
     $link = $tagMap['link'] ?? null;
-    $isVirtual = array_key_exists('virtual', $tagMap);
+    $isVirtual = $hookMetadata['virtual'] ?? array_key_exists('virtual', $tagMap);
+    $hooks = $hookMetadata['methods'] ?? [];
 
     foreach ($tags as $tag) {
         if ($tag->name === 'var') {
@@ -5351,6 +5377,7 @@ function parseProperty(
         $property->default ? $prettyPrinter->prettyPrintExpr($property->default) : null,
         $isDocReadonly,
         $isVirtual,
+        $hooks,
         $isPromoted,
         $link,
         $phpVersionIdMinimumCompatibility,

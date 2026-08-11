@@ -14,6 +14,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Param;
 use PhpParser\Node\Stmt;
 use PhpParser\NodeAbstract;
+use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitorAbstract;
 
@@ -21,6 +22,7 @@ final class PropertyHookLowering
 {
     public const string BACKING_ACCESS_ATTRIBUTE = 'typephpPropertyHookBackingAccess';
     public const string METHOD_ATTRIBUTE = 'typephpPropertyHookMethod';
+    public const string PROPERTY_ATTRIBUTE = 'typephpPropertyHooks';
     private const string GET_PREFIX = '__typephp_property_get_';
     private const string SET_PREFIX = '__typephp_property_set_';
     private const string PRIVATE_SET_PREFIX = '__typephp_property_private_set_';
@@ -61,6 +63,8 @@ final class PropertyHookLowering
 
         $propertyName = $property->props[0]->name->toString();
         $methods = [];
+        $hookMethods = [];
+        $hasBackingStorage = false;
         if ($property->flags & Modifiers::PRIVATE_SET) {
             $methods[] = self::visibilityMarker(
                 self::PRIVATE_SET_PREFIX . bin2hex($propertyName),
@@ -109,6 +113,15 @@ final class PropertyHookLowering
                 'property' => $propertyName,
             ]);
             $methods[] = $method;
+            $hookMethods[$kind] = $methodName;
+            $hasBackingStorage = $hasBackingStorage || self::containsBackingAccess($stmts);
+        }
+
+        if ($hookMethods !== []) {
+            $property->setAttribute(self::PROPERTY_ATTRIBUTE, [
+                'methods' => $hookMethods,
+                'virtual' => !$hasBackingStorage,
+            ]);
         }
 
         return $methods;
@@ -200,5 +213,15 @@ final class PropertyHookLowering
             }
         });
         $traverser->traverse($nodes);
+    }
+
+    /** @param list<Stmt> $stmts */
+    private static function containsBackingAccess(array $stmts): bool
+    {
+        $finder = new NodeFinder();
+        return $finder->findFirst(
+            $stmts,
+            static fn (Node $node): bool => $node->getAttribute(self::BACKING_ACCESS_ATTRIBUTE, false) === true,
+        ) !== null;
     }
 }
