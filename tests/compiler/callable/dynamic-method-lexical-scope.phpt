@@ -5,7 +5,7 @@ Dynamic method calls use the declaring class scope
 
 class DynamicScopeBase
 {
-    private function privateValue(): string
+    private function privateValue(mixed $_unused = null): string
     {
         return 'base-private';
     }

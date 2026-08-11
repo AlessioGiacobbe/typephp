@@ -150,19 +150,9 @@ trait ClosureGenerator
             }
             $requiredArgCount++;
         }
-        if ($requiredArgCount > 0) {
-            $expected = $requiredArgCount === count($params) ? 'exactly' : 'at least';
-            $message = $this->genCharPtr(
-                'Too few arguments to function {closure}(), %u passed and ' . $expected . ' ' . $requiredArgCount . ' expected',
-                true
-            );
-            $code .= $this->getIndent() . 'if (UNEXPECTED(php::getCallArgNum() < ' . $requiredArgCount . ')) {' . PHP_EOL;
-            $this->indentLevel++;
-            $code .= $this->getIndent() . 'php::throwExceptionEx(zend_ce_argument_count_error, 0, ' . $message . ', php::getCallArgNum());' . PHP_EOL;
-            $code .= $this->getIndent() . 'return php::null;' . PHP_EOL;
-            $this->indentLevel--;
-            $code .= $this->getIndent() . '}' . PHP_EOL;
-        }
+
+        $hasVariadic = $params !== [] && $params[array_key_last($params)]->variadic;
+        $code .= $this->genParameterCountCheck($requiredArgCount, count($params), $hasVariadic);
 
         foreach ($params as $i => $param) {
             if ($param->byRef) {

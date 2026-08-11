@@ -12,7 +12,7 @@ function test_basic_arrow() {
 // Test arrow function with multiple parameters
 function test_multi_param_arrow() {
     $pairs = [[1, 2], [3, 4], [5, 6]];
-    $sums = array_map(fn($a, $b) => $a + $b, ...$pairs);
+    $sums = array_map(fn($a, $b, $_unused) => $a + $b, ...$pairs);
     return $sums;
 }
 

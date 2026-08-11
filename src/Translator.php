@@ -3366,11 +3366,14 @@ CODE;
         // returns with EG(exception) set. Convert back to normal Zend exception
         // propagation at the outermost wrapper.
         $cppCode = 'try {' . PHP_EOL;
-        $callParams = '';
-        if ($functionDef->argCountRequired > 0) {
-            $cppCode .= $this->genWrapperRequiredArgCountCheck($functionDef, $displayName);
-        }
 
+        $cppCode .= $this->genParameterCountCheck(
+            $functionDef->argCountRequired,
+            count($functionDef->argInfoList),
+            $functionDef->hasVariadicArg(),
+        );
+
+        $callParams = '';
         foreach ($functionDef->argInfoList as $k => $argInfo) {
             $var = 'arg_' . $argInfo->name;
             if ($argInfo->variadic) {
@@ -3496,25 +3499,6 @@ CODE;
             Type::ARRAY,
             Type::OBJECT,
         ], true);
-    }
-
-    private function genWrapperRequiredArgCountCheck(FunctionDef $functionDef, string $displayName): string
-    {
-        $required = $functionDef->argCountRequired;
-        $expected = $required === count($functionDef->argInfoList) ? 'exactly' : 'at least';
-        $message = $this->genCharPtr(
-            'Too few arguments to function ' . $displayName . '(), %u passed and ' . $expected . ' ' . $required . ' expected',
-            true
-        );
-
-        $code = $this->getIndent() . 'if (UNEXPECTED(php::getCallArgNum() < ' . $required . ')) {' . PHP_EOL;
-        $this->indentLevel++;
-        $code .= $this->getIndent() . 'php::throwExceptionEx(zend_ce_argument_count_error, 0, ' . $message . ', php::getCallArgNum());' . PHP_EOL;
-        $code .= $this->getIndent() . 'return;' . PHP_EOL;
-        $this->indentLevel--;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-
-        return $code;
     }
 
     protected function genMethodWrapper(ClassDef $classDef, MethodDef $methodDef): string
