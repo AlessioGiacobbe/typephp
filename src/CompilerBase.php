@@ -3887,6 +3887,15 @@ class CompilerBase implements PropertyAccessContext
                 $dim = $this->parseIdentifier($expr->dim);
                 $list[] = '{php::ArrayDimFetch, ' . Type::VAR . '(' . $dim . ')}';
             } elseif ($this->isPropertyFetch($expr)) {
+                // Start the dynamic tail at a statically resolved property.
+                // Keeping it as a name-based PropertyFetch would make PHPX
+                // resolve a parent private property against the runtime child
+                // class, so isset()/?? could observe a different slot from a
+                // normal native read or write.
+                if ($this->isNativePropertyAccess($expr)) {
+                    $var = $this->parsePropertyFetch($expr);
+                    break;
+                }
                 $name = $this->propertyNameToStr($expr->name, literal: true);
                 $list[] = '{php::PropertyFetch, ' . Type::VAR . '(' . $name . ')}';
             } elseif ($this->isVarExpr($expr)) {
