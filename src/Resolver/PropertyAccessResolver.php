@@ -8,7 +8,11 @@
 
 namespace TypePhp\Resolver;
 
+use PhpParser\Modifiers;
 use PhpParser\NodeAbstract;
+use TypePhp\Entity\ClassDef;
+use TypePhp\Entity\PropertyDef;
+use TypePhp\Type;
 
 final class PropertyAccessResolver
 {
@@ -57,7 +61,8 @@ final class PropertyAccessResolver
         while (true) {
             $classDef = $this->compiler->getClassDef($findClass);
             if ($classDef === null) {
-                break;
+                // 非编译单元内的类：尝试按内置类的声明属性解析（offset 缓存）
+                return $this->resolveInternalClassProperty($expr, $property, $findClass, $class, $scope, $static);
             }
 
             if ($classDef->hasProperty($property)) {
@@ -143,6 +148,112 @@ final class PropertyAccessResolver
         }
 
         return $resolved;
+    }
+
+    /**
+     * 解析 PHP 内置类的声明属性，使其可以进入稳定属性 offset 缓存。
+     *
+     * 仅处理反射可见的声明属性：动态属性、魔术属性（__get/__set）反射不可见，
+     * 返回 null 回退到按名字符串查找路径。内置类在 MINIT 注册、进程级存活，
+     * 其声明属性的 offset 终身不变，缓存安全。
+     */
+    private function resolveInternalClassProperty(
+        NodeAbstract $expr,
+        string $property,
+        string $findClass,
+        string $requestedClass,
+        string $scope,
+        bool $static,
+    ): ?PropertyAccessResult {
+        $ref = Reflection::getClass($findClass);
+        if ($ref === null || !$ref->isInternal()) {
+            return null;
+        }
+        if (!$ref->hasProperty($property)) {
+            return null;
+        }
+        $propRef = $ref->getProperty($property);
+        // PHP 8.4 属性钩子必须由引擎调用，offset 直读会绕过钩子，回退字符串路径
+        if ($propRef->hasHooks()) {
+            return null;
+        }
+        if (!$static && $propRef->isStatic()) {
+            $this->fatal($expr, "Cannot access static property `{$requestedClass}::\${$property}` as non-static instance property.");
+        }
+        if ($static && !$propRef->isStatic()) {
+            $this->fatal($expr, "Cannot access non-static property `{$requestedClass}::\${$property}` as static property.");
+        }
+
+        $declaringClass = $propRef->getDeclaringClass()->getName();
+        if ($propRef->isProtected()) {
+            if (!$this->canAccessProtectedProperty($scope, $declaringClass)) {
+                $displayClass = ltrim($requestedClass, '\\');
+                $this->fatal($expr, "Cannot access protected property `{$property}` of class `{$displayClass}`");
+            }
+        } elseif ($propRef->isPrivate() && !$this->isSameClassName($scope, $declaringClass)) {
+            $displayClass = ltrim($requestedClass, '\\');
+            $this->fatal($expr, "Cannot access private property `{$property}` of class `{$displayClass}`");
+        }
+
+        // 复合类型（union/intersection）的运行时检查结构依赖 AST 构建，
+        // 无法从反射便捷还原，回退字符串路径以保证类型安全
+        $propType = $propRef->getType();
+        if ($propType !== null && !$propType instanceof \ReflectionNamedType) {
+            return null;
+        }
+
+        $type = Type::VAR;
+        $nullable = true;
+        $objectClass = '';
+        if ($propType instanceof \ReflectionNamedType) {
+            $nullable = $propType->allowsNull();
+            $typeName = $propType->getName();
+            $type = match ($typeName) {
+                'int' => Type::INT,
+                'float' => Type::FLOAT,
+                'bool', 'true', 'false' => Type::BOOL,
+                'string' => Type::STR,
+                'array' => Type::ARRAY,
+                'object' => Type::OBJECT,
+                default => $propType->isBuiltin() ? Type::VAR : Type::OBJECT,
+            };
+            if ($type === Type::OBJECT && $typeName !== 'object') {
+                $objectClass = $typeName;
+            }
+        }
+
+        $flags = 0;
+        if ($propRef->isPublic()) {
+            $flags |= Modifiers::PUBLIC;
+        }
+        if ($propRef->isProtected()) {
+            $flags |= Modifiers::PROTECTED;
+        }
+        if ($propRef->isPrivate()) {
+            $flags |= Modifiers::PRIVATE;
+        }
+        if ($propRef->isStatic()) {
+            $flags |= Modifiers::STATIC;
+        }
+        if ($propRef->isPrivateSet()) {
+            $flags |= Modifiers::PRIVATE_SET;
+        } elseif ($propRef->isProtectedSet()) {
+            $flags |= Modifiers::PROTECTED_SET;
+        }
+
+        $propertyDef = new PropertyDef($property, $flags, $type, null, $nullable);
+        $propertyDef->readonly = $propRef->isReadOnly();
+        $propertyDef->class = $objectClass;
+
+        $declaringName = $declaringClass;
+        $namespace = '';
+        if (($pos = strrpos($declaringName, '\\')) !== false) {
+            $namespace = substr($declaringName, 0, $pos);
+            $declaringName = substr($declaringName, $pos + 1);
+        }
+        $classDef = new ClassDef($declaringName, 0, $namespace);
+
+        return new PropertyAccessResult($requestedClass, $declaringClass, $property, $classDef, $propertyDef);
     }
 
     private function fatal(NodeAbstract $expr, string $message): never

@@ -248,6 +248,16 @@ class BackendOptionsTest extends TestCase
         $this->assertStringContainsString('-std=c++17', $options);
     }
 
+    public function testGccExtensionSymbolsAreHiddenByDefault(): void
+    {
+        $compiler = new Gcc(new Linux());
+        $options = $compiler->buildCompileOptions([
+            'build_mode' => 'ext',
+        ]);
+
+        $this->assertStringContainsString('-fvisibility=hidden', $options);
+    }
+
     /**
      * 测试 GCC 编译选项 - 调试模式
      */

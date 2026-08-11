@@ -936,10 +936,43 @@ YAML);
         $this->assertStringContainsString('#include <cstring>', $code);
         $this->assertStringContainsString('std::memset(php_func_map, 0, sizeof(php_func_map));', $code);
         $this->assertStringContainsString('std::memset(php_class_map, 0, sizeof(php_class_map));', $code);
-        $this->assertStringContainsString('std::memset(php_property_map, 0, sizeof(php_property_map));', $code);
+        $this->assertStringNotContainsString('php_property_map', $code);
         $this->assertStringNotContainsString('func_map = {}', $code);
         $this->assertStringNotContainsString('class_map = {}', $code);
         $this->assertStringNotContainsString('property_map = {}', $code);
+    }
+
+    public function testPersistentSymbolCachesAreLazyAndZtsSafe(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $compiler->setBuildMode(CompilerBase::BUILD_MODE_EXT);
+
+        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/persistent_symbol_cache.php';
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $compiler->convertFile($testFile);
+
+        $dataFile = $this->testDir . '/persistent_symbol_cache_data_decl.h';
+        $compiler->genDataDeclarations($dataFile);
+        $data = file_get_contents($dataFile);
+        $extension = file_get_contents($compiler->genExtension());
+
+        $this->assertStringContainsString('extern php::PersistentCacheSlot<zend_class_entry *>', $data);
+        $this->assertStringContainsString('extern php::PersistentCacheSlot<zend_function *>', $data);
+        $this->assertStringContainsString('extern php::PersistentCacheSlot<uint32_t>', $data);
+        $this->assertStringContainsString('php_persistent_class_map', $data);
+        $this->assertStringContainsString('php_get_persistent_class', $extension);
+        $this->assertStringContainsString('php::getPersistentCache(php_persistent_class_map[class_id]', $extension);
+        $this->assertStringContainsString('for (auto &slot : php_persistent_class_map)', $extension);
+        $this->assertStringContainsString('php::resetPersistentCache(slot);', $extension);
+        $this->assertStringNotContainsString('#ifdef ZTS', $data);
+        $this->assertStringNotContainsString('compare_exchange_strong', $extension);
+        $this->assertStringNotContainsString('// internal symbol caches', $extension);
+        $this->assertStringNotContainsString('php_find_internal_function', $extension);
+        $this->assertStringNotContainsString('php_find_internal_method', $extension);
+        $this->assertStringNotContainsString('php_internal_', $extension);
     }
 
     public function testArrayableKeywordConversionCallsGeneratedMethodAtRuntime(): void

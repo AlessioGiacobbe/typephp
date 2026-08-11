@@ -720,6 +720,7 @@ class Translator extends Preprocessor
     public function genDataDeclarations(string $file): void
     {
         $lines[] = '#include <phpx.h>';
+        $lines[] = '#include <typephp_helper.h>';
         $lines[] = PHP_EOL;
 
         // Embedded binaries populate the CLI script fields in $_SERVER at
@@ -744,23 +745,23 @@ class Translator extends Preprocessor
         // 确保数组大小至少为 1，避免 C/C++ 编译错误
         $classCount = max(1, count($this->classMap));
         $lines[] = 'extern THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;
-        $internalClassCount = max(1, count($this->internalClassMap));
-        $lines[] = 'extern zend_class_entry *' . self::PREFIX . self::INTERNAL_CLASS_MAP . '[' . $internalClassCount . '];' . PHP_EOL;
+        $persistentClassCount = max(1, count($this->persistentClassMap));
+        $lines[] = 'extern php::PersistentCacheSlot<zend_class_entry *> ' . self::PREFIX . self::PERSISTENT_CLASS_MAP . '[' . $persistentClassCount . '];' . PHP_EOL;
 
         $funcCount = max(1, count($this->funcMap));
         $lines[] = 'extern THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
-        $internalFuncCount = max(1, count($this->internalFuncMap));
-        $lines[] = 'extern zend_function *' . self::PREFIX . self::INTERNAL_FUNC_MAP . '[' . $internalFuncCount . '];' . PHP_EOL;
+        $persistentFuncCount = max(1, count($this->persistentFuncMap));
+        $lines[] = 'extern php::PersistentCacheSlot<zend_function *> ' . self::PREFIX . self::PERSISTENT_FUNC_MAP . '[' . $persistentFuncCount . '];' . PHP_EOL;
 
         $pythonModuleDeclarations = $this->genPythonModuleDataDeclarations();
         if ($pythonModuleDeclarations !== '') {
             $lines[] = $pythonModuleDeclarations;
         }
 
-        $propCount = max(1, count($this->propMap));
-        $lines[] = 'extern THREAD_LOCAL uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . $propCount . '];' . PHP_EOL;
-        $internalPropCount = max(1, count($this->internalPropMap));
-        $lines[] = 'extern uint32_t ' . self::PREFIX . self::INTERNAL_PROP_MAP . '[' . $internalPropCount . '];' . PHP_EOL;
+        // 无动态 propMap：属性 offset 缓存仅覆盖编译类/内置类的声明属性（见 getPropertyId），
+        // 全部在模块生命周期内稳定，只保留 persistent prop map
+        $persistentPropCount = max(1, count($this->persistentPropMap));
+        $lines[] = 'extern php::PersistentCacheSlot<uint32_t> ' . self::PREFIX . self::PERSISTENT_PROP_MAP . '[' . $persistentPropCount . '];' . PHP_EOL;
 
         foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
@@ -818,18 +819,20 @@ class Translator extends Preprocessor
         $code .= "// class entry \n";
         // 确保数组大小至少为 1，避免 C/C++ 编译错误
         $code .= 'THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . max(1, count($this->classMap)) . '];' . PHP_EOL;
-        // 内置/编译产物类，进程级缓存，MINIT 填充，无需 THREAD_LOCAL，RSHUTDOWN 不清理
-        $code .= 'zend_class_entry *' . self::PREFIX . self::INTERNAL_CLASS_MAP . '[' . max(1, count($this->internalClassMap)) . '];' . PHP_EOL;
+        // Internal/compiled symbols have module lifetime. They are initialized
+        // lazily after PHP startup, so disable_functions/disable_classes have
+        // already finalized the runtime tables. ZTS publishes them atomically.
+        $code .= 'php::PersistentCacheSlot<zend_class_entry *> ' . self::PREFIX . self::PERSISTENT_CLASS_MAP . '[' . max(1, count($this->persistentClassMap)) . ']{};' . PHP_EOL;
 
         $code .= "// func \n";
         $code .= 'THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . max(1, count($this->funcMap)) . '];' . PHP_EOL;
-        $code .= 'zend_function *' . self::PREFIX . self::INTERNAL_FUNC_MAP . '[' . max(1, count($this->internalFuncMap)) . '];' . PHP_EOL;
+        $code .= 'php::PersistentCacheSlot<zend_function *> ' . self::PREFIX . self::PERSISTENT_FUNC_MAP . '[' . max(1, count($this->persistentFuncMap)) . ']{};' . PHP_EOL;
 
         $code .= $this->genPythonModuleStorage();
 
         $code .= "// property \n";
-        $code .= 'THREAD_LOCAL uint32_t ' . self::PREFIX . self::PROP_MAP . '[' . max(1, count($this->propMap)) . '];' . PHP_EOL;
-        $code .= 'uint32_t ' . self::PREFIX . self::INTERNAL_PROP_MAP . '[' . max(1, count($this->internalPropMap)) . '];' . PHP_EOL;
+        // 无动态 propMap：属性 offset 缓存仅覆盖编译类/内置类的声明属性（见 getPropertyId）
+        $code .= 'php::PersistentCacheSlot<uint32_t> ' . self::PREFIX . self::PERSISTENT_PROP_MAP . '[' . max(1, count($this->persistentPropMap)) . ']{};' . PHP_EOL;
 
         $code .= "// functions \n";
 
@@ -856,66 +859,33 @@ zend_function *php_get_method(int func_id, const php::Str &method_name, int clas
     return php_func_map[func_id];
 }
 
-uint32_t php_get_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name) {
-    if (UNEXPECTED(php_property_map[prop_id] == 0)) {
-        php_property_map[prop_id] = php::getPropertyOffset(class_name, prop_name) + 1024;
-    }
-    return php_property_map[prop_id] - 1024;
+zend_class_entry *php_get_persistent_class(int class_id, const php::Str &class_name) {
+    return php::getPersistentCache(php_persistent_class_map[class_id], [&]() {
+        return php::getClassEntrySafe(class_name);
+    });
 }
 
-zend_class_entry *php_get_internal_class(int class_id, const php::Str &class_name) {
-    if (UNEXPECTED(php_internal_class_map[class_id] == nullptr)) {
-        php_internal_class_map[class_id] = php::getClassEntrySafe(class_name);
-    }
-    return php_internal_class_map[class_id];
+zend_function *php_get_persistent_func(int func_id, const php::Str &func_name) {
+    return php::getPersistentCache(php_persistent_func_map[func_id], [&]() {
+        return php::getFunction(func_name);
+    });
 }
 
-zend_function *php_get_internal_func(int func_id, const php::Str &func_name) {
-    if (UNEXPECTED(php_internal_func_map[func_id] == nullptr)) {
-        php_internal_func_map[func_id] = php::getFunction(func_name);
-    }
-    return php_internal_func_map[func_id];
+zend_function *php_get_persistent_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
+    return php::getPersistentCache(php_persistent_func_map[func_id], [&]() {
+        auto ce = php_get_persistent_class(class_id, class_name);
+        return php::getMethod(ce, method_name);
+    });
 }
 
-zend_function *php_get_internal_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
-    if (UNEXPECTED(php_internal_func_map[func_id] == nullptr)) {
-        auto ce = php_get_internal_class(class_id, class_name);
-        php_internal_func_map[func_id] = php::getMethod(ce, method_name);
-    }
-    return php_internal_func_map[func_id];
-}
-
-uint32_t php_get_internal_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name) {
-    if (UNEXPECTED(php_internal_property_map[prop_id] == 0)) {
-        php_internal_property_map[prop_id] = php::getPropertyOffset(class_name, prop_name) + 1024;
-    }
-    return php_internal_property_map[prop_id] - 1024;
+uint32_t php_get_persistent_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name) {
+    auto value = php::getPersistentCache(php_persistent_property_map[prop_id], [&]() {
+        return php::getPropertyOffset(class_name, prop_name) + 1024;
+    });
+    return value - 1024;
 }
 CODE;
         $code .= "\n\n";
-
-        // MINIT 阶段填充内部符号缓存使用的容错查找函数（查找失败返回空，留给运行期惰性重试）
-        if ($this->internalFuncMap !== []) {
-            $code .= <<<'CODE'
-static zend_function *php_find_internal_function(const php::Str &name) {
-    auto lc_name = zend_string_tolower(name.str());
-    auto fn = (zend_function *) zend_hash_find_ptr(CG(function_table), lc_name);
-    zend_string_release(lc_name);
-    return fn;
-}
-
-static zend_function *php_find_internal_method(zend_class_entry *ce, const php::Str &name) {
-    if (UNEXPECTED(ce == nullptr)) {
-        return nullptr;
-    }
-    auto lc_name = zend_string_tolower(name.str());
-    auto fn = (zend_function *) zend_hash_find_ptr(&ce->function_table, lc_name);
-    zend_string_release(lc_name);
-    return fn;
-}
-CODE;
-            $code .= "\n\n";
-        }
 
         $code .= $this->genPythonModuleGetter();
 
@@ -998,13 +968,23 @@ CODE;
         foreach ($this->registerSymbols as $registerSymbolFn) {
             $code .= $registerSymbolFn . '(module_number);' . PHP_EOL;
         }
-        $code .= $this->genInternalSymbolCacheInit();
         $code .= '} zend_end_try();' . PHP_EOL;
         $code .= 'return SUCCESS;' . PHP_EOL;
         $code .= '}' . PHP_EOL . PHP_EOL;
         // minit end
 
         $code .= 'PHP_MSHUTDOWN_FUNCTION(' . $this->getModuleName() . ') {' . PHP_EOL;
+        // The cache owns no Zend symbols, but its pointers must not survive a
+        // complete module shutdown/startup cycle in an embedded process.
+        $code .= 'for (auto &slot : ' . self::PREFIX . self::PERSISTENT_CLASS_MAP . ') {' . PHP_EOL;
+        $code .= $this->getIndent() . 'php::resetPersistentCache(slot);' . PHP_EOL;
+        $code .= '}' . PHP_EOL;
+        $code .= 'for (auto &slot : ' . self::PREFIX . self::PERSISTENT_FUNC_MAP . ') {' . PHP_EOL;
+        $code .= $this->getIndent() . 'php::resetPersistentCache(slot);' . PHP_EOL;
+        $code .= '}' . PHP_EOL;
+        $code .= 'for (auto &slot : ' . self::PREFIX . self::PERSISTENT_PROP_MAP . ') {' . PHP_EOL;
+        $code .= $this->getIndent() . 'php::resetPersistentCache(slot);' . PHP_EOL;
+        $code .= '}' . PHP_EOL;
         $code .= 'typephp_uninstall_reflection_attribute_handlers();' . PHP_EOL;
         $code .= 'return SUCCESS;' . PHP_EOL;
         $code .= '}' . PHP_EOL . PHP_EOL;
@@ -1136,12 +1116,12 @@ CODE;
             }
         }
 
-        // 扩展模式，需要在 RSHUTDOWN 阶段中清理用户定义的函数、类、属性缓存；
-        // 内置/编译产物符号在 internal_*_map 中，进程级存活，无需清理
+        // 扩展模式，需要在 RSHUTDOWN 阶段中清理用户定义的函数、类缓存；
+        // 内置/编译产物符号在 persistent_*_map 中，跨请求存活，无需清理；
+        // 无动态 propMap（属性 offset 缓存仅含进程级稳定的声明属性），无需清理
         if ($this->isBuildModeExt()) {
             $code .= 'std::memset(' . self::PREFIX . self::FUNC_MAP . ', 0, sizeof(' . self::PREFIX . self::FUNC_MAP . '));' . PHP_EOL;
             $code .= 'std::memset(' . self::PREFIX . self::CLASS_MAP . ', 0, sizeof(' . self::PREFIX . self::CLASS_MAP . '));' . PHP_EOL;
-            $code .= 'std::memset(' . self::PREFIX . self::PROP_MAP . ', 0, sizeof(' . self::PREFIX . self::PROP_MAP . '));' . PHP_EOL;
         }
 
         $code .= '}' . PHP_EOL . PHP_EOL;
@@ -1209,52 +1189,6 @@ CODE;
         $this->formatCppCode($file);
         $this->localHeaders = [];
         return $file;
-    }
-
-    /**
-     * 生成 MINIT 阶段填充内部符号缓存（进程级类/函数/属性）的代码。
-     * 类与函数使用容错查找：跨扩展符号可能因模块初始化顺序尚未注册，
-     * 查找失败时留空，由运行期 helper 惰性重试（此时抛错语义与拆分前一致）。
-     * 属性缓存的所属类必为本模块编译产物（已在上方注册完毕），直接调用 helper 填充。
-     */
-    protected function genInternalSymbolCacheInit(): string
-    {
-        if ($this->internalClassMap === [] && $this->internalFuncMap === [] && $this->internalPropMap === []) {
-            return '';
-        }
-        $code = '// internal symbol caches' . PHP_EOL;
-        foreach ($this->internalClassMap as $name => $id) {
-            $code .= self::PREFIX . self::INTERNAL_CLASS_MAP . '[' . $id . '] = php::getClassEntry('
-                . $this->genSymbolNameExpr($name) . ');' . PHP_EOL;
-        }
-        foreach ($this->internalFuncMap as $key => $id) {
-            if (str_contains($key, '::')) {
-                [$class, $method] = explode('::', $key, 2);
-                $code .= self::PREFIX . self::INTERNAL_FUNC_MAP . '[' . $id . '] = php_find_internal_method(php::getClassEntry('
-                    . $this->genSymbolNameExpr($class) . '), ' . $this->genSymbolNameExpr($method) . ');' . PHP_EOL;
-            } else {
-                $code .= self::PREFIX . self::INTERNAL_FUNC_MAP . '[' . $id . '] = php_find_internal_function('
-                    . $this->genSymbolNameExpr($key) . ');' . PHP_EOL;
-            }
-        }
-        foreach ($this->internalPropMap as $key => $id) {
-            [$class, $prop] = explode('::', $key, 2);
-            $code .= '(void) php_get_internal_prop(' . $id . ', ' . $this->genSymbolNameExpr($prop)
-                . ', 0, ' . $this->genSymbolNameExpr($class) . ');' . PHP_EOL;
-        }
-        return $code;
-    }
-
-    /**
-     * 生成符号名称的 C++ 表达式。优先复用字面量字符串表中的已有条目；
-     * 表条目在 MINIT 代码生成前已输出，缺失时（不应发生）退化为内联字符串。
-     */
-    private function genSymbolNameExpr(string $name): string
-    {
-        if (!$this->noLiteralStrings && isset($this->literalStrings[$name])) {
-            return self::LITERAL_STRINGS . '[' . $this->literalStrings[$name] . ']';
-        }
-        return Type::STR . '{ZEND_STRL(' . $this->genCharPtr($name, true) . '), true}';
     }
 
     public function getModuleName(): string

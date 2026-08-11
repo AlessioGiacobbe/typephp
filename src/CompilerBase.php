@@ -238,10 +238,9 @@ class CompilerBase implements PropertyAccessContext
     public const string OBJECT_PROP = '_object_prop_';
     public const string CLASS_MAP = 'class_map';
     public const string FUNC_MAP = 'func_map';
-    public const string PROP_MAP = 'property_map';
-    public const string INTERNAL_CLASS_MAP = 'internal_class_map';
-    public const string INTERNAL_FUNC_MAP = 'internal_func_map';
-    public const string INTERNAL_PROP_MAP = 'internal_property_map';
+    public const string PERSISTENT_CLASS_MAP = 'persistent_class_map';
+    public const string PERSISTENT_FUNC_MAP = 'persistent_func_map';
+    public const string PERSISTENT_PROP_MAP = 'persistent_property_map';
     public const string NAMESPACE_SEPARATOR = '__';
 
     public const string PREFIX = 'php_';
@@ -255,7 +254,6 @@ class CompilerBase implements PropertyAccessContext
     public const string BUILD_MODE_EXT = 'ext';
     public const string BUILD_MODE_LIB = 'lib';
     public const string ENTRY_FUNCTION = 'main';
-    public const string PHPX_VENDOR_DIR = '/vendor/swoole/phpx';
     protected const string PHASE_IDLE = 'idle';
     protected const string PHASE_PREPARE = 'prepare';
     protected const string PHASE_CONVERT = 'convert';
@@ -278,11 +276,11 @@ class CompilerBase implements PropertyAccessContext
      */
     protected array $classMap = [];
     /**
-     * 内置/编译产物（进程生命周期）类名 → ID，运行期为全局缓存，MINIT 填充，永不清理
+     * 内置/编译产物（模块生命周期）类名 → ID，PHP 启动完成后惰性填充，RSHUTDOWN 不清理
      * @var array<string, int>
      */
-    protected array $internalClassMap = [];
-    protected int $internalClassIndex = 0;
+    protected array $persistentClassMap = [];
+    protected int $persistentClassIndex = 0;
     /**
      * @var array<string, int>
      */
@@ -296,22 +294,18 @@ class CompilerBase implements PropertyAccessContext
      */
     protected array $funcMap = [];
     /**
-     * 内置/编译产物（进程生命周期）函数/方法 → ID，运行期为全局缓存，MINIT 填充，永不清理
+     * 内置/编译产物（模块生命周期）函数/方法 → ID，PHP 启动完成后惰性填充，RSHUTDOWN 不清理
      * key 为函数名或 `Class::method`
      * @var array<string, int>
      */
-    protected array $internalFuncMap = [];
-    protected int $internalFuncIndex = 0;
-    protected int $propIndex = 0;
+    protected array $persistentFuncMap = [];
+    protected int $persistentFuncIndex = 0;
     /**
-     * 用户定义类的属性 offset 缓存，key 为 `Class::prop`，RSHUTDOWN 清理
+     * 内置/编译产物类的声明属性 offset 缓存，key 为 `Class::prop`，惰性填充，RSHUTDOWN 不清理。
+     * 属性解析仅覆盖编译类与内置类的声明属性（进程级稳定），用户类属性走字符串路径，不进缓存。
      */
-    protected array $propMap = [];
-    /**
-     * 内置/编译产物类的属性 offset 缓存，key 为 `Class::prop`，MINIT 填充，永不清理
-     */
-    protected array $internalPropMap = [];
-    protected int $internalPropIndex = 0;
+    protected array $persistentPropMap = [];
+    protected int $persistentPropIndex = 0;
     protected const array PHP_RUNTIME_TYPE_MAP = [
         'integer' => Type::INT,
         'double' => Type::FLOAT,
@@ -1223,7 +1217,7 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * 判断类的符号指针是否进程级稳定（MINIT 注册，跨请求缓存安全）。
+     * 判断类的符号指针是否在 PHP 模块生命周期内稳定（MINIT 注册，跨请求缓存安全）。
      * 编译产物（本单元编译的类/接口）与 PHP 内置类/接口均满足条件。
      */
     protected function isProcessStableClass(string $className): bool
@@ -1236,7 +1230,7 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * 判断函数/方法符号指针是否进程级稳定。
+     * 判断函数/方法符号指针是否在 PHP 模块生命周期内稳定。
      * `Class::method` 形式的 key 以其所属类的稳定性为准。
      */
     protected function isProcessStableFunction(string $funcName): bool
@@ -1257,12 +1251,12 @@ class CompilerBase implements PropertyAccessContext
         if (isset($this->classMap[$className])) {
             return $this->classMap[$className];
         }
-        if (isset($this->internalClassMap[$className])) {
-            return $this->internalClassMap[$className];
+        if (isset($this->persistentClassMap[$className])) {
+            return $this->persistentClassMap[$className];
         }
         if ($this->isProcessStableClass($className)) {
-            $id = $this->internalClassIndex++;
-            $this->internalClassMap[$className] = $id;
+            $id = $this->persistentClassIndex++;
+            $this->persistentClassMap[$className] = $id;
         } else {
             $id = $this->classIndex++;
             $this->classMap[$className] = $id;
@@ -1275,12 +1269,12 @@ class CompilerBase implements PropertyAccessContext
         if (isset($this->funcMap[$funcName])) {
             return $this->funcMap[$funcName];
         }
-        if (isset($this->internalFuncMap[$funcName])) {
-            return $this->internalFuncMap[$funcName];
+        if (isset($this->persistentFuncMap[$funcName])) {
+            return $this->persistentFuncMap[$funcName];
         }
         if ($this->isProcessStableFunction($funcName)) {
-            $id = $this->internalFuncIndex++;
-            $this->internalFuncMap[$funcName] = $id;
+            $id = $this->persistentFuncIndex++;
+            $this->persistentFuncMap[$funcName] = $id;
         } else {
             $id = $this->funcIndex++;
             $this->funcMap[$funcName] = $id;
@@ -1290,30 +1284,28 @@ class CompilerBase implements PropertyAccessContext
 
     /**
      * @param string $className 必须是带有命名空间的完整类名
+     *
+     * 注意：不存在与用户定义类对应的动态 propMap（区别于 classMap/funcMap）。
+     * 属性 offset 缓存的前提是编译期能解析出声明属性（PropertyAccessResolver
+     * 只接受编译类的 ClassDef 或内置类的反射声明属性），用户类在编译期不可见，
+     * 其属性访问一律走 `.attr(name)` 字符串路径，因此所有条目必然进程级稳定，
+     * 全部进入 persistentPropMap。
      */
     protected function getPropertyId(string $className, string $propName): int
     {
         $key = $className . '::' . $propName;
-        if (isset($this->propMap[$key])) {
-            return $this->propMap[$key];
+        if (isset($this->persistentPropMap[$key])) {
+            return $this->persistentPropMap[$key];
         }
-        if (isset($this->internalPropMap[$key])) {
-            return $this->internalPropMap[$key];
-        }
-        if ($this->isProcessStableClass($className)) {
-            $id = $this->internalPropIndex++;
-            $this->internalPropMap[$key] = $id;
-        } else {
-            $id = $this->propIndex++;
-            $this->propMap[$key] = $id;
-        }
+        $id = $this->persistentPropIndex++;
+        $this->persistentPropMap[$key] = $id;
         return $id;
     }
 
     protected function getClassEntryPtr(string $className): string
     {
         $id = $this->getClassId($className);
-        $helper = isset($this->internalClassMap[$className]) ? 'php_get_internal_class' : 'php_get_class';
+        $helper = isset($this->persistentClassMap[$className]) ? 'php_get_persistent_class' : 'php_get_class';
         return $helper . '(' . $id . ', ' . $this->getLiteralString($className) . ')';
     }
 
@@ -1330,7 +1322,7 @@ class CompilerBase implements PropertyAccessContext
     protected function getFuncPtr(string $funcName): string
     {
         $id = $this->getFuncId($funcName);
-        $helper = isset($this->internalFuncMap[$funcName]) ? 'php_get_internal_func' : 'php_get_func';
+        $helper = isset($this->persistentFuncMap[$funcName]) ? 'php_get_persistent_func' : 'php_get_func';
         return $helper . '(' . $id . ', ' . $this->getLiteralString($funcName) . ')';
     }
 
@@ -1339,7 +1331,7 @@ class CompilerBase implements PropertyAccessContext
         $funcId = $this->getFuncId($class . '::' . $method);
         $classId = $this->getClassId($class);
         // 方法的稳定性与所属类一致，因此 class_id 必定落在同一张表中
-        $helper = isset($this->internalFuncMap[$class . '::' . $method]) ? 'php_get_internal_method' : 'php_get_method';
+        $helper = isset($this->persistentFuncMap[$class . '::' . $method]) ? 'php_get_persistent_method' : 'php_get_method';
         return $helper . '(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
@@ -1347,8 +1339,7 @@ class CompilerBase implements PropertyAccessContext
     {
         $propId = $this->getPropertyId($class, $prop);
         $classId = $this->getClassId($class);
-        $helper = isset($this->internalPropMap[$class . '::' . $prop]) ? 'php_get_internal_prop' : 'php_get_prop';
-        return $helper . '(' . $propId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
+        return 'php_get_persistent_prop(' . $propId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
     protected function writeLog($msg): void

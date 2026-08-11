@@ -102,7 +102,8 @@ abstract class GccLikeBackend extends CompilerBackend
 
         $cmd .= $this->getPICFlag($config);
 
-        if (($config['build_mode'] ?? null) === 'lib' && !($this->platform instanceof Windows)) {
+        if (in_array(($config['build_mode'] ?? null), ['ext', 'lib'], true)
+            && !($this->platform instanceof Windows)) {
             $cmd .= ' -fvisibility=hidden';
         }
 
