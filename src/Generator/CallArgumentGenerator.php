@@ -9,9 +9,7 @@ namespace TypePhp\Generator;
 
 use TypePhp\Type;
 
-use PhpParser\Modifiers;
 use PhpParser\Node;
-use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 use TypePhp\Entity\ArgInfo;
@@ -424,6 +422,7 @@ trait CallArgumentGenerator
                 $value = ($byRef || $this->isRefvalCall($arg->value) || $this->isToRefCall($arg->value))
                     ? $this->parseReferenceCallArgValue($arg)
                     : $this->parseCallArgValue($arg);
+                $value = $this->wrapScopedCallbackArg($arg, $value);
                 if ($separateNamedArgs) {
                     $namedArgsArray = $this->ensureCallNamedArgs($namedArgsVar);
                     $this->context->beforeStmtLines[] = $namedArgsArray . '.set(' . $this->getLiteralString($arg->name->name) . ', ' . $value . ');';
@@ -444,12 +443,17 @@ trait CallArgumentGenerator
             if ($byRef) {
                 $this->assertReadonlyPropertyReferenceForbidden($arg->value, $arg, false);
             }
-            if (($funcName === 'call_user_func' || $funcName === 'call_user_func_array') && $i === 0) {
-                $callback = $this->parseScopedCallbackArg($arg);
-                if ($callback !== null) {
-                    $this->addPositionalCallArg($callback, $arrayArgsVar, $list_args);
-                    continue;
+            $scopedCallback = $arg->getAttribute(self::ATTR_SCOPED_CALLBACK);
+            if ($scopedCallback !== null) {
+                if ($this->isVarExpr($arg->value)) {
+                    $name = $this->parseIdentifier($arg->value);
+                    if (!$this->hasVar($name)) {
+                        $this->fatalError($arg, 'Undefined variable `$' . $name . '`');
+                    }
                 }
+                $value = $this->wrapScopedCallbackArg($arg, $this->parseCallArgValue($arg));
+                $this->addPositionalCallArg($value, $arrayArgsVar, $list_args);
+                continue;
             }
             if ($this->isVarExpr($arg->value)) {
                 $name = $this->parseIdentifier($arg->value);
@@ -542,44 +546,15 @@ trait CallArgumentGenerator
         return $this->hasVar($name) && $this->getVarType($name) === Type::REF;
     }
 
-    protected function parseScopedCallbackArg(Node\Arg $arg): ?string
+    protected function wrapScopedCallbackArg(Node\Arg $arg, string $value): string
     {
-        $value = $arg->value;
-        if (!$value instanceof Expr\Array_ || count($value->items) < 2 || !$this->methodDef) {
-            return null;
+        $mode = $arg->getAttribute(self::ATTR_SCOPED_CALLBACK);
+        if ($mode === null || !$this->methodDef) {
+            return $value;
         }
 
-        $first = $value->items[0];
-        if (!$first instanceof ArrayItem || $first->key !== null || $first->unpack) {
-            return null;
-        }
-        if (!$first->value instanceof Node\Scalar\String_) {
-            return null;
-        }
-
-        $scope = strtolower($first->value->value);
-        $classExpr = match ($scope) {
-            'static' => ($this->methodDef->flags & Modifiers::STATIC)
-                ? $this->getLiteralString($this->getFullClassName())
-                : Symbol::getCalledClass(),
-            'self' => $this->getLiteralString($this->getFullClassName()),
-            'parent' => $this->classDef->extends ? $this->getLiteralString($this->classDef->extends) : null,
-            default => null,
-        };
-        if ($classExpr === null) {
-            return null;
-        }
-
-        $items = [$classExpr];
-        foreach (array_slice($value->items, 1) as $item) {
-            if (!$item instanceof ArrayItem || $item->key !== null || $item->unpack) {
-                return null;
-            }
-            $this->assertExprCanBeUsedAsValue($item->value, 'callback array item');
-            $items[] = $this->parseIdentifier($item->value);
-        }
-
-        return $this->genArray($items);
+        $helper = $mode === 'map' ? 'makeScopedCallableMap' : 'makeScopedCallable';
+        return 'php::' . $helper . '(' . $value . ', ' . $this->getCallableScopeExpr() . ')';
     }
 
     protected function ensureCallArgs(?string &$argsVar, array &$listArgs): string

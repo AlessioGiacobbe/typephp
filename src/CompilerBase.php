@@ -150,6 +150,7 @@ class CompilerBase implements PropertyAccessContext
     protected const string ATTR_PROPERTY_FETCH_UPDATE = 'aotPropertyFetchUpdate';
     protected const string ATTR_STATEMENT_EXPRESSION = 'aotStatementExpression';
     protected const string ATTR_MULTI_RETURN_IMPL = 'aotMultiReturnImpl';
+    protected const string ATTR_SCOPED_CALLBACK = 'aotScopedCallback';
 
     /**
      * Keyword methods (to* builtins) with mandated return types.
@@ -1307,6 +1308,17 @@ class CompilerBase implements PropertyAccessContext
         $id = $this->getClassId($className);
         $helper = isset($this->persistentClassMap[$className]) ? 'php_get_persistent_class' : 'php_get_class';
         return $helper . '(' . $id . ', ' . $this->getLiteralString($className) . ')';
+    }
+
+    /** The declaring class controls visibility; the runtime called class does not. */
+    protected function getCallableScopeExpr(): string
+    {
+        if (!$this->classDef || !$this->methodDef) {
+            return 'php::CallableScope(nullptr, nullptr, nullptr)';
+        }
+        return 'php_get_callable_scope('
+            . $this->getMethodPtr($this->getFullClassName(), $this->methodDef->name)
+            . ', this_)';
     }
 
     protected function getCeWrapper(string $className): string
@@ -3166,14 +3178,15 @@ class CompilerBase implements PropertyAccessContext
         string $className = '',
         bool $requiresDynamicScope = true,
     ): string {
-        if ($requiresDynamicScope) {
-            $this->markRuntimeObjectMethodCall();
+        $callArgs = $this->parseCallArgs($args, $funcName, $className);
+        if ($requiresDynamicScope && $this->methodDef) {
+            return 'php::callScoped(' . $object . ', ' . $method . ', ' . $this->getCallableScopeExpr() . ', ' . $callArgs . ')';
         }
-        return $object . '.call(' . $method . ', ' . $this->parseCallArgs($args, $funcName, $className) . ')';
+        return $object . '.call(' . $method . ', ' . $callArgs . ')';
     }
 
-    /** Mark methods that need Zend user-frame scope for dynamic visibility checks. */
-    protected function markRuntimeObjectMethodCall(): void
+    /** Retain the legacy frame scope when an unpacked value may contain a callback. */
+    protected function markUnpackedScopedCallbackCall(): void
     {
         if ($this->methodDef) {
             $this->methodDef->hasDynamicCall = true;
@@ -3245,25 +3258,40 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $argCount = count($args);
+        $matchedCallbacks = [];
+        $hasUnpackedArg = false;
         foreach ($args as $index => $arg) {
             if ($arg->unpack) {
-                // An unpacked argument can occupy any remaining callback slot.
-                $this->markRuntimeObjectMethodCall();
-                return;
+                $hasUnpackedArg = true;
+                continue;
             }
 
-            foreach ($descriptors as $descriptor) {
+            foreach ($descriptors as $descriptorIndex => $descriptor) {
                 [$position, $name] = $descriptor;
                 $container = $descriptor[2] ?? false;
                 $callbackPosition = $position < 0 ? $argCount + $position : $position;
                 $matches = $arg->name === null
                     ? $index === $callbackPosition
                     : $arg->name->toString() === $name;
-                if ($matches && ($container || !$this->isScopeIndependentCallableExpr($arg->value))) {
-                    $this->markRuntimeObjectMethodCall();
-                    return;
+                if ($matches) {
+                    $matchedCallbacks[$descriptorIndex] = true;
+                    if ($container || !$this->isScopeIndependentCallableExpr($arg->value)) {
+                        $arg->setAttribute(self::ATTR_SCOPED_CALLBACK, $container ? 'map' : 'callable');
+                    }
+                    // Some functions accept more than one callback (for
+                    // example array_udiff_uassoc()). Mark every matching
+                    // argument instead of stopping at the first one.
+                    break;
                 }
             }
+        }
+
+        if ($hasUnpackedArg && count($matchedCallbacks) !== count($descriptors)) {
+            // If the unpacked value itself supplies a callback, its runtime
+            // position is not known here. Keep the legacy frame scope only
+            // for this remaining case; ordinary callback arguments no longer
+            // mutate the executing Zend frame.
+            $this->markUnpackedScopedCallbackCall();
         }
     }
 
@@ -3273,15 +3301,6 @@ class CompilerBase implements PropertyAccessContext
             || $expr instanceof Expr\ArrowFunction
             || ($expr instanceof CallLike && $expr->isFirstClassCallable())
             || $this->isNull($expr);
-    }
-
-    protected function internalMethodMayInvokeCallback(string $class, string $method): bool
-    {
-        static $methods = [
-            'reflectionmethod::invoke' => true,
-            'reflectionmethod::invokeargs' => true,
-        ];
-        return isset($methods[strtolower(ltrim($class, '\\') . '::' . $method)]);
     }
 
     protected function validateInternalNamedCallArgs(\ReflectionFunctionAbstract $ref, array $callArgs): void

@@ -12,13 +12,12 @@ trait PlaceHolderGenerator
 {
     protected function genPlaceHolder(string $callable): string
     {
+        if ($this->classDef) {
+            return 'php::makeScopedCallable(' . $callable . ', ' . $this->getCallableScopeExpr() . ')';
+        }
+
         $ce = $this->getClassEntryPtr(\Closure::class);
         $fn = $ce . ', ' . $this->getFuncPtr('Closure::fromCallable');
-        $tmpVar = $this->genTmpVarName();
-        if ($this->classDef) {
-            $this->context->beforeStmtLines[] = "auto {$tmpVar} = php_switch_scope(this_);";
-            $this->context->afterStmtLines[] = "php_restore_scope({$tmpVar});";
-        }
         return 'php::call(' . $fn . ', {' . $callable . '})';
     }
 }

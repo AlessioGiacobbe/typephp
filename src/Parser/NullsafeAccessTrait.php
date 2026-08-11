@@ -91,9 +91,7 @@ trait NullsafeAccessTrait
                     ? $this->parseIdentifier($item[4]->name)
                     : '';
                 $receiverClass = $this->detectClassOfExpr($item[4]->var);
-                if ($this->runtimeMethodRequiresDynamicScope($receiverClass, $methodName)) {
-                    $this->markRuntimeObjectMethodCall();
-                }
+                $requiresDynamicScope = $this->runtimeMethodRequiresDynamicScope($receiverClass, $methodName);
                 $beforeStmtCount = count($this->context->beforeStmtLines);
                 $afterStmtCount = count($this->context->afterStmtLines);
                 $args = $this->parseCallArgs($item[2]);
@@ -104,7 +102,13 @@ trait NullsafeAccessTrait
                 if ($argBeforeStmts) {
                     $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argBeforeStmts) . PHP_EOL;
                 }
-                $code .= $this->getIndent() . "{$tmpVar} = {$object}.call({$item[1]}, {$args});";
+                if ($requiresDynamicScope && $this->methodDef) {
+                    $code .= $this->getIndent()
+                        . "{$tmpVar} = php::callScoped({$object}, {$item[1]}, "
+                        . $this->getCallableScopeExpr() . ", {$args});";
+                } else {
+                    $code .= $this->getIndent() . "{$tmpVar} = {$object}.call({$item[1]}, {$args});";
+                }
                 if ($argAfterStmts) {
                     $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argAfterStmts) . PHP_EOL;
                 }

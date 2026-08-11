@@ -24,6 +24,7 @@ trait MethodCallTrait
         string $class,
         string $method,
         bool $magicMethod = false,
+        bool $currentObject = false,
     ): bool {
         if ($method === '' || $magicMethod) {
             return true;
@@ -51,9 +52,11 @@ trait MethodCallTrait
             }
         }
 
-        // A named method with no non-public declaration is resolved as a
-        // normal public call and must not change an unrelated Zend frame.
-        return false;
+        // An unresolved method on `$this` may be declared by a runtime
+        // subclass.  The compiler itself exercises this when a method
+        // inherited from CompilerBase calls a protected helper supplied by
+        // Translator.  Calls on other receivers retain the public fast path.
+        return $currentObject && $this->methodDef !== null;
     }
 
     protected function isOverrideMethod(string $fullMethodName): bool
@@ -525,15 +528,15 @@ trait MethodCallTrait
             $funcName = '';
         }
 
-        $requiresDynamicScope = $this->runtimeMethodRequiresDynamicScope($class, $funcName, $magicMethod);
+        $requiresDynamicScope = $this->runtimeMethodRequiresDynamicScope(
+            $class,
+            $funcName,
+            $magicMethod,
+            $this->isVarExpr($expr->var) && $this->parseIdentifier($expr->var) === 'this_',
+        );
         if ($class && $funcName && !$magicMethod) {
             if ($this->isInternalClass($class)) {
                 $methodPtr = $this->getMethodPtr($class, $funcName);
-                // A small set of internal invokers synchronously executes a
-                // callback and therefore still needs the caller's scope.
-                if ($this->internalMethodMayInvokeCallback($class, $funcName)) {
-                    $requiresDynamicScope = true;
-                }
             } else {
                 $methodPtr = $method;
             }
@@ -542,8 +545,8 @@ trait MethodCallTrait
         }
 
         if (empty($expr->args)) {
-            if ($requiresDynamicScope) {
-                $this->markRuntimeObjectMethodCall();
+            if ($requiresDynamicScope && $this->methodDef) {
+                return 'php::callScoped(' . $object . ', ' . $methodPtr . ', ' . $this->getCallableScopeExpr() . ')';
             }
             return $object . '.call(' . $methodPtr . ')';
         }
