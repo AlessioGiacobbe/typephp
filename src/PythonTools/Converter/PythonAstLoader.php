@@ -4,7 +4,11 @@ namespace TypePhp\PythonTools\Converter;
 
 use RuntimeException;
 
-final class PythonAstLoader
+/**
+ * 非 final：测试可子类化注入预制 AST 或模拟解析失败，
+ * 见 phpunit/src/PythonTools/PythonAstLoaderTest.php。
+ */
+class PythonAstLoader
 {
     private const DUMPER = <<<'PYTHON'
 import ast
