@@ -46,13 +46,13 @@ trait NullsafeAccessTrait
                 $list[] = ['property', $this->identifierToStr($expr->name, literal: true), $expr, true];
                 $expr = $expr->var;
             } elseif ($expr instanceof Expr\NullsafeMethodCall) {
-                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, true];
+                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, true, $expr];
                 $expr = $expr->var;
             } elseif ($expr instanceof Expr\PropertyFetch) {
                 $list[] = ['property', $this->identifierToStr($expr->name, literal: true), $expr, false];
                 $expr = $expr->var;
             } elseif ($expr instanceof Expr\MethodCall) {
-                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, false];
+                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, false, $expr];
                 $expr = $expr->var;
             } else {
                 if ($this->isVarExpr($expr)) {
@@ -87,7 +87,13 @@ trait NullsafeAccessTrait
                 $update = $this->escapeAttrMode($this->isPropertyFetchUpdate($item[2]));
                 $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
             } else {
-                $this->markRuntimeObjectMethodCall();
+                $methodName = $this->isNamedMethod($item[4]->name)
+                    ? $this->parseIdentifier($item[4]->name)
+                    : '';
+                $receiverClass = $this->detectClassOfExpr($item[4]->var);
+                if ($this->runtimeMethodRequiresDynamicScope($receiverClass, $methodName)) {
+                    $this->markRuntimeObjectMethodCall();
+                }
                 $beforeStmtCount = count($this->context->beforeStmtLines);
                 $afterStmtCount = count($this->context->afterStmtLines);
                 $args = $this->parseCallArgs($item[2]);

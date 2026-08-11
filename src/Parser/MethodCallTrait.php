@@ -16,9 +16,46 @@ use PhpParser\Node\Expr\CallLike;
 use TypePhp\Exception\DynamicCall;
 use TypePhp\Exception\PlaceHolder;
 use TypePhp\Generator\Symbol;
+use TypePhp\Resolver\Reflection;
 
 trait MethodCallTrait
 {
+    protected function runtimeMethodRequiresDynamicScope(
+        string $class,
+        string $method,
+        bool $magicMethod = false,
+    ): bool {
+        if ($method === '' || $magicMethod) {
+            return true;
+        }
+
+        if ($class !== '') {
+            $flags = $this->getMethodFlags($class, $method);
+            if ($flags !== 0) {
+                return !($flags & Modifiers::PUBLIC);
+            }
+
+            $modifiers = Reflection::getClassMethodModifiers($class, $method);
+            if ($modifiers !== null) {
+                return !($modifiers & \ReflectionMethod::IS_PUBLIC);
+            }
+        }
+
+        // Late-bound receivers such as `new static()` do not have an exact
+        // class in the local type map. A matching current-class method still
+        // carries the lexical visibility rules of that class.
+        if ($this->classDef !== null) {
+            $flags = $this->getMethodFlags($this->getFullClassName(), $method);
+            if ($flags !== 0) {
+                return !($flags & Modifiers::PUBLIC);
+            }
+        }
+
+        // A named method with no non-public declaration is resolved as a
+        // normal public call and must not change an unrelated Zend frame.
+        return false;
+    }
+
     protected function isOverrideMethod(string $fullMethodName): bool
     {
         $fullMethodNameLower = strtolower($fullMethodName);
@@ -488,13 +525,18 @@ trait MethodCallTrait
             $funcName = '';
         }
 
-        $requiresDynamicScope = true;
-        if ($class && $funcName && !$magicMethod && $this->isInternalClass($class)) {
-            $methodPtr = $this->getMethodPtr($class, $funcName);
-            // Calling a resolved public internal method does not require
-            // callback visibility scope. A small set of invoker methods is
-            // intentionally exempt because it executes another PHP method.
-            $requiresDynamicScope = $this->internalMethodMayInvokeCallback($class, $funcName);
+        $requiresDynamicScope = $this->runtimeMethodRequiresDynamicScope($class, $funcName, $magicMethod);
+        if ($class && $funcName && !$magicMethod) {
+            if ($this->isInternalClass($class)) {
+                $methodPtr = $this->getMethodPtr($class, $funcName);
+                // A small set of internal invokers synchronously executes a
+                // callback and therefore still needs the caller's scope.
+                if ($this->internalMethodMayInvokeCallback($class, $funcName)) {
+                    $requiresDynamicScope = true;
+                }
+            } else {
+                $methodPtr = $method;
+            }
         } else {
             $methodPtr = $method;
         }
