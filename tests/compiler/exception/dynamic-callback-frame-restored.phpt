@@ -16,6 +16,11 @@ final class CallbackFrameProbe
     }
 }
 
+function fail_from_dynamic_function_callback(): void
+{
+    throw new DomainException('function');
+}
+
 function callback_frame_is_stale(Throwable $exception, string $function): bool
 {
     foreach ($exception->getTrace() as $frame) {
@@ -28,6 +33,16 @@ function callback_frame_is_stale(Throwable $exception, string $function): bool
 
 function main(): void
 {
+    try {
+        call_user_func('fail_from_dynamic_function_callback');
+    } catch (DomainException $exception) {
+    }
+    try {
+        throw new RuntimeException('after function');
+    } catch (RuntimeException $exception) {
+        echo 'function=', callback_frame_is_stale($exception, 'fail_from_dynamic_function_callback') ? 'stale' : 'clean', "\n";
+    }
+
     try {
         $copy = clone new CallbackFrameProbe();
     } catch (DomainException $exception) {
@@ -62,6 +77,7 @@ function main(): void
 }
 ?>
 --EXPECT--
+function=clean
 clone=clean
 array_map=clean
 reflection=clean

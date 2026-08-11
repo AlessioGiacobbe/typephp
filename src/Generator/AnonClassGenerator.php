@@ -76,12 +76,30 @@ trait AnonClassGenerator
         array_push($class->stmts, ...$injected);
     }
 
-    /**
-     * Resolve all relative type names in an anonymous class to fully qualified names.
-     * The generated eval code runs without use imports, so all type references must be FQN.
-     */
-    protected function resolveAnonClassTypeNames(Class_ $classDef): void
+    /** Resolve imported names in an anonymous class before evaluating it in the root namespace. */
+    protected function resolveAnonClassNames(Class_ $classDef): void
     {
+        // Anonymous classes are emitted through eval() in the root namespace. Names
+        // resolved from the declaring file's namespace and imports must therefore be
+        // embedded as fully-qualified names, including names used inside method bodies.
+        $traverser = new NodeTraverser();
+        $traverser->addVisitor(new class extends NodeVisitorAbstract {
+            public function enterNode(Node $node): ?Node
+            {
+                if (!$node instanceof Name || $node->isSpecialClassName()) {
+                    return null;
+                }
+                $resolvedName = $node->getAttribute('resolvedName');
+                if (!$resolvedName instanceof Name) {
+                    return null;
+                }
+                return new Name\FullyQualified($resolvedName->toString(), $node->getAttributes());
+            }
+        });
+        $traverser->traverse([$classDef]);
+
+        // Lowering may synthesize type nodes after name resolution, so retain the
+        // explicit signature pass for nodes which do not carry resolvedName metadata.
         foreach ($classDef->stmts as $stmt) {
             if ($stmt instanceof ClassMethod) {
                 foreach ($stmt->params as $param) {

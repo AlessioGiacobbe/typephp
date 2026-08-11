@@ -3533,8 +3533,8 @@ class CompilerBase implements PropertyAccessContext
                     }
                 }
                 $this->flattenEmbeddedClassTraits($classDef);
-                // 将匿名类内部的类型引用（方法参数、返回值、属性等）转为全限定名称
-                $this->resolveAnonClassTypeNames($classDef);
+                // 匿名类由根命名空间中的 eval 定义，内部导入的符号必须转为全限定名称。
+                $this->resolveAnonClassNames($classDef);
                 $this->context->beforeStmtLines[] = 'static THREAD_LOCAL bool ' . $className . '_defined = false;';
                 $classCode = $this->genEmbeddedCode($classDef);
                 $this->addConstData($className . '_code', $classCode);
@@ -3776,6 +3776,19 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $fileName = $this->parseIdentifier($expr->expr);
+
+        $scope = [];
+        foreach ($this->context->localVars as $name => $_type) {
+            if ($name === 'this_' || str_starts_with($name, 'tmp_var_')) {
+                continue;
+            }
+            $phpName = $this->unescapeVarName($name);
+            $scope[] = '{ ' . $this->getLiteralString($phpName) . '.str(), php::Var(' . $name . ') }';
+        }
+
+        if ($scope) {
+            return "php::include(php::Var($fileName), $type, php::Array{" . implode(', ', $scope) . '})';
+        }
 
         return "php::include(php::Var($fileName), $type)";
     }
