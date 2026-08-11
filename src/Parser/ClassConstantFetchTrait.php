@@ -19,6 +19,10 @@ trait ClassConstantFetchTrait
     {
         $this->rejectPythonModuleClassConstantFetch($expr);
 
+        if (!$this->isIdExpr($expr->name)) {
+            return $this->parseDynamicClassConstNameFetch($expr);
+        }
+
         if (!$this->isNameExpr($expr->class)) {
             return $this->parseDynamicClassConstFetch($expr);
         }
@@ -97,9 +101,48 @@ trait ClassConstantFetchTrait
         return Symbol::constant() . '(php::concat({' . $className . ', "::", ' . $this->getLiteralString($const) . '}))';
     }
 
+    protected function parseDynamicClassConstNameFetch(Expr\ClassConstFetch $expr): string
+    {
+        $scope = $this->methodDef && $this->classDef
+            ? $this->getClassEntryPtr($this->getFullClassName())
+            : 'nullptr';
+
+        if (!$this->isNameExpr($expr->class)) {
+            // PHP evaluates the class target before the dynamic constant name.
+            $target = $this->materializeDynamicClassConstOperand($expr->class, 'class constant target');
+            $name = $this->materializeDynamicClassConstOperand($expr->name, 'class constant name');
+            return 'php::classConstant(' . $target . ', ' . $name . ', ' . $scope . ')';
+        }
+
+        $class = $this->parseIdentifier($expr->class);
+        if ($class === 'static') {
+            if (!$this->methodDef) {
+                $this->fatalError($expr, "The 'static' keyword can only be used as the class name in class methods");
+            }
+            $ce = Symbol::getCalledCe();
+        } elseif ($class === 'self' or $class === 'this_') {
+            $ce = $this->getClassEntryPtr($this->getFullClassName());
+        } elseif ($class === 'parent') {
+            if (!$this->classDef || !$this->classDef->extends) {
+                $this->fatalError($expr, 'Cannot use "parent" outside a class or class does not extend any class');
+            }
+            $ce = $this->getClassEntryPtr($this->classDef->extends);
+        } else {
+            $ce = $this->getClassEntryPtr($this->getNamespacedClassName($class));
+        }
+
+        $name = $this->materializeDynamicClassConstOperand($expr->name, 'class constant name');
+        return 'php::classConstant(' . $ce . ', ' . $name . ', ' . $scope . ')';
+    }
+
     protected function materializeDynamicClassConstTarget(NodeAbstract $expr): string
     {
-        $this->assertExprCanBeUsedAsValue($expr, 'class constant target');
+        return $this->materializeDynamicClassConstOperand($expr, 'class constant target');
+    }
+
+    protected function materializeDynamicClassConstOperand(NodeAbstract $expr, string $description): string
+    {
+        $this->assertExprCanBeUsedAsValue($expr, $description);
         [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
         $tmpVar = $this->addTmpVar(Type::VAR);
         $this->appendCapturedStmtLinesToContext($beforeStmts);
