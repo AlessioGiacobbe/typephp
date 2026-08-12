@@ -19,6 +19,7 @@
 - [后端中立 IR](BACKEND_NEUTRAL_IR.md)
 - [TypePHP WASM 技术方案与实施计划](TYPEPHP_WASM_IMPLEMENTATION_PLAN.md)
 - [构建 TypePHP WASI 程序](WASI_BUILD.md)
+- [重建 PHPX WASM 静态库](PHPX_WASM_BUILD.md)：增量重编 `libphpx.a`、数值依赖重建与完整 SDK 重建边界。
 - [核心重构计划](REFACTORING_PLAN.md)
 - [作用域管理设计](SCOPE_MANAGEMENT.md)：`CallableScope`、`UserCodeScopeGuard` 与 `FakeScopeGuard` 的职责和使用边界。
 - [PHP 8.4 Property Hook 集成设计](PROPERTY_HOOKS.md)：编译期 lowering、Zend Hook 元数据、对象内省及 PHPX ABI 边界。
