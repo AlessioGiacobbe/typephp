@@ -35,6 +35,7 @@ use TypePhp\Generator\CallArgumentGenerator;
 use TypePhp\Generator\ClosureGenerator;
 use TypePhp\Generator\FiberGenerator;
 use TypePhp\Generator\PlaceHolderGenerator;
+use TypePhp\Generator\ParameterCountCheckGenerator;
 use TypePhp\Generator\PropertyPromotion;
 use TypePhp\Generator\Symbol;
 use TypePhp\Generator\Utils;
@@ -112,6 +113,7 @@ class CompilerBase implements PropertyAccessContext
     use ClosureGenerator;
     use FiberGenerator;
     use PlaceHolderGenerator;
+    use ParameterCountCheckGenerator;
     use PropertyPromotion;
     use MagicMethodDetector;
     use StdContainerTrait;

@@ -33,6 +33,6 @@ function main(): void
 ?>
 --EXPECT--
 string(18) "ArgumentCountError"
-string(84) "Too few arguments to function expect_nullable_int(), 0 passed and exactly 1 expected"
+string(57) "expect_nullable_int() expects exactly 1 argument, 0 given"
 string(18) "ArgumentCountError"
-string(94) "Too few arguments to function expect_nullable_with_default(), 0 passed and at least 1 expected"
+string(67) "expect_nullable_with_default() expects at least 1 argument, 0 given"

@@ -48,6 +48,6 @@ array(3) {
   NULL
 }
 string(18) "ArgumentCountError"
-string(74) "Too few arguments to function {closure}(), 0 passed and exactly 1 expected"
+string(57) "stdClass::{closure}() expects exactly 1 argument, 0 given"
 string(18) "ArgumentCountError"
-string(75) "Too few arguments to function {closure}(), 0 passed and at least 1 expected"
+string(58) "stdClass::{closure}() expects at least 1 argument, 0 given"
