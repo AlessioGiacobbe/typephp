@@ -452,7 +452,8 @@ trait SsaPropOptimizer
         if ($node instanceof Expr\FuncCall
             && $node->name instanceof Node\Name
             && $node->name->toLowerString() === 'refval'
-            && !empty($node->args)) {
+            && isset($node->args[0])
+            && $node->args[0] instanceof Node\Arg) {
             $propName = $this->getPropNameOfObj($node->args[0]->value, $objName);
             if ($propName !== null) {
                 $events[] = ['kind' => 'danger', 'prop' => $propName];
@@ -476,6 +477,12 @@ trait SsaPropOptimizer
                 $this->collectPropEvents($node->var, $objName, $events);
             }
             foreach ($node->args as $arg) {
+                // A first-class callable such as $object->method(...) stores a
+                // VariadicPlaceholder in args. It denotes callable creation,
+                // not an argument expression, and has no byRef/value fields.
+                if (!$arg instanceof Node\Arg) {
+                    continue;
+                }
                 $propName = $arg->byRef ? $this->getPropNameOfObj($arg->value, $objName) : null;
                 if ($propName !== null) {
                     $events[] = ['kind' => 'danger', 'prop' => $propName];
@@ -490,6 +497,9 @@ trait SsaPropOptimizer
                     $events[] = ['kind' => 'danger', 'prop' => '*'];
                 }
                 foreach ($node->args as $arg) {
+                    if (!$arg instanceof Node\Arg) {
+                        continue;
+                    }
                     if ($this->exprMayExposeObject($arg->value, $objName)) {
                         $events[] = ['kind' => 'danger', 'prop' => '*'];
                     }
