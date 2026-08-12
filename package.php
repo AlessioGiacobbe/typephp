@@ -608,6 +608,7 @@ function packageUnixLike(): void
         'README.md',
         'LICENSE.md',
         'examples/hello.php',
+        'completions/tpc.bash',
         'wasm/build-program.sh',
         "{$wasiSdkSourceRoot}/.typephp-wasi-sdk-abi",
         "{$wasiSdkSourceRoot}/include/php/main/php.h",
@@ -703,6 +704,8 @@ function packageUnixLike(): void
     mustCopy('LICENSE.md', "{$topLevelDir}/LICENSE.md");
     mustCreateDirectory("{$topLevelDir}/examples");
     mustCopy('examples/hello.php', "{$topLevelDir}/examples/hello.php");
+    mustCreateDirectory("{$topLevelDir}/completions");
+    mustCopy('completions/tpc.bash', "{$topLevelDir}/completions/tpc.bash");
     copyDirectory('wasm', "{$topLevelDir}/wasm");
     copyDirectory("{$phpxSourceDir}/wasm", "{$topLevelDir}/vendor/swoole/phpx/wasm");
 
@@ -740,6 +743,7 @@ function packageUnixLike(): void
         "{$topLevelDir}/README.md",
         "{$topLevelDir}/LICENSE.md",
         "{$topLevelDir}/examples/hello.php",
+        "{$topLevelDir}/completions/tpc.bash",
         "{$topLevelDir}/wasm/build-program.sh",
         "{$topLevelDir}/{$wasiSdkPackageRoot}/.typephp-wasi-sdk-abi",
         "{$topLevelDir}/{$wasiSdkPackageRoot}/include/php/main/php.h",
