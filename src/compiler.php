@@ -4,6 +4,7 @@ use TypePhp\Build\WasiToolchain;
 use TypePhp\Build\WasiProjectConfig;
 use TypePhp\Build\PhpxLocator;
 use TypePhp\PythonTools\Command as PythonToolsCommand;
+use TypePhp\Cli\CompletionCommand;
 
 function main(int $argc, array $argv): void
 {
@@ -13,6 +14,14 @@ function main(int $argc, array $argv): void
 
     if (!defined('ROOT_PATH')) {
         define("ROOT_PATH", getcwd());
+    }
+
+    $completionStatus = CompletionCommand::execute($argv);
+    if ($completionStatus !== null) {
+        if ($completionStatus !== 0) {
+            exit($completionStatus);
+        }
+        return;
     }
 
     $pythonToolStatus = PythonToolsCommand::execute($argv);

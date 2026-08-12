@@ -274,6 +274,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('--wasm[=profile]     Build WASI component (default) or browser output');
         $climate->tab()->out('--gen-python-helper <module> [--output-dir <dir>] Generate a Python namespace IDE helper');
         $climate->tab()->out('--convert-python-to-php <file.py> Convert Python source to TypePHP source');
+        $climate->tab()->out('--generate-completion=bash Generate Bash completion script');
         $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
         $climate->tab()->out('--php-version <ver>  PHP language version to accept (8.2-8.5, default: 8.5)');

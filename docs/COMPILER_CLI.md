@@ -1,5 +1,39 @@
 # TypePHP 编译器命令行
 
+## Bash 自动补全
+
+TypePHP 提供与当前编译器参数同步的 Bash completion。当前终端临时启用：
+
+```shell
+source <(./tpc --generate-completion=bash)
+```
+
+从源码仓库开发时也可以直接执行 `source completions/tpc.bash`。
+
+安装到当前用户并在后续 Bash 会话自动加载：
+
+```shell
+mkdir -p "$HOME/.local/share/bash-completion/completions"
+./tpc --generate-completion=bash \
+    > "$HOME/.local/share/bash-completion/completions/tpc"
+```
+
+如果系统没有自动扫描用户 completion 目录，可在 `~/.bashrc` 中加载：
+
+```shell
+source "$HOME/.local/share/bash-completion/completions/tpc"
+```
+
+系统级安装可将生成结果写入 `/usr/share/bash-completion/completions/tpc`。该操作通常
+需要 root 权限。
+
+补全支持编译选项、WASM profile、构建模式、PHP/C++ 版本、sanitizer、输入源码、
+项目 YAML、Python 源文件以及目录参数。`--` 之后是被编译程序自身的参数，补全器
+不会再把它们解释为 `tpc` 参数。
+
+发布包携带预生成的 `completions/tpc.bash`。此文件由同一个生成器产生，并有单元
+测试保证它与 `./tpc --generate-completion=bash` 的输出一致。
+
 本文档与 `src/Translator.php::showUsage()` 保持同步。使用：
 
 ```bash
