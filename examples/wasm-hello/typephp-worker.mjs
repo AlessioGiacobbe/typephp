@@ -3,7 +3,11 @@ import {
     _setStdin,
     _setStdout,
 } from '@bytecodealliance/preview2-shim/cli';
-import { _setFileData } from '@bytecodealliance/preview2-shim/filesystem';
+import {
+    _getPreopens,
+    _setFileData,
+    types as filesystemTypes,
+} from '@bytecodealliance/preview2-shim/filesystem';
 import { WASIShim } from '@bytecodealliance/preview2-shim/instantiation';
 
 const encoder = new TextEncoder();
@@ -13,6 +17,49 @@ let fileData = null;
 let persistent = false;
 let storageName = 'typephp-wasi-filesystem.json';
 let extensionQueue = Promise.resolve();
+
+function installMutableFilesystem(data) {
+    const descriptorEntries = new WeakMap();
+    for (const [descriptor] of _getPreopens()) descriptorEntries.set(descriptor, data);
+
+    function resolve(entry, guestPath) {
+        for (const segment of String(guestPath).split('/')) {
+            if (segment === '' || segment === '.') continue;
+            if (segment === '..' || !entry?.dir?.[segment]) throw { tag: 'no-entry' };
+            entry = entry.dir[segment];
+        }
+        return entry;
+    }
+
+    function remove(descriptor, guestPath, directory) {
+        const root = descriptorEntries.get(descriptor);
+        if (!root) throw { tag: 'bad-descriptor' };
+        const segments = String(guestPath).split('/').filter((segment) => segment !== '' && segment !== '.');
+        const name = segments.pop();
+        if (!name || name === '..' || segments.includes('..')) throw { tag: 'no-entry' };
+        const parent = resolve(root, segments.join('/'));
+        const entry = parent?.dir?.[name];
+        if (!entry) throw { tag: 'no-entry' };
+        if (directory ? !entry.dir : entry.dir) throw { tag: directory ? 'not-directory' : 'is-directory' };
+        if (directory && Object.keys(entry.dir).length !== 0) throw { tag: 'not-empty' };
+        delete parent.dir[name];
+    }
+
+    const descriptor = filesystemTypes.Descriptor.prototype;
+    const openAt = descriptor.openAt;
+    descriptor.openAt = function (...args) {
+        const opened = openAt.apply(this, args);
+        const parent = descriptorEntries.get(this);
+        if (parent) descriptorEntries.set(opened, resolve(parent, args[1]));
+        return opened;
+    };
+    descriptor.unlinkFileAt = function (guestPath) {
+        remove(this, guestPath, false);
+    };
+    descriptor.removeDirectoryAt = function (guestPath) {
+        remove(this, guestPath, true);
+    };
+}
 
 function outputHandler(stream) {
     return {
@@ -101,6 +148,7 @@ async function start(data) {
         storageName = String(data.storageName || 'typephp-wasi-filesystem.json');
         fileData = persistent ? await loadFileData(storageName) : { dir: {} };
         _setFileData(fileData);
+        installMutableFilesystem(fileData);
         _setStdin(inputHandler(String(data.stdin || '')));
         _setStdout(outputHandler('stdout'));
         _setStderr(outputHandler('stderr'));

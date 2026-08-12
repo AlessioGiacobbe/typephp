@@ -39,21 +39,22 @@ const pageOptions = JSON.stringify({ ...options, stdin }).replace(/</g, '\\u003c
 const html = `<!doctype html>
 <meta charset="utf-8">
 <script type="importmap">
-{"imports":{"@bytecodealliance/preview2-shim":"/deps/lib/browser/index.js","@bytecodealliance/preview2-shim/":"/deps/lib/browser/"}}
+{"imports":{"@bytecodealliance/preview2-shim":"/deps/dist/browser/index.js","@bytecodealliance/preview2-shim/":"/deps/dist/browser/"}}
 </script>
 <script>globalThis.TYPEPHP_WASM_TEST_OPTIONS = ${pageOptions};</script>
 <script type="module" src="/harness.js"></script>`;
 
 const harnessSource = `
-import { _setStderr, _setStdin, _setStdout } from '/deps/lib/browser/cli.js';
-import { _setFileData } from '/deps/lib/browser/filesystem.js';
-import { WASIShim } from '/deps/lib/common/instantiation.js';
+import { _setStderr, _setStdin, _setStdout } from '/deps/dist/browser/cli.js';
+import { _getPreopens, _setFileData, types as filesystemTypes } from '/deps/dist/browser/filesystem.js';
+import { WASIShim } from '/deps/dist/common/instantiation.js';
 import { instantiate } from '/artifact/program.js';
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
 const options = globalThis.TYPEPHP_WASM_TEST_OPTIONS;
 let output = '';
+globalThis.TYPEPHP_WASM_TEST_STAGE = 'module-loaded';
 
 function outputHandler() {
     return {
@@ -79,11 +80,56 @@ function inputHandler(text) {
     };
 }
 
+function installMutableFilesystem(fileData) {
+    const descriptorEntries = new WeakMap();
+    for (const [descriptor] of _getPreopens()) descriptorEntries.set(descriptor, fileData);
+
+    function resolve(entry, guestPath) {
+        for (const segment of String(guestPath).split('/')) {
+            if (segment === '' || segment === '.') continue;
+            if (segment === '..' || !entry?.dir?.[segment]) throw { tag: 'no-entry' };
+            entry = entry.dir[segment];
+        }
+        return entry;
+    }
+
+    function remove(descriptor, guestPath, directory) {
+        const root = descriptorEntries.get(descriptor);
+        if (!root) throw { tag: 'bad-descriptor' };
+        const segments = String(guestPath).split('/').filter((segment) => segment !== '' && segment !== '.');
+        const name = segments.pop();
+        if (!name || name === '..' || segments.includes('..')) throw { tag: 'no-entry' };
+        const parent = resolve(root, segments.join('/'));
+        const entry = parent?.dir?.[name];
+        if (!entry) throw { tag: 'no-entry' };
+        if (directory ? !entry.dir : entry.dir) throw { tag: directory ? 'not-directory' : 'is-directory' };
+        if (directory && Object.keys(entry.dir).length !== 0) throw { tag: 'not-empty' };
+        delete parent.dir[name];
+    }
+
+    const descriptor = filesystemTypes.Descriptor.prototype;
+    const openAt = descriptor.openAt;
+    descriptor.openAt = function (...args) {
+        const opened = openAt.apply(this, args);
+        const parent = descriptorEntries.get(this);
+        if (parent) descriptorEntries.set(opened, resolve(parent, args[1]));
+        return opened;
+    };
+    descriptor.unlinkFileAt = function (guestPath) {
+        remove(this, guestPath, false);
+    };
+    descriptor.removeDirectoryAt = function (guestPath) {
+        remove(this, guestPath, true);
+    };
+}
+
 try {
     if (typeof WebAssembly.Suspending !== 'function' || typeof WebAssembly.promising !== 'function') {
         throw new Error('Chrome does not provide WebAssembly JSPI');
     }
-    _setFileData({ dir: { sandbox: { dir: {} } } });
+    const fileData = { dir: { sandbox: { dir: {} } } };
+    _setFileData(fileData);
+    installMutableFilesystem(fileData);
     _setStdin(inputHandler(String(options.stdin || '')));
     _setStdout(outputHandler());
     _setStderr(outputHandler());
@@ -92,7 +138,9 @@ try {
         env: { ...(options.env || {}) },
         enableNetwork: true,
     }});
+    globalThis.TYPEPHP_WASM_TEST_STAGE = 'instantiating';
     const component = await instantiate(null, wasi.getImportObject());
+    globalThis.TYPEPHP_WASM_TEST_STAGE = 'running';
     const result = await component.run.run();
     globalThis.TYPEPHP_WASM_TEST_RESULT = { output, result };
 } catch (error) {
@@ -126,12 +174,21 @@ const server = http.createServer(async (request, response) => {
             response.writeHead(404).end();
             return;
         }
-        const filename = safePath(mapping[0], mapping[1]);
+        let filename = safePath(mapping[0], mapping[1]);
         if (!filename) {
             response.writeHead(403).end();
             return;
         }
-        const data = await fs.readFile(filename);
+        let data;
+        try {
+            data = await fs.readFile(filename);
+        } catch (error) {
+            // The browser shim publishes Node-style extensionless ESM imports.
+            // Resolve those within the already validated static root only.
+            if (error?.code !== 'ENOENT' || path.extname(filename) !== '') throw error;
+            filename += '.js';
+            data = await fs.readFile(filename);
+        }
         response.writeHead(200, { 'content-type': contentTypes.get(path.extname(filename)) || 'application/octet-stream' });
         response.end(data);
     } catch (error) {
@@ -163,7 +220,8 @@ try {
     try {
         await page.waitForFunction(() => globalThis.TYPEPHP_WASM_TEST_RESULT !== undefined, { timeout: 120000 });
     } catch (error) {
-        throw new Error(`${error.message}\n${diagnostics.join('\n')}`);
+        const stage = await page.evaluate(() => globalThis.TYPEPHP_WASM_TEST_STAGE || 'page-loading');
+        throw new Error(`${error.message}\nstage: ${stage}\n${diagnostics.join('\n')}`);
     }
     const result = await page.evaluate(() => globalThis.TYPEPHP_WASM_TEST_RESULT);
     process.stdout.write(result.output || '');
