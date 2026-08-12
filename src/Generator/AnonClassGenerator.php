@@ -177,6 +177,14 @@ trait AnonClassGenerator
                         $class = $this->classStack[count($this->classStack) - 1] ?? null;
                         if ($class !== null && $this->compiler->shouldAddMixedReturnToEmbeddedClassMethod($class, $node)) {
                             $node->returnType = new Identifier('mixed');
+                            // An implicit fallthrough returns null in PHP. Once the
+                            // compatibility return type is made explicit, PHP requires
+                            // an explicit value on that path as well.
+                            if ($node->stmts !== null) {
+                                $node->stmts[] = new Node\Stmt\Return_(
+                                    new Node\Expr\ConstFetch(new Name('null')),
+                                );
+                            }
                         }
                     }
                     return null;
