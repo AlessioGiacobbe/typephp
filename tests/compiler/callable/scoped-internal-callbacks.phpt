@@ -31,6 +31,7 @@ class ScopedInternalCallbacks
         var_dump(array_map(array: [4, 5], callback: [$this, 'triple']));
         var_dump(preg_replace_callback_array([
             '/a+/' => [self::class, 'replace'],
+            '/b+/' => static fn(array $match): string => '[' . $match[0] . ']',
         ], 'caaab'));
         var_dump(array_udiff_uassoc(
             ['a' => 1, 'b' => 2],
@@ -65,7 +66,7 @@ array(2) {
   [1]=>
   int(15)
 }
-string(5) "cAAAb"
+string(7) "cAAA[b]"
 array(1) {
   ["b"]=>
   int(2)

@@ -3244,7 +3244,10 @@ class CompilerBase implements PropertyAccessContext
             'forward_static_call' => [[0, 'callback']],
             'forward_static_call_array' => [[0, 'callback']],
             'preg_replace_callback' => [[1, 'callback']],
-            'preg_replace_callback_array' => [[0, 'pattern', 'map']],
+            // Zend resolves every callback stored in the map. Preserve the
+            // original array and expose the method scope once at function
+            // entry instead of scanning/copying it into fake Closures.
+            'preg_replace_callback_array' => [[0, 'pattern', 'dynamic-map']],
             'iterator_apply' => [[1, 'callback']],
             'array_udiff' => [[-1, 'value_compare_func']],
             'array_udiff_assoc' => [[-1, 'value_compare_func']],
@@ -3269,8 +3272,10 @@ class CompilerBase implements PropertyAccessContext
             return;
         }
 
-        $fullyDynamic = ($descriptors[0][2] ?? 'callable') === 'dynamic';
-        if ($fullyDynamic) {
+        $firstStrategy = $descriptors[0][2] ?? 'callable';
+        $fullyDynamic = $firstStrategy === 'dynamic';
+        $dynamicMap = $firstStrategy === 'dynamic-map';
+        if ($fullyDynamic || $dynamicMap) {
             $this->markUserCodeCallableScope();
         }
         $argCount = count($args);
@@ -3288,14 +3293,14 @@ class CompilerBase implements PropertyAccessContext
             foreach ($descriptors as $descriptorIndex => $descriptor) {
                 [$position, $name] = $descriptor;
                 $strategy = $descriptor[2] ?? 'callable';
-                $container = $strategy === 'map';
+                $scopeProvidedByGuard = $strategy === 'dynamic-map';
                 $callbackPosition = $position < 0 ? $argCount + $position : $position;
                 $matches = $arg->name === null
                     ? $index === $callbackPosition
                     : $arg->name->toString() === $name;
                 if ($matches) {
                     $matchedCallbacks[$descriptorIndex] = true;
-                    if ($container || !$this->isScopeIndependentCallableExpr($arg->value)) {
+                    if (!$scopeProvidedByGuard && !$this->isScopeIndependentCallableExpr($arg->value)) {
                         $mode = $strategy === 'dynamic' ? 'normalize' : $strategy;
                         $arg->setAttribute(self::ATTR_SCOPED_CALLBACK, $mode);
                     }

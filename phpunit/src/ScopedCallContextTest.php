@@ -20,5 +20,7 @@ class ScopedCallContextTest extends \BaseTest
         );
         preg_match('/php::CallableScope (tmp_var_\d+) =/', $cpp, $matches);
         $this->assertGreaterThanOrEqual(4, substr_count($cpp, $matches[1]));
+        $this->assertSame(1, substr_count($cpp, 'php::UserCodeScopeGuard'));
+        $this->assertStringNotContainsString('makeScopedCallableMap', $cpp);
     }
 }

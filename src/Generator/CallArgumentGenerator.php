@@ -558,7 +558,6 @@ trait CallArgumentGenerator
         }
 
         $helper = match ($mode) {
-            'map' => 'makeScopedCallableMap',
             'normalize' => 'normalizeCallableClass',
             default => 'prepareScopedCallback',
         };

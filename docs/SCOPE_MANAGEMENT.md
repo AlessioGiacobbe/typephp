@@ -132,12 +132,6 @@ $callback = $this->publicMethod(...);
 
 只有 private/protected 方法、`self` / `parent` / `static` 相对 callback 或 trampoline 才创建 Closure。这避免了循环中每次调用内置函数都无条件分配 fake Closure。
 
-#### `php::makeScopedCallableMap()`
-
-用于 callback map。它逐项调用 `prepareScopedCallback()`，只替换真正依赖作用域的元素。
-
-PHPX `Array` 使用 Zend copy-on-write：若所有 callback 都可直接复用，底层 HashTable 不会复制；首次需要替换时只分离一次，之后在同一结果数组中更新。因此复杂度仍为 O(N) 检查，但没有无条件 O(N) 的 Closure 分配。
-
 ### 3.6 为什么仍要运行时识别 `self` / `parent` / `static`
 
 直接语法中的 `self::class` 可以在编译期展开为具体类名，但 PHP callback 也允许动态值：
@@ -153,7 +147,7 @@ $callback = [$class, 'method'];
 
 ### 4.1 职责与适用范围
 
-`UserCodeScopeGuard` 服务于完全动态的 `call_user_func()` / `call_user_func_array()`，以及编译器无法静态改写 callback 的参数展开场景。
+`UserCodeScopeGuard` 服务于完全动态的 `call_user_func()` / `call_user_func_array()`、callback map，以及编译器无法静态改写 callback 的参数展开场景。
 
 ```php
 $args = [[$this, 'privateMethod'], 1];
@@ -170,7 +164,9 @@ call_user_func(...$args);
 
 规范化只复制需要修改的 callback 数组。绝对类名、对象 callback、Closure 和普通函数名保持原值。
 
-除 `call_user_func*` 外，普通 callback 参数不得使用此 guard；只要 callback 的 AST 参数位置已知，就应使用 `CallableScope` 路径。
+`preg_replace_callback_array()` 是 callback map 的特例。Zend 会在函数内部逐项解析 map 中的 callback；若提前包装 map，则每次调用都要执行 O(N) 扫描，并可能触发数组 COW 和多个 Closure 分配。因此编译器保留原始 map，在方法入口创建一次 `UserCodeScopeGuard`，让 Zend 直接按正确作用域解析。
+
+除完全动态调用、callback map 和参数展开外，普通 callback 参数不得使用此 guard；只要单个 callback 的 AST 参数位置已知，就应使用 `CallableScope` 路径。
 
 ### 4.2 实现方式
 
@@ -352,8 +348,7 @@ save EG(fake_scope)
 | `callScoped()` | `zend_is_callable_at_frame()` 动态解析 | 仅动态调用使用；可解析的 Native Call 不进入此路径 |
 | `prepareScopedCallback()` | 一次 callable 解析 | public 绝对 callback 不创建 Closure |
 | `makeScopedCallable()` | callable 解析及 Closure 分配 | 仅 first-class callable 使用 |
-| `makeScopedCallableMap()` | O(N) 检查 | COW；只包装需要作用域的元素 |
-| `UserCodeScopeGuard` | 方法入口一次指针查找、写入和退出恢复 | 只为 `call_user_func*` 或未解析的 unpack callback 生成 |
+| `UserCodeScopeGuard` | 方法入口一次指针查找、写入和退出恢复 | 只为 `call_user_func*`、callback map 或未解析的 unpack callback 生成 |
 | `FakeScopeGuard` | 两次 executor-global 指针赋值 | 仅包围确实读取 fake scope 的 Zend API |
 
 这套设计刻意让常见的纯 Native Call、无 callback 方法和 public callback 保持最短路径。不要为了统一表面形式而把低频 fallback 下沉到所有调用中。
