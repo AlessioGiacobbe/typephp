@@ -65,6 +65,28 @@ final class WasiToolchainTest extends TestCase
         $this->assertSame('wasm32-unknown-wasip2', $tools['target']);
     }
 
+    public function testLibraryModeRequiresPinnedWitBindgenFromPath(): void
+    {
+        $this->installFakeTools(22, 47, 1, 'wasm32-unknown-wasip2');
+        putenv('PATH=' . $this->directory);
+
+        $tools = (new WasiToolchain())->detect(false, true);
+
+        $this->assertSame($this->directory . '/wit-bindgen', $tools['wit-bindgen']);
+        $this->assertSame('0.60.0', $tools['wit-bindgen-version']);
+    }
+
+    public function testLibraryModeRejectsIncompatibleWitBindgen(): void
+    {
+        $this->installFakeTools(22, 47, 1, 'wasm32-unknown-wasip2');
+        $this->writeExecutable('wit-bindgen', "#!/bin/sh\necho 'wit-bindgen-cli 0.61.0'\n");
+        putenv('PATH=' . $this->directory);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('wit-bindgen-cli 0.60.0 is required');
+        (new WasiToolchain())->detect(false, true);
+    }
+
     public function testRejectsOldLlvm(): void
     {
         $this->installFakeTools(21, 47, 1, 'wasm32-unknown-wasip2');
@@ -97,6 +119,7 @@ final class WasiToolchainTest extends TestCase
         );
         $this->writeExecutable('wasmtime', "#!/bin/sh\necho 'wasmtime {$wasmtimeMajor}.0.0'\n");
         $this->writeExecutable('jco', "#!/bin/sh\necho 'jco {$jcoMajor}.0.0'\n");
+        $this->writeExecutable('wit-bindgen', "#!/bin/sh\necho 'wit-bindgen-cli 0.60.0'\n");
     }
 
     private function writeExecutable(string $name, string $contents): void

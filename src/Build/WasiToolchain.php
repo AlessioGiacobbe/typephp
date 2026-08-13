@@ -9,9 +9,10 @@ final class WasiToolchain
     public const MIN_LLVM_MAJOR = 22;
     public const MIN_WASMTIME_MAJOR = 47;
     public const MIN_JCO_MAJOR = 1;
+    public const WIT_BINDGEN_VERSION = '0.60.0';
 
     /** @return array<string, string> */
-    public function detect(bool $requireBrowserTools = true): array
+    public function detect(bool $requireBrowserTools = true, bool $requireWitBindgen = false): array
     {
         $tools = [];
         $requiredTools = [
@@ -26,6 +27,9 @@ final class WasiToolchain
         if ($requireBrowserTools) {
             $requiredTools[] = 'jco';
         }
+        if ($requireWitBindgen) {
+            $requiredTools[] = 'wit-bindgen';
+        }
         foreach ($requiredTools as $name) {
             $tools[$name] = $this->findExecutable($name);
         }
@@ -38,6 +42,19 @@ final class WasiToolchain
         $versions['wasmtime'] = $this->requireVersion('wasmtime', $tools['wasmtime'], self::MIN_WASMTIME_MAJOR);
         if ($requireBrowserTools) {
             $versions['jco'] = $this->requireVersion('jco', $tools['jco'], self::MIN_JCO_MAJOR);
+        }
+        if ($requireWitBindgen) {
+            [$exitCode, $output, $error] = $this->run([$tools['wit-bindgen'], '--version']);
+            $version = trim($output . "\n" . $error);
+            $expectedVersion = 'wit-bindgen-cli ' . self::WIT_BINDGEN_VERSION;
+            if ($exitCode !== 0 || $version !== $expectedVersion) {
+                throw new RuntimeException(
+                    "WASI tool `wit-bindgen` has an incompatible version: "
+                    . ($version !== '' ? $version : 'unknown')
+                    . "; {$expectedVersion} is required",
+                );
+            }
+            $versions['wit-bindgen'] = self::WIT_BINDGEN_VERSION;
         }
 
         [$exitCode, $target, $error] = $this->run([$tools['wasm32-wasip2-clang++'], '--print-target-triple']);
@@ -58,6 +75,9 @@ final class WasiToolchain
         $tools['wasmtime-version'] = $versions['wasmtime'];
         if ($requireBrowserTools) {
             $tools['jco-version'] = $versions['jco'];
+        }
+        if ($requireWitBindgen) {
+            $tools['wit-bindgen-version'] = $versions['wit-bindgen'];
         }
         return $tools;
     }

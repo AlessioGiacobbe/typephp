@@ -64,11 +64,10 @@ GMP, MPFR, the vendored mpdecimal, `libphpx.a`, and their headers. The
 orchestrator validates the combined installation before writing
 `.typephp-wasi-sdk-abi`.
 
-Autoconf, Bison, re2c, Rust, upstream `wit-bindgen`, and the PHP/PHPX source
-trees are SDK producer dependencies only. They are never searched for by an
-application build. PHPX release packages include the pinned host-side
-`phpx-wit-bindgen` needed for application-specific exports below
-`<phpx>/wasm/bin/<host-os>-<host-arch>/`.
+Autoconf, Bison, re2c, and the PHP/PHPX source trees are SDK producer
+dependencies only. They are never searched for by an application build.
+Library components additionally require the pinned host-side
+`wit-bindgen-cli 0.60.0` in `PATH`; command components do not use it.
 
 WASM integration checks live in `tests/wasm` and run through `run-tests.php`.
 The target-independent high-precision TypePHP example lives at

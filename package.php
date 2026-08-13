@@ -707,7 +707,9 @@ function packageUnixLike(): void
     mustCreateDirectory("{$topLevelDir}/completions");
     mustCopy('completions/tpc.bash', "{$topLevelDir}/completions/tpc.bash");
     copyDirectory('wasm', "{$topLevelDir}/wasm");
-    copyDirectory("{$phpxSourceDir}/wasm", "{$topLevelDir}/vendor/swoole/phpx/wasm");
+    // Host build tools such as wit-bindgen are installed independently and
+    // discovered through PATH; only the target SDK belongs in the package.
+    copyDirectory("{$phpxSourceDir}/wasm", "{$topLevelDir}/vendor/swoole/phpx/wasm", ['bin']);
 
     if (is_file($outputFile) && !unlink($outputFile)) {
         throw new RuntimeException("Unable to remove existing archive: {$outputFile}");

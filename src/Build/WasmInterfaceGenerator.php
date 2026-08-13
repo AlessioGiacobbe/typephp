@@ -151,7 +151,7 @@ final class WasmInterfaceGenerator
     /**
      * Render the small TypePHP-specific half of the C binding. The generic
      * Canonical ABI half and component type object are emitted by the pinned
-     * wit-bindgen binary shipped with PHPX.
+     * wit-bindgen version detected in PATH.
      *
      * @param array<string, mixed> $manifest
      */

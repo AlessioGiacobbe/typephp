@@ -158,22 +158,21 @@ include_flags=(
     -I"${generated_dir}/include"
 )
 
-# WIT is application-specific, but its generator is a host build tool. PHPX
-# packages a pinned wit-bindgen binary per host so users never install it or a
-# Rust toolchain. It is not linked into PHPX or the resulting component.
+# WIT is application-specific, and its generator is a host build tool found by
+# tpc in PATH. It is not linked into PHPX or the resulting component.
 binding_objects=()
 if [[ "${wasm_mode}" == library ]]; then
     bindgen=${TYPEPHP_WIT_BINDGEN:?TYPEPHP_WIT_BINDGEN is required in library mode}
     if [[ ! -x "${bindgen}" ]]; then
         fatal_error \
-            "PHPX bundled WIT binding generator is missing: ${bindgen}" \
-            "Install the matching PHPX package; installing wit-bindgen separately is not required."
+            "WASI build tool wit-bindgen is unavailable: ${bindgen}" \
+            "Install wit-bindgen-cli 0.60.0 and add it to PATH."
     fi
     bindgen_version=$("${bindgen}" --version 2>/dev/null || true)
     if [[ "${bindgen_version}" != 'wit-bindgen-cli 0.60.0' ]]; then
         fatal_error \
-            "PHPX bundled WIT binding generator has an incompatible version: ${bindgen_version:-unknown}" \
-            "Expected wit-bindgen-cli 0.60.0 from the matching PHPX package."
+            "WASI build tool wit-bindgen has an incompatible version: ${bindgen_version:-unknown}" \
+            "Install wit-bindgen-cli 0.60.0 and add it to PATH."
     fi
     binding_world=${TYPEPHP_WASM_WORLD//-/_}
     "${bindgen}" c \

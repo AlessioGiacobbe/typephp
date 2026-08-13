@@ -8,6 +8,7 @@ TypePHP 使用稳定的 WASI 0.2（Preview 2）和 Component Model。TypePHP 生
 - PHP 8.4 或更高版本，用于运行 TypePHP 编译器
 - Wasmtime 47 或更高版本，用于运行和测试产物
 - Jco 1 或更高版本，用于 browser profile；component profile 不需要 Jco
+- wit-bindgen-cli 0.60.0，用于 library/WasmExport 模式；command 模式不需要
 - 与当前 TypePHP 版本绑定的 `wasm32-wasip2` 集成 SDK
 
 WASI SDK 的 `bin` 目录和 Wasmtime 必须加入系统 `PATH`。编译器不会探测或使用 `/opt` 等约定安装目录，也不接受专用的工具目录配置。WASI 静态库和头文件统一安装到 PHPX 的 `wasm/wasm32-wasip2/`：
@@ -18,7 +19,7 @@ export PATH="<wasi-sdk-bin>:<wasmtime-bin>:$PATH"
 
 TypePHP 使用现有的 PHPX 定位规则：优先读取 `PHPX_HOME`，其次读取 Composer 的 `swoole/phpx` 安装位置，最后使用 `vendor/swoole/phpx`。不新增 WASI 专用环境变量。
 
-WASI 构建会检查 `wasm32-wasip2-clang`、`wasm32-wasip2-clang++`、`llvm-ar`、`llvm-ranlib`、`llvm-nm`、`wasm-component-ld` 和 `wasmtime`，并确认目标是 `wasm32-unknown-wasip2`。browser profile 另外检查 `jco`。所有工具只从 `PATH` 查找；npm script 会自动将项目本地的 `node_modules/.bin` 加入 `PATH`。
+WASI 构建会检查 `wasm32-wasip2-clang`、`wasm32-wasip2-clang++`、`llvm-ar`、`llvm-ranlib`、`llvm-nm`、`wasm-component-ld` 和 `wasmtime`，并确认目标是 `wasm32-unknown-wasip2`。browser profile 另外检查 `jco`，library 模式另外检查固定版本的 `wit-bindgen`。所有工具只从 `PATH` 查找；npm script 会自动将项目本地的 `node_modules/.bin` 加入 `PATH`。
 
 ## 一条命令构建
 
@@ -63,7 +64,7 @@ sources:
 
 路径、sources 等详细配置继续放在 `project.yml`，不通过 `--wasm=` 传递。
 
-PHP、PHPX、TypePHP runtime、GMP、MPFR 和 mpdecimal 由 SDK 发布阶段预编译为 WASI 静态库。应用构建只编译 TypePHP 为当前程序生成的 C++，然后链接这些 `.a`。`tpc --wasm` 不会下载源码，也不会调用 PHP、PHPX 或高精度库的构建脚本。library 模式会调用 PHPX 包内固定版本的 `wit-bindgen` 生成当前应用的 Canonical ABI 绑定；普通用户不需要从 `PATH` 安装它。
+PHP、PHPX、TypePHP runtime、GMP、MPFR 和 mpdecimal 由 SDK 发布阶段预编译为 WASI 静态库。应用构建只编译 TypePHP 为当前程序生成的 C++，然后链接这些 `.a`。`tpc --wasm` 不会下载源码，也不会调用 PHP、PHPX 或高精度库的构建脚本。library 模式会调用 `PATH` 中的 `wit-bindgen-cli 0.60.0` 生成当前应用的 Canonical ABI 绑定。
 
 PHP/WASI 当前静态内建 `date`、`pcre`、`hash`、`json`、`lexbor`、`random`、`Reflection`、`SPL`、`standard`、`uri`、`ctype`、`calendar`、`bcmath`、`filter`、`tokenizer`、`mbstring`、`zlib`、`fileinfo`、`sodium`、`openssl`、`libxml`、`dom`、`SimpleXML`、`xml`、`xmlreader`、`xmlwriter`、`PDO`、`pdo_sqlite`、`zip`、`bz2` 和 `exif` 扩展。OpenSSL 采用 crypto-only 构建，不包含 TLS stream transport；HTTP/HTTPS 仍由 WASI HTTP Component 提供。
 
