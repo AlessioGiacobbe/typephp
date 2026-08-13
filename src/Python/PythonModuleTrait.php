@@ -36,6 +36,19 @@ trait PythonModuleTrait
         'scalar' => true,
     ];
 
+    /** @var array<string, string> Builtins with a direct phpy Native ABI constructor. */
+    private const PYTHON_NATIVE_CONSTRUCTORS = [
+        'list' => 'List',
+        'dict' => 'Dict',
+        'tuple' => 'Tuple',
+        'set' => 'Set',
+        'str' => 'Str',
+        'object' => 'Object',
+        'int' => 'Int',
+        'float' => 'Float',
+        'bytes' => 'Bytes',
+    ];
+
     /** @var array<string, int> Case-sensitive Python module name to generated slot ID. */
     protected array $pythonModuleMap = [];
 
@@ -67,6 +80,56 @@ trait PythonModuleTrait
 
         $class = $this->detectClassOfExpr($receiver);
         return $class === '' || !\TypePhp\Resolver\Reflection::hasMethod($class, $method);
+    }
+
+    protected function parsePythonNativeFacadeMethodCall(Expr\MethodCall $expr, string $receiver): ?string
+    {
+        if (!$this->isNamedMethod($expr->name) || !$this->isPythonObjectExpr($expr->var)) {
+            return null;
+        }
+        $method = $expr->name->toString();
+        $helper = match ($method) {
+            'toValue' => 'toValue',
+            'toArray' => 'toArray',
+            default => null,
+        };
+        if ($helper === null) {
+            return null;
+        }
+        if ($expr->args !== []) {
+            $this->fatalError($expr, "The {$method} method does not accept parameters");
+        }
+        $this->markPythonRuntimeUsed();
+        return 'php::python::' . $helper . '(' . $receiver . ')';
+    }
+
+    protected function parsePythonObjectCall(Expr\FuncCall $expr): ?string
+    {
+        if (!$expr->name instanceof NodeAbstract || !$this->isPythonObjectExpr($expr->name)) {
+            return null;
+        }
+        if ($expr->isFirstClassCallable()) {
+            $this->fatalError($expr, 'Python objects do not support first-class callable syntax yet');
+        }
+
+        $receiver = $this->addTmpVar(Type::VAR);
+        $this->context->beforeStmtLines[] = $receiver . ' = ' . $this->parseExpr($expr->name) . ';';
+        if ($expr->args === []) {
+            return 'php::python::call(' . $receiver . ')';
+        }
+        return 'php::python::call(' . $receiver . ', ' . $this->parseCallArgs($expr->args) . ')';
+    }
+
+    protected function parsePythonObjectPropertyFetch(Expr\PropertyFetch $expr): ?string
+    {
+        if ($this->isPropertyFetchUpdate($expr)
+            || !$this->isIdExpr($expr->name)
+            || !$this->isPythonObjectExpr($expr->var)) {
+            return null;
+        }
+
+        return 'php::python::getAttr(' . $this->parseIdentifier($expr->var) . ', '
+            . $this->propertyNameToStr($expr->name, literal: true) . ')';
     }
 
     protected function getPythonBinaryOperator(Expr\BinaryOp $expr): ?string
@@ -127,8 +190,8 @@ trait PythonModuleTrait
 
         $left = $this->parseOrderedOperand($expr->left, false);
         $right = $this->parseOrderedOperand($expr->right, false);
-        $call = $this->getPythonModuleExpression('operator')
-            . '.call(' . $this->getLiteralString($this->getPythonBinaryOperator($expr))
+        $call = 'php::python::callMember(' . $this->getPythonModuleExpression('operator')
+            . ', ' . $this->getLiteralString($this->getPythonBinaryOperator($expr))
             . ', php::ArgList{' . $left . ', ' . $right . '})';
 
         return $this->pythonOperatorReturnsBool($expr)
@@ -139,8 +202,7 @@ trait PythonModuleTrait
     protected function convertPythonResultToBool(string $expression): string
     {
         $this->markPythonRuntimeUsed();
-        $scalar = 'php::call(' . $this->getClassEntryPtr('PyCore') . ', '
-            . $this->getMethodPtr('PyCore', 'scalar') . ', php::ArgList{' . $expression . '})';
+        $scalar = 'php::python::toValue(' . $expression . ')';
         return 'php::toBool(' . $scalar . ')';
     }
 
@@ -190,8 +252,8 @@ trait PythonModuleTrait
         }
 
         $operand = $this->parseOrderedOperand($expr->expr, false);
-        $call = $this->getPythonModuleExpression('operator')
-            . '.call(' . $this->getLiteralString($this->getPythonUnaryOperator($expr))
+        $call = 'php::python::callMember(' . $this->getPythonModuleExpression('operator')
+            . ', ' . $this->getLiteralString($this->getPythonUnaryOperator($expr))
             . ', php::ArgList{' . $operand . '})';
         return $expr instanceof Expr\BooleanNot ? $this->convertPythonResultToBool($call) : $call;
     }
@@ -201,8 +263,8 @@ trait PythonModuleTrait
         if (!$this->isPythonObjectExpr($expr)) {
             return null;
         }
-        $call = $this->getPythonModuleExpression('operator')
-            . '.call(' . $this->getLiteralString('truth') . ', php::ArgList{' . $parsed . '})';
+        $call = 'php::python::callMember(' . $this->getPythonModuleExpression('operator')
+            . ', ' . $this->getLiteralString('truth') . ', php::ArgList{' . $parsed . '})';
         return $this->convertPythonResultToBool($call);
     }
 
@@ -251,7 +313,7 @@ trait PythonModuleTrait
         } elseif ($expr->var instanceof Expr\PropertyFetch && $this->isIdExpr($expr->var->name)) {
             $receiver = $this->parseOrderedOperand($expr->var->var, false);
             $property = $this->propertyNameToStr($expr->var->name, literal: true);
-            $left = $receiver . '.attr(' . $property . ', php::AttrMode::Get)';
+            $left = 'php::python::getAttr(' . $receiver . ', ' . $property . ')';
             $writeBack = static fn(string $value): string => 'typephp_write_property_scoped('
                 . $receiver . ', ' . $property . ', ' . $value . ', nullptr)';
         } else {
@@ -259,8 +321,8 @@ trait PythonModuleTrait
         }
 
         $right = $this->parseOrderedOperand($expr->expr, false);
-        $call = $this->getPythonModuleExpression('operator')
-            . '.call(' . $this->getLiteralString($method)
+        $call = 'php::python::callMember(' . $this->getPythonModuleExpression('operator')
+            . ', ' . $this->getLiteralString($method)
             . ', php::ArgList{' . $left . ', ' . $right . '})';
         if ($this->isVarExpr($expr->var)) {
             return $writeBack($call);
@@ -329,8 +391,6 @@ trait PythonModuleTrait
         $this->pythonModuleMap[$module] = $id;
 
         $this->markPythonRuntimeUsed();
-        $this->getFuncId('PyCore::import');
-        $this->getLiteralString('import');
         $this->getLiteralString($module);
 
         return $id;
@@ -343,13 +403,6 @@ trait PythonModuleTrait
         }
         $this->pythonRuntimeUsed = true;
 
-        // Register runtime Zend symbols during conversion so generated map
-        // sizes are final before headers are emitted.
-        $this->getClassId('PyCore');
-        $this->getFuncId('PyCore::setOptions');
-        $this->getLiteralString('PyCore');
-        $this->getLiteralString('setOptions');
-        $this->getLiteralString('return_as_object');
     }
 
     protected function withPythonRuntimeConfigured(string $expression): string
@@ -412,9 +465,10 @@ trait PythonModuleTrait
             $target = $this->getPythonModuleExpression($moduleMember['module']);
             $member = $this->getLiteralString($moduleMember['member']);
             if ($expr->args === []) {
-                return $target . '.call(' . $member . ')';
+                return 'php::python::callMember(' . $target . ', ' . $member . ')';
             }
-            return $target . '.call(' . $member . ', ' . $this->parseCallArgs($expr->args) . ')';
+            return 'php::python::callMember(' . $target . ', ' . $member . ', '
+                . $this->parseCallArgs($expr->args) . ')';
         }
 
         $builtin = $this->resolvePythonBuiltinName($expr->name);
@@ -425,6 +479,23 @@ trait PythonModuleTrait
             $this->fatalError($expr, 'Python builtins do not support first-class callable syntax yet');
         }
         $this->markPythonRuntimeUsed();
+
+        if ($builtin === 'scalar') {
+            if (count($expr->args) !== 1 || $expr->args[0]->name !== null || $expr->args[0]->unpack) {
+                $this->fatalError($expr, 'python\\scalar() expects exactly one positional argument');
+            }
+            return 'php::python::toValue(' . $this->parseCallArgValue($expr->args[0]) . ')';
+        }
+
+        $nativeConstructor = self::PYTHON_NATIVE_CONSTRUCTORS[$builtin] ?? null;
+        if ($nativeConstructor !== null && $this->canUsePythonNativeConstructor($expr)) {
+            $constructor = 'php::python::Constructor::' . $nativeConstructor;
+            $call = $expr->args === []
+                ? 'php::python::construct(' . $constructor . ')'
+                : 'php::python::construct(' . $constructor . ', '
+                    . $this->parseCallArgValue($expr->args[0]) . ')';
+            return $this->withPythonRuntimeConfigured($call);
+        }
 
         // This is a deliberately closed map. In particular, PyDict's PHP-array
         // constructor is not equivalent to Python's dict(iterable) builtin.
@@ -456,9 +527,28 @@ trait PythonModuleTrait
         $target = $this->getPythonModuleExpression('builtins');
         $name = $this->getLiteralString($builtin);
         if ($expr->args === []) {
-            return $target . '.call(' . $name . ')';
+            return 'php::python::callMember(' . $target . ', ' . $name . ')';
         }
-        return $target . '.call(' . $name . ', ' . $this->parseCallArgs($expr->args) . ')';
+        return 'php::python::callMember(' . $target . ', ' . $name . ', '
+            . $this->parseCallArgs($expr->args) . ')';
+    }
+
+    /**
+     * The Native ABI has a deliberately small zero/one positional argument
+     * constructor path. Keep named and unpacked calls on Zend so its regular
+     * argument validation and unpacking semantics remain unchanged.
+     */
+    private function canUsePythonNativeConstructor(Expr\FuncCall $expr): bool
+    {
+        if (count($expr->args) > 1) {
+            return false;
+        }
+        foreach ($expr->args as $arg) {
+            if ($arg->name !== null || $arg->unpack) {
+                return false;
+            }
+        }
+        return true;
     }
 
     protected function parsePythonModuleAttributeFetch(Expr\ConstFetch $expr, bool $constantExpression): ?string
@@ -471,8 +561,8 @@ trait PythonModuleTrait
             $this->fatalError($expr, 'Python module attributes cannot be used in constant expressions');
         }
 
-        return $this->getPythonModuleExpression($moduleMember['module'])
-            . '.attr(' . $this->getLiteralString($moduleMember['member']) . ')';
+        return 'php::python::getAttr(' . $this->getPythonModuleExpression($moduleMember['module'])
+            . ', ' . $this->getLiteralString($moduleMember['member']) . ')';
     }
 
     protected function detectPythonExpressionReturnType(NodeAbstract $expr): ?string
@@ -647,17 +737,11 @@ trait PythonModuleTrait
             return '';
         }
 
-        $pyCoreClass = $this->getClassEntryPtr('PyCore');
-        $setOptionsFunction = $this->getMethodPtr('PyCore', 'setOptions');
-        $returnAsObject = $this->getLiteralString('return_as_object');
-
         $code = 'void ' . self::PREFIX . 'configure_python_runtime() {' . PHP_EOL
             . 'if (EXPECTED(' . self::PREFIX . 'python_runtime_configured)) {' . PHP_EOL
             . 'return;' . PHP_EOL
             . '}' . PHP_EOL
-            . 'php::Array options;' . PHP_EOL
-            . 'options.set(' . $returnAsObject . ', true);' . PHP_EOL
-            . 'php::call(' . $pyCoreClass . ', ' . $setOptionsFunction . ', php::ArgList{options});' . PHP_EOL
+            . 'php::python::configureRuntime(true);' . PHP_EOL
             . self::PREFIX . 'python_runtime_configured = true;' . PHP_EOL
             . '}' . PHP_EOL . PHP_EOL;
 
@@ -665,17 +749,13 @@ trait PythonModuleTrait
             return $code;
         }
 
-        $importFunction = $this->getMethodPtr('PyCore', 'import');
-
         return $code
             . 'php::Object ' . self::PREFIX
             . 'get_python_module(int module_id, const php::Str &module_name) {' . PHP_EOL
             . self::PREFIX . 'configure_python_runtime();' . PHP_EOL
             . 'zval *module = &' . self::PREFIX . 'python_module_map[module_id];' . PHP_EOL
             . 'if (UNEXPECTED(Z_ISUNDEF_P(module))) {' . PHP_EOL
-            . 'auto ce = ' . $pyCoreClass . ';' . PHP_EOL
-            . 'auto fn = ' . $importFunction . ';' . PHP_EOL
-            . 'php::Variant imported = php::call(ce, fn, php::ArgList{module_name});' . PHP_EOL
+            . 'php::Variant imported = php::python::importModule(module_name);' . PHP_EOL
             . '(void) php::Object(imported);' . PHP_EOL
             . 'imported.moveTo(module);' . PHP_EOL
             . '}' . PHP_EOL

@@ -382,6 +382,11 @@ trait MethodCallTrait
         $magicMethod = false;
         $method = $this->identifierToStr($expr->name, literal: true);
 
+        $pythonFacadeCall = $this->parsePythonNativeFacadeMethodCall($expr, $object);
+        if ($pythonFacadeCall !== null) {
+            return $pythonFacadeCall;
+        }
+
         // Keyword methods are dispatched before all receiver-specific logic.
         if ($this->isNamedMethod($expr->name)) {
             $methodName = $expr->name->toString();
@@ -426,6 +431,20 @@ trait MethodCallTrait
                     return $this->parseUniversalMethodCall($expr, $object, $methodName, $anyExtension, $this->isVarExpr($expr->var));
                 }
             }
+        }
+
+        // A statically named Python member can bypass PyObject::__call and
+        // zend_call_function(). Variable method names remain fully dynamic and
+        // intentionally continue through ZendVM.
+        if ($this->isNamedMethod($expr->name)
+            && $this->isPythonDynamicMethodCall($expr->var, $expr->name->toString())
+        ) {
+            $name = $this->getLiteralString($expr->name->toString());
+            if ($expr->args === []) {
+                return 'php::python::callMember(' . $object . ', ' . $name . ')';
+            }
+            return 'php::python::callMember(' . $object . ', ' . $name . ', '
+                . $this->parseCallArgs($expr->args) . ')';
         }
 
         // 可转为原生调用的 MethodCall

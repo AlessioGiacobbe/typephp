@@ -9,7 +9,39 @@ use TypePhp\Exception\TestError;
 
 final class PythonModuleTest extends TestCase
 {
-    public function testUsedModuleGeneratesLazyZendBindingWithoutPhpyLinkage(): void
+    public function testStaticallyResolvedPythonCallsUseNativeBridge(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/module-access.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+        $extension = file_get_contents($compiler->genExtension());
+
+        self::assertStringContainsString('php::python::callMember(', $cpp);
+        self::assertStringContainsString('php::python::getAttr(', $cpp);
+        self::assertStringContainsString('#include <phpx_python.h>', $cpp);
+        self::assertStringContainsString('php::python::importModule(', $extension);
+        self::assertStringNotContainsString('php::call(', $extension);
+    }
+
+    public function testDynamicPythonMethodNameStillUsesZendDispatch(): void
+    {
+        global $translator;
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/python/dynamic-method.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $cpp = file_get_contents($compiler->convertFile($source));
+
+        self::assertStringContainsString('.call(', $cpp);
+        self::assertStringNotContainsString('php::python::callMember(', $cpp);
+    }
+
+    public function testUsedModuleGeneratesLazyNativeBindingWithoutPhpyLinkage(): void
     {
         global $translator;
         $compiler = CompilerTest::create(ROOT_PATH);
@@ -23,13 +55,12 @@ final class PythonModuleTest extends TestCase
         $extension = file_get_contents($extensionFile);
 
         $this->assertStringContainsString('php_get_python_module(', $cpp);
-        $this->assertStringContainsString('.attr(', $cpp);
-        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('php::python::getAttr(', $cpp);
+        $this->assertStringContainsString('php::python::callMember(', $cpp);
         $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[1]', $extension);
         $this->assertStringContainsString('php::Object php_get_python_module(', $extension);
         $this->assertStringContainsString('zval_ptr_dtor(', $extension);
-        $this->assertStringContainsString('PyCore', $extension);
-        $this->assertStringContainsString('import', $extension);
+        $this->assertStringContainsString('php::python::importModule(', $extension);
         $this->assertStringNotContainsString('#include <phpy', $extension);
         $this->assertStringNotContainsString('phpy::', $extension);
         $this->assertStringNotContainsString('module_that_does_not_exist', $extension);
@@ -71,7 +102,7 @@ final class PythonModuleTest extends TestCase
         $cpp = file_get_contents($compiler->convertFile($source));
 
         $this->assertStringContainsString('php_get_python_module(', $cpp);
-        $this->assertStringContainsString('.attr(', $cpp);
+        $this->assertStringContainsString('php::python::getAttr(', $cpp);
     }
 
     public function testModuleStaticCallSyntaxIsRejected(): void
@@ -125,8 +156,8 @@ final class PythonModuleTest extends TestCase
         $extension = file_get_contents($compiler->genExtension());
 
         $this->assertSame(4, substr_count($cpp, 'php_get_python_module('));
-        $this->assertStringContainsString('.call(', $cpp);
-        $this->assertStringContainsString('.attr(', $cpp);
+        $this->assertStringContainsString('php::python::callMember(', $cpp);
+        $this->assertStringContainsString('php::python::getAttr(', $cpp);
         $this->assertStringContainsString('builtins', $extension);
         $this->assertStringContainsString('math', $extension);
         $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[2]', $extension);
@@ -143,8 +174,8 @@ final class PythonModuleTest extends TestCase
         $cpp = file_get_contents($compiler->convertFile($source));
         $extension = file_get_contents($compiler->genExtension());
 
-        $this->assertStringContainsString('.call(', $cpp);
-        $this->assertStringContainsString('.attr(', $cpp);
+        $this->assertStringContainsString('php::python::callMember(', $cpp);
+        $this->assertStringContainsString('php::python::getAttr(', $cpp);
         $this->assertStringContainsString('math', $extension);
         $this->assertStringContainsString('os.path', $extension);
         $this->assertStringContainsString('builtins', $extension);
@@ -201,7 +232,7 @@ final class PythonModuleTest extends TestCase
         $extension = file_get_contents($compiler->genExtension());
 
         $this->assertStringContainsString('php_get_python_module(', $cpp);
-        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('php::python::callMember(', $cpp);
         $this->assertStringContainsString('php::Object list;', $cpp);
         $this->assertStringContainsString('php::Object dict;', $cpp);
         $this->assertStringContainsString('php::Object tuple;', $cpp);
@@ -211,14 +242,15 @@ final class PythonModuleTest extends TestCase
         $this->assertStringContainsString('php::Object object;', $cpp);
         $this->assertStringContainsString('php::Object bytes;', $cpp);
         $this->assertStringContainsString('scalar = php::toInt(', $cpp);
-        $this->assertStringContainsString('php::newObject(', $cpp);
-        $this->assertStringContainsString('PyList', $extension);
-        $this->assertStringContainsString('PyDict', $extension);
+        $this->assertSame(8, substr_count($cpp, 'php::python::construct('));
+        $this->assertStringNotContainsString('php::newObject(', $cpp);
+        $this->assertStringNotContainsString('php::call(php_get_persistent_class(_literal_strings', $cpp);
+        $this->assertStringNotContainsString('PyList', $extension);
+        $this->assertStringNotContainsString('PyDict', $extension);
         $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[1]', $extension);
         $this->assertStringContainsString('builtins', $extension);
-        $this->assertStringContainsString('php_get_persistent_method(', $extension);
-        $this->assertStringContainsString('setOptions', $extension);
-        $this->assertStringContainsString('return_as_object', $extension);
+        $this->assertStringNotContainsString('PyCore::int', $extension);
+        $this->assertStringContainsString('php::python::configureRuntime(true)', $extension);
         $this->assertStringContainsString('php_python_runtime_configured = false;', $extension);
         $this->assertStringNotContainsString('python\\\\list', $extension);
     }
@@ -234,7 +266,7 @@ final class PythonModuleTest extends TestCase
         $cpp = file_get_contents($compiler->convertFile($source));
         $extension = file_get_contents($compiler->genExtension());
 
-        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('php::python::callMember(', $cpp);
         $this->assertStringContainsString('collections', $extension);
         $this->assertStringContainsString('deque', $extension);
     }
@@ -252,7 +284,7 @@ final class PythonModuleTest extends TestCase
 
         $this->assertStringContainsString('php_configure_python_runtime()', $cpp);
         $this->assertStringContainsString('void php_configure_python_runtime()', $extension);
-        $this->assertStringContainsString('return_as_object', $extension);
+        $this->assertStringContainsString('php::python::configureRuntime(true)', $extension);
     }
 
     public function testPythonOperatorsLowerToTheOperatorModule(): void
@@ -267,14 +299,14 @@ final class PythonModuleTest extends TestCase
         $extension = file_get_contents($compiler->genExtension());
 
         $this->assertStringContainsString('operator', $extension);
-        $this->assertStringContainsString('.call(', $cpp);
+        $this->assertStringContainsString('php::python::callMember(', $cpp);
         $this->assertStringContainsString('add', $extension);
         $this->assertStringContainsString('iadd', $extension);
         $this->assertStringContainsString('is_', $extension);
         $this->assertStringContainsString('is_not', $extension);
     }
 
-    public function testPythonObjectProtocolStaysOnZendDynamicDispatch(): void
+    public function testPythonObjectProtocolUsesNativeCallsAndZendHandlersWhereAppropriate(): void
     {
         global $translator;
         $compiler = CompilerTest::create(ROOT_PATH);
@@ -285,8 +317,10 @@ final class PythonModuleTest extends TestCase
         $cpp = file_get_contents($compiler->convertFile($source));
         $extension = file_get_contents($compiler->genExtension());
 
-        $this->assertStringContainsString('.call(', $cpp);
-        $this->assertStringContainsString('.attr(', $cpp);
+        $this->assertStringContainsString('php::python::callMember(', $cpp);
+        $this->assertStringContainsString('php::python::call(', $cpp);
+        $this->assertStringContainsString('php::python::getAttr(', $cpp);
+        $this->assertStringNotContainsString('.attr(', $cpp);
         $this->assertStringContainsString('.item(', $cpp);
         $this->assertStringContainsString('php::ForeachIterator', $cpp);
         $this->assertStringContainsString('integer = php::toInt(object);', $cpp);
@@ -294,7 +328,7 @@ final class PythonModuleTest extends TestCase
         $this->assertStringNotContainsString('phpy::', $cpp);
     }
 
-    public function testPyObjectConversionMethodsUseThePhpyFacade(): void
+    public function testPyObjectConversionMethodsUseTheNativeBridge(): void
     {
         global $translator;
         $compiler = CompilerTest::create(ROOT_PATH);
@@ -308,8 +342,8 @@ final class PythonModuleTest extends TestCase
         $this->assertStringContainsString('php::Array array;', $cpp);
         $this->assertStringContainsString('php::Var value;', $cpp);
         $this->assertStringNotContainsString('php::toArray(', $cpp);
-        $this->assertStringContainsString('toArray', $extension);
-        $this->assertStringContainsString('toValue', $extension);
+        $this->assertStringContainsString('php::python::toArray(', $cpp);
+        $this->assertStringContainsString('php::python::toValue(', $cpp);
         $this->assertStringNotContainsString('php::toPlainValue(', $cpp);
         $this->assertStringNotContainsString('phpy::', $cpp);
     }

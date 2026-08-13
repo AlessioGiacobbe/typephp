@@ -75,6 +75,10 @@ trait FunctionCallTrait
         if ($pythonCall !== null) {
             return $pythonCall;
         }
+        $pythonObjectCall = $this->parsePythonObjectCall($expr);
+        if ($pythonObjectCall !== null) {
+            return $pythonObjectCall;
+        }
 
         if ($this->isVarExpr($expr->name)) {
             $fn   = $this->parseIdentifier($expr->name);

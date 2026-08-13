@@ -918,6 +918,11 @@ trait PropertyAccessTrait
             return $this->parseNullsafeExpr($expr);
         }
 
+        $pythonProperty = $this->parsePythonObjectPropertyFetch($expr);
+        if ($pythonProperty !== null) {
+            return $pythonProperty;
+        }
+
         $object = $expr->var;
         $property = $expr->name;
         $id = $this->getPropertyIdentifier($expr, $object, $property);

@@ -88,6 +88,7 @@ class Translator extends Preprocessor
         'phpx_big_int.h',
         'phpx_big_float.h',
         'phpx_decimal.h',
+        'phpx_python.h',
         'typephp_helper.h',
         'typephp_fiber_generator.h',
         'phpx_std.h',
