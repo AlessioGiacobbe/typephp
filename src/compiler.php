@@ -188,13 +188,20 @@ function compileWasmProgram(array $argv): void
     }
 
     try {
-        $tools = (new WasiToolchain())->detect($project->profile === 'browser');
+        $tools = (new WasiToolchain())->detect(
+            requireBrowserTools: $project->profile === 'browser',
+            requireWitBindgen: $project->mode === 'library',
+        );
     } catch (RuntimeException $exception) {
         fwrite(STDERR, "WASI toolchain check failed: {$exception->getMessage()}\n");
         fwrite(STDERR, "Add WASI SDK and Wasmtime bin directories to PATH");
         if ($project->profile === 'browser') {
             fwrite(STDERR, ", and install Jco (`npm install -g @bytecodealliance/jco`)"
                 . " or use --wasm=component");
+        }
+        if ($project->mode === 'library') {
+            fwrite(STDERR, ", and install wit-bindgen-cli 0.60.0"
+                . " (`cargo install wit-bindgen-cli --version 0.60.0 --locked`)");
         }
         fwrite(STDERR, ", then try again.\n");
         exit(1);
@@ -239,27 +246,7 @@ function compileWasmProgram(array $argv): void
         exit(1);
     }
     if ($project->mode === 'library') {
-        $hostOs = match (PHP_OS_FAMILY) {
-            'Linux' => 'linux',
-            'Darwin' => 'macos',
-            'Windows' => 'windows',
-            default => strtolower(PHP_OS_FAMILY),
-        };
-        $hostArch = strtolower(php_uname('m'));
-        $hostArch = match ($hostArch) {
-            'amd64', 'x64' => 'x86_64',
-            'arm64' => $hostOs === 'linux' ? 'aarch64' : 'arm64',
-            default => $hostArch,
-        };
-        $bindgen = $phpxDir . DIRECTORY_SEPARATOR . 'wasm' . DIRECTORY_SEPARATOR . 'bin'
-            . DIRECTORY_SEPARATOR . $hostOs . '-' . $hostArch . DIRECTORY_SEPARATOR . 'wit-bindgen'
-            . ($hostOs === 'windows' ? '.exe' : '');
-        if (!is_file($bindgen)) {
-            fwrite(STDERR, "PHPX bundled WIT binding generator is missing: {$bindgen}\n");
-            fwrite(STDERR, "Install the matching PHPX package; installing wit-bindgen separately is not required.\n");
-            exit(1);
-        }
-        $environment['TYPEPHP_WIT_BINDGEN'] = $bindgen;
+        $environment['TYPEPHP_WIT_BINDGEN'] = $tools['wit-bindgen'];
     }
     $command = [$builder, $project->input, $project->output ?? '-', $phpxDir, $compilerExecutable];
 
