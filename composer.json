@@ -12,7 +12,7 @@
     "marcj/topsort": "^2.0",
     "symfony/var-dumper": "^8.0",
     "symfony/yaml": "^8.0",
-    "swoole/phpx": "~2.5.5",
+    "swoole/phpx": "~2.5.6",
     "ajaxray/ansikit": "^0.3.1"
   },
   "require-dev": {
