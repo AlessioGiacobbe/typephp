@@ -3125,9 +3125,6 @@ class StringBuilder {
         "false" => "ZEND_STR_FALSE",
         "null" => "ZEND_STR_NULL_LOWERCASE",
         "mixed" => "ZEND_STR_MIXED",
-        "any" => "ZEND_STR_MIXED",
-        "box" => "ZEND_STR_MIXED",
-        "stream" => "ZEND_STR_MIXED",
     ];
 
     // NEW in 8.1
