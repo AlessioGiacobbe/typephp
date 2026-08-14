@@ -173,9 +173,9 @@ final class ConstantExpressionValidatorTest extends PHPUnit\Framework\TestCase
         yield 'parameter default allows new' => ['function f($value = new Value()) {}', '8.4'];
         yield 'global const allows new' => ['const VALUE = new Value();', '8.4'];
         yield 'static variable allows new' => ['function f() { static $value = new Value(); }', '8.4'];
-        yield 'PHP 8.3 static variable allows dynamic initializer' => [
+        yield 'PHP 8.4 static variable allows dynamic initializer' => [
             'function f(int $seed) { static $value = loadValue($seed); }',
-            '8.3',
+            '8.4',
         ];
         yield 'PHP 8.5 class constant allows static closure' => [
             'class C { const VALUE = static function (): int { return 1; }; }',
@@ -201,11 +201,6 @@ final class ConstantExpressionValidatorTest extends PHPUnit\Framework\TestCase
             'class C { const VALUE = new Value(); }',
             '8.4',
             'New expressions are not supported in this context',
-        ];
-        yield 'PHP 8.2 static variable rejects dynamic initializer' => [
-            'function f(int $seed) { static $value = loadValue($seed); }',
-            '8.2',
-            'Constant expression contains invalid operations',
         ];
         yield 'property rejects new' => [
             'class C { public mixed $value = new Value(); }',

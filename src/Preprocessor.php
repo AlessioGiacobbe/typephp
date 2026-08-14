@@ -1440,9 +1440,6 @@ class Preprocessor extends CompilerBase
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
-        if ($v->hooks !== [] && version_compare($this->phpVersion, '8.4', '<')) {
-            $this->fatalError($v, 'Property Hooks require PHP 8.4 or later as the target runtime');
-        }
         $oriCtx = $this->context;
         $this->context = $this->classDef->propertyContext;
         $nullable = $v->type instanceof NullableType;
@@ -1665,9 +1662,6 @@ class Preprocessor extends CompilerBase
     {
         if ($property->hooks === []) {
             $this->fatalError($property, 'Interfaces may only include hooked properties');
-        }
-        if (version_compare($this->phpVersion, '8.4', '<')) {
-            $this->fatalError($property, 'Property Hooks require PHP 8.4 or later as the target runtime');
         }
         if ($property->flags & (Modifiers::PRIVATE | Modifiers::PROTECTED)) {
             $this->fatalError($property, 'Property in interface cannot be protected or private');

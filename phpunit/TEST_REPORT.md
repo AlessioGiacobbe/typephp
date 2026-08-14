@@ -223,9 +223,9 @@ OK (66 tests, 200+ assertions)
 已准备好 CI/CD 集成，配置文件见 `phpunit/README.md`。
 
 ### 测试矩阵
-- ✅ Windows + PHP 8.2/8.3
-- ✅ Linux + PHP 8.2/8.3
-- ✅ macOS + PHP 8.2/8.3
+- ✅ Windows + PHP 8.4/8.5
+- ✅ Linux + PHP 8.4/8.5
+- ✅ macOS + PHP 8.4/8.5
 
 ## 下一步计划
 

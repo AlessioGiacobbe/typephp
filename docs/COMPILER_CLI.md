@@ -82,7 +82,7 @@ bin/tpc.php app.php --dry --build-dir /tmp/typephp-build
 
 | 选项 | 说明 |
 |---|---|
-| `--php-version <8.2|8.3|8.4|8.5>` | 限制接受的 PHP 语法版本，默认 `8.5`。 |
+| `--php-version <8.4|8.5>` | 限制接受的 PHP 语法版本，默认 `8.5`。 |
 | `--cxx-std <ver>` | C++ 标准，例如 `c++17`、`c++20`。 |
 | `--march <arch>` | 目标指令集，例如 `native`、`x86-64-v3`。 |
 | `--target-platform <triple>` | 交叉编译目标 triple。 |
@@ -92,6 +92,8 @@ bin/tpc.php app.php --dry --build-dir /tmp/typephp-build
 | `--profile` | Linux 上启用 gperftools profiler，并强制重编译相关对象。 |
 
 `--php-version` 控制解析器接受的源码语法，也用于 `project.yml` 中依据 `PHP_VERSION` / `PHP_VERSION_ID` 选择源文件。它不负责选择链接的 PHP 安装目录。
+
+TypePHP 和 PHPX 的最低运行时版本均为 PHP 8.4。`--php-version` 与实际链接的 `libphp.so` 不要求小版本完全相同，但两者都必须为 PHP 8.4 或更高版本。
 
 ## C++ 编译和链接参数
 

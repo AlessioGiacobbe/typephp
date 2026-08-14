@@ -485,8 +485,8 @@ class CompilerBase implements PropertyAccessContext
     public function __construct(string $rootPath)
     {
         $this->osType = PHP_OS_FAMILY;
-        if (version_compare(PHP_VERSION, '8.2.0', '<')) {
-            $this->error('PHP 8.2.0 or later is required');
+        if (version_compare(PHP_VERSION, '8.4.0', '<')) {
+            $this->error('PHP 8.4.0 or later is required');
         }
         if (version_compare(PHP_VERSION, '8.6.0', '>=')) {
             $this->error('PHP 8.6.0 or later is not supported');
@@ -523,8 +523,8 @@ class CompilerBase implements PropertyAccessContext
     /** Set the PHP language version accepted by the parser. */
     public function setPhpVersion(string $version): void
     {
-        if (!preg_match('/^8\.(2|3|4|5)(?:\.0)?$/', $version, $matches)) {
-            $this->error('Unsupported PHP language version: `' . $version . '`. Supported versions: 8.2, 8.3, 8.4, 8.5');
+        if (!preg_match('/^8\.(4|5)(?:\.0)?$/', $version, $matches)) {
+            $this->error('Unsupported PHP language version: `' . $version . '`. Supported versions: 8.4, 8.5');
         }
 
         $this->phpVersion = '8.' . $matches[1] . '.0';

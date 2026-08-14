@@ -122,8 +122,8 @@ trait NullsafeAccessTrait
         $this->context->beforeStmtLines[] = $code;
 
         // C++ temporaries are function-scoped; release their zvals at the PHP statement boundary.
-        foreach (array_reverse($ownedTmpVars) as $tmpVar) {
-            $this->context->afterStmtLines[] = $tmpVar . '.unset();';
+        foreach (array_reverse($ownedTmpVars) as $ownedTmpVar) {
+            $this->context->afterStmtLines[] = $ownedTmpVar . '.unset();';
         }
         return "{$tmpFn}()";
     }

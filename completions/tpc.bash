@@ -68,7 +68,7 @@ _typephp_tpc()
             return
             ;;
         --php-version)
-            COMPREPLY=( $(compgen -W '8.2 8.3 8.4 8.5' -- "$current") )
+            COMPREPLY=( $(compgen -W '8.4 8.5' -- "$current") )
             return
             ;;
         --cxx-std)

@@ -279,7 +279,7 @@ class Translator extends Preprocessor
         $climate->tab()->out('--generate-completion=bash Generate Bash completion script');
         $climate->tab()->out('--lto                Enable Link Time Optimization (-flto)');
         $climate->tab()->out('--no-literal-strings Disable literal strings optimization');
-        $climate->tab()->out('--php-version <ver>  PHP language version to accept (8.2-8.5, default: 8.5)');
+        $climate->tab()->out('--php-version <ver>  PHP language version to accept (8.4-8.5, default: 8.5)');
         $climate->tab()->out('--no-progress        Disable progress bar, output per-file compilation progress line by line');
         $climate->tab()->out('--no-console         Hide console window (Windows only, GUI application)');
         $climate->tab()->out('--no-color           Disable ANSI color output');
@@ -1938,7 +1938,7 @@ CODE;
                 $buildCreateBody = function () use ($classDef, $className, $handlers, $initBlock, $delegateToParentAllocator): string {
                     $body = $classDef->ctorInit;
                     $body .= "auto obj = typephp_create_object_with_defaults(\n";
-                    $body .= "class_type, create_object_{$className}, &{$handlers}, ";
+                    $body .= "class_type, create_object_{$className}, ";
                     $body .= ($delegateToParentAllocator ? 'true' : 'false') . ",\n";
                     $body .= "[&](zend_object *obj) {\n";
                     $body .= $initBlock;
@@ -1948,19 +1948,12 @@ CODE;
                 };
 
                 $code .= "typephp_install_property_handlers({$ce}, &{$handlers});\n";
-                $code .= "#if (PHP_VERSION_ID < 80400)\n";
-                $code .= "create_object_{$className} = php_get_create_object_fn({$ce});\n";
-                $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
-                $code .= $buildCreateBody();
-                $code .= "};\n";
                 if ($classDef->requireCtor || $this->classHasAsymmetricOrHookedProperty($classDef)) {
-                    $code .= "#else\n";
                     $code .= "create_object_{$className} = php_get_create_object_fn({$ce});\n";
                     $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
                     $code .= $buildCreateBody();
                     $code .= "};\n";
                 }
-                $code .= "#endif\n";
             }
         }
         return $code;

@@ -219,7 +219,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-        php-version: ['8.2', '8.3']
+        php-version: ['8.4', '8.5']
     
     steps:
     - uses: actions/checkout@v2

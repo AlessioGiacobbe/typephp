@@ -62,6 +62,10 @@ final class BashCompletionTest extends TestCase
             $this->complete($script, ['tpc', '--php-version', '8.4']),
         );
         self::assertSame(
+            "8.4\n8.5\n",
+            $this->complete($script, ['tpc', '--php-version', '']),
+        );
+        self::assertSame(
             "-O2\n",
             $this->complete($script, ['tpc', '-O2']),
         );

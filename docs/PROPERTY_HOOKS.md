@@ -166,17 +166,9 @@ zend_string_init(data, length, true);
 - NTS 没有锁开销；
 - ZTS 下在工作线程处理请求前已完成注册，不会并发修改 class entry。
 
-## 7. PHP 版本隔离
+## 7. PHP 版本边界
 
-Property Hook 是 PHP 8.4 新特性。PHPX 对头文件、结构字段和实现均使用条件编译：
-
-```cpp
-#if PHP_VERSION_ID >= 80400
-#include "zend_property_hooks.h"
-#endif
-```
-
-PHP 8.2/8.3 构建不会引用以下 PHP 8.4 ABI：
+TypePHP 与 PHPX 的最低版本均为 PHP 8.4，因此 Property Hook 实现直接使用以下 PHP 8.4 ABI：
 
 - `zend_property_info::hooks`；
 - `zend_class_entry::num_hooked_props`；
@@ -185,7 +177,7 @@ PHP 8.2/8.3 构建不会引用以下 PHP 8.4 ABI：
 - `ZEND_VIRTUAL_PROPERTY_OFFSET`；
 - `zend_hooked_object_get_iterator()`。
 
-旧版本 fallback 会在错误地尝试注册 Hook 时抛出明确错误。TypePHP/PHPX 需要针对目标 PHP 版本分别编译，不能把链接 PHP 8.4 的 PHPX 二进制直接用于 PHP 8.2/8.3。
+PHPX 头文件和 CMake 配置会拒绝 PHP 8.4 以下的 headers/`php-config`。PHP 8.4 与 8.5 仍分别构建对应 PHPX 二进制；`--php-version` 只控制源码语法，不要求与 `libphp.so` 的小版本完全相同，但两者都必须不低于 8.4。
 
 ## 8. ABI 风险和升级检查
 
@@ -196,7 +188,7 @@ PHP 8.2/8.3 构建不会引用以下 PHP 8.4 ABI：
 1. TypePHP 与 PHPX 版本绑定，并针对具体 PHP 版本重新编译；
 2. 注册流程与 Zend 编译器处理原生 Property Hook 的步骤一致；
 3. 只复用 Zend 导出的 iterator，不复制其复杂实现；
-4. PHP 8.4 以下版本已在编译期隔离；
+4. PHP 8.4 以下版本在构建入口统一拒绝；
 5. 所有注册均在 MINIT 完成，不增加请求热路径上的名称查找。
 
 升级 PHP 版本时必须检查：
@@ -221,7 +213,7 @@ Property Hook 改动至少需要覆盖：
 - 序列化只包含真实存储状态；
 - 动态 Zend 属性读写；
 - 继承和属性可见性；
-- PHP 8.4 构建以及 PHP 8.2/8.3 条件编译。
+- PHP 8.4 与 PHP 8.5 构建。
 
 当前核心回归测试位于：
 

@@ -45,7 +45,7 @@ final class CompletionMetadata
             '--optimize' => ['0', '1', '2', '3'],
             '-m' => ['bin', 'lib', 'ext'],
             '--mode' => ['bin', 'lib', 'ext'],
-            '--php-version' => ['8.2', '8.3', '8.4', '8.5'],
+            '--php-version' => ['8.4', '8.5'],
             '--cxx-std' => ['c++17', 'c++20', 'c++23'],
             '--sanitize' => ['address', 'undefined'],
             '--wasm=' => ['component', 'browser'],

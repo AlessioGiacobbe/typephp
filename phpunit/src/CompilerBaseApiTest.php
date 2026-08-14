@@ -142,14 +142,36 @@ class CompilerBaseApiTest extends TestCase
         $parser->parse('<?php $value = "hello" |> trim(...);');
     }
 
-    public function testPhpLanguageVersionAcceptsPipeAt85AndRejectsInvalidValue(): void
+    public function testPhpLanguageVersionAcceptsPipeAt85AndRejectsPre84Target(): void
     {
         $this->compiler->setPhpVersion('8.5');
         $parser = $this->getPropertyValue('parser');
         $this->assertNotEmpty($parser->parse('<?php $value = "hello" |> trim(...);'));
 
         $this->expectException(TestError::class);
-        $this->compiler->setPhpVersion('8.1');
+        $this->expectExceptionMessage('Supported versions: 8.4, 8.5');
+        $this->compiler->setPhpVersion('8.3');
+    }
+
+    public function testLinkedPhpRuntimeMustBeAtLeast84WithoutMatchingLanguageMinor(): void
+    {
+        $php83 = $this->testDir . '/php83';
+        mkdir($php83 . '/include/php/main', 0777, true);
+        file_put_contents($php83 . '/include/php/main/php_version.h', "#define PHP_VERSION_ID 80399\n");
+
+        try {
+            $this->invokeMethod('validatePhpRuntimeMinimum', $php83);
+            self::fail('Expected PHP 8.3 target runtime to be rejected');
+        } catch (TestError $error) {
+            self::assertStringContainsString('requires libphp 8.4 or later', $error->getMessage());
+        }
+
+        $php84 = $this->testDir . '/php84';
+        mkdir($php84 . '/include/php/main', 0777, true);
+        file_put_contents($php84 . '/include/php/main/php_version.h', "#define PHP_VERSION_ID 80400\n");
+        $this->compiler->setPhpVersion('8.5');
+        $this->invokeMethod('validatePhpRuntimeMinimum', $php84);
+        $this->addToAssertionCount(1);
     }
 
     public function testMiscObjectCacheIsInvalidatedWhenCompileOptionsChange(): void

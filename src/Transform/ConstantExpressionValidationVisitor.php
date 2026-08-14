@@ -19,14 +19,12 @@ use TypePhp\Exception\SyntaxError;
  * false: class constants, property defaults and enum cases.
  * true: attributes, parameter defaults and global constants.
  *
- * Static variable initializers are constant expressions on PHP 8.2. PHP 8.3
- * and later compile them as regular expressions and evaluate them only once.
+ * PHP 8.4+ compiles static variable initializers as regular expressions and
+ * evaluates them only once, so they do not use the constant-expression path.
  */
 final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
 {
     private readonly ConstantExpressionValidator $validator;
-
-    private readonly bool $supportsDynamicStaticInitializers;
 
     /** @param null|Closure(Node, string): never $fatalError */
     public function __construct(
@@ -35,7 +33,6 @@ final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
     )
     {
         $this->validator = new ConstantExpressionValidator($phpVersion);
-        $this->supportsDynamicStaticInitializers = version_compare($phpVersion, '8.3', '>=');
     }
 
     public function enterNode(Node $node): null
@@ -92,14 +89,6 @@ final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
                 $this->validator->validate($constant->value, allowDynamic: true);
             }
             return null;
-        }
-
-        if ($node instanceof Node\Stmt\Static_ && !$this->supportsDynamicStaticInitializers) {
-            foreach ($node->vars as $variable) {
-                if ($variable->default !== null) {
-                    $this->validator->validate($variable->default, allowDynamic: true);
-                }
-            }
         }
 
         return null;

@@ -27,11 +27,6 @@ const PHP_83_VERSION_ID = 80300;
 const PHP_84_VERSION_ID = 80400;
 const PHP_85_VERSION_ID = 80500;
 const ALL_PHP_VERSION_IDS = [
-    PHP_70_VERSION_ID,
-    PHP_80_VERSION_ID,
-    PHP_81_VERSION_ID,
-    PHP_82_VERSION_ID,
-    PHP_83_VERSION_ID,
     PHP_84_VERSION_ID,
     PHP_85_VERSION_ID,
 ];
@@ -1196,18 +1191,8 @@ class ReturnInfo {
         $this->refcount = $refcount;
     }
 
-    public function beginArgInfo(string $funcInfoName, int $minArgs, bool $php81MinimumCompatibility): string {
-        $code = $this->beginArgInfoCompatible($funcInfoName, $minArgs);
-        if ($this->type !== null && $this->tentativeReturnType && !$php81MinimumCompatibility) {
-            $realCode = "#if (PHP_VERSION_ID >= " . PHP_81_VERSION_ID . ")\n";
-            $realCode .= $code;
-            $realCode .= sprintf(
-                "#else\nZEND_BEGIN_ARG_INFO_EX(%s, 0, %d, %d)\n#endif\n",
-                $funcInfoName, $this->byRef, $minArgs
-            );
-            return $realCode;
-        }
-        return $code;
+    public function beginArgInfo(string $funcInfoName, int $minArgs): string {
+        return $this->beginArgInfoCompatible($funcInfoName, $minArgs);
     }
 
     /**
@@ -1553,11 +1538,6 @@ class FuncInfo {
         $code .= "\t{ 0 },\n";
         $code .= "};\n";
 
-        $php84MinimumCompatibility = $this->minimumPhpVersionIdCompatibility === null || $this->minimumPhpVersionIdCompatibility >= PHP_84_VERSION_ID;
-        if (!$php84MinimumCompatibility) {
-            return "#if (PHP_VERSION_ID >= " . PHP_84_VERSION_ID . ")\n$code#endif\n";
-        }
-
         return $code;
     }
 
@@ -1628,25 +1608,10 @@ class FuncInfo {
         $docComment = $this->exposedDocComment ? '"' . $this->exposedDocComment->escape() . '"' : "NULL";
         $framelessFuncInfosName = !empty($this->framelessFunctionInfos) ? $this->getFramelessFunctionInfosName() : "NULL";
 
-        // Assume 8.4+ here, if older versions are supported this is conditional
         $code = $flagsByPhpVersions->generateVersionDependentFlagCode(
             "\tZEND_RAW_FENTRY($zendName, $name, $argInfoName, %s, $framelessFuncInfosName, $docComment)\n",
             PHP_84_VERSION_ID
         );
-
-        $php84MinimumCompatibility = $this->minimumPhpVersionIdCompatibility === null || $this->minimumPhpVersionIdCompatibility >= PHP_84_VERSION_ID;
-        if (!$php84MinimumCompatibility) {
-            $code = "#if (PHP_VERSION_ID >= " . PHP_84_VERSION_ID . ")\n$code";
-            $code .= "#else\n";
-
-            $code .= $flagsByPhpVersions->generateVersionDependentFlagCode(
-                "\tZEND_RAW_FENTRY($zendName, $name, $argInfoName, %s)\n",
-                $this->minimumPhpVersionIdCompatibility,
-                PHP_83_VERSION_ID
-            );
-
-            $code .= "#endif\n";
-        }
 
         return $code;
     }
@@ -2291,7 +2256,6 @@ OUPUT_EXAMPLE
         $code = $this->return->beginArgInfo(
             $this->getArgInfoName(),
             $this->numRequiredArgs,
-            $minPHPCompatability === null || $minPHPCompatability >= PHP_81_VERSION_ID
         );
 
         foreach ($this->args as $argInfo) {
@@ -2948,12 +2912,6 @@ class ConstInfo extends VariableLike
             $commentCode = "NULL";
         }
 
-        $php83MinimumCompatibility = $this->phpVersionIdMinimumCompatibility === null || $this->phpVersionIdMinimumCompatibility >= PHP_83_VERSION_ID;
-
-        if ($this->type && !$php83MinimumCompatibility) {
-            $code .= "#if (PHP_VERSION_ID >= " . PHP_83_VERSION_ID . ")\n";
-        }
-
         if ($this->type) {
             $typeCode = $this->getTypeCode($constName, $code);
 
@@ -2970,11 +2928,7 @@ class ConstInfo extends VariableLike
             );
         }
 
-        if ($this->type && !$php83MinimumCompatibility) {
-            $code .= "#else\n";
-        }
-
-        if (!$this->type || !$php83MinimumCompatibility) {
+        if (!$this->type) {
             if (!empty($this->attributes)) {
                 $template = "\tzend_class_constant *const_" . $this->name->getDeclarationName() . " = ";
             } else {
@@ -2985,10 +2939,6 @@ class ConstInfo extends VariableLike
                 $template,
                 $this->phpVersionIdMinimumCompatibility
             );
-        }
-
-        if ($this->type && !$php83MinimumCompatibility) {
-            $code .= "#endif\n";
         }
 
         $code .= "\tzend_string_release_ex(const_{$constName}_name, true);\n";
@@ -3766,16 +3716,6 @@ class ClassInfo {
 
         $code = '';
 
-        $php80MinimumCompatibility = $this->phpVersionIdMinimumCompatibility === null || $this->phpVersionIdMinimumCompatibility >= PHP_80_VERSION_ID;
-        $php81MinimumCompatibility = $this->phpVersionIdMinimumCompatibility === null || $this->phpVersionIdMinimumCompatibility >= PHP_81_VERSION_ID;
-        // TypePHP classes may target a pre-8.4 Zend runtime even when parsing
-        // newer PHP syntax, so class registration retains the old API branch.
-        $php84MinimumCompatibility = false;
-
-        if ($this->type === "enum" && !$php81MinimumCompatibility) {
-            $code .= "#if (PHP_VERSION_ID >= " . PHP_81_VERSION_ID . ")\n";
-        }
-
         if ($this->cond) {
             $code .= "#if {$this->cond}\n";
         }
@@ -3807,10 +3747,6 @@ class ClassInfo {
             }
 
             if ($this->type === "class" || $this->type === "trait") {
-                if (!$php84MinimumCompatibility) {
-                    $code .= "#if (PHP_VERSION_ID >= " . PHP_84_VERSION_ID . ")\n";
-                }
-
                 $template = "\tclass_entry = zend_register_internal_class_with_flags(&ce, " . (isset($this->extends[0]) ? "class_entry_" . str_replace("\\", "_", $this->extends[0]->toString()) : "NULL") . ", %s);\n";
                 $entries = $flags->generateVersionDependentFlagCode($template, $this->phpVersionIdMinimumCompatibility ? max($this->phpVersionIdMinimumCompatibility, PHP_84_VERSION_ID) : null);
                 if ($entries !== '') {
@@ -3819,15 +3755,6 @@ class ClassInfo {
                     $code .= sprintf($template, "0");
                 }
 
-                if (!$php84MinimumCompatibility) {
-                    $code .= "#else\n";
-
-                    $code .= "\tclass_entry = zend_register_internal_class_ex(&ce, " . (isset($this->extends[0]) ? "class_entry_" . str_replace("\\", "_", $this->extends[0]->toString()) : "NULL") . ");\n";
-                    if (!$flags->isEmpty()) {
-                        $code .= $flags->generateVersionDependentFlagCode("\tclass_entry->ce_flags |= %s;\n", $this->phpVersionIdMinimumCompatibility);
-                    }
-                    $code .= "#endif\n";
-                }
             } else {
                 $code .= "\tclass_entry = zend_register_internal_interface(&ce);\n";
                 if (!$flags->isEmpty()) {
@@ -3838,15 +3765,7 @@ class ClassInfo {
         }
 
         if ($this->exposedDocComment) {
-            if (!$php84MinimumCompatibility) {
-                $code .= "#if (PHP_VERSION_ID >= " . PHP_84_VERSION_ID . ")\n";
-            }
-
             $code .= "\tclass_entry->doc_comment = " . $this->exposedDocComment->getInitCode() . "\n";
-
-            if (!$php84MinimumCompatibility) {
-                $code .= "#endif\n";
-            }
         }
 
         $code .= generateCodeWithConditions(
@@ -3879,20 +3798,9 @@ class ClassInfo {
         if ($this->alias) {
             $code .= "\tzend_register_class_alias(\"" . str_replace("\\", "\\\\", $this->alias) . "\", class_entry);\n";
         }
-        // Reusable strings for wrapping conditional PHP 8.0+ code
-        if ($php80MinimumCompatibility) {
-            $php80CondStart = '';
-            $php80CondEnd = '';
-        } else {
-            $php80CondStart = "\n#if (PHP_VERSION_ID >= " . PHP_80_VERSION_ID . ")";
-            $php80CondEnd = "#endif\n";
-        }
-
         $declaredStrings = [];
 
         if (!empty($this->attributes)) {
-            $code .= $php80CondStart;
-
             foreach ($this->attributes as $key => $attribute) {
                 $code .= $attribute->generateCode(
                     "zend_add_class_attribute(class_entry",
@@ -3903,25 +3811,18 @@ class ClassInfo {
                 );
             }
 
-            $code .= $php80CondEnd;
         }
 
         if ($attributeInitializationCode = generateConstantAttributeInitialization($this->constInfos, $allConstInfos, $this->phpVersionIdMinimumCompatibility, $this->cond, $declaredStrings)) {
-            $code .= $php80CondStart;
             $code .= "\n" . $attributeInitializationCode;
-            $code .= $php80CondEnd;
         }
 
         if ($attributeInitializationCode = generatePropertyAttributeInitialization($this->propertyInfos, $allConstInfos, $this->phpVersionIdMinimumCompatibility, $declaredStrings)) {
-            $code .= $php80CondStart;
             $code .= "\n" . $attributeInitializationCode;
-            $code .= $php80CondEnd;
         }
 
         if ($attributeInitializationCode = generateFunctionAttributeInitialization($this->funcInfos, $allConstInfos, $this->phpVersionIdMinimumCompatibility, $this->cond, $declaredStrings)) {
-            $code .= $php80CondStart;
             $code .= "\n" . $attributeInitializationCode;
-            $code .= $php80CondEnd;
         }
 
         $code .= "\n\treturn class_entry;\n";
@@ -3929,10 +3830,6 @@ class ClassInfo {
         $code .= "}\n";
 
         if ($this->cond) {
-            $code .= "#endif\n";
-        }
-
-        if ($this->type === "enum" && !$php81MinimumCompatibility) {
             $code .= "#endif\n";
         }
 
@@ -4483,13 +4380,12 @@ class FileInfo {
             } else if ($tag->name === 'generate-legacy-arginfo') {
                 if ($tag->value && !in_array((int) $tag->value, ALL_PHP_VERSION_IDS, true)) {
                     throw new Exception(
-                        "Legacy PHP version must be one of: \"" . PHP_70_VERSION_ID . "\" (PHP 7.0), \"" . PHP_80_VERSION_ID . "\" (PHP 8.0), " .
-                        "\"" . PHP_81_VERSION_ID . "\" (PHP 8.1), \"" . PHP_82_VERSION_ID . "\" (PHP 8.2), \"" . PHP_83_VERSION_ID . "\" (PHP 8.3), " .
-                        "\"" . PHP_84_VERSION_ID . "\" (PHP 8.4), \"" . PHP_85_VERSION_ID . "\" (PHP 8.5), \"" . $tag->value . "\" provided"
+                        "Legacy PHP version must be one of: \"" . PHP_84_VERSION_ID . "\" (PHP 8.4), " .
+                        "\"" . PHP_85_VERSION_ID . "\" (PHP 8.5), \"" . $tag->value . "\" provided"
                     );
                 }
 
-                $this->minimumPhpVersionIdCompatibility = ($tag->value ? (int) $tag->value : PHP_70_VERSION_ID);
+                $this->minimumPhpVersionIdCompatibility = ($tag->value ? (int) $tag->value : PHP_84_VERSION_ID);
             } else if ($tag->name === 'generate-class-entries') {
                 $this->generateClassEntries = true;
                 $this->declarationPrefix = $tag->value ? $tag->value . " " : "";
@@ -5628,18 +5524,10 @@ function generateArgInfoCode(
         }
     }
 
-    $php80MinimumCompatibility = $fileInfo->getMinimumPhpVersionIdCompatibility() === null || $fileInfo->getMinimumPhpVersionIdCompatibility() >= PHP_80_VERSION_ID;
-
     if ($fileInfo->generateClassEntries) {
         $declaredStrings = [];
         $attributeInitializationCode = generateFunctionAttributeInitialization($fileInfo->funcInfos, $allConstInfos, $fileInfo->getMinimumPhpVersionIdCompatibility(), null, $declaredStrings);
         $attributeInitializationCode .= generateGlobalConstantAttributeInitialization($fileInfo->constInfos, $allConstInfos, $fileInfo->getMinimumPhpVersionIdCompatibility(), null, $declaredStrings);
-        if ($attributeInitializationCode) {
-            if (!$php80MinimumCompatibility) {
-                $attributeInitializationCode = "\n#if (PHP_VERSION_ID >= " . PHP_80_VERSION_ID . ")" . $attributeInitializationCode . "#endif\n";
-            }
-        }
-
         if ($attributeInitializationCode !== "") {
             $code .= "\nstatic void register_{$stubFilenameWithoutExtension}_symbols(int module_number)\n";
             $code .= "{\n";

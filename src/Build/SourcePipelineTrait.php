@@ -88,6 +88,10 @@ trait SourcePipelineTrait
             $phpDir = $this->getPhpDir();
         }
 
+        if (!($this->getPlatform() instanceof Wasi)) {
+            $this->validatePhpRuntimeMinimum($phpDir);
+        }
+
         if ($this->getPlatform() instanceof Linux) {
             try {
                 (new LibPhpxInstaller())->ensure($this->getPhpxDir(), $phpDir);
@@ -170,6 +174,41 @@ trait SourcePipelineTrait
                 "Configured linker command: {$linkerCommand}\n" .
                 "Install the required linker or update compiler configuration."
             );
+        }
+    }
+
+    /** Validate the selected headers/libphp independently of --php-version. */
+    protected function validatePhpRuntimeMinimum(string $phpDir): void
+    {
+        $versionId = null;
+        $headers = [
+            $phpDir . '/include/php/main/php_version.h',
+            $phpDir . '/include/main/php_version.h',
+        ];
+        foreach ($headers as $header) {
+            if (!is_file($header)) {
+                continue;
+            }
+            $contents = file_get_contents($header);
+            if (is_string($contents) && preg_match('/^#define\s+PHP_VERSION_ID\s+(\d+)/m', $contents, $matches)) {
+                $versionId = (int) $matches[1];
+                break;
+            }
+        }
+
+        if ($versionId === null) {
+            $phpConfig = $phpDir . '/bin/php-config';
+            if (is_executable($phpConfig)) {
+                $value = shell_exec(escapeshellarg($phpConfig) . ' --vernum 2>/dev/null');
+                if (is_string($value) && ctype_digit(trim($value))) {
+                    $versionId = (int) trim($value);
+                }
+            }
+        }
+
+        if ($versionId !== null && $versionId < 80400) {
+            $version = intdiv($versionId, 10000) . '.' . intdiv($versionId % 10000, 100);
+            $this->error("TypePHP requires libphp 8.4 or later; selected PHP installation is {$version}: {$phpDir}");
         }
     }
 

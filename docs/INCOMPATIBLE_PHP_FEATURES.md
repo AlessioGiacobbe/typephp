@@ -16,7 +16,7 @@
 - 不支持可变变量 `$$var`。
 - PHP 8.4 property hooks 会编译为 AOT getter/setter，并注册对应的 Zend hook 元数据；直接属性读写、Reflection 和对象遍历均受支持。当前不支持对 hook 属性取引用。
 - PHP 8.4 Reflection Lazy Object 不能用于 TypePHP AOT 类。AOT 类以 persistent internal class 注册，而 Zend 的 `zend_object_make_lazy()` 明确拒绝 internal class；运行时动态加载的 ZendPHP user class 不受此限制。
-- 支持 `private(set)` 与 `protected(set)` 非对称属性可见性；在 PHP 8.2～8.4 后端通过自定义属性写 handler 执行同等作用域检查。
+- 支持 `private(set)` 与 `protected(set)` 非对称属性可见性，并通过 PHP 8.4+ 的类级对象 handler 执行同等作用域检查。
 - 不支持闭包或箭头函数按引用返回。
 - `__construct()` 不允许返回值。
 - 参数默认值不允许出现在必填参数之前（`PHP`允许，但会直接丢弃此默认参数）。

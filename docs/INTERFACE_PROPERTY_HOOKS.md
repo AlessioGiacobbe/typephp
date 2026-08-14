@@ -20,8 +20,7 @@ interface Named
 - Interface 不持有属性槽，不生成 getter/setter 实现，也不产生访问时的契约检查。
 - TypePHP 在编译期验证已知 AOT 类是否满足属性的可见性、类型和 `get`/`set` 能力。
 - PHP 8.4 目标在 MINIT 注册原生 Zend Hook 元数据，使 Reflection 和动态 PHP 类获得相同契约。
-- 编译器前端解析和验证该语法不依赖 PHP 8.4；但使用 Property Hooks 的最终目标运行时必须链接 PHP 8.4 或更高版本。
-- PHP 8.3 不提供静默降级。缺少 Zend Hook 元数据会使动态属性访问、Reflection、JSON、序列化和 `eval()` 类链接的行为取决于执行路径，不能视为可靠支持。
+- TypePHP、PHPX 和最终目标运行时的最低版本均为 PHP 8.4，不提供旧版本降级路径。
 
 ## 2. 语法与诊断
 
@@ -72,7 +71,7 @@ php::registerAbstractPropertyHooks(
 );
 ```
 
-它只在 `PHP_VERSION_ID >= 80400` 下访问 PHP 8.4 ABI，并负责：
+TypePHP/PHPX 已统一要求 PHP 8.4+，因此该 helper 直接访问 PHP 8.4 ABI，并负责：
 
 - 持久化分配 `zend_property_info::hooks`；
 - 创建没有 handler 的 abstract `get`/`set` `zend_internal_function` 元数据；
@@ -84,17 +83,12 @@ php::registerAbstractPropertyHooks(
 
 ## 5. PHP 版本边界
 
-TypePHP 应区分编译器宿主与目标 PHP：
+TypePHP 区分源码语言版本与链接运行时：
 
-- PHP Parser 和 TypePHP 前端可以在 PHP 8.3 环境解析该语法；
-- 构建后端以项目选择的 PHP language/target version 以及最终链接的 PHP headers/`libphp` 作为能力依据；编译器进程自身可以运行在更旧的 PHP 上；
-- 发现 Property Hooks 且目标低于 PHP 8.4 时，在 C++ 编译前报告：
-
-```text
-Property Hooks require PHP 8.4 or later as the target runtime
-```
-
-PHPX 仍使用条件编译作为 ABI 防线，但不应把清晰的功能诊断推迟为 C++ 编译错误。
+- `--php-version` 只允许 `8.4` 或 `8.5`，用于解析语法和处理项目条件；
+- PHPX headers、`libphp` 与最终运行时必须为 PHP 8.4 或更高版本；
+- `--php-version` 与 `libphp.so` 的小版本不要求完全一致，例如使用 8.5 语法模式并链接 PHP 8.4 时，最终能否构建仍由实际使用的 Zend API 决定；
+- PHP 8.4 以下环境在 TypePHP/PHPX 构建入口直接拒绝。
 
 ## 6. TDD 覆盖
 
@@ -107,8 +101,7 @@ PHPX 仍使用条件编译作为 ABI 防线，但不应把清晰的功能诊断�
 5. Reflection 的 abstract、virtual、hasHook/getHook 元数据；
 6. PHP 8.4 动态 PHP 类的成功与失败链接；
 7. O0/O3 结果一致，Interface 不生成属性槽或 Native Hook 实现；
-8. PHP 8.3 目标得到明确的构建期错误；
-9. PHPX helper 在 NTS/ZTS 和 PHP 8.4/8.5 下的生命周期与 ABI 回归。
+8. PHPX helper 在 NTS/ZTS 和 PHP 8.4/8.5 下的生命周期与 ABI 回归。
 
 ## 7. 实施顺序
 
