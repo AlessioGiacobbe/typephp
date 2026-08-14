@@ -127,6 +127,26 @@ final class PropertyHookLowering
         return $methods;
     }
 
+    public static function markAbstractInterfaceProperty(Stmt\Property $property): void
+    {
+        if ($property->hooks === []) {
+            return;
+        }
+
+        $hooks = [];
+        foreach ($property->hooks as $hook) {
+            $kind = strtolower($hook->name->toString());
+            if ($kind === 'get' || $kind === 'set') {
+                $hooks[$kind] = true;
+            }
+        }
+        $property->setAttribute(self::PROPERTY_ATTRIBUTE, [
+            'methods' => $hooks,
+            'virtual' => true,
+            'abstract' => true,
+        ]);
+    }
+
     public static function lowerPromotedProperty(Param $param): ?Stmt\ClassMethod
     {
         if (!$param->isPromoted() || !is_string($param->var->name)) {

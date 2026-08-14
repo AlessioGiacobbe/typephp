@@ -25,6 +25,7 @@ class PropertyDef
     public bool $readonly = false;
     public ?string $getter = null;
     public ?string $setter = null;
+    public bool $virtual = false;
 
     public function __construct(string $name, int $flags, string $type, ?string $default = null, bool $nullable = false)
     {

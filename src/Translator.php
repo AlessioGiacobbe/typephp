@@ -28,6 +28,7 @@ use TypePhp\Entity\ClassLikeDef;
 use TypePhp\Entity\ConstantDef;
 use TypePhp\Entity\FunctionDef;
 use TypePhp\Entity\InterfaceDef;
+use TypePhp\Entity\InterfacePropertyDef;
 use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\Redo;
@@ -4405,8 +4406,117 @@ CODE;
             );
         }
 
+        foreach ($interfaceDef->properties as $property) {
+            $this->checkInterfacePropertyImplementation($node, $classDef, $interfaceName, $property);
+        }
+
         foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentInterface) {
             $this->checkInterfaceImplementation($node, $classDef, $parentInterface);
+        }
+    }
+
+    private function checkInterfacePropertyImplementation(
+        NodeAbstract $node,
+        ClassDef $classDef,
+        string $interfaceName,
+        InterfacePropertyDef $contract,
+    ): void {
+        $property = $this->findClassPropertyDef($classDef, $contract->name);
+        if ($property === null) {
+            if ($classDef->isAbstract()) {
+                return;
+            }
+            $this->fatalError(
+                $node,
+                "Class `{$classDef->getNamespacedName(false)}` must implement property " .
+                "`{$interfaceName}::\${$contract->name}`",
+            );
+        }
+        if (!$property->isPublic()) {
+            $this->fatalError(
+                $node,
+                "Property `{$classDef->getNamespacedName(false)}::\${$contract->name}` must be public " .
+                "to satisfy `{$interfaceName}::\${$contract->name}`",
+            );
+        }
+
+        $readable = $property->getter !== null || !$property->virtual;
+        $writable = $property->setter !== null
+            || (!$property->virtual
+                && !$property->isReadonly()
+                && !$property->isPrivateSet()
+                && !$property->isProtectedSet());
+        if (($contract->readable && !$readable) || ($contract->writable && !$writable)) {
+            $this->fatalError(
+                $node,
+                "Property `{$classDef->getNamespacedName(false)}::\${$contract->name}` does not satisfy " .
+                "the required hooks of `{$interfaceName}::\${$contract->name}`",
+            );
+        }
+
+        $implementationTypes = $this->getPropertyAcceptedTypes($property);
+        $contractTypes = $this->getPropertyAcceptedTypes($contract);
+        $compatible = match (true) {
+            $contract->readable && !$contract->writable =>
+                $this->isPropertyTypeSubset($implementationTypes, $contractTypes),
+            $contract->writable && !$contract->readable =>
+                $this->isPropertyTypeSubset($contractTypes, $implementationTypes),
+            default =>
+                $this->isPropertyTypeSubset($implementationTypes, $contractTypes)
+                && $this->isPropertyTypeSubset($contractTypes, $implementationTypes),
+        };
+        if (!$compatible) {
+            $this->fatalError(
+                $node,
+                "Property `{$classDef->getNamespacedName(false)}::\${$contract->name}` must be compatible " .
+                "with `{$interfaceName}::\${$contract->name}`",
+            );
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function getPropertyAcceptedTypes(PropertyDef|InterfacePropertyDef $property): array
+    {
+        if ($property->typeCheck !== []) {
+            return $property->typeCheck;
+        }
+        return match ($property->type) {
+            Type::INT => [['kind' => 'isInt']],
+            Type::FLOAT => [['kind' => 'isFloat']],
+            Type::BOOL => [['kind' => 'isBool']],
+            Type::STR => [['kind' => 'isString']],
+            Type::ARRAY => [['kind' => 'isArray']],
+            Type::RESOURCE => [['kind' => 'isResource']],
+            Type::OBJECT => $property->class !== ''
+                ? [['kind' => 'instanceof', 'class' => $property->class]]
+                : [['kind' => 'isObject']],
+            default => [['kind' => 'isMixed']],
+        };
+    }
+
+    private function isPropertyTypeSubset(array $candidateTypes, array $acceptedTypes): bool
+    {
+        foreach ($candidateTypes as $candidateType) {
+            if (!$this->isReturnTypeCoveredBy($candidateType, $acceptedTypes)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function findClassPropertyDef(ClassDef $classDef, string $propertyName): ?PropertyDef
+    {
+        $current = $classDef;
+        while (true) {
+            if ($current->hasProperty($propertyName)) {
+                return $current->getProperty($propertyName);
+            }
+            if (!$current->extends || !$this->hasClass($current->extends)) {
+                return null;
+            }
+            $current = $this->getClass($current->extends);
         }
     }
 

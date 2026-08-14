@@ -15,6 +15,7 @@ use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ConstantDef;
 use TypePhp\Entity\FunctionDef;
 use TypePhp\Entity\InterfaceDef;
+use TypePhp\Entity\InterfacePropertyDef;
 use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\PropertyDef;
 use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
@@ -1439,6 +1440,9 @@ class Preprocessor extends CompilerBase
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
+        if ($v->hooks !== [] && version_compare($this->phpVersion, '8.4', '<')) {
+            $this->fatalError($v, 'Property Hooks require PHP 8.4 or later as the target runtime');
+        }
         $oriCtx = $this->context;
         $this->context = $this->classDef->propertyContext;
         $nullable = $v->type instanceof NullableType;
@@ -1446,6 +1450,8 @@ class Preprocessor extends CompilerBase
         foreach ($v->props as $prop) {
             $propName = $this->parseIdentifier($prop->name);
             $propDef = $this->addClassProperty($propName, $v->flags, $v->type, $prop->default, $nullable, $v);
+            $hookMetadata = $v->getAttribute(PropertyHookLowering::PROPERTY_ATTRIBUTE, []);
+            $propDef->virtual = (bool) ($hookMetadata['virtual'] ?? false);
             foreach ($v->hooks as $hook) {
                 $kind = strtolower($hook->name->toString());
                 if ($kind === 'get') {
@@ -1639,6 +1645,11 @@ class Preprocessor extends CompilerBase
                 continue;
             }
 
+            if ($stmt instanceof Node\Stmt\Property) {
+                $this->prepareInterfaceProperty($stmt);
+                continue;
+            }
+
             if (!$stmt instanceof Node\Stmt\Nop) {
                 $this->fatalError($stmt, 'Unsupported interface statement: ' . $stmt->getType());
             }
@@ -1648,6 +1659,85 @@ class Preprocessor extends CompilerBase
         $this->resetFunction();
         $this->interface = '';
         $this->interfaceDef = null;
+    }
+
+    private function prepareInterfaceProperty(Node\Stmt\Property $property): void
+    {
+        if ($property->hooks === []) {
+            $this->fatalError($property, 'Interfaces may only include hooked properties');
+        }
+        if (version_compare($this->phpVersion, '8.4', '<')) {
+            $this->fatalError($property, 'Property Hooks require PHP 8.4 or later as the target runtime');
+        }
+        if ($property->flags & (Modifiers::PRIVATE | Modifiers::PROTECTED)) {
+            $this->fatalError($property, 'Property in interface cannot be protected or private');
+        }
+        if ($property->flags & Modifiers::STATIC) {
+            $this->fatalError($property, 'Cannot declare hooks for static property');
+        }
+        if ($property->flags & Modifiers::READONLY) {
+            $this->fatalError($property, 'Hooked properties cannot be readonly');
+        }
+
+        $readable = false;
+        $writable = false;
+        foreach ($property->hooks as $hook) {
+            if ($hook->body !== null) {
+                $this->fatalError($hook, 'Abstract property hook cannot have body');
+            }
+            $kind = strtolower($hook->name->toString());
+            if ($kind === 'get') {
+                if ($readable) {
+                    $this->fatalError($hook, 'Cannot redeclare property hook "get"');
+                }
+                $readable = true;
+            } elseif ($kind === 'set') {
+                if ($writable) {
+                    $this->fatalError($hook, 'Cannot redeclare property hook "set"');
+                }
+                if ($hook->params !== []) {
+                    $this->fatalError(
+                        $hook,
+                        'Explicit setter parameters in interface property hooks are not supported yet',
+                    );
+                }
+                $writable = true;
+            } else {
+                $this->fatalError($hook, "Unknown hook `{$kind}`, expected `get` or `set`");
+            }
+        }
+
+        [$type, $class] = $this->resolveTypeDecl($property->type, self::DECL_TYPE_OF_PROPERTY);
+        $nullable = $property->type instanceof NullableType;
+        foreach ($property->props as $prop) {
+            $name = $this->parseIdentifier($prop->name);
+            if ($this->interfaceDef->hasProperty($name)) {
+                $this->fatalError($property, "Duplicate property `{$name}`");
+            }
+            if ($prop->default !== null) {
+                $this->fatalError($property, "Cannot specify default value for virtual hooked property {$this->interfaceDef->getNamespacedName(false)}::\${$name}");
+            }
+
+            $definition = new InterfacePropertyDef(
+                $name,
+                $this->parseModifiers($property->flags),
+                $type,
+                $nullable,
+                $readable,
+                $writable,
+                $property,
+            );
+            $definition->class = $class;
+            if ($property->type instanceof NullableType
+                || $property->type instanceof UnionType
+                || $property->type instanceof IntersectionType
+            ) {
+                $typeInfo = $this->buildTypeCheckFromNode($property->type);
+                $definition->typeCheck = $typeInfo['check'];
+                $definition->typeStr = $typeInfo['typeStr'];
+            }
+            $this->interfaceDef->properties[$name] = $definition;
+        }
     }
 
     protected function parseTraitUseOptions(Node\Stmt\TraitUse $traitUse, array &$aliases, array &$ignored): void

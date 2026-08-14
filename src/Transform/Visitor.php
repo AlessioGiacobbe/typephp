@@ -46,6 +46,15 @@ class Visitor extends NodeVisitorAbstract
             $this->guard($node, static fn () => ParameterValidationLowering::rejectArrowFunction($node));
         }
 
+        if ($node instanceof Stmt\Interface_) {
+            foreach ($node->stmts as $stmt) {
+                if ($stmt instanceof Stmt\Property) {
+                    PropertyHookLowering::markAbstractInterfaceProperty($stmt);
+                }
+            }
+            return null;
+        }
+
         if (!$node instanceof Stmt\Class_ && !$node instanceof Stmt\Trait_ && !$node instanceof Stmt\Enum_) {
             return null;
         }

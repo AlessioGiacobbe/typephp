@@ -2,6 +2,8 @@
 
 本文记录 TypePHP 编译器与 PHPX 对 PHP 8.4 Property Hook 的实现方式，重点说明 Zend 元数据注册、对象内省、内存生命周期和版本兼容边界。本文是内部维护文档；用户侧语法说明应放在外部文档仓库。
 
+Interface 中不带实现体的 Property Hook 属于抽象属性契约，不走本文描述的具体类 lowering 流程；其模型、方差检查和 Zend 元数据注册见 [Interface Property Hook 实现方案](INTERFACE_PROPERTY_HOOKS.md)。
+
 ## 1. 背景
 
 TypePHP 会把 Property Hook 的函数体编译成隐藏的 AOT getter/setter。仅完成这一步，可以满足编译器明确识别出的属性读写，但 ZendVM 并不知道这些隐藏方法代表 Property Hook，因此以下动态能力会与 PHP 8.4 不一致：

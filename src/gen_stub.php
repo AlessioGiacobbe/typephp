@@ -3248,8 +3248,9 @@ class PropertyInfo extends VariableLike
     private /* readonly */ ?string $defaultValueString;
     private /* readonly */ bool $isDocReadonly;
     private /* readonly */ bool $isVirtual;
-    /** @var array{get?: string, set?: string} */
+    /** @var array{get?: string|true, set?: string|true} */
     private /* readonly */ array $hooks;
+    private /* readonly */ bool $abstractHooks;
     private /* readonly */ bool $isPromoted;
 
     /**
@@ -3279,6 +3280,8 @@ class PropertyInfo extends VariableLike
         $this->isDocReadonly = $isDocReadonly;
         $this->isVirtual = $isVirtual;
         $this->hooks = $hooks;
+        $this->abstractHooks = isset($hooks['get']) && $hooks['get'] === true
+            || isset($hooks['set']) && $hooks['set'] === true;
         $this->isPromoted = $isPromoted;
         parent::__construct($flags, $type, $phpDocType, $link, $phpVersionIdMinimumCompatibility, $attributes, $exposedDocComment);
     }
@@ -3408,13 +3411,19 @@ class PropertyInfo extends VariableLike
         $code .= $stringRelease;
 
         if ($this->hooks !== []) {
-            $getter = isset($this->hooks['get'])
-                ? 'std::string_view{"' . addslashes($this->hooks['get']) . '"}'
-                : 'std::string_view{}';
-            $setter = isset($this->hooks['set'])
-                ? 'std::string_view{"' . addslashes($this->hooks['set']) . '"}'
-                : 'std::string_view{}';
-            $code .= "\tphp::registerPropertyHooks(class_entry, property_{$propertyName}, {$getter}, {$setter});\n";
+            if ($this->abstractHooks) {
+                $getter = isset($this->hooks['get']) ? 'true' : 'false';
+                $setter = isset($this->hooks['set']) ? 'true' : 'false';
+                $code .= "\tphp::registerAbstractPropertyHooks(class_entry, property_{$propertyName}, {$getter}, {$setter});\n";
+            } else {
+                $getter = isset($this->hooks['get'])
+                    ? 'std::string_view{"' . addslashes($this->hooks['get']) . '"}'
+                    : 'std::string_view{}';
+                $setter = isset($this->hooks['set'])
+                    ? 'std::string_view{"' . addslashes($this->hooks['set']) . '"}'
+                    : 'std::string_view{}';
+                $code .= "\tphp::registerPropertyHooks(class_entry, property_{$propertyName}, {$getter}, {$setter});\n";
+            }
         }
 
         return $code;
@@ -3430,6 +3439,10 @@ class PropertyInfo extends VariableLike
 
         if ($this->flags & Modifiers::FINAL) {
             $flags->addForVersionsAbove("ZEND_ACC_FINAL", PHP_84_VERSION_ID);
+        }
+
+        if ($this->flags & Modifiers::ABSTRACT) {
+            $flags->addForVersionsAbove("ZEND_ACC_ABSTRACT", PHP_84_VERSION_ID);
         }
 
         if ($this->flags & Modifiers::READONLY) {
@@ -3836,21 +3849,6 @@ class ClassInfo {
             }
         }
 
-        $implements = array_map(
-            function (Name $item) {
-                return "class_entry_" . implode("_", $item->getParts());
-            },
-            $this->type === "interface" ? $this->extends : $this->implements
-        );
-
-        if (!empty($implements)) {
-            $code .= "\tzend_class_implements(class_entry, " . count($implements) . ", " . implode(", ", $implements) . ");\n";
-        }
-
-        if ($this->alias) {
-            $code .= "\tzend_register_class_alias(\"" . str_replace("\\", "\\\\", $this->alias) . "\", class_entry);\n";
-        }
-
         $code .= generateCodeWithConditions(
             $this->constInfos,
             '',
@@ -3863,6 +3861,23 @@ class ClassInfo {
 
         foreach ($this->propertyInfos as $property) {
             $code .= $property->getDeclaration($allConstInfos);
+        }
+
+        // Zend merges interface property contracts immediately. Declare the
+        // class/interface's own properties first so an implementation can
+        // replace a virtual abstract contract with its real property slot.
+        $implements = array_map(
+            function (Name $item) {
+                return "class_entry_" . implode("_", $item->getParts());
+            },
+            $this->type === "interface" ? $this->extends : $this->implements
+        );
+        if (!empty($implements)) {
+            $code .= "\tzend_class_implements(class_entry, " . count($implements) . ", " . implode(", ", $implements) . ");\n";
+        }
+
+        if ($this->alias) {
+            $code .= "\tzend_register_class_alias(\"" . str_replace("\\", "\\\\", $this->alias) . "\", class_entry);\n";
         }
         // Reusable strings for wrapping conditional PHP 8.0+ code
         if ($php80MinimumCompatibility) {
@@ -5342,6 +5357,9 @@ function parseProperty(
     $link = $tagMap['link'] ?? null;
     $isVirtual = $hookMetadata['virtual'] ?? array_key_exists('virtual', $tagMap);
     $hooks = $hookMetadata['methods'] ?? [];
+    if ($hookMetadata['abstract'] ?? false) {
+        $flags |= Modifiers::ABSTRACT;
+    }
 
     foreach ($tags as $tag) {
         if ($tag->name === 'var') {

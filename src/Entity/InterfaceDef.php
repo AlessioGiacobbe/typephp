@@ -21,6 +21,13 @@ class InterfaceDef extends ClassLikeDef
     public array $constants = [];
 
     /**
+     * Abstract hooked-property contracts, keyed by the case-sensitive property name.
+     *
+     * @var array<string, InterfacePropertyDef>
+     */
+    public array $properties = [];
+
+    /**
      * @var string[]
      */
     public array $extendsList = [];
@@ -43,5 +50,10 @@ class InterfaceDef extends ClassLikeDef
     public function hasConstant(string $name): bool
     {
         return isset($this->constants[$name]);
+    }
+
+    public function hasProperty(string $name): bool
+    {
+        return isset($this->properties[$name]);
     }
 }
