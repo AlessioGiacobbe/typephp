@@ -39,6 +39,7 @@ trait NullsafeAccessTrait
     ): string
     {
         $list = [];
+        $ownedTmpVars = [];
         $comment = $this->formatCppLineComment('Nullsafe Operator: ', $this->printer->prettyPrint([$expr]));
 
         while (1) {
@@ -66,6 +67,7 @@ trait NullsafeAccessTrait
                     }
                 }
                 $object = $this->addTmpVar(Type::OBJECT);
+                $ownedTmpVars[] = $object;
                 $this->context->beforeStmtLines[] = $this->getIndent() . $object . ' = ' . $this->parseIdentifier($expr) . ';';
                 break;
             }
@@ -80,6 +82,7 @@ trait NullsafeAccessTrait
 
         foreach ($list as $key => $item) {
             $tmpVar = $this->addTmpVar($key !== $last ? Type::OBJECT : Type::VAR);
+            $ownedTmpVars[] = $tmpVar;
             if ($item[3]) {
                 $code .= "if ({$object}.isNull()) { return " . self::VALUE_NULL . '; }';
             }
@@ -117,6 +120,11 @@ trait NullsafeAccessTrait
         }
         $code .= $this->getIndent() . "return {$object}; };";
         $this->context->beforeStmtLines[] = $code;
+
+        // C++ temporaries are function-scoped; release their zvals at the PHP statement boundary.
+        foreach (array_reverse($ownedTmpVars) as $tmpVar) {
+            $this->context->afterStmtLines[] = $tmpVar . '.unset();';
+        }
         return "{$tmpFn}()";
     }
 
