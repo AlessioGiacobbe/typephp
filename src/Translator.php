@@ -733,7 +733,13 @@ class Translator extends Preprocessor
         }
 
         foreach ($this->globalVars as $name => $type) {
-            $lines[] = 'extern THREAD_LOCAL ' . Type::VAR . ' ' . $this->escapeGlobalVar($name) . ';';
+            $cppType = isset($this->nativeGlobalObjects[$name])
+                ? $this->getNativeObjectPointerType($this->nativeGlobalObjects[$name])
+                : Type::VAR;
+            $lines[] = 'extern THREAD_LOCAL ' . $cppType . ' ' . $this->escapeGlobalVar($name) . ';';
+        }
+        foreach ($this->nativeStaticInitializers as $name => $_) {
+            $lines[] = 'extern THREAD_LOCAL bool ' . $this->escapeGlobalVar($name) . ';';
         }
 
         if ($this->literalStrings) {
@@ -811,7 +817,14 @@ class Translator extends Preprocessor
 
         $code .= "// global vars \n";
         foreach ($this->globalVars as $name => $type) {
-            $code .= 'THREAD_LOCAL ' . Type::VAR . ' ' . $this->escapeGlobalVar($name) . ';' . PHP_EOL;
+            $cppType = isset($this->nativeGlobalObjects[$name])
+                ? $this->getNativeObjectPointerType($this->nativeGlobalObjects[$name])
+                : Type::VAR;
+            $code .= 'THREAD_LOCAL ' . $cppType . ' ' . $this->escapeGlobalVar($name)
+                . (isset($this->nativeGlobalObjects[$name]) ? ' = nullptr' : '') . ';' . PHP_EOL;
+        }
+        foreach ($this->nativeStaticInitializers as $name => $_) {
+            $code .= 'THREAD_LOCAL bool ' . $this->escapeGlobalVar($name) . ' = false;' . PHP_EOL;
         }
 
         $code .= "// class register functions \n";
@@ -916,6 +929,9 @@ CODE;
 
         $code .= "// class \n";
         foreach ($this->getClassLikesWithConstants() as $classDef) {
+            if ($classDef instanceof ClassDef && $classDef->nativeObject) {
+                continue;
+            }
             if ($classDef instanceof ClassDef && !$classDef->trait && !$classDef->enum) {
                 $code .= 'static zend_object* (*create_object_' . $classDef->getNamespacedName() . ")(zend_class_entry *class_type);\n";
                 $code .= 'static zend_object_handlers property_handlers_' . $classDef->getNamespacedName() . ";\n";
@@ -943,6 +959,9 @@ CODE;
                 continue;
             }
             if ($functionDef->method) {
+                continue;
+            }
+            if ($this->functionUsesNativeObject($functionDef)) {
                 continue;
             }
             $fullName = $functionDef->getNamespacedName();
@@ -1006,6 +1025,11 @@ CODE;
             if ($name == 'GLOBALS') {
                 continue;
             }
+            if (isset($this->nativeGlobalObjects[$name])) {
+                $code .= 'php::nativeGcRegisterRequestRoot(reinterpret_cast<void **>(&'
+                    . $this->escapeGlobalVar($name) . '));' . PHP_EOL;
+                continue;
+            }
             $code .= 'php::initGlobal(' . $this->genCharPtr($name) . ', ' . $this->escapeGlobalVar($name) . ');' . PHP_EOL;
         }
 
@@ -1053,9 +1077,16 @@ CODE;
         $code .= 'void php_app_clean() {' . PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
             if ($name != 'GLOBALS') {
+                if (isset($this->nativeGlobalObjects[$name])) {
+                    $code .= $this->escapeGlobalVar($name) . ' = nullptr;' . PHP_EOL;
+                    continue;
+                }
                 $code .= $this->escapeGlobalVar($name) . '.unset();' . PHP_EOL;
                 $code .= 'php::unsetGlobal("' . $name . '");' . PHP_EOL;
             }
+        }
+        foreach ($this->nativeStaticInitializers as $name => $_) {
+            $code .= $this->escapeGlobalVar($name) . ' = false;' . PHP_EOL;
         }
         foreach ($this->constants as $name => $const) {
             if ($const->type !== Type::VAR) {
@@ -1693,6 +1724,8 @@ CODE;
         $code .= '#include <typephp_fiber_generator.h>' . PHP_EOL;
         $code .= PHP_EOL;
 
+        $code .= $this->genNativeObjectDeclarations();
+
         if ($this->isBuildModeLib()) {
             $code .= $this->genLibraryApiMacro($this->targetName);
         }
@@ -1712,7 +1745,7 @@ CODE;
             $functionDeclarationPrefix = $this->getFunctionDeclarationPrefix($func);
             $list = [];
             if ($func->method) {
-                $list[] = Type::OBJECT . ' &this_';
+                $list[] = ($this->getNativeObjectMethodThisType($func) ?? (Type::OBJECT . ' &')) . 'this_';
             }
             $argInfoList = $func->argInfoList;
             if ($argInfoList) {
@@ -1731,7 +1764,10 @@ CODE;
             }
             $params = implode(', ', $list);
             $functionAttribute = $this->getFunctionOptimizationAttribute($func);
-            $code .= $functionDeclarationPrefix . $functionAttribute . ($func->returnsByRef ? Type::REF : $func->returnType) . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
+            $returnType = $func->returnsByRef
+                ? Type::REF
+                : ($this->getNativeObjectReturnType($func) ?? $func->returnType);
+            $code .= $functionDeclarationPrefix . $functionAttribute . $returnType . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
             if ($func->hasMultiReturn()) {
                 $code .= 'namespace ' . self::MULTI_RETURN_NAMESPACE . ' {' . PHP_EOL;
                 $code .= $functionDeclarationPrefix . $functionAttribute . $func->getMultiReturnCppType() . ' ' . self::PREFIX . $name . '(' . $params . ');' . PHP_EOL;
@@ -1864,6 +1900,25 @@ CODE;
     {
         $rs = str_replace(['.stub.php', '.php'], '', $stubFile);
         return str_replace('-', '_', $rs);
+    }
+
+    public function isNativeClassForStub(string $class): bool
+    {
+        return $this->isNativeObjectClass($class);
+    }
+
+    public function isNativeFunctionForStub(string $function): bool
+    {
+        return $this->hasFunction($function)
+            && $this->functionUsesNativeObject($this->getFunction($function));
+    }
+
+    public function isNativeMethodForStub(string $class, string $method): bool
+    {
+        $class = ltrim($class, '\\');
+        return $this->hasClass($class)
+            && $this->getClass($class)->hasMethod($method)
+            && $this->functionUsesNativeObject($this->getClass($class)->getMethod($method)->functionDef);
     }
 
     public function getArgInfoHeaderFile(string $file, bool $relative = false): string
@@ -2511,6 +2566,9 @@ CODE;
         }
 
         foreach ($this->classesDefineInFile as $classDef) {
+            if ($classDef->nativeObject) {
+                continue;
+            }
             $cppCode .= $this->genClassWrapper($classDef);
         }
 
@@ -2519,7 +2577,7 @@ CODE;
         }
 
         foreach ($this->functionDefineInFile as $functionDef) {
-            if ($functionDef->attributeFactory) {
+            if ($functionDef->attributeFactory || $this->functionUsesNativeObject($functionDef)) {
                 continue;
             }
             $cppCode .= $this->genFunctionWrapper($functionDef);
@@ -2565,7 +2623,7 @@ CODE;
         }
 
         foreach ($this->symbols->classes() as $classDef) {
-            if ($classDef->trait !== null) {
+            if ($classDef->trait !== null || $classDef->nativeObject) {
                 continue;
             }
             $ce = $this->getClassCe($classDef);
@@ -3241,6 +3299,12 @@ CODE;
             $parentClass = $this->getNamespacedClassName($this->parseIdentifier($class->extends));
             if ($this->hasClass($parentClass)) {
                 $parent = $this->getClass($parentClass);
+                if ($this->classDef->nativeObject !== $parent->nativeObject) {
+                    $this->fatalError(
+                        $class,
+                        'Native and ZendVM-backed classes cannot inherit from each other'
+                    );
+                }
                 // 父类是 final 无法继承
                 if ($parent->flags & Modifiers::FINAL) {
                     $this->fatalError($class, "Class `{$this->class}` cannot extend final class `{$parentClass}`");
@@ -3325,6 +3389,9 @@ CODE;
             $this->checkInheritedAbstractMethodsAreImplemented($class);
         }
         $code = $this->genNativeMethod($methodCodes);
+        if ($this->classDef->nativeObject) {
+            $code .= $this->genNativeObjectRuntimeDefinition($this->classDef);
+        }
 
         $oriCtx = $this->context;
         $this->context = $this->classDef->propertyContext;
@@ -3531,6 +3598,9 @@ CODE;
 
         // 接口没有方法实体
         if ($classDef instanceof ClassDef && $classDef->trait === null) {
+            if ($classDef->nativeObject) {
+                return '';
+            }
             $defaultPropCount = 0;
             foreach ($classDef->properties as $property) {
                 if (!$property->isStatic() && $property->default !== null) {
@@ -3542,6 +3612,9 @@ CODE;
             }
             $methods = $classDef->methods;
             foreach ($methods as $methodDef) {
+                if ($this->functionUsesNativeObject($methodDef->functionDef)) {
+                    continue;
+                }
                 $cppCode .= $this->genMethodWrapper($classDef, $methodDef);
             }
         }
@@ -3643,10 +3716,18 @@ CODE;
         }
 
         if ($this->class) {
-            $this->addArgument('this_', Type::OBJECT);
+            if ($this->classDef->nativeObject) {
+                $this->addArgument('this_', $this->getNativeObjectCppName($this->classDef) . ' &');
+                $this->addNativeObject('this_', $this->classDef->getNamespacedName(false));
+            } else {
+                $this->addArgument('this_', Type::OBJECT);
+            }
         }
         foreach ($this->functionDef->argInfoList as $argInfo) {
-            $this->addArgument($argInfo->name, $argInfo->variadic ? Type::ARRAY : $argInfo->type);
+            $argumentType = $argInfo->variadic
+                ? Type::ARRAY
+                : ($this->getNativeObjectArgumentType($argInfo) ?? $argInfo->type);
+            $this->addArgument($argInfo->name, $argumentType);
             if (!$argInfo->variadic and $argInfo->declaredClass) {
                 $this->addObject($argInfo->name, $argInfo->declaredClass);
             }
@@ -3665,6 +3746,7 @@ CODE;
             $oriLocalVars = $this->context->localVars;
             $oriTmpVarIndex = $this->context->tmpVarIndex;
             $oriDeclaredObjects = $this->context->declaredObjects;
+            $oriNativeObjects = $this->context->nativeObjects;
             /** SSA/e-SSA analysis for the current function. Built once per function, discarded with the context. */
             $ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
             $ssaBuilder->build();
@@ -3677,7 +3759,12 @@ CODE;
                 $this->optimizeLoopVars($ssaBuilder);
                 $this->optimizeObjectProps($ssaBuilder);
             }
-            $this->context->resetAnalysisTemporaries($oriLocalVars, $oriTmpVarIndex, $oriDeclaredObjects);
+            $this->context->resetAnalysisTemporaries(
+                $oriLocalVars,
+                $oriTmpVarIndex,
+                $oriDeclaredObjects,
+                $oriNativeObjects,
+            );
         }
 
         $stmts = '';
@@ -3699,21 +3786,29 @@ CODE;
         $multiReturn = $this->functionDef->hasMultiReturn();
         $cppReturnType = $multiReturn
             ? $this->functionDef->getMultiReturnCppType()
-            : ($this->functionDef->returnsByRef ? Type::REF : $this->getReturnType());
+            : ($this->functionDef->returnsByRef
+                ? Type::REF
+                : ($this->getNativeObjectReturnType($this->functionDef) ?? $this->getReturnType()));
         $nativeName = self::PREFIX . $name;
         $functionAttribute = $this->getFunctionOptimizationAttribute($this->functionDef);
         $functionDeclCode = $functionAttribute . $cppReturnType . ' ' . ($multiReturn ? $this->getMultiReturnImplName($name) : $nativeName) . '(';
         if ($this->class) {
-            $functionDeclCode .= Type::OBJECT . ' &this_';
+            $functionDeclCode .= ($this->getNativeObjectMethodThisType($this->functionDef)
+                ?? (Type::OBJECT . ' &')) . 'this_';
             if ($this->functionDef->params) {
                 $functionDeclCode .= ', ';
             }
         }
-        $functionDeclCode .= $this->functionDef->params . ')';
+        // Rebuild parameter declarations from ArgInfo at code-generation time.
+        // Native classes may be discovered after an earlier declaration was
+        // normalized; the final ABI must use the precise native pointer type,
+        // not a stale php::Object spelling cached during preprocessing.
+        $functionDeclCode .= $this->getNativeMethodParameterDeclarations($this->functionDef) . ')';
 
         $code = $functionDeclCode . ' {' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->genScopeVarDecl();
+        $code .= $this->genNativeObjectParameterChecks($this->functionDef);
         $code .= "\n";
         // Runtime union/nullable parameter type checks
         foreach ($this->functionDef->argInfoList as $i => $argInfo) {
@@ -4375,6 +4470,7 @@ CODE;
     private function checkInterfaceImplementation(NodeAbstract $node, ClassDef $classDef, string $interfaceName): void
     {
         if ($this->isInternalInterface($interfaceName)) {
+            $this->checkInternalInterfaceImplementation($node, $classDef, $interfaceName);
             return;
         }
         if (!$this->hasInterface($interfaceName)) {
@@ -4581,11 +4677,17 @@ CODE;
                 if ($chainNode->hasProperty($name)) {
                     $parentProp = $chainNode->getProperty($name);
                     // A parent private property would be a separate PHP slot
-                    // hidden by the child declaration. TypePHP forbids that
-                    // dual-slot model. Public/protected declarations instead
+                    // hidden by the child declaration. Zend-backed TypePHP
+                    // classes still forbid that dual-slot model, while Native
+                    // classes have declaring-class-qualified C++ fields and
+                    // can represent it without a runtime property table.
+                    // Public/protected declarations instead
                     // describe the same inherited property slot and must obey
                     // PHP-compatible type, visibility and readonly rules.
                     if ($parentProp->flags & Modifiers::PRIVATE) {
+                        if ($classDef->nativeObject) {
+                            continue;
+                        }
                         $this->fatalError($classStmt,
                             "Declaration of `{$className}::\${$name}` conflicts with private property " .
                             "`{$parentClass}::\${$name}`; property shadowing across inheritance is not allowed");
@@ -4764,11 +4866,15 @@ CODE;
     private function installComposedTraitMethod(Node\Stmt\ClassMethod $methodStmt): void
     {
         $name = $methodStmt->name->toString();
+        $this->assertNativeMagicMethodSupported($methodStmt, $name);
         if ($this->classDef->hasMethod($name)) {
             return;
         }
 
         $flags = $this->parseModifiers($methodStmt->flags);
+        if ($this->classDef->nativeObject && ($flags & Modifiers::STATIC)) {
+            $this->fatalError($methodStmt, 'Native class static methods are not supported');
+        }
         $methodDef = new MethodDef($flags, $name);
         $methodDef->node = $methodStmt;
         $methodDef->traitOrigin = (string) $methodStmt->getAttribute(self::TRAIT_ORIGIN_ATTRIBUTE, '');

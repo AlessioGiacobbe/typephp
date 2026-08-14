@@ -531,11 +531,21 @@ trait BinaryOpTrait
         [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
         $this->appendCapturedStmtLinesToContext($beforeStmts);
 
-        $type = $this->getOrderedOperandTmpType($expr, (string) $value);
-        $tmpVar = $this->addTmpVar($type);
+        $nativeClass = $this->detectClassOfExpr($expr);
+        if ($this->isNativeObjectClass($nativeClass)) {
+            $type = $this->getNativeObjectPointerType($nativeClass);
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, $type);
+            $this->addNativeObject($tmpVar, $nativeClass);
+        } else {
+            $type = $this->getOrderedOperandTmpType($expr, (string) $value);
+            $tmpVar = $this->addTmpVar($type);
+        }
         $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
         $this->appendCapturedStmtLinesToContext($afterStmts);
-        if (in_array($type, [Type::VAR, Type::STR, Type::ARRAY, Type::OBJECT], true)) {
+        if ($this->isNativeObjectClass($nativeClass)) {
+            $this->context->afterStmtLines[] = $tmpVar . ' = nullptr;';
+        } elseif (in_array($type, [Type::VAR, Type::STR, Type::ARRAY, Type::OBJECT], true)) {
             // The declaration is function-scoped, but PHP releases an owned
             // expression temporary after the statement that consumes it.
             // All zval-owning PHPX wrappers must be cleared here: an Object is
@@ -629,6 +639,13 @@ trait BinaryOpTrait
             // Prefix expressions are operands too (for example, the left-hand
             // value of `.=`), so an empty RHS literal can be omitted there.
             if ($argList !== [] && $this->isScalarString($item) && $item->value === '') {
+                continue;
+            }
+
+            $itemClass = $this->detectClassOfExpr($item);
+            if ($this->isNativeObjectClass($itemClass)) {
+                $toString = new Expr\MethodCall($item, new Node\Identifier('toString'));
+                $argList[] = $this->parseOrderedOperand($toString, false);
                 continue;
             }
 
@@ -782,6 +799,17 @@ trait BinaryOpTrait
         }
         $left  = $this->parseCompareExpr($expr->left);
         $right = $this->parseCompareExpr($expr->right);
+        $leftIsNative = $this->isNativeObjectClass($this->detectClassOfExpr($expr->left));
+        $rightIsNative = $this->isNativeObjectClass($this->detectClassOfExpr($expr->right));
+        if ($leftIsNative && $this->isNull($expr->right)) {
+            return '(' . $left . ') == nullptr';
+        }
+        if ($rightIsNative && $this->isNull($expr->left)) {
+            return '(' . $right . ') == nullptr';
+        }
+        if ($leftIsNative && $rightIsNative) {
+            return 'static_cast<const void *>(' . $left . ') == static_cast<const void *>(' . $right . ')';
+        }
         if ($right === 'nullptr') {
             // The left operand may itself be an assignment or another compound
             // expression. Parenthesize it before invoking Variant::isNull(), or

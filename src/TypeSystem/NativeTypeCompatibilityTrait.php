@@ -159,6 +159,50 @@ trait NativeTypeCompatibilityTrait
             );
         }
 
+        $declaredClass = $argInfo->declaredClass ?: $argInfo->class;
+        $argumentClass = $this->detectClassOfExpr($arg->value);
+        if ($this->isNativeObjectClass($argumentClass)
+            && !$this->isNativeObjectClass($declaredClass)
+        ) {
+            if ($declaredClass !== '' && $this->isInterface($declaredClass)) {
+                $this->fatalError(
+                    $arg,
+                    "Native objects cannot be converted to interface `{$declaredClass}`",
+                );
+            }
+            $this->fatalError(
+                $arg,
+                'Native objects cannot cross a PHP/ZendVM argument boundary',
+            );
+        }
+        if ($this->isNativeObjectClass($declaredClass)) {
+            if ($argInfo->nullable && $this->isNull($arg->value)) {
+                return 'nullptr';
+            }
+            $class = $argumentClass;
+            if ($class === '' || !$this->isNativeObjectClass($class)
+                || !$this->isObjectClassStaticallyAssignableTo($class, $declaredClass)
+            ) {
+                $argName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
+                $this->fatalError(
+                    $arg,
+                    "Argument `{$argName}` must be a native object of type `{$declaredClass}`"
+                );
+            }
+            if ($argInfo->byRef) {
+                if (!$this->isVarExpr($arg->value)) {
+                    $this->fatalError($arg, 'Native object reference arguments must be variables');
+                }
+                $var = $this->parseIdentifier($arg->value);
+                if (!$this->isNativeObjectVar($var)) {
+                    $this->fatalError($arg, 'Native object reference arguments must be typed native variables');
+                }
+                return $var;
+            }
+            $expr = $this->parseOrderedArg($arg);
+            return $this->materializeCallArgValue($arg->value, $expr);
+        }
+
         if ($argInfo->byRef) {
             if ($this->isReferenceWrapperCall($arg->value)) {
                 $inner = $this->unwrapReferenceWrapperCall($arg->value, $arg);
@@ -217,7 +261,6 @@ trait NativeTypeCompatibilityTrait
         }
 
         if ($argInfo->type === Type::OBJECT) {
-            $declaredClass = $argInfo->declaredClass ?: $argInfo->class;
             if ($declaredClass !== '') {
                 $class = $this->detectDeclaredClassOfExpr($arg->value);
                 if ($class !== '') {

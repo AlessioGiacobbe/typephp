@@ -95,7 +95,13 @@ trait AssignOpTrait
             $next    = $next->expr;
         }
         $tmpVar = $this->genTmpVarName();
-        $this->addLocalVar($tmpVar, Type::VAR);
+        $nativeClass = $this->detectClassOfExpr($next);
+        if ($this->isNativeObjectClass($nativeClass)) {
+            $this->addLocalVar($tmpVar, $this->getNativeObjectPointerType($nativeClass));
+            $this->addNativeObject($tmpVar, $nativeClass);
+        } else {
+            $this->addLocalVar($tmpVar, Type::VAR);
+        }
 
         // 翻转赋值链
         $chain = array_reverse($chain);
@@ -208,8 +214,62 @@ trait AssignOpTrait
     protected function parseAssignFinally(Expr $left, Expr $right): string
     {
         $this->assertNotNullsafeWriteContext($left);
+        $rightClass = $this->detectClassOfExpr($right);
         if ($left instanceof Expr\List_) {
+            if ($this->isNativeObjectClass($rightClass)) {
+                $this->fatalError($right, 'Native objects cannot be destructured into PHP values');
+            }
             return $this->parseAssignToList($left, $right);
+        }
+
+        if ($this->isNativeObjectClass($rightClass)) {
+            $allowed = false;
+            if ($this->isVarExpr($left)) {
+                $leftName = $this->parseVariable($left);
+                $declaredClass = $this->getDeclaredObjectType($leftName);
+                if ($declaredClass !== '' && $this->isInterface($declaredClass)) {
+                    $this->fatalError(
+                        $left,
+                        'Native objects cannot be assigned to interface-typed variables',
+                    );
+                }
+                $allowed = !$this->hasVar($leftName)
+                    || $this->isNativeObjectVar($leftName)
+                    || $this->hasScopeGlobalVar($leftName)
+                    || $this->hasStaticVar($leftName);
+                if ($allowed && ($this->hasScopeGlobalVar($leftName) || $this->hasStaticVar($leftName))) {
+                    $this->promoteGlobalOrStaticToNativeObject($leftName, $rightClass);
+                }
+            } elseif ($left instanceof Expr\PropertyFetch
+                && $this->isVarExpr($left->var)
+                && $this->isIdExpr($left->name)
+            ) {
+                $receiver = $this->parseVariable($left->var);
+                if ($this->isNativeObjectVar($receiver)) {
+                    $property = $this->findNativeObjectProperty(
+                        $this->getNativeObjectVarClass($receiver),
+                        $left->name->toString(),
+                    );
+                    if ($property !== null
+                        && $property->class !== ''
+                        && $this->isInterface($property->class)
+                    ) {
+                        $this->fatalError(
+                            $left,
+                            'Native objects cannot be assigned to interface-typed properties',
+                        );
+                    }
+                    $allowed = $property !== null
+                        && $property->type === Type::OBJECT
+                        && $this->isNativeObjectClass($property->class);
+                }
+            }
+            if (!$allowed) {
+                $this->fatalError(
+                    $left,
+                    'Native objects cannot be stored in PHP arrays, PHP object properties, static properties, or mixed variables',
+                );
+            }
         }
 
         // A direct assignment to readonly must go through write_property so
@@ -228,6 +288,45 @@ trait AssignOpTrait
         }
         if ($left instanceof Expr\PropertyFetch && $this->isReadOnlyPropertyHook($left)) {
             $this->fatalError($left, 'Cannot write to read-only hooked property');
+        }
+
+        if ($left instanceof Expr\PropertyFetch
+            && $this->isVarExpr($left->var)
+            && $this->isIdExpr($left->name)
+        ) {
+            $object = $this->parseIdentifier($left->var);
+            if ($this->isNativeObjectVar($object)) {
+                $property = $this->parseIdentifier($left->name);
+                $class = $this->getNativeObjectVarClass($object);
+                $access = $this->getNativePropertyAccess($left);
+                if ($access === null) {
+                    $this->fatalError($left, "Native class `{$class}` has no property `\${$property}`");
+                }
+                $def = $access->getPropertyDef();
+                $field = $this->getNativeObjectPropertyCppName($def, $access->getClassDef());
+                $rightExpr = $this->parseExprAsValue($right);
+                if ($def->type === Type::OBJECT && $this->isNativeObjectClass($def->class)) {
+                    if ($this->isNull($right)) {
+                        if (!$def->nullable) {
+                            $this->fatalError($right, "Cannot assign null to native property `{$class}::\${$property}`");
+                        }
+                        return $this->getNativeObjectMemberReceiver($object)
+                            . $field . ' = nullptr';
+                    }
+                    $rightClass = $this->detectClassOfExpr($right);
+                    if ($rightClass === '' || !$this->isObjectClassStaticallyAssignableTo($rightClass, $def->class)) {
+                        $this->fatalError($right, "Cannot assign value to native property `{$class}::\${$property}`");
+                    }
+                } else {
+                    $this->assertCanAssignPropertyWrite($propertyWriteTarget, $right);
+                    $rightExpr = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $right, $rightExpr);
+                    if ($def->type !== Type::VAR) {
+                        $rightExpr = $this->convertExprFromType($def->type, $rightExpr);
+                    }
+                }
+                return $this->getNativeObjectMemberReceiver($object)
+                    . $field . ' = ' . $rightExpr;
+            }
         }
 
         if ($propertyWriteTarget !== null && $this->shouldUseDynamicNativePropertyWrite($left, $type)) {
@@ -250,11 +349,28 @@ trait AssignOpTrait
             }
             // 类型推断，获取对象的类名，如果不是对象则返回空字符串
             $rightClass = $this->detectClassOfExpr($right);
+            if ($this->isNativeObjectVar($var)) {
+                $leftClass = $this->getNativeObjectVarClass($var);
+                if ($this->isNull($right)) {
+                    return $var . ' = nullptr';
+                }
+                if ($rightClass === '' || !$this->isNativeObjectClass($rightClass)) {
+                    $this->fatalError($right, "Native object `\${$var}` cannot be converted to var/object");
+                }
+                if (!$this->isObjectClassStaticallyAssignableTo($rightClass, $leftClass)) {
+                    $this->fatalError($right, "Cannot assign native object `{$rightClass}` to `{$leftClass}`");
+                }
+            }
             // 右值是一个对象，已获得类的名称，左值必须与右值的类一致
             if ($rightClass) {
                 if (!$this->hasVar($var)) {
-                    $this->addLocalVar($var, Type::OBJECT);
-                    $this->addObject($var, $rightClass);
+                    if ($this->isNativeObjectClass($rightClass)) {
+                        $this->addLocalVar($var, $this->getNativeObjectPointerType($rightClass));
+                        $this->addNativeObject($var, $rightClass);
+                    } else {
+                        $this->addLocalVar($var, Type::OBJECT);
+                        $this->addObject($var, $rightClass);
+                    }
                 } elseif (($leftClass = $this->getDeclaredObjectType($var)) !== '') {
                     if ($this->isObjectClassStaticallyAssignableTo($rightClass, $leftClass)) {
                         // A child object can be assigned to a parent typed object.

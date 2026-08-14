@@ -80,6 +80,18 @@ trait FunctionCallTrait
             return $pythonObjectCall;
         }
 
+        $callableClass = $this->detectClassOfExpr($expr->name);
+        if ($this->isNativeObjectClass($callableClass)) {
+            if ($expr->isFirstClassCallable()) {
+                $this->fatalError($expr, 'Native object callables cannot be converted to Zend closures');
+            }
+            return $this->parseMethodCall(new Expr\MethodCall(
+                $expr->name,
+                new Node\Identifier('__invoke'),
+                $expr->args,
+            ));
+        }
+
         if ($this->isVarExpr($expr->name)) {
             $fn   = $this->parseIdentifier($expr->name);
             $placeHolder = $fn;

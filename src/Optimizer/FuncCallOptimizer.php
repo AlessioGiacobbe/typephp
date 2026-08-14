@@ -211,6 +211,23 @@ trait FuncCallOptimizer
             return false;
         }
 
+        // Optimized php::fn::* calls must obey the same ZendVM escape boundary
+        // as the generic call generator. The four scalar conversions are
+        // language-level Native keyword aliases and are lowered to an exact
+        // Native method; every other PHP function rejects Native pointers.
+        if (!isset($config['conversion'])) {
+            foreach ($expr->args as $arg) {
+                if ($arg instanceof Node\Arg
+                    && $this->isNativeObjectClass($this->detectClassOfExpr($arg->value))
+                ) {
+                    $this->fatalError(
+                        $arg,
+                        'Native objects cannot cross a dynamic PHP/ZendVM call boundary',
+                    );
+                }
+            }
+        }
+
         // 检测参数中使用的变量是否已定义，若变量不存在则回退到动态调用路径
         // 动态路径中的 parseCallArgs() 会给出明确的错误信息
         foreach ($expr->args as $arg) {
@@ -472,6 +489,22 @@ trait FuncCallOptimizer
     {
         $arg = $expr->args[0]->value;
         $type = $this->detectTypeOfExpr($arg);
+        $nativeClass = $this->detectClassOfExpr($arg);
+        if ($this->isNativeObjectClass($nativeClass)) {
+            $method = match ($convType) {
+                self::ARG_TYPE_STR => 'toString',
+                self::ARG_TYPE_INT => 'toInt',
+                self::ARG_TYPE_FLOAT => 'toFloat',
+                self::ARG_TYPE_BOOL => 'toBool',
+                default => null,
+            };
+            if ($method !== null) {
+                return $this->parseMethodCall(new Node\Expr\MethodCall(
+                    $arg,
+                    new Node\Identifier($method),
+                ));
+            }
+        }
         $parsed = $this->parseExpr($arg);
 
         if ($convType === self::ARG_TYPE_STR) {
@@ -589,7 +622,10 @@ trait FuncCallOptimizer
     protected function doFoldKnownClass(Node\Expr\FuncCall $expr): string|false
     {
         $cn = $expr->args[0]->value;
-        return ($this->isScalarString($cn) && $this->hasClass($cn->value)) ? 'true' : false;
+        if (!$this->isScalarString($cn) || !$this->hasClass($cn->value)) {
+            return false;
+        }
+        return $this->isNativeObjectClass($cn->value) ? 'false' : 'true';
     }
 
     protected function doFoldKnownConstant(Node\Expr\FuncCall $expr): string|false

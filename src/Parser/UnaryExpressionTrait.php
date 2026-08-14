@@ -54,10 +54,7 @@ trait UnaryExpressionTrait
     protected function parseCastString(Expr\Cast\String_ $node): string
     {
         $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
-        return $this->convertExprToStringByType(
-            $this->parseExprAsValue($node->expr),
-            $this->detectTypeOfExpr($node->expr)
-        );
+        return $this->parseExprToString($node->expr);
     }
 
     protected function parseCastBool(Expr\Cast\Bool_ $node): string

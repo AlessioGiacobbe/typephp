@@ -28,6 +28,7 @@ class Visitor extends NodeVisitorAbstract
     public function enterNode(Node $node): null
     {
         $this->guard($node, static fn () => CompileTimeAttribute::validateNode($node));
+        $this->guard($node, static fn () => NativeClassAttributeLowering::lower($node), 'Native');
         $this->guard($node, static fn () => FunctionAttributeLowering::lower($node));
         $this->guard($node, static fn () => GetterLowering::validateTarget($node), 'Getter');
         $this->guard($node, static fn () => PropertyMethodLowering::validateTarget($node));

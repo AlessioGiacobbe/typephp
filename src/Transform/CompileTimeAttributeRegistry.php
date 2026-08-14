@@ -72,6 +72,7 @@ final class CompileTimeAttributeRegistry
             ];
         };
 
+        $add('Native', [self::TARGET_NAMED_CLASS], 'Native can only be applied to named classes', self::ARGUMENTS_NONE, self::PHASE_PREPROCESS, false);
         $add('MethodsFor', [self::TARGET_NAMED_CLASS], 'MethodsFor can only be applied to classes', self::ARGUMENTS_METHODS_FOR, self::PHASE_PREPROCESS);
         $add('NoExport', [self::TARGET_CLASS_LIKE, self::TARGET_FUNCTION, self::TARGET_METHOD], 'NoExport can only be applied to classes, functions, or methods', self::ARGUMENTS_NONE, self::PHASE_PREPROCESS, false);
         $add('WasmExport', [self::TARGET_FUNCTION], 'WasmExport can only be applied to named functions', self::ARGUMENTS_WASM_EXPORT, self::PHASE_PREPROCESS, false);

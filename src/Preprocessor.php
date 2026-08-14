@@ -21,6 +21,7 @@ use TypePhp\Entity\PropertyDef;
 use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 use TypePhp\Exception\SyntaxError;
 use TypePhp\Transform\PropertyHookLowering;
+use TypePhp\Transform\NativeClassAttributeLowering;
 use TypePhp\Transform\PrinterLowering;
 use TypePhp\Transform\ArrayableLowering;
 use TypePhp\Transform\ClassFieldSelection;
@@ -77,6 +78,10 @@ class Preprocessor extends CompilerBase
 
     protected function genArgumentDeclaration(ArgInfo $argInfo): string
     {
+        $nativeObjectType = $this->getNativeObjectArgumentType($argInfo);
+        if ($nativeObjectType !== null) {
+            return $nativeObjectType . $argInfo->name;
+        }
         $type = $argInfo->type;
         if ($type === Type::STREAM || $type === Type::BOX) {
             $type = Type::VAR;
@@ -392,9 +397,6 @@ class Preprocessor extends CompilerBase
 
     protected function parseParameterType(Node\Param $param, ArgInfo $argInfo, string $var): string
     {
-        if ($param->byRef) {
-            return Type::REF;
-        }
         // Capture the late-bound parameter type keyword *before* resolveTypeDecl
         // runs, because resolveTypeDecl mutates the `self`/`static`/`parent` node
         // name to the declaring class when the method belongs to a trait.
@@ -406,6 +408,12 @@ class Preprocessor extends CompilerBase
             }
         }
         [$type, $class] = $this->resolveTypeDecl($param->type, self::DECL_TYPE_OF_PARAM);
+        $this->assertSupportedNativeObjectTypeNode($param->type, self::DECL_TYPE_OF_PARAM, $param);
+        $nullableNative = $this->resolveNullableNativeObjectType($param->type, self::DECL_TYPE_OF_PARAM);
+        if ($nullableNative !== null) {
+            [$type, $class] = $nullableNative;
+            $argInfo->nullable = true;
+        }
         $argInfo->undeclared = $param->type === null;
         if (
             $param->type !== null
@@ -424,7 +432,10 @@ class Preprocessor extends CompilerBase
         // Record late-bound parameter type keywords so they can be re-resolved
         // to the consuming class when a trait method is flattened into a class.
         $argInfo->typeKeyword = $typeKeyword;
-        return $type;
+        // Ordinary PHP references use php::Ref at the native ABI. Keep the
+        // resolved declaration metadata above, however: Native object
+        // references need it to lower to `native_struct *&` instead.
+        return $param->byRef ? Type::REF : $type;
     }
 
     /**
@@ -499,7 +510,7 @@ class Preprocessor extends CompilerBase
             }
             if ($param->type instanceof NullableType || $param->type instanceof UnionType || $param->type instanceof IntersectionType) {
                 $typeInfo = $this->buildTypeCheckFromNode($param->type);
-                if (!empty($typeInfo['check'])) {
+                if (!empty($typeInfo['check']) && !$this->isNativeObjectClass($argInfo->declaredClass)) {
                     $argInfo->typeCheck = $typeInfo['check'];
                     $argInfo->typeStr = $typeInfo['typeStr'];
                     $argInfo->typeNode = $param->type;
@@ -585,6 +596,14 @@ class Preprocessor extends CompilerBase
             }
         }
         [$returnType, $class] = $this->resolveTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
+        $this->assertSupportedNativeObjectTypeNode($v->returnType, self::DECL_TYPE_OF_RETURN, $v);
+        $nullableNativeReturn = $this->resolveNullableNativeObjectType(
+            $v->returnType,
+            self::DECL_TYPE_OF_RETURN,
+        );
+        if ($nullableNativeReturn !== null) {
+            [$returnType, $class] = $nullableNativeReturn;
+        }
         // 构造、析构、克隆方法不能有返回值
         if ($this->method and in_array($this->method, ['__construct', '__destruct', '__clone'])) {
             $returnType = Type::VOID;
@@ -607,6 +626,7 @@ class Preprocessor extends CompilerBase
         }
         $functionDef->exported = !($this->classDef?->exported === false || $this->hasNoExportAttribute($v));
         $functionDef->returnClass = $class;
+        $functionDef->returnNullable = $nullableNativeReturn !== null;
         $functionDef->returnTypeStr = $v->returnType === null
             ? ''
             : $this->typeCheckNodeToString($v->returnType);
@@ -622,6 +642,7 @@ class Preprocessor extends CompilerBase
         }
 
         if (!$functionDef->generator
+            && !$this->isNativeObjectClass($functionDef->returnClass)
             && ($v->returnType instanceof NullableType
                 || $v->returnType instanceof UnionType
                 || $v->returnType instanceof IntersectionType)) {
@@ -640,6 +661,14 @@ class Preprocessor extends CompilerBase
         }
 
         $this->parseParams($v->params, $functionDef);
+
+        if ($this->classDef !== null
+            && !$this->classDef->nativeObject
+            && strtolower($fnName) === '__construct'
+            && $this->functionUsesNativeObject($functionDef)
+        ) {
+            $this->fatalError($v, 'Zend-backed constructors cannot accept or return native objects');
+        }
 
         // main 函数，返回值必须为 void 类型，参数必须为空或者 argc, argv 两个参数
         if (!$this->class and !$this->namespace and $fnName === self::ENTRY_FUNCTION) {
@@ -741,6 +770,9 @@ class Preprocessor extends CompilerBase
         $functionDef->sourceFile = $this->file;
         $functionDef->startLine = $v->getStartLine();
         $functionDef->method = $this->methodDef !== null;
+        $functionDef->declaringClass = $functionDef->method
+            ? $this->classDef->getNamespacedName(false)
+            : '';
         $functionDef->displayName = $functionDef->method
             ? $this->classDef->getNamespacedName(false) . '::' . $functionDef->name
             : $functionDef->getNamespacedName();
@@ -767,6 +799,7 @@ class Preprocessor extends CompilerBase
         }
 
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
+        $this->classDef->nativeObject = NativeClassAttributeLowering::isNative($class);
         $this->classDef->exported = !$this->hasNoExportAttribute($class);
         $this->classDef->methodsForTarget = $this->parseMethodsForTarget($class);
         $this->addClass($fullClassName, $this->classDef);
@@ -1200,6 +1233,21 @@ class Preprocessor extends CompilerBase
     {
         $flags = $this->parseModifiers($flags);
         [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);
+        $this->assertSupportedNativeObjectTypeNode($typeNode, self::DECL_TYPE_OF_PROPERTY, $errorNode);
+        $nullableNative = $this->resolveNullableNativeObjectType(
+            $typeNode,
+            self::DECL_TYPE_OF_PROPERTY,
+        );
+        if ($nullableNative !== null) {
+            [$type, $class] = $nullableNative;
+            $nullable = true;
+        }
+        if ($this->isNativeObjectClass($class) && !$this->classDef->nativeObject) {
+            $this->fatalError(
+                $errorNode,
+                'Native object types can only be used as properties of native classes',
+            );
+        }
 
         $default = null;
         $arrayInitPlan = null;
@@ -1440,6 +1488,23 @@ class Preprocessor extends CompilerBase
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
+        if ($this->classDef->nativeObject) {
+            if ($v->type === null) {
+                $this->fatalError($v, 'Native class properties must declare a type');
+            }
+            if ($v->isStatic()) {
+                $this->fatalError($v, 'Native class static properties are not supported');
+            }
+            // A Zend readonly property carries runtime initialization state.
+            // Native fields deliberately have no Zend property slot, so a raw
+            // C++ assignment would silently bypass the readonly contract.
+            // Reject it until Native objects have an equally explicit state
+            // representation instead of emitting behavior that only appears
+            // readonly at compile time.
+            if ($v->isReadonly() || ($this->classDef->flags & Modifiers::READONLY)) {
+                $this->fatalError($v, 'Native class readonly properties are not supported');
+            }
+        }
         $oriCtx = $this->context;
         $this->context = $this->classDef->propertyContext;
         $nullable = $v->type instanceof NullableType;
@@ -1447,6 +1512,12 @@ class Preprocessor extends CompilerBase
         foreach ($v->props as $prop) {
             $propName = $this->parseIdentifier($prop->name);
             $propDef = $this->addClassProperty($propName, $v->flags, $v->type, $prop->default, $nullable, $v);
+            if ($this->classDef->nativeObject && $this->isNativeObjectForbiddenPropertyType($propDef)) {
+                $message = $propDef->type === Type::BOX
+                    ? 'Native class properties cannot use Box types'
+                    : 'Native class properties cannot use Std Container types';
+                $this->fatalError($v, $message);
+            }
             $hookMetadata = $v->getAttribute(PropertyHookLowering::PROPERTY_ATTRIBUTE, []);
             $propDef->virtual = (bool) ($hookMetadata['virtual'] ?? false);
             foreach ($v->hooks as $hook) {
@@ -1467,8 +1538,12 @@ class Preprocessor extends CompilerBase
         $this->resetMethod();
         $name = $this->getMethodName($v);
         $this->method = $name;
+        $this->assertNativeMagicMethodSupported($v, $name);
         $flags = $this->parseModifiers($v->flags);
         $abstract = $flags & Modifiers::ABSTRACT;
+        if ($this->classDef->nativeObject && ($flags & Modifiers::STATIC)) {
+            $this->fatalError($v, 'Native class static methods are not supported');
+        }
 
         if (!$abstract) {
             $this->methodDef = new MethodDef($flags, $name);

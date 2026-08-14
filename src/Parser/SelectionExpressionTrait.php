@@ -24,7 +24,9 @@ trait SelectionExpressionTrait
         $this->assertExprCanBeUsedAsValue($expr->else, 'ternary branch');
         $ifType = $this->detectTypeOfExpr($expr->if);
         $elseType = $this->detectTypeOfExpr($expr->else);
-        $typeChanged = $ifType !== $elseType;
+        $nativeClass = $this->detectClassOfExpr($expr);
+        $nativeSelection = $this->isNativeObjectClass($nativeClass);
+        $typeChanged = !$nativeSelection && $ifType !== $elseType;
         [$cond, $condBeforeStmts, $condAfterStmts] = $this->parseExprWithCapturedStmts($expr->cond);
         $ifBeforeStmtCount = count($this->context->beforeStmtLines);
         $ifAfterStmtCount = count($this->context->afterStmtLines);
@@ -42,6 +44,15 @@ trait SelectionExpressionTrait
         $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $elseBeforeStmtCount);
         $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $elseAfterStmtCount);
 
+        if ($nativeSelection) {
+            if ($this->isNull($expr->if)) {
+                $if = 'nullptr';
+            }
+            if ($this->isNull($expr->else)) {
+                $else = 'nullptr';
+            }
+        }
+
         $hasBranchStmts = $condBeforeStmts || $condAfterStmts || $ifBeforeStmts || $ifAfterStmts || $elseBeforeStmts || $elseAfterStmts;
         if (!$hasBranchStmts && $typeChanged) {
             $if = 'php::Var(' . $if . ')';
@@ -50,7 +61,9 @@ trait SelectionExpressionTrait
         if ($hasBranchStmts) {
             // REF and VOID are expression implementation types, not valid
             // by-value result types for the materializing lambda.
-            $ternaryType = $this->getNormalAssignType($typeChanged ? Type::VAR : $ifType);
+            $ternaryType = $nativeSelection
+                ? $this->getNativeObjectPointerType($nativeClass)
+                : $this->getNormalAssignType($typeChanged ? Type::VAR : $ifType);
             $code = '[&]() -> ' . $ternaryType . '{';
             $code .= $this->formatCapturedStmtLines($condBeforeStmts);
             if ($condAfterStmts) {
@@ -61,9 +74,9 @@ trait SelectionExpressionTrait
             }
             $cond = $this->convertConditionExpr($expr->cond, $cond);
             $code .= $this->getIndent() . 'if (' . $cond . ') {';
-            $code .= $this->formatTernaryReturn($expr->if, $if, $ifBeforeStmts, $ifAfterStmts, $ternaryType, $ifType);
+            $code .= $this->formatTernaryReturn($expr->if, $if, $ifBeforeStmts, $ifAfterStmts, $ternaryType, $ifType, $nativeClass);
             $code .= $this->getIndent() . '} else {';
-            $code .= $this->formatTernaryReturn($expr->else, $else, $elseBeforeStmts, $elseAfterStmts, $ternaryType, $elseType);
+            $code .= $this->formatTernaryReturn($expr->else, $else, $elseBeforeStmts, $elseAfterStmts, $ternaryType, $elseType, $nativeClass);
             $code .= $this->getIndent() . '}';
             $code .= $this->getIndent() . '}()';
             return $code;
@@ -79,16 +92,23 @@ trait SelectionExpressionTrait
         array $afterStmts,
         string $returnType,
         string $valueType,
+        string $nativeClass = '',
     ): string
     {
         $code = $this->formatCapturedStmtLines($beforeStmts);
         $returnsReference = $valueType === Type::REF
             || ($valueExpr instanceof Expr\CallLike && $this->resolveRefReturningCall($valueExpr) !== false);
-        if ($returnType !== Type::VAR && ($beforeStmts || $afterStmts)) {
+        if ($nativeClass === '' && $returnType !== Type::VAR && ($beforeStmts || $afterStmts)) {
             $value = $this->convertExprFromType($returnType, $value);
         }
         if ($afterStmts || $returnsReference) {
-            $tmpVar = $this->addTmpVar($returnType);
+            if ($nativeClass !== '') {
+                $tmpVar = $this->genTmpVarName();
+                $this->addLocalVar($tmpVar, $returnType);
+                $this->addNativeObject($tmpVar, $nativeClass);
+            } else {
+                $tmpVar = $this->addTmpVar($returnType);
+            }
             $code .= $this->getIndent() . "{$tmpVar} = {$value};";
             $code .= $this->formatCapturedStmtLines($afterStmts);
             $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
@@ -102,6 +122,11 @@ trait SelectionExpressionTrait
 
     protected function parseMatch(Expr\Match_ $expr): string
     {
+        $nativeClass = $this->detectClassOfExpr($expr);
+        $nativeSelection = $this->isNativeObjectClass($nativeClass);
+        $returnType = $nativeSelection
+            ? $this->getNativeObjectPointerType($nativeClass)
+            : Type::VAR;
         $this->assertExprCanBeUsedAsValue($expr->cond, 'match condition');
         $var = $this->parseIdentifier($expr->cond);
         if ($this->isVarExpr($expr->cond)) {
@@ -114,7 +139,7 @@ trait SelectionExpressionTrait
             $var = $tmpVar;
         }
 
-        $code = '[&]() -> ' . Type::VAR . '{';
+        $code = '[&]() -> ' . $returnType . '{';
         $default = null;
         foreach ($expr->arms as $arm) {
             if ($arm->conds === null) {
@@ -141,29 +166,40 @@ trait SelectionExpressionTrait
                 $code .= $this->getIndent() . '}';
             }
             $code .= $this->getIndent() . 'if (' . $matched . ') {';
-            $code .= $this->formatMatchReturn($arm->body);
+            $code .= $this->formatMatchReturn($arm->body, $nativeClass);
             $code .= $this->getIndent() . '}';
         }
 
         if ($default) {
             $code .= $this->getIndent() . '{';
-            $code .= $this->formatMatchReturn($default);
+            $code .= $this->formatMatchReturn($default, $nativeClass);
             $code .= $this->getIndent() . '}';
         } else {
-            $code .= $this->getIndent() . '{ return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
+            $code .= $nativeSelection
+                ? $this->getIndent() . '{ php::throwException("UnhandledMatchError", "Unhandled match case"); return nullptr; }'
+                : $this->getIndent() . '{ return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
         }
         $code .= '}()';
 
         return $code;
     }
 
-    protected function formatMatchReturn(NodeAbstract $body): string
+    protected function formatMatchReturn(NodeAbstract $body, string $nativeClass = ''): string
     {
         $this->assertExprCanBeUsedAsValue($body, 'match arm');
         [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($body);
+        if ($nativeClass !== '' && $this->isNull($body)) {
+            $value = 'nullptr';
+        }
         $code = $this->formatCapturedStmtLines($beforeStmts);
         if ($afterStmts) {
-            $tmpVar = $this->addTmpVar(Type::VAR);
+            if ($nativeClass !== '') {
+                $tmpVar = $this->genTmpVarName();
+                $this->addLocalVar($tmpVar, $this->getNativeObjectPointerType($nativeClass));
+                $this->addNativeObject($tmpVar, $nativeClass);
+            } else {
+                $tmpVar = $this->addTmpVar(Type::VAR);
+            }
             $code .= $this->getIndent() . "{$tmpVar} = {$value};";
             $code .= $this->formatCapturedStmtLines($afterStmts);
             $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
@@ -178,6 +214,10 @@ trait SelectionExpressionTrait
     {
         $this->assertExprCanBeUsedAsValue($left, 'selection value');
         $this->assertExprCanBeUsedAsValue($right, 'selection value');
+        $nativeClass = $this->detectClassOfExpr($expr);
+        if ($this->isNativeObjectClass($nativeClass)) {
+            return $this->parseNativeValueSelection($left, $right, $nativeClass);
+        }
         $leftExpr = $this->parseIdentifier($left);
         if ($this->isVarExpr($left)) {
             $this->checkVarMustExist($left, $leftExpr);
@@ -229,6 +269,40 @@ trait SelectionExpressionTrait
         $expr->setAttribute('replace', $tmpVar);
 
         return $tmpVar;
+    }
+
+    protected function parseNativeValueSelection(Expr $left, Expr $right, string $nativeClass): string
+    {
+        $pointerType = $this->getNativeObjectPointerType($nativeClass);
+        [$leftValue, $leftBefore, $leftAfter] = $this->parseExprWithCapturedStmts($left);
+        [$rightValue, $rightBefore, $rightAfter] = $this->parseExprWithCapturedStmts($right);
+        if ($this->isNull($left)) {
+            $leftValue = 'nullptr';
+        }
+        if ($this->isNull($right)) {
+            $rightValue = 'nullptr';
+        }
+
+        $leftTmp = $this->genTmpVarName();
+        $this->addLocalVar($leftTmp, $pointerType);
+        $this->addNativeObject($leftTmp, $nativeClass);
+
+        $code = '[&]() -> ' . $pointerType . '{';
+        $code .= $this->formatCapturedStmtLines($leftBefore);
+        $code .= $this->getIndent() . $leftTmp . ' = ' . $leftValue . ';';
+        $code .= $this->formatCapturedStmtLines($leftAfter);
+        $code .= $this->getIndent() . 'if (' . $leftTmp . ' != nullptr) { return ' . $leftTmp . '; }';
+        $code .= $this->formatCapturedStmtLines($rightBefore);
+        if ($rightAfter) {
+            $rightTmp = $this->genTmpVarName();
+            $this->addLocalVar($rightTmp, $pointerType);
+            $this->addNativeObject($rightTmp, $nativeClass);
+            $code .= $this->getIndent() . $rightTmp . ' = ' . $rightValue . ';';
+            $code .= $this->formatCapturedStmtLines($rightAfter);
+            $rightValue = $rightTmp;
+        }
+        $code .= $this->getIndent() . 'return ' . $rightValue . ';';
+        return $code . $this->getIndent() . '}()';
     }
 
 }

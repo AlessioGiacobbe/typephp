@@ -606,6 +606,13 @@ trait CallArgumentGenerator
     protected function parseCallArgValue(Node\Arg $arg): string
     {
         $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
+        $class = $this->detectClassOfExpr($arg->value);
+        if ($class !== '' && $this->isNativeObjectClass($class)) {
+            $this->fatalError(
+                $arg,
+                'Native objects cannot cross a dynamic PHP/ZendVM call boundary'
+            );
+        }
         // C++17 evaluates php::ArgList{...} elements from left to right, but a
         // later argument may emit captured beforeStmtLines while being lowered.
         // Those statements are placed before the whole outer call and would

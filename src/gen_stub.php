@@ -4553,6 +4553,9 @@ class FileInfo {
             }
 
             if ($stmt instanceof Stmt\Function_) {
+                if (getTranslator()->isNativeFunctionForStub($stmt->namespacedName->toString())) {
+                    continue;
+                }
                 $this->funcInfos[] = parseFunctionLike(
                     $prettyPrinter,
                     new FunctionName($stmt->namespacedName),
@@ -4574,6 +4577,13 @@ class FileInfo {
 
             if ($stmt instanceof Stmt\ClassLike) {
                 $className = $stmt->namespacedName;
+                // #[Native] classes are C++-only types. They intentionally have
+                // no zend_class_entry, arginfo method table or Zend wrappers.
+                if ($stmt instanceof Class_
+                    && getTranslator()->isNativeClassForStub($className->toString())
+                ) {
+                    continue;
+                }
                 $constInfos = [];
                 $propertyInfos = [];
                 $methodInfos = [];
@@ -4631,6 +4641,12 @@ class FileInfo {
                             );
                         }
                     } else if ($classStmt instanceof Stmt\ClassMethod) {
+                        if (getTranslator()->isNativeMethodForStub(
+                            $className->toString(),
+                            $classStmt->name->toString(),
+                        )) {
+                            continue;
+                        }
                         if (!($classStmt->flags & Class_::VISIBILITY_MODIFIER_MASK)) {
                             $classStmt->flags |= Modifiers::PUBLIC;
                         }

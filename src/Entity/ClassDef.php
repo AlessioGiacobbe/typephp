@@ -32,6 +32,8 @@ class ClassDef extends ClassLikeDef
     public string $extends = '';
     public bool $requireCtor = false;
     public bool $enum = false;
+    /** Compile-time-only class using the Native Object layout instead of zend_object. */
+    public bool $nativeObject = false;
     /** Whether this class and its methods are part of the public ABI of a library build. */
     public bool $exported = true;
     public ?string $methodsForTarget = null;

@@ -31,6 +31,10 @@ trait ArrayExpressionTrait
         $hasNextInsert = false;
         $hasReference = false;
         foreach ($items as $item) {
+            $valueClass = $this->detectClassOfExpr($item->value);
+            if ($this->isNativeObjectClass($valueClass)) {
+                $this->fatalError($item->value, 'Native objects cannot be stored in PHP arrays');
+            }
             if ($item->unpack) {
                 $hasUnpack = true;
             }

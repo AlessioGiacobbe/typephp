@@ -74,6 +74,23 @@ trait CompilationStateTrait
         $this->globalVars[$name] = $type;
     }
 
+    protected function promoteGlobalOrStaticToNativeObject(string $name, string $class): void
+    {
+        $class = ltrim($class, '\\');
+        if ($this->hasStaticVar($name)) {
+            $slot = $this->escapeStaticVar($name);
+            $this->context->staticVars[$name] = $this->getNativeObjectPointerType($class);
+        } elseif ($this->hasScopeGlobalVar($name)) {
+            $slot = $name;
+            $this->context->globalVars[$name] = $this->getNativeObjectPointerType($class);
+        } else {
+            return;
+        }
+        $this->globalVars[$slot] = $this->getNativeObjectPointerType($class);
+        $this->nativeGlobalObjects[$slot] = $class;
+        $this->addNativeObject($name, $class);
+    }
+
     protected function addScopeGlobalVar(string $name, string $type): void
     {
         $this->context->globalVars[$name] = $type;
@@ -81,6 +98,10 @@ trait CompilationStateTrait
 
     protected function addObject(string $name, string $class): void
     {
+        if ($this->isNativeObjectClass($class)) {
+            $this->addNativeObject($name, $class);
+            return;
+        }
         // Interfaces have no concrete method body for native calls. Abstract classes may have concrete methods.
         if ($this->isInterface($class)) {
             $this->context->declaredObjects[$name] = $class;

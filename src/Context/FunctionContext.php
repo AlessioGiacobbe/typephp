@@ -29,6 +29,9 @@ class FunctionContext
      */
     public array $objects = [];
 
+    /** @var array<string, string> Native Object pointer variable => fully-qualified class name. */
+    public array $nativeObjects = [];
+
     /**
      * Declared object constraints that are not used for native-call dispatch.
      *
@@ -90,6 +93,7 @@ class FunctionContext
         $this->staticVars = [];
         $this->arguments = [];
         $this->objects = [];
+        $this->nativeObjects = [];
         $this->declaredObjects = [];
         $this->stdArrays = [];
         $this->stdContainers = [];
@@ -124,11 +128,17 @@ class FunctionContext
         unset($this->scopeLayouts[$this->scopeLevel]);
     }
 
-    public function resetAnalysisTemporaries(array $localVars, int $tmpVarIndex, array $declaredObjects): void
+    public function resetAnalysisTemporaries(
+        array $localVars,
+        int $tmpVarIndex,
+        array $declaredObjects,
+        array $nativeObjects = [],
+    ): void
     {
         $this->localVars = $localVars;
         $this->tmpVarIndex = $tmpVarIndex;
         $this->declaredObjects = $declaredObjects;
+        $this->nativeObjects = $nativeObjects;
         $this->beforeStmtLines = [];
         $this->afterStmtLines = [];
         $this->objectProps = [];

@@ -7,6 +7,11 @@
  */
 
 #[Attribute(Attribute::TARGET_CLASS)]
+final readonly class Native
+{
+}
+
+#[Attribute(Attribute::TARGET_CLASS)]
 final readonly class MethodsFor
 {
     public function __construct(public string $target)

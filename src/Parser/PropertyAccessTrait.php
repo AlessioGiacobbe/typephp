@@ -780,6 +780,12 @@ trait PropertyAccessTrait
                     $lines[] = $array . '.offsetUnset(' . $dim . ');';
                 }
             } elseif ($this->isPropertyFetch($var)) {
+                if ($this->isVarExpr($var->var)) {
+                    $nativeObject = $this->parseIdentifier($var->var);
+                    if ($this->isNativeObjectVar($nativeObject)) {
+                        $this->fatalError($var, 'Native object properties cannot be unset');
+                    }
+                }
                 // unset has its own unconditional readonly diagnostic below;
                 // it is forbidden even while __construct is running.
                 $propertyWriteTarget = $this->preparePropertyWriteTarget($var, true);
@@ -828,7 +834,9 @@ trait PropertyAccessTrait
                     $this->errorUndefinedVariable($var);
                 }
                 $type = $this->getVarType($name);
-                if ($this->isNativeType($type)) {
+                if ($this->isNativeObjectVar($name)) {
+                    $lines[] = "{$name} = nullptr;";
+                } elseif ($this->isNativeType($type)) {
                     $this->warning($var, "Variable of native type `\${$name}` cannot be unset");
                 } elseif ($type === Type::OBJECT) {
                     // A PHP local read after unset() evaluates to null (and may
@@ -925,16 +933,51 @@ trait PropertyAccessTrait
 
         $object = $expr->var;
         $property = $expr->name;
-        $id = $this->getPropertyIdentifier($expr, $object, $property);
+        $nativeExpressionClass = !$this->isVarExpr($object) ? $this->detectClassOfExpr($object) : '';
+        if ($this->isNativeObjectClass($nativeExpressionClass)) {
+            if (!$property instanceof Node\Identifier) {
+                $this->fatalError($expr, 'Dynamic native object property access is not supported');
+            }
+            $propertyName = $property->toString();
+            $resolution = $this->resolveNativeInstanceProperty($expr, $propertyName, $nativeExpressionClass);
+            if ($resolution === null) {
+                $this->fatalError(
+                    $expr,
+                    "Native class `{$nativeExpressionClass}` has no property `\${$propertyName}`"
+                );
+            }
+            $id = $this->applyNativePropertyAccessResult($expr, $resolution);
+        } else {
+            $id = $this->getPropertyIdentifier($expr, $object, $property);
+        }
         $hook = $this->getPropertyHookGetter($expr);
         if ($hook !== null) {
             return $this->emitPropertyHookGetterCall($expr, $hook);
+        }
+
+        if ($this->isNativeObjectClass($nativeExpressionClass)) {
+            $objectName = $this->materializeNativeObjectReceiver($object, $nativeExpressionClass);
+            return $this->getNativeObjectMemberReceiver($objectName)
+                . $this->getNativeObjectPropertyCppName($resolution->propertyDef, $resolution->classDef);
         }
 
         $update = $this->isPropertyFetchUpdate($expr);
         $objectName = $update ? $this->parseWritableIdentifier($object) : $this->parseIdentifier($object);
         if ($this->isVarExpr($object) and !$this->hasVar($objectName)) {
             $this->errorUndefinedVariable($object);
+        }
+        if ($this->isVarExpr($object) && $this->isNativeObjectVar($objectName)) {
+            if (!$property instanceof Node\Identifier) {
+                $this->fatalError($expr, 'Dynamic native object property access is not supported');
+            }
+            $propertyName = $property->toString();
+            $class = $this->getNativeObjectVarClass($objectName);
+            $resolution = $this->resolveNativeInstanceProperty($expr, $propertyName, $class);
+            if ($resolution === null) {
+                $this->fatalError($expr, "Native class `{$class}` has no property `\${$propertyName}`");
+            }
+            return $this->getNativeObjectMemberReceiver($objectName)
+                . $this->getNativeObjectPropertyCppName($resolution->propertyDef, $resolution->classDef);
         }
         $objectVar = $objectName;
         if ($this->usesTraitPropertyScope($objectVar)) {

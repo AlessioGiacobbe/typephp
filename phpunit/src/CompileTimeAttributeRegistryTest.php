@@ -8,7 +8,7 @@ final class CompileTimeAttributeRegistryTest extends TestCase
     public function testEveryBuiltInCompileTimeAttributeHasCompleteMetadata(): void
     {
         $expected = [
-            'MethodsFor', 'NoExport', 'WasmExport', 'Getter', 'Setter', 'With', 'Printer', 'Arrayable',
+            'Native', 'MethodsFor', 'NoExport', 'WasmExport', 'Getter', 'Setter', 'With', 'Printer', 'Arrayable',
             'NotNull', 'NotEmpty', 'Validate', 'Override', 'MustUse', 'Hot', 'Cold', 'Constructor',
         ];
         $this->assertSame($expected, CompileTimeAttributeRegistry::names());
@@ -22,6 +22,7 @@ final class CompileTimeAttributeRegistryTest extends TestCase
         }
         $this->assertNotContains('NoExport', CompileTimeAttributeRegistry::names(true));
         $this->assertNotContains('WasmExport', CompileTimeAttributeRegistry::names(true));
+        $this->assertNotContains('Native', CompileTimeAttributeRegistry::names(true));
         $this->assertContains('Getter', CompileTimeAttributeRegistry::names(true));
         $this->assertContains('Override', CompileTimeAttributeRegistry::names(true));
         $this->assertSame(

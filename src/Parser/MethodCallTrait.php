@@ -287,6 +287,24 @@ trait MethodCallTrait
             $this->fatalError($expr, 'Cannot call parent method because class `' . $this->classDef->name . '` does not extend any class');
         }
         $parentClass = $this->classDef->extends;
+        if ($this->classDef->nativeObject) {
+            if (!$this->isIdExpr($expr->name)) {
+                $this->fatalError($expr, 'Dynamic parent method calls are not supported for native objects');
+            }
+            $method = $this->parseIdentifier($expr->name);
+            if (strtolower($method) === '__destruct') {
+                $this->fatalError($expr, 'Explicit calls to native object destructors are not supported');
+            }
+            $nativeFunc = $this->getNativeMethod($expr, $parentClass, $method);
+            if ($nativeFunc === false) {
+                $this->fatalError($expr, "Native parent class `{$parentClass}` has no method `{$method}()`");
+            }
+            if ($expr->args === []) {
+                return self::PREFIX . $nativeFunc . '(this_)';
+            }
+            return self::PREFIX . $nativeFunc . '(this_, '
+                . $this->parseNativeCallArgs($expr->args, $nativeFunc) . ')';
+        }
         $staticCall = false;
         if ($this->isIdExpr($expr->name)) {
             $method = $this->parseIdentifier($expr->name);
@@ -348,12 +366,20 @@ trait MethodCallTrait
         }
 
         $class = '';
+        $materializedNativeReceiver = false;
         // C++17 sequences a member-call receiver before its arguments, but
         // lowering an argument may hoist captured beforeStmtLines ahead of the
         // whole call. Materialize an effectful receiver before parsing args.
-        $object = empty($expr->args)
-            ? $this->parseIdentifier($expr->var)
-            : $this->parseOrderedOperand($expr->var, false);
+        $receiverClass = !$this->isVarExpr($expr->var) ? $this->detectClassOfExpr($expr->var) : '';
+        if ($this->isNativeObjectClass($receiverClass)) {
+            $object = $this->materializeNativeObjectReceiver($expr->var, $receiverClass);
+            $class = $receiverClass;
+            $materializedNativeReceiver = true;
+        } else {
+            $object = empty($expr->args)
+                ? $this->parseIdentifier($expr->var)
+                : $this->parseOrderedOperand($expr->var, false);
+        }
         if ($this->isVarExpr($expr->var)) {
             if (!$this->hasVar($object)) {
                 $this->errorUndefinedVariable($expr->var);
@@ -379,6 +405,27 @@ trait MethodCallTrait
             );
         }
 
+        if ($class !== '' && $this->isNativeObjectClass($class)) {
+            if (!$this->isNamedMethod($expr->name)) {
+                $this->fatalError($expr, 'Dynamic native object method calls are not supported');
+            }
+            $nativeMethodName = strtolower($expr->name->toString());
+            if ($nativeMethodName === '__destruct') {
+                $this->fatalError($expr, 'Explicit calls to native object destructors are not supported');
+            }
+            $nativeKeyword = $expr->name->toString();
+            if (isset(self::KEYWORD_METHOD_MAP[$nativeKeyword])) {
+                if (!isset(self::KEYWORD_METHOD_WITH_ARGUMENTS[$nativeKeyword]) && $expr->args !== []) {
+                    $this->fatalError($expr, "The {$nativeKeyword} method does not accept parameters");
+                }
+                $resolvedKeyword = $this->resolveNativeObjectKeywordMethod($expr, $class, $nativeKeyword);
+                if ($resolvedKeyword !== $nativeKeyword) {
+                    $expr->name = new Node\Identifier($resolvedKeyword, $expr->name->getAttributes());
+                }
+                $expr->setAttribute('nativeKeywordCall', true);
+            }
+        }
+
         $magicMethod = false;
         $method = $this->identifierToStr($expr->name, literal: true);
 
@@ -395,7 +442,10 @@ trait MethodCallTrait
                 $receiverType = Type::VAR;
             }
             $keywordType = $this->findKeywordMethod($methodName);
-            if ($keywordType !== null && isset(self::KEYWORD_METHOD_MAP[$methodName])) {
+            if ($keywordType !== null
+                && isset(self::KEYWORD_METHOD_MAP[$methodName])
+                && !$expr->getAttribute('nativeKeywordCall', false)
+            ) {
                 if (!isset(self::KEYWORD_METHOD_WITH_ARGUMENTS[$methodName]) && $expr->args !== []) {
                     $this->fatalError($expr, "The {$methodName} method does not accept parameters");
                 }
@@ -448,8 +498,36 @@ trait MethodCallTrait
         }
 
         // 可转为原生调用的 MethodCall
-        if ($this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
+        if (($this->isVarExpr($expr->var) || $materializedNativeReceiver) and $this->isNamedMethod($expr->name)) {
             $type = $this->getVarType($object);
+            if ($class !== '' && $this->isNativeObjectClass($class)) {
+                $methodName = $expr->name->toString();
+                // Native objects have their own C++ virtual thunk for an
+                // overridden family; do not let the Zend-object devirtualizer
+                // downgrade this call to the dynamic path.
+                $nativeFunc = $this->getNativeMethod($expr, $class, $methodName);
+                if ($nativeFunc === false) {
+                    $this->fatalError($expr, "Native class `{$class}` has no method `{$methodName}()`");
+                }
+                $expr->setAttribute('nativeCall', $nativeFunc);
+                $nativeFunctionDef = $this->getFunction($nativeFunc);
+                $declaringClass = $this->getClass($nativeFunctionDef->declaringClass);
+                $declaringMethod = $declaringClass->getMethod($methodName);
+                if ($this->isNativeVirtualMethod($declaringClass, $declaringMethod)) {
+                    $call = $this->getNativeObjectMemberReceiver($object)
+                        . $this->getNativeVirtualMethodName($methodName);
+                    if ($expr->args === []) {
+                        return $call . '()';
+                    }
+                    return $call . '(' . $this->parseNativeCallArgs($expr->args, $nativeFunc) . ')';
+                }
+                $receiver = $this->getNativeObjectReceiver($object);
+                if ($expr->args === []) {
+                    return self::PREFIX . $nativeFunc . '(' . $receiver . ')';
+                }
+                return self::PREFIX . $nativeFunc . '(' . $receiver . ', '
+                    . $this->parseNativeCallArgs($expr->args, $nativeFunc) . ')';
+            }
             // 引用参数允许方法调用：有class信息走原生调用，无class信息走动态调用
             if (!$this->checkArgType($type, Type::OBJECT) and $type !== Type::REF) {
                 $methodName = $expr->name->toString();

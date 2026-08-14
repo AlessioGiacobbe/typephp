@@ -1141,8 +1141,9 @@ YAML);
                 file_get_contents($this->compiler->getArgInfoHeaderFile($file)),
             );
             foreach (\TypePhp\Transform\CompileTimeAttributeRegistry::names() as $attribute) {
+                $needle = $attribute === 'Native' ? '#[Native' : $attribute;
                 $this->assertStringNotContainsString(
-                    $attribute,
+                    $needle,
                     file_get_contents($this->compiler->getArgInfoHeaderFile($file)),
                 );
             }

@@ -26,6 +26,7 @@ class ClassDefTest extends TestCase
         $this->assertFalse($class->enum);
         $this->assertFalse($class->requireCtor);
         $this->assertFalse($class->inheritedFromInternalClass);
+        $this->assertFalse($class->nativeObject);
         $this->assertNull($class->trait);
     }
 

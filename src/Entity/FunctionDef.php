@@ -24,6 +24,8 @@ class FunctionDef
     public string $params = '';
     public string $namespace;
     public bool $method = false;
+    /** Fully-qualified declaring class for methods; empty for free functions. */
+    public string $declaringClass = '';
     public bool $stub = false;
     /** Whether this function is part of the public ABI of a library build. */
     public bool $exported = true;
@@ -61,6 +63,8 @@ class FunctionDef
      * @var string 必须是带有命名空间的完整类名
      */
     public string $returnClass = '';
+    /** Whether a Native object return may be represented by nullptr. */
+    public bool $returnNullable = false;
 
     /**
      * Late-bound return type keyword: 'self', 'static' or 'parent'.

@@ -15,6 +15,21 @@ use PhpParser\NodeAbstract;
 
 trait TypeConversionTrait
 {
+    protected function parseExprToString(NodeAbstract $node): string
+    {
+        $class = $this->detectClassOfExpr($node);
+        if ($this->isNativeObjectClass($class)) {
+            return $this->parseMethodCall(new Node\Expr\MethodCall(
+                $node,
+                new Node\Identifier('toString'),
+            ));
+        }
+        return $this->convertExprToStringByType(
+            $this->parseExprAsValue($node),
+            $this->detectTypeOfExpr($node),
+        );
+    }
+
     protected function convertExprToStringByType(string $expr, $type): string
     {
         if ($type === Type::STR) {

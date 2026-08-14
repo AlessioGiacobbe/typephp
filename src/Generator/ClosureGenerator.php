@@ -114,6 +114,32 @@ trait ClosureGenerator
 
     private function doGenClosure(Expr\ArrowFunction|Expr\Closure $expr, array $params, array $uses = []): string
     {
+        if ($this->classDef?->nativeObject && !$expr->static) {
+            $this->fatalError($expr, 'Native objects cannot be bound as $this to Zend closures');
+        }
+        foreach ($params as $param) {
+            if ($this->getNativeObjectClassesFromTypeNode($param->type, self::DECL_TYPE_OF_PARAM) !== []) {
+                $this->fatalError($param, 'Zend closures cannot declare native object parameters or return types');
+            }
+        }
+        if ($this->getNativeObjectClassesFromTypeNode($expr->returnType, self::DECL_TYPE_OF_RETURN) !== []) {
+            $this->fatalError($expr, 'Zend closures cannot declare native object parameters or return types');
+        }
+        foreach ($uses as $useItem) {
+            if (!$this->isVarExpr($useItem->var)) {
+                continue;
+            }
+            $name = $this->parseIdentifier($useItem->var);
+            if ($this->isNativeObjectVar($name)) {
+                $this->fatalError($useItem, 'Native objects cannot be captured by Zend closures');
+            }
+        }
+        if ($expr instanceof Expr\ArrowFunction
+            && $this->isNativeObjectClass($this->detectClassOfExpr($expr->expr))
+        ) {
+            $this->fatalError($expr->expr, 'Zend closures cannot return native objects');
+        }
+
         $isGenerator = $this->closureContainsYield($expr);
         if ($isGenerator) {
             $this->validateGeneratorClosure($expr, $params);
