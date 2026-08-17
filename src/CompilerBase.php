@@ -3780,13 +3780,13 @@ class CompilerBase implements PropertyAccessContext
                         if ($nativeCtor === false) {
                             $this->fatalError($expr, "Native constructor `{$className}::__construct()` cannot be resolved");
                         }
-                        $args = $expr->args === []
+                        $nativeArgs = $expr->args === []
                             ? ''
                             : ', ' . $this->parseNativeCallArgs($expr->args, $nativeCtor);
                         return 'php::nativeConstruct<' . $cppClass . '>(' . $descriptor
                             . ', [&](auto &this_) { '
                             . $this->getNativeObjectInitializerName($className) . '(this_); '
-                            . self::PREFIX . $nativeCtor . '(this_' . $args . '); })';
+                            . self::PREFIX . $nativeCtor . '(this_' . $nativeArgs . '); })';
                     }
                     $cePtr = $this->getClassEntryPtr($className);
                 }

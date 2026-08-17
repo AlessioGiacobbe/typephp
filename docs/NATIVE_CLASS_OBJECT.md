@@ -39,6 +39,11 @@ Native Class Object 初版不追求以下能力：
 - 完整兼容 PHP 对象的析构时机和垃圾回收行为。
 - 在无法静态证明安全时自动降级为 ZendVM Object。
 
+`new (表达式)()` 始终属于 PHP 的动态类名语法。Native Class 分支不会为了
+`new (NativeClass::class)()` 等写法额外求值、识别或增加专用诊断；这种动态创建行为
+不在 Native Class 的工作范围内。Native Object 只能通过源码中静态可解析的
+`new NativeClass(...)` 创建。
+
 ## 4. 显式声明
 
 建议使用专用注解，暂定为：
