@@ -63,6 +63,10 @@ final class NativeClassValidationTest extends \BaseTest
             '/php::nativeDeref\\(tmp_var_\\d+, "NativeForwardGlobalValue"\\)\\.value/',
             $code,
         );
+        self::assertStringContainsString(
+            'php::nativeDeref(nativeForwardClosureGlobal, "NativeForwardGlobalValue").value',
+            $code,
+        );
         self::assertStringNotContainsString('nativeForwardGlobal.attr(', $code);
     }
 
@@ -306,6 +310,15 @@ final class NativeClassValidationTest extends \BaseTest
         $this->expectException(TestError::class);
         $this->expectExceptionMessage('Native objects cannot be stored in PHP arrays');
         $this->compile('native-class-php-array.php');
+    }
+
+    public function testRejectsNativeObjectStoredThroughDynamicGlobalsKey(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage(
+            'Native objects cannot be stored in PHP arrays, PHP object properties, static properties, or mixed variables',
+        );
+        $this->compile('native-class-dynamic-globals-write.php');
     }
 
     public function testRejectsNativeObjectStoredInPhpObjectProperty(): void

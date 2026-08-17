@@ -90,8 +90,9 @@ trait ArrayExpressionTrait
         if ($node->dim === null) {
             $this->fatalError($node, 'Cannot use [] for GLOBALS');
         }
-        if ($this->isScalarString($node->dim)) {
-            $name = $node->dim->value;
+        $staticSlot = $this->getStaticGlobalsSlot($node);
+        if ($staticSlot !== null) {
+            $name = $staticSlot;
             if (!$this->hasGlobalVar($name)) {
                 $this->addGlobalVar($name, Type::VAR);
             }

@@ -90,9 +90,6 @@ final class NativeGlobalDiscovery
 
         $globals = [];
         $this->collectGlobals($function->stmts, $globals);
-        if ($globals === [] && !$this->containsGlobalsArray($function->stmts)) {
-            return;
-        }
 
         $locals = [];
         $previousScope = $this->scopeClass;
@@ -113,6 +110,51 @@ final class NativeGlobalDiscovery
 
         $this->analyzeNodes($function->stmts, $globals, $locals, $result);
         $this->scopeClass = $previousScope;
+    }
+
+    /**
+     * Analyze a Closure as an independent PHP variable scope while retaining
+     * its lexical class scope. Native objects cannot be captured by a Zend
+     * Closure, but an ordinary captured object may still construct a Native
+     * object and a Closure may write a newly constructed object to a global.
+     *
+     * @param array<string, string> $outerLocals
+     * @param list<array{name: string, class: string, node: NodeAbstract}> $result
+     */
+    private function discoverClosure(
+        Node\Expr\Closure $closure,
+        array $outerLocals,
+        array &$result,
+    ): void {
+        if ($closure->stmts === null) {
+            return;
+        }
+
+        $globals = [];
+        $this->collectGlobals($closure->stmts, $globals);
+        $locals = [];
+        if (!$closure->static && isset($outerLocals['this'])) {
+            $locals['this'] = $outerLocals['this'];
+        }
+        foreach ($closure->uses as $use) {
+            if ($use->var instanceof Node\Expr\Variable
+                && is_string($use->var->name)
+                && isset($outerLocals[$use->var->name])
+            ) {
+                $locals[$use->var->name] = $outerLocals[$use->var->name];
+            }
+        }
+        foreach ($closure->params as $parameter) {
+            if (!$parameter->var instanceof Node\Expr\Variable || !is_string($parameter->var->name)) {
+                continue;
+            }
+            $parameterClass = $this->classFromType($parameter->type);
+            if ($parameterClass !== null) {
+                $locals[$parameter->var->name] = $parameterClass;
+            }
+        }
+
+        $this->analyzeNodes($closure->stmts, $globals, $locals, $result);
     }
 
     /** @param array<string, true> $globals */
@@ -143,33 +185,6 @@ final class NativeGlobalDiscovery
         }
     }
 
-    private function containsGlobalsArray(mixed $node): bool
-    {
-        if ($node === null) {
-            return false;
-        }
-        if (is_array($node)) {
-            foreach ($node as $item) {
-                if ($this->containsGlobalsArray($item)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (!$node instanceof NodeAbstract || $node instanceof Node\FunctionLike) {
-            return false;
-        }
-        if ($this->globalArrayName($node) !== null) {
-            return true;
-        }
-        foreach ($node->getSubNodeNames() as $name) {
-            if ($this->containsGlobalsArray($node->{$name})) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
      * @param array<string, true> $globals
      * @param array<string, string> $locals
@@ -190,7 +205,27 @@ final class NativeGlobalDiscovery
             }
             return;
         }
-        if (!$node instanceof NodeAbstract || $node instanceof Node\FunctionLike) {
+        if (!$node instanceof NodeAbstract) {
+            return;
+        }
+        if ($node instanceof Node\Expr\Closure) {
+            $this->discoverClosure($node, $locals, $result);
+            return;
+        }
+        if ($node instanceof Node\Stmt\Function_) {
+            $this->discoverFunction($node, '', $result);
+            return;
+        }
+        if ($node instanceof Node\Stmt\ClassLike) {
+            $className = isset($node->namespacedName)
+                ? $node->namespacedName->toString()
+                : ($node->name?->toString() ?? '');
+            foreach ($node->getMethods() as $method) {
+                $this->discoverFunction($method, $className, $result);
+            }
+            return;
+        }
+        if ($node instanceof Node\FunctionLike) {
             return;
         }
         if ($node instanceof Node\Expr\Assign || $node instanceof Node\Expr\AssignOp\Coalesce) {
@@ -326,11 +361,11 @@ final class NativeGlobalDiscovery
         if (!$node instanceof Node\Expr\ArrayDimFetch
             || !$node->var instanceof Node\Expr\Variable
             || $node->var->name !== 'GLOBALS'
-            || !$node->dim instanceof Node\Scalar\String_
+            || $node->dim === null
         ) {
             return null;
         }
-        return $node->dim->value;
+        return $this->resolver->staticString($node->dim, $this->scopeClass);
     }
 
     private function isNull(NodeAbstract $expression): bool

@@ -3351,14 +3351,9 @@ class PropertyInfo extends VariableLike
             $template .= "zend_declare_property_ex(class_entry, $nameCode, &$zvalName, %s, $commentCode);\n";
         }
 
-        $minimumFlagCompatibility = $this->phpVersionIdMinimumCompatibility;
-        if (($this->flags & (Modifiers::PRIVATE_SET | Modifiers::PROTECTED_SET))
-            && ($minimumFlagCompatibility === null || $minimumFlagCompatibility >= PHP_84_VERSION_ID)) {
-            $minimumFlagCompatibility = PHP_82_VERSION_ID;
-        }
         $code .= $this->getFlagsByPhpVersion()->generateVersionDependentFlagCode(
             $template,
-            $minimumFlagCompatibility
+            $this->phpVersionIdMinimumCompatibility
         );
 
         $code .= $stringRelease;

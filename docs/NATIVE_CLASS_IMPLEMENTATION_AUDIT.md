@@ -25,7 +25,7 @@
 | 静态可解析的 `new NativeClass()` 使用 Native Heap | `CompilerBase::parseNew()`、`php::nativeConstruct()` | `basic.phpt`、`construction-gc-roots.phpt` | 已验证 |
 | `new (表达式)()` 保持普通 PHP 动态实例化 | `parseNew()` 只对 `Node\\Name` 进入 Native 分支 | `testLeavesDynamicClassExpressionsToTheOrdinaryPhpPath` | 已验证 |
 | Native 对象本身不能充当动态 class target | `assertNotNativeObjectDynamicClassTarget()` | dynamic new/static call/class constant 负向测试 | 已验证 |
-| 所有不支持的用法在编译期终止 | Native 边界检查、类型兼容检查 | 128 项 `NativeClassValidationTest` | 已验证 |
+| 所有不支持的用法在编译期终止 | Native 边界检查、类型兼容检查 | 131 项 `NativeClassValidationTest` | 已验证 |
 
 ## 3. 属性与固定布局
 
@@ -113,7 +113,8 @@
 |---|---|---|---|
 | Native class 前向声明不依赖文件顺序 | declaration discovery pre-pass | `testDiscoversNativeTypesBeforeCrossFileSignaturePreprocessing` | 已验证 |
 | global Native slot ABI 在任一 C++ 文件生成前确定 | `NativeGlobalDiscovery`、`NativeGlobalTypeResolver` | `testDiscoversNativeGlobalSlotBeforeEarlierReaderIsConverted`，实际双文件构建 | 已验证 |
-| `global $slot` 与字面量 `$GLOBALS['slot']` 使用同一 Native root slot | literal global slot lowering、request root registration | `global-and-static.phpt`、跨文件 `$GLOBALS` fixture | 已验证 |
+| `global $slot` 与静态可解析的 `$GLOBALS[...]` 使用同一 Native root slot | literal/constant global slot lowering、request root registration | `global-and-static.phpt`、跨文件 Closure/常量 `$GLOBALS` fixture | 已验证 |
+| 动态 `$GLOBALS[$key]` 不得承载 Native Object | dynamic Zend boundary validation | `testRejectsNativeObjectStoredThroughDynamicGlobalsKey` | 已验证 |
 | global slot 固定首个 Native 类型，只允许子类或 null | global registration/type validation | `global-and-static.phpt`、global type change 负向测试 | 已验证 |
 | 未使用 Native Class 的项目跳过 Native global pre-pass | `discoverNativeGlobalObjects()` fast return | 源码检查、全量 PHPUnit | 已验证 |
 
@@ -126,6 +127,6 @@ vendor/bin/phpunit phpunit/src/NativeClass/NativeClassValidationTest.php
   --gtest_filter='wren_gc.*:native_gc.*'
 ```
 
-本次结果分别为：69/69 PHPT、128/128 PHPUnit、17/17 PHPX C++ tests。
-最终合入前仍需执行编译器完整 PHPUnit、完整 PHPT 和 PHPX 完整测试，防止 Native
-分支的公共 hook 影响普通对象模型。
+本次结果分别为：69/69 PHPT、131/131 PHPUnit、17/17 PHPX C++ tests。
+完整回归结果为：编译器 PHPUnit 1431/1431、编译器 PHPT 1037/1037（另有 2 项按
+环境跳过）、PHPX C++ tests 1016/1016。Native 分支的公共 hook 未影响普通对象模型。

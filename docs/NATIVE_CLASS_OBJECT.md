@@ -507,7 +507,9 @@ struct FunctionNativeRoots {
 - 只登记可能跨越 Native allocation 或显式 GC safe point 存活的变量。
 - 普通方法 receiver 由调用者的 root 或对象图保持存活，不重复登记。
 - 临时对象如果跨越一次可能触发 GC 的调用，必须先写入 root slot。
-- Native Class 允许保存在 TypePHP global 和 static local 中。这些槽不进入 Zend `$GLOBALS`，而是生成独立 Native 指针槽。
+- Native Class 允许保存在 TypePHP global 和 static local 中。这些槽不注册到 Zend symbol table，而是生成独立 Native 指针槽。
+- `global $slot` 与 `$GLOBALS['slot']` 使用同一个 Native 指针槽；`$GLOBALS` 的键也可以是编译期可求值为字符串的全局常量、类常量或常量表达式。
+- `$GLOBALS[$dynamicKey]` 仍按 PHP 语法走 Zend HashTable。由于 Native Object 没有 zval 表示，动态键不能用于读写 Native global。
 - ZTS 构建中的 global/static 指针槽和 static 初始化状态均使用 `THREAD_LOCAL`，不同线程之间不共享 Native 对象。
 - RINIT 将这些槽登记为 request root；RSHUTDOWN 清空槽和初始化状态，随后由 Native Heap 统一 finalization 和回收。
 
@@ -1289,6 +1291,7 @@ $json = json_encode($nativeObject->toArray());
 | Native 元素 Std Container 转 PHP array/mixed 或作为 PHP 参数 | 不支持；裸指针不得越过 ZendVM value boundary |
 | Native Class 属性循环引用 | 支持，指针字段加 Native tracing GC |
 | TypePHP global/static local | 支持；ZTS 使用 thread-local request roots，RSHUTDOWN 清理 |
+| `$GLOBALS` 访问 Native global | 字面量或编译期可求值的字符串常量映射到同一 C++ slot；动态键不支持 Native Object |
 | global/static local 类型 | 第一次 Native 赋值固定 C++ slot 类型；后续可写入其 Native 子类或 null，不可改为基类/无关类 |
 | Native Class 属性循环类型 | 支持；字段零值为 `nullptr`，类型图使用 C++ 前置声明 |
 | late static binding / `new static()` | 不支持；Native Class 无运行时 `zend_class_entry`，使用 `self::`、`parent::` 或具体类名 |

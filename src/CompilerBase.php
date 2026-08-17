@@ -83,6 +83,7 @@ use TypePhp\Symbol\SymbolRepository;
 use TypePhp\TypeSystem\CompositeTypeCheckerTrait;
 use TypePhp\TypeSystem\NativeTypeCompatibilityTrait;
 use TypePhp\NativeClass\NativeClassSupportTrait;
+use TypePhp\NativeClass\NativeGlobalTypeResolver;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -437,6 +438,8 @@ class CompilerBase implements PropertyAccessContext
     protected array $globalVars = [];
     /** @var array<string, string> Global/static Native pointer slot => class name. */
     protected array $nativeGlobalObjects = [];
+    /** Immutable metadata shared by Native global pre-discovery and lowering. */
+    protected ?NativeGlobalTypeResolver $nativeGlobalTypeResolver = null;
     /** @var array<string, string> Lowercase class name => declared Native class name. */
     protected array $nativeClassDeclarations = [];
     /** @var array<string, true> Request-reset initialization flags for Native static locals. */
@@ -1974,7 +1977,7 @@ class CompilerBase implements PropertyAccessContext
                 return $this->getObjectType($object);
             }
         }
-        $globalSlot = $this->getLiteralGlobalsSlot($expr);
+        $globalSlot = $this->getStaticGlobalsSlot($expr);
         if ($globalSlot !== null && isset($this->nativeGlobalObjects[$globalSlot])) {
             return $this->nativeGlobalObjects[$globalSlot];
         }

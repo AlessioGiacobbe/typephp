@@ -8,6 +8,9 @@
 
 namespace TypePhp\NativeClass;
 
+use PhpParser\ConstExprEvaluator;
+use PhpParser\Node;
+use PhpParser\NodeAbstract;
 use TypePhp\Entity\ClassDef;
 
 /**
@@ -22,6 +25,12 @@ final class NativeGlobalTypeResolver
     /** @var array<string, string> */
     private array $classes = [];
 
+    /** @var array<string, ClassDef> */
+    private array $classDefinitions = [];
+
+    /** @var array<string, Node\Expr> */
+    private array $globalConstantExpressions = [];
+
     /** @var array<string, true> */
     private array $nativeClasses = [];
 
@@ -34,15 +43,27 @@ final class NativeGlobalTypeResolver
     /** @var array<string, array<string, ?string>> */
     private array $propertyClasses = [];
 
-    /** @param array<string, ClassDef> $classes */
-    public function __construct(array $classes)
+    /**
+     * @param array<string, ClassDef> $classes
+     * @param array<string, object> $constants
+     */
+    public function __construct(array $classes, array $constants = [])
     {
         foreach ($classes as $class) {
             $name = $class->getNamespacedName(false);
             $key = strtolower(ltrim($name, '\\'));
             $this->classes[$key] = $name;
+            $this->classDefinitions[$key] = $class;
             if ($class->nativeObject) {
                 $this->nativeClasses[$key] = true;
+            }
+        }
+
+        foreach ($constants as $constant) {
+            if (isset($constant->name) && is_string($constant->name)
+                && isset($constant->valueExpr) && $constant->valueExpr instanceof Node\Expr
+            ) {
+                $this->globalConstantExpressions[ltrim($constant->name, '\\')] = $constant->valueExpr;
             }
         }
 
@@ -143,5 +164,164 @@ final class NativeGlobalTypeResolver
     public function parentClass(string $class): ?string
     {
         return $this->parents[strtolower(ltrim($class, '\\'))] ?? null;
+    }
+
+    /**
+     * Evaluate a PHP constant expression used as a `$GLOBALS[...]` key.
+     * Returning null keeps the expression on the ordinary dynamic Zend path.
+     */
+    public function staticString(NodeAbstract $expression, string $scopeClass = ''): ?string
+    {
+        if ($expression instanceof Node\Scalar\String_) {
+            return $expression->value;
+        }
+
+        $visiting = [];
+        try {
+            $value = $this->evaluateConstantExpression($expression, $scopeClass, $visiting, 0);
+        } catch (\Throwable) {
+            return null;
+        }
+        return is_string($value) ? $value : null;
+    }
+
+    /** @param array<string, true> $visiting */
+    private function evaluateConstantExpression(
+        NodeAbstract $expression,
+        string $scopeClass,
+        array &$visiting,
+        int $depth,
+    ): mixed {
+        if ($depth > 32 || !$expression instanceof Node\Expr) {
+            throw new \RuntimeException('Constant expression nesting is too deep');
+        }
+
+        $evaluator = new ConstExprEvaluator(function (Node\Expr $node) use (
+            $scopeClass,
+            &$visiting,
+            $depth,
+        ): mixed {
+            if ($node instanceof Node\Expr\ConstFetch) {
+                foreach ($this->resolvedNameCandidates($node->name) as $name) {
+                    $lower = strtolower($name);
+                    if ($lower === 'true') {
+                        return true;
+                    }
+                    if ($lower === 'false') {
+                        return false;
+                    }
+                    if ($lower === 'null') {
+                        return null;
+                    }
+                    if (isset($this->globalConstantExpressions[$name])) {
+                        $key = 'global:' . $name;
+                        if (isset($visiting[$key])) {
+                            throw new \RuntimeException('Circular constant expression');
+                        }
+                        $visiting[$key] = true;
+                        try {
+                            return $this->evaluateConstantExpression(
+                                $this->globalConstantExpressions[$name],
+                                $scopeClass,
+                                $visiting,
+                                $depth + 1,
+                            );
+                        } finally {
+                            unset($visiting[$key]);
+                        }
+                    }
+                    if (defined($name)) {
+                        return constant($name);
+                    }
+                }
+                throw new \RuntimeException('Unresolved global constant');
+            }
+
+            if ($node instanceof Node\Expr\ClassConstFetch
+                && $node->class instanceof Node\Name
+                && $node->name instanceof Node\Identifier
+            ) {
+                $class = $this->resolvedClassName($node->class, $scopeClass);
+                $constant = $node->name->toString();
+                if (strcasecmp($constant, 'class') === 0) {
+                    return $class;
+                }
+                $classKey = strtolower(ltrim($class, '\\'));
+                while (isset($this->classDefinitions[$classKey])) {
+                    $definition = $this->classDefinitions[$classKey];
+                    if ($definition->hasConstant($constant)) {
+                        $constantDefinition = $definition->getConstant($constant);
+                        if (!$constantDefinition->valueExpr instanceof Node\Expr) {
+                            throw new \RuntimeException('Class constant has no static expression');
+                        }
+                        $key = 'class:' . $classKey . '::' . $constant;
+                        if (isset($visiting[$key])) {
+                            throw new \RuntimeException('Circular class constant expression');
+                        }
+                        $visiting[$key] = true;
+                        try {
+                            return $this->evaluateConstantExpression(
+                                $constantDefinition->valueExpr,
+                                $definition->getNamespacedName(false),
+                                $visiting,
+                                $depth + 1,
+                            );
+                        } finally {
+                            unset($visiting[$key]);
+                        }
+                    }
+                    $parent = $this->parents[$classKey] ?? null;
+                    if ($parent === null) {
+                        break;
+                    }
+                    $classKey = strtolower($parent);
+                }
+                $runtimeConstant = $class . '::' . $constant;
+                if (defined($runtimeConstant)) {
+                    return constant($runtimeConstant);
+                }
+                throw new \RuntimeException('Unresolved class constant');
+            }
+
+            throw new \RuntimeException('Unsupported constant expression');
+        });
+
+        return $evaluator->evaluateDirectly($expression);
+    }
+
+    private function resolvedClassName(Node\Name $name, string $scopeClass): string
+    {
+        $keyword = strtolower($name->toString());
+        if ($keyword === 'self' || $keyword === 'static') {
+            if ($scopeClass === '') {
+                throw new \RuntimeException('Class-relative constant outside class scope');
+            }
+            return ltrim($scopeClass, '\\');
+        }
+        if ($keyword === 'parent') {
+            $parent = $this->parentClass($scopeClass);
+            if ($parent === null) {
+                throw new \RuntimeException('Parent-relative constant without a parent');
+            }
+            return $parent;
+        }
+        $resolved = $name->getAttribute('resolvedName');
+        return ltrim($resolved instanceof Node\Name ? $resolved->toString() : $name->toString(), '\\');
+    }
+
+    /** @return list<string> */
+    private function resolvedNameCandidates(Node\Name $name): array
+    {
+        $names = [];
+        $resolved = $name->getAttribute('resolvedName');
+        if ($resolved instanceof Node\Name) {
+            $names[] = ltrim($resolved->toString(), '\\');
+        }
+        $fallback = $name->getAttribute('fallbackName');
+        if ($fallback instanceof Node\Name) {
+            $names[] = ltrim($fallback->toString(), '\\');
+        }
+        $names[] = ltrim($name->toString(), '\\');
+        return array_values(array_unique($names));
     }
 }

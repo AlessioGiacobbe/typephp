@@ -4500,7 +4500,12 @@ CODE;
     private function checkInterfaceImplementation(NodeAbstract $node, ClassDef $classDef, string $interfaceName): void
     {
         if ($this->isInternalInterface($interfaceName)) {
-            $this->checkInternalInterfaceImplementation($node, $classDef, $interfaceName);
+            // Zend validates ordinary classes while registering their class
+            // entries. Only Native classes need the compiler-side reflection
+            // contract because they deliberately have no zend_class_entry.
+            if ($classDef->nativeObject) {
+                $this->checkInternalInterfaceImplementation($node, $classDef, $interfaceName);
+            }
             return;
         }
         if (!$this->hasInterface($interfaceName)) {

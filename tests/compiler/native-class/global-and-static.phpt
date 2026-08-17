@@ -6,8 +6,12 @@ Native class: TypePHP globals and static locals retain request-rooted native obj
 #[Native]
 class NativeCounter
 {
+    public const string GLOBAL_KEY = 'nativeGlobalsArray';
+
     public int $value;
 }
+
+const NATIVE_GLOBAL_KEY = NativeCounter::GLOBAL_KEY;
 
 #[Native]
 class NativeCounterChild extends NativeCounter {}
@@ -46,13 +50,13 @@ function globalIsNull(): bool
 
 function initializeGlobalsArray(): void
 {
-    $GLOBALS['nativeGlobalsArray'] ??= new NativeCounter();
-    $GLOBALS['nativeGlobalsArray']->value = 42;
+    $GLOBALS[NATIVE_GLOBAL_KEY] ??= new NativeCounter();
+    $GLOBALS[NativeCounter::GLOBAL_KEY]->value = 42;
 }
 
 function readGlobalsArray(): int
 {
-    return $GLOBALS['nativeGlobalsArray']->value;
+    return $GLOBALS[NATIVE_GLOBAL_KEY]->value;
 }
 
 function resetGlobalsArray(): void
@@ -62,7 +66,7 @@ function resetGlobalsArray(): void
 
 function globalsArrayIsNull(): bool
 {
-    return is_null($GLOBALS['nativeGlobalsArray']);
+    return is_null($GLOBALS[NativeCounter::GLOBAL_KEY]);
 }
 
 function nextStatic(): int

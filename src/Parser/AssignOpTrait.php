@@ -275,7 +275,7 @@ trait AssignOpTrait
                 if ($allowed && ($this->hasScopeGlobalVar($leftName) || $this->hasStaticVar($leftName))) {
                     $this->promoteGlobalOrStaticToNativeObject($leftName, $rightClass, $right);
                 }
-            } elseif (($globalSlot = $this->getLiteralGlobalsSlot($left)) !== null) {
+            } elseif (($globalSlot = $this->getStaticGlobalsSlot($left)) !== null) {
                 if (!$this->hasGlobalVar($globalSlot)) {
                     $this->addGlobalVar($globalSlot, Type::VAR);
                 }
@@ -1189,7 +1189,7 @@ trait AssignOpTrait
         // declared as Variant because boxing the raw pointer would coerce it
         // to bool. Other values retain the normal nullable Variant behavior.
         $var = $this->isVarExpr($expr->var) ? $this->parseIdentifier($expr->var) : null;
-        $globalSlot = $this->getLiteralGlobalsSlot($expr->var);
+        $globalSlot = $this->getStaticGlobalsSlot($expr->var);
         if ($globalSlot !== null) {
             if (!$this->hasGlobalVar($globalSlot)) {
                 $this->addGlobalVar($globalSlot, Type::VAR);
@@ -1201,6 +1201,15 @@ trait AssignOpTrait
                 $this->promoteGlobalOrStaticToNativeObject($globalSlot, $rightClass, $expr->expr);
             }
             $var = $globalSlot;
+        } elseif ($nativeRight
+            && $expr->var instanceof Expr\ArrayDimFetch
+            && $this->isVarExpr($expr->var->var)
+            && $expr->var->var->name === 'GLOBALS'
+        ) {
+            $this->fatalError(
+                $expr->var,
+                'Native objects cannot be stored in dynamically addressed `$GLOBALS`',
+            );
         }
         if ($var !== null && !$this->hasVar($var)) {
             if ($nativeRight) {

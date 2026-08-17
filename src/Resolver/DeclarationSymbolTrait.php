@@ -21,14 +21,15 @@ trait DeclarationSymbolTrait
             if ($this->namespace) {
                 $name = $this->namespace . '\\' . $name;
             }
-            $this->addConstant($name, $value);
+            $this->addConstant($name, $value, $const->value);
         }
     }
 
-    protected function addConstant(string $name, string $value): void
+    protected function addConstant(string $name, string $value, ?Node\Expr $valueExpr = null): void
     {
         $constInfo                    = new \stdClass();
         $constInfo->value             = $value;
+        $constInfo->valueExpr         = $valueExpr;
         $constInfo->type              = $this->detectStrValueType($value);
         $constInfo->namespace = $this->namespace;
         $constInfo->name = $name;

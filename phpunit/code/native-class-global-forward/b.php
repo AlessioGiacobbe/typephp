@@ -71,3 +71,13 @@ function initializeNativeForwardGlobalsArray(): void
 {
     $GLOBALS['nativeForwardGlobalsArray'] = new NativeForwardGlobalValue();
 }
+
+const NATIVE_FORWARD_CLOSURE_GLOBAL = 'nativeForwardClosureGlobal';
+
+function initializeNativeForwardClosureGlobal(): void
+{
+    $initialize = static function (): void {
+        $GLOBALS[NATIVE_FORWARD_CLOSURE_GLOBAL] = new NativeForwardGlobalValue();
+    };
+    $initialize();
+}

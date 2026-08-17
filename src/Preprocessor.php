@@ -151,7 +151,8 @@ class Preprocessor extends CompilerBase
             }
         }
 
-        $resolver = new NativeGlobalTypeResolver($this->symbols->classes());
+        $resolver = new NativeGlobalTypeResolver($this->symbols->classes(), $this->constants);
+        $this->nativeGlobalTypeResolver = $resolver;
         $discovery = new NativeGlobalDiscovery($resolver, $functionReturns);
 
         foreach ($candidateSources as $source) {

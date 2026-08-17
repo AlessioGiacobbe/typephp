@@ -22,3 +22,9 @@ function readNativeForwardGlobalsArray(): int
 {
     return $GLOBALS['nativeForwardGlobalsArray']->value;
 }
+
+function readNativeForwardClosureGlobal(): int
+{
+    global $nativeForwardClosureGlobal;
+    return $nativeForwardClosureGlobal->value;
+}

@@ -375,6 +375,11 @@ trait NativeClassSupportTrait
         }
     }
 
+    /**
+     * Resolve only the `$GLOBALS['literal']` form. A fixed key can share the
+     * compiler-owned Native global slot without touching Zend's symbol table;
+     * dynamically addressed `$GLOBALS[$name]` remains a Zend value boundary.
+     */
     protected function getLiteralGlobalsSlot(NodeAbstract $expression): ?string
     {
         if (!$expression instanceof Node\Expr\ArrayDimFetch
@@ -385,6 +390,66 @@ trait NativeClassSupportTrait
             return null;
         }
         return $expression->dim->value;
+    }
+
+    /**
+     * Resolve a statically known `$GLOBALS[...]` key to the compiler-owned
+     * Native global slot. Dynamic keys deliberately return null and remain on
+     * the ordinary Zend HashTable path.
+     */
+    protected function getStaticGlobalsSlot(NodeAbstract $expression): ?string
+    {
+        $literal = $this->getLiteralGlobalsSlot($expression);
+        if ($literal !== null) {
+            return $literal;
+        }
+        if (!$expression instanceof Node\Expr\ArrayDimFetch
+            || !$expression->var instanceof Node\Expr\Variable
+            || $expression->var->name !== 'GLOBALS'
+            || $expression->dim === null
+        ) {
+            return null;
+        }
+
+        // Preserve PHP visibility diagnostics even though the key itself is
+        // folded and never emitted as a runtime class-constant fetch.
+        $finder = new \PhpParser\NodeFinder();
+        foreach ($finder->findInstanceOf($expression->dim, Node\Expr\ClassConstFetch::class) as $fetch) {
+            if (!$fetch->class instanceof Node\Name
+                || !$fetch->name instanceof Node\Identifier
+                || strcasecmp($fetch->name->toString(), 'class') === 0
+            ) {
+                continue;
+            }
+            $class = $fetch->class->toString();
+            if (strcasecmp($class, 'self') === 0 || strcasecmp($class, 'static') === 0) {
+                $class = $this->getFullClassName();
+            } elseif (strcasecmp($class, 'parent') === 0) {
+                $class = $this->classDef?->extends ?? '';
+            } else {
+                $resolved = $fetch->class->getAttribute('resolvedName');
+                $class = $resolved instanceof Node\Name
+                    ? $resolved->toString()
+                    : $this->getNamespacedClassName($class);
+            }
+            if ($class !== '') {
+                $this->getClassConstValue(
+                    $fetch,
+                    $class,
+                    $fetch->name->toString(),
+                    $this->getFullClassName(),
+                );
+            }
+        }
+
+        $this->nativeGlobalTypeResolver ??= new NativeGlobalTypeResolver(
+            $this->symbols->classes(),
+            $this->constants,
+        );
+        return $this->nativeGlobalTypeResolver->staticString(
+            $expression->dim,
+            $this->getFullClassName(),
+        );
     }
 
     protected function getNativeObjectCppName(string|ClassDef $class): string
