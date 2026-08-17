@@ -26,6 +26,7 @@ function main(): void
     var_dump((string) $value);
     var_dump('value=' . $value);
     var_dump($value(42));
+    var_dump($value instanceof Stringable);
 }
 ?>
 --EXPECT--
@@ -33,3 +34,4 @@ native
 string(6) "native"
 string(12) "value=native"
 string(9) "native:42"
+bool(true)

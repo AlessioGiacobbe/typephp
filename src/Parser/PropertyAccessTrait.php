@@ -415,6 +415,12 @@ trait PropertyAccessTrait
             return $this->getLiteralString($this->classDef->extends);
         }
         if ($name === 'static') {
+            if ($this->classDef?->nativeObject) {
+                $this->fatalError(
+                    $class,
+                    'Native classes do not support late static binding; use `self::` or a concrete class name',
+                );
+            }
             if (!$this->methodDef) {
                 $this->fatalError($class, "The 'static' keyword can only be used as the class name in class methods");
             }
@@ -618,6 +624,12 @@ trait PropertyAccessTrait
             return $rightExpr;
         }
 
+        if ($def->type === Type::STREAM) {
+            return $this->detectTypeOfExpr($right) === Type::STREAM
+                ? $rightExpr
+                : 'php::toStream(' . $rightExpr . ')';
+        }
+
         $typeCheck = $this->getObjectPropertyAssignTypeCheck($def);
         if (empty($typeCheck)) {
             return $rightExpr;
@@ -768,6 +780,7 @@ trait PropertyAccessTrait
         $lines = [];
         foreach ($vars as $var) {
             $this->assertNotNullsafeWriteContext($var);
+            $this->assertNativePropertyHookDirectWriteTarget($var);
             if ($this->isArrayDimFetch($var)) {
                 if ($var->dim === null) {
                     $this->fatalError($var, 'Cannot use [] for array unset');
@@ -835,6 +848,7 @@ trait PropertyAccessTrait
                 }
                 $type = $this->getVarType($name);
                 if ($this->isNativeObjectVar($name)) {
+                    $this->forgetNativeObjectNonNull($name);
                     $lines[] = "{$name} = nullptr;";
                 } elseif ($this->isNativeType($type)) {
                     $this->warning($var, "Variable of native type `\${$name}` cannot be unset");
@@ -957,6 +971,7 @@ trait PropertyAccessTrait
 
         if ($this->isNativeObjectClass($nativeExpressionClass)) {
             $objectName = $this->materializeNativeObjectReceiver($object, $nativeExpressionClass);
+            $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
             return $this->getNativeObjectMemberReceiver($objectName)
                 . $this->getNativeObjectPropertyCppName($resolution->propertyDef, $resolution->classDef);
         }
@@ -976,6 +991,7 @@ trait PropertyAccessTrait
             if ($resolution === null) {
                 $this->fatalError($expr, "Native class `{$class}` has no property `\${$propertyName}`");
             }
+            $this->setNativePropertyValueSource($expr, self::NATIVE_PROPERTY_VALUE_VAR);
             return $this->getNativeObjectMemberReceiver($objectName)
                 . $this->getNativeObjectPropertyCppName($resolution->propertyDef, $resolution->classDef);
         }
@@ -1038,6 +1054,38 @@ trait PropertyAccessTrait
             return null;
         }
         return $this->getNativePropertyDef($expr)?->setter;
+    }
+
+    protected function isNativeObjectPropertyHook(NodeAbstract $expr): bool
+    {
+        $class = $this->getNativePropertyClassDef($expr);
+        $property = $this->getNativePropertyDef($expr);
+        return $class?->nativeObject === true
+            && $property !== null
+            && ($property->getter !== null || $property->setter !== null);
+    }
+
+    /**
+     * Native hooks lower to ordinary getter/setter calls. An indirect write
+     * would only mutate the value returned by the getter and cannot reliably
+     * invoke the setter, so only a direct property assignment is meaningful.
+     */
+    protected function assertNativePropertyHookDirectWriteTarget(NodeAbstract $expr): void
+    {
+        while ($expr instanceof Expr\ArrayDimFetch) {
+            $expr = $expr->var;
+        }
+        if ($expr instanceof Expr\PropertyFetch && $this->isIdExpr($expr->name)) {
+            // Resolve the property before querying its hook metadata. Indirect
+            // write paths reach this guard before normal property lowering.
+            $this->getPropertyIdentifier($expr, $expr->var, $expr->name);
+        }
+        if ($expr instanceof Expr\PropertyFetch && $this->isNativeObjectPropertyHook($expr)) {
+            $this->fatalError(
+                $expr,
+                'Native property hooks only support direct reads and assignments',
+            );
+        }
     }
 
     protected function isReadOnlyPropertyHook(NodeAbstract $expr): bool

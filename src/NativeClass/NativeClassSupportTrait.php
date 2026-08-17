@@ -21,6 +21,8 @@ use PhpParser\Node;
 
 trait NativeClassSupportTrait
 {
+    private const string NATIVE_VIRTUAL_CLONE_METHOD = '__typephp_native_clone';
+
     /**
      * Magic methods whose semantics require Zend object handlers, runtime
      * method resolution, dynamic properties, or Zend serialization state.
@@ -39,6 +41,15 @@ trait NativeClassSupportTrait
         '__unserialize' => true,
         '__set_state' => true,
         '__debuginfo' => true,
+    ];
+
+    /** Internal interfaces which PHP does not allow an ordinary class to implement directly. */
+    private const NON_IMPLEMENTABLE_INTERNAL_INTERFACES = [
+        'throwable' => true,
+        'traversable' => true,
+        'datetimeinterface' => true,
+        'unitenum' => true,
+        'backedenum' => true,
     ];
 
     protected function assertNativeMagicMethodSupported(NodeAbstract $node, string $method): void
@@ -65,6 +76,12 @@ trait NativeClassSupportTrait
         ClassDef $classDef,
         string $interfaceName,
     ): void {
+        if (isset(self::NON_IMPLEMENTABLE_INTERNAL_INTERFACES[strtolower(ltrim($interfaceName, '\\'))])) {
+            $this->fatalError(
+                $node,
+                "Native class `{$classDef->getNamespacedName(false)}` cannot implement internal interface `{$interfaceName}`",
+            );
+        }
         $interface = Reflection::getClass($interfaceName);
         if ($interface === null) {
             $this->fatalError($node, "Internal interface `{$interfaceName}` is not available");
@@ -244,6 +261,60 @@ trait NativeClassSupportTrait
         return $class !== '' && $this->hasClass($class) && $this->getClass($class)->nativeObject;
     }
 
+    /**
+     * Native objects have identity but no Zend object handler capable of PHP's
+     * recursive loose/value comparison. Reject unsupported operators before a
+     * raw pointer can reach php::equals() or a C++ arithmetic expression.
+     */
+    protected function assertNativeObjectBinaryOperatorSupported(Node\Expr\BinaryOp $expr): void
+    {
+        $leftNative = $this->isNativeObjectClass($this->detectClassOfExpr($expr->left));
+        $rightNative = $this->isNativeObjectClass($this->detectClassOfExpr($expr->right));
+        if (!$leftNative && !$rightNative) {
+            return;
+        }
+
+        if ($expr instanceof Node\Expr\BinaryOp\Identical
+            || $expr instanceof Node\Expr\BinaryOp\NotIdentical
+            || $expr instanceof Node\Expr\BinaryOp\Coalesce
+            || $expr instanceof Node\Expr\BinaryOp\Concat
+            || $expr instanceof Node\Expr\BinaryOp\BooleanAnd
+            || $expr instanceof Node\Expr\BinaryOp\LogicalAnd
+            || $expr instanceof Node\Expr\BinaryOp\BooleanOr
+            || $expr instanceof Node\Expr\BinaryOp\LogicalOr
+            || $expr instanceof Node\Expr\BinaryOp\LogicalXor
+            || $expr instanceof Node\Expr\BinaryOp\Pipe
+        ) {
+            return;
+        }
+
+        $operator = match (true) {
+            $expr instanceof Node\Expr\BinaryOp\Equal => '==',
+            $expr instanceof Node\Expr\BinaryOp\NotEqual => '!=',
+            $expr instanceof Node\Expr\BinaryOp\Plus => '+',
+            $expr instanceof Node\Expr\BinaryOp\Minus => '-',
+            $expr instanceof Node\Expr\BinaryOp\Mul => '*',
+            $expr instanceof Node\Expr\BinaryOp\Div => '/',
+            $expr instanceof Node\Expr\BinaryOp\Mod => '%',
+            $expr instanceof Node\Expr\BinaryOp\Pow => '**',
+            $expr instanceof Node\Expr\BinaryOp\Smaller => '<',
+            $expr instanceof Node\Expr\BinaryOp\SmallerOrEqual => '<=',
+            $expr instanceof Node\Expr\BinaryOp\Greater => '>',
+            $expr instanceof Node\Expr\BinaryOp\GreaterOrEqual => '>=',
+            $expr instanceof Node\Expr\BinaryOp\Spaceship => '<=>',
+            $expr instanceof Node\Expr\BinaryOp\ShiftLeft => '<<',
+            $expr instanceof Node\Expr\BinaryOp\ShiftRight => '>>',
+            $expr instanceof Node\Expr\BinaryOp\BitwiseAnd => '&',
+            $expr instanceof Node\Expr\BinaryOp\BitwiseOr => '|',
+            $expr instanceof Node\Expr\BinaryOp\BitwiseXor => '^',
+            default => $expr->getType(),
+        };
+        $suffix = in_array($operator, ['==', '!='], true)
+            ? '; use `===` or `!==` for identity comparison'
+            : '';
+        $this->fatalError($expr, "Native objects do not support the `{$operator}` operator{$suffix}");
+    }
+
     protected function getNativeObjectCppName(string|ClassDef $class): string
     {
         $classDef = $class instanceof ClassDef ? $class : $this->getClass(ltrim($class, '\\'));
@@ -260,33 +331,76 @@ trait NativeClassSupportTrait
         return $this->getNativeObjectCppName($class) . ' *';
     }
 
+    /**
+     * A statically typed base pointer may hold any Native subclass. Only such
+     * inheritance hierarchies need a vtable entry for clone; standalone/final
+     * object layouts retain the zero-overhead static clone path.
+     */
+    protected function nativeObjectUsesVirtualClone(string|ClassDef $class): bool
+    {
+        $classDef = $class instanceof ClassDef ? $class : $this->getClass(ltrim($class, '\\'));
+        if ($classDef->extends !== '' && $this->isNativeObjectClass($classDef->extends)) {
+            return true;
+        }
+        $className = $classDef->getNamespacedName(false);
+        foreach ($this->symbols->classes() as $candidate) {
+            if (!$candidate->nativeObject
+                || $this->isSameClassName($candidate->getNamespacedName(false), $className)
+            ) {
+                continue;
+            }
+            $parent = $candidate->extends;
+            while ($parent !== '' && $this->isNativeObjectClass($parent)) {
+                if ($this->isSameClassName($parent, $className)) {
+                    return true;
+                }
+                $parent = $this->getClass($parent)->extends;
+            }
+        }
+        return false;
+    }
+
     protected function getNativeObjectArgumentType(ArgInfo $argument): ?string
     {
         $class = $argument->declaredClass ?: $argument->class;
-        if ((!$argument->byRef && $argument->type !== Type::OBJECT)
-            || !$this->isNativeObjectClass($class)
-        ) {
+        if ($argument->type !== Type::OBJECT || !$this->isNativeObjectClass($class)) {
             return null;
         }
-        return $this->getNativeObjectPointerType($class) . ($argument->byRef ? '&' : '');
+        return $this->getNativeObjectPointerType($class);
+    }
+
+    /**
+     * A virtual adapter may widen value parameters, but C++ cannot safely
+     * adapt T*& to Base*&: the callee could replace it with a Base that is not
+     * a T. Native objects intentionally carry no runtime class tag, so reject
+     * that one PHP variance case at the declaration boundary.
+     */
+    protected function assertNativeVirtualByRefStorageCompatible(
+        NodeAbstract $node,
+        FunctionDef $child,
+        FunctionDef $parent,
+    ): void {
+        foreach ($parent->argInfoList as $index => $parentArgument) {
+            if (!$parentArgument->byRef || !isset($child->argInfoList[$index])) {
+                continue;
+            }
+            $childArgument = $child->argInfoList[$index];
+            $parentStorage = $this->getNativeObjectArgumentType($parentArgument)
+                ?? $parentArgument->type;
+            $childStorage = $this->getNativeObjectArgumentType($childArgument)
+                ?? $childArgument->type;
+            if ($parentStorage !== $childStorage) {
+                $this->fatalError(
+                    $node,
+                    'Native virtual by-reference parameters must keep the same storage type',
+                );
+            }
+        }
     }
 
     protected function resolveNullableNativeObjectType(?NodeAbstract $type, int $declarationKind): ?array
     {
-        $inner = null;
-        if ($type instanceof Node\NullableType) {
-            $inner = $type->type;
-        } elseif ($type instanceof Node\UnionType && count($type->types) === 2) {
-            foreach ($type->types as $member) {
-                if ($member instanceof Node\Identifier && strtolower($member->toString()) === 'null') {
-                    continue;
-                }
-                if ($inner !== null) {
-                    return null;
-                }
-                $inner = $member;
-            }
-        }
+        $inner = $type instanceof Node\NullableType ? $type->type : null;
         if (!$inner instanceof Node\Name) {
             return null;
         }
@@ -365,10 +479,62 @@ trait NativeClassSupportTrait
             return;
         }
         $nativeClasses = $this->getNativeObjectClassesFromTypeNode($type, $declarationKind);
-        if ($nativeClasses !== [] && $this->resolveNullableNativeObjectType($type, $declarationKind) === null) {
+        if ($nativeClasses !== []) {
             $this->fatalError(
                 $errorNode,
-                'Native object types cannot be combined with other union or intersection members',
+                'Native object types do not support union or intersection declarations; use nullable ?Class syntax',
+            );
+        }
+    }
+
+    protected function assertNativeObjectFunctionSignature(
+        Node\Stmt\Function_|Node\Stmt\ClassMethod $node,
+        FunctionDef $function,
+    ): void {
+        if ($this->isNativeObjectClass($function->returnClass) && $function->returnsByRef) {
+            $this->fatalError($node, 'Native objects cannot be returned by reference');
+        }
+        foreach ($function->argInfoList as $index => $argument) {
+            $class = $argument->declaredClass ?: $argument->class;
+            if (!$this->isNativeObjectClass($class)) {
+                continue;
+            }
+            $parameter = $node->params[$index] ?? $node;
+            if ($argument->byRef) {
+                $this->fatalError($parameter, 'Native object parameters cannot be passed by reference');
+            }
+            if ($argument->variadic) {
+                $this->fatalError($parameter, 'Native object parameters cannot be variadic');
+            }
+            if ($parameter instanceof Node\Param
+                && $parameter->default !== null
+                && $this->isNull($parameter->default)
+                && !$argument->nullable
+            ) {
+                $this->fatalError(
+                    $parameter,
+                    'A Native object parameter with a null default must use explicit nullable ?Class syntax',
+                );
+            }
+        }
+    }
+
+    /**
+     * Native objects already have reference semantics: variables contain a
+     * typed pointer and assignment copies only that pointer. PHP references
+     * would alias the pointer slot itself, which has no useful Native ABI
+     * representation and would make a typed slot possible to rebind through
+     * an untyped reference.
+     */
+    protected function assertNativeObjectReferenceForbidden(
+        NodeAbstract $expr,
+        NodeAbstract $errorNode,
+    ): void {
+        $class = $this->detectDeclaredClassOfExpr($expr);
+        if ($this->isNativeObjectClass($class)) {
+            $this->fatalError(
+                $errorNode,
+                'Native objects cannot be referenced; object assignment already shares identity',
             );
         }
     }
@@ -433,10 +599,28 @@ trait NativeClassSupportTrait
         return $this->context->nativeObjects[$name] ?? '';
     }
 
+    protected function markNativeObjectNonNull(string $name): void
+    {
+        $this->context->nonNullNativeObjects[$name] = true;
+    }
+
+    protected function forgetNativeObjectNonNull(string $name): void
+    {
+        unset($this->context->nonNullNativeObjects[$name]);
+    }
+
+    protected function isNativeObjectKnownNonNull(string $name): bool
+    {
+        return isset($this->context->nonNullNativeObjects[$name]);
+    }
+
     protected function getNativeObjectReceiver(string $name): string
     {
         if ($name === 'this_') {
             return 'this_';
+        }
+        if ($this->isNativeObjectKnownNonNull($name)) {
+            return '(*' . $name . ')';
         }
         $class = $this->getNativeObjectVarClass($name);
         return 'php::nativeDeref(' . $name . ', "' . addslashes($class) . '")';
@@ -467,6 +651,132 @@ trait NativeClassSupportTrait
         return $object;
     }
 
+    /**
+     * Lower a nullsafe chain whose root and every intermediate receiver are
+     * Native pointers. The generic implementation deliberately uses
+     * php::Object/Variant and therefore cannot represent this object model.
+     */
+    protected function parseNativeNullsafeAccess(
+        Node\Expr\PropertyFetch|Node\Expr\MethodCall|Node\Expr\NullsafePropertyFetch|Node\Expr\NullsafeMethodCall $expr,
+    ): ?string {
+        $steps = [];
+        $base = $expr;
+        while ($base instanceof Node\Expr\PropertyFetch
+            || $base instanceof Node\Expr\MethodCall
+            || $base instanceof Node\Expr\NullsafePropertyFetch
+            || $base instanceof Node\Expr\NullsafeMethodCall
+        ) {
+            array_unshift($steps, $base);
+            $base = $base->var;
+        }
+
+        $baseClass = $this->detectClassOfExpr($base);
+        if ($baseClass === '' && $this->isVarExpr($base)) {
+            $baseName = $this->parseIdentifier($base);
+            if ($this->isNativeObjectVar($baseName)) {
+                $baseClass = $this->getNativeObjectVarClass($baseName);
+            }
+        }
+        if (!$this->isNativeObjectClass($baseClass)) {
+            return null;
+        }
+
+        $current = $this->isVarExpr($base)
+            ? $this->parseIdentifier($base)
+            : $this->materializeNativeObjectReceiver($base, $baseClass);
+        if ($this->isVarExpr($base) && !$this->hasVar($current) && $current !== 'this_') {
+            $this->errorUndefinedVariable($base);
+        }
+
+        $body = '';
+        $last = array_key_last($steps);
+        $finalClass = '';
+        $finalType = Type::VAR;
+        $nullToken = '__TYPEPHP_NATIVE_NULLSAFE_NULL__';
+
+        foreach ($steps as $index => $step) {
+            $nullsafe = $step instanceof Node\Expr\NullsafePropertyFetch
+                || $step instanceof Node\Expr\NullsafeMethodCall;
+            if ($nullsafe) {
+                $body .= $this->getIndent() . 'if (' . $current . ' == nullptr) { return '
+                    . $nullToken . '; }' . PHP_EOL;
+            }
+
+            $receiver = new Node\Expr\Variable($current, $step->var->getAttributes());
+            if ($step instanceof Node\Expr\PropertyFetch || $step instanceof Node\Expr\NullsafePropertyFetch) {
+                if (!$step->name instanceof Node\Identifier) {
+                    $this->fatalError($step, 'Dynamic native object property access is not supported');
+                }
+                $access = new Node\Expr\PropertyFetch($receiver, clone $step->name, $step->getAttributes());
+            } else {
+                if (!$step->name instanceof Node\Identifier) {
+                    $this->fatalError($step, 'Dynamic native object method calls are not supported');
+                }
+                $access = new Node\Expr\MethodCall(
+                    $receiver,
+                    clone $step->name,
+                    $step->args,
+                    $step->getAttributes(),
+                );
+            }
+
+            [$value, $before, $after] = $this->parseExprWithCapturedStmts($access);
+            $valueClass = $this->detectClassOfExpr($access);
+            $valueType = $this->detectTypeOfExpr($access);
+            $body .= $this->formatCapturedStmtLines($before);
+
+            if ($index !== $last) {
+                if (!$this->isNativeObjectClass($valueClass)) {
+                    $this->fatalError(
+                        $step,
+                        'A Native nullsafe chain cannot continue through a non-Native value',
+                    );
+                }
+                $next = $this->genTmpVarName();
+                $this->addLocalVar($next, $this->getNativeObjectPointerType($valueClass));
+                $this->addNativeObject($next, $valueClass);
+                $body .= $this->getIndent() . $next . ' = ' . $value . ';' . PHP_EOL;
+                $body .= $this->formatCapturedStmtLines($after);
+                $current = $next;
+                continue;
+            }
+
+            $finalClass = $valueClass;
+            $finalType = $valueType;
+            if ($finalType === Type::VOID) {
+                $body .= $this->getIndent() . $value . ';' . PHP_EOL;
+                $body .= $this->formatCapturedStmtLines($after);
+                $body .= $this->getIndent() . 'return php::null;' . PHP_EOL;
+                continue;
+            }
+
+            if ($after !== []) {
+                if ($this->isNativeObjectClass($finalClass)) {
+                    $result = $this->genTmpVarName();
+                    $this->addLocalVar($result, $this->getNativeObjectPointerType($finalClass));
+                    $this->addNativeObject($result, $finalClass);
+                    $body .= $this->getIndent() . $result . ' = ' . $value . ';' . PHP_EOL;
+                } else {
+                    $result = $this->genTmpVarName();
+                    $body .= $this->getIndent() . 'auto ' . $result . ' = ' . $value . ';' . PHP_EOL;
+                }
+                $body .= $this->formatCapturedStmtLines($after);
+                $value = $result;
+            }
+            $body .= $this->getIndent() . 'return '
+                . ($this->isNativeObjectClass($finalClass) ? $value : 'php::Var(' . $value . ')')
+                . ';' . PHP_EOL;
+        }
+
+        $nativeResult = $this->isNativeObjectClass($finalClass);
+        $returnType = $nativeResult ? $this->getNativeObjectPointerType($finalClass) : Type::VAR;
+        $nullValue = $nativeResult ? 'nullptr' : 'php::null';
+        $body = str_replace($nullToken, $nullValue, $body);
+        return '[&]() -> ' . $returnType . ' {' . PHP_EOL
+            . $body
+            . $this->getIndent() . '}()';
+    }
+
     protected function findNativeObjectProperty(string $class, string $property): ?PropertyDef
     {
         while ($class !== '' && $this->hasClass($class)) {
@@ -485,6 +795,11 @@ trait NativeClassSupportTrait
             $classDef = $this->getClass($class);
             if ($classDef->hasMethod($method)) {
                 return $classDef->getMethod($method);
+            }
+            if ($classDef->hasAbstractMethod($method)
+                && isset($classDef->abstractMethodDefs[strtolower($method)])
+            ) {
+                return $classDef->getAbstractMethod($method);
             }
             $class = $classDef->extends;
         }
@@ -542,15 +857,34 @@ trait NativeClassSupportTrait
         return $resolvedMethod;
     }
 
-    protected function getNativeVirtualMethodName(string $method): string
+    protected function parseNativeObjectExplicitConversion(NodeAbstract $expr, string $method): ?string
     {
-        return '__typephp_virtual_' . strtolower($method);
+        $class = $this->detectClassOfExpr($expr);
+        if (!$this->isNativeObjectClass($class)) {
+            return null;
+        }
+        return $this->parseMethodCall(new Node\Expr\MethodCall(
+            $expr,
+            new Node\Identifier($method),
+            [],
+            $expr->getAttributes(),
+        ));
     }
 
+    protected function getNativeVirtualMethodName(string|ClassDef $slotClass, string $method): string
+    {
+        return '__typephp_virtual_' . strtolower($this->getNativeObjectCppName($slotClass))
+            . '__' . strtolower($method);
+    }
+
+    /** Whether this declaration owns a virtual dispatch slot. */
     protected function isNativeVirtualMethod(ClassDef $class, MethodDef $method): bool
     {
-        if ($method->flags & (Modifiers::STATIC | Modifiers::PRIVATE | Modifiers::FINAL | Modifiers::ABSTRACT)) {
+        if ($method->flags & (Modifiers::STATIC | Modifiers::PRIVATE | Modifiers::FINAL)) {
             return false;
+        }
+        if ($method->flags & Modifiers::ABSTRACT) {
+            return true;
         }
         if (in_array(strtolower($method->name), ['__construct', '__destruct', '__clone'], true)) {
             return false;
@@ -558,15 +892,39 @@ trait NativeClassSupportTrait
         if ($this->isOverrideMethod($class->getNamespacedName(false) . '::' . $method->name)) {
             return true;
         }
-        $parent = $class->extends;
-        while ($parent !== '' && $this->hasClass($parent)) {
-            $parentDef = $this->getClass($parent);
-            if ($parentDef->hasMethod($method->name)) {
-                return true;
-            }
-            $parent = $parentDef->extends;
-        }
         return false;
+    }
+
+    /**
+     * Return every virtual slot a declaration must implement. PHP permits
+     * contravariant parameters and covariant returns, so one C++ virtual
+     * signature cannot represent the whole family. Each source declaration
+     * owns a stable slot; an override supplies adapters for all ancestor slots.
+     *
+     * @return list<array{ClassDef, MethodDef}>
+     */
+    protected function getNativeVirtualMethodSlots(ClassDef $class, MethodDef $method): array
+    {
+        $slots = [];
+        $current = $class;
+        while (true) {
+            $declaration = null;
+            if ($current->hasMethod($method->name)) {
+                $declaration = $current->getMethod($method->name);
+            } elseif ($current->hasAbstractMethod($method->name)
+                && isset($current->abstractMethodDefs[strtolower($method->name)])
+            ) {
+                $declaration = $current->getAbstractMethod($method->name);
+            }
+            if ($declaration !== null && $this->isNativeVirtualMethod($current, $declaration)) {
+                $slots[] = [$current, $declaration];
+            }
+            if ($current->extends === '' || !$this->isNativeObjectClass($current->extends)) {
+                break;
+            }
+            $current = $this->getClass($current->extends);
+        }
+        return $slots;
     }
 
     protected function getNativeMethodReturnCppType(FunctionDef $function): string
@@ -576,17 +934,40 @@ trait NativeClassSupportTrait
             : ($this->getNativeObjectReturnType($function) ?? $function->returnType);
     }
 
-    protected function getNativeMethodParameterDeclarations(FunctionDef $function): string
+    protected function getNativeMethodParameterDeclarations(
+        FunctionDef $function,
+        ?int $parameterCount = null,
+    ): string
     {
         $args = [];
-        foreach ($function->argInfoList as $argument) {
+        $arguments = $parameterCount === null
+            ? $function->argInfoList
+            : array_slice($function->argInfoList, 0, $parameterCount);
+        foreach ($arguments as $argument) {
             if ($argument->variadic) {
-                $args[] = Type::ARRAY . ' ' . $argument->name;
+                $declaration = Type::ARRAY . ' ' . $argument->name;
             } else {
-                $args[] = $this->genArgumentDeclaration($argument);
+                $declaration = $this->genArgumentDeclaration($argument);
             }
+            $args[] = $declaration;
         }
         return implode(', ', $args);
+    }
+
+    /**
+     * C++ binds a default argument from the receiver's static type, while PHP
+     * uses the default declared by the dynamically selected override. Emit an
+     * overload for every positional arity instead of putting C++ defaults on
+     * a virtual declaration. Each override adapter can then call its concrete
+     * php_* function with the supplied prefix and let that declaration provide
+     * the correct dynamic defaults.
+     *
+     * @return list<int>
+     */
+    protected function getNativeVirtualMethodArities(FunctionDef $function): array
+    {
+        $total = count($function->argInfoList);
+        return range(min($function->argCountRequired, $total), $total);
     }
 
     protected function getNativeObjectPropertyType(PropertyDef $property): string
@@ -595,9 +976,21 @@ trait NativeClassSupportTrait
             return $this->getNativeObjectPointerType($property->class);
         }
         return match ($property->type) {
-            Type::STREAM, Type::BOX => Type::VAR,
+            // These language values use PHPX's boxed Variant ABI. Embedding
+            // the implementation classes by value would be incompatible with
+            // every arithmetic/conversion helper, all of which accepts and
+            // returns Variant while preserving immutable value semantics.
+            Type::STREAM, Type::BOX, Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL => Type::VAR,
             default => $property->type,
         };
+    }
+
+    protected function getNativeObjectInitializerName(string|ClassDef $class): string
+    {
+        // Keep compiler-owned helpers outside the php_* user symbol namespace.
+        // A PHP method named initialize() previously collided with
+        // php_<class>__initialize and produced duplicate C++ definitions.
+        return 'typephp_native_initialize_fields__' . $this->getNativeObjectCppName($class);
     }
 
     protected function getNativeObjectPropertyCppName(
@@ -740,20 +1133,35 @@ trait NativeClassSupportTrait
                 }
                 $code .= ';' . PHP_EOL;
             }
-            foreach ($class->methods as $method) {
-                if (!$this->isNativeVirtualMethod($class, $method)) {
-                    continue;
+            foreach ([...$class->methods, ...$class->abstractMethodDefs] as $method) {
+                foreach ($this->getNativeVirtualMethodSlots($class, $method) as [$slotClass, $slotMethod]) {
+                    $ownsSlot = $this->isSameClassName(
+                        $slotClass->getNamespacedName(false),
+                        $class->getNamespacedName(false),
+                    );
+                    foreach ($this->getNativeVirtualMethodArities($slotMethod->functionDef) as $arity) {
+                        $code .= '    virtual ' . $this->getNativeMethodReturnCppType($slotMethod->functionDef)
+                            . ' ' . $this->getNativeVirtualMethodName($slotClass, $method->name) . '('
+                            . $this->getNativeMethodParameterDeclarations($slotMethod->functionDef, $arity) . ')'
+                            . ($ownsSlot ? '' : ' override')
+                            . (($method->flags & Modifiers::ABSTRACT) ? ' = 0' : '')
+                            . ';' . PHP_EOL;
+                    }
                 }
-                $parentHasMethod = $class->extends !== ''
-                    && $this->hasClass($class->extends)
-                    && $this->getClass($class->extends)->hasMethod($method->name);
-                $code .= '    virtual ' . $this->getNativeMethodReturnCppType($method->functionDef)
-                    . ' ' . $this->getNativeVirtualMethodName($method->name) . '('
-                    . $this->getNativeMethodParameterDeclarations($method->functionDef) . ')'
-                    . ($parentHasMethod ? ' override' : '') . ';' . PHP_EOL;
+            }
+            if ($this->nativeObjectUsesVirtualClone($class)) {
+                $code .= '    virtual ' . $name . ' *' . self::NATIVE_VIRTUAL_CLONE_METHOD . '() const';
+                if ($class->extends !== '' && $this->isNativeObjectClass($class->extends)) {
+                    $code .= ' override';
+                }
+                if ($class->isAbstract()) {
+                    $code .= ' = 0';
+                }
+                $code .= ';' . PHP_EOL;
             }
             $code .= '};' . PHP_EOL;
-            $code .= 'void ' . $name . '__initialize(' . $name . ' &object);' . PHP_EOL;
+            $code .= 'void ' . $this->getNativeObjectInitializerName($class)
+                . '(' . $name . ' &object);' . PHP_EOL;
             $code .= 'void ' . $name . '__gc_trace(void *object, php::NativeMarker &marker);' . PHP_EOL;
             $code .= 'extern const php::NativeTypeDescriptor '
                 . $this->getNativeObjectDescriptorName($class) . ';' . PHP_EOL . PHP_EOL;
@@ -766,9 +1174,11 @@ trait NativeClassSupportTrait
         $cpp = $this->getNativeObjectCppName($class);
         $prefix = $cpp . '__gc';
         $code = '';
-        $code .= 'void ' . $cpp . '__initialize(' . $cpp . ' &this_) {' . PHP_EOL;
+        $code .= 'void ' . $this->getNativeObjectInitializerName($class)
+            . '(' . $cpp . ' &this_) {' . PHP_EOL;
         if ($class->extends !== '' && $this->isNativeObjectClass($class->extends)) {
-            $code .= '    ' . $this->getNativeObjectCppName($class->extends) . '__initialize(this_);' . PHP_EOL;
+            $code .= '    ' . $this->getNativeObjectInitializerName($class->extends)
+                . '(this_);' . PHP_EOL;
         }
         foreach ($class->properties as $property) {
             if ($property->isStatic() || $property->default === null) {
@@ -783,21 +1193,45 @@ trait NativeClassSupportTrait
         }
         $code .= '}' . PHP_EOL . PHP_EOL;
         foreach ($class->methods as $method) {
-            if (!$this->isNativeVirtualMethod($class, $method)) {
-                continue;
-            }
-            $function = $method->functionDef;
-            $returnType = $this->getNativeMethodReturnCppType($function);
-            $args = array_map(static fn (ArgInfo $arg): string => $arg->name, $function->argInfoList);
             $nativeFunction = self::PREFIX . $this->getNativeName(
                 $method->name,
                 $class->namespace,
                 $class->name,
             );
-            $code .= $returnType . ' ' . $cpp . '::' . $this->getNativeVirtualMethodName($method->name)
-                . '(' . $this->getNativeMethodParameterDeclarations($function) . ') {' . PHP_EOL;
-            $call = $nativeFunction . '(*this' . ($args === [] ? '' : ', ' . implode(', ', $args)) . ')';
-            $code .= '    ' . ($returnType === Type::VOID ? '' : 'return ') . $call . ';' . PHP_EOL;
+            foreach ($this->getNativeVirtualMethodSlots($class, $method) as [$slotClass, $slotMethod]) {
+                $slotFunction = $slotMethod->functionDef;
+                $returnType = $this->getNativeMethodReturnCppType($slotFunction);
+                foreach ($this->getNativeVirtualMethodArities($slotFunction) as $arity) {
+                    $args = array_map(
+                        static fn (ArgInfo $arg): string => $arg->name,
+                        array_slice($slotFunction->argInfoList, 0, $arity),
+                    );
+                    $code .= $returnType . ' ' . $cpp . '::'
+                        . $this->getNativeVirtualMethodName($slotClass, $method->name)
+                        . '(' . $this->getNativeMethodParameterDeclarations($slotFunction, $arity) . ') {' . PHP_EOL;
+                    $call = $nativeFunction . '(*this' . ($args === [] ? '' : ', ' . implode(', ', $args)) . ')';
+                    $code .= '    ' . ($returnType === Type::VOID ? '' : 'return ') . $call . ';' . PHP_EOL;
+                    $code .= '}' . PHP_EOL . PHP_EOL;
+                }
+            }
+        }
+
+        if ($this->nativeObjectUsesVirtualClone($class) && !$class->isAbstract()) {
+            $initializer = '';
+            $cloneMethod = $this->findNativeObjectMethod($class->getNamespacedName(false), '__clone');
+            if ($cloneMethod !== null) {
+                $declaringClass = $this->getClass($cloneMethod->functionDef->declaringClass);
+                $clone = self::PREFIX . $this->getNativeName(
+                    '__clone',
+                    $declaringClass->namespace,
+                    $declaringClass->name,
+                );
+                $initializer = $clone . '(this_); ';
+            }
+            $code .= $cpp . ' *' . $cpp . '::' . self::NATIVE_VIRTUAL_CLONE_METHOD . '() const {' . PHP_EOL;
+            $code .= '    return php::nativeClone<' . $cpp . '>('
+                . $this->getNativeObjectDescriptorName($class) . ', *this, '
+                . '[&](auto &this_) { ' . $initializer . '});' . PHP_EOL;
             $code .= '}' . PHP_EOL . PHP_EOL;
         }
         $code .= 'void ' . $prefix . '_trace(void *object, php::NativeMarker &marker) {' . PHP_EOL;

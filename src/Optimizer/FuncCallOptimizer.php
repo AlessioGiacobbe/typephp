@@ -165,9 +165,9 @@ trait FuncCallOptimizer
             'is_bool'   => ['constFold' => self::FOLD_SSA_TYPE, 'constFoldExtra' => Type::BOOL],
 
             // Custom handlers
-            'is_null'            => ['handler' => 'genIsNull'],
-            'get_class'          => ['handler' => 'genGetClassOptimized'],
-            'get_parent_class'   => ['handler' => 'genGetParentClass'],
+            'is_null'            => ['handler' => 'genIsNull', 'nativeReceiver' => true],
+            'get_class'          => ['handler' => 'genGetClassOptimized', 'nativeReceiver' => true],
+            'get_parent_class'   => ['handler' => 'genGetParentClass', 'nativeReceiver' => true],
             'function_exists'    => ['handler' => 'genFunctionExistsOptimized'],
             'func_get_arg'       => ['handler' => 'genFuncGetArgOptimized'],
             'func_get_args'      => ['handler' => 'genFuncGetArgsOptimized'],
@@ -177,7 +177,9 @@ trait FuncCallOptimizer
             'array_keys'         => ['handler' => 'genArrayKeys'],
             'array_key_exists'   => ['handler' => 'genArrayKeyExists'],
             'round'              => ['handler' => 'genRound'],
-            'count'              => ['handler' => 'genCount'],
+            // count() is also a language-level Native operation when its
+            // concrete receiver implements Countable.
+            'count'              => ['handler' => 'genCount', 'nativeReceiver' => true],
             'define'             => ['handler' => 'genDefine'],
             'is_callable'        => ['handler' => 'genIsCallable'],
         ];
@@ -216,10 +218,13 @@ trait FuncCallOptimizer
         // language-level Native keyword aliases and are lowered to an exact
         // Native method; every other PHP function rejects Native pointers.
         if (!isset($config['conversion'])) {
-            foreach ($expr->args as $arg) {
+            foreach ($expr->args as $index => $arg) {
                 if ($arg instanceof Node\Arg
                     && $this->isNativeObjectClass($this->detectClassOfExpr($arg->value))
                 ) {
+                    if (($config['nativeReceiver'] ?? false) && $index === 0) {
+                        continue;
+                    }
                     $this->fatalError(
                         $arg,
                         'Native objects cannot cross a dynamic PHP/ZendVM call boundary',
@@ -648,7 +653,11 @@ trait FuncCallOptimizer
 
     protected function genIsNull(string $n, Node\Expr\FuncCall $e, array $c): string
     {
-        return '(' . $this->parseExprAsValue($e->args[0]->value) . ').isNull()';
+        $value = $e->args[0]->value;
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($value))) {
+            return '(' . $this->parseExprAsValue($value) . ' == nullptr)';
+        }
+        return '(' . $this->parseExprAsValue($value) . ').isNull()';
     }
 
     protected function genIsCallable(string $n, Node\Expr\FuncCall $e, array $c): string|false
@@ -659,9 +668,24 @@ trait FuncCallOptimizer
         return $this->dispatchFuncCall('is_callable', $e, ['target' => 'php::fn::is_callable']);
     }
 
-    protected function genGetClassOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genGetClassOptimized(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
+        if ($e->args === []) {
+            if ($this->classDef?->nativeObject) {
+                $this->fatalError(
+                    $e,
+                    'Native classes do not support runtime class introspection; use `self::class` or a concrete class name',
+                );
+            }
+            return false;
+        }
         $obj = $e->args[0]->value;
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($obj))) {
+            $this->fatalError(
+                $e,
+                'Native classes do not support runtime class introspection; use `NativeClass::class`',
+            );
+        }
         if ($this->isVarExpr($obj) && $this->isTypedObject($obj->name)) {
             return $this->getLiteralString($this->getObjectType($obj->name));
         }
@@ -671,12 +695,24 @@ trait FuncCallOptimizer
     protected function genGetParentClass(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         if (count($e->args) === 0) {
+            if ($this->classDef?->nativeObject) {
+                $this->fatalError(
+                    $e,
+                    'Native classes do not support runtime class introspection; use `parent::class` or a concrete class name',
+                );
+            }
             if ($this->classDef && $this->classDef->extends) {
                 return $this->getLiteralString($this->classDef->extends);
             }
             return 'false';
         }
         $arg = $e->args[0]->value;
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($arg))) {
+            $this->fatalError(
+                $e,
+                'Native classes do not support runtime class introspection; use a concrete class name',
+            );
+        }
         if ($this->isScalarString($arg)) {
             $cls = $this->getClass($arg->value);
             if ($cls && $cls->extends) return $this->getLiteralString($cls->extends);
@@ -753,6 +789,29 @@ trait FuncCallOptimizer
 
     protected function genCount(string $n, Node\Expr\FuncCall $e, array $c): string
     {
+        $receiver = $e->args[0] ?? null;
+        $nativeClass = $receiver instanceof Node\Arg
+            ? $this->detectClassOfExpr($receiver->value)
+            : '';
+        if ($this->isNativeObjectClass($nativeClass)) {
+            if (count($e->args) !== 1) {
+                $this->fatalError($e, 'count() accepts exactly one argument for native objects');
+            }
+            if (!$this->isObjectClassStaticallyAssignableTo($nativeClass, 'Countable')) {
+                $this->fatalError($e, 'count() requires a native class implementing Countable');
+            }
+
+            // Native objects have no zend_class_entry/count_elements handler.
+            // Countable gives us an exact compile-time target, so lower this
+            // directly and retain the same zero-cost call path as $obj->count().
+            return $this->parseMethodCall(new Node\Expr\MethodCall(
+                $receiver->value,
+                new Node\Identifier('count'),
+                [],
+                $e->getAttributes(),
+            ));
+        }
+
         $folded = $this->doFoldCountLiteral($e);
         if ($folded !== false) return $folded;
         if (count($e->args) >= 2) {
@@ -833,8 +892,14 @@ trait FuncCallOptimizer
         $funcName = $expr->args[0]->value;
         if ($this->isScalarString($funcName)) {
             $nameLower = strtolower(trim($funcName->value, '\\'));
-            if ($this->findNativeFunction($nameLower)) {
-                return 'true';
+            $nativeFunction = $this->findNativeFunction($nameLower);
+            if ($nativeFunction) {
+                // A function whose ABI contains Native pointers is callable
+                // only from generated TypePHP C++. It has no Zend wrapper and
+                // therefore must remain invisible to function_exists().
+                return $this->functionUsesNativeObject($this->getFunction($nativeFunction))
+                    ? 'false'
+                    : 'true';
             }
             $funcName = $this->getLiteralString($nameLower);
             return 'php::fn::function_exists(' . $funcName . ')';

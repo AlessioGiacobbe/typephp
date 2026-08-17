@@ -238,7 +238,7 @@ trait AssignOpTrait
                     || $this->hasScopeGlobalVar($leftName)
                     || $this->hasStaticVar($leftName);
                 if ($allowed && ($this->hasScopeGlobalVar($leftName) || $this->hasStaticVar($leftName))) {
-                    $this->promoteGlobalOrStaticToNativeObject($leftName, $rightClass);
+                    $this->promoteGlobalOrStaticToNativeObject($leftName, $rightClass, $right);
                 }
             } elseif ($left instanceof Expr\PropertyFetch
                 && $this->isVarExpr($left->var)
@@ -263,6 +263,15 @@ trait AssignOpTrait
                         && $property->type === Type::OBJECT
                         && $this->isNativeObjectClass($property->class);
                 }
+            } elseif ($left instanceof Expr\ArrayDimFetch && $this->isStdContainerExpr($left)) {
+                $info = $this->isStdArrayExpr($left)
+                    ? $this->getStdArrayInfo($left)
+                    : $this->getStdContainerInfo($left);
+                // A std container with a concrete Native class element type is
+                // compile-time storage, not a PHP array/Variant boundary.
+                $allowed = $info !== null
+                    && isset($info['class'])
+                    && $this->isNativeObjectClass($info['class']);
             }
             if (!$allowed) {
                 $this->fatalError(
@@ -350,6 +359,10 @@ trait AssignOpTrait
             // 类型推断，获取对象的类名，如果不是对象则返回空字符串
             $rightClass = $this->detectClassOfExpr($right);
             if ($this->isNativeObjectVar($var)) {
+                // Assignment rebinds the local pointer slot. Even an
+                // assignment nested in a conditional invalidates the simple
+                // non-null proof; later reads fall back to nativeDeref().
+                $this->forgetNativeObjectNonNull($var);
                 $leftClass = $this->getNativeObjectVarClass($var);
                 if ($this->isNull($right)) {
                     return $var . ' = nullptr';
@@ -436,6 +449,7 @@ trait AssignOpTrait
                     }
                 } elseif ($this->isVarExpr($right)) {
                     $rightVar = $this->parseIdentifier($right);
+                    $this->assertStdContainerDoesNotEscapeNativeObjects($right, $rightVar);
                     $type = $this->isStdContainer($rightVar) ? Type::ARRAY : $this->getVarType($rightVar);
                     $finalVarType = $this->getNormalAssignType($type);
                     $leftClass = $this->getDeclaredObjectType($var);
@@ -598,12 +612,20 @@ trait AssignOpTrait
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
         $this->assertNotNullsafeWriteContext($node->var);
+        $this->assertNativePropertyHookDirectWriteTarget($node->var);
         $pythonOperator = $this->parsePythonAssignOperator($node);
         if ($pythonOperator !== null) {
             return $pythonOperator;
         }
         $propertyWriteTarget = $this->preparePropertyWriteTarget($node->var);
         $this->guardLiteralDivisionByZero($node->expr, $op);
+
+        if ($node->var instanceof Expr\PropertyFetch && $this->isNativeObjectPropertyHook($node->var)) {
+            $this->fatalError(
+                $node->var,
+                'Native property hooks only support direct reads and assignments',
+            );
+        }
 
         if ($node->var instanceof Expr\PropertyFetch && $this->isReadOnlyPropertyHook($node->var)) {
             $this->fatalError($node->var, 'Cannot write to read-only hooked property');
@@ -754,6 +776,21 @@ trait AssignOpTrait
         }
 
         $rightType = $this->detectTypeOfExpr($node->expr);
+        if (in_array($def->type, [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT], true)) {
+            $binaryOp = $this->removeAssignOp($op);
+            $leftExpr = $this->parseWritableIdentifier($node->var);
+            $rightExpr = (string) $this->parseIdentifier($node->expr);
+            $value = $this->parseBigAssignOpExpr(
+                $leftExpr,
+                $def->type,
+                $rightExpr,
+                $rightType,
+                $binaryOp,
+                $node->var,
+                $node->expr,
+            );
+            return $leftExpr . ' = ' . $value;
+        }
         if ($this->isFixedObjectProp($def) && $rightType !== Type::VAR && !$this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
             $this->fatalError(
                 $node->var,
@@ -906,9 +943,14 @@ trait AssignOpTrait
     protected function parseAssignRef(Expr\AssignRef $expr): string
     {
         $this->assertNotNullsafeWriteContext($expr->var);
+        $this->assertNativePropertyHookDirectWriteTarget($expr->var);
+        $this->assertNativePropertyHookDirectWriteTarget($expr->expr);
         if ($expr->expr instanceof Expr\NullsafePropertyFetch) {
             $this->fatalError($expr->expr, 'Cannot take reference of a nullsafe chain');
         }
+
+        $this->assertNativeObjectReferenceForbidden($expr->var, $expr);
+        $this->assertNativeObjectReferenceForbidden($expr->expr, $expr);
 
         // A reference would outlive the constructor-only write window and
         // make later mutations invisible to the compiler. It is therefore
@@ -1015,6 +1057,7 @@ trait AssignOpTrait
 
     protected function parseAssignPropertyArrayDim(NodeAbstract $left, NodeAbstract $right): string
     {
+        $this->assertNativePropertyHookDirectWriteTarget($left);
         $propertyWriteTarget = $this->preparePropertyWriteTarget($left->var);
         $code     = '';
         $value    = $this->parseExprAsValue($right);

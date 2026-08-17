@@ -45,6 +45,10 @@ trait UnaryExpressionTrait
     protected function parseCastInt(Expr\Cast\Int_ $node): string
     {
         $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
+        $native = $this->parseNativeObjectExplicitConversion($node->expr, 'toInt');
+        if ($native !== null) {
+            return $native;
+        }
         return $this->convertIntExpr(
             $this->parseExprAsValue($node->expr),
             $this->detectTypeOfExpr($node->expr)
@@ -60,6 +64,10 @@ trait UnaryExpressionTrait
     protected function parseCastBool(Expr\Cast\Bool_ $node): string
     {
         $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
+        $native = $this->parseNativeObjectExplicitConversion($node->expr, 'toBool');
+        if ($native !== null) {
+            return $native;
+        }
         return $this->convertBoolExpr(
             $this->parseExprAsValue($node->expr),
             $this->detectTypeOfExpr($node->expr)
@@ -69,6 +77,9 @@ trait UnaryExpressionTrait
     protected function parseCastObject(Expr\Cast\Object_ $node): string
     {
         $this->assertExprCanBeUsedAsValue($node->expr, 'cast operand');
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($node->expr))) {
+            $this->fatalError($node, 'Native objects cannot be converted to Zend objects');
+        }
         return $this->convertObjectExpr($this->parseExprAsValue($node->expr));
     }
 

@@ -1742,6 +1742,9 @@ CODE;
         $code .= $this->genDefaultArgumentHelperDeclarations();
 
         foreach ($this->symbols->functions() as $name => $func) {
+            if ($func->abstractMethod) {
+                continue;
+            }
             $functionDeclarationPrefix = $this->getFunctionDeclarationPrefix($func);
             $list = [];
             if ($func->method) {
@@ -3731,6 +3734,13 @@ CODE;
             if (!$argInfo->variadic and $argInfo->declaredClass) {
                 $this->addObject($argInfo->name, $argInfo->declaredClass);
             }
+            $argumentClass = $argInfo->declaredClass ?: $argInfo->class;
+            if (!$argInfo->nullable && $this->isNativeObjectClass($argumentClass)) {
+                // genNativeObjectParameterChecks() establishes this invariant
+                // once at function entry. Rebinding the local pointer later
+                // invalidates it conservatively in parseAssign()/parseUnset().
+                $this->markNativeObjectNonNull($argInfo->name);
+            }
         }
 
         if ($this->functionDef->generator) {
@@ -3747,6 +3757,7 @@ CODE;
             $oriTmpVarIndex = $this->context->tmpVarIndex;
             $oriDeclaredObjects = $this->context->declaredObjects;
             $oriNativeObjects = $this->context->nativeObjects;
+            $oriNonNullNativeObjects = $this->context->nonNullNativeObjects;
             /** SSA/e-SSA analysis for the current function. Built once per function, discarded with the context. */
             $ssaBuilder = new SsaBuilder($v->stmts, $this->functionDef->argInfoList);
             $ssaBuilder->build();
@@ -3764,6 +3775,7 @@ CODE;
                 $oriTmpVarIndex,
                 $oriDeclaredObjects,
                 $oriNativeObjects,
+                $oriNonNullNativeObjects,
             );
         }
 
@@ -3918,7 +3930,7 @@ CODE;
         }
     }
 
-    private function validateMethodOverrideSignature(
+    protected function validateMethodOverrideSignature(
         NodeAbstract $v,
         string $methodName,
         MethodDef $childMethodDef,
@@ -4002,6 +4014,13 @@ CODE;
             if (!$childArg->variadic && $childArg->defaultValue === null) {
                 $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
+        }
+
+        if ($this->classDef?->nativeObject
+            && $this->hasClass($parentClass)
+            && $this->getClass($parentClass)->nativeObject
+        ) {
+            $this->assertNativeVirtualByRefStorageCompatible($v, $childFuncDef, $parentFuncDef);
         }
     }
 
@@ -4609,7 +4628,7 @@ CODE;
         }
     }
 
-    private function findClassMethodDef(ClassDef $classDef, string $methodName, bool $includeAbstract = true): ?MethodDef
+    protected function findClassMethodDef(ClassDef $classDef, string $methodName, bool $includeAbstract = true): ?MethodDef
     {
         $current = $classDef;
         while (true) {

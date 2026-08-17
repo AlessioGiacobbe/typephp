@@ -12,6 +12,8 @@ class NativeZeroValue
     public string $name;
     public array $items;
     public mixed $value;
+    public Stream $stream;
+    public stdClass $requiredObject;
     public ?stdClass $object;
     public ?NativeZeroValue $child;
 }
@@ -26,6 +28,8 @@ function main(): void
         $value->name,
         $value->items,
         $value->value,
+        $value->stream,
+        $value->requiredObject,
         $value->object,
         $value->child === null,
     );
@@ -38,6 +42,8 @@ float(0)
 string(0) ""
 array(0) {
 }
+NULL
+NULL
 NULL
 NULL
 bool(true)

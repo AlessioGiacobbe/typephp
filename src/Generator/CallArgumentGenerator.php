@@ -20,7 +20,12 @@ use TypePhp\Generator\Symbol;
 
 trait CallArgumentGenerator
 {
-    protected function parseNativeCallArgs(array $callArgs, string $nativeFunc, int $parameterOffset = 0): string
+    protected function parseNativeCallArgs(
+        array $callArgs,
+        string $nativeFunc,
+        int $parameterOffset = 0,
+        bool $deferTrailingDefaults = false,
+    ): string
     {
         $functionDef = $this->getFunction($nativeFunc);
         $providedArgs = [];
@@ -65,6 +70,12 @@ trait CallArgumentGenerator
         // lowered in source order; sorting raw AST arguments here would also
         // reorder their side effects.
         if ($hasNamedArg) {
+            $lastProvidedIndex = $providedArgs === []
+                ? $parameterOffset - 1
+                : max(array_keys($providedArgs));
+            if ($deferTrailingDefaults && $variadicArgCount > 0) {
+                $lastProvidedIndex = $variadicArgIndex;
+            }
             // 命名参数中间存在空洞，需要使用默认参数填充
             foreach ($functionDef->argInfoList as $k => $argInfo) {
                 if ($k < $parameterOffset) {
@@ -74,6 +85,20 @@ trait CallArgumentGenerator
                     continue;
                 }
                 if (!isset($providedArgs[$k])) {
+                    // A Native virtual overload must omit a trailing default
+                    // so the dynamically selected implementation supplies it.
+                    // A named-argument hole before a later argument cannot be
+                    // represented by a positional C++ overload without a
+                    // presence mask, so reject that uncommon shape explicitly.
+                    if ($deferTrailingDefaults && $k > $lastProvidedIndex) {
+                        continue;
+                    }
+                    if ($deferTrailingDefaults) {
+                        $this->fatalError(
+                            reset($callArgs),
+                            'Named calls to Native virtual methods cannot skip an earlier optional parameter',
+                        );
+                    }
                     if ($argInfo->default === '') {
                         $errorNode = null;
                         foreach ($callArgs as $a) {
@@ -97,7 +122,7 @@ trait CallArgumentGenerator
         if (count($sourceArgs) === 0
             and count($functionDef->argInfoList) === $parameterOffset + 1
             and $functionDef->argInfoList[$parameterOffset]->variadic) {
-            return '{}';
+            return $deferTrailingDefaults ? '' : '{}';
         }
 
         $resolvedArgs = [];
@@ -606,6 +631,12 @@ trait CallArgumentGenerator
     protected function parseCallArgValue(Node\Arg $arg): string
     {
         $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
+        if ($this->isVarExpr($arg->value)) {
+            $this->assertStdContainerDoesNotEscapeNativeObjects(
+                $arg,
+                $this->parseIdentifier($arg->value),
+            );
+        }
         $class = $this->detectClassOfExpr($arg->value);
         if ($class !== '' && $this->isNativeObjectClass($class)) {
             $this->fatalError(
@@ -655,6 +686,8 @@ trait CallArgumentGenerator
         if ($this->isReferenceWrapperCall($arg->value)) {
             $arg->value = $this->unwrapReferenceWrapperCall($arg->value, $arg);
         }
+
+        $this->assertNativeObjectReferenceForbidden($arg->value, $arg);
 
         if ($this->isVarExpr($arg->value)) {
             return $this->parseArgRefVar($arg, $this->parseIdentifier($arg->value));

@@ -264,6 +264,7 @@ trait TypeConversionTrait
 
     protected function convertToRef(NodeAbstract $expr): string
     {
+        $this->assertNativeObjectReferenceForbidden($expr, $expr);
         $this->checkLeftValue($expr);
         $var = $this->parseIdentifier($expr);
         if ($this->isVarExpr($expr) and $this->isNativeTypeVar($var)) {

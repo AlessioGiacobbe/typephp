@@ -95,6 +95,27 @@ trait StdContainerTrait
         return $this->context->stdContainers[$var];
     }
 
+    protected function getStdContainerNativeObjectClass(string $var): string
+    {
+        if (!$this->isStdContainer($var)) {
+            return '';
+        }
+        $class = $this->getStdContainerVarInfo($var)['class'] ?? '';
+        return is_string($class) && $this->isNativeObjectClass($class) ? $class : '';
+    }
+
+    protected function assertStdContainerDoesNotEscapeNativeObjects(
+        NodeAbstract $node,
+        string $var,
+    ): void {
+        if ($this->getStdContainerNativeObjectClass($var) !== '') {
+            $this->fatalError(
+                $node,
+                'Std containers holding Native objects cannot cross a PHP/ZendVM value boundary',
+            );
+        }
+    }
+
     protected function getStdContainerKeyType(string $var): string
     {
         if ($this->isStdVector($var) or $this->isStdArray($var)) {
@@ -107,7 +128,14 @@ trait StdContainerTrait
     {
         $info = $this->getStdContainerVarInfo($var);
         if ($this->isStdArray($var)) {
-            return count($info['sizes']) > 1 ? Type::ARRAY : $info['type'];
+            if (count($info['sizes']) > 1) {
+                return Type::ARRAY;
+            }
+        }
+        if ($info['type'] === Type::OBJECT && $this->isNativeObjectClass($info['class'] ?? '')) {
+            $this->addNativeObject($valueVar, $info['class']);
+            unset($this->context->objects[$valueVar]);
+            return $this->getNativeObjectPointerType($info['class']);
         }
         if ($info['type'] === Type::OBJECT and $info['class']) {
             $this->addObject($valueVar, $info['class']);
@@ -117,10 +145,10 @@ trait StdContainerTrait
         return $info['type'];
     }
 
-    protected function getStdArrayDecl(string $type, array $sizes): string
+    protected function getStdArrayDecl(string $type, array $sizes, ?string $class = null): string
     {
         $decl = str_repeat(Type::STD_ARRAY . '<', count($sizes));
-        $decl .= $this->getStdContainerElementType($type);
+        $decl .= $this->getStdContainerElementType($type, $class);
         for ($i = count($sizes) - 1; $i >= 0; $i--) {
             $decl .= ', ' . $sizes[$i] . '>';
         }
@@ -146,7 +174,7 @@ trait StdContainerTrait
         $nestedSizes = array_slice($sizes, $accessLevel);
         return [
             'kind' => 'array',
-            'decl' => $this->getStdArrayDecl($info['type'], $nestedSizes),
+            'decl' => $this->getStdArrayDecl($info['type'], $nestedSizes, $info['class']),
             'type' => $info['type'],
             'class' => $info['class'],
             'sizes' => array_reverse($nestedSizes),
@@ -584,8 +612,11 @@ trait StdContainerTrait
         return $container . '_ref.offsetUnset(' . $index . ')';
     }
 
-    protected function getStdContainerElementType(string $type): string
+    protected function getStdContainerElementType(string $type, ?string $class = null): string
     {
+        if ($class !== null && $this->isNativeObjectClass($class)) {
+            return $this->getNativeObjectPointerType($class);
+        }
         return match ($type) {
             Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL, Type::STREAM, Type::BOX => Type::VAR,
             default => $type,
@@ -678,6 +709,20 @@ trait StdContainerTrait
             }
             return $this->convertExprFromType($targetType, $valueExpr);
         }
+        if ($this->isNativeObjectClass($class)) {
+            if ($this->isNull($expr)) {
+                return 'nullptr';
+            }
+            $rightClass = $this->detectClassOfExpr($expr);
+            if ($rightClass === '' || !$this->isObjectClassStaticallyAssignableTo($rightClass, $class)) {
+                $actual = $rightClass === '' ? $this->detectTypeOfExpr($expr) : $rightClass;
+                $this->fatalError(
+                    $expr,
+                    "Cannot assign value of type `{$actual}` to std container value of native class `{$class}`",
+                );
+            }
+            return $valueExpr;
+        }
         $rightClass = $this->detectClassOfExpr($expr);
         if ($rightClass !== '') {
             if (!$this->isObjectClassStaticallyAssignableTo($rightClass, $class)) {
@@ -768,9 +813,15 @@ trait StdContainerTrait
         $this->fatalError($expr, "{$owner} key only supports Type::Int or Type::String");
     }
 
-    protected function getStdMapDecl(string $containerType, string $keyType, string $valueType): string
+    protected function getStdMapDecl(
+        string $containerType,
+        string $keyType,
+        string $valueType,
+        ?string $class = null,
+    ): string
     {
-        return $containerType . '<' . $keyType . ', ' . $this->getStdContainerElementType($valueType) . '>';
+        return $containerType . '<' . $keyType . ', '
+            . $this->getStdContainerElementType($valueType, $class) . '>';
     }
 
     protected function parseStdArray(string $var, Expr\StaticCall $expr): string
@@ -807,7 +858,7 @@ trait StdContainerTrait
         }
         $totalBytes = array_product($nesting) * $byte;
 
-        $decl = $this->getStdArrayDecl($type, $nesting);
+        $decl = $this->getStdArrayDecl($type, $nesting, $typeInfo['class']);
         $this->context->stdArrays[$var] = $this->addStdTypeId([
             'kind' => 'array',
             'decl' => $decl,
@@ -833,7 +884,8 @@ trait StdContainerTrait
             }
             $size = $expr->args[1]->value->value;
         }
-        $decl = Type::STD_VECTOR . '<' . $this->getStdContainerElementType($type) . '>';
+        $decl = Type::STD_VECTOR . '<'
+            . $this->getStdContainerElementType($type, $typeInfo['class']) . '>';
         $this->context->stdContainers[$var] = $this->addStdTypeId([
             'kind' => 'vector',
             'decl' => $decl,
@@ -862,7 +914,7 @@ trait StdContainerTrait
         $keyType = $this->parseStdMapKeyType($expr->args[0]->value, $funcName);
         $valueTypeInfo = $this->parseStdValueTypeInfo($expr->args[1]->value, $funcName);
         $valueType = $valueTypeInfo['type'];
-        $decl = $this->getStdMapDecl($containerType, $keyType, $valueType);
+        $decl = $this->getStdMapDecl($containerType, $keyType, $valueType, $valueTypeInfo['class']);
         $this->context->stdContainers[$var] = $this->addStdTypeId([
             'kind' => $kind,
             'decl' => $decl,

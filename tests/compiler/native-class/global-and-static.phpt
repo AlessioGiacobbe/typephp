@@ -9,6 +9,9 @@ class NativeCounter
     public int $value;
 }
 
+#[Native]
+class NativeCounterChild extends NativeCounter {}
+
 function initializeGlobal(): void
 {
     global $nativeGlobal;
@@ -22,6 +25,13 @@ function readGlobal(): int
     return $nativeGlobal->value;
 }
 
+function replaceGlobalWithChild(): void
+{
+    global $nativeGlobal;
+    $nativeGlobal = new NativeCounterChild();
+    $nativeGlobal->value = 41;
+}
+
 function nextStatic(): int
 {
     static $counter = new NativeCounter();
@@ -32,11 +42,14 @@ function main(): void
 {
     initializeGlobal();
     var_dump(readGlobal());
+    replaceGlobalWithChild();
+    var_dump(readGlobal());
     var_dump(nextStatic());
     var_dump(nextStatic());
 }
 ?>
 --EXPECT--
 int(40)
+int(41)
 int(1)
 int(2)

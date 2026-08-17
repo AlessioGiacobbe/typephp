@@ -99,6 +99,25 @@ trait FunctionCallTrait
         } elseif ($expr->name->getType() === 'Name' or $expr->name->getType() === 'Name_FullyQualified') {
             $name = $this->parseIdentifier($expr->name);
             $globalName = ltrim($name, '\\');
+            if ($globalName === 'get_called_class' && $this->classDef?->nativeObject) {
+                $this->fatalError(
+                    $expr,
+                    'Native classes do not support late static binding; use `self::class` or a concrete class name',
+                );
+            }
+            if (($globalName === 'get_class' || $globalName === 'get_parent_class')
+                && (($expr->args === [] && $this->classDef?->nativeObject)
+                    || ($expr->args !== []
+                        && $this->isNativeObjectClass($this->detectClassOfExpr($expr->args[0]->value))))
+            ) {
+                $replacement = $globalName === 'get_class'
+                    ? '`self::class` or a concrete class name'
+                    : '`parent::class` or a concrete class name';
+                $this->fatalError(
+                    $expr,
+                    "Native classes do not support runtime class introspection; use {$replacement}",
+                );
+            }
             if ($this->isInternalFunction($globalName)) {
                 $this->assertWasiFunctionSupported($expr, $globalName);
                 $this->markInternalFunctionCallbackCall($globalName, $expr->args);
@@ -110,7 +129,20 @@ trait FunctionCallTrait
                 if (count($expr->args) !== 1 || $expr->args[0]->unpack) {
                     $this->fatalError($expr, 'The any function expects exactly one non-unpacked argument');
                 }
-                return $this->parseExprAsValue($expr->args[0]->value);
+                $value = $expr->args[0]->value;
+                if ($this->isNativeObjectClass($this->detectClassOfExpr($value))) {
+                    $this->fatalError(
+                        $value,
+                        'Native objects cannot be converted to mixed with any(); use an explicitly typed Native variable',
+                    );
+                }
+                if ($this->isVarExpr($value)) {
+                    $this->assertStdContainerDoesNotEscapeNativeObjects(
+                        $value,
+                        $this->parseIdentifier($value),
+                    );
+                }
+                return $this->parseExprAsValue($value);
             }
             if ($globalName === 'expected' || $globalName === 'unexpected') {
                 if (count($expr->args) !== 1 || $expr->args[0]->unpack) {
@@ -125,6 +157,11 @@ trait FunctionCallTrait
             $nativeFn = $this->findNativeFunction($name);
             if ($nativeFn) {
                 $expr->setAttribute('nativeCall', $nativeFn);
+                if ($expr->isFirstClassCallable()
+                    && $this->functionUsesNativeObject($this->getFunction($nativeFn))
+                ) {
+                    $this->fatalError($expr, 'Native ABI functions cannot be converted to Zend closures');
+                }
                 // 函数调用占位符，不是真实的函数调用
                 if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
                     return $this->genPlaceHolder($this->identifierToStr($expr->name));

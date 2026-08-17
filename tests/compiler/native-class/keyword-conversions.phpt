@@ -51,6 +51,10 @@ function main(): void
     var_dump($value->toFloat());
     var_dump($value->toBool());
     var_dump($value->toString());
+    var_dump((array) $value);
+    var_dump((int) $value);
+    var_dump((float) $value);
+    var_dump((bool) $value);
     var_dump((string) $value);
     var_dump(strval($value));
 
@@ -68,6 +72,13 @@ int(7)
 float(7.5)
 bool(true)
 string(7) "value=7"
+array(1) {
+  [0]=>
+  int(7)
+}
+int(7)
+float(7.5)
+bool(true)
 string(7) "value=7"
 string(7) "value=7"
 string(5) "magic"

@@ -9,6 +9,7 @@
 namespace TypePhp\Context;
 
 use PhpParser\Node\Expr\Variable;
+use PhpParser\NodeAbstract;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\FunctionDef;
 use TypePhp\Entity\InterfaceDef;
@@ -74,7 +75,11 @@ trait CompilationStateTrait
         $this->globalVars[$name] = $type;
     }
 
-    protected function promoteGlobalOrStaticToNativeObject(string $name, string $class): void
+    protected function promoteGlobalOrStaticToNativeObject(
+        string $name,
+        string $class,
+        ?NodeAbstract $node = null,
+    ): void
     {
         $class = ltrim($class, '\\');
         if ($this->hasStaticVar($name)) {
@@ -85,6 +90,19 @@ trait CompilationStateTrait
             $this->context->globalVars[$name] = $this->getNativeObjectPointerType($class);
         } else {
             return;
+        }
+        if (isset($this->nativeGlobalObjects[$slot])) {
+            $existing = $this->nativeGlobalObjects[$slot];
+            if (!$this->isObjectClassStaticallyAssignableTo($class, $existing)) {
+                $message = "Native global/static slot cannot change from `{$existing}` to `{$class}`";
+                if ($node !== null) {
+                    $this->fatalError($node, $message);
+                }
+                $this->error($message);
+            }
+            // The first assignment fixes the C++ slot type. A derived object
+            // remains assignable, but must not narrow later uses of the slot.
+            $class = $existing;
         }
         $this->globalVars[$slot] = $this->getNativeObjectPointerType($class);
         $this->nativeGlobalObjects[$slot] = $class;

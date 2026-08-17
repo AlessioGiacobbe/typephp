@@ -6,6 +6,27 @@ use TypePhp\Exception\TestError;
 
 final class NativeClassValidationTest extends \BaseTest
 {
+    public function testRejectsNativeAttributeOnInterface(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Native can only be applied to named classes');
+        $this->compile('native-class-attribute-interface.php');
+    }
+
+    public function testRejectsNativeAttributeOnTrait(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Native can only be applied to named classes');
+        $this->compile('native-class-attribute-trait.php');
+    }
+
+    public function testRejectsNativeAttributeOnEnum(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Native can only be applied to named classes');
+        $this->compile('native-class-attribute-enum.php');
+    }
+
     public function testRejectsUntypedProperty(): void
     {
         $this->expectException(TestError::class);
@@ -48,6 +69,55 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-std-container-property.php');
     }
 
+    public function testRejectsNativeStdContainerConversionToPhpArray(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects cannot cross a PHP/ZendVM value boundary');
+        $this->compile('native-class-std-container-escape.php');
+    }
+
+    public function testRejectsNativeStdContainerPassedAsPhpValue(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects cannot cross a PHP/ZendVM value boundary');
+        $this->compile('native-class-std-container-argument.php');
+    }
+
+    public function testRejectsCompoundWritesToNativePropertyHooks(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native property hooks only support direct reads and assignments');
+        $this->compile('native-class-property-hook-compound.php');
+    }
+
+    public function testRejectsIssetOnNativePropertyHooks(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('isset()/empty() are not supported for Native property hooks');
+        $this->compile('native-class-property-hook-isset.php');
+    }
+
+    public function testRejectsIndirectWritesToNativePropertyHooks(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native property hooks only support direct reads and assignments');
+        $this->compile('native-class-property-hook-indirect-write.php');
+    }
+
+    public function testRejectsIndirectUnsetOnNativePropertyHooks(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native property hooks only support direct reads and assignments');
+        $this->compile('native-class-property-hook-indirect-unset.php');
+    }
+
+    public function testRejectsIndirectReferencesToNativePropertyHooks(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native property hooks only support direct reads and assignments');
+        $this->compile('native-class-property-hook-indirect-reference.php');
+    }
+
     public function testRejectsDynamicInstanceofBecauseNativeClassesHaveNoRuntimeTypeLookup(): void
     {
         $this->expectException(TestError::class);
@@ -83,6 +153,20 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-closure-capture.php');
     }
 
+    public function testRejectsNativeMethodFirstClassCallable(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native object methods cannot be converted to Zend closures');
+        $this->compile('native-class-first-class-callable.php');
+    }
+
+    public function testRejectsNativeAbiFunctionFirstClassCallable(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native ABI functions cannot be converted to Zend closures');
+        $this->compile('native-class-function-first-class-callable.php');
+    }
+
     public function testRejectsNativeObjectClosureParameter(): void
     {
         $this->expectException(TestError::class);
@@ -107,8 +191,71 @@ final class NativeClassValidationTest extends \BaseTest
     public function testRejectsUnsupportedNativeObjectUnion(): void
     {
         $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Native object types cannot be combined with other union or intersection members');
+        $this->expectExceptionMessage('Native object types do not support union or intersection declarations; use nullable ?Class syntax');
         $this->compile('native-class-union-signature.php');
+    }
+
+    public function testRejectsNativeObjectReferenceParameter(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native object parameters cannot be passed by reference');
+        $this->compile('native-class-reference-parameter.php');
+    }
+
+    public function testRejectsNativeObjectReferenceReturn(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be returned by reference');
+        $this->compile('native-class-reference-return.php');
+    }
+
+    public function testRejectsNativeObjectReferenceAssignment(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be referenced; object assignment already shares identity');
+        $this->compile('native-class-reference-assignment.php');
+    }
+
+    public function testRejectsNativeObjectReferenceKeywordMethod(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be referenced; object assignment already shares identity');
+        $this->compile('native-class-reference-method.php');
+    }
+
+    public function testRejectsNativeObjectReferenceFunction(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be referenced; object assignment already shares identity');
+        $this->compile('native-class-reference-function.php');
+    }
+
+    public function testRejectsNativeObjectVariadicParameter(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native object parameters cannot be variadic');
+        $this->compile('native-class-variadic-parameter.php');
+    }
+
+    public function testRejectsNativeObjectPassedToUntypedParameter(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot cross a PHP/ZendVM argument boundary');
+        $this->compile('native-class-untyped-parameter.php');
+    }
+
+    public function testRejectsNativeObjectNullUnionInFavorOfNullableSyntax(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native object types do not support union or intersection declarations; use nullable ?Class syntax');
+        $this->compile('native-class-null-union-parameter.php');
+    }
+
+    public function testRejectsImplicitNullableNativeParameterDefault(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('A Native object parameter with a null default must use explicit nullable ?Class syntax');
+        $this->compile('native-class-implicit-nullable-parameter.php');
     }
 
     public function testRejectsIncorrectNativeKeywordReturnType(): void
@@ -243,4 +390,138 @@ final class NativeClassValidationTest extends \BaseTest
         $this->expectExceptionMessage('must be compatible with `ArrayAccess::offsetExists()`');
         $this->compile('native-class-internal-interface-parameter.php');
     }
+
+    public function testRejectsExplicitNativeConstructorCall(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Explicit calls to native object constructors are not supported');
+        $this->compile('native-class-explicit-constructor-call.php');
+    }
+
+    public function testRejectsInternalInterfaceThatPhpClassesCannotImplement(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('cannot implement internal interface `Throwable`');
+        $this->compile('native-class-non-implementable-interface.php');
+    }
+
+    public function testCountRequiresCountableContract(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('count() requires a native class implementing Countable');
+        $this->compile('native-class-count-without-countable.php');
+    }
+
+    public function testRejectsNativeLooseEquality(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects do not support the `==` operator; use `===` or `!==` for identity comparison');
+        $this->compile('native-class-loose-equality.php');
+    }
+
+    public function testRejectsNativeArithmeticOperators(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects do not support the `+` operator');
+        $this->compile('native-class-arithmetic-operator.php');
+    }
+
+    public function testRejectsInaccessibleNativeCloneMethod(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Call to private NativePrivateClone::__clone()');
+        $this->compile('native-class-private-clone.php');
+    }
+
+    public function testRejectsNativeObjectReferenceParameterBeforeVirtualAbiGeneration(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native object parameters cannot be passed by reference');
+        $this->compile('native-class-virtual-byref-variance.php');
+    }
+
+    public function testRejectsNamedArgumentHoleInNativeVirtualCall(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Named calls to Native virtual methods cannot skip an earlier optional parameter');
+        $this->compile('native-class-virtual-named-gap.php');
+    }
+
+    public function testRejectsLateStaticConstructionInNativeClass(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native classes do not support `new static()`');
+        $this->compile('native-class-new-static.php');
+    }
+
+    public function testRejectsGetCalledClassInNativeClass(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native classes do not support late static binding');
+        $this->compile('native-class-get-called-class.php');
+    }
+
+    public function testRejectsGetClassForNativeObject(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native classes do not support runtime class introspection');
+        $this->compile('native-class-get-class.php');
+    }
+
+    public function testRejectsImplicitGetClassInNativeMethod(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native classes do not support runtime class introspection');
+        $this->compile('native-class-get-class-implicit.php');
+    }
+
+    public function testRejectsGetParentClassForNativeObject(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native classes do not support runtime class introspection');
+        $this->compile('native-class-get-parent-class.php');
+    }
+
+    public function testRejectsChangingAnInferredNativeGlobalType(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native global/static slot cannot change from `NativeGlobalFirst` to `NativeGlobalSecond`');
+        $this->compile('native-class-global-type-change.php');
+    }
+
+    public function testRejectsLateStaticConstantResolutionInNativeClass(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native classes do not support late static binding; use `self::` or a concrete class name');
+        $this->compile('native-class-late-static-constant.php');
+    }
+
+    public function testRejectsNativeObjectCastToZendObject(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be converted to Zend objects');
+        $this->compile('native-class-object-cast.php');
+    }
+
+    public function testRejectsErasingNativeObjectTypeWithAny(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be converted to mixed with any()');
+        $this->compile('native-class-any-escape.php');
+    }
+
+    public function testRejectsBareReturnForNullableNativeObjectType(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('A function with a Native object return type must return a value');
+        $this->compile('native-class-bare-return.php');
+    }
+
+    public function testRejectsNullForNonNullableNativeObjectReturn(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('The return type is non-nullable native object `NativeNullReturnValue`');
+        $this->compile('native-class-null-return.php');
+    }
+
 }

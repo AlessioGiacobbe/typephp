@@ -64,6 +64,15 @@ trait NativeTypeCompatibilityTrait
             return true;
         }
         $classDef = $this->getClass($class);
+        if ($classDef->nativeObject
+            && strcasecmp($expected, 'Stringable') === 0
+            && $this->findNativeObjectMethod($class, '__toString') !== null
+        ) {
+            // PHP implicitly marks every class with __toString() as
+            // Stringable. Native classes have no zend_class_entry, so preserve
+            // that relation in the compile-time class graph instead.
+            return true;
+        }
         while (true) {
             if ($isInterface) {
                 if ($classDef->implements and in_array($expected, $classDef->implements)) {
@@ -148,6 +157,12 @@ trait NativeTypeCompatibilityTrait
     {
         $type = $this->detectTypeOfExpr($arg->value);
         $this->assertExprCanBeUsedAsValue($arg->value, 'function argument');
+        if ($this->isVarExpr($arg->value)) {
+            $this->assertStdContainerDoesNotEscapeNativeObjects(
+                $arg,
+                $this->parseIdentifier($arg->value),
+            );
+        }
 
         if (!empty($argInfo->typeCheck)) {
             $this->checkCompositeTypeAssignment(
@@ -189,16 +204,6 @@ trait NativeTypeCompatibilityTrait
                     "Argument `{$argName}` must be a native object of type `{$declaredClass}`"
                 );
             }
-            if ($argInfo->byRef) {
-                if (!$this->isVarExpr($arg->value)) {
-                    $this->fatalError($arg, 'Native object reference arguments must be variables');
-                }
-                $var = $this->parseIdentifier($arg->value);
-                if (!$this->isNativeObjectVar($var)) {
-                    $this->fatalError($arg, 'Native object reference arguments must be typed native variables');
-                }
-                return $var;
-            }
             $expr = $this->parseOrderedArg($arg);
             return $this->materializeCallArgValue($arg->value, $expr);
         }
@@ -206,6 +211,7 @@ trait NativeTypeCompatibilityTrait
         if ($argInfo->byRef) {
             if ($this->isReferenceWrapperCall($arg->value)) {
                 $inner = $this->unwrapReferenceWrapperCall($arg->value, $arg);
+                $this->assertNativeObjectReferenceForbidden($inner, $arg);
                 $this->assertReadonlyPropertyReferenceForbidden($inner, $arg, false);
                 if ($this->isVarExpr($inner)) {
                     $arg->value = $inner;
@@ -217,6 +223,7 @@ trait NativeTypeCompatibilityTrait
                     $this->fatalError($arg, 'The refval function only accepts a variable, array element, or object property');
                 }
             } else {
+                $this->assertNativeObjectReferenceForbidden($arg->value, $arg);
                 $this->assertReadonlyPropertyReferenceForbidden($arg->value, $arg, false);
             }
             if ($this->isVarExpr($arg->value)) {

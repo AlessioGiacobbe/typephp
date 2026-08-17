@@ -31,6 +31,9 @@ function main(): void
     var_dump($object instanceof NativeInstanceofBase);
     var_dump($object instanceof NativeInstanceofOther);
     var_dump(makeInstanceofChild() instanceof NativeInstanceofChild);
+    $object = null;
+    var_dump($object instanceof NativeInstanceofChild);
+    var_dump($object instanceof NativeInstanceofBase);
 }
 ?>
 --EXPECT--
@@ -39,3 +42,5 @@ bool(true)
 bool(false)
 made
 bool(true)
+bool(false)
+bool(false)

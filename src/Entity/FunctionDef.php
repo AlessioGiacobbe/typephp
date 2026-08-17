@@ -24,6 +24,8 @@ class FunctionDef
     public string $params = '';
     public string $namespace;
     public bool $method = false;
+    /** Abstract method contract; it has metadata/default helpers but no C++ body symbol. */
+    public bool $abstractMethod = false;
     /** Fully-qualified declaring class for methods; empty for free functions. */
     public string $declaringClass = '';
     public bool $stub = false;

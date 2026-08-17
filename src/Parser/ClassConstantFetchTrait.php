@@ -50,6 +50,12 @@ trait ClassConstantFetchTrait
 
         $const = $this->escapeString($this->parseIdentifier($expr->name));
         if ($class === 'static') {
+            if ($this->classDef?->nativeObject) {
+                $this->fatalError(
+                    $expr,
+                    'Native classes do not support late static binding; use `self::` or a concrete class name',
+                );
+            }
             if (!$this->methodDef) {
                 $this->fatalError($expr, "The 'static' keyword can only be used as the class name in class methods");
             }
@@ -116,6 +122,12 @@ trait ClassConstantFetchTrait
 
         $class = $this->parseIdentifier($expr->class);
         if ($class === 'static') {
+            if ($this->classDef?->nativeObject) {
+                $this->fatalError(
+                    $expr,
+                    'Native classes do not support late static binding; use `self::` or a concrete class name',
+                );
+            }
             if (!$this->methodDef) {
                 $this->fatalError($expr, "The 'static' keyword can only be used as the class name in class methods");
             }

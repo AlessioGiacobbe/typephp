@@ -38,6 +38,11 @@ trait NullsafeAccessTrait
         Expr\PropertyFetch|Expr\MethodCall|Expr\NullsafePropertyFetch|Expr\NullsafeMethodCall $expr
     ): string
     {
+        $native = $this->parseNativeNullsafeAccess($expr);
+        if ($native !== null) {
+            return $native;
+        }
+
         $list = [];
         $ownedTmpVars = [];
         $comment = $this->formatCppLineComment('Nullsafe Operator: ', $this->printer->prettyPrint([$expr]));

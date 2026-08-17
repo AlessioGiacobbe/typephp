@@ -1,7 +1,7 @@
 # Native Class Object 设计与实现
 
 > 状态：第一阶段实现中。固定布局、Native Call、精确 tracing GC、
-> 构造/克隆/析构、Trait、Getter/Setter、Property Hook、单继承、有限虚分派和
+> 构造/克隆/析构、Trait、Getter/Setter、Property Hook、抽象类、单继承、有限虚分派和
 > Interface 编译期契约已经落地；本文同时记录尚未开放的边界。
 
 ## 1. 背景
@@ -70,6 +70,8 @@ class Child extends Base {}
 ```
 
 `#[Native]` 是 Native Class Object 的正式显式声明方式。未使用该注解的普通 class 继续进入现有 ZendVM Object 编译流程。
+该注解只能用于具名 `class`；Interface、Trait 与 Enum 均不能声明为 Native。Trait 仍可由
+Native Class 在 convert 阶段注入，但 Trait 自身不形成 Native runtime 类型。
 
 ## 5. 生成的 C++ 结构
 
@@ -123,14 +125,21 @@ Native 方法不生成 Zend method wrapper，也不注册到 ZendVM。普通 PHP
 
 Native Class 使用 C++ public single inheritance 保持基类子对象布局。PHP 方法的实现主体仍然是 `php_*` 自由函数，不改为复杂的 C++ 成员函数模型。
 
-全程序分析发现继承链中存在同名的 public/protected instance method 时，为该方法族生成内部 virtual dispatch thunk：
+Native abstract class 及 abstract method 也完全在编译期实现。抽象方法在 C++ struct 中
+生成 pure virtual thunk，具体 Native 子类的实现继续调用对应 `php_*` 自由函数；通过抽象
+基类 typed parameter 调用时只发生一次 C++ 虚分派，不注册 Zend class 或 method。
+
+全程序分析发现继承链中存在同名的 public/protected instance method 时，为每一个声明层级
+生成独立的内部 virtual slot。子类实现同时覆盖祖先 slot，并以各 slot 自己的参数和返回
+签名生成 adapter，再转调子类的 `php_*` 实现。这样可以保留 PHP 允许的参数逆变、返回值
+协变，而不会把不兼容的 C++ 函数指针或引用强制转换到同一个 vtable slot：
 
 ```cpp
 struct php_app__base;
 php::Str php_app__base__name(php_app__base &this_);
 
 struct php_app__base {
-    virtual php::Str __native_dispatch_name() {
+    virtual php::Str __native_dispatch_base_name() {
         return php_app__base__name(*this);
     }
 
@@ -141,7 +150,7 @@ struct php_app__child;
 php::Str php_app__child__name(php_app__child &this_);
 
 struct php_app__child : public php_app__base {
-    php::Str __native_dispatch_name() override {
+    php::Str __native_dispatch_base_name() override {
         return php_app__child__name(*this);
     }
 };
@@ -155,6 +164,15 @@ struct php_app__child : public php_app__base {
 - private、static、constructor 和 destructor 不加入 virtual method family。
 - PHP 不支持按参数签名重载；Native Class 同样不增加 C++ overload 语义。
 - override 必须通过现有 PHP 方法兼容性规则和 Interface 检查。
+- 普通值参数通过 per-declaration adapter 支持 PHP 的参数逆变与返回协变。Native Object
+  参数禁止 `&`；typed pointer 按值传递已经共享对象身份，而 `&` 还会暴露调用方指针槽的
+  重绑定能力，这不属于 Native Object ABI。
+- C++ 默认参数由 receiver 的静态类型绑定，不能直接放在 virtual 声明上。编译器为每个
+  可用的位置参数数量生成一个重载 virtual slot；动态选中的 adapter 再调用自身 `php_*`
+  实现，因此使用动态实现类的默认值，不需要运行时 presence mask。
+- Native virtual method 的命名参数调用可以省略尾部连续的 optional 参数；若在后续实参
+  之前留下命名参数空洞则编译期拒绝。该少见形状无法由位置型 C++ 重载表达，支持它会使
+  每次虚调用携带 presence mask。非虚 Native Call 仍保留普通命名参数行为。
 
 这会提供继承所必需的有限单分派多态，但不支持变量方法名、运行时 overload resolution、`__call()` 或 ZendVM 动态调用。C++ 编译器仍可对 `final` class、`final` method 和已知精确类型完成去虚化。
 
@@ -223,8 +241,9 @@ final class InvalidContext
 | Native Class | `native_struct *` | 保存同一 Native Heap 内的裸指针 |
 | `Stream` | `php::Var` | 保存 stream resource zval，并在赋值入口执行精确类型检查 |
 | `mixed` | `php::Var` | 保存任意 PHP zval |
-| union/intersection/nullable | `php::Var` | 与普通类属性使用同一类型描述和运行时写入检查 |
-| BigInt/BigFloat/Decimal | 对应 PHPX 高精度类型 | 直接使用已有 RAII 类型 |
+| 不含 Native Class 的 union/intersection/nullable | `php::Var` | 与普通类属性使用同一类型描述和运行时写入检查 |
+| `?NativeClass` | `native_struct *` | `nullptr` 表示空值；包含 Native Class 的 union/intersection 不支持 |
+| BigInt/BigFloat/Decimal | `php::Var` | 保存 PHPX boxed 高精度值；字段寻址仍是固定偏移，运算复用现有 Variant ABI |
 
 `string`、`array`、Zend Object、Stream 和 mixed 字段仍然直接位于 C++ `struct` 的固定偏移处。它们持有的底层 zval 或 zend 对象由 PHPX RAII 类型管理，但属性读取不需要属性哈希表、object handler 或 ZendVM 分派。
 
@@ -308,6 +327,16 @@ b->x = 10;
 
 Native Class Object 不使用 `std::shared_ptr`。`std::shared_ptr` 的控制块、原子引用计数和循环引用问题与本特性的极致性能目标不符。
 
+Native Object 的严格比较使用指针身份：`===`/`!==` 判断两个槽是否指向同一个 Native
+对象，也支持与 `null` 比较。PHP 的 `==`/`!=` 会递归比较 Zend Object 属性；Native
+Object 没有 Zend object handler，而且对象图可能包含环，因此不提供隐式字段值比较。
+松散比较、大小比较和算术/位运算在编译期直接报错。需要值相等语义时应声明一个具有
+明确字段和循环处理规则的普通 Native 方法。
+
+`isset($native)` 与 `empty($native)` 直接检查裸指针是否为 `nullptr`。命名 Native
+属性链使用短路 lambda 逐级检查中间指针，不会把指针传入 `php::Variant`，因此
+`isset($node->next->next)` 在中间槽为空时返回 `false`，而不是触发空对象调用。
+
 ### 7.1 Native Class 循环引用
 
 两个或多个 Native Class 可以在属性类型上相互引用：
@@ -357,9 +386,9 @@ Native Class 属性始终保存指针，不按值嵌入另一个 Native struct�
 
 Native Heap tracing GC 能够遍历所有 Native 指针字段，因此 A 与 B 相互指向不会形成引用计数循环，也不会产生永久泄漏。裸指针字段本身没有析构动作。
 
-但如果循环中的每一条边都是 non-nullable，并且都要求在各自构造函数返回前完成初始化，就会形成无法构造的初始化死结：创建 A 需要 B，而创建 B 又需要 A。
-
-首版不引入“未初始化对象发布”或特殊的两阶段构造 API。循环对象图必须至少使用一条 nullable 边打破初始化环：
+Native Object 属性的零值是 `nullptr`，包括源码中声明为 non-nullable 的 Native Class
+属性。non-nullable 约束只作用于后续显式赋值，不引入 PHP typed property 的 UNDEF
+状态。因此循环对象图可以先分别构造，再建立双向关系：
 
 ```php
 $a = new A();
@@ -367,7 +396,7 @@ $b = new B($a);
 $a->b = $b;
 ```
 
-如果编译器发现一个 Native Class 构造依赖环全部由必须在构造阶段赋值的 non-nullable 属性组成，应抛出 FatalError，并提示将至少一条边声明为 nullable。该检查针对构造初始化依赖，而不是简单禁止类型循环。
+不需要构造依赖 SCC 或“两阶段发布”机制；类型 SCC 仅用于 C++ 前置声明与生成顺序。
 
 ## 8. 内存与生命周期
 
@@ -377,7 +406,7 @@ Native Class Object 应使用独立的、非移动、精确 tracing GC。本文�
 
 ### 8.1 Native Heap
 
-Native Heap 使用 Arena/chunk/free-list 提供快速内存分配，但每个对象都具有位于 struct 之前的隐藏 GC header：
+首版 Wren 派生实现为每个对象分配一块连续内存，并在 struct 前放置隐藏 GC header：
 
 ```cpp
 struct NativeGcHeader {
@@ -392,6 +421,9 @@ auto *point = native_heap.make<php_app__point>();
 ```
 
 GC header 不属于生成的 C++ struct，也不会改变属性偏移。用户可见对象变量仍然只是一个 `native_struct *`。
+
+当前分配器使用独立 non-moving allocation；Arena/chunk/free-list 可以作为后续分配器
+优化，但不得改变对象地址稳定性、header 布局、精确 tracing 或 finalization 语义。
 
 Native Heap 具有以下特征：
 
@@ -427,7 +459,7 @@ static void trace_a(void *ptr, NativeMarkVisitor &visitor) {
 
 `php::Str`、`php::Array`、`php::Object`、`php::Var` 和 Stream 字段由 Zend 引用计数管理，但它们不能反向保存 Native Object，因此无需由 Native GC 深入扫描。
 
-禁止 Native Object 进入 PHP Array、Box、Std Container 和 Zend Object，是保证 Native 对象图封闭且可精确遍历的重要条件。
+禁止 Native Object 进入 PHP Array、Box 和 Zend Object，是保证 Native 对象图封闭且可精确遍历的重要条件。局部 Std Container 是例外：当元素类型明确写成 Native Class 时，容器直接保存 typed Native pointer，并由独立的容器 Root Frame 在 GC 标记阶段遍历其当前元素。该 Root Frame 跟踪容器而不是元素地址，因此 vector/map 扩容搬迁不会产生悬空 root。
 
 ### 8.3 Root 管理
 
@@ -461,7 +493,6 @@ struct FunctionNativeRoots {
 初版只在确定的 safe point 执行 GC：
 
 - Native Heap 分配量超过自适应阈值。
-- Native 对象数量超过阈值。
 - Request Shutdown 强制清理全部对象。
 
 Native GC 不暴露语言级显式收集函数。PHPX 内部的收集入口只供运行时阈值策略和底层测试使用，不注册为 TypePHP/PHP API。
@@ -734,17 +765,16 @@ void php_move(php_app__point *point, php::Float x);
 - 修改属性对调用者可见。
 - 在函数内部重新赋值 `$point` 不影响调用者变量。
 
-引用参数生成二级指针引用：
+这里不需要、也不允许 PHP 引用符号：
 
 ```php
-function replace(Point &$point): void;
+function replace(Point &$point): void; // FatalError
+$alias =& $point;                       // FatalError
+refval($point);                         // FatalError
+$point->toRef();                        // FatalError
 ```
 
-近似生成：
-
-```cpp
-void php_replace(php_app__point *&point);
-```
+普通的 `$alias = $point` 已经只复制有类型的指针，二者指向并修改同一个对象。
 
 返回 Native Object 时返回指针：
 
@@ -752,7 +782,12 @@ void php_replace(php_app__point *&point);
 php_app__point *php_create_point();
 ```
 
-非 nullable class 参数在函数入口执行一次空指针检查。确定非空的成员访问不应重复检查。nullable class 使用相同指针表示，`nullptr` 表示 `null`。
+非 nullable class 参数在函数入口执行一次空指针检查。确定非空的成员访问不应重复检查。
+nullable class 必须使用 `?Point`，使用相同指针表示，`nullptr` 表示 `null`。
+`Point $value = null` 这种隐式 nullable 声明不支持，必须写为 `?Point $value = null`。
+`Point|null`、其他 union/intersection、Native variadic 参数以及 Native 引用返回均不支持。
+参数和返回值必须显式声明具体 Native Class（或其 nullable 形式），不能通过 `mixed`、
+`object` 或 Interface carrier 传递。
 
 ## 10. ZendVM 边界
 
@@ -771,7 +806,10 @@ Native Class 的字段可以保存 `php::Var`、`php::Array` 或 `php::Object`�
 - 作为 `call_user_func()` 等动态 callback 的 receiver。
 - 保存到 ZendVM 全局变量或对象属性中。
 
-Box 和 Std Container 不能保存 Native Object，也不能作为 Native Class 属性。普通 PHP array 同样不能保存 Native Object。
+Box 不能保存 Native Object。Std Container 不能作为 Native Class 属性，但局部
+`std::array`、`std::vector`、`std::map` 和 `std::ordered_map` 可以使用具体
+`NativeClass::class` 作为 value type，并保存该类或其 Native 子类。普通 PHP array
+仍然不能保存 Native Object。
 
 任何跨越 ZendVM 边界的行为都应在编译期抛出 FatalError。编译器不得静默装箱或降级，因为这会使性能模型不可预测。
 
@@ -879,6 +917,8 @@ ZendVM；普通 PHP class 实现该 Interface 的行为不变。Native Class 支
 
 - 使用与 PHP 一致的规则检查 required method 和 hooked property 是否存在、visibility、
   static/引用/variadic、参数与返回类型及属性读写约束是否兼容。
+- 项目 Interface 使用预处理得到的完整声明；PHP 内置 Interface 使用 Reflection 得到的
+  正式签名。Tentative return type 保持 PHP 8.4 的非致命语义，不擅自升级为 FatalError。
 - 在 Trait AST 注入及继承成员合并完成后检查，因此 Trait 或父类提供的方法可以满足 Interface。
 - 支持 Interface 继承和多个 `implements` 声明。
 - 不为 Native Class 生成 Interface vtable、runtime interface id、`zend_class_entry` 或
@@ -953,22 +993,19 @@ php_app__user__get_name(*user);
 php_app__user__set_name(*user, value);
 ```
 
-复合写入必须显式展开，并严格保持 PHP 从左到右的求值顺序：
+为保持 Native 分支简单且不存在隐式运行时分派，首版只支持直接读取和直接赋值：
 
 ```php
-$user->count += getValue();
-```
-
-近似生成：
-
-```cpp
-auto tmp_value = getValue();
-auto tmp_current = php_app__user__get_count(*user);
-php_app__user__set_count(*user, tmp_current + tmp_value);
+$value = $user->count;
+$user->count = getValue();
 ```
 
 带 Hook 的属性禁止：
 
+- `+=`、`.=` 等复合写入。
+- `++`、`--`。
+- `$object->hookedArray[] = ...`、元素赋值或元素 `unset()` 等间接写入。
+- `isset()`、`empty()`。
 - 取引用。
 - 引用返回。
 - 返回底层属性 slot。
@@ -980,6 +1017,10 @@ Native Property Hook 只有编译期语义，不生成 Zend Property Hook 元数
 ## 14. Clone
 
 `clone` 可以支持，但必须由编译器生成字段级浅复制，不能无条件依赖 C++ 默认 copy constructor。
+
+当 receiver 的静态类型可能保存 Native 子类时，继承层次生成一个内部协变 virtual clone
+thunk，由动态子类执行正确尺寸的字段复制并调用其 `__clone()`；不能按静态基类复制，否则会
+发生 C++ object slicing。没有 Native 继承关系的类继续使用静态 clone 路径，不增加 vptr。
 
 ```php
 $copy = clone $source;
@@ -1001,7 +1042,12 @@ php_app__user____clone(*copy);
 - PHP Array 保持 PHP 的 copy-on-write 行为，不进行无条件深拷贝。
 - Zend Object 字段复制对象句柄，继续指向同一 Zend 对象。
 - Native Object 字段复制指针，继续指向同一对象，保持浅复制语义。
-- 完成字段复制后调用可选的 `__clone()`。
+- 完成字段复制后调用可选的 `__clone()`；子类未重新声明时会解析并调用继承的
+  `__clone()`，子类重新声明时不会隐式再调用父实现，与普通方法覆盖规则一致。
+- `__clone()` 的 public/protected/private 可见性在 clone 表达式所在的编译期作用域检查，
+  不允许通过直接 Native Call 绕过。
+- clone operand 可以是 typed variable、Native function/method call 或 Native property
+  expression；非变量 operand 会先物化为精确 root 的临时裸指针。
 
 包含不可复制字段的 Native Class 必须显式禁止 clone；对它使用 `clone` 时编译期报错。
 
@@ -1017,6 +1063,9 @@ php_app__user____construct(*object, args...);
 ```
 
 构造函数抛出异常时，必须销毁已经初始化的字段，并从 Native Heap 活动对象集合中移除该对象。
+
+与其他 TypePHP class 一致，`__construct()` 只能由 `new` 触发。显式调用
+`$object->__construct()` 在编译期报错，避免重复初始化已经存活的 Native Object。
 
 ### 15.2 析构
 
@@ -1049,6 +1098,10 @@ struct NativeTypeDescriptor {
 5. 未复活对象调用 `destroy()`；实际 C++ destructor 只负责字段 RAII 和基类子对象清理，保持 `noexcept`。descriptor 已记录最派生类型，因此不依赖通过基类指针执行 `delete`，也不要求仅为销毁而给所有继承层次增加 vtable。
 6. finalizer 抛出异常时，GC 必须先恢复内部状态并保证对象最终可清理，再把异常传播到当前 TypePHP 异常边界；shutdown 阶段遵循单独的不可抛出策略。
 
+Request shutdown 会在 finalization 前后各清空一次已注册的 global/static Native root。
+这是必要的：`__destruct()` 可能在 finalization 中把 `$this` 重新写入某个全局槽，但 request
+heap 随后仍会整体销毁；第二次清空可防止悬空指针进入下一 request。
+
 这种设计保留 `__destruct()` 的资源清理能力，同时避免让复杂用户代码穿过 C++ destructor。它与 PHP 的主要差异是调用时机由 Native GC 决定，而不是引用计数降为零的时刻。
 
 ### 15.3 `unset()` 与析构时机
@@ -1067,7 +1120,32 @@ Native Class 支持 `toArray()`、`toString()`、`toInt()`、`toFloat()`、`toBo
 
 `__toString(): string` 是 `toString(): string` 的兼容别名。对 Native Object 使用 `toString()`、`strval($object)`、`(string) $object`、字符串拼接或 `echo` 时，编译器优先使用实际声明的 `toString()`，若不存在则使用 `__toString()`。
 
-### 15.5 `json_encode()`
+与 PHP 一致，声明合法 `__toString()` 的 Native Class 在编译期隐式满足 `Stringable`；
+`$native instanceof Stringable` 折叠为 `true`，但这仍不允许把 Native Object 转换或
+传递为 `Stringable` Interface 值。
+
+### 15.5 `count()` 与 `Countable`
+
+当编译器能静态确定 Native Class 实现了 `Countable` 时，`count($nativeObject)` 等价于
+`$nativeObject->count()`，并直接 lowering 为同一个 Native Call。Native Object 不会因此构造
+Zend Object，也不会进入 `php::fn::count()`。
+
+仅仅声明一个名为 `count()` 的方法并不足够；Native Class 必须显式 `implements Countable`，且
+实现会经过内部 Interface 签名校验。首版只支持 `count($nativeObject)` 单参数形式；带 `$mode`
+的形式不进入这条 Native 特化路径。
+
+### 15.6 Nullsafe operator
+
+Native root 及每一个中间 receiver 都是 Native pointer 时，`?->` 使用专门的短路
+lowering。每一级只执行一次 `nullptr` 判断，方法参数只在 receiver 非空后求值。最终结果
+为 Native Object 时继续返回 nullable typed pointer；最终结果为 PHP 标量或 PHPX value
+时，因为 PHP 语义是 `T|null`，只在结果边界装箱为 `php::Var`。
+
+Native nullsafe chain 不能在中间切换到 Zend Object 后继续；该混合对象模型链在编译期
+拒绝，用户应拆成两条语句。Native Property Hook 可以作为最终的直接读取；
+`isset()/empty()` 不支持 Hook 属性。
+
+### 15.7 `json_encode()`
 
 Native Object 没有 `zval` 表示，不能作为 `json_encode()` 或其他 PHP/ZendVM 函数的参数。编译器不会为 `json_encode()` 增加特殊 lowering，也不会隐式构造临时 Zend Object 或 DTO；`json_encode($nativeObject)` 在编译期直接报错。
 
@@ -1088,21 +1166,34 @@ $json = json_encode($nativeObject->toArray());
 | 无类型属性 | 不支持，编译期 FatalError |
 | 直接属性读写 | 支持 |
 | 普通成员方法 | 支持 |
+| Native Object 参数/返回值 | 必须显式声明具体 Native Class；按 pointer value 传递，不复制对象 |
+| non-null Native 参数 | `NativeClass $value` 在函数入口统一拒绝 `nullptr`；进入函数体后保证非空 |
+| nullable Native 参数/返回值 | 支持 `?NativeClass`，以 `nullptr` 表示；成员访问必须检查或先证明非空 |
+| Native 参数/返回值的 `&` | 不支持；编译期 FatalError |
+| 对 Native Object 变量取引用 | 不支持；普通赋值已经共享对象身份 |
+| Native variadic、union/intersection | 不支持；编译期 FatalError |
 | `__construct()` | 支持 |
 | `clone` / `__clone()` | 支持 |
 | Getter/Setter 注解 | 支持 |
-| Property Hook | 支持 |
+| Property Hook | 支持直接 get/set；间接写入、复合写入、引用、isset/empty 不支持 |
 | Trait AST 注入 | 支持，注入完成后按普通 Native member 编译 |
 | `readonly` | 不支持，编译期 FatalError；PHP readonly 是依赖 Zend 属性初始化状态的运行时机制，与 Native 固定裸字段模型不兼容 |
 | `toArray()`/`toInt()` 等关键词转换 | 支持，要求 Native Class 声明零参数且返回类型完全一致的方法 |
 | `toString()` / `__toString()` | 支持确定 Native Call；字符串强转、`strval()`、拼接和 `echo` 使用同一规则 |
+| `count($nativeObject)` | 支持确定 Native Call；要求 Native Class 实现 `Countable`，首版限单参数形式 |
+| `isset()` / `empty()` | 支持裸指针槽及纯 Native 命名属性链，逐级短路，不进入 ZendVM |
+| `is_null()` | 支持 Native typed pointer，直接与 `nullptr` 比较 |
+| Nullsafe `?->` | 支持纯 Native receiver chain；Native 返回保持 typed pointer，标量返回按 `T|null` 装箱 |
 | `__invoke()` | 支持确定 Native Call |
 | `__destruct()` | 支持，由 GC finalization 触发且每个对象最多一次 |
 | Native Class 单继承 | 支持；与普通 ZendVM class 禁止互相继承 |
+| Native abstract class / abstract method | 支持；生成 pure virtual thunk，具体子类在编译期完成实现检查 |
 | override method | 支持，继承链同名实例方法生成 virtual dispatch thunk |
 | 基于参数签名的同名方法重载 | 不支持；PHP 源码不允许在同一个类中重复声明同名方法 |
 | Interface | 普通 Interface 注册到 ZendVM；Native `implements` 只做编译期契约校验，Native Object 不能转换为 Interface 值 |
 | `instanceof` | 支持编译期可解析的 Native class 和 Interface，直接折叠；变量 class 不支持 |
+| `===` / `!==` | 支持 Native 指针身份及与 `null` 的严格比较 |
+| `==` / `!=`、大小及算术/位运算 | 不支持，编译期 FatalError；值相等应使用显式 Native 方法 |
 | 动态属性 | 不支持 |
 | `$nativeObject->$expr()` | 不支持，只允许命名方法调用 |
 | `__call()` / `__callStatic()` | 不支持；Native Call 必须在编译期解析为确定符号 |
@@ -1110,6 +1201,7 @@ $json = json_encode($nativeObject->toArray());
 | `__sleep()` / `__wakeup()` / `__serialize()` / `__unserialize()` | 不支持；Native Object 不进入 Zend 序列化系统 |
 | `__set_state()` / `__debugInfo()` | 不支持；Native Object 没有相应 Zend object handler |
 | Reflection | 不支持 |
+| `get_class()` / `get_parent_class()` / `get_called_class()` | 不支持 Native runtime introspection；使用 `self::class`、`parent::class` 或具体类名 |
 | WeakReference | 不支持 |
 | PHP serialize | 不支持 |
 | PHP `json_encode()` | 不支持直接传入 Native Object；先显式调用 `toArray()` |
@@ -1117,10 +1209,14 @@ $json = json_encode($nativeObject->toArray());
 | 动态 PHP/eval 使用 | 不支持 |
 | 普通 PHP array 保存 Native Object | 不支持 |
 | Box/Std Container 属性 | 不支持 |
-| Box/Std Container 保存 Native Object | 不支持 |
+| Box 保存 Native Object | 不支持 |
+| 局部 Std Container 保存 Native Object | 支持具体 Native class value type；容器 Root Frame 参与 GC tracing |
+| Native 元素 Std Container 转 PHP array/mixed 或作为 PHP 参数 | 不支持；裸指针不得越过 ZendVM value boundary |
 | Native Class 属性循环引用 | 支持，指针字段加 Native tracing GC |
 | TypePHP global/static local | 支持；ZTS 使用 thread-local request roots，RSHUTDOWN 清理 |
-| 全 non-nullable 构造依赖环 | 不支持，至少需要一条 nullable 边 |
+| global/static local 类型 | 第一次 Native 赋值固定 C++ slot 类型；后续可写入其 Native 子类或 null，不可改为基类/无关类 |
+| Native Class 属性循环类型 | 支持；字段零值为 `nullptr`，类型图使用 C++ 前置声明 |
+| late static binding / `new static()` | 不支持；Native Class 无运行时 `zend_class_entry`，使用 `self::`、`parent::` 或具体类名 |
 
 ## 17. 编译器目录与隔离要求
 
@@ -1216,7 +1312,7 @@ Native Class 的主要路径必须满足：
 4. 支持构造、析构、强制属性类型、全部 PHP 字段类型、普通方法和对象参数传递。
 5. 接入现有 Trait AST 注入，并支持 Getter/Setter 等编译期注解。
 6. 支持单继承、override virtual thunk、Interface 编译期契约和相关类型检查。
-7. 支持 Property Hook 与复合写入 lowering。
+7. 支持 Property Hook 的直接 getter/setter lowering；复合写入等动态语义编译期拒绝。
 8. 支持 clone、Native Class 指针字段、循环类型依赖和构造依赖环诊断。
 9. 最后评估 `json_encode()`、栈分配与逃逸分析。
 

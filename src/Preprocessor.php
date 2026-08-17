@@ -432,9 +432,10 @@ class Preprocessor extends CompilerBase
         // Record late-bound parameter type keywords so they can be re-resolved
         // to the consuming class when a trait method is flattened into a class.
         $argInfo->typeKeyword = $typeKeyword;
-        // Ordinary PHP references use php::Ref at the native ABI. Keep the
-        // resolved declaration metadata above, however: Native object
-        // references need it to lower to `native_struct *&` instead.
+        // Ordinary PHP references use php::Ref at the native ABI. Native
+        // object references are rejected after the complete signature has
+        // been parsed: a typed pointer already shares object identity, while
+        // PHP & would additionally expose caller-slot rebinding.
         return $param->byRef ? Type::REF : $type;
     }
 
@@ -661,6 +662,7 @@ class Preprocessor extends CompilerBase
         }
 
         $this->parseParams($v->params, $functionDef);
+        $this->assertNativeObjectFunctionSignature($v, $functionDef);
 
         if ($this->classDef !== null
             && !$this->classDef->nativeObject
@@ -1589,8 +1591,11 @@ class Preprocessor extends CompilerBase
             if (is_string($traitOrigin)) {
                 $this->methodDef->traitOrigin = $traitOrigin;
             }
-            $this->methodDef->functionDef = $this->parseFunctionDecl($v);
-            $this->methodDef->functionDef->method = true;
+            // Keep abstract method metadata in the symbol repository as well.
+            // Native virtual calls need the same argument/default lowering as
+            // concrete calls, even though no free-function body is emitted.
+            $this->prepareFunction($v);
+            $this->methodDef->functionDef->abstractMethod = true;
             $this->checkRequiredArgNum($name, $this->methodDef, $v);
             if ($this->method === '__construct') {
                 foreach ($v->params as $param) {

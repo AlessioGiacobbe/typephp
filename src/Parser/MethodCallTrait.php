@@ -406,14 +406,23 @@ trait MethodCallTrait
         }
 
         if ($class !== '' && $this->isNativeObjectClass($class)) {
+            if ($expr->isFirstClassCallable()) {
+                $this->fatalError($expr, 'Native object methods cannot be converted to Zend closures');
+            }
             if (!$this->isNamedMethod($expr->name)) {
                 $this->fatalError($expr, 'Dynamic native object method calls are not supported');
             }
             $nativeMethodName = strtolower($expr->name->toString());
+            if ($nativeMethodName === '__construct') {
+                $this->fatalError($expr, 'Explicit calls to native object constructors are not supported');
+            }
             if ($nativeMethodName === '__destruct') {
                 $this->fatalError($expr, 'Explicit calls to native object destructors are not supported');
             }
             $nativeKeyword = $expr->name->toString();
+            if ($nativeKeyword === 'toRef') {
+                $this->assertNativeObjectReferenceForbidden($expr->var, $expr);
+            }
             if (isset(self::KEYWORD_METHOD_MAP[$nativeKeyword])) {
                 if (!isset(self::KEYWORD_METHOD_WITH_ARGUMENTS[$nativeKeyword]) && $expr->args !== []) {
                     $this->fatalError($expr, "The {$nativeKeyword} method does not accept parameters");
@@ -505,21 +514,47 @@ trait MethodCallTrait
                 // Native objects have their own C++ virtual thunk for an
                 // overridden family; do not let the Zend-object devirtualizer
                 // downgrade this call to the dynamic path.
+                $nativeMethodDef = $this->findNativeObjectMethod($class, $methodName);
                 $nativeFunc = $this->getNativeMethod($expr, $class, $methodName);
                 if ($nativeFunc === false) {
-                    $this->fatalError($expr, "Native class `{$class}` has no method `{$methodName}()`");
+                    if ($nativeMethodDef === null || !($nativeMethodDef->flags & Modifiers::ABSTRACT)) {
+                        $this->fatalError($expr, "Native class `{$class}` has no method `{$methodName}()`");
+                    }
+                    $declaringClassName = $nativeMethodDef->functionDef->declaringClass;
+                    $declaringClass = $this->getClass($declaringClassName);
+                    if (!$this->checkAccessible($declaringClass, $nativeMethodDef->flags)) {
+                        $this->fatalError(
+                            $expr,
+                            "Method `{$declaringClassName}::{$methodName}()` is not accessible",
+                        );
+                    }
+                    $nativeFunc = $this->getNativeName(
+                        $methodName,
+                        $declaringClass->namespace,
+                        $declaringClass->name,
+                    );
+                    $this->checkNativeCallArgs(
+                        $expr,
+                        $nativeMethodDef->functionDef,
+                        $expr->args,
+                        $declaringClassName . '::' . $methodName,
+                    );
                 }
                 $expr->setAttribute('nativeCall', $nativeFunc);
                 $nativeFunctionDef = $this->getFunction($nativeFunc);
                 $declaringClass = $this->getClass($nativeFunctionDef->declaringClass);
-                $declaringMethod = $declaringClass->getMethod($methodName);
+                $declaringMethod = $nativeMethodDef ?? $declaringClass->getMethod($methodName);
                 if ($this->isNativeVirtualMethod($declaringClass, $declaringMethod)) {
                     $call = $this->getNativeObjectMemberReceiver($object)
-                        . $this->getNativeVirtualMethodName($methodName);
+                        . $this->getNativeVirtualMethodName($declaringClass, $methodName);
                     if ($expr->args === []) {
                         return $call . '()';
                     }
-                    return $call . '(' . $this->parseNativeCallArgs($expr->args, $nativeFunc) . ')';
+                    return $call . '(' . $this->parseNativeCallArgs(
+                        $expr->args,
+                        $nativeFunc,
+                        deferTrailingDefaults: true,
+                    ) . ')';
                 }
                 $receiver = $this->getNativeObjectReceiver($object);
                 if ($expr->args === []) {
@@ -756,6 +791,12 @@ trait MethodCallTrait
             }
             $placeHolder = $fn;
         } elseif ($this->isNameExpr($expr->class) and $class === 'static') {
+            if ($this->classDef?->nativeObject) {
+                $this->fatalError(
+                    $expr,
+                    'Native classes do not support late static binding; use `self::` or a concrete class name',
+                );
+            }
             $method = $this->parseIdentifier($expr->name);
             $methodPtr = $this->identifierToStr($expr->name, literal: true);
             $fn = Symbol::getCalledCe() . ', php::getMethod(' . Symbol::getCalledCe() . ', ' . $methodPtr . ')';

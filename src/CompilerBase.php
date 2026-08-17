@@ -708,6 +708,9 @@ class CompilerBase implements PropertyAccessContext
         if ($expr->getLine() === $this->debugLine) {
             dump($expr);
         }
+        if ($expr instanceof Node\Expr\BinaryOp) {
+            $this->assertNativeObjectBinaryOperatorSupported($expr);
+        }
         switch ($type) {
             case 'Expr_Isset':
                 return $this->parseIsset($expr);
@@ -1879,8 +1882,30 @@ class CompilerBase implements PropertyAccessContext
 
     protected function detectClassOfExpr(NodeAbstract $expr): string
     {
+        // Error suppression changes diagnostics only; it must never erase the
+        // static type of the wrapped expression. This is especially important
+        // for Native objects because treating their typed pointer as php::Var
+        // would cross the ZendVM boundary.
+        if ($expr instanceof Expr\ErrorSuppress) {
+            return $this->detectClassOfExpr($expr->expr);
+        }
         if ($expr instanceof Expr\Clone_) {
             return $this->detectClassOfExpr($expr->expr);
+        }
+        if ($expr instanceof Expr\NullsafeMethodCall) {
+            return $this->detectClassOfExpr(new Expr\MethodCall(
+                $expr->var,
+                $expr->name,
+                $expr->args,
+                $expr->getAttributes(),
+            ));
+        }
+        if ($expr instanceof Expr\NullsafePropertyFetch) {
+            return $this->detectClassOfExpr(new Expr\PropertyFetch(
+                $expr->var,
+                $expr->name,
+                $expr->getAttributes(),
+            ));
         }
         if ($expr instanceof Expr\Closure || $expr instanceof Expr\ArrowFunction) {
             return 'Closure';
@@ -1921,6 +1946,9 @@ class CompilerBase implements PropertyAccessContext
                 return $this->getFullClassName();
             }
             if ($class === 'static') {
+                if ($this->classDef?->nativeObject) {
+                    $this->fatalError($expr, 'Native classes do not support `new static()`');
+                }
                 // 无法在编译期获得 static 类的准确类名
                 return '';
             } else {
@@ -2225,6 +2253,14 @@ class CompilerBase implements PropertyAccessContext
             return 'return ' . $this->parseChainedExpr($v->expr, self::OP_REFVAL) . ';';
         }
         if ($v->expr === null) {
+            if (!$this->context->inClosure
+                && $this->getNativeObjectReturnType($this->functionDef) !== null
+            ) {
+                $this->fatalError(
+                    $v,
+                    'A function with a Native object return type must return a value',
+                );
+            }
             $nullExpr = new Expr\ConstFetch(new Node\Name('null'));
             if ($this->shouldCheckClosureReturnType()) {
                 $this->checkCompositeTypeAssignment(
@@ -2348,7 +2384,31 @@ class CompilerBase implements PropertyAccessContext
                     "The return type is native object `{$nativeReturnClass}`, `{$objectClass}` given"
                 );
             }
-            return 'return ' . $this->parseExprAsValue($v->expr) . ';';
+            $afterStmtCount = count($this->context->afterStmtLines);
+            $returnExpr = $this->parseExprAsValue($v->expr);
+            $returnCode = $this->functionDef->returnNullable
+                ? $returnExpr
+                : 'php::nativeRequireObject(' . $returnExpr . ', "'
+                    . addslashes($nativeReturnClass) . '")';
+
+            if (count($this->context->afterStmtLines) === $afterStmtCount) {
+                return 'return ' . $returnCode . ';';
+            }
+
+            // Cleanup emitted by the expression (for example restoring @'s
+            // error_reporting state) must run before either the non-null
+            // return check or the actual return. Materialize the pointer in a
+            // precise root slot, then append the boundary operation after the
+            // expression's cleanup statements.
+            $tmpVar = $this->genTmpVarName();
+            $this->addLocalVar($tmpVar, $this->getNativeObjectPointerType($nativeReturnClass));
+            $this->addNativeObject($tmpVar, $nativeReturnClass);
+            $finalReturn = $this->functionDef->returnNullable
+                ? $tmpVar
+                : 'php::nativeRequireObject(' . $tmpVar . ', "'
+                    . addslashes($nativeReturnClass) . '")';
+            $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $finalReturn . ';';
+            return $tmpVar . ' = ' . $returnExpr . ';';
         }
         $expr = $this->parseExprAsValue($v->expr);
         $returnType = $this->getReturnType();
@@ -2746,6 +2806,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function detectTypeOfExpr($expr): string
     {
+        if ($expr instanceof Expr\ErrorSuppress) {
+            return $this->detectTypeOfExpr($expr->expr);
+        }
         if ($expr instanceof Expr\MethodCall && $this->isNamedMethod($expr->name)) {
             $keywordType = $this->findKeywordMethod($this->parseIdentifier($expr->name));
             if ($keywordType !== null) {
@@ -3071,6 +3134,12 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $target = $this->preparePropertyWriteTarget($var);
+        if ($this->isNativeObjectPropertyHook($var)) {
+            $this->fatalError(
+                $var,
+                'Native property hooks only support direct reads and assignments',
+            );
+        }
         $getter = $this->getPropertyHookGetter($var);
         $setter = $this->getPropertyHookSetter($var);
         if ($getter !== null && $setter === null) {
@@ -3111,6 +3180,7 @@ class CompilerBase implements PropertyAccessContext
     protected function parsePreInc(Expr\PreInc $expr): string
     {
         $this->assertNotNullsafeWriteContext($expr->var);
+        $this->assertNativePropertyHookDirectWriteTarget($expr->var);
         $result = $this->genDynamicPropIncDec($expr->var, '+', true);
         if ($result !== null) {
             return $result;
@@ -3497,6 +3567,7 @@ class CompilerBase implements PropertyAccessContext
     protected function parsePostOp(Expr\PostDec|Expr\PostInc $expr, string $op): string
     {
         $this->assertNotNullsafeWriteContext($expr->var);
+        $this->assertNativePropertyHookDirectWriteTarget($expr->var);
         $result = $this->genDynamicPropIncDec($expr->var, $op, false);
         if ($result !== null) {
             return $result;
@@ -3545,6 +3616,7 @@ class CompilerBase implements PropertyAccessContext
     protected function parsePreDec(Expr\PreDec $expr): string
     {
         $this->assertNotNullsafeWriteContext($expr->var);
+        $this->assertNativePropertyHookDirectWriteTarget($expr->var);
         $result = $this->genDynamicPropIncDec($expr->var, '-', true);
         if ($result !== null) {
             return $result;
@@ -3631,6 +3703,9 @@ class CompilerBase implements PropertyAccessContext
             $className = $this->parseIdentifier($expr->class);
             if ($this->isNameExpr($expr->class)) {
                 if ($className === 'static') {
+                    if ($this->classDef?->nativeObject) {
+                        $this->fatalError($expr, 'Native classes do not support `new static()`');
+                    }
                     $cePtr = Symbol::getCalledCe();
                 } else {
                     if ($className === 'self') {
@@ -3664,7 +3739,8 @@ class CompilerBase implements PropertyAccessContext
                                 $this->fatalError($expr, "Native class `{$className}` does not have a constructor");
                             }
                             return 'php::nativeConstruct<' . $cppClass . '>(' . $descriptor
-                                . ', [&](auto &this_) { ' . $cppClass . '__initialize(this_); })';
+                                . ', [&](auto &this_) { '
+                                . $this->getNativeObjectInitializerName($className) . '(this_); })';
                         }
                         $nativeCtor = $this->getNativeMethod($expr, $className, '__construct');
                         if ($nativeCtor === false) {
@@ -3674,7 +3750,8 @@ class CompilerBase implements PropertyAccessContext
                             ? ''
                             : ', ' . $this->parseNativeCallArgs($expr->args, $nativeCtor);
                         return 'php::nativeConstruct<' . $cppClass . '>(' . $descriptor
-                            . ', [&](auto &this_) { ' . $cppClass . '__initialize(this_); '
+                            . ', [&](auto &this_) { '
+                            . $this->getNativeObjectInitializerName($className) . '(this_); '
                             . self::PREFIX . $nativeCtor . '(this_' . $args . '); })';
                     }
                     $cePtr = $this->getClassEntryPtr($className);
@@ -3696,17 +3773,33 @@ class CompilerBase implements PropertyAccessContext
         $this->assertExprCanBeUsedAsValue($expr->expr, 'clone operand');
         $class = $this->detectClassOfExpr($expr->expr);
         if ($this->isNativeObjectClass($class)) {
-            if (!$this->isVarExpr($expr->expr)) {
-                $this->fatalError($expr, 'Native object clone currently requires a typed variable');
-            }
-            $source = $this->parseIdentifier($expr->expr);
+            $source = $this->isVarExpr($expr->expr)
+                ? $this->parseIdentifier($expr->expr)
+                : $this->materializeNativeObjectReceiver($expr->expr, $class);
             $cpp = $this->getNativeObjectCppName($class);
             $descriptor = $this->getNativeObjectDescriptorName($class);
-            $classDef = $this->getClass($class);
             $initializer = '';
-            if ($classDef->hasMethod('__clone')) {
-                $clone = self::PREFIX . $this->getNativeName('__clone', $classDef->namespace, $classDef->name);
+            $cloneMethod = $this->findNativeObjectMethod($class, '__clone');
+            if ($cloneMethod !== null) {
+                $declaringClassName = $cloneMethod->functionDef->declaringClass;
+                $declaringClass = $this->getClass($declaringClassName);
+                if (!$this->checkAccessible($declaringClass, $cloneMethod->flags)) {
+                    $visibility = $this->visibilityLabel($cloneMethod->flags);
+                    $this->fatalError(
+                        $expr,
+                        "Call to {$visibility} {$declaringClassName}::__clone()",
+                    );
+                }
+                $clone = self::PREFIX . $this->getNativeName(
+                    '__clone',
+                    $declaringClass->namespace,
+                    $declaringClass->name,
+                );
                 $initializer = $clone . '(this_); ';
+            }
+            if ($this->nativeObjectUsesVirtualClone($class)) {
+                return $this->getNativeObjectReceiver($source) . '.'
+                    . self::NATIVE_VIRTUAL_CLONE_METHOD . '()';
             }
             return 'php::nativeClone<' . $cpp . '>(' . $descriptor . ', '
                 . $this->getNativeObjectReceiver($source)
@@ -3746,7 +3839,13 @@ class CompilerBase implements PropertyAccessContext
             // a non-variable left operand. Native objects cannot cross into a
             // Variant, so sequence the original pointer expression directly.
             $value = $this->parseExprAsValue($expr->expr);
-            return '(static_cast<void>(' . $value . '), ' . ($result ? 'true' : 'false') . ')';
+            if ($result) {
+                // Static assignability proves the class relationship, but a
+                // nullable Native slot still follows PHP: null instanceof T
+                // is false. The raw-pointer null check is the only runtime work.
+                return '(' . $value . ' != nullptr)';
+            }
+            return '(static_cast<void>(' . $value . '), false)';
         }
 
         if ($this->isNameExpr($expr->class)) {
@@ -3875,7 +3974,7 @@ class CompilerBase implements PropertyAccessContext
             if ($var->default) {
                 $class = $this->detectClassOfExpr($var->default);
                 if ($this->isNativeObjectClass($class)) {
-                    $this->promoteGlobalOrStaticToNativeObject($varName, $class);
+                    $this->promoteGlobalOrStaticToNativeObject($varName, $class, $var->default);
                 }
             }
 
@@ -4042,11 +4141,28 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseChainedExpr(NodeAbstract $node, string $op, bool $getValue = false): string
     {
+        if ($op === self::OP_REFVAL) {
+            $this->assertNativeObjectReferenceForbidden($node, $node);
+        }
+        if (in_array($op, [self::OP_ISSET, self::OP_EMPTY, self::OP_NOT_EMPTY], true)) {
+            $nativePresence = $this->parseNativeObjectPresenceChain($node, $op);
+            if ($nativePresence !== null) {
+                return $nativePresence;
+            }
+        }
         // TypePHP 编译器不允许操作未定义的变量，PHP 的 isset($var) 可能 $var 未定义
         $this->checkVarMustExist($node, $this->parseIdentifier($node));
         $fn = $this->getChainedFunc($op);
         $expr = $node;
         if ($this->isVarExpr($expr)) {
+            $nativeObject = $this->parseIdentifier($expr);
+            if ($this->isNativeObjectVar($nativeObject)) {
+                return match ($op) {
+                    self::OP_ISSET, self::OP_NOT_EMPTY => '(' . $nativeObject . ' != nullptr)',
+                    self::OP_EMPTY => '(' . $nativeObject . ' == nullptr)',
+                    default => $fn . '(' . $this->parseExpr($expr) . ')',
+                };
+            }
             if (!$getValue) {
                 return $fn . '(' . $this->parseExpr($expr) . ')';
             }
@@ -4059,6 +4175,13 @@ class CompilerBase implements PropertyAccessContext
             if ($this->isNativePropertyAccess($expr)) {
                 if ($op === self::OP_REFVAL) {
                     return $prop . '.toReference()';
+                }
+                if ($this->isNativeObjectClass($this->detectClassOfExpr($expr))) {
+                    return match ($op) {
+                        self::OP_ISSET, self::OP_NOT_EMPTY => '(' . $prop . ' != nullptr)',
+                        self::OP_EMPTY => '(' . $prop . ' == nullptr)',
+                        default => $fn . '(' . $prop . ')',
+                    };
                 }
                 return $fn . '(' . $prop . ')';
             }
@@ -4120,9 +4243,93 @@ class CompilerBase implements PropertyAccessContext
         }
     }
 
+    /**
+     * Lower a named Native property chain without converting its raw pointers
+     * to Variant. The short-circuit lambda preserves PHP's isset()/empty()
+     * behavior when either the root or an intermediate Native slot is null.
+     */
+    protected function parseNativeObjectPresenceChain(NodeAbstract $node, string $op): ?string
+    {
+        $properties = [];
+        $base = $node;
+        while ($base instanceof Expr\PropertyFetch) {
+            if (!$base->name instanceof Node\Identifier) {
+                return null;
+            }
+            $properties[] = $base;
+            $base = $base->var;
+        }
+        if ($properties === [] || !$this->isVarExpr($base)) {
+            return null;
+        }
+
+        $baseName = $this->parseIdentifier($base);
+        if (!$this->isNativeObjectVar($baseName)) {
+            return null;
+        }
+        $this->checkVarMustExist($base, $baseName);
+
+        $properties = array_reverse($properties);
+        $nullResult = $op === self::OP_EMPTY ? 'true' : 'false';
+        $current = $this->genTmpVarName();
+        $class = $this->getNativeObjectVarClass($baseName);
+        $code = '[&]() -> bool {' . PHP_EOL;
+        $code .= $this->getIndent() . 'auto *' . $current . ' = ' . $baseName . ';' . PHP_EOL;
+        $code .= $this->getIndent() . 'if (' . $current . ' == nullptr) { return ' . $nullResult . '; }' . PHP_EOL;
+
+        $last = array_key_last($properties);
+        foreach ($properties as $index => $propertyExpr) {
+            $property = $propertyExpr->name->toString();
+            $resolution = $this->resolveNativeInstanceProperty($propertyExpr, $property, $class);
+            if ($resolution === null) {
+                $this->fatalError($propertyExpr, "Native class `{$class}` has no property `\${$property}`");
+            }
+            $this->applyNativePropertyAccessResult($propertyExpr, $resolution);
+            $definition = $resolution->propertyDef;
+            if ($definition->getter !== null || $definition->setter !== null) {
+                $this->fatalError(
+                    $propertyExpr,
+                    'isset()/empty() are not supported for Native property hooks',
+                );
+            }
+            $field = $current . '->'
+                . $this->getNativeObjectPropertyCppName($definition, $resolution->classDef);
+            $isNativePointer = $definition->type === Type::OBJECT
+                && $this->isNativeObjectClass($definition->class);
+
+            if ($index !== $last) {
+                if (!$isNativePointer) {
+                    $this->fatalError(
+                        $propertyExpr,
+                        'Native isset()/empty() chains may only traverse Native object properties',
+                    );
+                }
+                $next = $this->genTmpVarName();
+                $code .= $this->getIndent() . 'auto *' . $next . ' = ' . $field . ';' . PHP_EOL;
+                $code .= $this->getIndent() . 'if (' . $next . ' == nullptr) { return '
+                    . $nullResult . '; }' . PHP_EOL;
+                $current = $next;
+                $class = $definition->class;
+                continue;
+            }
+
+            if ($isNativePointer) {
+                $condition = '(' . $field . ($op === self::OP_EMPTY ? ' == ' : ' != ') . 'nullptr)';
+            } else {
+                $condition = $this->getChainedFunc($op) . '(' . $field . ')';
+            }
+            $code .= $this->getIndent() . 'return ' . $condition . ';' . PHP_EOL;
+        }
+        return $code . $this->getIndent() . '}()';
+    }
+
     protected function parseCastArray(Expr\Cast\Array_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'cast operand');
+        $native = $this->parseNativeObjectExplicitConversion($expr->expr, 'toArray');
+        if ($native !== null) {
+            return $native;
+        }
         return $this->convertArrayExpr($this->parseExprAsValue($expr->expr));
     }
 
@@ -4144,6 +4351,10 @@ class CompilerBase implements PropertyAccessContext
     protected function parseCastDouble(mixed $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'cast operand');
+        $native = $this->parseNativeObjectExplicitConversion($expr->expr, 'toFloat');
+        if ($native !== null) {
+            return $native;
+        }
         return $this->convertFloatExpr(
             $this->parseIdentifier($expr->expr),
             $this->detectTypeOfExpr($expr->expr)
@@ -4581,9 +4792,11 @@ class CompilerBase implements PropertyAccessContext
             if (isset($this->context->globalVars[$name])) {
                 continue;
             }
+            $stdContainerInfo = null;
             $code .= $this->getIndent();
             if ($type === Type::STD_ARRAY) {
                 $info = $this->context->stdArrays[$name];
+                $stdContainerInfo = $info;
                 if (isset($info['boxExpr'])) {
                     $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';
                 } else {
@@ -4596,6 +4809,7 @@ class CompilerBase implements PropertyAccessContext
                 }
             } elseif ($type === Type::STD_VECTOR) {
                 $info = $this->context->stdContainers[$name];
+                $stdContainerInfo = $info;
                 if (isset($info['boxExpr'])) {
                     $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';
                 } else {
@@ -4614,6 +4828,7 @@ class CompilerBase implements PropertyAccessContext
                 }
             } elseif ($type === Type::STD_MAP || $type === Type::STD_ORDERED_MAP) {
                 $info = $this->context->stdContainers[$name];
+                $stdContainerInfo = $info;
                 if (isset($info['boxExpr'])) {
                     $code .= 'auto &' . $name . '_ref = php::toStdContainer<' . $info['decl'] . '>(' . $info['boxExpr'] . ', ' . $info['typeId'] . ');';
                 } else {
@@ -4633,6 +4848,14 @@ class CompilerBase implements PropertyAccessContext
                 $code .= ';';
             }
             $code .= PHP_EOL;
+            if ($stdContainerInfo !== null
+                && isset($stdContainerInfo['class'])
+                && $this->isNativeObjectClass($stdContainerInfo['class'])
+            ) {
+                $rootType = 'std::remove_reference_t<decltype(' . $name . '_ref)>';
+                $code .= $this->getIndent() . 'php::NativeContainerRootFrame<' . $rootType . '> '
+                    . $name . '_native_root_frame(' . $name . '_ref);' . PHP_EOL;
+            }
         }
         return $code;
     }
@@ -4717,7 +4940,10 @@ class CompilerBase implements PropertyAccessContext
             return '';
         }
         if ($this->getNativeObjectReturnType($this->functionDef) !== null) {
-            return $this->getIndent() . 'return nullptr;';
+            $class = $this->getReturnClass();
+            $pointerType = $this->getNativeObjectPointerType($class);
+            return $this->getIndent() . 'return static_cast<' . $pointerType . '>('
+                . 'php::nativeGcRequireObject(nullptr, "' . addslashes($class) . '"));';
         }
         if ($this->functionDef->returnTypeCheck && !$this->context->inClosure) {
             return $this->genUnionCheckedReturn(self::VALUE_NULL);

@@ -33,6 +33,16 @@ class FunctionContext
     public array $nativeObjects = [];
 
     /**
+     * Native pointer variables proven non-null at the current parse point.
+     *
+     * Non-null Native parameters enter this set after their single function
+     * entry check. Any assignment or unset conservatively removes the proof.
+     *
+     * @var array<string, true>
+     */
+    public array $nonNullNativeObjects = [];
+
+    /**
      * Declared object constraints that are not used for native-call dispatch.
      *
      * @var array<string, string>
@@ -94,6 +104,7 @@ class FunctionContext
         $this->arguments = [];
         $this->objects = [];
         $this->nativeObjects = [];
+        $this->nonNullNativeObjects = [];
         $this->declaredObjects = [];
         $this->stdArrays = [];
         $this->stdContainers = [];
@@ -133,12 +144,14 @@ class FunctionContext
         int $tmpVarIndex,
         array $declaredObjects,
         array $nativeObjects = [],
+        array $nonNullNativeObjects = [],
     ): void
     {
         $this->localVars = $localVars;
         $this->tmpVarIndex = $tmpVarIndex;
         $this->declaredObjects = $declaredObjects;
         $this->nativeObjects = $nativeObjects;
+        $this->nonNullNativeObjects = $nonNullNativeObjects;
         $this->beforeStmtLines = [];
         $this->afterStmtLines = [];
         $this->objectProps = [];
