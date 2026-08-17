@@ -135,6 +135,7 @@ trait SourcePipelineTrait
         }
 
         $files = $this->filterIgnoredFiles($files);
+        $this->discoverNativeClassDeclarations($files);
         // 分析 PHP 文件，预处理
         foreach ($files as $k => $file) {
             if (FileScanner::isPhpFile($file)) {

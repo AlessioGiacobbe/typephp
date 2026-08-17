@@ -18,6 +18,8 @@ class PropertyDef
     public ?string $default = null;
     public ?ArrayInitPlan $arrayInitPlan = null;
     public bool $nullable = false;
+    /** The declared type is the unconstrained `mixed`/`any` type. */
+    public bool $explicitMixed = false;
     public string $class = '';
     public array $typeCheck = [];
     public string $typeStr = '';

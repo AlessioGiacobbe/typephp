@@ -437,6 +437,8 @@ class CompilerBase implements PropertyAccessContext
     protected array $globalVars = [];
     /** @var array<string, string> Global/static Native pointer slot => class name. */
     protected array $nativeGlobalObjects = [];
+    /** @var array<string, string> Lowercase class name => declared Native class name. */
+    protected array $nativeClassDeclarations = [];
     /** @var array<string, true> Request-reset initialization flags for Native static locals. */
     protected array $nativeStaticInitializers = [];
     protected bool $nativeTypes = false;
@@ -4060,7 +4062,10 @@ class CompilerBase implements PropertyAccessContext
         $this->assertExprCanBeUsedAsValue($expr->expr, 'eval operand');
         // 对 eval() 指令的 PHP 代码段禁止字面量优化
         $expr->expr->setAttribute('noLiteralString', true);
-        return 'php::eval(' . $this->identifierToStr($expr->expr) . ')';
+        $source = $this->isNativeObjectClass($this->detectClassOfExpr($expr->expr))
+            ? $this->parseExprToString($expr->expr)
+            : $this->identifierToStr($expr->expr);
+        return 'php::eval(' . $source . ')';
     }
 
     protected function parseInclude(Expr\Include_ $expr): string
@@ -4084,7 +4089,9 @@ class CompilerBase implements PropertyAccessContext
                 break;
         }
 
-        $fileName = $this->parseIdentifier($expr->expr);
+        $fileName = $this->isNativeObjectClass($this->detectClassOfExpr($expr->expr))
+            ? $this->parseExprToString($expr->expr)
+            : $this->parseIdentifier($expr->expr);
 
         $scope = [];
         foreach ($this->context->localVars as $name => $_type) {
@@ -4571,7 +4578,19 @@ class CompilerBase implements PropertyAccessContext
         }
         $list = [];
         foreach ($expr->parts as $part) {
-            $list[] = $this->identifierToStr($part);
+            if (!$part instanceof Node\InterpolatedStringPart) {
+                $this->assertExprCanBeUsedAsValue($part, 'shell command interpolation value');
+            }
+            if ($part instanceof Node\InterpolatedStringPart) {
+                $list[] = $this->parseExpr($part);
+            } elseif ($this->isNativeObjectClass($this->detectClassOfExpr($part))) {
+                $list[] = $this->parseOrderedOperand(
+                    new Expr\MethodCall($part, new Node\Identifier('toString')),
+                    false,
+                );
+            } else {
+                $list[] = $this->parseOrderedOperand($part, false);
+            }
         }
         return 'php::fn::shell_exec(php::concat({' . implode(', ', $list) . '}))';
     }

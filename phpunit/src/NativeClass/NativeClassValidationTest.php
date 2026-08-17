@@ -6,6 +6,25 @@ use TypePhp\Exception\TestError;
 
 final class NativeClassValidationTest extends \BaseTest
 {
+    public function testDiscoversNativeTypesBeforeCrossFileSignaturePreprocessing(): void
+    {
+        global $translator;
+
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $directory = dirname(__DIR__, 2) . '/code/native-class-forward';
+        $files = [$directory . '/a.php', $directory . '/b.php'];
+        $compiler->discoverNativeClassDeclarations($files);
+        foreach ($files as $file) {
+            $compiler->prepareFile($file);
+        }
+        foreach ($files as $file) {
+            $compiler->convertFile($file);
+        }
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testRejectsNativeAttributeOnInterface(): void
     {
         $this->expectException(\TypePhp\Exception\SyntaxError::class);
@@ -242,6 +261,32 @@ final class NativeClassValidationTest extends \BaseTest
         $this->expectException(TestError::class);
         $this->expectExceptionMessage('Native objects cannot be referenced; object assignment already shares identity');
         $this->compile('native-class-reference-assignment.php');
+    }
+
+    public function testRejectsReferencesToNativeObjectProperties(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Only Native object properties declared as any or mixed can be referenced');
+        $this->compile('native-class-property-reference.php');
+    }
+
+    public function testAllowsReferencesToExplicitAnyNativeObjectProperties(): void
+    {
+        $this->compile('native-class-any-property-reference.php');
+    }
+
+    public function testRejectsUnsetOnNativeObjectProperties(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native object properties cannot be unset');
+        $this->compile('native-class-property-unset.php');
+    }
+
+    public function testRejectsExplicitNativeDestructorCall(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Explicit calls to native object destructors are not supported');
+        $this->compile('native-class-explicit-destructor-call.php');
     }
 
     public function testRejectsNativeObjectReferenceKeywordMethod(): void

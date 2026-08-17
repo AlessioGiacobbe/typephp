@@ -240,7 +240,7 @@ final class InvalidContext
 | `object` | `php::Object` | 保存任意 Zend Object |
 | Native Class | `native_struct *` | 保存同一 Native Heap 内的裸指针 |
 | `Stream` | `php::Var` | 保存 stream resource zval，并在赋值入口执行精确类型检查 |
-| `mixed` | `php::Var` | 保存任意 PHP zval |
+| `mixed` / `any` | `php::Var` | 保存任意 PHP zval；两种声明具有相同的无约束槽语义 |
 | 不含 Native Class 的 union/intersection/nullable | `php::Var` | 与普通类属性使用同一类型描述和运行时写入检查 |
 | `?NativeClass` | `native_struct *` | `nullptr` 表示空值；包含 Native Class 的 union/intersection 不支持 |
 | BigInt/BigFloat/Decimal | `php::Var` | 保存 PHPX boxed 高精度值；字段寻址仍是固定偏移，运算复用现有 Variant ABI |
@@ -277,7 +277,19 @@ struct php_app__requestcontext final {
 
 允许字段持有 ZendVM 值不代表 Native Class Object 本身进入 ZendVM。ZendVM 可以管理字段指向的 String、Array、Object 或 resource，但它不知道外层 Native Class 的存在。
 
-### 6.1 初始化状态
+### 6.1 属性引用
+
+Native 属性是否允许取引用必须完全由声明元数据在编译期决定，不生成运行时类型分支：
+
+- `mixed` / `any` 是无约束的 `php::Var` 槽，允许 `$ref =& $object->property`。
+- `bool`、`int`、`float` 等固定布局字段不能表示 PHP 引用，编译期拒绝。
+- `string`、`array`、`object`、Stream 和高精度类型虽然具有 PHPX 包装层，但仍是固定声明类型，引用写入会绕过类型约束，因此编译期拒绝。
+- nullable、union、intersection 等受约束的 `php::Var` 字段同样拒绝引用；不能仅因底层存储也是 `php::Var` 就允许。
+- 带 Property Hook 的属性没有可暴露的实体槽，始终拒绝引用。
+
+这项规则只允许引用无约束字段值，不允许引用 Native Object 指针变量本身。Native Object 变量之间的普通赋值已经共享对象身份。
+
+### 6.2 初始化状态
 
 Native Class 不保存 PHP typed property 的 `UNDEF` 状态，也不为字段增加额外状态位。对象创建时，每个没有显式默认值的字段直接使用类型零值：
 
@@ -293,7 +305,7 @@ Native Class 不保存 PHP typed property 的 `UNDEF` 状态，也不为字段�
 
 Property Hook 的虚拟属性没有实体字段，但 Hook 声明仍必须包含类型。
 
-### 6.2 赋值检查
+### 6.3 赋值检查
 
 已确定的赋值在编译期检查。来自 `mixed`、动态 PHP 返回值或其他无法静态确定的值，在写入字段前执行一次运行时类型检查。检查完成后直接写入对应字段，不经过 Zend property handler。
 
@@ -1212,6 +1224,7 @@ $json = json_encode($nativeObject->toArray());
 | nullable Native 参数/返回值 | 支持 `?NativeClass`，以 `nullptr` 表示；成员访问必须检查或先证明非空 |
 | Native 参数/返回值的 `&` | 不支持；编译期 FatalError |
 | 对 Native Object 变量取引用 | 不支持；普通赋值已经共享对象身份 |
+| 对 Native 属性取引用 | 仅显式声明为 `mixed` / `any` 的无约束字段支持；其他字段编译期 FatalError |
 | Native variadic、union/intersection | 不支持；编译期 FatalError |
 | `__construct()` | 支持 |
 | `clone` / `__clone()` | 支持 |

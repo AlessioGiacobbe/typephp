@@ -659,6 +659,13 @@ trait CallArgumentGenerator
 
     protected function materializeCallArgValue(NodeAbstract $value, string $expr): string
     {
+        // A Native property fetch is a typed C++ pointer, never an INDIRECT
+        // zval. Passing it through php_deindirect() would box the pointer as a
+        // bool/Variant and break the Native ABI. Dynamic Zend calls reject the
+        // value before reaching here; direct Native calls keep it unchanged.
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($value))) {
+            return $expr;
+        }
         // A call that returns by reference yields a live php::Ref aliasing the
         // callee's storage. When such a call feeds a by-value argument, PHP takes
         // a value snapshot at evaluation time (left to right), so later mutations

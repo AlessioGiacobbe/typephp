@@ -246,20 +246,16 @@ trait AssignOpTrait
                 if ($allowed && ($this->hasScopeGlobalVar($leftName) || $this->hasStaticVar($leftName))) {
                     $this->promoteGlobalOrStaticToNativeObject($leftName, $rightClass, $right);
                 }
-            } elseif ($left instanceof Expr\PropertyFetch
-                && $this->isVarExpr($left->var)
-                && $this->isIdExpr($left->name)
-            ) {
-                $receiver = $this->parseVariable($left->var);
-                if ($this->isNativeObjectVar($receiver)) {
-                    $property = $this->findNativeObjectProperty(
-                        $this->getNativeObjectVarClass($receiver),
-                        $left->name->toString(),
-                    );
-                    if ($property !== null
-                        && $property->class !== ''
-                        && $this->isInterface($property->class)
-                    ) {
+            } elseif ($left instanceof Expr\PropertyFetch && $this->isIdExpr($left->name)) {
+                $receiverClass = $this->detectClassOfExpr($left->var);
+                if ($this->isNativeObjectClass($receiverClass)) {
+                    $propertyName = $left->name->toString();
+                    $resolution = $this->resolveNativeInstanceProperty($left, $propertyName, $receiverClass);
+                    if ($resolution !== null) {
+                        $this->applyNativePropertyAccessResult($left, $resolution);
+                    }
+                    $property = $resolution?->propertyDef;
+                    if ($property !== null && $property->class !== '' && $this->isInterface($property->class)) {
                         $this->fatalError(
                             $left,
                             'Native objects cannot be assigned to interface-typed properties',
@@ -306,42 +302,46 @@ trait AssignOpTrait
             $this->fatalError($left, 'Cannot write to read-only hooked property');
         }
 
-        if ($left instanceof Expr\PropertyFetch
-            && $this->isVarExpr($left->var)
-            && $this->isIdExpr($left->name)
-        ) {
-            $object = $this->parseIdentifier($left->var);
-            if ($this->isNativeObjectVar($object)) {
-                $property = $this->parseIdentifier($left->name);
-                $class = $this->getNativeObjectVarClass($object);
+        if ($left instanceof Expr\PropertyFetch && $this->isIdExpr($left->name)) {
+            $receiverClass = $this->detectClassOfExpr($left->var);
+            if ($this->isNativeObjectClass($receiverClass)) {
+                $property = $left->name->toString();
                 $access = $this->getNativePropertyAccess($left);
                 if ($access === null) {
-                    $this->fatalError($left, "Native class `{$class}` has no property `\${$property}`");
+                    $resolution = $this->resolveNativeInstanceProperty($left, $property, $receiverClass);
+                    if ($resolution === null) {
+                        $this->fatalError($left, "Native class `{$receiverClass}` has no property `\${$property}`");
+                    }
+                    $this->applyNativePropertyAccessResult($left, $resolution);
+                    $access = $this->getNativePropertyAccess($left);
                 }
                 $def = $access->getPropertyDef();
-                $field = $this->getNativeObjectPropertyCppName($def, $access->getClassDef());
-                $rightExpr = $this->parseExprAsValue($right);
+
+                // Parse and materialize the receiver before the right-hand
+                // expression. PHP evaluates an object/property target before
+                // its assigned value, and C++ operand order must not decide it.
+                $leftExpr = $this->parsePropertyFetch($left);
                 if ($def->type === Type::OBJECT && $this->isNativeObjectClass($def->class)) {
                     if ($this->isNull($right)) {
                         if (!$def->nullable) {
-                            $this->fatalError($right, "Cannot assign null to native property `{$class}::\${$property}`");
+                            $this->fatalError($right, "Cannot assign null to native property `{$receiverClass}::\${$property}`");
                         }
-                        return $this->getNativeObjectMemberReceiver($object)
-                            . $field . ' = nullptr';
+                        return $leftExpr . ' = nullptr';
                     }
                     $rightClass = $this->detectClassOfExpr($right);
                     if ($rightClass === '' || !$this->isObjectClassStaticallyAssignableTo($rightClass, $def->class)) {
-                        $this->fatalError($right, "Cannot assign value to native property `{$class}::\${$property}`");
+                        $this->fatalError($right, "Cannot assign value to native property `{$receiverClass}::\${$property}`");
                     }
-                } else {
-                    $this->assertCanAssignPropertyWrite($propertyWriteTarget, $right);
-                    $rightExpr = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $right, $rightExpr);
-                    if ($def->type !== Type::VAR) {
-                        $rightExpr = $this->convertExprFromType($def->type, $rightExpr);
-                    }
+                    return $leftExpr . ' = ' . $this->parseExprAsValue($right);
                 }
-                return $this->getNativeObjectMemberReceiver($object)
-                    . $field . ' = ' . $rightExpr;
+
+                $this->assertCanAssignPropertyWrite($propertyWriteTarget, $right);
+                $rightExpr = $this->parseExprAsValue($right);
+                $rightExpr = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $right, $rightExpr);
+                if ($def->type !== Type::VAR) {
+                    $rightExpr = $this->convertExprFromType($def->type, $rightExpr);
+                }
+                return $leftExpr . ' = ' . $rightExpr;
             }
         }
 

@@ -207,6 +207,12 @@ trait PropertyAccessTrait
 
     protected function emitDynamicPropertyFetchRef(Expr\PropertyFetch $expr, NodeAbstract $errorNode): string
     {
+        $receiverClass = $this->detectClassOfExpr($expr->var);
+        if ($this->isNativeObjectClass($receiverClass)) {
+            $this->assertNativeObjectReferenceForbidden($expr, $errorNode);
+            return $this->parsePropertyFetch($expr) . '.toReference()';
+        }
+
         // Reference diagnostics are more specific than the generic readonly
         // mutation error emitted by preparePropertyWriteTarget().
         $target = $this->preparePropertyWriteTarget($expr, true);

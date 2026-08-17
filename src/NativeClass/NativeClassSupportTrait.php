@@ -258,7 +258,13 @@ trait NativeClassSupportTrait
     protected function isNativeObjectClass(string $class): bool
     {
         $class = ltrim($class, '\\');
-        return $class !== '' && $this->hasClass($class) && $this->getClass($class)->nativeObject;
+        if ($class === '') {
+            return false;
+        }
+        if (isset($this->nativeClassDeclarations[strtolower($class)])) {
+            return true;
+        }
+        return $this->hasClass($class) && $this->getClass($class)->nativeObject;
     }
 
     /**
@@ -361,8 +367,23 @@ trait NativeClassSupportTrait
 
     protected function getNativeObjectCppName(string|ClassDef $class): string
     {
-        $classDef = $class instanceof ClassDef ? $class : $this->getClass(ltrim($class, '\\'));
-        return self::PREFIX . $this->getNativeName('', $classDef->namespace, $classDef->name);
+        if ($class instanceof ClassDef) {
+            return self::PREFIX . $this->getNativeName('', $class->namespace, $class->name);
+        }
+        $class = ltrim($class, '\\');
+        if ($this->hasClass($class)) {
+            $classDef = $this->getClass($class);
+            return self::PREFIX . $this->getNativeName('', $classDef->namespace, $classDef->name);
+        }
+
+        // The Native declaration catalog is built before semantic
+        // preprocessing, so signatures may name a Native class declared in a
+        // later file. Its C++ symbol is derivable from the fully-qualified PHP
+        // name without requiring the complete ClassDef yet.
+        $separator = strrpos($class, '\\');
+        $namespace = $separator === false ? '' : substr($class, 0, $separator);
+        $name = $separator === false ? $class : substr($class, $separator + 1);
+        return self::PREFIX . $this->getNativeName('', $namespace, $name);
     }
 
     protected function getNativeObjectDescriptorName(string|ClassDef $class): string
@@ -564,16 +585,44 @@ trait NativeClassSupportTrait
     }
 
     /**
-     * Native objects already have reference semantics: variables contain a
-     * typed pointer and assignment copies only that pointer. PHP references
-     * would alias the pointer slot itself, which has no useful Native ABI
-     * representation and would make a typed slot possible to rebind through
-     * an untyped reference.
+     * Validate a Native reference entirely from compile-time metadata.
+     *
+     * A Native object variable is a typed pointer and must never expose its
+     * pointer slot as a PHP reference. A Native property may expose a reference
+     * only when it was explicitly declared `mixed`/`any`: that field is an
+     * unconstrained php::Var slot. Fixed-layout fields and constrained Variant
+     * fields must reject references because a later reference write could
+     * bypass their declared type.
      */
     protected function assertNativeObjectReferenceForbidden(
         NodeAbstract $expr,
         NodeAbstract $errorNode,
     ): void {
+        if ($expr instanceof Node\Expr\PropertyFetch) {
+            $receiverClass = $this->detectClassOfExpr($expr->var);
+            if ($this->isNativeObjectClass($receiverClass)) {
+                if (!$expr->name instanceof Node\Identifier) {
+                    $this->fatalError($errorNode, 'Dynamic native object property access is not supported');
+                }
+                $property = $expr->name->toString();
+                $resolution = $this->resolveNativeInstanceProperty($expr, $property, $receiverClass);
+                if ($resolution === null) {
+                    $this->fatalError(
+                        $errorNode,
+                        "Native class `{$receiverClass}` has no property `\${$property}`",
+                    );
+                }
+                $this->applyNativePropertyAccessResult($expr, $resolution);
+                $definition = $resolution->propertyDef;
+                if (!$definition->explicitMixed || $definition->getter !== null || $definition->setter !== null) {
+                    $this->fatalError(
+                        $errorNode,
+                        'Only Native object properties declared as any or mixed can be referenced',
+                    );
+                }
+                return;
+            }
+        }
         $class = $this->detectDeclaredClassOfExpr($expr);
         if ($this->isNativeObjectClass($class)) {
             $this->fatalError(

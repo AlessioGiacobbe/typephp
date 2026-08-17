@@ -21,6 +21,7 @@ use TypePhp\Entity\PropertyDef;
 use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 use TypePhp\Exception\SyntaxError;
 use TypePhp\Transform\PropertyHookLowering;
+use TypePhp\Transform\CompileTimeAttribute;
 use TypePhp\Transform\NativeClassAttributeLowering;
 use TypePhp\Transform\PrinterLowering;
 use TypePhp\Transform\ArrayableLowering;
@@ -42,6 +43,69 @@ use PhpParser\NodeVisitor\NameResolver;
 
 class Preprocessor extends CompilerBase
 {
+    /**
+     * Discover Native class names before parsing any signatures or fields.
+     *
+     * PHP permits forward class references across both declaration and file
+     * order. Native fields need the same property while choosing a concrete
+     * C++ pointer type, so waiting for prepareClass() would be order-dependent.
+     * Only files which mention both an attribute and "Native" are parsed in
+     * this lightweight pass; ordinary projects pay no second parse cost.
+     *
+     * @param list<string> $files
+     */
+    public function discoverNativeClassDeclarations(array $files): void
+    {
+        foreach ($files as $file) {
+            if (!$this->isPhpFileForNativeDiscovery($file)) {
+                continue;
+            }
+            $source = file_get_contents($file);
+            if (!is_string($source)
+                || !str_contains($source, '#[')
+                || stripos($source, 'native') === false
+            ) {
+                continue;
+            }
+            try {
+                $ast = $this->parser->parse($source);
+            } catch (\PhpParser\Error) {
+                // prepareFile() owns the normal source diagnostic, including
+                // the filename and compiler formatting. Avoid reporting a
+                // syntax error twice from this declaration-only pass.
+                continue;
+            }
+            $traverser = new NodeTraverser();
+            $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
+            $ast = $traverser->traverse($ast);
+            $this->discoverNativeClassDeclarationsInAst($ast);
+        }
+    }
+
+    private function isPhpFileForNativeDiscovery(string $file): bool
+    {
+        return str_ends_with(strtolower($file), '.php');
+    }
+
+    /** @param array<Node\Stmt> $ast */
+    private function discoverNativeClassDeclarationsInAst(array $ast): void
+    {
+        $finder = new NodeFinder();
+        foreach ($finder->findInstanceOf($ast, Node\Stmt\Class_::class) as $class) {
+            if ($class->name === null
+                || (!NativeClassAttributeLowering::isNative($class)
+                    && CompileTimeAttribute::find($class, 'Native') === null)
+            ) {
+                continue;
+            }
+            $name = isset($class->namespacedName)
+                ? $class->namespacedName->toString()
+                : $class->name->toString();
+            $name = ltrim($name, '\\');
+            $this->nativeClassDeclarations[strtolower($name)] = $name;
+        }
+    }
+
     public function getSortedFiles(array $list): array
     {
         $sorter = new StringSort();
@@ -158,6 +222,10 @@ class Preprocessor extends CompilerBase
             $traverser->addVisitor(new ConstantExpressionValidationVisitor($this->phpVersion));
             $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
             $stmts = $traverser->traverse($ast);
+            // CompilerTest and embedding users may invoke prepareFile()
+            // directly instead of the project pipeline. Preserve same-file
+            // forward Native references for that public entry path as well.
+            $this->discoverNativeClassDeclarationsInAst($stmts);
 
             foreach ($stmts as $v) {
                 $type = $v->getType();
@@ -1288,6 +1356,17 @@ class Preprocessor extends CompilerBase
         }
 
         $propDef = new PropertyDef($name, $flags, $type, $default, $nullable);
+        if ($typeNode !== null
+            && !$typeNode instanceof NullableType
+            && !$typeNode instanceof UnionType
+            && !$typeNode instanceof IntersectionType
+        ) {
+            $propDef->explicitMixed = in_array(
+                strtolower($this->parseIdentifier($typeNode)),
+                ['mixed', 'any'],
+                true,
+            );
+        }
         $propDef->readonly = (bool) (($flags | $this->classDef->flags) & Modifiers::READONLY);
         $propDef->class = $class;
         $propDef->arrayInitPlan = $arrayInitPlan;
@@ -1472,7 +1551,7 @@ class Preprocessor extends CompilerBase
             'null'                     => ['null'],
             'object'                   => [], // no literal object default exists
             'self', 'parent', 'static' => [],
-            'mixed'                    => null,
+            'mixed', 'any'             => null,
             'callable'                 => null, // string/array/closure — not checkable
             default                    => [],   // class type: only null via ?Type
         };
