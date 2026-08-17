@@ -91,6 +91,22 @@ trait CompilationStateTrait
         } else {
             return;
         }
+        $class = $this->registerNativeGlobalObject($slot, $class, $node);
+        $this->addNativeObject($name, $class);
+    }
+
+    /**
+     * Fix the C++ pointer ABI of a project-wide global/static slot.
+     *
+     * The project discovery pass calls this before C++ emission; the ordinary
+     * convert path calls it again to validate every concrete assignment.
+     */
+    protected function registerNativeGlobalObject(
+        string $slot,
+        string $class,
+        ?NodeAbstract $node = null,
+    ): string {
+        $class = ltrim($class, '\\');
         if (isset($this->nativeGlobalObjects[$slot])) {
             $existing = $this->nativeGlobalObjects[$slot];
             if (!$this->isObjectClassStaticallyAssignableTo($class, $existing)) {
@@ -106,7 +122,7 @@ trait CompilationStateTrait
         }
         $this->globalVars[$slot] = $this->getNativeObjectPointerType($class);
         $this->nativeGlobalObjects[$slot] = $class;
-        $this->addNativeObject($name, $class);
+        return $class;
     }
 
     protected function addScopeGlobalVar(string $name, string $type): void

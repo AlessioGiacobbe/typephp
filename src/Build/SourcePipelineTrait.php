@@ -150,6 +150,10 @@ trait SourcePipelineTrait
                 }
             }
         }
+        // Global slots are shared by every translation unit. Fix any Native
+        // pointer ABI now, after declarations are known and before the first
+        // per-file C++ body is generated.
+        $this->discoverNativeGlobalObjects(array_values($files));
         $files = $this->getSortedFiles($files);
         return $files;
     }

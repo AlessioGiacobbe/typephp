@@ -32,6 +32,18 @@ function replaceGlobalWithChild(): void
     $nativeGlobal->value = 41;
 }
 
+function clearGlobal(): void
+{
+    global $nativeGlobal;
+    $nativeGlobal = null;
+}
+
+function globalIsNull(): bool
+{
+    global $nativeGlobal;
+    return is_null($nativeGlobal);
+}
+
 function nextStatic(): int
 {
     static $counter = new NativeCounter();
@@ -44,12 +56,18 @@ function main(): void
     var_dump(readGlobal());
     replaceGlobalWithChild();
     var_dump(readGlobal());
+    clearGlobal();
+    var_dump(globalIsNull());
+    replaceGlobalWithChild();
+    var_dump(readGlobal());
     var_dump(nextStatic());
     var_dump(nextStatic());
 }
 ?>
 --EXPECT--
 int(40)
+int(41)
+bool(true)
 int(41)
 int(1)
 int(2)

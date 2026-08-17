@@ -30,6 +30,7 @@ use TypePhp\Transform\FunctionAttributeLowering;
 use TypePhp\Transform\ConstantExpressionValidationVisitor;
 use TypePhp\Transform\RuntimeAttributeFactoryLowering;
 use TypePhp\Transform\Visitor;
+use TypePhp\NativeClass\NativeGlobalDiscovery;
 use PhpParser\Modifiers;
 use PhpParser\ConstExprEvaluator;
 use PhpParser\Node;
@@ -104,6 +105,135 @@ class Preprocessor extends CompilerBase
             $name = ltrim($name, '\\');
             $this->nativeClassDeclarations[strtolower($name)] = $name;
         }
+    }
+
+    /**
+     * Discover Native Object globals after all declarations have been prepared
+     * but before the first translation unit is emitted.
+     *
+     * @param list<string> $files
+     */
+    public function discoverNativeGlobalObjects(array $files): void
+    {
+        $hasNativeClass = false;
+        foreach ($this->symbols->classes() as $class) {
+            if ($class->nativeObject) {
+                $hasNativeClass = true;
+                break;
+            }
+        }
+        if (!$hasNativeClass) {
+            return;
+        }
+
+        $functionReturns = [];
+        foreach ($this->symbols->functions() as $function) {
+            if (!$function->method && $this->hasClass($function->returnClass)) {
+                $functionReturns[strtolower(ltrim($function->getNamespacedName(), '\\'))]
+                    = $this->getClass($function->returnClass)->getNamespacedName(false);
+            }
+        }
+
+        $discovery = new NativeGlobalDiscovery(
+            function (string $class): ?string {
+                $class = ltrim($class, '\\');
+                if (!$this->hasClass($class)) {
+                    return null;
+                }
+                return $this->getClass($class)->getNamespacedName(false);
+            },
+            function (string $class): ?string {
+                $class = ltrim($class, '\\');
+                if (!$this->isNativeObjectClass($class)) {
+                    return null;
+                }
+                return $this->getClass($class)->getNamespacedName(false);
+            },
+            static function (array $names) use ($functionReturns): ?string {
+                foreach ($names as $name) {
+                    $key = strtolower(ltrim($name, '\\'));
+                    if (isset($functionReturns[$key])) {
+                        return $functionReturns[$key];
+                    }
+                }
+                return null;
+            },
+            function (string $class, string $method): ?string {
+                while ($this->hasClass($class)) {
+                    $classDefinition = $this->getClass($class);
+                    if ($classDefinition->hasMethod($method)) {
+                        $returnClass = $classDefinition->getMethod($method)->functionDef->returnClass;
+                        return $this->hasClass($returnClass)
+                            ? $this->getClass($returnClass)->getNamespacedName(false)
+                            : null;
+                    }
+                    $class = $classDefinition->extends;
+                }
+                return null;
+            },
+            function (string $class, string $property): ?string {
+                while ($this->hasClass($class)) {
+                    $classDefinition = $this->getClass($class);
+                    if ($classDefinition->hasProperty($property)) {
+                        $propertyClass = $classDefinition->getProperty($property)->class;
+                        return $this->hasClass($propertyClass)
+                            ? $this->getClass($propertyClass)->getNamespacedName(false)
+                            : null;
+                    }
+                    $class = $classDefinition->extends;
+                }
+                return null;
+            },
+            function (string $left, string $right): ?string {
+                if ($this->isObjectClassStaticallyAssignableTo($left, $right)) {
+                    return $right;
+                }
+                if ($this->isObjectClassStaticallyAssignableTo($right, $left)) {
+                    return $left;
+                }
+                return null;
+            },
+            function (string $class): ?string {
+                if (!$this->hasClass($class)) {
+                    return null;
+                }
+                $parent = $this->getClass($class)->extends;
+                return $this->hasClass($parent)
+                    ? $this->getClass($parent)->getNamespacedName(false)
+                    : null;
+            },
+        );
+
+        foreach ($files as $file) {
+            if (!$this->isPhpFileForNativeDiscovery($file)) {
+                continue;
+            }
+            $source = file_get_contents($file);
+            if (!is_string($source)
+                || (!str_contains($source, 'global') && !str_contains($source, '$GLOBALS'))
+            ) {
+                continue;
+            }
+            try {
+                $ast = $this->parser->parse($source);
+            } catch (\PhpParser\Error) {
+                // prepareFile() has already emitted the authoritative syntax
+                // diagnostic. This pass must not report it a second time.
+                continue;
+            }
+            $traverser = new NodeTraverser();
+            $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
+            $ast = $traverser->traverse($ast);
+            foreach ($discovery->discover($ast) as $slot) {
+                $this->registerNativeGlobalObject($slot['name'], $slot['class'], $slot['node']);
+            }
+        }
+
+        // The resolver closures are bound to the Translator. Release the
+        // short-lived discovery object before returning so an embedded,
+        // self-hosted compiler never keeps that object graph alive until
+        // php_embed_shutdown().
+        unset($discovery);
     }
 
     public function getSortedFiles(array $list): array

@@ -25,6 +25,31 @@ final class NativeClassValidationTest extends \BaseTest
         $this->addToAssertionCount(1);
     }
 
+    public function testDiscoversNativeGlobalSlotBeforeEarlierReaderIsConverted(): void
+    {
+        global $translator;
+
+        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $directory = dirname(__DIR__, 2) . '/code/native-class-global-forward';
+        $files = [$directory . '/a.php', $directory . '/b.php'];
+        $compiler->discoverNativeClassDeclarations($files);
+        foreach ($files as $file) {
+            $compiler->prepareFile($file);
+        }
+        $compiler->discoverNativeGlobalObjects($files);
+        $reader = $compiler->convertFile($files[0]);
+        $compiler->convertFile($files[1]);
+
+        $code = file_get_contents($reader);
+        self::assertIsString($code);
+        self::assertStringContainsString(
+            'php::nativeDeref(nativeForwardGlobal, "NativeForwardGlobalValue").value',
+            $code,
+        );
+        self::assertStringNotContainsString('nativeForwardGlobal.attr(', $code);
+    }
+
     public function testRejectsNativeAttributeOnInterface(): void
     {
         $this->expectException(\TypePhp\Exception\SyntaxError::class);
@@ -239,6 +264,11 @@ final class NativeClassValidationTest extends \BaseTest
         $this->expectException(TestError::class);
         $this->expectExceptionMessage('Native objects cannot be used as dynamic class targets');
         $this->compile('native-class-dynamic-new.php');
+    }
+
+    public function testLeavesDynamicClassExpressionsToTheOrdinaryPhpPath(): void
+    {
+        $this->compile('native-class-dynamic-class-expression.php');
     }
 
     public function testRejectsNativeObjectAsDynamicStaticCallTarget(): void

@@ -1,0 +1,392 @@
+<?php
+/**
+ * This file is part of TypePHP.
+ *
+ * @link     https://www.swoole.com/
+ * @contact  service@swoole.com
+ */
+
+namespace TypePhp\NativeClass;
+
+use PhpParser\Node;
+use PhpParser\NodeAbstract;
+
+/**
+ * Discovers project-wide global slots which carry Native Object pointers.
+ *
+ * C++ files are emitted one at a time, while a PHP global can be written in a
+ * later file. The slot ABI must therefore be known before the first file is
+ * converted. This deliberately small, flow-local analysis only tracks Native
+ * pointer identities; ordinary PHP value inference remains in the compiler's
+ * normal convert phase.
+ */
+final class NativeGlobalDiscovery
+{
+    /** @var \Closure(string): ?string */
+    private \Closure $canonicalClass;
+
+    /** @var \Closure(string): ?string */
+    private \Closure $nativeClass;
+
+    /** @var \Closure(list<string>): ?string */
+    private \Closure $functionReturn;
+
+    /** @var \Closure(string, string): ?string */
+    private \Closure $methodReturn;
+
+    /** @var \Closure(string, string): ?string */
+    private \Closure $propertyClass;
+
+    /** @var \Closure(string, string): ?string */
+    private \Closure $commonClass;
+
+    /** @var \Closure(string): ?string */
+    private \Closure $parentClass;
+
+    private string $scopeClass = '';
+
+    /**
+     * @param \Closure(string): ?string $canonicalClass
+     * @param \Closure(string): ?string $nativeClass
+     * @param \Closure(list<string>): ?string $functionReturn
+     * @param \Closure(string, string): ?string $methodReturn
+     * @param \Closure(string, string): ?string $propertyClass
+     * @param \Closure(string, string): ?string $commonClass
+     * @param \Closure(string): ?string $parentClass
+     */
+    public function __construct(
+        \Closure $canonicalClass,
+        \Closure $nativeClass,
+        \Closure $functionReturn,
+        \Closure $methodReturn,
+        \Closure $propertyClass,
+        \Closure $commonClass,
+        \Closure $parentClass,
+    ) {
+        $this->canonicalClass = $canonicalClass;
+        $this->nativeClass = $nativeClass;
+        $this->functionReturn = $functionReturn;
+        $this->methodReturn = $methodReturn;
+        $this->propertyClass = $propertyClass;
+        $this->commonClass = $commonClass;
+        $this->parentClass = $parentClass;
+    }
+
+    /**
+     * @param list<Node\Stmt> $statements
+     * @return list<array{name: string, class: string, node: NodeAbstract}>
+     */
+    public function discover(array $statements): array
+    {
+        $result = [];
+        $this->discoverStatements($statements, '', $result);
+        return $result;
+    }
+
+    /**
+     * @param list<Node\Stmt> $statements
+     * @param list<array{name: string, class: string, node: NodeAbstract}> $result
+     */
+    private function discoverStatements(array $statements, string $class, array &$result): void
+    {
+        foreach ($statements as $statement) {
+            if ($statement instanceof Node\Stmt\Namespace_) {
+                $this->discoverStatements($statement->stmts, '', $result);
+                continue;
+            }
+            if ($statement instanceof Node\Stmt\Function_) {
+                $this->discoverFunction($statement, '', $result);
+                continue;
+            }
+            if ($statement instanceof Node\Stmt\ClassLike) {
+                $className = isset($statement->namespacedName)
+                    ? $statement->namespacedName->toString()
+                    : ($statement->name?->toString() ?? '');
+                foreach ($statement->getMethods() as $method) {
+                    $this->discoverFunction($method, $className, $result);
+                }
+            }
+        }
+    }
+
+    /**
+     * @param list<array{name: string, class: string, node: NodeAbstract}> $result
+     */
+    private function discoverFunction(
+        Node\Stmt\Function_|Node\Stmt\ClassMethod $function,
+        string $class,
+        array &$result,
+    ): void {
+        if ($function->stmts === null) {
+            return;
+        }
+
+        $globals = [];
+        $this->collectGlobals($function->stmts, $globals);
+        if ($globals === [] && !$this->containsGlobalsArray($function->stmts)) {
+            return;
+        }
+
+        $locals = [];
+        $previousScope = $this->scopeClass;
+        $thisClass = ($this->canonicalClass)($class);
+        $this->scopeClass = $thisClass ?? '';
+        if ($thisClass !== null) {
+            $locals['this'] = $thisClass;
+        }
+        foreach ($function->params as $parameter) {
+            if (!$parameter->var instanceof Node\Expr\Variable || !is_string($parameter->var->name)) {
+                continue;
+            }
+            $parameterClass = $this->classFromType($parameter->type);
+            if ($parameterClass !== null) {
+                $locals[$parameter->var->name] = $parameterClass;
+            }
+        }
+
+        $this->analyzeNodes($function->stmts, $globals, $locals, $result);
+        $this->scopeClass = $previousScope;
+    }
+
+    /** @param array<string, true> $globals */
+    private function collectGlobals(mixed $node, array &$globals): void
+    {
+        if ($node === null) {
+            return;
+        }
+        if (is_array($node)) {
+            foreach ($node as $item) {
+                $this->collectGlobals($item, $globals);
+            }
+            return;
+        }
+        if (!$node instanceof NodeAbstract || $node instanceof Node\FunctionLike) {
+            return;
+        }
+        if ($node instanceof Node\Stmt\Global_) {
+            foreach ($node->vars as $variable) {
+                if ($variable instanceof Node\Expr\Variable && is_string($variable->name)) {
+                    $globals[$variable->name] = true;
+                }
+            }
+            return;
+        }
+        foreach ($node->getSubNodeNames() as $name) {
+            $this->collectGlobals($node->{$name}, $globals);
+        }
+    }
+
+    private function containsGlobalsArray(mixed $node): bool
+    {
+        if ($node === null) {
+            return false;
+        }
+        if (is_array($node)) {
+            foreach ($node as $item) {
+                if ($this->containsGlobalsArray($item)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (!$node instanceof NodeAbstract || $node instanceof Node\FunctionLike) {
+            return false;
+        }
+        if ($this->globalArrayName($node) !== null) {
+            return true;
+        }
+        foreach ($node->getSubNodeNames() as $name) {
+            if ($this->containsGlobalsArray($node->{$name})) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param array<string, true> $globals
+     * @param array<string, string> $locals
+     * @param list<array{name: string, class: string, node: NodeAbstract}> $result
+     */
+    private function analyzeNodes(
+        mixed $node,
+        array $globals,
+        array &$locals,
+        array &$result,
+    ): void {
+        if ($node === null) {
+            return;
+        }
+        if (is_array($node)) {
+            foreach ($node as $item) {
+                $this->analyzeNodes($item, $globals, $locals, $result);
+            }
+            return;
+        }
+        if (!$node instanceof NodeAbstract || $node instanceof Node\FunctionLike) {
+            return;
+        }
+        if ($node instanceof Node\Expr\Assign) {
+            $this->analyzeNodes($node->expr, $globals, $locals, $result);
+            $class = $this->inferClass($node->expr, $locals);
+            $globalName = $this->assignmentGlobalName($node->var, $globals);
+            $nativeClass = $class === null ? null : ($this->nativeClass)($class);
+            if ($globalName !== null && $nativeClass !== null) {
+                $result[] = ['name' => $globalName, 'class' => $nativeClass, 'node' => $node];
+            } elseif ($node->var instanceof Node\Expr\Variable && is_string($node->var->name)) {
+                if ($class !== null) {
+                    $locals[$node->var->name] = $class;
+                } elseif (!$this->isNull($node->expr)) {
+                    unset($locals[$node->var->name]);
+                }
+            }
+            $this->analyzeNodes($node->var, $globals, $locals, $result);
+            return;
+        }
+        foreach ($node->getSubNodeNames() as $name) {
+            $this->analyzeNodes($node->{$name}, $globals, $locals, $result);
+        }
+    }
+
+    /** @param array<string, string> $locals */
+    private function inferClass(NodeAbstract $expression, array $locals): ?string
+    {
+        if ($expression instanceof Node\Expr\Assign) {
+            return $this->inferClass($expression->expr, $locals);
+        }
+        if ($expression instanceof Node\Expr\New_ && $expression->class instanceof Node\Name) {
+            return $this->resolvedClass($expression->class);
+        }
+        if ($expression instanceof Node\Expr\Variable && is_string($expression->name)) {
+            return $locals[$expression->name] ?? null;
+        }
+        if ($expression instanceof Node\Expr\Clone_
+            || $expression instanceof Node\Expr\ErrorSuppress
+        ) {
+            return $this->inferClass($expression->expr, $locals);
+        }
+        if ($expression instanceof Node\Expr\FuncCall && $expression->name instanceof Node\Name) {
+            return ($this->functionReturn)($this->resolvedNameCandidates($expression->name));
+        }
+        if ($expression instanceof Node\Expr\StaticCall
+            && $expression->class instanceof Node\Name
+            && $expression->name instanceof Node\Identifier
+        ) {
+            $class = $this->resolvedClass($expression->class);
+            return $class === null ? null : ($this->methodReturn)($class, $expression->name->toString());
+        }
+        if ($expression instanceof Node\Expr\MethodCall
+            && $expression->name instanceof Node\Identifier
+        ) {
+            $class = $this->inferClass($expression->var, $locals);
+            return $class === null ? null : ($this->methodReturn)($class, $expression->name->toString());
+        }
+        if ($expression instanceof Node\Expr\PropertyFetch
+            && $expression->name instanceof Node\Identifier
+        ) {
+            $class = $this->inferClass($expression->var, $locals);
+            return $class === null ? null : ($this->propertyClass)($class, $expression->name->toString());
+        }
+        if ($expression instanceof Node\Expr\Ternary) {
+            $if = $expression->if === null
+                ? $this->inferClass($expression->cond, $locals)
+                : $this->inferClass($expression->if, $locals);
+            return $this->mergeClasses($if, $this->inferClass($expression->else, $locals));
+        }
+        if ($expression instanceof Node\Expr\BinaryOp\Coalesce) {
+            return $this->mergeClasses(
+                $this->inferClass($expression->left, $locals),
+                $this->inferClass($expression->right, $locals),
+            );
+        }
+        if ($expression instanceof Node\Expr\Match_) {
+            $class = null;
+            foreach ($expression->arms as $arm) {
+                $class = $this->mergeClasses($class, $this->inferClass($arm->body, $locals));
+            }
+            return $class;
+        }
+        return null;
+    }
+
+    private function mergeClasses(?string $left, ?string $right): ?string
+    {
+        if ($left === null) {
+            return $right;
+        }
+        if ($right === null) {
+            return $left;
+        }
+        return ($this->commonClass)($left, $right);
+    }
+
+    private function classFromType(?NodeAbstract $type): ?string
+    {
+        if ($type instanceof Node\NullableType) {
+            $type = $type->type;
+        }
+        return $type instanceof Node\Name
+            ? $this->resolvedClass($type)
+            : null;
+    }
+
+    /** @param array<string, true> $globals */
+    private function assignmentGlobalName(NodeAbstract $target, array $globals): ?string
+    {
+        if ($target instanceof Node\Expr\Variable
+            && is_string($target->name)
+            && isset($globals[$target->name])
+        ) {
+            return $target->name;
+        }
+        return $this->globalArrayName($target);
+    }
+
+    private function globalArrayName(NodeAbstract $node): ?string
+    {
+        if (!$node instanceof Node\Expr\ArrayDimFetch
+            || !$node->var instanceof Node\Expr\Variable
+            || $node->var->name !== 'GLOBALS'
+            || !$node->dim instanceof Node\Scalar\String_
+        ) {
+            return null;
+        }
+        return $node->dim->value;
+    }
+
+    private function isNull(NodeAbstract $expression): bool
+    {
+        return $expression instanceof Node\Expr\ConstFetch
+            && strtolower($expression->name->toString()) === 'null';
+    }
+
+    private function resolvedName(Node\Name $name): string
+    {
+        $resolved = $name->getAttribute('resolvedName');
+        return ltrim($resolved instanceof Node\Name ? $resolved->toString() : $name->toString(), '\\');
+    }
+
+    private function resolvedClass(Node\Name $name): ?string
+    {
+        $keyword = strtolower($name->toString());
+        if ($keyword === 'self' || $keyword === 'static') {
+            return $this->scopeClass !== '' ? $this->scopeClass : null;
+        }
+        if ($keyword === 'parent') {
+            return $this->scopeClass !== '' ? ($this->parentClass)($this->scopeClass) : null;
+        }
+        return ($this->canonicalClass)($this->resolvedName($name));
+    }
+
+    /** @return list<string> */
+    private function resolvedNameCandidates(Node\Name $name): array
+    {
+        $names = [$this->resolvedName($name)];
+        $fallback = $name->getAttribute('fallbackName');
+        if ($fallback instanceof Node\Name) {
+            $names[] = ltrim($fallback->toString(), '\\');
+        }
+        $names[] = ltrim($name->toString(), '\\');
+        return array_values(array_unique($names));
+    }
+}

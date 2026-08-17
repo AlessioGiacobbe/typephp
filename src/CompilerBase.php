@@ -3780,6 +3780,10 @@ class CompilerBase implements PropertyAccessContext
                         if ($nativeCtor === false) {
                             $this->fatalError($expr, "Native constructor `{$className}::__construct()` cannot be resolved");
                         }
+                        // Keep the generated C++ argument text separate from
+                        // the AST argument array used by the ordinary-class
+                        // path below. The self-hosted compiler assigns one
+                        // fixed C++ type to each PHP local variable.
                         $nativeArgs = $expr->args === []
                             ? ''
                             : ', ' . $this->parseNativeCallArgs($expr->args, $nativeCtor);
