@@ -221,6 +221,19 @@ trait AssignOpTrait
     {
         $this->assertNotNullsafeWriteContext($left);
         $rightClass = $this->detectClassOfExpr($right);
+
+        // A Native-element std container owns a PHPX Box but its raw pointer
+        // elements are traced only by the function-local container root frame.
+        // Copying the whole Box into any other value slot could outlive that
+        // frame, so reject the escape once at the assignment boundary. Element
+        // reads/writes do not pass the container variable itself as the RHS.
+        if ($this->isVarExpr($right)) {
+            $this->assertStdContainerDoesNotEscapeNativeObjects(
+                $right,
+                $this->parseIdentifier($right),
+            );
+        }
+
         if ($left instanceof Expr\List_) {
             if ($this->isNativeObjectClass($rightClass)) {
                 $this->fatalError($right, 'Native objects cannot be destructured into PHP values');
@@ -430,6 +443,9 @@ trait AssignOpTrait
                     $class = $this->parseIdentifier($right->class);
                     if ($class === 'std') {
                         if (in_array($right->name->toString(), ['array', 'vector', 'map', 'ordered_map'], true)) {
+                            if ($this->hasScopeGlobalVar($var) || $this->hasStaticVar($var)) {
+                                $this->assertNativeStdContainerFunctionLocal($right);
+                            }
                             if ($this->hasVar($var)) {
                                 $this->fatalError($left, "Cannot re-assign `\${$var}` to std::{$right->name->toString()}");
                             }
@@ -970,6 +986,14 @@ trait AssignOpTrait
 
         $this->assertNativeObjectReferenceForbidden($expr->var, $expr);
         $this->assertNativeObjectReferenceForbidden($expr->expr, $expr);
+        foreach ([$expr->var, $expr->expr] as $referenceOperand) {
+            if ($this->isVarExpr($referenceOperand)) {
+                $this->assertStdContainerDoesNotEscapeNativeObjects(
+                    $referenceOperand,
+                    $this->parseIdentifier($referenceOperand),
+                );
+            }
+        }
 
         // A reference would outlive the constructor-only write window and
         // make later mutations invisible to the compiler. It is therefore
@@ -1071,6 +1095,9 @@ trait AssignOpTrait
         }
 
         $this->context->beforeStmtLines[] = $rightExpr . ';';
+        if ($expr->var instanceof Expr\PropertyFetch && $this->isNativePropertyAccess($expr->var)) {
+            return $left . '.rebindReference(' . $tmpVar . ')';
+        }
         return $left . ' = &' . $tmpVar;
     }
 

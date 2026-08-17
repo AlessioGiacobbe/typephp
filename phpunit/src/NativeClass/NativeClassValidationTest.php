@@ -109,6 +109,82 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-std-container-argument.php');
     }
 
+    public function testRejectsReturningStdContainerHoldingNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects cannot cross a PHP/ZendVM value boundary');
+        $this->compile('native-class-std-container-return.php');
+    }
+
+    public function testRejectsConvertingStdContainerHoldingNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects cannot cross a PHP/ZendVM value boundary');
+        $this->compile('native-class-std-container-conversion.php');
+    }
+
+    public function testRejectsCapturingStdContainerHoldingNativeObjectsInClosure(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects cannot be captured by Zend closures');
+        $this->compile('native-class-std-container-closure-capture.php');
+    }
+
+    public function testRejectsCapturingStdContainerHoldingNativeObjectsInArrowFunction(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects cannot be captured by Zend closures');
+        $this->compile('native-class-std-container-arrow-capture.php');
+    }
+
+    /**
+     * @dataProvider nativeStdContainerStorageBoundaryProvider
+     */
+    public function testRejectsStoringStdContainerHoldingNativeObjects(string $fixture): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects cannot cross a PHP/ZendVM value boundary');
+        $this->compile($fixture);
+    }
+
+    public static function nativeStdContainerStorageBoundaryProvider(): array
+    {
+        return [
+            ['native-class-std-container-php-property.php'],
+            ['native-class-std-container-static-property.php'],
+            ['native-class-std-container-php-array.php'],
+            ['native-class-std-container-native-any-property.php'],
+        ];
+    }
+
+    public function testRejectsReferencingStdContainerHoldingNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects cannot cross a PHP/ZendVM value boundary');
+        $this->compile('native-class-std-container-reference.php');
+    }
+
+    public function testRejectsDestructuringStdContainerHoldingNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects cannot cross a PHP/ZendVM value boundary');
+        $this->compile('native-class-std-container-destructure.php');
+    }
+
+    public function testRejectsStaticStdContainerHoldingNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects must be function-local');
+        $this->compile('native-class-static-std-container.php');
+    }
+
+    public function testRejectsGlobalStdContainerHoldingNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Std containers holding Native objects must be function-local');
+        $this->compile('native-class-global-std-container.php');
+    }
+
     public function testRejectsCompoundWritesToNativePropertyHooks(): void
     {
         $this->expectException(TestError::class);
@@ -266,8 +342,15 @@ final class NativeClassValidationTest extends \BaseTest
     public function testRejectsReferencesToNativeObjectProperties(): void
     {
         $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Only Native object properties declared as any or mixed can be referenced');
+        $this->expectExceptionMessage('Only Native object properties declared as any can be referenced');
         $this->compile('native-class-property-reference.php');
+    }
+
+    public function testRejectsReferencesToMixedNativeObjectProperties(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Only Native object properties declared as any can be referenced');
+        $this->compile('native-class-mixed-property-reference.php');
     }
 
     public function testAllowsReferencesToExplicitAnyNativeObjectProperties(): void
@@ -672,6 +755,20 @@ final class NativeClassValidationTest extends \BaseTest
         $this->expectException(TestError::class);
         $this->expectExceptionMessage('Native classes do not support late static binding; use `self::` or a concrete class name');
         $this->compile('native-class-late-static-constant.php');
+    }
+
+    public function testRejectsLateStaticNativeMethodSignature(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native classes do not support late static binding in parameter or return types');
+        $this->compile('native-class-static-signature.php');
+    }
+
+    public function testRejectsInaccessibleNativeClassConstant(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Constant `NativePrivateConstantOwner::VALUE` is not accessible');
+        $this->compile('native-class-private-constant-access.php');
     }
 
     public function testRejectsNativeObjectCastToZendObject(): void

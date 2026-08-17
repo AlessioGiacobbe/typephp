@@ -929,10 +929,11 @@ CODE;
 
         $code .= "// class \n";
         foreach ($this->getClassLikesWithConstants() as $classDef) {
-            if ($classDef instanceof ClassDef && $classDef->nativeObject) {
-                continue;
-            }
-            if ($classDef instanceof ClassDef && !$classDef->trait && !$classDef->enum) {
+            if ($classDef instanceof ClassDef
+                && !$classDef->nativeObject
+                && !$classDef->trait
+                && !$classDef->enum
+            ) {
                 $code .= 'static zend_object* (*create_object_' . $classDef->getNamespacedName() . ")(zend_class_entry *class_type);\n";
                 $code .= 'static zend_object_handlers property_handlers_' . $classDef->getNamespacedName() . ";\n";
             }
@@ -1104,15 +1105,20 @@ CODE;
                     $constName = self::PREFIX . $this->getNativeName($constant->name, $classDef->namespace, $classDef->name);
                     $code .= $constName . ".unset();\n";
 
-                    $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
-                    $classConstStr = $this->genCharPtr($constant->name);
-                    $code .= "php::updateConstant($classNameStr, $classConstStr, php::null);\n";
+                    if (!$classDef instanceof ClassDef || !$classDef->nativeObject) {
+                        $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
+                        $classConstStr = $this->genCharPtr($constant->name);
+                        $code .= "php::updateConstant($classNameStr, $classConstStr, php::null);\n";
+                    }
                 }
             }
         }
 
         // Clean up inherited array constants from child classes
         foreach ($this->symbols->classes() as $className => $classDef) {
+            if ($classDef->nativeObject) {
+                continue;
+            }
             $ownConstNames = [];
             foreach ($classDef->constants as $constant) {
                 if ($constant->type === Type::ARRAY) {
@@ -2145,9 +2151,11 @@ CODE;
                     $code .= "do {\n";
                     $code .= $constant->arrayExpr;
                     $code .= $constName . ' = ' . $constant->value . ";\n";
-                    $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
-                    $classConstStr = $this->genCharPtr($constant->name);
-                    $code .= "php::updateConstant($classNameStr, $classConstStr, {$constant->value});\n";
+                    if (!$classDef instanceof ClassDef || !$classDef->nativeObject) {
+                        $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
+                        $classConstStr = $this->genCharPtr($constant->name);
+                        $code .= "php::updateConstant($classNameStr, $classConstStr, {$constant->value});\n";
+                    }
                     $code .= "} while(0);\n";
                 }
             }
@@ -2155,6 +2163,9 @@ CODE;
 
         // Propagate array constants to child classes that don't override them
         foreach ($this->symbols->classes() as $className => $classDef) {
+            if ($classDef->nativeObject) {
+                continue;
+            }
             $ownConstNames = [];
             foreach ($classDef->constants as $constant) {
                 if ($constant->type === Type::ARRAY) {

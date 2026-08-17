@@ -240,7 +240,7 @@ final class InvalidContext
 | `object` | `php::Object` | 保存任意 Zend Object |
 | Native Class | `native_struct *` | 保存同一 Native Heap 内的裸指针 |
 | `Stream` | `php::Var` | 保存 stream resource zval，并在赋值入口执行精确类型检查 |
-| `mixed` / `any` | `php::Var` | 保存任意 PHP zval；两种声明具有相同的无约束槽语义 |
+| `mixed` / `any` | `php::Var` | 保存任意 PHP zval；只有 `any` 明确允许暴露引用 |
 | 不含 Native Class 的 union/intersection/nullable | `php::Var` | 与普通类属性使用同一类型描述和运行时写入检查 |
 | `?NativeClass` | `native_struct *` | `nullptr` 表示空值；包含 Native Class 的 union/intersection 不支持 |
 | BigInt/BigFloat/Decimal | `php::Var` | 保存 PHPX boxed 高精度值；字段寻址仍是固定偏移，运算复用现有 Variant ABI |
@@ -281,7 +281,8 @@ struct php_app__requestcontext final {
 
 Native 属性是否允许取引用必须完全由声明元数据在编译期决定，不生成运行时类型分支：
 
-- `mixed` / `any` 是无约束的 `php::Var` 槽，允许 `$ref =& $object->property`。
+- 只有 `any` 属性允许 `$ref =& $object->property`；这是显式选择允许 Zend 动态代码替换槽值。
+- `mixed` 虽然也使用 `php::Var` 存储，但仍拒绝取引用；Native Class 中除 `any` 外的所有声明类型都必须维持编译期类型约束。
 - `bool`、`int`、`float` 等固定布局字段不能表示 PHP 引用，编译期拒绝。
 - `string`、`array`、`object`、Stream 和高精度类型虽然具有 PHPX 包装层，但仍是固定声明类型，引用写入会绕过类型约束，因此编译期拒绝。
 - nullable、union、intersection 等受约束的 `php::Var` 字段同样拒绝引用；不能仅因底层存储也是 `php::Var` 就允许。
@@ -857,6 +858,13 @@ Box 不能保存 Native Object。Std Container 不能作为 Native Class 属性�
 `NativeClass::class` 作为 value type，并保存该类或其 Native 子类。普通 PHP array
 仍然不能保存 Native Object。
 
+Native 元素 Std Container 必须是函数顶层的局部变量。编译器为该局部容器生成与其
+词法生命周期一致的 `NativeContainerRootFrame`；因此它不能保存到 global/static、
+Zend 或 Native 属性、PHP array，也不能被返回、取引用、捕获进 Closure/arrow
+function，或通过 `toArray()`/`toAny()` 等方式转换。上述行为都会让保存裸指针的
+`StdContainerBox` 比 root frame 活得更久，必须在编译期统一拒绝。读取或写入单个
+typed Native 元素仍然保持在 Native 指针模型内，不属于容器逃逸。
+
 任何跨越 ZendVM 边界的行为都应在编译期抛出 FatalError。编译器不得静默装箱或降级，因为这会使性能模型不可预测。
 
 Native Object 必须始终保持 typed object。它不能被擦除为 `var`、`mixed`、普通 `object` 或无类型 callback receiver。即使编译器能够常量折叠 `$expr = 'run'`，变量方法名语法仍不支持；只有源码中明确写出的 `$nativeObject->run()` 才进入 Native method resolution。
@@ -1224,7 +1232,7 @@ $json = json_encode($nativeObject->toArray());
 | nullable Native 参数/返回值 | 支持 `?NativeClass`，以 `nullptr` 表示；成员访问必须检查或先证明非空 |
 | Native 参数/返回值的 `&` | 不支持；编译期 FatalError |
 | 对 Native Object 变量取引用 | 不支持；普通赋值已经共享对象身份 |
-| 对 Native 属性取引用 | 仅显式声明为 `mixed` / `any` 的无约束字段支持；其他字段编译期 FatalError |
+| 对 Native 属性取引用 | 仅显式声明为 `any` 的字段支持；包括 `mixed` 在内的其他字段均编译期 FatalError |
 | Native variadic、union/intersection | 不支持；编译期 FatalError |
 | `__construct()` | 支持 |
 | `clone` / `__clone()` | 支持 |
@@ -1269,7 +1277,7 @@ $json = json_encode($nativeObject->toArray());
 | Native Object 作为 PHP array key 或 `[]` receiver | 不支持；编译期 FatalError |
 | Box/Std Container 属性 | 不支持 |
 | Box 保存 Native Object | 不支持 |
-| 局部 Std Container 保存 Native Object | 支持具体 Native class value type；容器 Root Frame 参与 GC tracing |
+| 局部 Std Container 保存 Native Object | 仅支持函数顶层局部变量和具体 Native class value type；容器 Root Frame 参与 GC tracing |
 | Native 元素 Std Container 转 PHP array/mixed 或作为 PHP 参数 | 不支持；裸指针不得越过 ZendVM value boundary |
 | Native Class 属性循环引用 | 支持，指针字段加 Native tracing GC |
 | TypePHP global/static local | 支持；ZTS 使用 thread-local request roots，RSHUTDOWN 清理 |

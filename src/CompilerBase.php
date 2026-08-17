@@ -1138,6 +1138,12 @@ class CompilerBase implements PropertyAccessContext
 
     protected function assertExprCanBeUsedAsValue(NodeAbstract $expr, string $context = 'value'): void
     {
+        if ($this->isVarExpr($expr)) {
+            $this->assertStdContainerDoesNotEscapeNativeObjects(
+                $expr,
+                $this->parseIdentifier($expr),
+            );
+        }
         // PHP permits using a void/never call as an expression; the expression
         // result is null after the call side effect has run.
     }
@@ -2209,6 +2215,12 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseReturn(Node\Stmt\Return_ $v): string
     {
+        if ($v->expr !== null && $this->isVarExpr($v->expr)) {
+            $this->assertStdContainerDoesNotEscapeNativeObjects(
+                $v,
+                $this->parseIdentifier($v->expr),
+            );
+        }
         if ($this->functionDef->returnsByRef) {
             if ($v->expr === null) {
                 return 'return ' . Type::REF . '{};';
@@ -3999,6 +4011,7 @@ class CompilerBase implements PropertyAccessContext
             $type = $var->default ? $this->detectTypeOfExpr($var->default) : Type::VAR;
             if ($var->default) {
                 $this->assertExprCanBeUsedAsValue($var->default, 'static variable default value');
+                $this->assertNativeStdContainerFunctionLocal($var->default);
             }
             $globalVar = $this->addStaticVar($var->var, $varName, $type);
             if ($var->default) {

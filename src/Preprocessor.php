@@ -1361,11 +1361,7 @@ class Preprocessor extends CompilerBase
             && !$typeNode instanceof UnionType
             && !$typeNode instanceof IntersectionType
         ) {
-            $propDef->explicitMixed = in_array(
-                strtolower($this->parseIdentifier($typeNode)),
-                ['mixed', 'any'],
-                true,
-            );
+            $propDef->explicitAny = strtolower($this->parseIdentifier($typeNode)) === 'any';
         }
         $propDef->readonly = (bool) (($flags | $this->classDef->flags) & Modifiers::READONLY);
         $propDef->class = $class;

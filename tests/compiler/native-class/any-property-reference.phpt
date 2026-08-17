@@ -6,14 +6,18 @@ Native any properties support PHP references without runtime type dispatch
 #[Native]
 class NativeAnyReference
 {
-    // `mixed` is the PHP spelling of TypePHP's equivalent `any` storage.
-    public mixed $value = 1;
+    public any $value = 1;
     public ?NativeAnyReference $child;
 }
 
 function replaceAny(mixed &$value, mixed $replacement): void
 {
     $value = $replacement;
+}
+
+function &getNativeAnyReference(NativeAnyReference $object): mixed
+{
+    return $object->value;
 }
 
 function main(): void
@@ -30,6 +34,18 @@ function main(): void
     $childReference =& $object->child->value;
     replaceAny($childReference, ['native', 'reference']);
     var_dump($object->child->value);
+
+    replaceAny($object->child->value, 'direct argument');
+    var_dump($childReference);
+
+    $source = 'assigned reference';
+    $object->value =& $source;
+    $source = 'source changed';
+    var_dump($object->value);
+
+    $returnedReference =& getNativeAnyReference($object);
+    $returnedReference = 'returned reference';
+    var_dump($source);
 }
 
 ?>
@@ -42,3 +58,6 @@ array(2) {
   [1]=>
   string(9) "reference"
 }
+string(15) "direct argument"
+string(14) "source changed"
+string(18) "returned reference"

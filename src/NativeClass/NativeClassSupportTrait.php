@@ -589,10 +589,10 @@ trait NativeClassSupportTrait
      *
      * A Native object variable is a typed pointer and must never expose its
      * pointer slot as a PHP reference. A Native property may expose a reference
-     * only when it was explicitly declared `mixed`/`any`: that field is an
-     * unconstrained php::Var slot. Fixed-layout fields and constrained Variant
-     * fields must reject references because a later reference write could
-     * bypass their declared type.
+     * only when it was explicitly declared `any`: that field intentionally
+     * permits arbitrary PHP values. Every other declaration, including
+     * `mixed`, must reject references because dynamic Zend code could replace
+     * the referenced value with one that violates the Native field contract.
      */
     protected function assertNativeObjectReferenceForbidden(
         NodeAbstract $expr,
@@ -614,10 +614,10 @@ trait NativeClassSupportTrait
                 }
                 $this->applyNativePropertyAccessResult($expr, $resolution);
                 $definition = $resolution->propertyDef;
-                if (!$definition->explicitMixed || $definition->getter !== null || $definition->setter !== null) {
+                if (!$definition->explicitAny || $definition->getter !== null || $definition->setter !== null) {
                     $this->fatalError(
                         $errorNode,
-                        'Only Native object properties declared as any or mixed can be referenced',
+                        'Only Native object properties declared as any can be referenced',
                     );
                 }
                 return;
@@ -1478,9 +1478,12 @@ trait NativeClassSupportTrait
         }
         if ($destructors !== []) {
             $code .= 'static void ' . $prefix . '_finalize(void *object) {' . PHP_EOL;
+            $code .= '    php::NativeFinalizerChain chain;' . PHP_EOL;
             foreach ($destructors as [$destructor, $destructorCpp]) {
-                $code .= '    ' . $destructor . '(*static_cast<' . $destructorCpp . ' *>(object));' . PHP_EOL;
+                $code .= '    chain.run([&] { ' . $destructor
+                    . '(*static_cast<' . $destructorCpp . ' *>(object)); });' . PHP_EOL;
             }
+            $code .= '    chain.rethrow();' . PHP_EOL;
             $code .= '}' . PHP_EOL;
         }
         $code .= 'static void ' . $prefix . '_destroy(void *object) noexcept {' . PHP_EOL;

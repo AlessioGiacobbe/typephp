@@ -133,6 +133,12 @@ trait ClosureGenerator
             if ($this->isNativeObjectVar($name)) {
                 $this->fatalError($useItem, 'Native objects cannot be captured by Zend closures');
             }
+            if ($this->getStdContainerNativeObjectClass($name) !== '') {
+                $this->fatalError(
+                    $useItem,
+                    'Std containers holding Native objects cannot be captured by Zend closures',
+                );
+            }
         }
         if ($expr instanceof Expr\ArrowFunction
             && $this->isNativeObjectClass($this->detectClassOfExpr($expr->expr))

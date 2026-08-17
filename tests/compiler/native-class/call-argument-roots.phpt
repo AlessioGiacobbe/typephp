@@ -14,9 +14,20 @@ class NativeArgument
     }
 }
 
+#[Native]
+class NativeArgumentPressure
+{
+    public int $value;
+}
+
 function makeNativeArgument(string $name): NativeArgument
 {
     echo 'make:', $name, PHP_EOL;
+    if ($name === 'B') {
+        for ($i = 0; $i < 300000; $i++) {
+            $filler = new NativeArgumentPressure();
+        }
+    }
     return new NativeArgument($name);
 }
 

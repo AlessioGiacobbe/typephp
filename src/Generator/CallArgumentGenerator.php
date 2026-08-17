@@ -493,14 +493,16 @@ trait CallArgumentGenerator
                 if (!$this->hasVar($name)) {
                     $this->fatalError($arg, 'Undefined variable `$' . $name . '`');
                 }
-            } elseif ($this->isPropertyFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
+            } elseif ($this->isPropertyFetch($arg->value)) {
                 if ($byRef) {
                     $this->addPositionalCallArg($this->emitDynamicPropertyFetchRef($arg->value, $arg), $arrayArgsVar, $list_args);
                     continue;
                 }
-                $objectExpr = $this->parseIdentifier($arg->value->var);
-                if (!$this->hasVar($objectExpr)) {
-                    $this->fatalError($arg, 'Undefined variable `$' . $objectExpr . '`');
+                if ($this->isVarExpr($arg->value->var)) {
+                    $objectExpr = $this->parseIdentifier($arg->value->var);
+                    if (!$this->hasVar($objectExpr)) {
+                        $this->fatalError($arg, 'Undefined variable `$' . $objectExpr . '`');
+                    }
                 }
             } elseif ($this->isArrayDimFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
                 $array = $this->parseIdentifier($arg->value->var);
@@ -700,7 +702,7 @@ trait CallArgumentGenerator
             return $this->parseArgRefVar($arg, $this->parseIdentifier($arg->value));
         }
 
-        if ($this->isPropertyFetch($arg->value) and $this->isVarExpr($arg->value->var)) {
+        if ($this->isPropertyFetch($arg->value)) {
             return $this->emitDynamicPropertyFetchRef($arg->value, $arg);
         }
 
@@ -768,7 +770,7 @@ trait CallArgumentGenerator
      */
     protected function expandRefvalExpr(NodeAbstract $inner, Node\Arg $arg): ?string
     {
-        if ($this->isPropertyFetch($inner) and $this->isVarExpr($inner->var)) {
+        if ($this->isPropertyFetch($inner)) {
             return $this->emitDynamicPropertyFetchRef($inner, $arg);
         }
         if ($this->isArrayDimFetch($inner) and $this->isVarExpr($inner->var)) {

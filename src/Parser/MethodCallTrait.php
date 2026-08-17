@@ -455,6 +455,9 @@ trait MethodCallTrait
                 && isset(self::KEYWORD_METHOD_MAP[$methodName])
                 && !$expr->getAttribute('nativeKeywordCall', false)
             ) {
+                if ($this->isVarExpr($expr->var)) {
+                    $this->assertStdContainerDoesNotEscapeNativeObjects($expr, $object);
+                }
                 if (!isset(self::KEYWORD_METHOD_WITH_ARGUMENTS[$methodName]) && $expr->args !== []) {
                     $this->fatalError($expr, "The {$methodName} method does not accept parameters");
                 }

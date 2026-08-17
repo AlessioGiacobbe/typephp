@@ -20,6 +20,71 @@ use PhpParser\NodeAbstract;
 
 trait StdContainerTrait
 {
+    /**
+     * Resolve the Native value class of a std container factory without
+     * creating container metadata. This is used before assignment lowering so
+     * a global/static destination cannot accidentally outlive the temporary
+     * NativeContainerRootFrame generated for function-local containers.
+     */
+    protected function getStdContainerFactoryNativeClass(NodeAbstract $expr): string
+    {
+        if (!$expr instanceof StaticCall
+            || !$this->isNameExpr($expr->class)
+            || !$this->isIdExpr($expr->name)
+            || $this->parseIdentifier($expr->class) !== 'std'
+        ) {
+            return '';
+        }
+
+        $method = $expr->name->toString();
+        if (!in_array($method, ['array', 'vector', 'map', 'ordered_map'], true)) {
+            return '';
+        }
+
+        if ($method === 'array') {
+            $factory = $expr;
+            while ($factory instanceof StaticCall
+                && $this->isNameExpr($factory->class)
+                && $this->isIdExpr($factory->name)
+                && $this->parseIdentifier($factory->class) === 'std'
+                && $factory->name->toString() === 'array'
+            ) {
+                if (count($factory->args) !== 2) {
+                    return '';
+                }
+                $value = $factory->args[0]->value;
+                if (!$value instanceof StaticCall) {
+                    $typeInfo = $this->parseStdValueTypeInfo($value, 'std::array');
+                    $class = $typeInfo['class'] ?? '';
+                    return is_string($class) && $this->isNativeObjectClass($class) ? $class : '';
+                }
+                $factory = $value;
+            }
+            return '';
+        }
+
+        $valueIndex = $method === 'vector' ? 0 : 1;
+        if (!isset($expr->args[$valueIndex])) {
+            return '';
+        }
+        $typeInfo = $this->parseStdValueTypeInfo(
+            $expr->args[$valueIndex]->value,
+            'std::' . $method,
+        );
+        $class = $typeInfo['class'] ?? '';
+        return is_string($class) && $this->isNativeObjectClass($class) ? $class : '';
+    }
+
+    protected function assertNativeStdContainerFunctionLocal(NodeAbstract $expr): void
+    {
+        if ($this->getStdContainerFactoryNativeClass($expr) !== '') {
+            $this->fatalError(
+                $expr,
+                'Std containers holding Native objects must be function-local',
+            );
+        }
+    }
+
     protected function isStdContainerIterating(string $var): bool
     {
         return !empty($this->context->stdContainers[$var]['iterationDepth']);

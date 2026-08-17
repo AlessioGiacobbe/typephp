@@ -18,8 +18,8 @@ class PropertyDef
     public ?string $default = null;
     public ?ArrayInitPlan $arrayInitPlan = null;
     public bool $nullable = false;
-    /** The declared type is the unconstrained `mixed`/`any` type. */
-    public bool $explicitMixed = false;
+    /** The declared type is TypePHP's unconstrained, reference-capable `any` type. */
+    public bool $explicitAny = false;
     public string $class = '';
     public array $typeCheck = [];
     public string $typeStr = '';
