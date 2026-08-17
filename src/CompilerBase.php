@@ -3202,6 +3202,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parsePreInc(Expr\PreInc $expr): string
     {
+        $this->assertNativeArrayAccessDirectWrite($expr->var, false);
         $this->assertNativeObjectOperatorOperandSupported($expr->var, $expr, '++');
         $this->assertNotNullsafeWriteContext($expr->var);
         $this->assertNativePropertyHookDirectWriteTarget($expr->var);
@@ -3590,6 +3591,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parsePostOp(Expr\PostDec|Expr\PostInc $expr, string $op): string
     {
+        $this->assertNativeArrayAccessDirectWrite($expr->var, false);
         $this->assertNativeObjectOperatorOperandSupported($expr->var, $expr, str_repeat($op, 2));
         $this->assertNotNullsafeWriteContext($expr->var);
         $this->assertNativePropertyHookDirectWriteTarget($expr->var);
@@ -3640,6 +3642,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parsePreDec(Expr\PreDec $expr): string
     {
+        $this->assertNativeArrayAccessDirectWrite($expr->var, false);
         $this->assertNativeObjectOperatorOperandSupported($expr->var, $expr, '--');
         $this->assertNotNullsafeWriteContext($expr->var);
         $this->assertNativePropertyHookDirectWriteTarget($expr->var);
@@ -4209,7 +4212,13 @@ class CompilerBase implements PropertyAccessContext
     protected function parseChainedExpr(NodeAbstract $node, string $op, bool $getValue = false): string
     {
         if ($op === self::OP_REFVAL) {
+            $this->assertNativeArrayAccessReferenceForbidden($node);
             $this->assertNativeObjectReferenceForbidden($node, $node);
+        }
+        if ($node instanceof Expr\ArrayDimFetch
+            && $this->isNativeObjectClass($this->detectClassOfExpr($node->var))
+        ) {
+            return $this->parseNativeArrayAccessPresence($node, $op, $getValue);
         }
         if (in_array($op, [self::OP_ISSET, self::OP_EMPTY, self::OP_NOT_EMPTY], true)) {
             $nativePresence = $this->parseNativeObjectPresenceChain($node, $op);
@@ -4266,6 +4275,10 @@ class CompilerBase implements PropertyAccessContext
         $list = [];
         while (true) {
             if ($this->isArrayDimFetch($expr)) {
+                if ($this->isNativeObjectClass($this->detectClassOfExpr($expr->var))) {
+                    $var = $this->parseArrayDimFetchRead($expr);
+                    break;
+                }
                 if ($expr->dim === null) {
                     $this->fatalError($expr, 'Cannot use [] for reading');
                 }
@@ -4308,6 +4321,72 @@ class CompilerBase implements PropertyAccessContext
             }
             return $fn . '(' . $var . ', {' . implode(', ', $list) . '})';
         }
+    }
+
+    /**
+     * Lower isset/empty/coalesce without exposing the Native pointer to the
+     * generic Variant chain walker. Repeated offsetExists/offsetGet operations
+     * share one receiver and key evaluation, matching PHP ArrayAccess order.
+     */
+    protected function parseNativeArrayAccessPresence(
+        Expr\ArrayDimFetch $access,
+        string $op,
+        bool $getValue,
+    ): string {
+        if ($access->dim === null) {
+            $this->fatalError($access, 'Cannot use [] for reading');
+        }
+
+        if ($op === self::OP_REFVAL) {
+            $this->assertNativeArrayAccessReferenceForbidden($access);
+        }
+        if (!in_array($op, [self::OP_ISSET, self::OP_EMPTY, self::OP_NOT_EMPTY], true)) {
+            $this->fatalError($access, 'Unsupported Native ArrayAccess operation');
+        }
+
+        if ($op === self::OP_ISSET && !$getValue) {
+            return $this->parseNativeArrayAccessCall(
+                $access,
+                'offsetExists',
+                [new Node\Arg($access->dim)],
+            );
+        }
+
+        $receiver = $access->var;
+        $class = $this->getNativeArrayAccessClass($receiver, $access);
+        if (!$this->isVarExpr($receiver)) {
+            $receiverName = $this->materializeNativeObjectReceiver($receiver, $class);
+            $receiver = new Expr\Variable($receiverName, $receiver->getAttributes());
+        }
+
+        $key = $this->addTmpVar(Type::VAR);
+        $keyExpr = $this->parseOrderedOperand($access->dim, false);
+        $this->context->beforeStmtLines[] = $key . ' = ' . $keyExpr . ';';
+        $stableAccess = new Expr\ArrayDimFetch(
+            $receiver,
+            new Expr\Variable($key, $access->dim->getAttributes()),
+            $access->getAttributes(),
+        );
+        $exists = $this->parseNativeArrayAccessCall(
+            $stableAccess,
+            'offsetExists',
+            [new Node\Arg($stableAccess->dim)],
+        );
+        $value = $this->parseNativeArrayAccessCall(
+            $stableAccess,
+            'offsetGet',
+            [new Node\Arg($stableAccess->dim)],
+        );
+
+        if ($getValue) {
+            $result = $this->addTmpVar(Type::VAR);
+            $access->setAttribute('chainOpResult', $result);
+            return '(' . $exists . ' && ((' . $result . ' = ' . $value . '), true))';
+        }
+        if ($op === self::OP_EMPTY) {
+            return '(!(' . $exists . ') || !php::notEmpty(' . $value . '))';
+        }
+        return '(' . $exists . ' && php::notEmpty(' . $value . '))';
     }
 
     /**

@@ -357,13 +357,107 @@ trait NativeClassSupportTrait
         }
     }
 
-    protected function assertNotNativeObjectArrayDimensionReceiver(
+    /**
+     * Return the statically known Native receiver class for array syntax.
+     * PHP only dispatches [] through ArrayAccess; having similarly named
+     * methods without the interface is not sufficient.
+     */
+    protected function getNativeArrayAccessClass(
         NodeAbstract $receiver,
         NodeAbstract $errorNode,
-    ): void {
-        if ($this->isNativeObjectClass($this->detectClassOfExpr($receiver))) {
-            $this->fatalError($errorNode, 'Native objects do not support array dimension access');
+    ): ?string {
+        $class = $this->detectClassOfExpr($receiver);
+        if (!$this->isNativeObjectClass($class)) {
+            return null;
         }
+
+        $implementsArrayAccess = false;
+        foreach ($this->getClassImplementedInterfaces($this->getClass($class)) as $interface) {
+            if (strcasecmp(ltrim($interface, '\\'), 'ArrayAccess') === 0) {
+                $implementsArrayAccess = true;
+                break;
+            }
+        }
+        if (!$implementsArrayAccess) {
+            $this->fatalError(
+                $errorNode,
+                "Native class `{$class}` must implement `ArrayAccess` to use array access syntax",
+            );
+        }
+        return $class;
+    }
+
+    /** Locate the first Native ArrayAccess dimension inside a writable chain. */
+    protected function findNativeArrayAccessDimension(NodeAbstract $expression): ?Node\Expr\ArrayDimFetch
+    {
+        if ($expression instanceof Node\Expr\ArrayDimFetch) {
+            if ($this->isNativeObjectClass($this->detectClassOfExpr($expression->var))) {
+                return $expression;
+            }
+            return $this->findNativeArrayAccessDimension($expression->var);
+        }
+        if ($expression instanceof Node\Expr\PropertyFetch
+            || $expression instanceof Node\Expr\NullsafePropertyFetch
+        ) {
+            return $this->findNativeArrayAccessDimension($expression->var);
+        }
+        return null;
+    }
+
+    protected function assertNativeArrayAccessDirectWrite(
+        NodeAbstract $target,
+        bool $allowDirectDimension,
+    ): void {
+        $dimension = $this->findNativeArrayAccessDimension($target);
+        if ($dimension === null) {
+            return;
+        }
+        $this->getNativeArrayAccessClass($dimension->var, $dimension);
+        if ($allowDirectDimension && $dimension === $target) {
+            return;
+        }
+        $this->fatalError(
+            $target,
+            'Indirect modification of Native ArrayAccess elements is not supported',
+        );
+    }
+
+    protected function assertNativeArrayAccessReferenceForbidden(NodeAbstract $expression): void
+    {
+        $dimension = $this->findNativeArrayAccessDimension($expression);
+        if ($dimension === null) {
+            return;
+        }
+        $this->getNativeArrayAccessClass($dimension->var, $dimension);
+        $this->fatalError(
+            $expression,
+            'References to Native ArrayAccess elements are not supported',
+        );
+    }
+
+    /**
+     * Build a normal MethodCall so Native dispatch, visibility, signature
+     * checks, virtual thunks and PHP evaluation ordering remain centralized.
+     *
+     * @param list<Node\Arg> $arguments
+     */
+    protected function parseNativeArrayAccessCall(
+        Node\Expr\ArrayDimFetch $access,
+        string $method,
+        array $arguments,
+    ): ?string {
+        if ($this->getNativeArrayAccessClass($access->var, $access) === null) {
+            return null;
+        }
+        if ($access->dim !== null) {
+            $this->assertNotNativeObjectArrayKey($access->dim);
+        }
+        return $this->parseMethodCall(new Node\Expr\MethodCall(
+            $access->var,
+            new Node\Identifier($method),
+            $arguments,
+            $access->getAttributes(),
+        ));
     }
 
     protected function assertNotNativeObjectDynamicClassTarget(

@@ -743,32 +743,74 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-array-dim-key.php');
     }
 
-    public function testRejectsArrayAccessOnNativeObjects(): void
+    public function testRejectsArrayAccessWithoutArrayAccessInterface(): void
     {
         $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Native objects do not support array dimension access');
+        $this->expectExceptionMessage('must implement `ArrayAccess` to use array access syntax');
         $this->compile('native-class-array-access.php');
     }
 
-    public function testRejectsArrayWritesOnNativeObjects(): void
+    public function testRejectsArrayWritesWithoutArrayAccessInterface(): void
     {
         $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Native objects do not support array dimension access');
+        $this->expectExceptionMessage('must implement `ArrayAccess` to use array access syntax');
         $this->compile('native-class-array-access-write.php');
     }
 
-    public function testRejectsArrayIssetOnNativeObjects(): void
+    public function testRejectsArrayIssetWithoutArrayAccessInterface(): void
     {
         $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Native objects do not support array dimension access');
+        $this->expectExceptionMessage('must implement `ArrayAccess` to use array access syntax');
         $this->compile('native-class-array-access-isset.php');
     }
 
-    public function testRejectsArrayUnsetOnNativeObjects(): void
+    public function testRejectsArrayUnsetWithoutArrayAccessInterface(): void
     {
         $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Native objects do not support array dimension access');
+        $this->expectExceptionMessage('must implement `ArrayAccess` to use array access syntax');
         $this->compile('native-class-array-access-unset.php');
+    }
+
+    public function testRejectsNativeArrayAccessCompoundModification(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Indirect modification of Native ArrayAccess elements is not supported');
+        $this->compile('native-class-array-access-compound.php');
+    }
+
+    public function testRejectsNativeArrayAccessIncrement(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Indirect modification of Native ArrayAccess elements is not supported');
+        $this->compile('native-class-array-access-increment.php');
+    }
+
+    public function testRejectsNativeArrayAccessNestedWrite(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Indirect modification of Native ArrayAccess elements is not supported');
+        $this->compile('native-class-array-access-nested-write.php');
+    }
+
+    public function testRejectsNativeArrayAccessPropertyWrite(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Indirect modification of Native ArrayAccess elements is not supported');
+        $this->compile('native-class-array-access-property-write.php');
+    }
+
+    public function testRejectsNativeArrayAccessReferences(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('References to Native ArrayAccess elements are not supported');
+        $this->compile('native-class-array-access-reference.php');
+    }
+
+    public function testRejectsNativeArrayAccessCoalesceAssignment(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Indirect modification of Native ArrayAccess elements is not supported');
+        $this->compile('native-class-array-access-coalesce-assign.php');
     }
 
     public function testRejectsInaccessibleNativeCloneMethod(): void

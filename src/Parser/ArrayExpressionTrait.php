@@ -110,6 +110,14 @@ trait ArrayExpressionTrait
     protected function parseWritableIdentifier(NodeAbstract $expr): string
     {
         if ($expr instanceof Expr\ArrayDimFetch) {
+            $dimension = $this->findNativeArrayAccessDimension($expr);
+            if ($dimension !== null) {
+                $this->getNativeArrayAccessClass($dimension->var, $dimension);
+                $this->fatalError(
+                    $expr,
+                    'Indirect modification of Native ArrayAccess elements is not supported',
+                );
+            }
             return $this->parseArrayDimFetchUpdate($expr);
         }
 
@@ -174,7 +182,16 @@ trait ArrayExpressionTrait
 
     protected function parseArrayDimFetch(Expr\ArrayDimFetch $node): string
     {
-        $this->assertNotNativeObjectArrayDimensionReceiver($node->var, $node);
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($node->var))) {
+            if ($node->dim === null) {
+                $this->fatalError($node, 'Cannot use [] for reading');
+            }
+            return $this->parseNativeArrayAccessCall(
+                $node,
+                'offsetGet',
+                [new Node\Arg($node->dim)],
+            );
+        }
         if ($node->dim !== null) {
             $this->assertNotNativeObjectArrayKey($node->dim);
         }

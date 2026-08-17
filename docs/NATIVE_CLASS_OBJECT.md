@@ -1284,7 +1284,9 @@ $json = json_encode($nativeObject->toArray());
 | 动态 callback | 不支持 |
 | 动态 PHP/eval 使用 | 不支持 |
 | 普通 PHP array 保存 Native Object | 不支持 |
-| Native Object 作为 PHP array key 或 `[]` receiver | 不支持；编译期 FatalError |
+| Native Object 作为 PHP array key | 不支持；编译期 FatalError |
+| Native Object 作为 `[]` receiver | 实现 `ArrayAccess` 时支持直接读写、追加、`isset`、`empty`、`??` 和 `unset`；直接生成 Native `offset*()` 调用 |
+| Native `ArrayAccess` 元素间接修改 | 不支持 `++/--`、复合赋值、`??=`、嵌套写入、属性写入和取引用；编译期 FatalError |
 | Box/Std Container 属性 | 不支持 |
 | Box 保存 Native Object | 不支持 |
 | 局部 Std Container 保存 Native Object | 仅支持函数顶层局部变量和具体 Native class value type；容器 Root Frame 参与 GC tracing |

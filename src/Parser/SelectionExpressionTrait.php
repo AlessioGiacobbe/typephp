@@ -256,7 +256,11 @@ trait SelectionExpressionTrait
         if ($this->isNativeObjectClass($nativeClass)) {
             return $this->parseNativeValueSelection($left, $right, $nativeClass);
         }
-        $leftExpr = $this->parseIdentifier($left);
+        $nativeArrayAccessLeft = $left instanceof Expr\ArrayDimFetch
+            && $this->isNativeObjectClass($this->detectClassOfExpr($left->var));
+        // Native ArrayAccess coalesce must let the presence helper evaluate
+        // offsetExists() before offsetGet(), with receiver/key evaluated once.
+        $leftExpr = $nativeArrayAccessLeft ? '' : $this->parseIdentifier($left);
         if ($this->isVarExpr($left)) {
             $this->checkVarMustExist($left, $leftExpr);
         }

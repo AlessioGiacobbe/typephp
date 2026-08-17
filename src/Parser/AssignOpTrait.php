@@ -24,9 +24,6 @@ trait AssignOpTrait
         if ($left instanceof Expr\ArrayDimFetch && $left->dim !== null) {
             $this->assertNotNativeObjectArrayKey($left->dim);
         }
-        if ($left instanceof Expr\ArrayDimFetch) {
-            $this->assertNotNativeObjectArrayDimensionReceiver($left->var, $left);
-        }
         if ($this->isPropertyFetch($left)) {
             return $this->parseAssignPropertyArrayDim($left, $right);
         }
@@ -236,6 +233,45 @@ trait AssignOpTrait
     protected function parseAssignFinally(Expr $left, Expr $right): string
     {
         $this->assertNotNullsafeWriteContext($left);
+        $this->assertNativeArrayAccessDirectWrite($left, true);
+        if ($left instanceof Expr\ArrayDimFetch
+            && $this->isNativeObjectClass($this->detectClassOfExpr($left->var))
+        ) {
+            if ($this->isNativeObjectClass($this->detectClassOfExpr($right))) {
+                $this->fatalError(
+                    $right,
+                    'Native objects cannot cross a PHP/ZendVM argument boundary',
+                );
+            }
+            $result = $this->addTmpVar(Type::VAR);
+            $key = $this->addTmpVar(Type::VAR);
+            $store = $this->parseNativeArrayAccessCall(
+                $left,
+                'offsetSet',
+                [
+                    new Node\Arg(new Variable($key)),
+                    new Node\Arg(new Variable($result)),
+                ],
+            );
+            if ($left->dim === null) {
+                $keyExpr = self::VALUE_NULL;
+                $keyBefore = $keyAfter = [];
+            } else {
+                [$keyExpr, $keyBefore, $keyAfter] = $this->parseExprWithCapturedStmts($left->dim);
+            }
+            [$rightExpr, $rightBefore, $rightAfter] = $this->parseExprWithCapturedStmts($right);
+
+            $code = '[&]() -> php::Var {' . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($keyBefore);
+            $code .= $this->getIndent() . $key . ' = ' . $keyExpr . ';' . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($keyAfter);
+            $code .= $this->formatCapturedStmtLines($rightBefore);
+            $code .= $this->getIndent() . $result . ' = ' . $rightExpr . ';' . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($rightAfter);
+            $code .= $this->getIndent() . $store . ';' . PHP_EOL;
+            $code .= $this->getIndent() . 'return ' . $result . ';' . PHP_EOL;
+            return $code . $this->getIndent() . '}()';
+        }
         $rightClass = $this->detectClassOfExpr($right);
 
         // A Native-element std container owns a PHPX Box but its raw pointer
@@ -703,6 +739,7 @@ trait AssignOpTrait
 
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
+        $this->assertNativeArrayAccessDirectWrite($node->var, false);
         $this->assertNativeObjectOperatorOperandSupported($node->var, $node, $op);
         $this->assertNotNullsafeWriteContext($node->var);
         $this->assertNativePropertyHookDirectWriteTarget($node->var);
@@ -1035,6 +1072,8 @@ trait AssignOpTrait
 
     protected function parseAssignRef(Expr\AssignRef $expr): string
     {
+        $this->assertNativeArrayAccessReferenceForbidden($expr->var);
+        $this->assertNativeArrayAccessReferenceForbidden($expr->expr);
         $this->assertNotNullsafeWriteContext($expr->var);
         $this->assertNativePropertyHookDirectWriteTarget($expr->var);
         $this->assertNativePropertyHookDirectWriteTarget($expr->expr);
@@ -1179,6 +1218,7 @@ trait AssignOpTrait
 
     protected function parseAssignOpCoalesce(Expr\AssignOp\Coalesce $expr): string
     {
+        $this->assertNativeArrayAccessDirectWrite($expr->var, false);
         $this->checkLeftValue($expr->var);
 
         $rightClass = $this->detectClassOfExpr($expr->expr);

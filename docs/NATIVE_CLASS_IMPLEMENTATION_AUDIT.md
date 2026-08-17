@@ -78,6 +78,8 @@
 | 动态魔术方法、变量属性/方法名不支持 | Native magic/dynamic access deny-list | dynamic magic、variable method/property 负向测试 | 已验证 |
 | `toArray/toString/toInt/toFloat/toBool` 要求实体方法和精确返回类型 | Native keyword method resolution | `keyword-conversions.phpt` 及 missing/wrong return 负向测试 | 已验证 |
 | `count($obj)` 仅在实现 Countable 时特化 | Native count optimizer | `keyword-conversions.phpt`、count-without-countable 负向测试 | 已验证 |
+| `ArrayAccess` 直接语法映射到 Native `offset*()` 方法 | Native array access lowering | `array-access.phpt` | 已验证 |
+| Native `ArrayAccess` 禁止间接修改和引用 | writable-chain/reference validators | ArrayAccess compound/increment/nested/property/reference/coalesce 负向测试 | 已验证 |
 
 ## 6. GC 与生命周期
 
@@ -127,6 +129,6 @@ vendor/bin/phpunit phpunit/src/NativeClass/NativeClassValidationTest.php
   --gtest_filter='wren_gc.*:native_gc.*'
 ```
 
-本次结果分别为：69/69 PHPT、131/131 PHPUnit、17/17 PHPX C++ tests。
+本次结果分别为：70/70 PHPT、137/137 PHPUnit、17/17 PHPX C++ tests。
 完整回归结果为：编译器 PHPUnit 1431/1431、编译器 PHPT 1037/1037（另有 2 项按
 环境跳过）、PHPX C++ tests 1016/1016。Native 分支的公共 hook 未影响普通对象模型。

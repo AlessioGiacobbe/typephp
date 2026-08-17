@@ -788,11 +788,16 @@ trait PropertyAccessTrait
             $this->assertNotNullsafeWriteContext($var);
             $this->assertNativePropertyHookDirectWriteTarget($var);
             if ($this->isArrayDimFetch($var)) {
-                $this->assertNotNativeObjectArrayDimensionReceiver($var->var, $var);
                 if ($var->dim === null) {
                     $this->fatalError($var, 'Cannot use [] for array unset');
                 }
-                if ($this->isStdContainerExpr($var)) {
+                if ($this->isNativeObjectClass($this->detectClassOfExpr($var->var))) {
+                    $lines[] = $this->parseNativeArrayAccessCall(
+                        $var,
+                        'offsetUnset',
+                        [new Node\Arg($var->dim)],
+                    ) . ';';
+                } elseif ($this->isStdContainerExpr($var)) {
                     $lines[] = $this->parseStdContainerOffsetUnset($var) . ';';
                 } else {
                     $array = $this->parseIdentifier($var->var);
