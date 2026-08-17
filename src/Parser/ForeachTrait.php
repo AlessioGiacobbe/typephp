@@ -171,11 +171,18 @@ trait ForeachTrait
 
     protected function parseForeach(Foreach_ $node): string
     {
-        if ($this->isNativeObjectClass($this->detectClassOfExpr($node->expr))) {
-            // Native classes have no Zend iterator handlers and cannot carry
-            // Traversable as a runtime interface value. Expose iteration via
-            // an explicitly returned PHP array or a typed std container.
-            $this->fatalError($node->expr, 'Native objects cannot be iterated by PHP foreach');
+        $nativeClass = $this->detectClassOfExpr($node->expr);
+        if ($this->isNativeObjectClass($nativeClass)) {
+            if ($this->nativeClassImplementsInterface($nativeClass, 'Iterator')) {
+                return $this->parseForeachNativeIterator($node, $node->expr, $nativeClass);
+            }
+            if ($this->nativeClassImplementsInterface($nativeClass, 'IteratorAggregate')) {
+                return $this->parseForeachNativeAggregate($node, $node->expr, $nativeClass);
+            }
+            $this->fatalError(
+                $node->expr,
+                "Native class `{$nativeClass}` must implement `Iterator` or `IteratorAggregate` to use foreach",
+            );
         }
         if ($this->isVarExpr($node->expr)) {
             $name = $this->parseIdentifier($node->expr);

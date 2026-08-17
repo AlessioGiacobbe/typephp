@@ -371,20 +371,150 @@ trait NativeClassSupportTrait
             return null;
         }
 
-        $implementsArrayAccess = false;
-        foreach ($this->getClassImplementedInterfaces($this->getClass($class)) as $interface) {
-            if (strcasecmp(ltrim($interface, '\\'), 'ArrayAccess') === 0) {
-                $implementsArrayAccess = true;
-                break;
-            }
-        }
-        if (!$implementsArrayAccess) {
+        if (!$this->nativeClassImplementsInterface($class, 'ArrayAccess')) {
             $this->fatalError(
                 $errorNode,
                 "Native class `{$class}` must implement `ArrayAccess` to use array access syntax",
             );
         }
         return $class;
+    }
+
+    /** Native interfaces are compile-time contracts and have no Zend class entry. */
+    protected function nativeClassImplementsInterface(string $class, string $interface): bool
+    {
+        if (!$this->isNativeObjectClass($class)) {
+            return false;
+        }
+        foreach ($this->getClassImplementedInterfaces($this->getClass($class)) as $implemented) {
+            if (strcasecmp(ltrim($implemented, '\\'), ltrim($interface, '\\')) === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function nativeIteratorCall(Node\Expr $receiver, string $method): Node\Expr\MethodCall
+    {
+        return new Node\Expr\MethodCall(
+            $receiver,
+            new Node\Identifier($method),
+            [],
+            $receiver->getAttributes(),
+        );
+    }
+
+    /**
+     * Native Iterator is a compile-time protocol. Calls never enter ZendVM and
+     * retain PHP's rewind/valid/current/key/body/next ordering. A C++ for-loop
+     * is intentional: continue must execute next(), while break must not.
+     */
+    protected function parseForeachNativeIterator(
+        Node\Stmt\Foreach_ $node,
+        Node\Expr $iteratorExpr,
+        string $iteratorClass,
+    ): string {
+        if ($node->byRef) {
+            $this->fatalError($node, 'Native Iterator foreach does not support references');
+        }
+
+        if (!$this->nativeClassImplementsInterface($iteratorClass, 'Iterator')) {
+            $this->fatalError(
+                $node->expr,
+                "Native class `{$iteratorClass}` returned by `getIterator()` must implement `Iterator`",
+            );
+        }
+
+        // foreach captures its iterable once. Always use a dedicated rooted
+        // pointer, even for a variable receiver: assigning null or another
+        // object to the source variable inside the loop must not change the
+        // active iterator. Validate that captured pointer once before rewind,
+        // rather than repeating a null check for every protocol method.
+        $iterator = $this->materializeNativeObjectReceiver($iteratorExpr, $iteratorClass);
+        $this->context->beforeStmtLines[] = 'php::nativeGcRequireObject('
+            . $iterator . ', "' . addslashes($iteratorClass) . '");';
+        $this->markNativeObjectNonNull($iterator);
+        $iteratorExpr = new Node\Expr\Variable($iterator, $iteratorExpr->getAttributes());
+
+        $rewind = $this->parseMethodCall($this->nativeIteratorCall($iteratorExpr, 'rewind'));
+        $valid = $this->parseMethodCall($this->nativeIteratorCall($iteratorExpr, 'valid'));
+        $currentNode = $this->nativeIteratorCall($iteratorExpr, 'current');
+        $next = $this->parseMethodCall($this->nativeIteratorCall($iteratorExpr, 'next'));
+
+        // Materialized Native receivers schedule precise-root cleanup at the
+        // end of the foreach statement. Capture it before parsing the body,
+        // whose own statement buffers are independent.
+        $setup = $this->parseBeforeStmtLines();
+        $cleanup = $this->parseAfterStmtLines();
+
+        $code = $setup . '{' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'for (' . $rewind . '; ' . $valid . '; ' . $next . ') {' . PHP_EOL;
+        $this->indentLevel++;
+
+        // PHP invokes current() before key(); key() is skipped entirely when
+        // the foreach statement does not bind a key variable.
+        $code .= $this->getIndent()
+            . $this->parseAssignFinally($node->valueVar, $currentNode) . ';' . PHP_EOL;
+        if ($node->keyVar !== null) {
+            $keyNode = $this->nativeIteratorCall($iteratorExpr, 'key');
+            $code .= $this->getIndent()
+                . $this->parseAssignFinally($node->keyVar, $keyNode) . ';' . PHP_EOL;
+        }
+
+        $body = $this->parseForeachBody($node);
+        $this->indentLevel--;
+        $code .= $body;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $code .= $cleanup;
+        return $code;
+    }
+
+    protected function parseForeachNativeAggregate(
+        Node\Stmt\Foreach_ $node,
+        Node\Expr $aggregateExpr,
+        string $aggregateClass,
+    ): string {
+        if ($node->byRef) {
+            $this->fatalError($node, 'Native Iterator foreach does not support references');
+        }
+
+        $method = $this->findNativeObjectMethod($aggregateClass, 'getIterator');
+        if ($method === null) {
+            $this->fatalError($node->expr, "Native class `{$aggregateClass}` has no method `getIterator()`");
+        }
+        $function = $method->functionDef;
+        $call = $this->nativeIteratorCall($aggregateExpr, 'getIterator');
+        $returnClass = $function->returnClass;
+
+        if ($this->isNativeObjectClass($returnClass)) {
+            if ($function->returnNullable) {
+                $this->fatalError($call, 'Native IteratorAggregate::getIterator() cannot return null');
+            }
+            return $this->parseForeachNativeIterator($node, $call, $returnClass);
+        }
+
+        if ($function->returnType !== Type::OBJECT
+            || $returnClass === ''
+            || !$this->isInheritedFrom($returnClass, 'Traversable')
+        ) {
+            $this->fatalError(
+                $call,
+                'Native IteratorAggregate::getIterator() must return a Traversable object or Native Iterator',
+            );
+        }
+
+        $iterator = $this->genTmpVarName();
+        $this->addLocalVar($iterator, Type::OBJECT);
+        $value = $this->parseMethodCall($call);
+        $setup = $this->parseBeforeStmtLines();
+        $cleanup = $this->parseAfterStmtLines();
+        return $setup
+            . $iterator . ' = ' . $value . ';' . PHP_EOL
+            . $this->parseForeachIterable($node, $iterator) . PHP_EOL
+            . $cleanup;
     }
 
     /** Locate the first Native ArrayAccess dimension inside a writable chain. */

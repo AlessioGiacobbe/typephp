@@ -1007,11 +1007,18 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-throw.php');
     }
 
-    public function testRejectsIteratingNativeObjectThroughZendForeach(): void
+    public function testRejectsIteratingNativeObjectWithoutIteratorContract(): void
     {
         $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Native objects cannot be iterated by PHP foreach');
+        $this->expectExceptionMessage('Native class `NativeForeachValue` must implement `Iterator` or `IteratorAggregate` to use foreach');
         $this->compile('native-class-foreach.php');
+    }
+
+    public function testRejectsNativeIteratorForeachByReference(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native Iterator foreach does not support references');
+        $this->compile('native-class-foreach-by-reference.php');
     }
 
 }

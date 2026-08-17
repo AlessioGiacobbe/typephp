@@ -1003,7 +1003,33 @@ Object。编译器不得为此生成 `reinterpret_cast`、`void *` 转换或临�
 多个无共同 Native 基类的实现之间做运行时动态分派，应作为新的对象表示单独设计，不能
 偷偷把 Native Object 装箱为 Zend Object，也不能改变当前裸指针 Native Call 的热路径。
 
-### 12.3 `instanceof`
+### 12.3 `Iterator` 与 `IteratorAggregate`
+
+Native Class 只有显式实现 `Iterator` 或 `IteratorAggregate` 时才允许作为 `foreach`
+的 iterable。编译器不会像 ZendVM 那样回退为“遍历当前作用域可见的对象属性”；没有
+迭代接口的 Native Object 在编译期报错。
+
+`Iterator` 完全降级为确定的 Native Method Call，调用顺序与 PHP 一致：
+
+```text
+rewind() → valid() → current() → key() → loop body → next()
+```
+
+未绑定 key variable 时不调用 `key()`。编译器在循环入口只求值一次 iterable，并用独立
+的精确 GC root 保存它；因此循环体重新赋值原变量不会改变正在执行的 iterator。
+`continue` 通过 C++ `for` 的 iteration expression 调用 `next()`，`break` 则不会调用。
+Native iterator 的 null 检查只在循环入口执行一次，协议方法的热路径不重复检查。
+
+`IteratorAggregate::getIterator()` 只调用一次：
+
+- 返回具体 Native Class 且该类实现 `Iterator` 时，继续使用上述全 Native 路径；
+- 返回普通 PHP `Traversable` 时，只有返回对象进入现有 PHPX `ForeachIterator`；
+- 其他返回类型在编译期拒绝。
+
+`current()` 可以声明返回具体 Native Class，foreach value variable 会被推断为对应的 typed
+Native pointer。Native `foreach` 不支持 `&$value`，避免引用和间接修改进入迭代协议。
+
+### 12.4 `instanceof`
 
 Native Class 没有 `zend_class_entry` 或运行时类名查找，因此只支持目标 class
 能够在编译期解析的 `instanceof`。编译器依据 Native 静态类型与继承关系直接
@@ -1263,6 +1289,10 @@ $json = json_encode($nativeObject->toArray());
 | override method | 支持，继承链同名实例方法生成 virtual dispatch thunk |
 | 基于参数签名的同名方法重载 | 不支持；PHP 源码不允许在同一个类中重复声明同名方法 |
 | Interface | 普通 Interface 注册到 ZendVM；Native `implements` 只做编译期契约校验，Native Object 不能转换为 Interface 值 |
+| `foreach` / `Iterator` | 实现 `Iterator` 时直接生成 `rewind/valid/current/key/next` Native Call；iterable 只求值一次，支持 `continue`/`break` |
+| `IteratorAggregate` | `getIterator()` 只调用一次；具体 Native Iterator 继续走 Native 路径，PHP `Traversable` 走 PHPX iterator |
+| Native `foreach` 引用遍历 | 不支持 `foreach ($native as &$value)`；编译期 FatalError |
+| 未实现迭代接口的 Native Object | 不枚举 public 属性；用于 `foreach` 时编译期 FatalError |
 | `instanceof` | 支持编译期可解析的 Native class 和 Interface，直接折叠；变量 class 不支持 |
 | `===` / `!==` | 支持 Native 指针身份及与 `null` 的严格比较 |
 | Native 条件的 `match` | 支持，使用与 `===` 相同的指针身份规则 |

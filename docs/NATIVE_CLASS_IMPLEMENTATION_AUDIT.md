@@ -80,6 +80,9 @@
 | `count($obj)` 仅在实现 Countable 时特化 | Native count optimizer | `keyword-conversions.phpt`、count-without-countable 负向测试 | 已验证 |
 | `ArrayAccess` 直接语法映射到 Native `offset*()` 方法 | Native array access lowering | `array-access.phpt` | 已验证 |
 | Native `ArrayAccess` 禁止间接修改和引用 | writable-chain/reference validators | ArrayAccess compound/increment/nested/property/reference/coalesce 负向测试 | 已验证 |
+| Native `Iterator` foreach 映射到协议方法，保持 PHP 调用顺序 | Native foreach lowering | `iterator.phpt` | 已验证 |
+| `IteratorAggregate` 分流 Native Iterator 与 PHP Traversable | aggregate return-type lowering | `iterator.phpt` | 已验证 |
+| Native foreach 不枚举属性且禁止引用遍历 | interface/reference validators | foreach 负向 PHPUnit | 已验证 |
 
 ## 6. GC 与生命周期
 
@@ -129,6 +132,6 @@ vendor/bin/phpunit phpunit/src/NativeClass/NativeClassValidationTest.php
   --gtest_filter='wren_gc.*:native_gc.*'
 ```
 
-本次结果分别为：70/70 PHPT、137/137 PHPUnit、17/17 PHPX C++ tests。
-完整回归结果为：编译器 PHPUnit 1431/1431、编译器 PHPT 1037/1037（另有 2 项按
-环境跳过）、PHPX C++ tests 1016/1016。Native 分支的公共 hook 未影响普通对象模型。
+本次 Iterator 专项结果为：`iterator.phpt` 1/1、Native Class PHPUnit 136/136，
+普通 foreach 回归 14/14。Native Class PHPT 目录现有 71 项；按当前任务约定暂未重复执行
+该目录及编译器 PHPT 全量测试，留待下一轮统一回归。
