@@ -556,6 +556,12 @@ trait NativeClassSupportTrait
         Node\Stmt\Function_|Node\Stmt\ClassMethod $node,
         FunctionDef $function,
     ): void {
+        if ($this->classDef?->nativeObject && $function->returnTypeKeyword === 'static') {
+            $this->fatalError(
+                $node,
+                'Native classes do not support late static binding in return types',
+            );
+        }
         if ($this->isNativeObjectClass($function->returnClass) && $function->returnsByRef) {
             $this->fatalError($node, 'Native objects cannot be returned by reference');
         }
@@ -823,6 +829,25 @@ trait NativeClassSupportTrait
         }
         $class = $this->getNativeObjectVarClass($name);
         return 'php::nativeDeref(' . $name . ', "' . addslashes($class) . '")';
+    }
+
+    /**
+     * Native method bodies receive `this_` by C++ reference so direct member
+     * access remains zero-cost. In a PHP value context, however, `$this` is an
+     * object handle and must therefore become the address of that reference.
+     * Keep this conversion out of parseIdentifier(): receiver contexts need
+     * the reference itself, while assignments, returns, arguments and
+     * comparisons need the typed pointer.
+     */
+    protected function normalizeNativeObjectValueExpr(NodeAbstract $expr, string $value): string
+    {
+        if ($this->classDef?->nativeObject
+            && $this->isVarExpr($expr)
+            && $this->parseVariable($expr) === 'this_'
+        ) {
+            return '&this_';
+        }
+        return $value;
     }
 
     protected function getNativeObjectMemberReceiver(string $name): string
@@ -1478,12 +1503,18 @@ trait NativeClassSupportTrait
         }
         if ($destructors !== []) {
             $code .= 'static void ' . $prefix . '_finalize(void *object) {' . PHP_EOL;
-            $code .= '    php::NativeFinalizerChain chain;' . PHP_EOL;
-            foreach ($destructors as [$destructor, $destructorCpp]) {
-                $code .= '    chain.run([&] { ' . $destructor
-                    . '(*static_cast<' . $destructorCpp . ' *>(object)); });' . PHP_EOL;
+            if (count($destructors) === 1) {
+                [$destructor, $destructorCpp] = $destructors[0];
+                $code .= '    ' . $destructor
+                    . '(*static_cast<' . $destructorCpp . ' *>(object));' . PHP_EOL;
+            } else {
+                $code .= '    php::NativeFinalizerChain chain;' . PHP_EOL;
+                foreach ($destructors as [$destructor, $destructorCpp]) {
+                    $code .= '    chain.run([&] { ' . $destructor
+                        . '(*static_cast<' . $destructorCpp . ' *>(object)); });' . PHP_EOL;
+                }
+                $code .= '    chain.rethrow();' . PHP_EOL;
             }
-            $code .= '    chain.rethrow();' . PHP_EOL;
             $code .= '}' . PHP_EOL;
         }
         $code .= 'static void ' . $prefix . '_destroy(void *object) noexcept {' . PHP_EOL;

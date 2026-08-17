@@ -46,6 +46,13 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-attribute-enum.php');
     }
 
+    public function testRejectsNativeAttributeOnAnonymousClass(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Native can only be applied to named classes');
+        $this->compile('native-class-anonymous.php');
+    }
+
     public function testRejectsUntypedProperty(): void
     {
         $this->expectException(TestError::class);
@@ -435,6 +442,24 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-json-encode.php');
     }
 
+    /**
+     * @dataProvider nativeZendObjectFacilityProvider
+     */
+    public function testRejectsNativeObjectPassedToZendObjectFacilities(string $fixture): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot cross a dynamic PHP/ZendVM call boundary');
+        $this->compile($fixture);
+    }
+
+    public static function nativeZendObjectFacilityProvider(): array
+    {
+        return [
+            ['native-class-serialize.php'],
+            ['native-class-weak-reference.php'],
+        ];
+    }
+
     public function testRejectsNativeObjectFromUntypedReturn(): void
     {
         $this->expectException(TestError::class);
@@ -760,8 +785,15 @@ final class NativeClassValidationTest extends \BaseTest
     public function testRejectsLateStaticNativeMethodSignature(): void
     {
         $this->expectException(TestError::class);
-        $this->expectExceptionMessage('Native classes do not support late static binding in parameter or return types');
+        $this->expectExceptionMessage('Native classes do not support late static binding in return types');
         $this->compile('native-class-static-signature.php');
+    }
+
+    public function testRejectsLateStaticSignatureInjectedIntoNativeClassByTrait(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native classes do not support late static binding in return types');
+        $this->compile('native-class-trait-static-signature.php');
     }
 
     public function testRejectsInaccessibleNativeClassConstant(): void
@@ -769,6 +801,25 @@ final class NativeClassValidationTest extends \BaseTest
         $this->expectException(TestError::class);
         $this->expectExceptionMessage('Constant `NativePrivateConstantOwner::VALUE` is not accessible');
         $this->compile('native-class-private-constant-access.php');
+    }
+
+    /**
+     * @dataProvider inaccessibleNativeMethodProvider
+     */
+    public function testRejectsInaccessibleNativeMethods(string $fixture): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Method');
+        $this->expectExceptionMessage('is not accessible');
+        $this->compile($fixture);
+    }
+
+    public static function inaccessibleNativeMethodProvider(): array
+    {
+        return [
+            ['native-class-private-method-access.php'],
+            ['native-class-protected-method-access.php'],
+        ];
     }
 
     public function testRejectsNativeObjectCastToZendObject(): void

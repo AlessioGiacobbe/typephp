@@ -575,15 +575,48 @@ trait AssignOpTrait
         ?PropertyWriteTarget $target,
         string $setter,
     ): string {
+        $property = $this->getNativePropertyDef($left);
+        $nativeObjectClass = $property !== null
+            && $property->type === Type::OBJECT
+            && $this->isNativeObjectClass($property->class)
+            ? $property->class
+            : '';
         if ($target !== null) {
             $this->assertCanAssignPropertyWrite($target, $right);
         }
-        $rightExpr = $this->parseExprAsValue($right);
-        if ($target !== null) {
+        if ($nativeObjectClass !== '') {
+            if ($this->isNull($right)) {
+                if (!$property->nullable) {
+                    $this->fatalError($right, "Cannot assign null to native property `{$nativeObjectClass}`");
+                }
+                $rightExpr = 'nullptr';
+            } else {
+                $rightClass = $this->detectClassOfExpr($right);
+                if ($rightClass === ''
+                    || !$this->isNativeObjectClass($rightClass)
+                    || !$this->isObjectClassStaticallyAssignableTo($rightClass, $nativeObjectClass)
+                ) {
+                    $this->fatalError($right, "Cannot assign value to native property of type `{$nativeObjectClass}`");
+                }
+                $rightExpr = $this->parseExprAsValue($right);
+            }
+        } else {
+            $rightExpr = $this->parseExprAsValue($right);
+        }
+        if ($target !== null && $nativeObjectClass === '') {
             $rightExpr = $this->wrapPropertyWriteTypeCheck($target, $right, $rightExpr);
         }
         $tmp = $this->genTmpVarName();
-        $this->addLocalVar($tmp, Type::VAR);
+        if ($nativeObjectClass !== '') {
+            // The synthesized value variable is also the assignment result and
+            // the setter argument. Preserve its exact Native type so argument
+            // validation and NativeRootFrame generation do not see a mixed
+            // Zend value at this compiler-created boundary.
+            $this->addLocalVar($tmp, $this->getNativeObjectPointerType($nativeObjectClass));
+            $this->addNativeObject($tmp, $nativeObjectClass);
+        } else {
+            $this->addLocalVar($tmp, Type::VAR);
+        }
         $call = $this->emitPropertyHookSetterCall($left, $setter, new Expr\Variable($tmp));
         return '((' . $tmp . ' = ' . $rightExpr . ', ' . $call . '), ' . $tmp . ')';
     }

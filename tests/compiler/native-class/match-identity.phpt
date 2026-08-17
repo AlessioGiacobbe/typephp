@@ -27,6 +27,19 @@ function scalarMatchValue(): int
     return 42;
 }
 
+function temporaryMatchSubject(): NativeMatchValue
+{
+    return new NativeMatchValue();
+}
+
+function pressuredMatchValue(): NativeMatchValue
+{
+    for ($i = 0; $i < 300000; $i++) {
+        $filler = new NativeMatchValue();
+    }
+    return new NativeMatchValue();
+}
+
 function choose(?NativeMatchValue $subject, NativeMatchValue $same, NativeMatchValue $other): string
 {
     return match ($subject) {
@@ -48,6 +61,10 @@ function main(): void
         scalarMatchValue() => 'scalar',
         $value => 'identity',
     });
+    var_dump(match (temporaryMatchSubject()) {
+        pressuredMatchValue() => 'reused',
+        default => 'distinct',
+    });
 }
 
 ?>
@@ -58,3 +75,4 @@ subject
 unrelated
 scalar
 string(8) "identity"
+string(8) "distinct"

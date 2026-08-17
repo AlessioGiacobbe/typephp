@@ -1261,12 +1261,15 @@ class VersionFlags {
     }
 
     public function addForVersionsAbove(string $flag, int $minimumVersionId): void {
-        $write = false;
-
         foreach (ALL_PHP_VERSION_IDS as $version) {
-            if ($version === $minimumVersionId || $write === true) {
+            // The supported-version table does not necessarily contain the
+            // PHP release that originally introduced a flag. For example,
+            // TypePHP currently starts at PHP 8.4, while ZEND_ACC_STATIC was
+            // introduced much earlier. Compare ranges instead of waiting for
+            // an exact table entry, otherwise established flags silently
+            // disappear when the minimum supported PHP version is raised.
+            if ($version >= $minimumVersionId) {
                 $this->flagsByVersion[$version][] = $flag;
-                $write = true;
             }
         }
     }

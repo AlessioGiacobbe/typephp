@@ -858,7 +858,9 @@ Box 不能保存 Native Object。Std Container 不能作为 Native Class 属性�
 `NativeClass::class` 作为 value type，并保存该类或其 Native 子类。普通 PHP array
 仍然不能保存 Native Object。
 
-Native 元素 Std Container 必须是函数顶层的局部变量。编译器为该局部容器生成与其
+TypePHP 当前的 Std Container 本身就只允许作为函数内的局部变量，不允许作为
+global/static，因此不存在需要为 Native 元素另外设计的长期容器所有权。Native 元素
+Std Container 进一步要求它是函数顶层的局部变量。编译器为该局部容器生成与其
 词法生命周期一致的 `NativeContainerRootFrame`；因此它不能保存到 global/static、
 Zend 或 Native 属性、PHP array，也不能被返回、取引用、捕获进 Closure/arrow
 function，或通过 `toArray()`/`toAny()` 等方式转换。上述行为都会让保存裸指针的

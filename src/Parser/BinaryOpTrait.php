@@ -525,7 +525,8 @@ trait BinaryOpTrait
     {
         $this->assertExprCanBeUsedAsValue($expr, 'operand');
         if (!$this->shouldMaterializeOrderedOperand($expr)) {
-            return $numeric ? $this->parseNumericIdentifier($expr) : $this->parseIdentifier($expr);
+            $value = $numeric ? $this->parseNumericIdentifier($expr) : $this->parseIdentifier($expr);
+            return $this->normalizeNativeObjectValueExpr($expr, $value);
         }
 
         [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);

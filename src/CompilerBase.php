@@ -1170,7 +1170,8 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseExprAsValue(NodeAbstract $expr): string
     {
-        return $this->wrapVoidExprAsNull($expr, $this->parseExpr($expr));
+        $value = $this->wrapVoidExprAsNull($expr, $this->parseExpr($expr));
+        return $this->normalizeNativeObjectValueExpr($expr, $value);
     }
 
     /**
@@ -1886,7 +1887,7 @@ class CompilerBase implements PropertyAccessContext
             }
         }
 
-        return $this->parseIdentifier($expr);
+        return $this->normalizeNativeObjectValueExpr($expr, $this->parseIdentifier($expr));
     }
 
     protected function detectClassOfExpr(NodeAbstract $expr): string
