@@ -185,6 +185,11 @@ trait FiberGenerator
 
     private function materializeYieldOperand(Node $expr, bool $force = false): string
     {
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($expr))) {
+            // Yield payloads are stored in a Zend array and cross the Fiber /
+            // Generator object boundary. A Native pointer has no zval form.
+            $this->fatalError($expr, 'Native objects cannot be yielded through a Zend Generator');
+        }
         [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
         foreach ($beforeStmts as $stmt) {
             $this->context->beforeStmtLines[] = $stmt;
@@ -285,6 +290,15 @@ trait FiberGenerator
         $this->indentLevel++;
         if ($v->stmts) {
             $body .= $this->parseStmts($v->stmts);
+        }
+        if ($this->context->nativeObjects !== []) {
+            // TypePHP Generators are represented by Zend Closure/Fiber state.
+            // Keep Native values out of that generated state even though the
+            // runtime root registry itself now tolerates Fiber suspension.
+            $this->fatalError(
+                $v,
+                'Generator functions cannot retain Native objects across suspension',
+            );
         }
         $body .= $this->getIndent() . 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
         if ($this->context->needsUserCodeCallableScope) {

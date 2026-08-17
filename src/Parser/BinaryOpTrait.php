@@ -810,6 +810,13 @@ trait BinaryOpTrait
         if ($leftIsNative && $rightIsNative) {
             return 'static_cast<const void *>(' . $left . ') == static_cast<const void *>(' . $right . ')';
         }
+        if ($leftIsNative || $rightIsNative) {
+            // A Native pointer has no zval representation and can never be
+            // strictly identical to a Zend value. Explicit void casts retain
+            // both PHP side effects in left-to-right order without allowing
+            // C++ to coerce the pointer to bool.
+            return '(static_cast<void>(' . $left . '), static_cast<void>(' . $right . '), false)';
+        }
         if ($right === 'nullptr') {
             // The left operand may itself be an assignment or another compound
             // expression. Parenthesize it before invoking Variant::isNull(), or

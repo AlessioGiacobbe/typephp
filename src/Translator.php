@@ -1188,8 +1188,8 @@ CODE;
 
         $code .= <<<CODE
 PHP_RSHUTDOWN_FUNCTION({$moduleName}) {
-    php_app_clean();
     php::request_shutdown();
+    php_app_clean();
     return SUCCESS;
 }
 

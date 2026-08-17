@@ -57,6 +57,9 @@ function main(): void
     var_dump((bool) $value);
     var_dump((string) $value);
     var_dump(strval($value));
+    print $value;
+    echo "\n";
+    echo "interpolated={$value}\n";
 
     $magic = new NativeMagicString();
     var_dump($magic->toString());
@@ -81,5 +84,7 @@ float(7.5)
 bool(true)
 string(7) "value=7"
 string(7) "value=7"
+value=7
+interpolated=value=7
 string(5) "magic"
 string(5) "magic"

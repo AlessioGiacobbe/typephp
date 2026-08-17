@@ -1480,6 +1480,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseArrayKey(NodeAbstract $expr): string
     {
+        $this->assertNotNativeObjectArrayKey($expr);
         $key = $this->parseIdentifier($expr);
         if (str_starts_with($key, self::LITERAL_STRINGS)) {
             $key = "{$key}.str()";
@@ -3179,6 +3180,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parsePreInc(Expr\PreInc $expr): string
     {
+        $this->assertNativeObjectOperatorOperandSupported($expr->var, $expr, '++');
         $this->assertNotNullsafeWriteContext($expr->var);
         $this->assertNativePropertyHookDirectWriteTarget($expr->var);
         $result = $this->genDynamicPropIncDec($expr->var, '+', true);
@@ -3566,6 +3568,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parsePostOp(Expr\PostDec|Expr\PostInc $expr, string $op): string
     {
+        $this->assertNativeObjectOperatorOperandSupported($expr->var, $expr, str_repeat($op, 2));
         $this->assertNotNullsafeWriteContext($expr->var);
         $this->assertNativePropertyHookDirectWriteTarget($expr->var);
         $result = $this->genDynamicPropIncDec($expr->var, $op, false);
@@ -3615,6 +3618,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parsePreDec(Expr\PreDec $expr): string
     {
+        $this->assertNativeObjectOperatorOperandSupported($expr->var, $expr, '--');
         $this->assertNotNullsafeWriteContext($expr->var);
         $this->assertNativePropertyHookDirectWriteTarget($expr->var);
         $result = $this->genDynamicPropIncDec($expr->var, '-', true);
@@ -3633,6 +3637,9 @@ class CompilerBase implements PropertyAccessContext
     protected function parsePrint(Expr\Print_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'print operand');
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($expr->expr))) {
+            return 'php::print(' . $this->parseExprToString($expr->expr) . ')';
+        }
         return 'php::print(' . $this->parseExprAsValue($expr->expr) . ')';
     }
 
@@ -3667,6 +3674,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseNew(Expr\New_ $expr): string
     {
+        if (!$expr->class instanceof Node\Stmt\Class_ && !$this->isNameExpr($expr->class)) {
+            $this->assertNotNativeObjectDynamicClassTarget($expr->class, $expr);
+        }
         $ctorClassName = '';
         // 匿名类
         if ($expr->class instanceof Node\Stmt\Class_) {
@@ -3719,6 +3729,7 @@ class CompilerBase implements PropertyAccessContext
                         $className = $this->getNamespacedClassName($className);
                     }
                     $ctorClassName = $className;
+                    $this->assertNativeClassNotUsedWithReflection($expr, $className);
                     if ($this->isAbstractClass($className)) {
                         $this->fatalError($expr, "abstract class `{$className}` cannot be instantiated");
                     }
@@ -3732,6 +3743,14 @@ class CompilerBase implements PropertyAccessContext
                         );
                     }
                     if ($this->isNativeObjectClass($className)) {
+                        if ($this->inGeneratorBody) {
+                            // Generator lowering deliberately keeps Native
+                            // values out of the Zend Closure/Fiber state.
+                            $this->fatalError(
+                                $expr,
+                                'Native objects cannot be created inside Generator functions',
+                            );
+                        }
                         $cppClass = $this->getNativeObjectCppName($className);
                         $descriptor = $this->getNativeObjectDescriptorName($className);
                         if ($constructor === null) {
@@ -3909,9 +3928,16 @@ class CompilerBase implements PropertyAccessContext
             // Although C++17 orders the braced-list elements, materializing an
             // expression prevents captured statements from a later part from
             // being hoisted ahead of an earlier Call.
-            $list[] = $part instanceof Node\InterpolatedStringPart
-                ? $this->parseExpr($part)
-                : $this->parseOrderedOperand($part, false);
+            if ($part instanceof Node\InterpolatedStringPart) {
+                $list[] = $this->parseExpr($part);
+            } elseif ($this->isNativeObjectClass($this->detectClassOfExpr($part))) {
+                $list[] = $this->parseOrderedOperand(
+                    new Expr\MethodCall($part, new Node\Identifier('toString')),
+                    false,
+                );
+            } else {
+                $list[] = $this->parseOrderedOperand($part, false);
+            }
         }
 
         return 'php::concat({' . implode(', ', $list) . '})';
@@ -3957,7 +3983,9 @@ class CompilerBase implements PropertyAccessContext
         if (!$node->expr) {
             return 'php::aotExit()';
         }
-        $status = $this->parseExprAsValue($node->expr);
+        $status = $this->isNativeObjectClass($this->detectClassOfExpr($node->expr))
+            ? $this->parseExprToString($node->expr)
+            : $this->parseExprAsValue($node->expr);
         return 'php::aotExit(' . $status . ')';
     }
 
@@ -4061,6 +4089,13 @@ class CompilerBase implements PropertyAccessContext
         $scope = [];
         foreach ($this->context->localVars as $name => $_type) {
             if ($name === 'this_' || str_starts_with($name, 'tmp_var_')) {
+                continue;
+            }
+            // Native pointers have no zval representation. Boxing one into
+            // the include symbol table would silently select a bool overload
+            // and expose `true` instead of the object. Dynamic PHP is not
+            // allowed to observe Native locals, so leave these names absent.
+            if ($this->isNativeObjectVar($name)) {
                 continue;
             }
             $phpName = $this->unescapeVarName($name);
@@ -4879,10 +4914,11 @@ class CompilerBase implements PropertyAccessContext
         if ($this->context->nativeObjects !== []) {
             $rootSlots = [];
             foreach ($this->context->nativeObjects as $name => $_class) {
-                if ($name === 'this_') {
-                    $code .= $this->getIndent() . 'auto *_native_this_root = &this_;' . PHP_EOL;
-                    $rootSlots[] = 'reinterpret_cast<void **>(&_native_this_root)';
-                } elseif ($this->hasLocalVar($name)) {
+                // `this_` and Native parameters are borrowed from a generated
+                // caller which already owns a root slot (nativeConstruct/
+                // nativeClone do the same for lifecycle callbacks). Only
+                // function-owned pointer slots must be registered here.
+                if ($name !== 'this_' && !$this->hasArgument($name) && $this->hasLocalVar($name)) {
                     $rootSlots[] = 'reinterpret_cast<void **>(&' . $name . ')';
                 }
             }

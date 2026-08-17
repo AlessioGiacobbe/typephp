@@ -663,6 +663,18 @@ class Preprocessor extends CompilerBase
 
         $this->parseParams($v->params, $functionDef);
         $this->assertNativeObjectFunctionSignature($v, $functionDef);
+        if ($functionDef->generator
+            && ($this->classDef?->nativeObject || $this->functionUsesNativeObject($functionDef))
+        ) {
+            // FiberGenerator lowers the body to a Zend Closure and captures all
+            // parameters through php::Args. Native pointers deliberately have
+            // no zval representation, and a Native method's `this` cannot be
+            // bound to that Closure either.
+            $this->fatalError(
+                $v,
+                'Generator functions cannot accept, capture, or return Native objects',
+            );
+        }
 
         if ($this->classDef !== null
             && !$this->classDef->nativeObject

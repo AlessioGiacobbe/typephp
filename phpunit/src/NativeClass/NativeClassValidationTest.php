@@ -69,6 +69,13 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-std-container-property.php');
     }
 
+    public function testRejectsBoxProperty(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native class properties cannot use Box types');
+        $this->compile('native-class-box-property.php');
+    }
+
     public function testRejectsNativeStdContainerConversionToPhpArray(): void
     {
         $this->expectException(TestError::class);
@@ -123,6 +130,27 @@ final class NativeClassValidationTest extends \BaseTest
         $this->expectException(TestError::class);
         $this->expectExceptionMessage('Dynamic instanceof is not supported for native objects');
         $this->compile('native-class-instanceof.php');
+    }
+
+    public function testRejectsNativeObjectAsDynamicNewTarget(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be used as dynamic class targets');
+        $this->compile('native-class-dynamic-new.php');
+    }
+
+    public function testRejectsNativeObjectAsDynamicStaticCallTarget(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be used as dynamic class targets');
+        $this->compile('native-class-dynamic-static-call.php');
+    }
+
+    public function testRejectsNativeObjectAsDynamicClassConstantTarget(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be used as dynamic class targets');
+        $this->compile('native-class-dynamic-class-constant.php');
     }
 
     public function testRejectsNativeObjectStoredInPhpArray(): void
@@ -328,6 +356,20 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-dynamic-magic-method.php');
     }
 
+    public function testRejectsVariableNativeMethodCalls(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Dynamic native object method calls are not supported');
+        $this->compile('native-class-variable-method.php');
+    }
+
+    public function testRejectsVariableNativePropertyAccess(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Dynamic native object property access is not supported');
+        $this->compile('native-class-variable-property.php');
+    }
+
     public function testRejectsDynamicStaticMagicMethodBeforeGenericStaticDiagnostic(): void
     {
         $this->expectException(TestError::class);
@@ -426,6 +468,97 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-arithmetic-operator.php');
     }
 
+    public function testRejectsNativeUnaryOperators(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects do not support the unary `-` operator');
+        $this->compile('native-class-unary-operator.php');
+    }
+
+    public function testRejectsIncrementingNativePointerSlots(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects do not support the `++` operator');
+        $this->compile('native-class-increment.php');
+    }
+
+    public function testRejectsNativeCompoundAssignments(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects do not support the `+=` operator');
+        $this->compile('native-class-compound-assignment.php');
+    }
+
+    public function testRejectsIncompatibleNativeCoalesceAssignment(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Cannot assign native object `NativeCoalesceWrong` to `NativeCoalesceExpected`');
+        $this->compile('native-class-coalesce-assign-type.php');
+    }
+
+    public function testRejectsIncompatibleNativePropertyCoalesceAssignment(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Cannot assign object of class `NativeCoalescePropertyWrong` to object property `value` of class `NativeCoalescePropertyExpected`');
+        $this->compile('native-class-coalesce-property-type.php');
+    }
+
+    public function testRejectsNativeSwitchConditions(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be used as switch values');
+        $this->compile('native-class-switch.php');
+    }
+
+    public function testRejectsNativeSwitchCaseValues(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be used as switch values');
+        $this->compile('native-class-switch-case.php');
+    }
+
+    public function testRejectsNativeArrayLiteralKeys(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be used as PHP array keys');
+        $this->compile('native-class-array-key.php');
+    }
+
+    public function testRejectsNativeArrayDimensionKeys(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be used as PHP array keys');
+        $this->compile('native-class-array-dim-key.php');
+    }
+
+    public function testRejectsArrayAccessOnNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects do not support array dimension access');
+        $this->compile('native-class-array-access.php');
+    }
+
+    public function testRejectsArrayWritesOnNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects do not support array dimension access');
+        $this->compile('native-class-array-access-write.php');
+    }
+
+    public function testRejectsArrayIssetOnNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects do not support array dimension access');
+        $this->compile('native-class-array-access-isset.php');
+    }
+
+    public function testRejectsArrayUnsetOnNativeObjects(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects do not support array dimension access');
+        $this->compile('native-class-array-access-unset.php');
+    }
+
     public function testRejectsInaccessibleNativeCloneMethod(): void
     {
         $this->expectException(TestError::class);
@@ -522,6 +655,69 @@ final class NativeClassValidationTest extends \BaseTest
         $this->expectException(TestError::class);
         $this->expectExceptionMessage('The return type is non-nullable native object `NativeNullReturnValue`');
         $this->compile('native-class-null-return.php');
+    }
+
+    public function testRejectsNativeObjectGeneratorParameter(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Generator functions cannot accept, capture, or return Native objects');
+        $this->compile('native-class-generator-parameter.php');
+    }
+
+    public function testRejectsNativeObjectGeneratorMethod(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Generator functions cannot accept, capture, or return Native objects');
+        $this->compile('native-class-generator-method.php');
+    }
+
+    public function testRejectsNativeObjectConstructionInsideGenerator(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be created inside Generator functions');
+        $this->compile('native-class-generator-local.php');
+    }
+
+    public function testRejectsNativeObjectRetainedByGeneratorFromFactory(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Generator functions cannot retain Native objects across suspension');
+        $this->compile('native-class-generator-factory.php');
+    }
+
+    public function testRejectsYieldingNativeObject(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be yielded through a Zend Generator');
+        $this->compile('native-class-generator-yield.php');
+    }
+
+    public function testRejectsNativeClassReflection(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native class `NativeReflectionClassValue` cannot be used with ReflectionClass');
+        $this->compile('native-class-reflection-class.php');
+    }
+
+    public function testRejectsNativeMemberReflection(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native class `NativeReflectionMemberValue` cannot be used with ReflectionMethod');
+        $this->compile('native-class-reflection-member.php');
+    }
+
+    public function testRejectsThrowingNativeObject(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be thrown as Zend exceptions');
+        $this->compile('native-class-throw.php');
+    }
+
+    public function testRejectsIteratingNativeObjectThroughZendForeach(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native objects cannot be iterated by PHP foreach');
+        $this->compile('native-class-foreach.php');
     }
 
 }

@@ -749,6 +749,9 @@ trait MethodCallTrait
 
     protected function parseStaticCall(Expr\StaticCall $expr): string
     {
+        if (!$this->isNameExpr($expr->class)) {
+            $this->assertNotNativeObjectDynamicClassTarget($expr->class, $expr);
+        }
         $pythonCall = $this->parsePythonModuleStaticCall($expr);
         if ($pythonCall !== null) {
             return $pythonCall;

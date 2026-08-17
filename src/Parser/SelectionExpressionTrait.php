@@ -124,6 +124,8 @@ trait SelectionExpressionTrait
     {
         $nativeClass = $this->detectClassOfExpr($expr);
         $nativeSelection = $this->isNativeObjectClass($nativeClass);
+        $conditionNativeClass = $this->detectClassOfExpr($expr->cond);
+        $nativeCondition = $this->isNativeObjectClass($conditionNativeClass);
         $returnType = $nativeSelection
             ? $this->getNativeObjectPointerType($nativeClass)
             : Type::VAR;
@@ -134,7 +136,13 @@ trait SelectionExpressionTrait
                 $this->errorUndefinedVariable($expr->cond);
             }
         } else {
-            $tmpVar = $this->addTmpVar(Type::VAR);
+            if ($nativeCondition) {
+                $tmpVar = $this->genTmpVarName();
+                $this->addLocalVar($tmpVar, $this->getNativeObjectPointerType($conditionNativeClass));
+                $this->addNativeObject($tmpVar, $conditionNativeClass);
+            } else {
+                $tmpVar = $this->addTmpVar(Type::VAR);
+            }
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $var . ';';
             $var = $tmpVar;
         }
@@ -157,12 +165,37 @@ trait SelectionExpressionTrait
                 $code .= $this->getIndent() . 'if (!' . $matched . ') {';
                 $code .= $this->formatCapturedStmtLines($beforeStmts);
                 if ($afterStmts) {
-                    $condTmpVar = $this->addTmpVar(Type::VAR);
+                    $condClass = $this->detectClassOfExpr($cond);
+                    if ($nativeCondition && $this->isNativeObjectClass($condClass)) {
+                        $condTmpVar = $this->genTmpVarName();
+                        $this->addLocalVar($condTmpVar, $this->getNativeObjectPointerType($condClass));
+                        $this->addNativeObject($condTmpVar, $condClass);
+                    } else {
+                        $condTmpVar = $this->addTmpVar(Type::VAR);
+                    }
                     $code .= $this->getIndent() . "{$condTmpVar} = {$condValue};";
                     $code .= $this->formatCapturedStmtLines($afterStmts);
                     $condValue = $condTmpVar;
                 }
-                $code .= $this->getIndent() . $matched . ' = php::same(' . $var . ', ' . $condValue . ');';
+                if ($nativeCondition) {
+                    $condClass = $this->detectClassOfExpr($cond);
+                    if ($this->isNull($cond)) {
+                        $comparison = $var . ' == nullptr';
+                    } elseif ($this->isNativeObjectClass($condClass)
+                        && ($this->isObjectClassStaticallyAssignableTo($condClass, $conditionNativeClass)
+                            || $this->isObjectClassStaticallyAssignableTo($conditionNativeClass, $condClass))
+                    ) {
+                        $comparison = $var . ' == ' . $condValue;
+                    } else {
+                        // PHP match uses strict identity. An unrelated Native
+                        // pointer or a Zend value can never be identical, but
+                        // its expression must still be evaluated for effects.
+                        $comparison = '(static_cast<void>(' . $condValue . '), false)';
+                    }
+                    $code .= $this->getIndent() . $matched . ' = (' . $comparison . ');';
+                } else {
+                    $code .= $this->getIndent() . $matched . ' = php::same(' . $var . ', ' . $condValue . ');';
+                }
                 $code .= $this->getIndent() . '}';
             }
             $code .= $this->getIndent() . 'if (' . $matched . ') {';

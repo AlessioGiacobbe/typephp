@@ -22,6 +22,9 @@ trait ExceptionControlFlowTrait
         if ($this->method === '__destruct') {
             $this->warning($expr, "Throwing exception in {$this->getFullClassName()}::__destruct() may cause memory leak");
         }
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($expr->expr))) {
+            $this->fatalError($expr, 'Native objects cannot be thrown as Zend exceptions');
+        }
         $type = $this->detectTypeOfExpr($expr->expr);
         if ($this->isNewExpr($expr->expr)) {
             $ex = $this->parseExpr($expr->expr);
@@ -237,4 +240,3 @@ trait ExceptionControlFlowTrait
     }
 
 }
-

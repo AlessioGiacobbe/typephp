@@ -21,6 +21,12 @@ trait AssignOpTrait
 {
     protected function parseAssignArrayDim(NodeAbstract $left, NodeAbstract $right): string
     {
+        if ($left instanceof Expr\ArrayDimFetch && $left->dim !== null) {
+            $this->assertNotNativeObjectArrayKey($left->dim);
+        }
+        if ($left instanceof Expr\ArrayDimFetch) {
+            $this->assertNotNativeObjectArrayDimensionReceiver($left->var, $left);
+        }
         if ($this->isPropertyFetch($left)) {
             return $this->parseAssignPropertyArrayDim($left, $right);
         }
@@ -288,6 +294,7 @@ trait AssignOpTrait
         $finalVarType = $this->getNormalAssignType($type);
         $runtimeObjectAssignClass = '';
         $assigningNullToTypedObject = false;
+        $markNativeObjectNonNull = false;
         if ($type === Type::VOID) {
             $type = Type::VAR;
         }
@@ -358,6 +365,11 @@ trait AssignOpTrait
             }
             // 类型推断，获取对象的类名，如果不是对象则返回空字符串
             $rightClass = $this->detectClassOfExpr($right);
+            $markNativeObjectNonNull = $this->context->scopeLevel <= 1
+                && !$this->hasScopeGlobalVar($var)
+                && !$this->hasStaticVar($var)
+                && $this->isNativeObjectClass($rightClass)
+                && $this->isNativeObjectExpressionKnownNonNull($right);
             if ($this->isNativeObjectVar($var)) {
                 // Assignment rebinds the local pointer slot. Even an
                 // assignment nested in a conditional invalidates the simple
@@ -520,6 +532,12 @@ trait AssignOpTrait
                 . ' return php::toObject(' . $checkedValue . ', ' . $this->getClassEntryPtr($runtimeObjectAssignClass) . ');'
                 . ' })(' . $rightExpr . ')';
         }
+        if ($markNativeObjectNonNull) {
+            // Parsing is sequential: this proof affects only subsequent source
+            // expressions. Nested control flow is excluded above because its
+            // assignment may not execute on every path.
+            $this->markNativeObjectNonNull($var);
+        }
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
         if ($propertyWriteTarget !== null && ($propertyDef = $this->getNativePropertyDef($left)) !== null) {
@@ -611,6 +629,7 @@ trait AssignOpTrait
 
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
+        $this->assertNativeObjectOperatorOperandSupported($node->var, $node, $op);
         $this->assertNotNullsafeWriteContext($node->var);
         $this->assertNativePropertyHookDirectWriteTarget($node->var);
         $pythonOperator = $this->parsePythonAssignOperator($node);
@@ -1077,11 +1096,34 @@ trait AssignOpTrait
     {
         $this->checkLeftValue($expr->var);
 
+        $rightClass = $this->detectClassOfExpr($expr->expr);
+        $nativeRight = $this->isNativeObjectClass($rightClass);
+
         // An undefined variable must exist before generating its isset check.
-        // Keep it as Variant so NULL remains distinguishable from native defaults.
+        // A Native RHS establishes a typed nullptr slot; it must never be
+        // declared as Variant because boxing the raw pointer would coerce it
+        // to bool. Other values retain the normal nullable Variant behavior.
         $var = $this->isVarExpr($expr->var) ? $this->parseIdentifier($expr->var) : null;
         if ($var !== null && !$this->hasVar($var)) {
-            $this->addLocalVar($var, Type::VAR);
+            if ($nativeRight) {
+                $this->addLocalVar($var, $this->getNativeObjectPointerType($rightClass));
+                $this->addNativeObject($var, $rightClass);
+            } else {
+                $this->addLocalVar($var, Type::VAR);
+            }
+        }
+        if ($var !== null && $this->isNativeObjectVar($var)) {
+            $leftClass = $this->getNativeObjectVarClass($var);
+            if ($this->isNull($expr->expr)) {
+                // nullptr remains a valid nullable slot value.
+            } elseif (!$nativeRight) {
+                $this->fatalError($expr->expr, "Native object `\${$var}` cannot be converted to var/object");
+            } elseif (!$this->isObjectClassStaticallyAssignableTo($rightClass, $leftClass)) {
+                $this->fatalError(
+                    $expr->expr,
+                    "Cannot assign native object `{$rightClass}` to `{$leftClass}`",
+                );
+            }
         }
 
         $isset = $this->parseChainedExpr($expr->var, self::OP_ISSET);
@@ -1093,12 +1135,48 @@ trait AssignOpTrait
             $this->assertCanAssignPropertyWrite($propertyWriteTarget, $expr->expr);
         }
 
+        $rightBeforeCount = count($this->context->beforeStmtLines);
+        $rightAfterCount = count($this->context->afterStmtLines);
         $right = $this->parseExpr($expr->expr);
+        $rightBefore = array_slice($this->context->beforeStmtLines, $rightBeforeCount);
+        $rightAfter = array_slice($this->context->afterStmtLines, $rightAfterCount);
+        $this->context->beforeStmtLines = array_slice(
+            $this->context->beforeStmtLines,
+            0,
+            $rightBeforeCount,
+        );
+        $this->context->afterStmtLines = array_slice(
+            $this->context->afterStmtLines,
+            0,
+            $rightAfterCount,
+        );
         if ($propertyWriteTarget !== null) {
             $right = $this->wrapPropertyWriteTypeCheck($propertyWriteTarget, $expr->expr, $right);
         }
         if ($this->isVarExpr($expr->expr) and !$this->hasVar($right)) {
             $this->errorUndefinedVariable($expr->expr);
+        }
+        $targetClass = $var !== null && $this->isNativeObjectVar($var)
+            ? $this->getNativeObjectVarClass($var)
+            : $this->detectClassOfExpr($expr->var);
+        if (($rightBefore !== [] || $rightAfter !== []) && $this->isNativeObjectClass($targetClass)) {
+            $tmp = $this->genTmpVarName();
+            $pointerType = $this->getNativeObjectPointerType($targetClass);
+            $this->addLocalVar($tmp, $pointerType);
+            $this->addNativeObject($tmp, $targetClass);
+            $code = '[&]() -> ' . $pointerType . ' {' . PHP_EOL;
+            $code .= $this->getIndent() . 'if (' . $isset . ') { return ' . $var . '; }' . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($rightBefore);
+            $code .= $this->getIndent() . $tmp . ' = ' . $right . ';' . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($rightAfter);
+            $code .= $this->getIndent() . $var . ' = ' . $tmp . ';' . PHP_EOL;
+            $code .= $this->getIndent() . 'return ' . $var . ';' . PHP_EOL;
+            $code .= $this->getIndent() . '}()';
+            return $code;
+        }
+        $this->appendCapturedStmtLinesToContext($rightBefore);
+        foreach ($rightAfter as $stmt) {
+            $this->context->afterStmtLines[] = $stmt;
         }
         return '(' . $isset . '?' . $var . ':(' . $var . ' = ' . $right . '))';
     }

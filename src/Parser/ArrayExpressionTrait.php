@@ -170,6 +170,10 @@ trait ArrayExpressionTrait
 
     protected function parseArrayDimFetch(Expr\ArrayDimFetch $node): string
     {
+        $this->assertNotNativeObjectArrayDimensionReceiver($node->var, $node);
+        if ($node->dim !== null) {
+            $this->assertNotNativeObjectArrayKey($node->dim);
+        }
         $write = $this->isArrayDimFetchUpdate($node);
         if ($this->isStdContainerExpr($node)) {
             if ($write && $node->dim === null) {

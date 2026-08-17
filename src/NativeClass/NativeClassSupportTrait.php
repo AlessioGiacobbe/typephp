@@ -315,6 +315,50 @@ trait NativeClassSupportTrait
         $this->fatalError($expr, "Native objects do not support the `{$operator}` operator{$suffix}");
     }
 
+    /**
+     * A Native object expression is a raw C++ pointer.  Applying arithmetic
+     * unary or update operators to it could otherwise become pointer
+     * arithmetic, which is valid C++ but has no PHP object semantics.
+     */
+    protected function assertNativeObjectOperatorOperandSupported(
+        NodeAbstract $operand,
+        NodeAbstract $errorNode,
+        string $operator,
+        bool $unary = false,
+    ): void {
+        if (!$this->isNativeObjectClass($this->detectClassOfExpr($operand))) {
+            return;
+        }
+
+        $prefix = $unary ? 'unary ' : '';
+        $this->fatalError($errorNode, "Native objects do not support the {$prefix}`{$operator}` operator");
+    }
+
+    protected function assertNotNativeObjectArrayKey(NodeAbstract $key): void
+    {
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($key))) {
+            $this->fatalError($key, 'Native objects cannot be used as PHP array keys');
+        }
+    }
+
+    protected function assertNotNativeObjectArrayDimensionReceiver(
+        NodeAbstract $receiver,
+        NodeAbstract $errorNode,
+    ): void {
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($receiver))) {
+            $this->fatalError($errorNode, 'Native objects do not support array dimension access');
+        }
+    }
+
+    protected function assertNotNativeObjectDynamicClassTarget(
+        NodeAbstract $target,
+        NodeAbstract $errorNode,
+    ): void {
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($target))) {
+            $this->fatalError($errorNode, 'Native objects cannot be used as dynamic class targets');
+        }
+    }
+
     protected function getNativeObjectCppName(string|ClassDef $class): string
     {
         $classDef = $class instanceof ClassDef ? $class : $this->getClass(ltrim($class, '\\'));
@@ -539,6 +583,68 @@ trait NativeClassSupportTrait
         }
     }
 
+    /**
+     * Reflection constructors accept a class name string, so the ordinary
+     * Native-pointer Zend boundary check cannot see this escape. Reject known
+     * Native class literals before generating a lookup for a class which is
+     * intentionally absent from the Zend class table.
+     */
+    protected function assertNativeClassNotUsedWithReflection(
+        Node\Expr\New_ $expr,
+        string $constructedClass,
+    ): void {
+        $reflectionClass = strtolower(ltrim($constructedClass, '\\'));
+        if (!in_array($reflectionClass, [
+            'reflectionclass',
+            'reflectionmethod',
+            'reflectionproperty',
+            'reflectionclassconstant',
+            'reflectionenum',
+            'reflectionenumunitcase',
+            'reflectionenumbackedcase',
+        ], true) || $expr->args === []) {
+            return;
+        }
+
+        $target = $expr->args[0]->value;
+        $nativeClass = '';
+        if ($this->isScalarString($target)) {
+            // Reflection string arguments are runtime names, not names relative
+            // to the current PHP namespace.
+            $candidate = ltrim($target->value, '\\');
+            if ($this->isNativeObjectClass($candidate)) {
+                $nativeClass = $candidate;
+            }
+        } elseif ($this->isClassConstFetch($target)
+            && $this->isNameExpr($target->class)
+            && $this->isIdExpr($target->name)
+            && strtolower($this->parseIdentifier($target->name)) === 'class'
+        ) {
+            $candidate = $this->parseIdentifier($target->class);
+            if ($candidate === 'self' || $candidate === 'static') {
+                $candidate = $this->getFullClassName();
+            } elseif ($candidate === 'parent') {
+                $candidate = $this->classDef?->extends ?? '';
+            } else {
+                $candidate = $this->getNamespacedClassName($candidate);
+            }
+            if ($this->isNativeObjectClass($candidate)) {
+                $nativeClass = $candidate;
+            }
+        }
+
+        if ($nativeClass !== '') {
+            $reflectionName = strrchr($constructedClass, '\\');
+            $reflectionName = $reflectionName === false
+                ? $constructedClass
+                : substr($reflectionName, 1);
+            $this->fatalError(
+                $target,
+                "Native class `{$nativeClass}` cannot be used with {$reflectionName}",
+            );
+        }
+    }
+
     protected function getNativeObjectReturnType(FunctionDef $function): ?string
     {
         if ($function->returnType !== Type::OBJECT || !$this->isNativeObjectClass($function->returnClass)) {
@@ -612,6 +718,50 @@ trait NativeClassSupportTrait
     protected function isNativeObjectKnownNonNull(string $name): bool
     {
         return isset($this->context->nonNullNativeObjects[$name]);
+    }
+
+    /**
+     * Conservative straight-line non-null proof for a Native pointer value.
+     * This deliberately excludes properties (a non-nullable Native field has
+     * a nullptr zero value) and control-flow expressions. The caller may only
+     * retain the proof at function top level, where no branch merge is needed.
+     */
+    protected function isNativeObjectExpressionKnownNonNull(NodeAbstract $expr): bool
+    {
+        if ($expr instanceof Node\Expr\ErrorSuppress) {
+            return $this->isNativeObjectExpressionKnownNonNull($expr->expr);
+        }
+        if ($expr instanceof Node\Expr\New_ || $expr instanceof Node\Expr\Clone_) {
+            return $this->isNativeObjectClass($this->detectClassOfExpr($expr));
+        }
+        if ($expr instanceof Node\Expr\Variable && is_string($expr->name)) {
+            return $this->isNativeObjectKnownNonNull($this->parseIdentifier($expr));
+        }
+        if ($expr instanceof Node\Expr\FuncCall
+            && ($this->isNameExpr($expr->name) || $this->isFullNameExpr($expr->name))
+        ) {
+            $native = $this->findNativeFunction($this->parseIdentifier($expr->name));
+            if ($native !== false) {
+                $function = $this->getFunction($native);
+                return $this->isNativeObjectClass($function->returnClass)
+                    && !$function->returnNullable;
+            }
+        }
+        if ($expr instanceof Node\Expr\MethodCall
+            && $this->isIdExpr($expr->name)
+        ) {
+            $receiverClass = $this->detectClassOfExpr($expr->var);
+            if ($this->isNativeObjectClass($receiverClass)) {
+                $method = $this->findNativeObjectMethod(
+                    $receiverClass,
+                    $this->parseIdentifier($expr->name),
+                );
+                return $method !== null
+                    && $this->isNativeObjectClass($method->functionDef->returnClass)
+                    && !$method->functionDef->returnNullable;
+            }
+        }
+        return false;
     }
 
     protected function getNativeObjectReceiver(string $name): string

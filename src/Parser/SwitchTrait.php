@@ -16,6 +16,16 @@ trait SwitchTrait
     protected function parseSwitch(Node\Stmt\Switch_ $v): string
     {
         $cond    = $v->cond;
+        if ($this->isNativeObjectClass($this->detectClassOfExpr($cond))) {
+            $this->fatalError($cond, 'Native objects cannot be used as switch values');
+        }
+        foreach ($v->cases as $case) {
+            if ($case->cond !== null
+                && $this->isNativeObjectClass($this->detectClassOfExpr($case->cond))
+            ) {
+                $this->fatalError($case->cond, 'Native objects cannot be used as switch values');
+            }
+        }
         $tmp_var = $this->genTmpVarName();
         $type    = $this->detectTypeOfExpr($cond);
         $this->assertExprCanBeUsedAsValue($cond, 'switch condition');

@@ -17,6 +17,9 @@ trait ClassConstantFetchTrait
 {
     protected function parseClassConstFetch(Expr\ClassConstFetch $expr): string
     {
+        if (!$this->isNameExpr($expr->class)) {
+            $this->assertNotNativeObjectDynamicClassTarget($expr->class, $expr);
+        }
         $this->rejectPythonModuleClassConstantFetch($expr);
 
         if (!$this->isIdExpr($expr->name)) {

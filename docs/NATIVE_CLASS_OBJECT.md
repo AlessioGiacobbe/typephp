@@ -328,10 +328,16 @@ b->x = 10;
 Native Class Object 不使用 `std::shared_ptr`。`std::shared_ptr` 的控制块、原子引用计数和循环引用问题与本特性的极致性能目标不符。
 
 Native Object 的严格比较使用指针身份：`===`/`!==` 判断两个槽是否指向同一个 Native
-对象，也支持与 `null` 比较。PHP 的 `==`/`!=` 会递归比较 Zend Object 属性；Native
+对象，也支持与 `null` 比较。与任何 Zend 标量或 Zend Object 的严格比较恒为
+`false`，不会把裸指针隐式转换为 `bool`。`match` 条件同样使用这一指针身份规则。
+PHP 的 `==`/`!=` 会递归比较 Zend Object 属性；Native
 Object 没有 Zend object handler，而且对象图可能包含环，因此不提供隐式字段值比较。
 松散比较、大小比较和算术/位运算在编译期直接报错。需要值相等语义时应声明一个具有
 明确字段和循环处理规则的普通 Native 方法。
+
+一元算术/位运算、`++`/`--`、复合算术赋值和 `switch` 也依赖 PHP 的数值或松散比较
+语义，因此禁止用于 Native Object。该检查必须发生在 C++ 生成前，避免裸指针意外进入
+合法但危险的 C++ 指针算术。
 
 `isset($native)` 与 `empty($native)` 直接检查裸指针是否为 `nullptr`。命名 Native
 属性链使用短路 lambda 逐级检查中间指针，不会把指针传入 `php::Variant`，因此
@@ -789,6 +795,28 @@ nullable class 必须使用 `?Point`，使用相同指针表示，`nullptr` 表�
 参数和返回值必须显式声明具体 Native Class（或其 nullable 形式），不能通过 `mixed`、
 `object` 或 Interface carrier 传递。
 
+例如：
+
+```php
+function bar(Point $point): void
+{
+    // 函数入口已经完成非空检查；进入函数体后 $point 一定指向 Point 对象。
+    echo $point->x;
+}
+
+function maybeBar(?Point $point): void
+{
+    // $point 可能是空指针，使用前必须先收窄或由成员访问生成空值检查。
+    if ($point !== null) {
+        echo $point->x;
+    }
+}
+```
+
+两者的 C++ ABI 都使用 `php_app__point *`，但契约不同：`bar()` 在执行第一条用户
+语句前拒绝 `nullptr`；`maybeBar()` 接受 `nullptr`。这项入口保证只约束传入时的值，
+函数内部仍可把自己的局部指针槽重新赋为 `null`，且不会改变调用者的变量槽。
+
 ## 10. ZendVM 边界
 
 Native Object 没有对应的 `zval` 表示，因此只能传给明确接受相同 Native Class或其 Native 基类的参数。Interface 只用于校验 Native Class 的声明契约，不能作为 Native Object 的参数、属性、变量或返回值 carrier。
@@ -803,6 +831,12 @@ Native Class 的字段可以保存 `php::Var`、`php::Array` 或 `php::Object`�
 - 使用 `$nativeObject->$expr()`、`$nativeObject->{$expr}()` 等变量方法名调用。
 - 放入普通 PHP `array`。
 - 捕获到需要注册为 Zend Closure 的闭包中。
+- 作为 TypePHP Generator 的参数、`this`、局部变量、返回类型或 `yield` 值。Generator
+  由 Zend Closure/Fiber 状态机表示，Native pointer 不进入该 Zend 状态。
+- 作为 Fiber API 的传入值、恢复值或 Closure capture。普通 TypePHP 函数可以在自己的
+  C++ 局部槽中保存 Native Object 并跨越 `Fiber::suspend()`；Native Root Frame 使用
+  可任意 O(1) 摘除的 thread-local 双向侵入链表，GC 会同时扫描运行中与挂起 Fiber 的
+  有效 frame，不依赖跨 Fiber 的 LIFO 析构顺序。
 - 作为 `call_user_func()` 等动态 callback 的 receiver。
 - 保存到 ZendVM 全局变量或对象属性中。
 
@@ -1118,6 +1152,13 @@ Native Class 支持 `toArray()`、`toString()`、`toInt()`、`toFloat()`、`toBo
 
 方法返回类型必须与关键词类型完全一致。例如 `toArray(): array`、`toInt(): int`、`toString(): string`；缺少方法、接收参数、按引用返回或返回类型不同均为编译期 FatalError。
 
+对象条件与显式转换是两套语义。`if ($object)`、`!$object`、`$left && $right` 和
+`$left || $right` 只判断 Native pointer 是否为 `nullptr`，不会调用 `toBool()`；这与
+PHP 对普通对象“存在即为 true”的语义一致，也使 nullable Native pointer 可以直接作为
+条件。只有显式 `(bool) $object` 或 `$object->toBool()` 才解析为 Native `toBool(): bool`
+调用；没有定义该方法时在编译期报错。即使类定义的 `toBool()` 返回 `false`，一个非空
+对象在 `if ($object)` 中仍为 `true`。
+
 `__toString(): string` 是 `toString(): string` 的兼容别名。对 Native Object 使用 `toString()`、`strval($object)`、`(string) $object`、字符串拼接或 `echo` 时，编译器优先使用实际声明的 `toString()`，若不存在则使用 `__toString()`。
 
 与 PHP 一致，声明合法 `__toString()` 的 Native Class 在编译期隐式满足 `Stringable`；
@@ -1193,7 +1234,9 @@ $json = json_encode($nativeObject->toArray());
 | Interface | 普通 Interface 注册到 ZendVM；Native `implements` 只做编译期契约校验，Native Object 不能转换为 Interface 值 |
 | `instanceof` | 支持编译期可解析的 Native class 和 Interface，直接折叠；变量 class 不支持 |
 | `===` / `!==` | 支持 Native 指针身份及与 `null` 的严格比较 |
+| Native 条件的 `match` | 支持，使用与 `===` 相同的指针身份规则 |
 | `==` / `!=`、大小及算术/位运算 | 不支持，编译期 FatalError；值相等应使用显式 Native 方法 |
+| 一元算术/位运算、`++`/`--`、复合算术赋值、`switch` | 不支持，编译期 FatalError |
 | 动态属性 | 不支持 |
 | `$nativeObject->$expr()` | 不支持，只允许命名方法调用 |
 | `__call()` / `__callStatic()` | 不支持；Native Call 必须在编译期解析为确定符号 |
@@ -1201,6 +1244,8 @@ $json = json_encode($nativeObject->toArray());
 | `__sleep()` / `__wakeup()` / `__serialize()` / `__unserialize()` | 不支持；Native Object 不进入 Zend 序列化系统 |
 | `__set_state()` / `__debugInfo()` | 不支持；Native Object 没有相应 Zend object handler |
 | Reflection | 不支持 |
+| TypePHP Generator 保存或产出 Native Object | 不支持；编译期 FatalError |
+| 普通函数的 Native 局部变量跨 `Fiber::suspend()` | 支持；Root Frame 注册表允许非 LIFO Fiber 生命周期 |
 | `get_class()` / `get_parent_class()` / `get_called_class()` | 不支持 Native runtime introspection；使用 `self::class`、`parent::class` 或具体类名 |
 | WeakReference | 不支持 |
 | PHP serialize | 不支持 |
@@ -1208,6 +1253,7 @@ $json = json_encode($nativeObject->toArray());
 | 动态 callback | 不支持 |
 | 动态 PHP/eval 使用 | 不支持 |
 | 普通 PHP array 保存 Native Object | 不支持 |
+| Native Object 作为 PHP array key 或 `[]` receiver | 不支持；编译期 FatalError |
 | Box/Std Container 属性 | 不支持 |
 | Box 保存 Native Object | 不支持 |
 | 局部 Std Container 保存 Native Object | 支持具体 Native class value type；容器 Root Frame 参与 GC tracing |

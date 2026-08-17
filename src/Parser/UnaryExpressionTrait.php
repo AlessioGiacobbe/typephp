@@ -20,6 +20,7 @@ trait UnaryExpressionTrait
         if ($pythonOperator !== null) {
             return $pythonOperator;
         }
+        $this->assertNativeObjectOperatorOperandSupported($expr->expr, $expr, '~', true);
         $type = $this->detectTypeOfExpr($expr->expr);
         $this->assertExprCanBeUsedAsValue($expr->expr, 'bitwise operand');
         if ($type === Type::BIGINT) {
@@ -89,6 +90,7 @@ trait UnaryExpressionTrait
         if ($pythonOperator !== null) {
             return $pythonOperator;
         }
+        $this->assertNativeObjectOperatorOperandSupported($expr->expr, $expr, '-', true);
         $type = $this->detectTypeOfExpr($expr->expr);
         $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
         if ($type === Type::BIGFLOAT) {
@@ -124,6 +126,7 @@ trait UnaryExpressionTrait
         if ($pythonOperator !== null) {
             return $pythonOperator;
         }
+        $this->assertNativeObjectOperatorOperandSupported($expr->expr, $expr, '+', true);
         $this->assertExprCanBeUsedAsValue($expr->expr, 'unary operand');
         return $this->parseExprAsValue($expr->expr);
     }
