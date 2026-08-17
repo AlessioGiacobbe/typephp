@@ -15,6 +15,45 @@ class NativeSelectedValue
     }
 }
 
+#[Native]
+class NativeSelectedBase
+{
+    public int $value;
+
+    public function __construct(int $value)
+    {
+        $this->value = $value;
+    }
+}
+
+#[Native]
+class NativeSelectedLeft extends NativeSelectedBase
+{
+}
+
+#[Native]
+class NativeSelectedRight extends NativeSelectedBase
+{
+}
+
+function selectSibling(bool $left): NativeSelectedBase
+{
+    return $left ? new NativeSelectedLeft(90) : new NativeSelectedRight(91);
+}
+
+function matchSibling(bool $left): NativeSelectedBase
+{
+    return match ($left) {
+        true => new NativeSelectedLeft(92),
+        false => new NativeSelectedRight(93),
+    };
+}
+
+function coalesceSibling(?NativeSelectedLeft $left): NativeSelectedBase
+{
+    return $left ?? new NativeSelectedRight(94);
+}
+
 function selectWithMatch(int $kind): NativeSelectedValue
 {
     return match ($kind) {
@@ -58,6 +97,11 @@ function main(): void
     $existing = new NativeSelectedValue(80);
     $existing ??= identitySelectedValue(makeSelectedValue());
     var_dump($existing->value);
+
+    var_dump(selectSibling(true)->value, selectSibling(false)->value);
+    var_dump(matchSibling(true)->value, matchSibling(false)->value);
+    var_dump(coalesceSibling(null)->value);
+    var_dump(coalesceSibling(new NativeSelectedLeft(95))->value);
 }
 ?>
 --EXPECT--
@@ -69,3 +113,9 @@ int(1)
 int(40)
 int(60)
 int(80)
+int(90)
+int(91)
+int(92)
+int(93)
+int(94)
+int(95)

@@ -1,6 +1,6 @@
 <?php
 /**
- * This file is part of TypePHP.
+ * This file is part of Swoole-Compiler(AOT).
  *
  * @link     https://www.swoole.com/
  * @contact  service@swoole.com
@@ -22,54 +22,21 @@ use PhpParser\NodeAbstract;
  */
 final class NativeGlobalDiscovery
 {
-    /** @var \Closure(string): ?string */
-    private \Closure $canonicalClass;
+    private NativeGlobalTypeResolver $resolver;
 
-    /** @var \Closure(string): ?string */
-    private \Closure $nativeClass;
-
-    /** @var \Closure(list<string>): ?string */
-    private \Closure $functionReturn;
-
-    /** @var \Closure(string, string): ?string */
-    private \Closure $methodReturn;
-
-    /** @var \Closure(string, string): ?string */
-    private \Closure $propertyClass;
-
-    /** @var \Closure(string, string): ?string */
-    private \Closure $commonClass;
-
-    /** @var \Closure(string): ?string */
-    private \Closure $parentClass;
-
+    /** @var array<string, string> */
+    private array $functionReturns;
     private string $scopeClass = '';
 
     /**
-     * @param \Closure(string): ?string $canonicalClass
-     * @param \Closure(string): ?string $nativeClass
-     * @param \Closure(list<string>): ?string $functionReturn
-     * @param \Closure(string, string): ?string $methodReturn
-     * @param \Closure(string, string): ?string $propertyClass
-     * @param \Closure(string, string): ?string $commonClass
-     * @param \Closure(string): ?string $parentClass
+     * @param array<string, string> $functionReturns
      */
     public function __construct(
-        \Closure $canonicalClass,
-        \Closure $nativeClass,
-        \Closure $functionReturn,
-        \Closure $methodReturn,
-        \Closure $propertyClass,
-        \Closure $commonClass,
-        \Closure $parentClass,
+        NativeGlobalTypeResolver $resolver,
+        array $functionReturns,
     ) {
-        $this->canonicalClass = $canonicalClass;
-        $this->nativeClass = $nativeClass;
-        $this->functionReturn = $functionReturn;
-        $this->methodReturn = $methodReturn;
-        $this->propertyClass = $propertyClass;
-        $this->commonClass = $commonClass;
-        $this->parentClass = $parentClass;
+        $this->resolver = $resolver;
+        $this->functionReturns = $functionReturns;
     }
 
     /**
@@ -129,7 +96,7 @@ final class NativeGlobalDiscovery
 
         $locals = [];
         $previousScope = $this->scopeClass;
-        $thisClass = ($this->canonicalClass)($class);
+        $thisClass = $this->resolver->canonicalClass($class);
         $this->scopeClass = $thisClass ?? '';
         if ($thisClass !== null) {
             $locals['this'] = $thisClass;
@@ -226,11 +193,11 @@ final class NativeGlobalDiscovery
         if (!$node instanceof NodeAbstract || $node instanceof Node\FunctionLike) {
             return;
         }
-        if ($node instanceof Node\Expr\Assign) {
+        if ($node instanceof Node\Expr\Assign || $node instanceof Node\Expr\AssignOp\Coalesce) {
             $this->analyzeNodes($node->expr, $globals, $locals, $result);
             $class = $this->inferClass($node->expr, $locals);
             $globalName = $this->assignmentGlobalName($node->var, $globals);
-            $nativeClass = $class === null ? null : ($this->nativeClass)($class);
+            $nativeClass = $class === null ? null : $this->resolver->nativeClass($class);
             if ($globalName !== null && $nativeClass !== null) {
                 $result[] = ['name' => $globalName, 'class' => $nativeClass, 'node' => $node];
             } elseif ($node->var instanceof Node\Expr\Variable && is_string($node->var->name)) {
@@ -251,7 +218,7 @@ final class NativeGlobalDiscovery
     /** @param array<string, string> $locals */
     private function inferClass(NodeAbstract $expression, array $locals): ?string
     {
-        if ($expression instanceof Node\Expr\Assign) {
+        if ($expression instanceof Node\Expr\Assign || $expression instanceof Node\Expr\AssignOp\Coalesce) {
             return $this->inferClass($expression->expr, $locals);
         }
         if ($expression instanceof Node\Expr\New_ && $expression->class instanceof Node\Name) {
@@ -266,26 +233,38 @@ final class NativeGlobalDiscovery
             return $this->inferClass($expression->expr, $locals);
         }
         if ($expression instanceof Node\Expr\FuncCall && $expression->name instanceof Node\Name) {
-            return ($this->functionReturn)($this->resolvedNameCandidates($expression->name));
+            foreach ($this->resolvedNameCandidates($expression->name) as $name) {
+                $key = strtolower(ltrim($name, '\\'));
+                if (isset($this->functionReturns[$key])) {
+                    return $this->functionReturns[$key];
+                }
+            }
+            return null;
         }
         if ($expression instanceof Node\Expr\StaticCall
             && $expression->class instanceof Node\Name
             && $expression->name instanceof Node\Identifier
         ) {
             $class = $this->resolvedClass($expression->class);
-            return $class === null ? null : ($this->methodReturn)($class, $expression->name->toString());
+            return $class === null
+                ? null
+                : $this->resolver->methodReturn($class, $expression->name->toString());
         }
         if ($expression instanceof Node\Expr\MethodCall
             && $expression->name instanceof Node\Identifier
         ) {
             $class = $this->inferClass($expression->var, $locals);
-            return $class === null ? null : ($this->methodReturn)($class, $expression->name->toString());
+            return $class === null
+                ? null
+                : $this->resolver->methodReturn($class, $expression->name->toString());
         }
         if ($expression instanceof Node\Expr\PropertyFetch
             && $expression->name instanceof Node\Identifier
         ) {
             $class = $this->inferClass($expression->var, $locals);
-            return $class === null ? null : ($this->propertyClass)($class, $expression->name->toString());
+            return $class === null
+                ? null
+                : $this->resolver->propertyClass($class, $expression->name->toString());
         }
         if ($expression instanceof Node\Expr\Ternary) {
             $if = $expression->if === null
@@ -317,7 +296,7 @@ final class NativeGlobalDiscovery
         if ($right === null) {
             return $left;
         }
-        return ($this->commonClass)($left, $right);
+        return $this->resolver->commonClass($left, $right);
     }
 
     private function classFromType(?NodeAbstract $type): ?string
@@ -373,9 +352,11 @@ final class NativeGlobalDiscovery
             return $this->scopeClass !== '' ? $this->scopeClass : null;
         }
         if ($keyword === 'parent') {
-            return $this->scopeClass !== '' ? ($this->parentClass)($this->scopeClass) : null;
+            return $this->scopeClass !== ''
+                ? $this->resolver->parentClass($this->scopeClass)
+                : null;
         }
-        return ($this->canonicalClass)($this->resolvedName($name));
+        return $this->resolver->canonicalClass($this->resolvedName($name));
     }
 
     /** @return list<string> */

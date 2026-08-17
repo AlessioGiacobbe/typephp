@@ -228,7 +228,17 @@ trait NativeClassSupportTrait
             ));
         }
 
-        /** @var \ReflectionNamedType $type */
+        if (!$type instanceof \ReflectionNamedType) {
+            throw new \LogicException('Unsupported reflection type: ' . $type::class);
+        }
+        return $this->reflectionNamedTypeToNode($type, $declaringClass, $allowNullableWrapper);
+    }
+
+    private function reflectionNamedTypeToNode(
+        \ReflectionNamedType $type,
+        \ReflectionClass $declaringClass,
+        bool $allowNullableWrapper,
+    ): NodeAbstract {
         $name = $type->getName();
         $lower = strtolower($name);
         if ($lower === 'self') {
@@ -363,6 +373,18 @@ trait NativeClassSupportTrait
         if ($this->isNativeObjectClass($this->detectClassOfExpr($target))) {
             $this->fatalError($errorNode, 'Native objects cannot be used as dynamic class targets');
         }
+    }
+
+    protected function getLiteralGlobalsSlot(NodeAbstract $expression): ?string
+    {
+        if (!$expression instanceof Node\Expr\ArrayDimFetch
+            || !$expression->var instanceof Node\Expr\Variable
+            || $expression->var->name !== 'GLOBALS'
+            || !$expression->dim instanceof Node\Scalar\String_
+        ) {
+            return null;
+        }
+        return $expression->dim->value;
     }
 
     protected function getNativeObjectCppName(string|ClassDef $class): string
@@ -523,16 +545,34 @@ trait NativeClassSupportTrait
                 $common = $class;
                 continue;
             }
-            if ($this->isObjectClassStaticallyAssignableTo($class, $common)) {
-                continue;
+            $common = $this->getCommonNativeObjectClass($common, $class);
+            if ($common === '') {
+                return '';
             }
-            if ($this->isObjectClassStaticallyAssignableTo($common, $class)) {
-                $common = $class;
-                continue;
-            }
-            return '';
         }
         return $common;
+    }
+
+    protected function getCommonNativeObjectClass(string $left, string $right): string
+    {
+        $leftAncestors = [];
+        while ($this->isNativeObjectClass($left)) {
+            $definition = $this->getClass($left);
+            $canonical = $definition->getNamespacedName(false);
+            $leftAncestors[strtolower($canonical)] = $canonical;
+            $left = $definition->extends;
+        }
+
+        while ($this->isNativeObjectClass($right)) {
+            $definition = $this->getClass($right);
+            $canonical = $definition->getNamespacedName(false);
+            $key = strtolower($canonical);
+            if (isset($leftAncestors[$key])) {
+                return $leftAncestors[$key];
+            }
+            $right = $definition->extends;
+        }
+        return '';
     }
 
     protected function assertSupportedNativeObjectTypeNode(

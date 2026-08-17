@@ -39,6 +39,8 @@ Options:
     -j<workers>, -j <workers>, --job <workers>
                 Run up to <workers> simultaneous testing processes in parallel
                 for quicker testing on systems with multiple logical processors.
+                When more than one test worker is enabled, each tpc process
+                compiles with one job to avoid multiplying both parallelism levels.
 
     -l <file>   Read the testfiles to be executed from <file>. After the test
                 has finished all failed tests are written to the same <file>.
@@ -4439,6 +4441,7 @@ function compile_wasm_php_file(string $file, string $profile, string $compilerAr
     if ($compilerArgs !== '') {
         array_push($command, ...parse_wasm_test_args($compilerArgs));
     }
+    array_push($command, ...get_aot_compiler_job_args());
 
     $log = $root . DIRECTORY_SEPARATOR . 'compile.log';
     $process = proc_open(
@@ -4576,6 +4579,9 @@ function compile_php_file(string $file, string $compiler_args = ''): string
     if ($compiler_args !== '') {
         $cmd .= ' ' . $compiler_args;
     }
+    foreach (get_aot_compiler_job_args() as $argument) {
+        $compiler_output_args .= ' ' . escapeshellarg($argument);
+    }
     exec($cmd . $compiler_output_args . ' 2>&1', $output, $exitCode);
     clearstatcache(true, $binary_file);
 
@@ -4584,6 +4590,23 @@ function compile_php_file(string $file, string $compiler_args = ''): string
     }
 
     return $binary_file;
+}
+
+/**
+ * Keep test-level and compiler-level parallelism from multiplying each other.
+ *
+ * `parse_worker_count()` represents the sequential `-j1` mode as null, so a
+ * non-null value here means run-tests owns more than one concurrent test slot.
+ * Append this after --AOT_ARGS-- so an individual test cannot accidentally
+ * re-enable nested compiler parallelism.
+ *
+ * @return list<string>
+ */
+function get_aot_compiler_job_args(): array
+{
+    global $workers;
+
+    return $workers !== null && $workers > 1 ? ['--job', '1'] : [];
 }
 
 function create_aot_parallel_root(): string

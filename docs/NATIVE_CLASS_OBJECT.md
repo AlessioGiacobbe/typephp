@@ -1,8 +1,9 @@
 # Native Class Object 设计与实现
 
-> 状态：第一阶段实现中。固定布局、Native Call、精确 tracing GC、
-> 构造/克隆/析构、Trait、Getter/Setter、Property Hook、抽象类、单继承、有限虚分派和
-> Interface 编译期契约已经落地；本文同时记录尚未开放的边界。
+> 状态：核心方案已实现，正在进行最终整体验证。固定布局、Native Call、精确 tracing GC、
+> 构造/克隆/析构、Trait、Getter/Setter、Property Hook、抽象类、单继承、有限虚分派、
+> Interface 编译期契约及项目级 global slot 预发现均已落地。逐项实现证据见
+> [NATIVE_CLASS_IMPLEMENTATION_AUDIT.md](NATIVE_CLASS_IMPLEMENTATION_AUDIT.md)。
 
 ## 1. 背景
 
@@ -46,7 +47,7 @@ Native Class Object 初版不追求以下能力：
 
 ## 4. 显式声明
 
-建议使用专用注解，暂定为：
+使用专用内置注解：
 
 ```php
 #[Native]
@@ -1292,49 +1293,43 @@ $json = json_encode($nativeObject->toArray());
 | Native Class 属性循环类型 | 支持；字段零值为 `nullptr`，类型图使用 C++ 前置声明 |
 | late static binding / `new static()` | 不支持；Native Class 无运行时 `zend_class_entry`，使用 `self::`、`parent::` 或具体类名 |
 
-## 17. 编译器目录与隔离要求
+## 17. 实际目录与隔离方式
 
-Native Class 的实现应集中放置在独立目录：
+当前实现把对象模型的主体规则集中在以下位置：
 
 ```text
 src/NativeClass/
-├── Analysis/
-│   ├── NativeClassAnalyzer.php
-│   ├── NativeEscapeAnalyzer.php
-│   ├── NativeBoundaryValidator.php
-│   └── NativeRootAnalyzer.php
-├── CodeGen/
-│   ├── NativeClassGenerator.php
-│   ├── NativeMethodGenerator.php
-│   ├── NativePropertyGenerator.php
-│   ├── NativeTraceGenerator.php
-│   └── NativeRootFrameGenerator.php
-├── Model/
-│   ├── NativeClassDefinition.php
-│   ├── NativeFieldDefinition.php
-│   └── NativeMethodDefinition.php
-├── Transform/
-│   ├── NativeAnnotationExpander.php
-│   ├── NativeCloneLowering.php
-│   └── NativePropertyHookLowering.php
-├── Diagnostics/
-│   └── NativeClassDiagnostic.php
-└── NativeClassCompiler.php
+├── NativeClassSupportTrait.php       # 声明、布局、方法、边界和 codegen 策略
+├── NativeGlobalDiscovery.php         # 项目级 Native global slot 预发现
+└── NativeGlobalTypeResolver.php      # 预发现器的只读符号查询边界
+
+src/Transform/NativeClassAttributeLowering.php
+src/TypeSystem/NativeTypeCompatibilityTrait.php
+
+phpx/include/phpx_native_gc.h
+phpx/src/core/native_gc.cc
+phpx/thirdparty/wren-gc/
 ```
 
-隔离原则：
+普通 parser、call generator、property resolver 和 control-flow lowering 中只保留进入
+Native 策略所需的窄 hook。Native 具体诊断、类型映射、字段生成、virtual thunk、trace、
+clone 和 finalizer 规则集中在 `NativeClassSupportTrait`；项目级预分析放在同目录的独立
+analyzer 中。这样可以复用 TypePHP 已有 AST、符号表和求值顺序基础设施，而不复制一套
+容易发生语义漂移的平行编译器。
 
-1. 现有普通 class 编译流程不得包含 Native Class 的具体规则。
-2. 公共编译流程只负责识别显式标记，并将完整 class AST 交给 `NativeClassCompiler`。
-3. Native Class 的类型信息优先保存在独立 side table 中，不向现有 Class Definition 持续增加特殊状态字段。
-4. Native Class 的边界检查、逃逸分析、Hook lowering 和 C++ 生成都在该目录内完成。
-5. 未使用 Native Class 的项目不加载相关分析器，不增加普通编译流程的运行成本。
-6. Native Class 需要的运行时支持应放入独立头文件，且只在实际使用时 include。
+隔离约束如下：
 
-建议对应测试目录：
+1. 普通对象路径不得生成 Native pointer，也不得依赖 Native Heap。
+2. 公共 hook 必须先检查确定的 Native 类型；未命中时保持原有路径。
+3. 项目中没有 Native class 时，global pre-pass 在扫描源码前立即返回。
+4. Native Object 不能通过 fallback 进入 `php::Var`、Zend Object 或动态调用。
+5. GC runtime 位于独立 PHPX 头文件和源文件中；第三方 Wren 派生代码保留来源与 MIT
+   license 文件。
+6. Native 正向测试与编译期拒绝测试分别集中在：
 
 ```text
 tests/compiler/native-class/
+phpunit/src/NativeClass/NativeClassValidationTest.php
 ```
 
 普通 class 的测试与 Native Class 测试不得混用，以明确两套对象模型的语义边界。
@@ -1376,21 +1371,24 @@ Native Class 的主要路径必须满足：
 
 若某个 PHP 特性无法满足这些要求，应优先禁止该特性，而不是降低所有 Native Class 的性能。
 
-## 20. 建议的实施阶段
+## 20. 实施状态
 
-实现按以下顺序推进：
+已落地的实施阶段：
 
-1. 固定 `#[Native] class` 语法、typed object 规则和诊断边界。
-2. 建立独立 AST model、side table 和 C++ struct 生成器。
-3. 建立 Native Heap、精确 tracing GC、root frame、循环回收和异常清理机制。
-4. 支持构造、析构、强制属性类型、全部 PHP 字段类型、普通方法和对象参数传递。
-5. 接入现有 Trait AST 注入，并支持 Getter/Setter 等编译期注解。
-6. 支持单继承、override virtual thunk、Interface 编译期契约和相关类型检查。
-7. 支持 Property Hook 的直接 getter/setter lowering；复合写入等动态语义编译期拒绝。
-8. 支持 clone、Native Class 指针字段、循环类型依赖和构造依赖环诊断。
-9. 最后评估 `json_encode()`、栈分配与逃逸分析。
+1. `#[Native] class` 语法、typed pointer 规则和编译期诊断边界。
+2. C++ struct、固定字段、descriptor、trace 和 `php_*` 方法生成。
+3. Wren 风格 Native Heap、精确 root frame、循环回收、异常恢复和 request shutdown。
+4. 构造、析构、属性类型、PHPX 字段、普通方法及 typed pointer 参数/返回。
+5. Trait AST 注入、Getter/Setter 和关键词方法直接调用。
+6. 单继承、abstract、override virtual thunk、签名 variance 和 Interface 编译期契约。
+7. Property Hook 直接 getter/setter lowering，并拒绝所有间接与复合写入。
+8. clone、动态子类 clone、循环类型、生命周期失败和对象复活处理。
+9. Std Container 局部 Native value、Fiber root、global/static request root 与跨文件 slot
+   ABI 预发现。
 
-每个阶段都必须先添加 PHPT/PHPUnit 测试，再实现代码。
+`json_encode()` 已确定不支持直接接收 Native Object；使用显式 `toArray()` 边界。
+栈分配和逃逸分析仍属于独立的后续性能优化，不是当前对象模型正确性的组成部分。
+每一项已实现能力均同时具有 PHPT、PHPUnit 或 PHPX C++ 测试，详细对应关系见验收矩阵。
 
 ## 21. 已确定但仍需性能验证的参数
 

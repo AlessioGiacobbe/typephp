@@ -44,6 +44,27 @@ function globalIsNull(): bool
     return is_null($nativeGlobal);
 }
 
+function initializeGlobalsArray(): void
+{
+    $GLOBALS['nativeGlobalsArray'] ??= new NativeCounter();
+    $GLOBALS['nativeGlobalsArray']->value = 42;
+}
+
+function readGlobalsArray(): int
+{
+    return $GLOBALS['nativeGlobalsArray']->value;
+}
+
+function resetGlobalsArray(): void
+{
+    $GLOBALS['nativeGlobalsArray'] = null;
+}
+
+function globalsArrayIsNull(): bool
+{
+    return is_null($GLOBALS['nativeGlobalsArray']);
+}
+
 function nextStatic(): int
 {
     static $counter = new NativeCounter();
@@ -60,6 +81,12 @@ function main(): void
     var_dump(globalIsNull());
     replaceGlobalWithChild();
     var_dump(readGlobal());
+    initializeGlobalsArray();
+    var_dump(readGlobalsArray());
+    resetGlobalsArray();
+    var_dump(globalsArrayIsNull());
+    initializeGlobalsArray();
+    var_dump(readGlobalsArray());
     var_dump(nextStatic());
     var_dump(nextStatic());
 }
@@ -69,5 +96,8 @@ int(40)
 int(41)
 bool(true)
 int(41)
+int(42)
+bool(true)
+int(42)
 int(1)
 int(2)

@@ -47,6 +47,22 @@ final class NativeClassValidationTest extends \BaseTest
             'php::nativeDeref(nativeForwardGlobal, "NativeForwardGlobalValue").value',
             $code,
         );
+        self::assertStringContainsString(
+            'php::nativeDeref(nativeForwardPolymorphic, "NativeForwardBase").value',
+            $code,
+        );
+        self::assertStringContainsString(
+            'php::nativeDeref(nativeForwardCoalesced, "NativeForwardGlobalValue").value',
+            $code,
+        );
+        self::assertStringContainsString(
+            'auto &nativeForwardGlobalsArray = _global_var_nativeForwardGlobalsArray;',
+            $code,
+        );
+        self::assertMatchesRegularExpression(
+            '/php::nativeDeref\\(tmp_var_\\d+, "NativeForwardGlobalValue"\\)\\.value/',
+            $code,
+        );
         self::assertStringNotContainsString('nativeForwardGlobal.attr(', $code);
     }
 

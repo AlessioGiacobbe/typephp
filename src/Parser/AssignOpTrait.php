@@ -32,9 +32,25 @@ trait AssignOpTrait
         }
         if ($this->isVarExpr($left->var) && $left->var->name === 'GLOBALS') {
             $target = $this->parseGlobalsArrayDimFetch($left);
-            $value = $this->parseExprAsValue($right);
             $tmp = $this->genTmpVarName();
-            $this->addLocalVar($tmp, Type::VAR);
+            if ($this->isNativeObjectVar($target)) {
+                $targetClass = $this->getNativeObjectVarClass($target);
+                $rightClass = $this->detectClassOfExpr($right);
+                if ($this->isNull($right)) {
+                    $value = 'nullptr';
+                } elseif (!$this->isNativeObjectClass($rightClass)) {
+                    $this->fatalError($right, "Native object `\${$target}` cannot be converted to var/object");
+                } elseif (!$this->isObjectClassStaticallyAssignableTo($rightClass, $targetClass)) {
+                    $this->fatalError($right, "Cannot assign native object `{$rightClass}` to `{$targetClass}`");
+                } else {
+                    $value = $this->parseExprAsValue($right);
+                }
+                $this->addLocalVar($tmp, $this->getNativeObjectPointerType($targetClass));
+                $this->addNativeObject($tmp, $targetClass);
+            } else {
+                $value = $this->parseExprAsValue($right);
+                $this->addLocalVar($tmp, Type::VAR);
+            }
             return '((' . $tmp . ' = ' . $value . ', ' . $target . ' = ' . $tmp . '), ' . $tmp . ')';
         }
         $array              = $this->parseWritableIdentifier($left->var);
@@ -259,6 +275,15 @@ trait AssignOpTrait
                 if ($allowed && ($this->hasScopeGlobalVar($leftName) || $this->hasStaticVar($leftName))) {
                     $this->promoteGlobalOrStaticToNativeObject($leftName, $rightClass, $right);
                 }
+            } elseif (($globalSlot = $this->getLiteralGlobalsSlot($left)) !== null) {
+                if (!$this->hasGlobalVar($globalSlot)) {
+                    $this->addGlobalVar($globalSlot, Type::VAR);
+                }
+                if (!$this->hasScopeGlobalVar($globalSlot)) {
+                    $this->addScopeGlobalVar($globalSlot, $this->globalVars[$globalSlot]);
+                }
+                $this->promoteGlobalOrStaticToNativeObject($globalSlot, $rightClass, $right);
+                $allowed = true;
             } elseif ($left instanceof Expr\PropertyFetch && $this->isIdExpr($left->name)) {
                 $receiverClass = $this->detectClassOfExpr($left->var);
                 if ($this->isNativeObjectClass($receiverClass)) {
@@ -1164,6 +1189,19 @@ trait AssignOpTrait
         // declared as Variant because boxing the raw pointer would coerce it
         // to bool. Other values retain the normal nullable Variant behavior.
         $var = $this->isVarExpr($expr->var) ? $this->parseIdentifier($expr->var) : null;
+        $globalSlot = $this->getLiteralGlobalsSlot($expr->var);
+        if ($globalSlot !== null) {
+            if (!$this->hasGlobalVar($globalSlot)) {
+                $this->addGlobalVar($globalSlot, Type::VAR);
+            }
+            if (!$this->hasScopeGlobalVar($globalSlot)) {
+                $this->addScopeGlobalVar($globalSlot, $this->globalVars[$globalSlot]);
+            }
+            if ($nativeRight) {
+                $this->promoteGlobalOrStaticToNativeObject($globalSlot, $rightClass, $expr->expr);
+            }
+            $var = $globalSlot;
+        }
         if ($var !== null && !$this->hasVar($var)) {
             if ($nativeRight) {
                 $this->addLocalVar($var, $this->getNativeObjectPointerType($rightClass));
@@ -1186,7 +1224,9 @@ trait AssignOpTrait
             }
         }
 
-        $isset = $this->parseChainedExpr($expr->var, self::OP_ISSET);
+        $isset = $var !== null && $this->isNativeObjectVar($var)
+            ? $var . ' != nullptr'
+            : $this->parseChainedExpr($expr->var, self::OP_ISSET);
 
         $var ??= $this->parseWritableIdentifier($expr->var);
         $propertyWriteTarget = $this->preparePropertyWriteTarget($expr->var);

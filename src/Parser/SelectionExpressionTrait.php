@@ -45,11 +45,16 @@ trait SelectionExpressionTrait
         $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $elseAfterStmtCount);
 
         if ($nativeSelection) {
+            $pointerType = $this->getNativeObjectPointerType($nativeClass);
             if ($this->isNull($expr->if)) {
                 $if = 'nullptr';
+            } else {
+                $if = 'static_cast<' . $pointerType . '>(' . $if . ')';
             }
             if ($this->isNull($expr->else)) {
                 $else = 'nullptr';
+            } else {
+                $else = 'static_cast<' . $pointerType . '>(' . $else . ')';
             }
         }
 

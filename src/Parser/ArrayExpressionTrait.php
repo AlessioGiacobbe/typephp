@@ -96,7 +96,10 @@ trait ArrayExpressionTrait
                 $this->addGlobalVar($name, Type::VAR);
             }
             if (!$this->hasScopeGlobalVar($name)) {
-                $this->addScopeGlobalVar($name, Type::VAR);
+                $this->addScopeGlobalVar($name, $this->globalVars[$name]);
+            }
+            if (isset($this->nativeGlobalObjects[$name])) {
+                $this->addNativeObject($name, $this->nativeGlobalObjects[$name]);
             }
             return $name;
         }

@@ -1974,6 +1974,10 @@ class CompilerBase implements PropertyAccessContext
                 return $this->getObjectType($object);
             }
         }
+        $globalSlot = $this->getLiteralGlobalsSlot($expr);
+        if ($globalSlot !== null && isset($this->nativeGlobalObjects[$globalSlot])) {
+            return $this->nativeGlobalObjects[$globalSlot];
+        }
         if ($expr instanceof Expr\PropertyFetch && $this->isIdExpr($expr->name)) {
             $receiverClass = $this->detectClassOfExpr($expr->var);
             if ($this->isNativeObjectClass($receiverClass)) {
