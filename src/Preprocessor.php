@@ -640,6 +640,7 @@ class Preprocessor extends CompilerBase
             $argInfo->byRef = $param->byRef;
             $argInfo->variadic = $param->variadic;
             $argInfo->property = $param->isPromoted();
+            $argInfo->immutable = \TypePhp\Transform\CompileTimeAttribute::consume($param, 'Immutable');
             if ($param->type === null || $param->type instanceof NullableType) {
                 $argInfo->nullable = true;
             }
@@ -746,6 +747,7 @@ class Preprocessor extends CompilerBase
 
         $functionDef = new FunctionDef($fnName, $returnType, $this->namespace);
         $functionDef->mustUse = (bool) $v->getAttribute(FunctionAttributeLowering::MUST_USE_ATTRIBUTE, false);
+        $functionDef->immutable = (bool) $v->getAttribute(FunctionAttributeLowering::IMMUTABLE_ATTRIBUTE, false);
         $functionDef->overrideRequired = (bool) $v->getAttribute(FunctionAttributeLowering::OVERRIDE_ATTRIBUTE, false);
         $functionDef->hot = (bool) $v->getAttribute(FunctionAttributeLowering::HOT_ATTRIBUTE, false);
         $functionDef->cold = (bool) $v->getAttribute(FunctionAttributeLowering::COLD_ATTRIBUTE, false);

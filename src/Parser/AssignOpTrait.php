@@ -130,6 +130,10 @@ trait AssignOpTrait
         $rightVar  = new Variable($tmpVar);
         foreach ($chain as $var) {
             $list[] = $this->parseAssignFinally($var, $rightVar);
+            // The synthetic temporary has no PHP-level binding metadata. Use
+            // the original RHS to retain immutable object identity across a
+            // right-associative assignment chain after validating the write.
+            $this->recordImmutableAlias($var, $next);
         }
 
         return '(' . implode(', ', $list) . ')';
@@ -232,6 +236,8 @@ trait AssignOpTrait
 
     protected function parseAssignFinally(Expr $left, Expr $right): string
     {
+        $this->assertImmutableMutationTarget($left);
+        $this->recordImmutableAlias($left, $right);
         $this->assertNotNullsafeWriteContext($left);
         $this->assertNativeArrayAccessDirectWrite($left, true);
         if ($left instanceof Expr\ArrayDimFetch
@@ -739,6 +745,7 @@ trait AssignOpTrait
 
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
+        $this->assertImmutableMutationTarget($node->var);
         $this->assertNativeArrayAccessDirectWrite($node->var, false);
         $this->assertNativeObjectOperatorOperandSupported($node->var, $node, $op);
         $this->assertNotNullsafeWriteContext($node->var);
@@ -1072,6 +1079,8 @@ trait AssignOpTrait
 
     protected function parseAssignRef(Expr\AssignRef $expr): string
     {
+        $this->assertImmutableMutationTarget($expr->var);
+        $this->assertImmutableMutationTarget($expr->expr);
         $this->assertNativeArrayAccessReferenceForbidden($expr->var);
         $this->assertNativeArrayAccessReferenceForbidden($expr->expr);
         $this->assertNotNullsafeWriteContext($expr->var);
@@ -1218,6 +1227,7 @@ trait AssignOpTrait
 
     protected function parseAssignOpCoalesce(Expr\AssignOp\Coalesce $expr): string
     {
+        $this->assertImmutableMutationTarget($expr->var);
         $this->assertNativeArrayAccessDirectWrite($expr->var, false);
         $this->checkLeftValue($expr->var);
 

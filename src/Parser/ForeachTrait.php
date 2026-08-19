@@ -171,6 +171,9 @@ trait ForeachTrait
 
     protected function parseForeach(Foreach_ $node): string
     {
+        if ($node->byRef) {
+            $this->assertImmutableMutationTarget($node->expr);
+        }
         $nativeClass = $this->detectClassOfExpr($node->expr);
         if ($this->isNativeObjectClass($nativeClass)) {
             if ($this->nativeClassImplementsInterface($nativeClass, 'Iterator')) {

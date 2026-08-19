@@ -1175,6 +1175,11 @@ YAML);
         $this->assertStringContainsString('#[\MustUse, \Cold]', $stub);
         $this->assertStringContainsString('#[\MustUse, \Hot]', $stub);
         $this->assertStringContainsString('#[\Override]', $stub);
+        $this->assertStringContainsString('#[\Immutable]', $stub);
+        $this->assertMatchesRegularExpression(
+            '/function inspect\(\s*#\[\\\\Immutable\]\s*\\\\LibraryApi\\\\Counter \$counter\s*\): int/s',
+            $stub,
+        );
         $this->assertMatchesRegularExpression(
             '/public int \$doubled\s*\{\s*get\s*\{\s*\}\s*set\(int \$value\)\s*\{\s*\}\s*\}/s',
             $stub,

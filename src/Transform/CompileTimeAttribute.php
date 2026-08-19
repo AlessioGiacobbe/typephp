@@ -189,6 +189,10 @@ final class CompileTimeAttribute
             && $node instanceof Node\Stmt\ClassMethod) {
             return true;
         }
+        if (in_array(CompileTimeAttributeRegistry::TARGET_PROPERTY_HOOK, $targets, true)
+            && $node instanceof Node\PropertyHook) {
+            return true;
+        }
         if (in_array(CompileTimeAttributeRegistry::TARGET_PROPERTY, $targets, true)
             && ($node instanceof Node\Stmt\Property || ($node instanceof Node\Param && $node->isPromoted()))) {
             return true;

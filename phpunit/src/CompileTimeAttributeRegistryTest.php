@@ -9,7 +9,7 @@ final class CompileTimeAttributeRegistryTest extends TestCase
     {
         $expected = [
             'Native', 'MethodsFor', 'NoExport', 'WasmExport', 'Getter', 'Setter', 'With', 'Printer', 'Arrayable',
-            'NotNull', 'NotEmpty', 'Validate', 'Override', 'MustUse', 'Hot', 'Cold', 'Constructor',
+            'NotNull', 'NotEmpty', 'Validate', 'Override', 'MustUse', 'Immutable', 'Hot', 'Cold', 'Constructor',
         ];
         $this->assertSame($expected, CompileTimeAttributeRegistry::names());
 
@@ -26,7 +26,7 @@ final class CompileTimeAttributeRegistryTest extends TestCase
         $this->assertContains('Getter', CompileTimeAttributeRegistry::names(true));
         $this->assertContains('Override', CompileTimeAttributeRegistry::names(true));
         $this->assertSame(
-            ['Override', 'MustUse', 'Hot', 'Cold'],
+            ['Override', 'MustUse', 'Immutable', 'Hot', 'Cold'],
             CompileTimeAttributeRegistry::namesForPhase(CompileTimeAttributeRegistry::PHASE_ENTER),
         );
     }

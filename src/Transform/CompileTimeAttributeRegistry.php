@@ -15,6 +15,7 @@ final class CompileTimeAttributeRegistry
     public const TARGET_CLASS_LIKE = 'class_like';
     public const TARGET_FUNCTION = 'function';
     public const TARGET_METHOD = 'method';
+    public const TARGET_PROPERTY_HOOK = 'property_hook';
     public const TARGET_PROPERTY = 'property';
     public const TARGET_DECLARED_PROPERTY = 'declared_property';
     public const TARGET_PARAMETER = 'parameter';
@@ -88,6 +89,7 @@ final class CompileTimeAttributeRegistry
         $add('Validate', [self::TARGET_PARAMETER], 'Validate can only be applied to function or method parameters', self::ARGUMENTS_VALIDATE, self::PHASE_FUNCTION_LEAVE);
         $add('Override', [self::TARGET_METHOD], 'Override can only be applied to methods', self::ARGUMENTS_NONE, self::PHASE_ENTER);
         $add('MustUse', [self::TARGET_FUNCTION, self::TARGET_METHOD], 'MustUse can only be applied to functions or methods', self::ARGUMENTS_NONE, self::PHASE_ENTER);
+        $add('Immutable', [self::TARGET_METHOD, self::TARGET_PROPERTY_HOOK, self::TARGET_PARAMETER], 'Immutable can only be applied to methods, property hooks, or function parameters', self::ARGUMENTS_NONE, self::PHASE_ENTER);
         $add('Hot', [self::TARGET_FUNCTION, self::TARGET_METHOD], 'Hot can only be applied to functions or methods', self::ARGUMENTS_NONE, self::PHASE_ENTER, true, ['Cold']);
         $add('Cold', [self::TARGET_FUNCTION, self::TARGET_METHOD], 'Cold can only be applied to functions or methods', self::ARGUMENTS_NONE, self::PHASE_ENTER, true, ['Hot']);
         $add('Constructor', [self::TARGET_DECLARED_PROPERTY], 'Constructor can only be applied to instance properties', self::ARGUMENTS_NONE, self::PHASE_CLASS_LEAVE);

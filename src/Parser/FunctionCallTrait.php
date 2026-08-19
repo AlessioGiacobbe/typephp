@@ -71,6 +71,7 @@ trait FunctionCallTrait
 
     protected function parseFuncCall(Expr\FuncCall $expr): string
     {
+        $this->validateImmutableCall($expr);
         $pythonCall = $this->parsePythonFunctionCall($expr);
         if ($pythonCall !== null) {
             return $pythonCall;

@@ -12,6 +12,7 @@
 - [编译期函数](COMPILE_TIME_FUNCTIONS.md)：`any()`、`refval()`、`objval()`、`expected()`、`unexpected()` 和关键词方法。
 - [原生类型](NATIVE_TYPES.md)、[高精度类型](HIGH_PRECISION_TYPES.md)、[Std 容器](STD_CONTAINERS.md)。
 - [通用与扩展方法](UNIVERSAL_METHODS.md)、[Generator](YIELD_GENERATOR.md)。
+- [`#[Immutable]` 编译期只读契约](IMMUTABLE.md)：方法、参数、别名、调用边界与动态逃逸规则。
 - [类继承](CLASS_INHERITANCE.md)、[混合 C++/PHP](MIXED_CPP_PHP.md)。
 
 ## 架构与维护

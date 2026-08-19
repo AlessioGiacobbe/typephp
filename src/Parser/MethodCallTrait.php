@@ -361,6 +361,7 @@ trait MethodCallTrait
 
     protected function parseMethodCall(Expr\MethodCall $expr): string
     {
+        $this->validateImmutableCall($expr);
         if ($this->containsNullsafeChain($expr->var)) {
             return $this->parseNullsafeExpr($expr);
         }
@@ -752,6 +753,7 @@ trait MethodCallTrait
 
     protected function parseStaticCall(Expr\StaticCall $expr): string
     {
+        $this->validateImmutableCall($expr);
         if (!$this->isNameExpr($expr->class)) {
             $this->assertNotNativeObjectDynamicClassTarget($expr->class, $expr);
         }

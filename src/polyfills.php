@@ -95,6 +95,11 @@ final readonly class MustUse
 {
 }
 
+#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_PARAMETER)]
+final readonly class Immutable
+{
+}
+
 #[Attribute(Attribute::TARGET_FUNCTION | Attribute::TARGET_METHOD)]
 final readonly class Hot
 {

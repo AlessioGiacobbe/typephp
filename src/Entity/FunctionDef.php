@@ -42,6 +42,8 @@ class FunctionDef
     public bool $generator = false;
     /** The call result must not be discarded as a statement expression. */
     public bool $mustUse = false;
+    /** This instance method may not mutate its receiver. */
+    public bool $immutable = false;
     /** The method must override an inherited class or interface method. */
     public bool $overrideRequired = false;
     /** Prefer optimizing this function for frequently executed paths. */

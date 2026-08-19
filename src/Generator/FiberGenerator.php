@@ -185,6 +185,7 @@ trait FiberGenerator
 
     private function materializeYieldOperand(Node $expr, bool $force = false): string
     {
+        $this->assertImmutableObjectDoesNotEscape($expr, 'a yielded value');
         if ($this->isNativeObjectClass($this->detectClassOfExpr($expr))) {
             // Yield payloads are stored in a Zend array and cross the Fiber /
             // Generator object boundary. A Native pointer has no zval form.
@@ -281,10 +282,17 @@ trait FiberGenerator
         foreach ($functionDef->argInfoList as $i => $argInfo) {
             $code .= $this->getIndent() . Type::VAR . ' ' . $argInfo->name . ' = vars_.get(' . $i . ');' . PHP_EOL;
             $this->addArgument($argInfo->name, Type::VAR);
+            $argumentClass = $argInfo->declaredClass ?: $argInfo->class;
+            if ($argumentClass !== '') {
+                $this->addObject($argInfo->name, $argumentClass);
+            }
         }
         if ($this->class) {
             $this->addArgument('this_', Type::OBJECT);
         }
+        // The Fiber body has its own FunctionContext. Reapply compile-time
+        // effect metadata so suspension does not erase Immutable guarantees.
+        $this->initializeImmutableFunctionContext();
 
         $body = '';
         $this->indentLevel++;

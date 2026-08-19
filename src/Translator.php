@@ -3753,6 +3753,7 @@ CODE;
                 $this->markNativeObjectNonNull($argInfo->name);
             }
         }
+        $this->initializeImmutableFunctionContext();
 
         if ($this->functionDef->generator) {
             try {
@@ -3984,6 +3985,13 @@ CODE;
             ));
         }
 
+        // Immutable is an effect contract. Code compiled against the parent
+        // may pass a read-only object or call the method through a read-only
+        // receiver, so an override must not silently regain write access.
+        if ($parentFuncDef->immutable && !$childFuncDef->immutable) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
         if (!$this->isReturnTypeOverrideCompatible(
             $childFuncDef,
             $parentFuncDef,
@@ -4008,6 +4016,9 @@ CODE;
                 $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
             $childArg = $childFuncDef->argInfoList[$i];
+            if ($parentArg->immutable && !$childArg->immutable) {
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+            }
             if (!$this->isParameterTypeOverrideCompatible($childArg, $parentArg)) {
                 $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }

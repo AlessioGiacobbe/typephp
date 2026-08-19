@@ -15,6 +15,7 @@ use TypePhp\Exception\SyntaxError;
 final class FunctionAttributeLowering
 {
     public const MUST_USE_ATTRIBUTE = 'typephpMustUse';
+    public const IMMUTABLE_ATTRIBUTE = 'typephpImmutable';
     public const OVERRIDE_ATTRIBUTE = 'typephpOverride';
     public const HOT_ATTRIBUTE = 'typephpHot';
     public const COLD_ATTRIBUTE = 'typephpCold';
@@ -23,6 +24,17 @@ final class FunctionAttributeLowering
     {
         foreach (CompileTimeAttributeRegistry::namesForPhase(CompileTimeAttributeRegistry::PHASE_ENTER) as $name) {
             if (!CompileTimeAttribute::has($node, $name)) {
+                continue;
+            }
+            if ($name === 'Immutable' && $node instanceof Node\Param) {
+                // Parameter metadata is consumed while building ArgInfo.
+                continue;
+            }
+            if ($name === 'Immutable' && $node instanceof Node\PropertyHook) {
+                // Property hooks are later lowered to generated ClassMethod
+                // nodes. Carry the effect bit through the source attributes.
+                CompileTimeAttribute::consume($node, $name);
+                $node->setAttribute(self::IMMUTABLE_ATTRIBUTE, true);
                 continue;
             }
             if (!$node instanceof Stmt\Function_ && !$node instanceof Stmt\ClassMethod) {

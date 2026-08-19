@@ -42,6 +42,8 @@ class ArgInfo
     public bool $undeclared = false;
     public bool $explicitMixed = false;
     public bool $property = false;
+    /** This parameter binding and any referenced object are read-only in the callee. */
+    public bool $immutable = false;
 
     /**
      * Each element: ['kind' => 'isInt'|'isFloat'|...|'instanceof', 'class' => '']

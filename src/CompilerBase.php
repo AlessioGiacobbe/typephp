@@ -84,6 +84,7 @@ use TypePhp\TypeSystem\CompositeTypeCheckerTrait;
 use TypePhp\TypeSystem\NativeTypeCompatibilityTrait;
 use TypePhp\NativeClass\NativeClassSupportTrait;
 use TypePhp\NativeClass\NativeGlobalTypeResolver;
+use TypePhp\Immutable\ImmutableSupportTrait;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -105,6 +106,7 @@ class CompilerBase implements PropertyAccessContext
     use CompilationStateTrait;
     use NativeTypeCompatibilityTrait;
     use NativeClassSupportTrait;
+    use ImmutableSupportTrait;
     use NativeBuildConfigurationTrait;
     use PythonModuleTrait;
     use DeclarationSymbolTrait;
@@ -2223,6 +2225,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseReturn(Node\Stmt\Return_ $v): string
     {
+        if ($v->expr !== null) {
+            $this->assertImmutableObjectDoesNotEscape($v->expr, 'a return value');
+        }
         if ($v->expr !== null && $this->isVarExpr($v->expr)) {
             $this->assertStdContainerDoesNotEscapeNativeObjects(
                 $v,
@@ -3202,6 +3207,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parsePreInc(Expr\PreInc $expr): string
     {
+        $this->assertImmutableMutationTarget($expr->var);
         $this->assertNativeArrayAccessDirectWrite($expr->var, false);
         $this->assertNativeObjectOperatorOperandSupported($expr->var, $expr, '++');
         $this->assertNotNullsafeWriteContext($expr->var);
@@ -3591,6 +3597,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parsePostOp(Expr\PostDec|Expr\PostInc $expr, string $op): string
     {
+        $this->assertImmutableMutationTarget($expr->var);
         $this->assertNativeArrayAccessDirectWrite($expr->var, false);
         $this->assertNativeObjectOperatorOperandSupported($expr->var, $expr, str_repeat($op, 2));
         $this->assertNotNullsafeWriteContext($expr->var);
@@ -3642,6 +3649,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parsePreDec(Expr\PreDec $expr): string
     {
+        $this->assertImmutableMutationTarget($expr->var);
         $this->assertNativeArrayAccessDirectWrite($expr->var, false);
         $this->assertNativeObjectOperatorOperandSupported($expr->var, $expr, '--');
         $this->assertNotNullsafeWriteContext($expr->var);
@@ -3699,6 +3707,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseNew(Expr\New_ $expr): string
     {
+        $this->validateImmutableCall($expr);
         if (!$expr->class instanceof Node\Stmt\Class_ && !$this->isNameExpr($expr->class)) {
             $this->assertNotNativeObjectDynamicClassTarget($expr->class, $expr);
         }

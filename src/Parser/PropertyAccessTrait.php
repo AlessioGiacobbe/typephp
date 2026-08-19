@@ -785,6 +785,7 @@ trait PropertyAccessTrait
         $vars = $node->vars;
         $lines = [];
         foreach ($vars as $var) {
+            $this->assertImmutableMutationTarget($var);
             $this->assertNotNullsafeWriteContext($var);
             $this->assertNativePropertyHookDirectWriteTarget($var);
             if ($this->isArrayDimFetch($var)) {

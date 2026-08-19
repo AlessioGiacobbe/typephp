@@ -72,6 +72,10 @@ class FunctionContext
     public bool $needsUserCodeCallableScope = false;
     public int $tmpVarIndex = 0;
     public array $arguments = [];
+    /** @var array<string, true> Bindings protected by #[Immutable]. */
+    public array $immutableVars = [];
+    /** @var array<string, true> Immutable bindings which may contain object identity. */
+    public array $immutableObjectVars = [];
     /** True while parsing a breakable loop or switch. */
     public bool $inLoop = false;
     /** True while parsing a for/foreach/while/do-while body. */
@@ -102,6 +106,8 @@ class FunctionContext
         $this->localVars = [];
         $this->staticVars = [];
         $this->arguments = [];
+        $this->immutableVars = [];
+        $this->immutableObjectVars = [];
         $this->objects = [];
         $this->nativeObjects = [];
         $this->nonNullNativeObjects = [];

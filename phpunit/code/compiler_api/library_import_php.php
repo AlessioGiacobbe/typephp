@@ -8,6 +8,7 @@ use \Constructor;
 use \Validate;
 use \Getter;
 use \Hot;
+use \Immutable;
 use \NotNull;
 use \NoExport as Internal;
 use \Override;
@@ -37,6 +38,12 @@ class Counter
     public function add(int $amount = self::STEP): int
     {
         $this->value += $amount;
+        return $this->value;
+    }
+
+    #[Immutable]
+    public function current(): int
+    {
         return $this->value;
     }
 
@@ -76,6 +83,11 @@ class InternalStringExtension
 function twice(int $value): int
 {
     return $value * 2;
+}
+
+function inspect(#[Immutable] Counter $counter): int
+{
+    return $counter->current();
 }
 
 #[Internal]

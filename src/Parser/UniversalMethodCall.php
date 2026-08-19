@@ -397,6 +397,7 @@ trait UniversalMethodCall
                     'return_type' => $function->returnType,
                     'min_args' => max(0, $function->argCountRequired - 1),
                     'max_args' => $function->hasVariadicArg() ? -1 : count($function->argInfoList) - 1,
+                    'receiver_immutable' => $receiver->immutable,
                 ];
             }
         }

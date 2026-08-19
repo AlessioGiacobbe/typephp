@@ -12,6 +12,7 @@ use TypePhp\Type;
 
 use TypePhp\Entity\ArgInfo;
 use TypePhp\Context\FunctionContext;
+use TypePhp\Transform\CompileTimeAttribute;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\IntersectionType;
@@ -201,6 +202,9 @@ trait ClosureGenerator
                 $code .= $this->getIndent() . '}' . PHP_EOL;
                 $code .= $this->genExtraNamedVariadicArgs($var);
                 $this->addArgument($var, Type::ARRAY);
+                if (CompileTimeAttribute::consume($param, 'Immutable')) {
+                    $this->context->immutableVars[$var] = true;
+                }
                 $code .= $this->genClosureParamTypeCheck($param, $var, $phpName, $i, true);
                 continue;
             }
@@ -209,6 +213,18 @@ trait ClosureGenerator
                 : 'php::getCallArg(' . $i . ', ' . $this->parseParamDefaultValue($param->default) . ')';
             $code .= $this->getIndent() . 'auto ' . $var . ' = ' . $argExpr . ';' . PHP_EOL;
             $this->addArgument($var, Type::VAR);
+            if (CompileTimeAttribute::consume($param, 'Immutable')) {
+                $this->context->immutableVars[$var] = true;
+                if ($this->immutableTypeNodeMayBeObject($param->type)) {
+                    $this->context->immutableObjectVars[$var] = true;
+                }
+                if ($param->type !== null) {
+                    [, $parameterClass] = $this->resolveTypeDecl($param->type, self::DECL_TYPE_OF_PARAM);
+                    if ($parameterClass !== '') {
+                        $this->addObject($var, $parameterClass);
+                    }
+                }
+            }
             $code .= $this->genClosureParamTypeCheck($param, $var, $phpName, $i, false);
         }
 
@@ -216,10 +232,20 @@ trait ClosureGenerator
             $var = $this->parseIdentifier($useItem->var);
             $code .= 'auto ' . $var . ' = vars_.get(' . $i . ');' . PHP_EOL;
             $this->addArgument($var, Type::VAR);
+            if (isset($oriContext->immutableVars[$var])) {
+                $this->context->immutableVars[$var] = true;
+                if (isset($oriContext->immutableObjectVars[$var])) {
+                    $this->context->immutableObjectVars[$var] = true;
+                }
+            }
         }
 
         if ($this->methodDef && !$expr->static) {
             $this->addArgument('this_', Type::OBJECT);
+            if (isset($oriContext->immutableVars['this_'])) {
+                $this->context->immutableVars['this_'] = true;
+                $this->context->immutableObjectVars['this_'] = true;
+            }
         }
 
         $body = $isGenerator
