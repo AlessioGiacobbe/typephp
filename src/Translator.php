@@ -64,7 +64,7 @@ class Translator extends Preprocessor
     use ResourceCompilationTrait;
     use ClassConstantValueTrait;
 
-    public const string VERSION = '0.5.0';
+    public const string VERSION = '0.6.0';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
 
     protected string $targetName = 'app';
