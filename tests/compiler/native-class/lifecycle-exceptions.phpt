@@ -66,6 +66,7 @@ class NativeThrowingFinalizer
 class NativeLifecycleFiller
 {
     public int $value;
+    public int $padding;
 }
 
 function allocateUntilFinalizerRuns(): void

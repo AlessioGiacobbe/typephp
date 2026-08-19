@@ -431,21 +431,20 @@ Native Class Object 应使用独立的、非移动、精确 tracing GC。本文�
 
 ### 8.1 Native Heap
 
-首版 Wren 派生实现为每个对象分配一块连续内存，并在 struct 前放置隐藏 GC header：
+Wren 派生实现为每个对象分配一块连续内存，并在 struct 前放置隐藏 GC header。Header 固定为两个机器字，在 64 位平台上是 16 字节：
 
 ```cpp
 struct NativeGcHeader {
+    // 低 3 位复用为 marked/finalized/allocated-during-collection 标志。
+    uintptr_t nextAndFlags;
     const NativeTypeDescriptor *type;
-    NativeGcHeader *next;
-    uint32_t flags;
-    uint32_t size;
 };
 
 // 内存布局：[NativeGcHeader][php_app__point]
 auto *point = native_heap.make<php_app__point>();
 ```
 
-GC header 不属于生成的 C++ struct，也不会改变属性偏移。用户可见对象变量仍然只是一个 `native_struct *`。
+GC header 不属于生成的 C++ struct，也不会改变属性偏移。用户可见对象变量仍然只是一个 `native_struct *`。对象尺寸、对齐方式及 trace/finalize/destroy 回调保存在每个类型唯一的静态 `NativeTypeDescriptor` 中，不在每个实例中重复保存。
 
 当前分配器使用独立 non-moving allocation；Arena/chunk/free-list 可以作为后续分配器
 优化，但不得改变对象地址稳定性、header 布局、精确 tracing 或 finalization 语义。

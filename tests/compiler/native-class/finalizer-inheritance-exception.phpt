@@ -28,6 +28,7 @@ class NativeThrowingFinalizerChild extends NativeThrowingFinalizerBase
 class NativeFinalizerPressureObject
 {
     public int $value;
+    public int $padding;
 }
 
 function collectThrowingFinalizer(): void

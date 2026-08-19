@@ -25,6 +25,7 @@ class NativeFailedCloneFinalizer
 class NativeFailedClonePressure
 {
     public int $value;
+    public int $padding;
 }
 
 function forceFailedCloneCollection(): void

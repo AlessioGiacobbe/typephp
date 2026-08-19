@@ -6,6 +6,12 @@ Native class: long-running allocation triggers automatic tracing collection
 #[Native]
 class NativeGcThresholdValue
 {
+    // Keep the pressure in the object payload so this test does not depend on
+    // the implementation size of the hidden Native GC header.
+    public int $padding1;
+    public int $padding2;
+    public int $padding3;
+
     public function __destruct()
     {
         global $nativeGcFinalized;

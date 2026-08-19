@@ -28,6 +28,7 @@ class NativeFinalizerCreator
 class NativeFinalizerFiller
 {
     public int $value;
+    public int $padding;
 }
 
 function main(): void

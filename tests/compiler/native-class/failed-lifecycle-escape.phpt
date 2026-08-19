@@ -68,6 +68,7 @@ class NativeFailedCloneEscape
 class NativeFailedLifecyclePressure
 {
     public int $value;
+    public int $padding;
 }
 
 function forceNativeCollection(): void
