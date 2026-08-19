@@ -90,7 +90,7 @@
 |---|---|---|---|
 | Wren 风格精确、非移动、STW mark-sweep | `phpx/thirdparty/wren-gc`、`native_gc.cc` | PHPX `wren_gc.*` | 已验证 |
 | 裸指针写入无 RC、无 write barrier | Native pointer field/local codegen | 生成 C++ 审查、Native PHPT | 已验证 |
-| 10 MiB 初始阈值、1 MiB 下限、50% headroom | Wren GC 配置 | `wren_gc.uses_stable_native_heap_defaults` | 已验证 |
+| 16 MiB 初始阈值、1 MiB 下限、50% headroom | Wren GC 配置 | `wren_gc.uses_stable_native_heap_defaults` | 已验证 |
 | 精确 root frame 保持对象图存活 | `NativeRootFrame`、generated root slots | PHPX root tests、`gc-cycle.phpt` | 已验证 |
 | Fiber 非 LIFO 生命周期安全 | root frame registry | `fiber-lifetime.phpt`、`fiber-shutdown.phpt`、PHPX Fiber root tests | 已验证 |
 | global/static request roots 在 ZTS 下为 thread-local | generated globals/root registration | ZTS 环境下 `global-and-static.phpt`、PHPX request root tests | 已验证 |

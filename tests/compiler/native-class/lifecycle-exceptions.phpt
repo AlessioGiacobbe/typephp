@@ -66,13 +66,12 @@ class NativeThrowingFinalizer
 class NativeLifecycleFiller
 {
     public int $value;
-    public int $padding;
 }
 
 function allocateUntilFinalizerRuns(): void
 {
     global $nativeFinalizers;
-    for ($i = 0; $i < 400000; $i++) {
+    for ($i = 0; $i < 800000; $i++) {
         try {
             $filler = new NativeLifecycleFiller();
         } catch (RuntimeException $error) {

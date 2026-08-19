@@ -25,12 +25,11 @@ class NativeFailedCloneFinalizer
 class NativeFailedClonePressure
 {
     public int $value;
-    public int $padding;
 }
 
 function forceFailedCloneCollection(): void
 {
-    for ($i = 0; $i < 400000; $i++) {
+    for ($i = 0; $i < 800000; $i++) {
         new NativeFailedClonePressure();
     }
 }

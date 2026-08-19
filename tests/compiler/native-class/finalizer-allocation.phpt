@@ -28,7 +28,6 @@ class NativeFinalizerCreator
 class NativeFinalizerFiller
 {
     public int $value;
-    public int $padding;
 }
 
 function main(): void
@@ -39,7 +38,7 @@ function main(): void
 
     $creator = new NativeFinalizerCreator();
     $creator = null;
-    for ($i = 0; $i < 400000; $i++) {
+    for ($i = 0; $i < 800000; $i++) {
         $filler = new NativeFinalizerFiller();
     }
 

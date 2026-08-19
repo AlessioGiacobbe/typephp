@@ -28,12 +28,11 @@ class NativeThrowingFinalizerChild extends NativeThrowingFinalizerBase
 class NativeFinalizerPressureObject
 {
     public int $value;
-    public int $padding;
 }
 
 function collectThrowingFinalizer(): void
 {
-    for ($i = 0; $i < 400000; $i++) {
+    for ($i = 0; $i < 800000; $i++) {
         try {
             $filler = new NativeFinalizerPressureObject();
         } catch (RuntimeException $error) {

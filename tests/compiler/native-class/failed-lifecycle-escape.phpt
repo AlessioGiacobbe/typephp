@@ -68,12 +68,11 @@ class NativeFailedCloneEscape
 class NativeFailedLifecyclePressure
 {
     public int $value;
-    public int $padding;
 }
 
 function forceNativeCollection(): void
 {
-    for ($i = 0; $i < 400000; $i++) {
+    for ($i = 0; $i < 800000; $i++) {
         $filler = new NativeFailedLifecyclePressure();
     }
 }

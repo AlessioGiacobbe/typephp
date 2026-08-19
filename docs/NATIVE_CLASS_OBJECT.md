@@ -733,18 +733,19 @@ PHPX 的 Native GC adapter 负责类型 descriptor、root frame、C++ 析构回�
 
 首版采用以下固定默认值：
 
-- 首次收集阈值：10 MiB。
+- 首次收集阈值：16 MiB。
 - 收集后的最低阈值：1 MiB。
 - 存活堆增长比例：50%。
 - 下一次收集阈值：`max(1 MiB, liveBytes + liveBytes * 50%)`。
 
-这组参数沿用 Wren 的成熟默认值。阈值会随每轮收集后的实际存活字节数自动伸缩，
+自适应增长策略沿用 Wren 的成熟设计；TypePHP 将首次阈值设为更规整的 16 MiB。
+阈值会随每轮收集后的实际存活字节数自动伸缩，
 但不读取 PHP `memory_limit`、主机物理内存或容器内存。PHP `memory_limit` 面向
 Zend 请求内存，常见的 128 MiB 默认值不能代表常驻 TypePHP 程序的 Native Heap
 预算；按主机内存同比放大阈值也会使相同程序在不同机器上表现不稳定。
 
-10 MiB 只表示首次触发完整收集前允许的累计 Native allocation，并不是预留或立即
-申请 10 MiB。1 MiB 下限避免小型存活集反复触发 stop-the-world 收集；50% headroom
+16 MiB 只表示首次触发完整收集前允许的累计 Native allocation，并不是预留或立即
+申请 16 MiB。1 MiB 下限避免小型存活集反复触发 stop-the-world 收集；50% headroom
 在扫描 CPU 与额外内存之间采取比 Go 默认 100% 更保守的折中，因为首版 collector
 是单线程 stop-the-world，而不是并发 collector。后续只能依据 TypePHP 的真实分配率、
 存活率、暂停时间和峰值内存 benchmark 调整这些内部常量，不开放语言级 GC 调参接口。
@@ -1428,7 +1429,7 @@ Native Class 的主要路径必须满足：
 
 - Native Object 永远不能转换或赋值为 Interface 类型；`implements` 只提供编译期契约
   校验，首版不提供调用点特化、fat pointer 或 interface table。
-- Native Heap 使用 10 MiB 首次阈值、1 MiB 最低阈值和 50% live-heap headroom。
+- Native Heap 使用 16 MiB 首次阈值、1 MiB 最低阈值和 50% live-heap headroom。
 
 这些约定已经固定。后续 benchmark 可以调整 GC 的内部数值，但不得改变 Native Object
 不做 Interface 类型擦除、没有 Zend 表示、热路径使用裸指针 Native Call 的基本设计。
