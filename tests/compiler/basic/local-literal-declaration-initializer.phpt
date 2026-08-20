@@ -3,19 +3,14 @@ Top-level literal local assignments preserve PHP values
 --FILE--
 <?php
 
-function values(): array
-{
-    $integer = 42;
-    $negative = -7;
-    $floating = 1.25;
-    $boolean = true;
-    $string = 'hello';
-    $nullValue = null;
+$integer = 42;
+$negative = -7;
+$floating = 1.25;
+$boolean = true;
+$string = 'hello';
+$nullValue = null;
 
-    return [$integer, $negative, $floating, $boolean, $string, $nullValue];
-}
-
-var_dump(values());
+var_dump([$integer, $negative, $floating, $boolean, $string, $nullValue]);
 ?>
 --EXPECT--
 array(6) {

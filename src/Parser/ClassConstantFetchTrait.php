@@ -12,9 +12,82 @@ use TypePhp\Type;
 use PhpParser\Node\Expr;
 use PhpParser\NodeAbstract;
 use TypePhp\Generator\Symbol;
+use TypePhp\Resolver\Reflection;
 
 trait ClassConstantFetchTrait
 {
+    /**
+     * Return true when a class constant fetch can be evaluated at the hoisted
+     * local declaration without changing PHP execution order. Only a literal
+     * ::class name, constants owned by a statically known TypePHP class and
+     * public scalar constants from an internal class/interface are eligible.
+     * ZendVM lookup, late static binding and dynamic operands stay at their
+     * original source position.
+     */
+    protected function isHoistSafeClassConstFetch(Expr\ClassConstFetch $expr): bool
+    {
+        if (!$this->isNameExpr($expr->class) || !$this->isIdExpr($expr->name)) {
+            return false;
+        }
+        if ($this->resolvePythonModule($expr->class) !== null) {
+            return false;
+        }
+
+        $class = $this->parseIdentifier($expr->class);
+        if ($class === 'static') {
+            return false;
+        }
+        if ($class === 'self' || $class === 'this_') {
+            if (!$this->classDef) {
+                return false;
+            }
+            $class = '\\' . $this->getFullClassName();
+        } elseif ($class === 'parent') {
+            if (!$this->classDef || !$this->classDef->extends) {
+                return false;
+            }
+            $class = '\\' . $this->classDef->extends;
+        }
+
+        $class = $this->getNamespacedClassName($class);
+        $const = $this->parseIdentifier($expr->name);
+        if (strcasecmp($const, 'class') === 0) {
+            return true;
+        }
+        if ($this->hasClass($class)) {
+            if ($this->getClass($class)->enum) {
+                return false;
+            }
+            $nativeConst = $this->findNativeClassConst($expr, $class, $const);
+            return $nativeConst !== false
+                && !$this->classConstantValueRequiresRuntimeCall($nativeConst);
+        }
+
+        return $this->getInternalScalarClassConstant($class, $const) !== null;
+    }
+
+    private function classConstantValueRequiresRuntimeCall(string $value): bool
+    {
+        return preg_match('/\b[A-Za-z_][A-Za-z0-9_:]*\s*\(/', $value) === 1;
+    }
+
+    /** @return array{mixed}|null */
+    private function getInternalScalarClassConstant(string $class, string $const): ?array
+    {
+        if (!$this->isInternalClass($class) && !$this->isInternalInterface($class)) {
+            return null;
+        }
+
+        $reflection = Reflection::getClass($class);
+        $constant = $reflection?->getReflectionConstant($const);
+        if ($constant === false || $constant === null || !$constant->isPublic()) {
+            return null;
+        }
+
+        $value = $constant->getValue();
+        return is_scalar($value) ? [$value] : null;
+    }
+
     protected function parseClassConstFetch(Expr\ClassConstFetch $expr): string
     {
         if (!$this->isNameExpr($expr->class)) {
@@ -88,6 +161,10 @@ trait ClassConstantFetchTrait
                 if ($nativeConst) {
                     return $nativeConst;
                 }
+            }
+            $internalConst = $this->getInternalScalarClassConstant($class, $const);
+            if ($internalConst !== null) {
+                return $this->genInternalScalarConstantValue($internalConst[0]);
             }
             $ce = $this->getClassEntryPtr($class);
             return Symbol::constant() . '(' . $ce . ', ' . $this->getLiteralString($const) . ')';

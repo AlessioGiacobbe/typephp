@@ -46,32 +46,15 @@ trait ConstantExpressionTrait
                 return Symbol::constant() . '(' . $ce . ', ' . $this->getLiteralString($ns[1]) . ')';
             }
 
-            if (isset($this->useConstants[$name])) {
-                $name = $this->useConstants[$name];
-            } elseif ($expr->name->isUnqualified()) {
-                if ($this->namespace) {
-                    $namespacedName = $this->namespace . '\\' . $name;
-                    if ($this->hasConstant($namespacedName)) {
-                        return $this->getConstant($namespacedName);
-                    }
-
-                    // PHP resolves an unqualified constant in a namespace at
-                    // runtime: first Namespace\NAME, then the global NAME. AOT
-                    // cannot select only the namespaced spelling because a
-                    // define() call may execute before this fetch.
-                    return Symbol::constant() . '('
-                        . $this->getLiteralString($namespacedName)
-                        . ', php::ConstantLookup::UnqualifiedInNamespace)';
-                }
-                // A class import with the same alias does not affect a bare
-                // constant fetch. Only `use const` participates here.
-            } elseif ($expr->name instanceof Node\Name\FullyQualified) {
-                // parseIdentifier() has already removed the leading slash.
-            } else {
-                $fullName = $this->getNamespacedClassName($name);
-                if ($fullName) {
-                    $name = $fullName;
-                }
+            [$name, $runtimeNamespaceFallback] = $this->resolveConstantFetchName($expr, $name);
+            if ($runtimeNamespaceFallback) {
+                // PHP resolves an unqualified constant in a namespace at
+                // runtime: first Namespace\NAME, then the global NAME. AOT
+                // cannot select only the namespaced spelling because a
+                // define() call may execute before this fetch.
+                return Symbol::constant() . '('
+                    . $this->getLiteralString($name)
+                    . ', php::ConstantLookup::UnqualifiedInNamespace)';
             }
 
             if ($this->hasConstant($name)) {
@@ -90,6 +73,66 @@ trait ConstantExpressionTrait
             return Symbol::constant() . '(' . $this->getLiteralString($name) . ')';
         }
         return Symbol::constant() . '("' . $this->escapeString($name) . '")';
+    }
+
+    /**
+     * Resolve a regular constant name and report whether PHP namespace
+     * fallback must remain deferred until the source expression executes.
+     *
+     * @return array{string, bool}
+     */
+    private function resolveConstantFetchName(Expr\ConstFetch $expr, string $name): array
+    {
+        if (isset($this->useConstants[$name])) {
+            return [$this->useConstants[$name], false];
+        }
+        if ($expr->name->isUnqualified()) {
+            if ($this->namespace) {
+                $namespacedName = $this->namespace . '\\' . $name;
+                return [$namespacedName, !$this->hasConstant($namespacedName)];
+            }
+
+            // A class import with the same alias does not affect a bare
+            // constant fetch. Only `use const` participates here.
+            return [$name, false];
+        }
+        if ($expr->name instanceof Node\Name\FullyQualified) {
+            // parseIdentifier() has already removed the leading slash.
+            return [$name, false];
+        }
+
+        return [$this->getNamespacedClassName($name), false];
+    }
+
+    /**
+     * Return true only when reading this constant can be moved to the hoisted
+     * local declaration at function entry. Runtime define() constants and
+     * namespace fallback must stay at their original source position.
+     */
+    protected function isHoistSafeConstFetch(Expr\ConstFetch $expr): bool
+    {
+        if ($this->resolvePythonModuleMember($expr->name) !== null
+            || ($expr->name->getType() !== 'Name' && !$expr->name instanceof Node\Name\FullyQualified)
+        ) {
+            return false;
+        }
+
+        $name = ltrim($this->parseIdentifier($expr->name), '\\');
+        if (in_array(strtolower($name), ['null', 'true', 'false'], true)) {
+            return true;
+        }
+        if (str_contains($name, '::')) {
+            return false;
+        }
+
+        [$name, $runtimeNamespaceFallback] = $this->resolveConstantFetchName($expr, $name);
+        if ($runtimeNamespaceFallback) {
+            return false;
+        }
+
+        return $this->hasConstant($name)
+            || $name === 'PHP_EOL'
+            || $this->isInternalScalarConstant($name);
     }
 
     protected function parseMagicConst(MagicConst $expr): string
@@ -177,7 +220,11 @@ trait ConstantExpressionTrait
 
     protected function getInternalScalarConstantValue(string $name): string
     {
-        $value = $this->internalConstants[$name];
+        return $this->genInternalScalarConstantValue($this->internalConstants[$name]);
+    }
+
+    protected function genInternalScalarConstantValue(mixed $value): string
+    {
         if (is_int($value)) {
             return $this->genIntegerLiteral($value);
         }
@@ -191,7 +238,7 @@ trait ConstantExpressionTrait
             return $this->genCValue($value);
         }
         if (is_bool($value)) {
-            return $value ? 1 : 0;
+            return $value ? 'true' : 'false';
         }
         if (is_string($value)) {
             return $this->genCharPtr($value, true);

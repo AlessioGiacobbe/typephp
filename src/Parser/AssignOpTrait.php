@@ -155,17 +155,17 @@ trait AssignOpTrait
         return $this->parseAssignFinally(
             $left,
             $right,
-            $this->canFoldLocalLiteralIntoDeclaration($v),
+            $this->canFoldLocalInitializerIntoDeclaration($v),
         );
     }
 
     /**
-     * A pure literal assigned to a new function-top-level local can initialize
-     * the already-hoisted C++ declaration directly. Keep arrays and compound
-     * constant expressions on the ordinary path: parsing them may create
-     * temporaries whose declaration order must remain explicit.
+     * A hoist-safe value assigned to a new function-top-level local can
+     * initialize the already-hoisted C++ declaration directly. Keep runtime
+     * constants, arrays and compound expressions on the ordinary path: their
+     * evaluation order or generated temporaries must remain at the source site.
      */
-    private function canFoldLocalLiteralIntoDeclaration(Expr\Assign $assign): bool
+    private function canFoldLocalInitializerIntoDeclaration(Expr\Assign $assign): bool
     {
         if (!$assign->getAttribute(self::ATTR_STATEMENT_EXPRESSION, false)
             || $this->context->scopeLevel !== 1
@@ -178,22 +178,24 @@ trait AssignOpTrait
         if ($name === 'this_' || $this->hasVar($name)) {
             return false;
         }
-        return $this->isDeclarationLiteral($assign->expr);
+        return $this->isHoistSafeDeclarationInitializer($assign->expr);
     }
 
-    private function isDeclarationLiteral(Expr $expr): bool
+    private function isHoistSafeDeclarationInitializer(Expr $expr): bool
     {
-        if ($expr instanceof Node\Scalar\Int_
+        $literal = $expr instanceof Node\Scalar\Int_
             || $expr instanceof Node\Scalar\Float_
             || $expr instanceof Node\Scalar\String_
-        ) {
-            return true;
-        }
-        if ($expr instanceof Expr\ConstFetch) {
-            return in_array(strtolower($expr->name->toString()), ['true', 'false', 'null'], true);
-        }
-        return ($expr instanceof Expr\UnaryPlus || $expr instanceof Expr\UnaryMinus)
-            && ($expr->expr instanceof Node\Scalar\Int_ || $expr->expr instanceof Node\Scalar\Float_);
+            || ($expr instanceof Expr\ConstFetch && $this->isHoistSafeConstFetch($expr))
+            || ($expr instanceof Expr\ClassConstFetch && $this->isHoistSafeClassConstFetch($expr))
+            || (($expr instanceof Expr\UnaryPlus || $expr instanceof Expr\UnaryMinus)
+                && ($expr->expr instanceof Node\Scalar\Int_ || $expr->expr instanceof Node\Scalar\Float_));
+
+        return $literal && in_array(
+            $this->detectTypeOfExpr($expr),
+            [Type::INT, Type::FLOAT, Type::BOOL, Type::STR, Type::VAR],
+            true,
+        );
     }
 
     private function parseAssignToMultiReturn(Expr\List_ $left, Expr $right): ?string
