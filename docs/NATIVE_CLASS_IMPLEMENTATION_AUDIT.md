@@ -76,7 +76,7 @@
 | `__destruct` 由 GC 至多执行一次，继承链 derived-to-base | Native finalizer chain | destructor/finalizer/lifecycle 系列 PHPT | 已验证 |
 | `__invoke` 和 `__toString` 使用确定 Native Call | Native magic method allow-list | `magic-methods.phpt` | 已验证 |
 | 动态魔术方法、变量属性/方法名不支持 | Native magic/dynamic access deny-list | dynamic magic、variable method/property 负向测试 | 已验证 |
-| `toArray/toString/toInt/toFloat/toBool` 要求实体方法和精确返回类型 | Native keyword method resolution | `keyword-conversions.phpt` 及 missing/wrong return 负向测试 | 已验证 |
+| `toArray/toString/toInt/toFloat/toBool/toObject` 要求实体方法、零参数和精确返回类型 | Native keyword method resolution | `keyword-conversions.phpt`、`testNativeObjectToObjectKeywordUsesDeclaredNativeMethod` 及签名负向测试 | 已验证 |
 | `count($obj)` 仅在实现 Countable 时特化 | Native count optimizer | `keyword-conversions.phpt`、count-without-countable 负向测试 | 已验证 |
 | `ArrayAccess` 直接语法映射到 Native `offset*()` 方法 | Native array access lowering | `array-access.phpt` | 已验证 |
 | Native `ArrayAccess` 禁止间接修改和引用 | writable-chain/reference validators | ArrayAccess compound/increment/nested/property/reference/coalesce 负向测试 | 已验证 |

@@ -115,6 +115,14 @@ final readonly class Constructor
 {
 }
 
+#[Attribute(Attribute::TARGET_PROPERTY)]
+final readonly class ArrayDef
+{
+    public function __construct(string $keyOrValueType, ?string $valueType = null)
+    {
+    }
+}
+
 /**
  * Public compile-time type symbols shared by MethodsFor providers and std containers.
  * This root class is deliberately distinct from the compiler-internal TypePhp\Type.

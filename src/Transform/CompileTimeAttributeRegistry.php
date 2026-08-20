@@ -25,6 +25,7 @@ final class CompileTimeAttributeRegistry
     public const ARGUMENTS_FIELDS = 'fields';
     public const ARGUMENTS_VALIDATE = 'validate';
     public const ARGUMENTS_WASM_EXPORT = 'wasm_export';
+    public const ARGUMENTS_ARRAY_DEF = 'array_def';
 
     public const PHASE_PREPROCESS = 'preprocess';
     public const PHASE_ENTER = 'enter';
@@ -93,6 +94,7 @@ final class CompileTimeAttributeRegistry
         $add('Hot', [self::TARGET_FUNCTION, self::TARGET_METHOD], 'Hot can only be applied to functions or methods', self::ARGUMENTS_NONE, self::PHASE_ENTER, true, ['Cold']);
         $add('Cold', [self::TARGET_FUNCTION, self::TARGET_METHOD], 'Cold can only be applied to functions or methods', self::ARGUMENTS_NONE, self::PHASE_ENTER, true, ['Hot']);
         $add('Constructor', [self::TARGET_DECLARED_PROPERTY], 'Constructor can only be applied to instance properties', self::ARGUMENTS_NONE, self::PHASE_CLASS_LEAVE);
+        $add('ArrayDef', [self::TARGET_PROPERTY], 'ArrayDef can only be applied to properties', self::ARGUMENTS_ARRAY_DEF, self::PHASE_PREPROCESS);
 
         return $definitions;
     }

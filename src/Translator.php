@@ -4986,7 +4986,8 @@ CODE;
             && $existing->type === $incoming->type
             && $existing->class === $incoming->class
             && $existing->nullable === $incoming->nullable
-            && $existing->default === $incoming->default;
+            && $existing->default === $incoming->default
+            && $existing->arrayDef == $incoming->arrayDef;
     }
 
     private function resolveLateBoundClass(ClassDef $usingClassDef, string $keyword): ?string

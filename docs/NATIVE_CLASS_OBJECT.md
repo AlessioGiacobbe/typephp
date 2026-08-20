@@ -4,6 +4,8 @@
 > 构造/克隆/析构、Trait、Getter/Setter、Property Hook、抽象类、单继承、有限虚分派、
 > Interface 编译期契约及项目级 global slot 预发现均已落地。逐项实现证据见
 > [NATIVE_CLASS_IMPLEMENTATION_AUDIT.md](NATIVE_CLASS_IMPLEMENTATION_AUDIT.md)。
+> Native Class 与普通 Zend Object、PHPX Box 并存的架构原因见
+> [OBJECT_STORAGE_AND_PASSING_MODELS.md](OBJECT_STORAGE_AND_PASSING_MODELS.md)。
 
 ## 1. 背景
 
@@ -1206,6 +1208,11 @@ Native 局部变量是一个由 root frame 跟踪的 `native_struct *` 槽。普
 
 Native Class 支持 `toArray()`、`toString()`、`toInt()`、`toFloat()`、`toBool()` 等 TypePHP 关键词转换方法，但不会进入 PHPX 的动态转换 helper。编译器要求 Native Class 实际声明对应的零参数方法，并把调用直接 lowering 为 Native Call。
 
+`toObject()` 遵循相同规则：Native Class 若声明 `toObject(): object`，关键词调用直接指向
+这个确定的 Native 方法；未声明、声明了参数或返回值不是 object 时均在编译期报错。这里
+的 `toObject()` 是用户定义的数据转换方法，不是把 Native pointer 交给通用 PHPX
+`php::toObject()` helper，也不会为 Native Object 建立隐式 Zend carrier。
+
 方法返回类型必须与关键词类型完全一致。例如 `toArray(): array`、`toInt(): int`、`toString(): string`；缺少方法、接收参数、按引用返回或返回类型不同均为编译期 FatalError。
 
 对象条件与显式转换是两套语义。`if ($object)`、`!$object`、`$left && $right` 和
@@ -1276,7 +1283,7 @@ $json = json_encode($nativeObject->toArray());
 | Property Hook | 支持直接 get/set；间接写入、复合写入、引用、isset/empty 不支持 |
 | Trait AST 注入 | 支持，注入完成后按普通 Native member 编译 |
 | `readonly` | 不支持，编译期 FatalError；PHP readonly 是依赖 Zend 属性初始化状态的运行时机制，与 Native 固定裸字段模型不兼容 |
-| `toArray()`/`toInt()` 等关键词转换 | 支持，要求 Native Class 声明零参数且返回类型完全一致的方法 |
+| `toArray()`/`toInt()`/`toObject()` 等关键词转换 | 支持，要求 Native Class 声明零参数且返回类型完全一致的方法；直接生成 Native Call |
 | `toString()` / `__toString()` | 支持确定 Native Call；字符串强转、`strval()`、拼接和 `echo` 使用同一规则 |
 | `count($nativeObject)` | 支持确定 Native Call；要求 Native Class 实现 `Countable`，首版限单参数形式 |
 | `isset()` / `empty()` | 支持裸指针槽及纯 Native 命名属性链，逐级短路，不进入 ZendVM |

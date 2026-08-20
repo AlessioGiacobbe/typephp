@@ -445,6 +445,25 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-reference-method.php');
     }
 
+    public function testNativeObjectToObjectKeywordUsesDeclaredNativeMethod(): void
+    {
+        $this->compile('native-class-to-object.php');
+    }
+
+    public function testRejectsNativeObjectToObjectKeywordWithParameters(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native conversion method `InvalidNativeToObjectParameters::toObject()` must not accept arguments');
+        $this->compile('native-class-to-object-parameters.php');
+    }
+
+    public function testRejectsNativeObjectToObjectKeywordWithWrongReturnType(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native conversion method `InvalidNativeToObjectReturn::toObject()` must return exactly `object`');
+        $this->compile('native-class-to-object-return-type.php');
+    }
+
     public function testRejectsNativeObjectReferenceFunction(): void
     {
         $this->expectException(TestError::class);

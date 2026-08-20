@@ -612,7 +612,8 @@ class Preprocessor extends CompilerBase
                 // Promoted property defaults belong to the constructor parameter,
                 // not to the property default table. The property itself must stay
                 // uninitialized until __construct assigns it.
-                $this->addClassProperty($phpName, $param->flags, $param->type, null, $nullable, $param, true);
+                $promotedProperty = $this->addClassProperty($phpName, $param->flags, $param->type, null, $nullable, $param, true);
+                $promotedProperty->arrayDef = $this->parseArrayDefinition($param);
             }
             if ($param->variadic) {
                 if ($i !== $last) {
@@ -1645,6 +1646,7 @@ class Preprocessor extends CompilerBase
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
+        $arrayDef = $this->parseArrayDefinition($v);
         if ($this->classDef->nativeObject) {
             if ($v->type === null) {
                 $this->fatalError($v, 'Native class properties must declare a type');
@@ -1669,6 +1671,7 @@ class Preprocessor extends CompilerBase
         foreach ($v->props as $prop) {
             $propName = $this->parseIdentifier($prop->name);
             $propDef = $this->addClassProperty($propName, $v->flags, $v->type, $prop->default, $nullable, $v);
+            $propDef->arrayDef = $arrayDef;
             if ($this->classDef->nativeObject && $this->isNativeObjectForbiddenPropertyType($propDef)) {
                 $message = $propDef->type === Type::BOX
                     ? 'Native class properties cannot use Box types'

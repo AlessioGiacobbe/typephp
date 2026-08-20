@@ -59,6 +59,8 @@ class FunctionContext
      */
     public array $stdContainers = [];
     public array $localVars = [];
+    /** @var array<string, string> C++ initializers folded into function-scope local declarations. */
+    public array $localVarInitializers = [];
     public array $staticVars = [];
     public array $globalVars = [];
 
@@ -104,6 +106,7 @@ class FunctionContext
     public function __construct()
     {
         $this->localVars = [];
+        $this->localVarInitializers = [];
         $this->staticVars = [];
         $this->arguments = [];
         $this->immutableVars = [];
@@ -154,6 +157,7 @@ class FunctionContext
     ): void
     {
         $this->localVars = $localVars;
+        $this->localVarInitializers = [];
         $this->tmpVarIndex = $tmpVarIndex;
         $this->declaredObjects = $declaredObjects;
         $this->nativeObjects = $nativeObjects;

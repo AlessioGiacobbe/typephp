@@ -85,6 +85,7 @@ use TypePhp\TypeSystem\NativeTypeCompatibilityTrait;
 use TypePhp\NativeClass\NativeClassSupportTrait;
 use TypePhp\NativeClass\NativeGlobalTypeResolver;
 use TypePhp\Immutable\ImmutableSupportTrait;
+use TypePhp\ArrayDef\ArrayDefSupportTrait;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\Node\ArrayItem;
@@ -107,6 +108,7 @@ class CompilerBase implements PropertyAccessContext
     use NativeTypeCompatibilityTrait;
     use NativeClassSupportTrait;
     use ImmutableSupportTrait;
+    use ArrayDefSupportTrait;
     use NativeBuildConfigurationTrait;
     use PythonModuleTrait;
     use DeclarationSymbolTrait;
@@ -1707,7 +1709,8 @@ class CompilerBase implements PropertyAccessContext
                     } elseif ($this->inGeneratorBody && $v->expr instanceof Expr\YieldFrom) {
                         $result = $this->parseYieldFromStmt($v->expr);
                     } else {
-                        $result = $this->parseExpr($v->expr) . ';';
+                        $expression = $this->parseExpr($v->expr);
+                        $result = $expression === '' ? '' : $expression . ';';
                     }
                     break;
                 case 'Stmt_Echo':
@@ -5007,7 +5010,9 @@ class CompilerBase implements PropertyAccessContext
                 $code .= Type::VAR . ' ' . $name . ';';
             } else {
                 $code .= $type . ' ' . $name;
-                if ($this->isNativeObjectVar($name)) {
+                if (array_key_exists($name, $this->context->localVarInitializers)) {
+                    $code .= ' = ' . $this->context->localVarInitializers[$name];
+                } elseif ($this->isNativeObjectVar($name)) {
                     $code .= ' = nullptr';
                 } elseif ($type === Type::INT or $type === Type::FLOAT or $type === Type::BOOL) {
                     $code .= ' = 0';

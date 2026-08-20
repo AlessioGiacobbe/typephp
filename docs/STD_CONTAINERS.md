@@ -1,5 +1,9 @@
 # Swoole AOT 强类型高性能容器，数组访问性能提升 10 倍
 
+> Std Container 使用 PHPX Box 保存具体 C++ 模板实例。它与普通 Zend Object、Native
+> Class Object 的存储和传递边界见
+> [OBJECT_STORAGE_AND_PASSING_MODELS.md](OBJECT_STORAGE_AND_PASSING_MODELS.md)。
+
 Swoole AOT 编译器为 PHP 提供了一组 `std` 强类型容器，用于在 AOT 编译场景下替代部分性能敏感路径中的 PHP Array。它们保留接近 PHP 的访问语法，同时让编译器获得明确的元素类型、键类型和容器结构，从而生成更直接、更低开销的 C++ 代码。
 
 ## PHP Array 的问题

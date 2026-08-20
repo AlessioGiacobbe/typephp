@@ -9,6 +9,7 @@
 namespace TypePhp\Entity;
 
 use PhpParser\Modifiers;
+use TypePhp\ArrayDef\ArrayDefinition;
 
 class PropertyDef
 {
@@ -17,6 +18,7 @@ class PropertyDef
     public int $flags;
     public ?string $default = null;
     public ?ArrayInitPlan $arrayInitPlan = null;
+    public ?ArrayDefinition $arrayDef = null;
     public bool $nullable = false;
     /** The declared type is TypePHP's unconstrained, reference-capable `any` type. */
     public bool $explicitAny = false;

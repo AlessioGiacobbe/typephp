@@ -152,7 +152,48 @@ trait AssignOpTrait
                 return $optimized;
             }
         }
-        return $this->parseAssignFinally($left, $right);
+        return $this->parseAssignFinally(
+            $left,
+            $right,
+            $this->canFoldLocalLiteralIntoDeclaration($v),
+        );
+    }
+
+    /**
+     * A pure literal assigned to a new function-top-level local can initialize
+     * the already-hoisted C++ declaration directly. Keep arrays and compound
+     * constant expressions on the ordinary path: parsing them may create
+     * temporaries whose declaration order must remain explicit.
+     */
+    private function canFoldLocalLiteralIntoDeclaration(Expr\Assign $assign): bool
+    {
+        if (!$assign->getAttribute(self::ATTR_STATEMENT_EXPRESSION, false)
+            || $this->context->scopeLevel !== 1
+            || !$this->isVarExpr($assign->var)
+            || !is_string($assign->var->name)
+        ) {
+            return false;
+        }
+        $name = $this->parseWritableIdentifier($assign->var);
+        if ($name === 'this_' || $this->hasVar($name)) {
+            return false;
+        }
+        return $this->isDeclarationLiteral($assign->expr);
+    }
+
+    private function isDeclarationLiteral(Expr $expr): bool
+    {
+        if ($expr instanceof Node\Scalar\Int_
+            || $expr instanceof Node\Scalar\Float_
+            || $expr instanceof Node\Scalar\String_
+        ) {
+            return true;
+        }
+        if ($expr instanceof Expr\ConstFetch) {
+            return in_array(strtolower($expr->name->toString()), ['true', 'false', 'null'], true);
+        }
+        return ($expr instanceof Expr\UnaryPlus || $expr instanceof Expr\UnaryMinus)
+            && ($expr->expr instanceof Node\Scalar\Int_ || $expr->expr instanceof Node\Scalar\Float_);
     }
 
     private function parseAssignToMultiReturn(Expr\List_ $left, Expr $right): ?string
@@ -234,7 +275,11 @@ trait AssignOpTrait
         return $code . '}';
     }
 
-    protected function parseAssignFinally(Expr $left, Expr $right): string
+    protected function parseAssignFinally(
+        Expr $left,
+        Expr $right,
+        bool $foldIntoDeclaration = false,
+    ): string
     {
         $this->assertImmutableMutationTarget($left);
         $this->recordImmutableAlias($left, $right);
@@ -589,6 +634,13 @@ trait AssignOpTrait
             return $this->parseAssignArrayDim($left, $right);
         } elseif ($this->isArrayDimFetch($left) and $this->isPropertyFetch($left->var)) {
             return $this->parseAssignPropertyArrayDim($left, $right);
+        } elseif ($this->isArrayDimFetch($left) and $this->isStaticPropertyFetch($left->var)) {
+            // Keep ordinary static-array writes on their established lowering
+            // path. Only ArrayDef needs the specialized key/value plan below.
+            $this->preparePropertyWriteTarget($left->var);
+            if ($this->getNativePropertyDef($left->var)?->arrayDef !== null) {
+                return $this->parseAssignStaticPropertyArrayDim($left, $right);
+            }
         }
 
         if ($propertyWriteTarget !== null) {
@@ -629,11 +681,14 @@ trait AssignOpTrait
                 : $rightExprType;
             return $var . ' = ' . $this->convertNativePropertyWriteExpr($propertyDef->type, $effectiveRightType, $rightExpr);
         }
-        if ($finalVarType === Type::VAR) {
-            return $var . ' = ' . $rightExpr;
-        } else {
-            return $var . ' = ' . $this->convertExprType($rightExpr, $leftExprType, $rightExprType);
+        $assignedExpr = $finalVarType === Type::VAR
+            ? $rightExpr
+            : $this->convertExprType($rightExpr, $leftExprType, $rightExprType);
+        if ($foldIntoDeclaration) {
+            $this->context->localVarInitializers[$var] = $assignedExpr;
+            return '';
         }
+        return $var . ' = ' . $assignedExpr;
     }
 
     protected function parseAssignPropertyHook(
@@ -1213,16 +1268,37 @@ trait AssignOpTrait
         $propertyWriteTarget = $this->preparePropertyWriteTarget($left->var);
         $code     = '';
         $value    = $this->parseExprAsValue($right);
+        $arrayDefWrite = $this->prepareArrayDefDirectWrite($left, $right, $value);
+        if ($arrayDefWrite !== null) {
+            $value = $arrayDefWrite->value;
+        }
 
         $tmp = $this->genTmpVarName();
         $this->addLocalVar($tmp, Type::VAR);
 
-        if ($left->dim === null) {
+        if ($left->dim === null || ($arrayDefWrite !== null && $arrayDefWrite->append)) {
             return $code . '((' . $tmp . ' = ' . $value . ', ' . $this->emitDynamicPropertyFetchAppendArray($left->var, $tmp, $propertyWriteTarget) . '), ' . $tmp . ')';
         }
-        $dim = $this->parseIdentifier($left->dim);
+        $dim = $arrayDefWrite?->key ?? $this->parseIdentifier($left->dim);
 
         return $code . '((' . $tmp . ' = ' . $value . ', ' . $this->emitDynamicPropertyFetchUpdateArray($left->var, $dim, $tmp, $propertyWriteTarget) . '), ' . $tmp . ')';
+    }
+
+    protected function parseAssignStaticPropertyArrayDim(Expr\ArrayDimFetch $left, Expr $right): string
+    {
+        $value = $this->parseExprAsValue($right);
+        $arrayDefWrite = $this->prepareArrayDefDirectWrite($left, $right, $value);
+        $array = $this->parseWritableIdentifier($left->var);
+
+        $tmp = $this->genTmpVarName();
+        $this->addLocalVar($tmp, Type::VAR);
+        $value = $arrayDefWrite?->value ?? $value;
+
+        if ($left->dim === null || ($arrayDefWrite !== null && $arrayDefWrite->append)) {
+            return '((' . $tmp . ' = ' . $value . ', ' . $array . '.newItem() = ' . $tmp . '), ' . $tmp . ')';
+        }
+        $dim = $arrayDefWrite?->key ?? $this->parseIdentifier($left->dim);
+        return '((' . $tmp . ' = ' . $value . ', ' . $array . '.item(' . $dim . ', true) = ' . $tmp . '), ' . $tmp . ')';
     }
 
     protected function parseAssignOpCoalesce(Expr\AssignOp\Coalesce $expr): string
