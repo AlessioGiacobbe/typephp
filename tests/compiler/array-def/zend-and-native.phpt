@@ -62,6 +62,7 @@ function main(): void
     $native->counters['ok'] = 11;
 
     writeDynamicList($zend, 1, 'dynamic');
+    writeDynamicList($zend, count($zend->names), 'appended');
     writeDynamicMap($native, 'dynamic', 12);
 
     var_dump($zend->names, $zend->labels, ZendArrayDefBox::$staticCounters, $promoted->values, $native->values, $native->counters);
@@ -87,18 +88,20 @@ function main(): void
         echo "map value type checked\n";
     }
     try {
-        writeDynamicList($zend, 20, 'out');
+        writeDynamicList($zend, count($zend->names) + 1, 'out');
     } catch (Error $error) {
         echo "list bounds checked\n";
     }
 }
 ?>
 --EXPECT--
-array(2) {
+array(3) {
   [0]=>
   string(7) "changed"
   [1]=>
   string(7) "dynamic"
+  [2]=>
+  string(8) "appended"
 }
 array(1) {
   [10]=>

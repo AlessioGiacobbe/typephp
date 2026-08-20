@@ -25,10 +25,15 @@ the normal write unchanged or reports a fatal type error. An `any` key/value is
 checked with PHPX exact-type helpers at runtime. No coercive `intval()` or
 string conversion is performed.
 
-List writes support `[]`, an existing integer index, and the exact append form
-`$object->property[count($object->property)]`. Existing-index writes use
-`php::safeIndex()`; negative and out-of-range indexes fail at runtime. Maps do
-not support `[]` append writes.
+List writes support `[]` and non-negative integer indexes up to PHP's current
+append position. Indexed writes uniformly emit `php::safeArrayIndex(index,
+array)`. The helper uses `zend_hash_next_free_element()` and follows the
+initial-index rule of `zend_hash_next_index_insert()`, which remains correct
+when `unset()` has created holes or removed the highest numeric key. An index
+equal to that value behaves like the next `$array[]` append; earlier indexes
+may update or refill an element. Negative indexes and indexes beyond the append
+position fail at runtime. There is no AST special case for
+`property[count(property)]`. Maps do not support `[]` append writes.
 
 The contract intentionally applies only to direct element assignment lowered
 by TypePHP. Reads and in-place operators are unchanged. Values passed through

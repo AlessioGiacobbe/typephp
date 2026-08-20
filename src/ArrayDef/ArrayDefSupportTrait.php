@@ -117,16 +117,14 @@ trait ArrayDefSupportTrait
             return new ArrayDefWritePlan(true, null, $value);
         }
 
-        if ($arrayDef->isList() && $this->isArrayDefCountAppend($left->dim, $left->var)) {
-            return new ArrayDefWritePlan(true, null, $value);
-        }
-
         $expectedKey = $arrayDef->keyType ?? Type::INT;
         $key = $this->parseExprAsValue($left->dim);
         $key = $this->validateArrayDefWriteValue($left->var, $left->dim, $key, $expectedKey, 'key');
         if ($arrayDef->isList()) {
             $array = $this->parseWritableIdentifier($left->var);
-            $key = 'php::safeIndex(' . $key . ', ' . $array . '.length())';
+            // PHP's append index does not shrink after unset(). Element count
+            // is therefore not a valid list-write boundary for sparse arrays.
+            $key = 'php::safeArrayIndex(' . $key . ', ' . $array . ')';
         }
 
         return new ArrayDefWritePlan(false, $key, $value);
@@ -254,38 +252,4 @@ trait ArrayDefSupportTrait
         ], true);
     }
 
-    private function isArrayDefCountAppend(Expr $dim, Expr $property): bool
-    {
-        if (!$dim instanceof Expr\FuncCall
-            || !$dim->name instanceof Node\Name
-            || strtolower(ltrim($dim->name->toString(), '\\')) !== 'count'
-            || count($dim->args) !== 1
-            || !$dim->args[0] instanceof Node\Arg
-        ) {
-            return false;
-        }
-        return $this->isSameArrayDefProperty($dim->args[0]->value, $property);
-    }
-
-    private function isSameArrayDefProperty(Expr $left, Expr $right): bool
-    {
-        if ($left instanceof Expr\StaticPropertyFetch && $right instanceof Expr\StaticPropertyFetch) {
-            return $left->class instanceof Node\Name
-                && $right->class instanceof Node\Name
-                && $left->name instanceof Node\Identifier
-                && $right->name instanceof Node\Identifier
-                && strcasecmp($left->class->toString(), $right->class->toString()) === 0
-                && strcasecmp($left->name->toString(), $right->name->toString()) === 0;
-        }
-        if (!$left instanceof Expr\PropertyFetch || !$right instanceof Expr\PropertyFetch
-            || !$left->name instanceof Node\Identifier || !$right->name instanceof Node\Identifier
-            || strcasecmp($left->name->toString(), $right->name->toString()) !== 0
-        ) {
-            return false;
-        }
-        return $left->var instanceof Expr\Variable
-            && $right->var instanceof Expr\Variable
-            && is_string($left->var->name)
-            && $left->var->name === $right->var->name;
-    }
 }

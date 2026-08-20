@@ -1,5 +1,7 @@
 <?php
 
+use TypePhp\CompilerTest;
+
 final class ArrayDefTest extends \BaseTest
 {
     public function testArrayDefDeclarationAndDirectWriteDiagnostics(): void
@@ -15,5 +17,23 @@ final class ArrayDefTest extends \BaseTest
         $this->exec('expects value of type ArrayDefExpectedUser, ArrayDefOtherUser given', 'array-def-static-class-mismatch.php');
         $this->exec('Native class types cannot be used in ArrayDef', 'array-def-native-class-value.php');
         $this->exec('Std Container values cannot be stored in ArrayDef properties', 'array-def-std-container-value.php');
+    }
+
+    public function testListIndexUsesPhpAppendBoundaryWithoutAstSpecialCase(): void
+    {
+        global $translator;
+
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $translator = $compiler;
+        $source = ROOT_PATH . '/phpunit/code/array-def-inclusive-upper-bound.php';
+        $compiler->addFiles([$source]);
+        $compiler->prepareFile($source);
+        $generated = $compiler->convertFile($source);
+        $code = file_get_contents($generated);
+
+        self::assertIsString($code);
+        self::assertSame(2, substr_count($code, 'php::safeArrayIndex('));
+        self::assertStringNotContainsString('.length() + 1', $code);
+        self::assertStringNotContainsString('.newItem()', $code);
     }
 }
