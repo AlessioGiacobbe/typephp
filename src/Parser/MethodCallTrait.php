@@ -322,7 +322,7 @@ trait MethodCallTrait
             // object's parent. Resolve the method there; the receiver below is
             // selected from the current static/instance context.
             $methodPtr = 'php::getMethod(' . $this->getClassEntryPtr($parentClass) . ', '
-                . $this->identifierToStr($expr->name) . ')';
+                . $this->methodNameToStr($expr->name) . ')';
             // A dynamic parent call made from a static method cannot have an
             // object receiver. Zend validates the resolved method at runtime.
             $staticCall = (bool) ($this->methodDef->flags & Modifiers::STATIC);
@@ -437,7 +437,7 @@ trait MethodCallTrait
         }
 
         $magicMethod = false;
-        $method = $this->identifierToStr($expr->name, literal: true);
+        $method = $this->methodNameToStr($expr->name, literal: true);
 
         $pythonFacadeCall = $this->parsePythonNativeFacadeMethodCall($expr, $object);
         if ($pythonFacadeCall !== null) {
@@ -795,9 +795,9 @@ trait MethodCallTrait
                 goto _do_call;
             }
             if ($this->getVarType($var) == Type::OBJECT) {
-                $fn = 'php::concat({' . $var . '.getClassName(), "::", ' . $this->identifierToStr($expr->name) . '})';
+                $fn = 'php::concat({' . $var . '.getClassName(), "::", ' . $this->methodNameToStr($expr->name) . '})';
             } else {
-                $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
+                $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->methodNameToStr($expr->name) . '})';
             }
             $placeHolder = $fn;
         } elseif ($this->isNameExpr($expr->class) and $class === 'static') {
@@ -808,7 +808,7 @@ trait MethodCallTrait
                 );
             }
             $method = $this->parseIdentifier($expr->name);
-            $methodPtr = $this->identifierToStr($expr->name, literal: true);
+            $methodPtr = $this->methodNameToStr($expr->name, literal: true);
             $fn = Symbol::getCalledCe() . ', php::getMethod(' . Symbol::getCalledCe() . ', ' . $methodPtr . ')';
             if ($this->debug) {
                 $this->context->beforeStmtLines[] = $this->formatCppLineComment(
@@ -882,7 +882,7 @@ trait MethodCallTrait
             $fn = $this->getLiteralString($class . '::' . $method);
             $placeHolder = $this->genArray($callScope);
         } else {
-            $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->identifierToStr($expr->name) . '})';
+            $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->methodNameToStr($expr->name) . '})';
             $placeHolder = $fn;
         }
 

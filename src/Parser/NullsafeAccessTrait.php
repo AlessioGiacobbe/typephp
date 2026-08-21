@@ -54,13 +54,13 @@ trait NullsafeAccessTrait
                 $list[] = ['property', $this->propertyNameToStr($expr->name, literal: true), $expr, true];
                 $expr = $expr->var;
             } elseif ($expr instanceof Expr\NullsafeMethodCall) {
-                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, true, $expr];
+                $list[] = ['method', $this->methodNameToStr($expr->name, literal: true), $expr->args, true, $expr];
                 $expr = $expr->var;
             } elseif ($expr instanceof Expr\PropertyFetch) {
                 $list[] = ['property', $this->propertyNameToStr($expr->name, literal: true), $expr, false];
                 $expr = $expr->var;
             } elseif ($expr instanceof Expr\MethodCall) {
-                $list[] = ['method', $this->identifierToStr($expr->name, literal: true), $expr->args, false, $expr];
+                $list[] = ['method', $this->methodNameToStr($expr->name, literal: true), $expr->args, false, $expr];
                 $expr = $expr->var;
             } else {
                 if ($this->isVarExpr($expr)) {

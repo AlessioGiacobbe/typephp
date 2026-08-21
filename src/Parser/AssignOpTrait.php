@@ -897,7 +897,11 @@ trait AssignOpTrait
             $type      = $this->detectVarType($node->var);
             $rightType = $this->detectTypeOfExpr($node->expr);
             $tmpVar    = $this->genTmpVarName();
-            $this->addLocalVar($tmpVar, $rightType);
+            // PHP arrays are dynamically typed even when SSA can currently
+            // infer an element as int. Keep the compound result in Variant so
+            // Zend arithmetic promotes overflowing integers to float instead
+            // of evaluating a signed C++ expression with undefined behavior.
+            $this->addLocalVar($tmpVar, Type::VAR);
             $dim      = $this->parseIdentifier($node->var->dim);
             $readVar  = $this->parseArrayDimFetchRead($node->var);
             $binaryOp = $this->removeAssignOp($op);

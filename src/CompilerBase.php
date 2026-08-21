@@ -4631,6 +4631,15 @@ class CompilerBase implements PropertyAccessContext
         return $this->identifierToStr($node, $require, $literal);
     }
 
+    /**
+     * Method identifiers share the same lexical rules as property names:
+     * `self` and `static` are ordinary member names here, not class keywords.
+     */
+    protected function methodNameToStr(NodeAbstract $node, bool $require = true, bool $literal = false): string
+    {
+        return $this->propertyNameToStr($node, $require, $literal);
+    }
+
     protected function requireVar($node, string $var): void
     {
         if (!$this->hasVar($var)) {
