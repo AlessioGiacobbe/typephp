@@ -542,6 +542,12 @@ trait BinaryOpTrait
             $type = $this->getOrderedOperandTmpType($expr, (string) $value);
             $tmpVar = $this->addTmpVar($type);
         }
+        if ($this->nativeTypes && $this->isNativeType($type)) {
+            // A native temporary has a fixed C++ scalar ABI. The expression
+            // can still contain a dynamic operand (for example, an array
+            // element), so normalize it at the materialization boundary.
+            $value = $this->convertExprFromType($type, (string) $value);
+        }
         $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $value . ';';
         $this->appendCapturedStmtLinesToContext($afterStmts);
         if ($this->isNativeObjectClass($nativeClass)) {
@@ -560,18 +566,25 @@ trait BinaryOpTrait
 
     protected function getOrderedOperandTmpType(NodeAbstract $expr, string $value): string
     {
-        if ($expr instanceof Expr\BinaryOp) {
-            $type = $this->detectTypeOfExpr($expr);
-            return in_array($type, [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT], true) ? $type : Type::VAR;
-        }
-
         if (
-            $expr instanceof Expr\FuncCall
+            $expr instanceof Expr\BinaryOp
+            || $expr instanceof Expr\FuncCall
             || $expr instanceof Expr\MethodCall
             || $expr instanceof Expr\StaticCall
         ) {
             $type = $this->detectTypeOfExpr($expr);
-            return in_array($type, [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT], true) ? $type : Type::VAR;
+            if (
+                in_array($type, [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT], true)
+                || ($this->nativeTypes && $this->isNativeType($type))
+            ) {
+                // Calls and nested binary operands are materialized to preserve
+                // PHP's left-to-right evaluation order. In native-types mode
+                // their scalar result has a fixed C++ representation, so
+                // boxing it in a Variant would add dynamic arithmetic and zval
+                // lifetime work to otherwise native expressions.
+                return $type;
+            }
+            return Type::VAR;
         }
 
         if ($expr instanceof Expr\PropertyFetch) {

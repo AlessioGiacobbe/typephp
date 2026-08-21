@@ -873,6 +873,9 @@ trait AssignOpTrait
                 if ($this->isArrayVar($node->var)) {
                     $this->fatalError($node->var, 'Cannot concat string to array');
                 }
+                if ($type === Type::STR) {
+                    return $this->parseInPlaceStringConcatAssign($node, $var);
+                }
                 return $var . ' = ' . $this->parseFlattenedConcat($node->expr, [
                     $this->prepareConcatOperand($var, $type),
                 ]);
@@ -956,6 +959,25 @@ trait AssignOpTrait
             return $var . ' = php::toString(' . $this->parseFlattenedConcat($node->expr, [$var]) . ')';
         }
         return $var . ' ' . $op . ' (' . $expr . ')';
+    }
+
+    /**
+     * Preserve PHP's concat-assignment operation for statically typed strings.
+     * String::append() calls concat_function() with the target as both the
+     * result and left operand, allowing Zend to extend an unshared string in
+     * place. Rebuilding `target = concat(target, rhs)` would copy the complete
+     * prefix on every iteration and turn repeated `.=` into O(n^2) work.
+     *
+     * A compound RHS is still evaluated completely before the target changes.
+     * The comma expression keeps `.=` usable as a value expression.
+     */
+    private function parseInPlaceStringConcatAssign(Expr\AssignOp\Concat $node, string $var): string
+    {
+        $right = $node->expr instanceof Expr\BinaryOp\Concat
+            ? $this->parseFlattenedConcat($node->expr)
+            : $this->parseExprAsValue($node->expr);
+
+        return '(' . $var . '.append(' . $right . '), ' . $var . ')';
     }
 
     protected function parseNativePropertyAssignOp(Expr\AssignOp $node, string $op): ?string

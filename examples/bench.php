@@ -179,11 +179,11 @@ function ary3(int $n) {
 
 /****/
 
-function fibo_r(int $n){
+function fibo_r(int $n): int {
     return(($n < 2) ? 1 : fibo_r($n - 2) + fibo_r($n - 1));
 }
 
-function fibo(int $n) {
+function fibo(int $n): void {
   $r = fibo_r($n);
   print "$r\n";
 }
