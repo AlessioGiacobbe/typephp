@@ -654,6 +654,8 @@ php bin/tpc.php examples/prime -o prime
 
 ### 1. 函数命名规范
 
+这里的 `php_` 仅用于“用户 PHP 函数/类方法到 C++ callable”的 ABI 映射，不是 TypePHP 或 PHPX 内部 helper 的通用前缀。内部 ZendAPI 包装必须使用 `php::`，TypePHP 独有逻辑使用 `typephp_`。完整规则参见 [C++ 命名空间、前缀与符号 ABI](CPP_SYMBOL_NAMING.md)。
+
 ✅ **正确**:
 ```cpp
 bool php_is_prime(php::Int n);
@@ -713,7 +715,8 @@ class InternalService {}
 `NoExport` 与 `ExtensionProvider` 都遵循 PHP 类名解析规则，支持完全限定名、`use` 和 `use ... as ...` 别名。只有解析结果严格指向根命名空间内建 Attribute 时，编译器才会消费它。
 
 `php_<target>_func_decl.h` 和 `php_<target>_data_decl.h` 都是 TypePHP 构建过程的内部生成文件，不是库的对外开发头文件。
-`func_decl.h` 在 `-m lib` 构建时还会被强制包含，用于给当前 target 的 `php_*` C++ ABI 函数添加平台导出标记；`data_decl.h` 仅在 target 内部声明全局变量、字面量、常量对象和运行时映射等数据。
+`func_decl.h` 在 `-m lib` 构建时还会被强制包含，用于给当前 target 的 `php_*` C++ ABI 函数添加平台导出标记；`data_decl.h` 仅在 target 内部声明全局变量、常量对象以及字面量/运行时映射 accessor。
+这些项目数据声明位于 `typephp_<target>` C++ namespace；literal/cache 底层表保留在 `extension-<target>.cc` 中，其他 translation unit 只通过 `get_str()`、`get_class()`、`get_func()` 等 accessor 使用，不直接依赖 storage。
 
 发布 TypePHP 库时，对外提供：
 
