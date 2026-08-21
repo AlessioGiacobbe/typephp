@@ -135,19 +135,19 @@ TypePHP 父类已经安装自定义 allocator 时，普通子类通常直接继�
 
 在 micro benchmark 中，仅包含标量属性的 `new Foo()` 已从约 `1.8s` 降至约 `0.78s`，与同环境 ZendPHP 扣除空循环后的约 `0.83s` 接近。该数字只用于记录优化量级，不是跨机器性能承诺。
 
-## 7. 剩余性能成本与后续方向
+## 7. 已实现优化、剩余成本与后续方向
 
-### 7.1 非空数组应改为请求级模板与 copy-on-write
+### 7.1 非空数组使用请求级模板与 copy-on-write
 
-当前实现仍在每个对象中重新构建 `php::Array` 及所有元素，这是剩余的最大常见成本。不能把非空数组放进 internal class 的默认属性表，但这不等于必须为每个对象重新构建数组。
+不能把非空数组放进 internal class 的默认属性表，但这不等于必须为每个对象重新构建数组。当前生成器已经使用请求级默认值模板：
 
-推荐生成一个请求级默认值模板：
-
-1. 每个包含运行时数组默认值的类拥有一组 `THREAD_LOCAL php::Var` 模板和一个初始化状态；
+1. 每个包含运行时数组默认值的类拥有一组 `THREAD_LOCAL php::Var` 模板和一个初始化状态，NTS 构建不引入锁；
 2. 第一次创建该类对象时，通过 `UNEXPECTED(!initialized)` 惰性构建该类的全部模板；
-3. 后续创建对象时只把模板 zval 复制到目标 backing slot，即增加一次数组引用计数；
-4. 某个对象第一次修改该属性时，由 Zend/PHPX 的 `SEPARATE_ARRAY` 执行 copy-on-write；
-5. 在 `php_app_clean()` 中释放模板并重置初始化状态，不能让 request allocator 分配的 HashTable 跨越 RSHUTDOWN。
+3. 模板全部在局部临时值中成功构建后才提交并设置初始化标记，构造异常不会发布半初始化状态；
+4. 模板初始化发生在对象分配之前，失败时不会遗留一个尚未返回的对象；
+5. 后续创建对象时只把模板 zval 复制到目标 backing slot，即增加一次数组引用计数；
+6. 某个对象第一次修改该属性时，由 Zend/PHPX 的 `SEPARATE_ARRAY` 执行 copy-on-write；
+7. 在 `php_app_clean()` 中释放模板并重置初始化状态，request allocator 分配的 HashTable 不会跨越 RSHUTDOWN。
 
 以如下默认值为例：
 
@@ -163,15 +163,15 @@ class Request
 
 若创建一万个对象但不修改 `$options`，数组及嵌套数组只构建一次；每个对象只持有共享 zval。若其中一个对象执行 `$request->options['timeout'] = 30`，只有该对象在写入时分离，其他对象和模板保持不变。嵌套数组也继续使用 Zend 原有的逐层 copy-on-write 规则。
 
-PHP 属性默认数组不能包含引用，允许出现在常量表达式中的对象主要是不可变的 enum case，因此共享模板符合默认属性语义。实现后仍须用 PHPT 覆盖顶层写入、嵌套写入、`unset`、引用写入和动态 ZendVM 写入，确认所有路径都会正确分离。
+PHP 属性默认数组不能包含引用，允许出现在常量表达式中的对象主要是不可变的 enum case，因此共享模板符合默认属性语义。PHPT 已覆盖顶层写入、嵌套写入、`unset`、引用写入和动态对象写入，确认这些路径都会正确分离。
 
 不能简单地在 MINIT 构造持久化数组并传给 `zend_declare_typed_property()`。TypePHP 注册的是 `ZEND_INTERNAL_CLASS`，Zend 8.4 明确禁止 internal property 使用 refcounted default zval；`_object_properties_init()` 的 internal-class 快速路径也不会增加默认值引用计数。非空 array 与 enum object 都属于 refcounted value。
 
-因此，在不改变“TypePHP Class 注册为 internal class”这一基础设计、也不修改 Zend ABI 的前提下，非空数组仍不能进入 class default table；但可以在表外维护请求级模板，使数组构造成本从“每个对象一次”降为“每个请求、每个默认值一次”。
+因此，在不改变“TypePHP Class 注册为 internal class”这一基础设计、也不修改 Zend ABI 的前提下，非空数组仍不进入 class default table；表外请求级模板把数组构造成本从“每个对象一次”降为“每个请求、每个默认值一次”。未修改默认数组的对象只承担 zval 复制和引用计数成本，实际修改的对象才承担数组分离成本。
 
-模板建议按类惰性初始化，而不是在 RINIT 无条件构建全部模板：大型项目中很多类在一次请求内不会实例化。每个对象只增加一个高度可预测的初始化状态分支；第一次之后该分支稳定为 false。
+模板按类惰性初始化，而不是在 RINIT 无条件构建全部模板：大型项目中很多类在一次请求内不会实例化。每个对象只增加一个高度可预测的初始化状态分支；第一次之后该分支稳定为 false。
 
-第二阶段可以为完全由标量、字符串和嵌套字面量组成的数组生成模块生命周期的 persistent immutable template。它能进一步消除每个请求的一次构建，但需要正确处理 persistent HashTable、interned string、嵌套数组、MSHUTDOWN 和 ZTS，并把包含运行时常量或 enum case 的数组留在请求级路径。该方案侵入性和验证成本明显更高，不应作为第一阶段实现。
+暂不生成模块生命周期的 persistent immutable template。该方案需要完整验证 persistent HashTable、interned string、嵌套数组、MSHUTDOWN 和 ZTS，并且包含运行时常量或 enum case 的数组仍要走请求级路径。在 ZendVM 对这些组合的约束得到充分验证前，请求级模板是安全边界。
 
 ### 7.2 已改为固定属性槽写入
 

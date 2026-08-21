@@ -75,35 +75,46 @@ final class NewObjectCodegenTest extends \BaseTest
         [, $extension] = $this->compileFixtureAndExtension();
 
         self::assertStringContainsString(
-            'THREAD_LOCAL bool php_request_array_defaults_initialized_RuntimeArrayDefaultCodegen = false;',
+            'THREAD_LOCAL bool typephp_request_array_defaults_initialized_RuntimeArrayDefaultCodegen = false;',
             $extension,
         );
         self::assertStringContainsString(
-            'THREAD_LOCAL php::Var php_request_array_default_runtimearraydefaultcodegen__values;',
+            'THREAD_LOCAL php::Var typephp_request_array_default_runtimearraydefaultcodegen__values;',
             $extension,
         );
         self::assertStringContainsString(
-            'THREAD_LOCAL php::Var php_request_array_default_runtimearraydefaultcodegen__labels;',
+            'THREAD_LOCAL php::Var typephp_request_array_default_runtimearraydefaultcodegen__labels;',
             $extension,
         );
         self::assertMatchesRegularExpression(
-            '/if \(UNEXPECTED\(!php_request_array_defaults_initialized_RuntimeArrayDefaultCodegen\)\) \{[\s\S]*prepared_default_0[\s\S]*prepared_default_1[\s\S]*php_request_array_defaults_initialized_RuntimeArrayDefaultCodegen = true;/',
+            '/if \(UNEXPECTED\(!typephp_request_array_defaults_initialized_RuntimeArrayDefaultCodegen\)\) \{[\s\S]*prepared_default_0[\s\S]*prepared_default_1[\s\S]*typephp_request_array_defaults_initialized_RuntimeArrayDefaultCodegen = true;/',
             $extension,
         );
-        self::assertMatchesRegularExpression(
-            '/create_object_RuntimeArrayDefaultCodegen[^=]*= \[\][\s\S]*php_ensure_request_array_defaults_RuntimeArrayDefaultCodegen\(\);[\s\S]*typephp_create_object_with_defaults/',
+        $createObject = strpos(
+            $extension,
+            'php_class_entry_RuntimeArrayDefaultCodegen->create_object = [](zend_class_entry *class_type)',
+        );
+        self::assertIsInt($createObject);
+        $ensureDefaults = strpos(
+            $extension,
+            'typephp_ensure_request_array_defaults_RuntimeArrayDefaultCodegen();',
+            $createObject,
+        );
+        self::assertIsInt($ensureDefaults);
+        $allocateObject = strpos($extension, 'typephp_create_object_with_defaults(', $ensureDefaults);
+        self::assertIsInt($allocateObject);
+        self::assertLessThan($ensureDefaults, $createObject);
+        self::assertLessThan($allocateObject, $ensureDefaults);
+        self::assertStringContainsString(
+            '= typephp_request_array_default_runtimearraydefaultcodegen__values;',
             $extension,
         );
         self::assertStringContainsString(
-            '= php_request_array_default_runtimearraydefaultcodegen__values;',
+            'typephp_request_array_default_runtimearraydefaultcodegen__values.unset();',
             $extension,
         );
         self::assertStringContainsString(
-            'php_request_array_default_runtimearraydefaultcodegen__values.unset();',
-            $extension,
-        );
-        self::assertStringContainsString(
-            'php_request_array_default_runtimearraydefaultcodegen__labels.unset();',
+            'typephp_request_array_default_runtimearraydefaultcodegen__labels.unset();',
             $extension,
         );
     }

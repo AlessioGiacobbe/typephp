@@ -1994,17 +1994,17 @@ CODE;
 
     private function getRequestArrayDefaultInitializedName(ClassDef $classDef): string
     {
-        return self::PREFIX . 'request_array_defaults_initialized_' . $classDef->getNamespacedName();
+        return 'typephp_request_array_defaults_initialized_' . $classDef->getNamespacedName();
     }
 
     private function getRequestArrayDefaultInitializerName(ClassDef $classDef): string
     {
-        return self::PREFIX . 'ensure_request_array_defaults_' . $classDef->getNamespacedName();
+        return 'typephp_ensure_request_array_defaults_' . $classDef->getNamespacedName();
     }
 
     private function getRequestArrayDefaultTemplateName(ClassDef $classDef, PropertyDef $property): string
     {
-        return self::PREFIX . 'request_array_default_'
+        return 'typephp_request_array_default_'
             . $this->getNativeName($property->name, $classDef->namespace, $classDef->name);
     }
 
@@ -2066,7 +2066,10 @@ CODE;
                 $plan = $property->arrayInitPlan;
                 $code .= '        do {' . PHP_EOL;
                 $code .= $this->indentGeneratedBlock($plan->init, 3);
-                $code .= "            prepared_default_{$index} = {$plan->expr};" . PHP_EOL;
+                $code .= $this->indentGeneratedBlock(
+                    "prepared_default_{$index} = {$plan->expr};",
+                    3,
+                );
                 $code .= $this->indentGeneratedBlock($plan->clean, 3);
                 $code .= '        } while (0);' . PHP_EOL;
             }

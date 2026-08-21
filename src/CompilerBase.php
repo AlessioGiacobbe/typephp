@@ -426,6 +426,8 @@ class CompilerBase implements PropertyAccessContext
     protected ?MethodDef $methodDef = null;
     protected ?InterfaceDef $interfaceDef = null;
     protected bool $inGeneratorBody = false;
+    /** Parameter-default helpers have no ordinary function-entry declaration block. */
+    protected bool $allowLocalClassEntryHoisting = true;
     private ?DiagnosticReporter $diagnosticReporter = null;
     protected FunctionContext $context;
     protected array $superGlobalVars = [
@@ -1344,7 +1346,7 @@ class CompilerBase implements PropertyAccessContext
      */
     protected function getLocalClassEntryPtr(string $className): string
     {
-        if (!$this->isProcessStableClass($className)) {
+        if (!$this->allowLocalClassEntryHoisting || !$this->isProcessStableClass($className)) {
             return $this->getClassEntryPtr($className);
         }
         if (isset($this->context->classEntryPtrs[$className])) {
@@ -1354,6 +1356,17 @@ class CompilerBase implements PropertyAccessContext
         $entry = $this->genTmpVarName();
         $this->context->classEntryPtrs[$className] = $entry;
         return $entry;
+    }
+
+    protected function withoutLocalClassEntryHoisting(callable $callback): mixed
+    {
+        $allowLocalClassEntryHoisting = $this->allowLocalClassEntryHoisting;
+        $this->allowLocalClassEntryHoisting = false;
+        try {
+            return $callback();
+        } finally {
+            $this->allowLocalClassEntryHoisting = $allowLocalClassEntryHoisting;
+        }
     }
 
     /** The declaring class controls visibility; the runtime called class does not. */
@@ -1588,19 +1601,26 @@ class CompilerBase implements PropertyAccessContext
         if (!$default) {
             return null;
         }
-        /*
-         * 函数参数默认值只能为字面量，无法使用表达式获取值。
-         * 但 PHP 自 5.6 起支持在默认参数值中使用常量表达式，包括
-         * 类常量（self::FOO、ClassName::BAR、\Full\Class::BAZ），
-         * 编译器需要在编译期将其折叠为对应的字面量。
-         */
-        if ($default instanceof Expr\ConstFetch) {
-            return $this->parseConstFetch($default, true);
-        }
-        if ($default instanceof Expr\ClassConstFetch) {
-            return $this->parseClassConstFetch($default);
-        }
-        return $this->parseIdentifier($default);
+        return $this->withoutLocalClassEntryHoisting(function () use ($default): string {
+            /*
+             * 函数参数默认值只能为字面量，无法使用表达式获取值。
+             * 但 PHP 自 5.6 起支持在默认参数值中使用常量表达式，包括
+             * 类常量（self::FOO、ClassName::BAR、\Full\Class::BAZ），
+             * 编译器需要在编译期将其折叠为对应的字面量。
+             *
+             * PHP 8.1 also permits `new` in selected default-value contexts.
+             * These expressions are emitted into standalone helper functions,
+             * so a class entry must remain in the helper expression rather than
+             * being hoisted into the containing function's entry block.
+             */
+            if ($default instanceof Expr\ConstFetch) {
+                return $this->parseConstFetch($default, true);
+            }
+            if ($default instanceof Expr\ClassConstFetch) {
+                return $this->parseClassConstFetch($default);
+            }
+            return $this->parseIdentifier($default);
+        });
     }
 
     protected function getComment(Node\Stmt $v, string $class): string

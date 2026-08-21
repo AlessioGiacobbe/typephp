@@ -660,7 +660,9 @@ class Preprocessor extends CompilerBase
             }
             if ($param->default) {
                 $arrayInitPlan = $param->default instanceof Node\Expr\Array_
-                    ? $this->buildLiteralArrayInitPlan($param->default)
+                    ? $this->withoutLocalClassEntryHoisting(
+                        fn (): ArrayInitPlan => $this->buildLiteralArrayInitPlan($param->default),
+                    )
                     : null;
                 if ($param->byRef) {
                     if ($this->isEmptyArray($param->default)) {
