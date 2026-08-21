@@ -255,7 +255,7 @@ trait TypeCheckGenerator
             'iterable' => '(' . $v . '.isArray() || (' . $v . '.isObject() && php::instanceOf(' . $v . ', zend_ce_traversable)))',
             'allOf' => $this->genAllOfTypeCondition($varName, $entry['types']),
             'instanceof' => $entry['class'] === 'static'
-                ? '(' . $v . '.isObject() && php::instanceOf(' . $v . ', php_get_called_ce(this_)))'
+                ? '(' . $v . '.isObject() && php::instanceOf(' . $v . ', php::getCalledCe(this_)))'
                 : '(' . $v . '.isObject() && php::instanceOf(' . $v . ', ' . $this->getClassEntryPtr($entry['class']) . '))',
             default => '',
         };

@@ -13,9 +13,9 @@ class ScopedCallContextTest extends \BaseTest
         $cppFile = $compiler->convertFile($testFile);
         $cpp = file_get_contents($cppFile);
 
-        $this->assertSame(1, substr_count($cpp, 'php_get_callable_scope('));
+        $this->assertSame(1, substr_count($cpp, 'php::getCallableScope('));
         $this->assertMatchesRegularExpression(
-            '/php::CallableScope (tmp_var_\d+) = php_get_callable_scope\(/',
+            '/php::CallableScope (tmp_var_\d+) = php::getCallableScope\(/',
             $cpp,
         );
         preg_match('/php::CallableScope (tmp_var_\d+) =/', $cpp, $matches);

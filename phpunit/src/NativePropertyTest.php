@@ -38,7 +38,7 @@ class NativePropertyTest extends \BaseTest
         }
 
         $code = file_get_contents($outputFile);
-        $this->assertStringContainsString('tmp_var_0 = php_get_called_class(this_);', $code);
+        $this->assertStringContainsString('tmp_var_0 = php::getCalledClass(this_);', $code);
         $this->assertStringContainsString('php::getStaticProperty((tmp_var_0.isObject()', $code);
         $this->assertStringContainsString('php::getStaticProperty((tmp_var_0.isObject() ? php::fn::get_class(tmp_var_0)', $code);
         $this->assertStringContainsString('= php::toInt(value);', $code);
@@ -56,8 +56,8 @@ class NativePropertyTest extends \BaseTest
         $this->assertStringContainsString('typephp_static_int_ref(this_.attr(', $code);
         $this->assertStringContainsString('typephp_static_int_ref(box.attr(', $code);
         $this->assertSame(2, substr_count($code, 'typephp_static_int_ref('));
-        $this->assertStringNotContainsString('this_.attr(php_get_prop(0, _literal_strings[0], 0, _literal_strings[1]), true) +=', $code);
-        $this->assertStringNotContainsString('box.attr(php_get_prop(0, _literal_strings[0], 0, _literal_strings[1]), true) +=', $code);
+        $this->assertStringNotContainsString('this_.attr(get_persistent_prop(0, get_str(0), 0, get_str(1)), true) +=', $code);
+        $this->assertStringNotContainsString('box.attr(get_persistent_prop(0, get_str(0), 0, get_str(1)), true) +=', $code);
     }
 
     public function testReadonlyPropertiesDoNotUseNativeScalarReferences(): void

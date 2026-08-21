@@ -244,7 +244,7 @@ final class PythonModuleTest extends TestCase
         $this->assertStringContainsString('scalar = php::toInt(', $cpp);
         $this->assertSame(8, substr_count($cpp, 'php::python::construct('));
         $this->assertStringNotContainsString('php::newObject(', $cpp);
-        $this->assertStringNotContainsString('php::call(php_get_persistent_class(_literal_strings', $cpp);
+        $this->assertStringNotContainsString('php::call(get_persistent_class(get_str(', $cpp);
         $this->assertStringNotContainsString('PyList', $extension);
         $this->assertStringNotContainsString('PyDict', $extension);
         $this->assertStringContainsString('THREAD_LOCAL zval php_python_module_map[1]', $extension);

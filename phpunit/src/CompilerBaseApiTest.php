@@ -925,6 +925,26 @@ YAML);
         $this->assertArrayNotHasKey('cxxflags', $options);
     }
 
+    public function testEmbeddedCompileOptionsPassProjectNameForModuleAccessor(): void
+    {
+        $this->compiler->setTargetName('module_accessor');
+
+        foreach ([CompilerBase::BUILD_MODE_BIN, CompilerBase::BUILD_MODE_LIB] as $mode) {
+            $this->setPropertyValue('buildMode', $mode);
+            $options = $this->invokeMethod('getCommonCompileCommandOptions');
+
+            $this->assertContains('TYPEPHP_PROJECT_NAME=module_accessor', $options['user_defines'], $mode);
+            $this->assertSame(
+                [],
+                array_values(array_filter(
+                    $options['user_defines'],
+                    static fn (string $define): bool => str_starts_with($define, 'TYPEPHP_EMBED_GET_MODULE='),
+                )),
+                $mode,
+            );
+        }
+    }
+
     public function testMacosNativeBuildOptionsIncludeHomebrewSearchPaths(): void
     {
         $this->setPropertyValue('platform', new Macos());
@@ -996,20 +1016,22 @@ YAML);
 
             $this->assertStringContainsString('namespace ' . $namespace . ' {', $data, $mode);
             $this->assertStringContainsString('using namespace ' . $namespace . ';', $data, $mode);
-            $this->assertStringContainsString('zend_class_entry *php_get_class(', $data, $mode);
+            $this->assertStringContainsString('zend_class_entry *get_class(', $data, $mode);
             $this->assertStringContainsString('namespace ' . $namespace . ' {', $extension, $mode);
-            $this->assertStringContainsString('zend_class_entry *php_get_class(', $extension, $mode);
+            $this->assertStringContainsString('zend_class_entry *get_class(', $extension, $mode);
+            $this->assertStringContainsString('static void module_init()', $extension, $mode);
+            $this->assertStringContainsString('static void module_clean()', $extension, $mode);
+            $this->assertStringNotContainsString('php_app_init', $extension, $mode);
+            $this->assertStringNotContainsString('php_app_clean', $extension, $mode);
 
-            if ($mode === CompilerBase::BUILD_MODE_BIN) {
-                $this->assertStringContainsString('zend_module_entry *php_embed_get_module()', $extension);
-                $this->assertStringContainsString(
-                    'return &' . $namespace . '::' . $namespace . '_module_entry;',
-                    $extension,
-                );
-            } elseif ($mode === CompilerBase::BUILD_MODE_LIB) {
+            if ($mode === CompilerBase::BUILD_MODE_BIN || $mode === CompilerBase::BUILD_MODE_LIB) {
                 $this->assertStringNotContainsString('zend_module_entry *php_embed_get_module()', $extension);
                 $this->assertStringContainsString(
                     'zend_module_entry *php_' . $target . '_embed_get_module()',
+                    $extension,
+                );
+                $this->assertStringContainsString(
+                    'return &' . $namespace . '::' . $namespace . '_module_entry;',
                     $extension,
                 );
             } else {
@@ -1043,11 +1065,22 @@ YAML);
         $data = file_get_contents($dataFile);
         $extension = file_get_contents($compiler->genExtension());
 
-        $this->assertStringContainsString('extern php::PersistentCacheSlot<zend_class_entry *>', $data);
-        $this->assertStringContainsString('extern php::PersistentCacheSlot<zend_function *>', $data);
-        $this->assertStringContainsString('extern php::PersistentCacheSlot<uint32_t>', $data);
-        $this->assertStringContainsString('php_persistent_class_map', $data);
-        $this->assertStringContainsString('php_get_persistent_class', $extension);
+        $this->assertStringNotContainsString('php_persistent_class_map', $data);
+        $this->assertStringNotContainsString('php_persistent_func_map', $data);
+        $this->assertStringNotContainsString('php_persistent_property_map', $data);
+        $this->assertStringContainsString(
+            'static php::PersistentCacheSlot<zend_class_entry *> php_persistent_class_map',
+            $extension,
+        );
+        $this->assertStringContainsString(
+            'static php::PersistentCacheSlot<zend_function *> php_persistent_func_map',
+            $extension,
+        );
+        $this->assertStringContainsString(
+            'static php::PersistentCacheSlot<uint32_t> php_persistent_property_map',
+            $extension,
+        );
+        $this->assertStringContainsString('get_persistent_class', $extension);
         $this->assertStringContainsString('php::getPersistentCache(php_persistent_class_map[class_id]', $extension);
         $this->assertStringContainsString('for (auto &slot : php_persistent_class_map)', $extension);
         $this->assertStringContainsString('php::resetPersistentCache(slot);', $extension);
@@ -1123,13 +1156,19 @@ YAML);
         $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_INT;', $dataHeader);
         $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_STRING;', $dataHeader);
         $this->assertStringContainsString('extern php::Var _const_var_EXPORTED_ABI_ARRAY;', $dataHeader);
-        $this->assertStringContainsString('extern php::Str _literal_strings[', $dataHeader);
-        $this->assertStringContainsString('extern THREAD_LOCAL zend_function *php_func_map[', $dataHeader);
+        $this->assertStringContainsString(
+            'ZEND_ATTRIBUTE_CONST php::Str &get_str(uint32_t index);',
+            $dataHeader,
+        );
+        $this->assertStringNotContainsString('_literal_strings', $dataHeader);
+        $this->assertStringNotContainsString('php_func_map', $dataHeader);
+        $this->assertStringNotContainsString('php_class_map', $dataHeader);
 
         $extensionFile = $this->compiler->genExtension();
         $extension = file_get_contents($extensionFile);
         $this->assertStringContainsString('php::Str php_exported_defaults_arg_0_default_value() {', $extension);
-        $this->assertStringContainsString('return _literal_strings[', $extension);
+        $this->assertStringContainsString('static php::Str _literal_strings[]', $extension);
+        $this->assertStringContainsString('return get_str(', $extension);
         $this->assertStringContainsString('php::Array php_exported_variadic_arg_0_default_value() {', $extension);
     }
 

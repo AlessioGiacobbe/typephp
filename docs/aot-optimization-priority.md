@@ -372,7 +372,7 @@ if ($x instanceof Logger) {
 
 ```cpp
 // 守卫式去虚拟化
-if (x.getInstanceOf(php_get_class(SubFooA))) {
+if (x.getInstanceOf(get_class(SubFooA))) {
     Aot_SubFooA_method(x);          // 直接调用
 } else {
     Aot_SubFooB_method(x);          // 直接调用（最后一种不用判断）

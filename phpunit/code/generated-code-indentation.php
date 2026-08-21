@@ -18,3 +18,12 @@ function generatedCodeIndentation(array $items): int
 
     return -1;
 }
+
+function generated_empty_function()
+{
+}
+
+function generated_implicit_return()
+{
+    $value = 1;
+}

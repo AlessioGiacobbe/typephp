@@ -36,5 +36,14 @@ class GeneratedCodeIndentationTest extends \PHPUnit\Framework\TestCase
         $this->assertStringNotContainsString("\ntry {", $code);
         $this->assertStringNotContainsString("\ncatch (zend_object", $code);
         $this->assertDoesNotMatchRegularExpression('/}[ \\t]+}/', $code);
+        $this->assertStringContainsString(
+            "php::Var php_generated_empty_function() {\n\treturn php::null;\n}",
+            $code,
+        );
+        $this->assertStringContainsString(
+            "\tphp::Var value = 1L;\n\n\treturn php::null;\n}",
+            $code,
+        );
+        $this->assertStringNotContainsString('return php::null;}', $code);
     }
 }

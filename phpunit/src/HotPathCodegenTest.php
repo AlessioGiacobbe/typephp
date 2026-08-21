@@ -21,7 +21,7 @@ final class HotPathCodegenTest extends \BaseTest
         $code = $this->compileFixture();
 
         self::assertMatchesRegularExpression(
-            '/php::concat\(_literal_strings\[\d+\], limit\)/',
+            '/php::concat\(get_str\(\d+\), limit\)/',
             $code,
         );
         self::assertStringContainsString('php::concat({', $code);
@@ -41,7 +41,7 @@ final class HotPathCodegenTest extends \BaseTest
         $code = $this->compileFixture();
 
         self::assertMatchesRegularExpression(
-            '/hash\.get\(_literal_strings\[\d+\]\)/',
+            '/hash\.get\(get_str\(\d+\)\)/',
             $code,
         );
         self::assertStringContainsString('str.offsetGet(0L)', $code);
@@ -52,7 +52,7 @@ final class HotPathCodegenTest extends \BaseTest
 
         // Compound receivers retain the evaluate-once chain implementation.
         self::assertMatchesRegularExpression(
-            '/php::notEmpty\(hash, \{\{php::ArrayDimFetch, php::Var\(_literal_strings\[\d+\]\)\}\}, tmp_var_\d+\)/',
+            '/php::notEmpty\(hash, \{\{php::ArrayDimFetch, php::Var\(get_str\(\d+\)\)\}\}, tmp_var_\d+\)/',
             $code,
         );
     }

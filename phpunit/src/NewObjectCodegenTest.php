@@ -9,11 +9,11 @@ final class NewObjectCodegenTest extends \BaseTest
         $code = $this->compileFixture();
 
         self::assertMatchesRegularExpression(
-            '/php_createknownobjects\([^)]*\) \{[\s\S]*?zend_class_entry \*(tmp_var_\d+) = php_get_persistent_class\([^;]+;[\s\S]*?php::newObject\(\1\)/',
+            '/php_createknownobjects\([^)]*\) \{[\s\S]*?zend_class_entry \*(tmp_var_\d+) = get_persistent_class\([^;]+;[\s\S]*?php::newObject\(\1\)/',
             $code,
         );
         self::assertStringNotContainsString(
-            'php::newObject(php_get_persistent_class(',
+            'php::newObject(get_persistent_class(',
             $code,
         );
     }
@@ -23,7 +23,7 @@ final class NewObjectCodegenTest extends \BaseTest
         $code = $this->compileFixture();
 
         self::assertMatchesRegularExpression(
-            '/php_createruntimeobject\([^)]*\)[\s\S]*?php::newObject\(php_get_class\(/',
+            '/php_createruntimeobject\([^)]*\)[\s\S]*?php::newObject\(get_class\(/',
             $code,
         );
     }
@@ -33,23 +33,23 @@ final class NewObjectCodegenTest extends \BaseTest
         [, $extension] = $this->compileFixtureAndExtension();
 
         self::assertStringNotContainsString(
-            'create_object_KnownNewObjectCodegen = php_get_create_object_fn',
+            'create_object_KnownNewObjectCodegen = php::getCreateObjectFn',
             $extension,
         );
         self::assertStringNotContainsString(
-            'create_object_EmptyArrayDefaultCodegen = php_get_create_object_fn',
+            'create_object_EmptyArrayDefaultCodegen = php::getCreateObjectFn',
             $extension,
         );
         self::assertStringNotContainsString(
-            'create_object_ScalarExpressionDefaultCodegen = php_get_create_object_fn',
+            'create_object_ScalarExpressionDefaultCodegen = php::getCreateObjectFn',
             $extension,
         );
         self::assertStringNotContainsString(
-            'create_object_ScalarConstantDefaultCodegen = php_get_create_object_fn',
+            'create_object_ScalarConstantDefaultCodegen = php::getCreateObjectFn',
             $extension,
         );
         self::assertStringContainsString(
-            'create_object_RuntimeArrayDefaultCodegen = php_get_create_object_fn',
+            'create_object_RuntimeArrayDefaultCodegen = php::getCreateObjectFn',
             $extension,
         );
         self::assertStringNotContainsString(
@@ -57,15 +57,15 @@ final class NewObjectCodegenTest extends \BaseTest
             $extension,
         );
         self::assertStringContainsString(
-            'create_object_EnumPropertyDefaultCodegen = php_get_create_object_fn',
+            'create_object_EnumPropertyDefaultCodegen = php::getCreateObjectFn',
             $extension,
         );
         self::assertStringNotContainsString(
-            'create_object_HookOnlyDefaultCodegen = php_get_create_object_fn',
+            'create_object_HookOnlyDefaultCodegen = php::getCreateObjectFn',
             $extension,
         );
         self::assertStringNotContainsString(
-            'create_object_AsymmetricOnlyDefaultCodegen = php_get_create_object_fn',
+            'create_object_AsymmetricOnlyDefaultCodegen = php::getCreateObjectFn',
             $extension,
         );
     }

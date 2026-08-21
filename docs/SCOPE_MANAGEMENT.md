@@ -91,13 +91,13 @@ synthetic frame 不会安装到 `EG(current_execute_data)`，因此不会污染�
 编译器通过 `FunctionContext::$callableScopeVar` 延迟申请 Scope 变量。第一次需要显式 callable scope 时，`getCallableScopeExpr()` 分配临时变量；随后 `genScopeVarDecl()` 将初始化代码提升到函数入口：
 
 ```cpp
-php::CallableScope tmp_var_1 = php_get_callable_scope(
-    php_get_persistent_method(...),
+php::CallableScope tmp_var_1 = php::getCallableScope(
+    get_persistent_method(...),
     this_
 );
 ```
 
-`php_get_callable_scope()` 根据 `this_` 同时构建 called scope 和真实实例信息。一个方法内所有 scoped call 都引用同一个 `tmp_var_1`，因此循环中的重复调用不会重复创建 synthetic frame。
+`php::getCallableScope()` 根据 `this_` 同时构建 called scope 和真实实例信息。一个方法内所有 scoped call 都引用同一个 `tmp_var_1`，因此循环中的重复调用不会重复创建 synthetic frame。
 
 如果方法从未使用 scoped dynamic call、first-class callable 或 scoped callback，编译器不会生成该变量。
 
@@ -205,7 +205,7 @@ FunctionContext::$needsUserCodeCallableScope
 当编译器遇到 `call_user_func*` 的动态 callback，或一个已知会同步调用 callback 的内置函数存在无法匹配的参数展开时，`markUserCodeCallableScope()` 设置该标记。状态属于当前 `FunctionContext`，因此普通方法、嵌套 Closure 和 Fiber 各自独立，不会把 guard 错误泄漏到外层函数。每个函数体入口只生成一个：
 
 ```cpp
-php::CallableScope tmp_var_1 = php_get_callable_scope(..., this_);
+php::CallableScope tmp_var_1 = php::getCallableScope(..., this_);
 php::UserCodeScopeGuard tmp_var_2{tmp_var_1};
 ```
 
@@ -358,7 +358,7 @@ save EG(fake_scope)
 Scope 修改至少应覆盖以下层次：
 
 - PHPX 单测：`FakeScopeGuard` 保存、嵌套、恢复和提前 `restore()`；
-- 编译器结构测试：一个方法只生成一个 `php_get_callable_scope()`，多处调用复用同一变量；
+- 编译器结构测试：一个方法只生成一个 `php::getCallableScope()`，多处调用复用同一变量；
 - PHPT：private/protected callback、非静态 `self::method(...)`、public callback；
 - PHPT：callback map 中 public 与 scoped callback 混合；
 - PHPT：`...$args` 中 private callback 可调用，异常退出后 scope 已恢复；
@@ -384,7 +384,7 @@ Scope 修改至少应覆盖以下层次：
 | callable 解析与包装 | `vendor/swoole/phpx/src/core/base.cc`、`vendor/swoole/phpx/src/core/closure.cc` |
 | `FakeScopeGuard` | `vendor/swoole/phpx/include/phpx_fake_scope_guard.h` |
 | `UserCodeScopeGuard` | `vendor/swoole/phpx/src/misc/typephp_helper.h`、`typephp_main.cc` |
-| `php_get_callable_scope()` | `vendor/swoole/phpx/src/misc/typephp_helper.h` |
+| `php::getCallableScope()` | `vendor/swoole/phpx/src/misc/typephp_helper.h` |
 | callback 标记和 Scope 变量生成 | `src/CompilerBase.php` |
 | callback 参数包装 | `src/Generator/CallArgumentGenerator.php` |
 | Closure/Fiber fallback guard | `src/Generator/ClosureGenerator.php`、`FiberGenerator.php` |

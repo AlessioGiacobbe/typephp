@@ -21,7 +21,7 @@ final class LocalVariableInitializerTest extends \BaseTest
         self::assertStringContainsString('php::Var negative = -7L;', $code);
         self::assertStringContainsString('php::Var floating = 1.25;', $code);
         self::assertStringContainsString('php::Var boolean = true;', $code);
-        self::assertMatchesRegularExpression('/php::Str string = _literal_strings\[\d+\];/', $code);
+        self::assertMatchesRegularExpression('/php::Str string = get_str\(\d+\);/', $code);
         self::assertStringContainsString('php::Var nullValue = php::null;', $code);
 
         self::assertStringContainsString('php::Var nested;', $code);
@@ -53,7 +53,7 @@ final class LocalVariableInitializerTest extends \BaseTest
         self::assertStringContainsString('php::Int negative = php::toInt(-7L);', $code);
         self::assertStringContainsString('php::Float floating = php::toFloat(1.25);', $code);
         self::assertStringContainsString('php::Bool boolean = php::toBool(true);', $code);
-        self::assertMatchesRegularExpression('/php::Str string = _literal_strings\[\d+\];/', $code);
+        self::assertMatchesRegularExpression('/php::Str string = get_str\(\d+\);/', $code);
         self::assertStringContainsString('php::Var nullValue = php::null;', $code);
     }
 
@@ -103,15 +103,15 @@ final class LocalVariableInitializerTest extends \BaseTest
         $code = file_get_contents($generated);
 
         self::assertIsString($code);
-        self::assertStringContainsString('php::Var selfValue = _literal_strings[', $code);
+        self::assertStringContainsString('php::Var selfValue = get_str(', $code);
         self::assertStringContainsString('php::Var parentValue = 128L;', $code);
-        self::assertStringContainsString('php::Var concreteValue = _literal_strings[', $code);
-        self::assertStringContainsString('php::Var selfClass = _literal_strings[', $code);
-        self::assertStringContainsString('php::Var parentClass = _literal_strings[', $code);
-        self::assertStringContainsString('php::Var unknownClass = _literal_strings[', $code);
+        self::assertStringContainsString('php::Var concreteValue = get_str(', $code);
+        self::assertStringContainsString('php::Var selfClass = get_str(', $code);
+        self::assertStringContainsString('php::Var parentClass = get_str(', $code);
+        self::assertStringContainsString('php::Var unknownClass = get_str(', $code);
 
         self::assertStringContainsString('php::Var lateStatic;', $code);
-        self::assertStringContainsString('lateStatic = php::constant(php_get_called_ce(this_)', $code);
+        self::assertStringContainsString('lateStatic = php::constant(php::getCalledCe(this_)', $code);
         self::assertStringContainsString('php::Var external = "', $code);
         self::assertStringNotContainsString("php::Var external;\n", $code);
         self::assertStringContainsString('php::Var runtimeClassConstant;', $code);

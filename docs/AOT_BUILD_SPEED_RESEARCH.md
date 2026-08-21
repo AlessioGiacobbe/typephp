@@ -276,7 +276,7 @@ clang-format -i <file>
 字面量数组与字面量字符串不同：
 
 - **字面量字符串** 可以利用永久字符串，绕开 Zend request 生命周期
-- **字面量数组** 必须存在于 `app_init()` 到 `app_clean()`，即 PHP 的 `RINIT/RSHUTDOWN` 之间
+- **字面量数组** 必须存在于 `module_init()` 到 `module_clean()`，即 PHP 的 `RINIT/RSHUTDOWN` 之间
 
 因此后续所有“数组初始化缓存”研究都必须遵守：
 

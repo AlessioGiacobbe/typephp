@@ -374,7 +374,7 @@ trait FuncCallOptimizer
     {
         $arg = $expr->args[$i]->value;
         if ($this->isVarExpr($arg) and $arg->name === 'GLOBALS') {
-            return 'php_globals_array()';
+            return 'php::globalsArray()';
         }
         return $this->parseOrderedOperand($arg, false);
     }

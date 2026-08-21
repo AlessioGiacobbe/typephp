@@ -88,7 +88,7 @@ class Task
 
 ### 4.1 Property Hook 与非对称 set 可见性不单独触发
 
-PHP 8.4 Property Hook、`private(set)` 和 `protected(set)` 会安装 TypePHP 自定义 object handlers，但这本身不要求覆盖 `create_object`。Zend 8.4 的 `object_properties_init()` 直接复制 class default table，不调用 read/write handler；普通 `php_std_create_object` 已能正确设置最终 handlers。
+PHP 8.4 Property Hook、`private(set)` 和 `protected(set)` 会安装 TypePHP 自定义 object handlers，但这本身不要求覆盖 `create_object`。Zend 8.4 的 `object_properties_init()` 直接复制 class default table，不调用 read/write handler；普通 `php::stdCreateObject()` 已能正确设置最终 handlers。
 
 只有该类同时含有非空数组、enum case 等运行时默认值时，才需要自定义创建流程。补充初始化必须绕过 setter；即使使用 `zend_std_write_property()`，PHP 8.4 也会根据 Hook 元数据调用 setter。当前生成代码因此使用编译期已知的 property offset，经 PHPX `Object::attr(offset)` 直接更新 backing slot。
 
@@ -115,7 +115,7 @@ TypePHP 父类已经安装自定义 allocator 时，普通子类通常直接继�
 以下行为不属于 `create_object`：
 
 - PHP `__construct()` 的函数体；
-- static property 默认值初始化；它在 `php_app_init()` 中完成；
+- static property 默认值初始化；它在 `module_init()` 中完成；
 - 已由默认属性表表达的标量、`null` 和空数组赋值；
 - clone 后重新应用默认值；clone 应复制源对象当前状态，而不是重新创建默认状态。
 
@@ -147,7 +147,7 @@ TypePHP 父类已经安装自定义 allocator 时，普通子类通常直接继�
 4. 模板初始化发生在对象分配之前，失败时不会遗留一个尚未返回的对象；
 5. 后续创建对象时只把模板 zval 复制到目标 backing slot，即增加一次数组引用计数；
 6. 某个对象第一次修改该属性时，由 Zend/PHPX 的 `SEPARATE_ARRAY` 执行 copy-on-write；
-7. 在 `php_app_clean()` 中释放模板并重置初始化状态，request allocator 分配的 HashTable 不会跨越 RSHUTDOWN。
+7. 在 `module_clean()` 中释放模板并重置初始化状态，request allocator 分配的 HashTable 不会跨越 RSHUTDOWN。
 
 以如下默认值为例：
 

@@ -68,7 +68,10 @@ trait ClassConstantFetchTrait
 
     private function classConstantValueRequiresRuntimeCall(string $value): bool
     {
-        return preg_match('/\b[A-Za-z_][A-Za-z0-9_:]*\s*\(/', $value) === 1;
+        // get_str() is a pure accessor for the module's immutable literal pool,
+        // so moving it into a hoisted local initializer preserves semantics.
+        $value = preg_replace('/\bget_str\(\d+\)/', '', $value);
+        return preg_match('/\b[A-Za-z_][A-Za-z0-9_:]*\s*\(/', $value ?? '') === 1;
     }
 
     /** @return array{mixed}|null */

@@ -240,6 +240,7 @@ class CompilerBase implements PropertyAccessContext
     public const string VALUE_FALSE = 'php::false_';
     public const string VALUE_TRUE = 'php::true_';
     public const string LITERAL_STRINGS = '_literal_strings';
+    public const string LITERAL_STRING_GETTER = 'get_str';
     public const string ANON_CLASS = '_anon_class_';
     public const string DYNAMIC_CALLED_CLASS = '__dynamic_called_class__';
     public const string STATIC_VAR = '_static_var_';
@@ -881,9 +882,9 @@ class CompilerBase implements PropertyAccessContext
                 }
                 // $GLOBALS is an INDIRECT to &EG(symbol_table),
                 // whose refcount MUST NOT be directly manipulated.
-                // Use php_globals_array() to create a separated copy.
+                // Use php::globalsArray() to create a separated copy.
                 if ($varName === 'GLOBALS') {
-                    return 'php_globals_array()';
+                    return 'php::globalsArray()';
                 }
                 return $varName;
             case 'Scalar_MagicConst_File':
@@ -1335,7 +1336,7 @@ class CompilerBase implements PropertyAccessContext
     protected function getClassEntryPtr(string $className): string
     {
         $id = $this->getClassId($className);
-        $helper = isset($this->persistentClassMap[$className]) ? 'php_get_persistent_class' : 'php_get_class';
+        $helper = isset($this->persistentClassMap[$className]) ? 'get_persistent_class' : 'get_class';
         return $helper . '(' . $id . ', ' . $this->getLiteralString($className) . ')';
     }
 
@@ -1397,7 +1398,7 @@ class CompilerBase implements PropertyAccessContext
             throw new \LogicException('Class methods must be resolved through getMethodPtr()');
         }
         $id = $this->getFuncId($funcName);
-        $helper = isset($this->persistentFuncMap[$funcName]) ? 'php_get_persistent_func' : 'php_get_func';
+        $helper = isset($this->persistentFuncMap[$funcName]) ? 'get_persistent_func' : 'get_func';
         return $helper . '(' . $id . ', ' . $this->getLiteralString($funcName) . ')';
     }
 
@@ -1406,7 +1407,7 @@ class CompilerBase implements PropertyAccessContext
         $funcId = $this->getFuncId($class . '::' . $method);
         $classId = $this->getClassId($class);
         // 方法的稳定性与所属类一致，因此 class_id 必定落在同一张表中
-        $helper = isset($this->persistentFuncMap[$class . '::' . $method]) ? 'php_get_persistent_method' : 'php_get_method';
+        $helper = isset($this->persistentFuncMap[$class . '::' . $method]) ? 'get_persistent_method' : 'get_method';
         return $helper . '(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
@@ -1414,7 +1415,7 @@ class CompilerBase implements PropertyAccessContext
     {
         $propId = $this->getPropertyId($class, $prop);
         $classId = $this->getClassId($class);
-        return 'php_get_persistent_prop(' . $propId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
+        return 'get_persistent_prop(' . $propId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 
     protected function writeLog($msg): void
@@ -1430,7 +1431,7 @@ class CompilerBase implements PropertyAccessContext
             return $this->getInlineString($string);
         }
         $index = $this->literalStrings[$string] ?? $this->addLiteralString($string);
-        return self::LITERAL_STRINGS . '[' . $index . ']';
+        return self::LITERAL_STRING_GETTER . '(' . $index . ')';
     }
 
     /**
@@ -1530,7 +1531,7 @@ class CompilerBase implements PropertyAccessContext
     {
         $this->assertNotNativeObjectArrayKey($expr);
         $key = $this->parseIdentifier($expr);
-        if (str_starts_with($key, self::LITERAL_STRINGS)) {
+        if (str_starts_with($key, self::LITERAL_STRING_GETTER . '(')) {
             $key = "{$key}.str()";
         } elseif ($this->isZeroLiteral($expr)) {
             $key = self::VALUE_ZERO;
@@ -5136,7 +5137,7 @@ class CompilerBase implements PropertyAccessContext
         }
         if ($this->context->callableScopeVar !== null) {
             $code .= $this->getIndent() . 'php::CallableScope '
-                . $this->context->callableScopeVar . ' = php_get_callable_scope('
+                . $this->context->callableScopeVar . ' = php::getCallableScope('
                 . $this->getMethodPtr($this->getFullClassName(), $this->methodDef->name)
                 . ', this_);' . PHP_EOL;
         }
@@ -5173,7 +5174,7 @@ class CompilerBase implements PropertyAccessContext
                 . $this->getClassEntryPtr($className) . ';' . PHP_EOL;
         }
         foreach ($this->context->globalVars as $name => $type) {
-            // $GLOBALS is handled via php_globals_array() at each read site
+            // $GLOBALS is handled via php::globalsArray() at each read site
             if ($name === 'GLOBALS') {
                 continue;
             }

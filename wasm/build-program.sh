@@ -106,6 +106,29 @@ if [[ ${#generated_sources[@]} -eq 0 ]]; then
     exit 1
 fi
 
+# typephp_main.cc references the project-specific module accessor. Keep it out
+# of the reusable libphpx.a and compile it with this program's project token.
+project_name=''
+for source in "${generated_sources[@]}"; do
+    source_name=$(basename "${source}")
+    if [[ "${source_name}" == extension-*.cc ]]; then
+        candidate=${source_name#extension-}
+        candidate=${candidate%.cc}
+        if [[ -n "${project_name}" && "${project_name}" != "${candidate}" ]]; then
+            fatal_error "Multiple TypePHP project module sources were generated"
+        fi
+        project_name=${candidate}
+    fi
+done
+if [[ ! "${project_name}" =~ ^[a-zA-Z0-9_]+$ ]]; then
+    fatal_error "Unable to determine a valid TypePHP project name from generated sources"
+fi
+typephp_runtime_source=${phpx_dir}/src/misc/typephp_main.cc
+if [[ ! -f "${typephp_runtime_source}" ]]; then
+    fatal_error "TypePHP embedded runtime source is missing: ${typephp_runtime_source}"
+fi
+generated_sources+=("${typephp_runtime_source}")
+
 wasi_sdk_stamp=${wasi_sdk_dir}/.typephp-wasi-sdk-abi
 if [[ ! -f "${wasi_sdk_stamp}" ]] \
     || ! grep -qx 'typephp-wasip2-sdk-abi-v4' "${wasi_sdk_stamp}"; then
@@ -190,11 +213,20 @@ for source in "${generated_sources[@]}"; do
         echo "Generated C++ source file not found: ${source}" >&2
         exit 1
     fi
-    object=${source%.cc}.o
+    source_compile_flags=()
+    if [[ "${source}" == "${typephp_runtime_source}" ]]; then
+        object=${build_root}/typephp_main.o
+        source_compile_flags+=("-DTYPEPHP_PROJECT_NAME=${project_name}")
+        if [[ "${wasm_mode}" == library ]]; then
+            source_compile_flags+=("-DTYPEPHP_NO_MAIN=1")
+        fi
+    else
+        object=${source%.cc}.o
+    fi
     if [[ "${source}" == *.c ]]; then
         "${TYPEPHP_WASI_CC:?TYPEPHP_WASI_CC is required}" -O2 -c "${source}" -o "${object}"
     else
-        "${wasi_cxx}" "${compile_flags[@]}" "${include_flags[@]}" -I"${interface_dir}" -c "${source}" -o "${object}"
+        "${wasi_cxx}" "${compile_flags[@]}" "${source_compile_flags[@]}" "${include_flags[@]}" -I"${interface_dir}" -c "${source}" -o "${object}"
     fi
     generated_objects+=("${object}")
 done

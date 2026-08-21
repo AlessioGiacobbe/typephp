@@ -740,8 +740,11 @@ class Translator extends Preprocessor
 
     public function genDataDeclarations(string $file): void
     {
+        $projectNamespace = $this->getProjectNamespace();
         $lines[] = '#include <phpx.h>';
         $lines[] = '#include <typephp_helper.h>';
+        $lines[] = PHP_EOL;
+        $lines[] = 'namespace ' . $projectNamespace . ' {';
         $lines[] = PHP_EOL;
 
         // Embedded binaries populate the CLI script fields in $_SERVER at
@@ -761,34 +764,26 @@ class Translator extends Preprocessor
         }
 
         if ($this->literalStrings) {
-            $literalStringsCount = count($this->literalStrings);
-            $lines[] = 'extern ' . Type::STR . ' ' . self::LITERAL_STRINGS . '[' . $literalStringsCount . '];' . PHP_EOL;
+            $lines[] = 'ZEND_ATTRIBUTE_CONST ' . Type::STR . ' &'
+                . self::LITERAL_STRING_GETTER . '(uint32_t index);' . PHP_EOL;
         }
 
         foreach ($this->constants as $name => $constant) {
             $lines[] = 'extern ' . $constant->type . ' ' . $name . ';';
         }
 
-        // 确保数组大小至少为 1，避免 C/C++ 编译错误
-        $classCount = max(1, count($this->classMap));
-        $lines[] = 'extern THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . $classCount . '];' . PHP_EOL;
-        $persistentClassCount = max(1, count($this->persistentClassMap));
-        $lines[] = 'extern php::PersistentCacheSlot<zend_class_entry *> ' . self::PREFIX . self::PERSISTENT_CLASS_MAP . '[' . $persistentClassCount . '];' . PHP_EOL;
-
-        $funcCount = max(1, count($this->funcMap));
-        $lines[] = 'extern THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . $funcCount . '];' . PHP_EOL;
-        $persistentFuncCount = max(1, count($this->persistentFuncMap));
-        $lines[] = 'extern php::PersistentCacheSlot<zend_function *> ' . self::PREFIX . self::PERSISTENT_FUNC_MAP . '[' . $persistentFuncCount . '];' . PHP_EOL;
-
         $pythonModuleDeclarations = $this->genPythonModuleDataDeclarations();
         if ($pythonModuleDeclarations !== '') {
             $lines[] = $pythonModuleDeclarations;
         }
 
-        // 无动态 propMap：属性 offset 缓存仅覆盖编译类/内置类的声明属性（见 getPropertyId），
-        // 全部在模块生命周期内稳定，只保留 persistent prop map
-        $persistentPropCount = max(1, count($this->persistentPropMap));
-        $lines[] = 'extern php::PersistentCacheSlot<uint32_t> ' . self::PREFIX . self::PERSISTENT_PROP_MAP . '[' . $persistentPropCount . '];' . PHP_EOL;
+        $lines[] = 'zend_class_entry *get_class(int class_id, const php::Str &class_name);';
+        $lines[] = 'zend_function *get_func(int func_id, const php::Str &func_name);';
+        $lines[] = 'zend_function *get_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name);';
+        $lines[] = 'zend_class_entry *get_persistent_class(int class_id, const php::Str &class_name);';
+        $lines[] = 'zend_function *get_persistent_func(int func_id, const php::Str &func_name);';
+        $lines[] = 'zend_function *get_persistent_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name);';
+        $lines[] = 'uint32_t get_persistent_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name);' . PHP_EOL;
 
         foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
@@ -798,6 +793,9 @@ class Translator extends Preprocessor
                 }
             }
         }
+
+        $lines[] = '}  // namespace ' . $projectNamespace;
+        $lines[] = 'using namespace ' . $projectNamespace . ';';
 
         $code = implode(PHP_EOL, $lines) . PHP_EOL . PHP_EOL;
         $this->writeFile($file, $code);
@@ -833,6 +831,9 @@ class Translator extends Preprocessor
             $code .= '}' . PHP_EOL;
         }
 
+        $projectNamespace = $this->getProjectNamespace();
+        $code .= 'namespace ' . $projectNamespace . ' {' . PHP_EOL . PHP_EOL;
+
         $code .= "// global vars \n";
         foreach ($this->globalVars as $name => $type) {
             $cppType = isset($this->nativeGlobalObjects[$name])
@@ -852,67 +853,67 @@ class Translator extends Preprocessor
 
         $code .= "// class entry \n";
         // 确保数组大小至少为 1，避免 C/C++ 编译错误
-        $code .= 'THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . max(1, count($this->classMap)) . '];' . PHP_EOL;
+        $code .= 'static THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . max(1, count($this->classMap)) . '];' . PHP_EOL;
         // Internal/compiled symbols have module lifetime. They are initialized
         // lazily after PHP startup, so disable_functions/disable_classes have
         // already finalized the runtime tables. ZTS publishes them atomically.
-        $code .= 'php::PersistentCacheSlot<zend_class_entry *> ' . self::PREFIX . self::PERSISTENT_CLASS_MAP . '[' . max(1, count($this->persistentClassMap)) . ']{};' . PHP_EOL;
+        $code .= 'static php::PersistentCacheSlot<zend_class_entry *> ' . self::PREFIX . self::PERSISTENT_CLASS_MAP . '[' . max(1, count($this->persistentClassMap)) . ']{};' . PHP_EOL;
 
         $code .= "// func \n";
-        $code .= 'THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . max(1, count($this->funcMap)) . '];' . PHP_EOL;
-        $code .= 'php::PersistentCacheSlot<zend_function *> ' . self::PREFIX . self::PERSISTENT_FUNC_MAP . '[' . max(1, count($this->persistentFuncMap)) . ']{};' . PHP_EOL;
+        $code .= 'static THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . max(1, count($this->funcMap)) . '];' . PHP_EOL;
+        $code .= 'static php::PersistentCacheSlot<zend_function *> ' . self::PREFIX . self::PERSISTENT_FUNC_MAP . '[' . max(1, count($this->persistentFuncMap)) . ']{};' . PHP_EOL;
 
         $code .= $this->genPythonModuleStorage();
 
         $code .= "// property \n";
         // 无动态 propMap：属性 offset 缓存仅覆盖编译类/内置类的声明属性（见 getPropertyId）
-        $code .= 'php::PersistentCacheSlot<uint32_t> ' . self::PREFIX . self::PERSISTENT_PROP_MAP . '[' . max(1, count($this->persistentPropMap)) . ']{};' . PHP_EOL;
+        $code .= 'static php::PersistentCacheSlot<uint32_t> ' . self::PREFIX . self::PERSISTENT_PROP_MAP . '[' . max(1, count($this->persistentPropMap)) . ']{};' . PHP_EOL;
 
         $code .= "// functions \n";
 
         $code .= <<<'CODE'
-zend_class_entry *php_get_class(int class_id, const php::Str &class_name) {
+zend_class_entry *get_class(int class_id, const php::Str &class_name) {
     if (UNEXPECTED(php_class_map[class_id] == nullptr)) {
         php_class_map[class_id] = php::getClassEntrySafe(class_name);
     }
     return php_class_map[class_id];
 }
 
-zend_function *php_get_func(int func_id, const php::Str &func_name) {
+zend_function *get_func(int func_id, const php::Str &func_name) {
     if (UNEXPECTED(php_func_map[func_id] == nullptr)) {
         php_func_map[func_id] = php::getFunction(func_name);
     }
     return php_func_map[func_id];
 }
 
-zend_function *php_get_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
+zend_function *get_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
     if (UNEXPECTED(php_func_map[func_id] == nullptr)) {
-        auto ce = php_get_class(class_id, class_name);
+        auto ce = get_class(class_id, class_name);
         php_func_map[func_id] = php::getMethod(ce, method_name);
     }
     return php_func_map[func_id];
 }
 
-zend_class_entry *php_get_persistent_class(int class_id, const php::Str &class_name) {
+zend_class_entry *get_persistent_class(int class_id, const php::Str &class_name) {
     return php::getPersistentCache(php_persistent_class_map[class_id], [&]() {
         return php::getClassEntrySafe(class_name);
     });
 }
 
-zend_function *php_get_persistent_func(int func_id, const php::Str &func_name) {
+zend_function *get_persistent_func(int func_id, const php::Str &func_name) {
     return php::getPersistentCache(php_persistent_func_map[func_id], [&]() {
         return php::getFunction(func_name);
     });
 }
 
-zend_function *php_get_persistent_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
+zend_function *get_persistent_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
     return php::getPersistentCache(php_persistent_func_map[func_id], [&]() {
-        auto ce = php_get_persistent_class(class_id, class_name);
+        auto ce = get_persistent_class(class_id, class_name);
         return php::getMethod(ce, method_name);
     });
 }
 
-uint32_t php_get_persistent_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name) {
+uint32_t get_persistent_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name) {
     auto value = php::getPersistentCache(php_persistent_property_map[prop_id], [&]() {
         return php::getPropertyOffset(class_name, prop_name) + 1024;
     });
@@ -925,7 +926,7 @@ CODE;
 
         $code .= "// literal strings \n";
         if ($this->literalStrings) {
-            $code .= Type::STR . ' ' . self::LITERAL_STRINGS . '[] = {' . PHP_EOL;
+            $code .= 'static ' . Type::STR . ' ' . self::LITERAL_STRINGS . '[] = {' . PHP_EOL;
             foreach ($this->literalStrings as $str => $index) {
                 // PHP converts canonical integer-string array keys (for
                 // example "0" and "-1") to int. literalStrings only accepts
@@ -933,13 +934,20 @@ CODE;
                 $code .= Type::STR . '{ZEND_STRL("' . $this->escapeString((string) $str) . '"), true}, // [' . $index . ']' . PHP_EOL;
             }
             $code .= '};' . PHP_EOL . PHP_EOL;
+            $code .= 'ZEND_ATTRIBUTE_CONST ' . Type::STR . ' &'
+                . self::LITERAL_STRING_GETTER . '(uint32_t index) {' . PHP_EOL;
+            $code .= $this->getIndent() . 'return ' . self::LITERAL_STRINGS . '[index];' . PHP_EOL;
+            $code .= '}' . PHP_EOL . PHP_EOL;
         } else {
             $code .= PHP_EOL;
         }
 
+        $code .= '}  // namespace ' . $projectNamespace . PHP_EOL . PHP_EOL;
+
         $code .= "// default argument values \n";
         $code .= $this->genDefaultArgumentHelperDefinitions();
 
+        $code .= 'namespace ' . $projectNamespace . ' {' . PHP_EOL . PHP_EOL;
         $code .= "// constants \n";
         foreach ($this->constants as $name => $const) {
             $code .= $const->type . ' ' . $name . ";\n";
@@ -1034,8 +1042,8 @@ CODE;
 
         $code .= 'THREAD_LOCAL zval globals_array;' . PHP_EOL;
 
-        // php_app_init begin
-        $code .= 'void php_app_init() {' . PHP_EOL;
+        // request-level module state initialization
+        $code .= 'static void module_init() {' . PHP_EOL;
         $code .= '// register constants' . PHP_EOL;
         foreach ($this->constants as $name => $const) {
             $code .= "{$name} = {$const->value};\n";
@@ -1092,10 +1100,10 @@ CODE;
         $code .= '// class array constants' . PHP_EOL;
         $code .= $this->genClassArrayConstants();
         $code .= '}' . PHP_EOL . PHP_EOL;
-        // php_app_init end
+        // module_init end
 
-        // php_app_clean begin
-        $code .= 'void php_app_clean() {' . PHP_EOL;
+        // request-level module state cleanup
+        $code .= 'static void module_clean() {' . PHP_EOL;
         foreach ($this->globalVars as $name => $type) {
             if ($name != 'GLOBALS') {
                 if (isset($this->nativeGlobalObjects[$name])) {
@@ -1185,13 +1193,13 @@ CODE;
         $code .= 'std::memset(' . self::PREFIX . self::CLASS_MAP . ', 0, sizeof(' . self::PREFIX . self::CLASS_MAP . '));' . PHP_EOL;
 
         $code .= '}' . PHP_EOL . PHP_EOL;
-        // php_app_clean end
+        // module_clean end
 
         $moduleName = $this->getModuleName();
         // rinit begin
         $code .= 'PHP_RINIT_FUNCTION(' . $moduleName . ') {' . PHP_EOL;
         $code .= 'php::request_init();' . PHP_EOL;
-        $code .= 'php_app_init();' . PHP_EOL;
+        $code .= 'module_init();' . PHP_EOL;
 
         if ($this->isBuildModeBin()) {
             $entryFunction = $this->symbols->function(self::ENTRY_FUNCTION);
@@ -1216,7 +1224,7 @@ CODE;
         $code .= <<<CODE
 PHP_RSHUTDOWN_FUNCTION({$moduleName}) {
     php::request_shutdown();
-    php_app_clean();
+    module_clean();
     return SUCCESS;
 }
 
@@ -1237,10 +1245,14 @@ CODE;
 
         if ($this->isBuildModeExt()) {
             $code .= "ZEND_GET_MODULE({$moduleName});\n";
-        } else {
-            $code .= 'zend_module_entry *' . self::PREFIX . 'embed_get_module() {' . PHP_EOL;
-            $code .= $this->getIndent() . 'return &' . $moduleName . '_module_entry;' . PHP_EOL;
+            $code .= '}  // namespace ' . $projectNamespace . PHP_EOL;
+        } elseif ($this->isBuildModeEmbed()) {
+            $code .= '}  // namespace ' . $projectNamespace . PHP_EOL . PHP_EOL;
+            $code .= 'zend_module_entry *' . self::PREFIX . $this->targetName . '_embed_get_module() {' . PHP_EOL;
+            $code .= $this->getIndent() . 'return &' . $projectNamespace . '::' . $moduleName . '_module_entry;' . PHP_EOL;
             $code .= '}' . PHP_EOL;
+        } else {
+            $code .= '}  // namespace ' . $projectNamespace . PHP_EOL;
         }
 
         $this->indentLevel--;
@@ -1254,6 +1266,11 @@ CODE;
     public function getModuleName(): string
     {
         return Constants::EXTENSION_PREFIX . $this->targetName;
+    }
+
+    public function getProjectNamespace(): string
+    {
+        return $this->getModuleName();
     }
 
     /**
@@ -2188,7 +2205,7 @@ CODE;
 
                 $code .= "typephp_install_property_handlers({$ce}, &{$handlers});\n";
                 if ($classDef->requireCtor) {
-                    $code .= "create_object_{$className} = php_get_create_object_fn({$ce});\n";
+                    $code .= "create_object_{$className} = php::getCreateObjectFn({$ce});\n";
                     $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
                     $code .= $buildCreateBody();
                     $code .= "};\n";
@@ -3948,20 +3965,21 @@ CODE;
         }
 
         $stmts = '';
-        if ($v->stmts) {
-            $this->indentLevel++;
-            try {
+        $this->indentLevel++;
+        try {
+            if ($v->stmts) {
                 $stmts = $this->parseStmts($v->stmts);
-                if (!$this->isReturnStmtInLastLine($v->stmts)) {
-                    $stmts .= $this->genReturnCode();
-                }
-            } catch (Skip) {
-                $this->climate->cyan('Skip function ' . $name);
             }
-            $this->indentLevel--;
-        } else {
-            $stmts = $this->genReturnCode();
+            if (!$this->isReturnStmtInLastLine($v->stmts ?? [])) {
+                $returnCode = $this->genReturnCode();
+                if ($returnCode !== '') {
+                    $stmts .= rtrim($returnCode, "\r\n") . PHP_EOL;
+                }
+            }
+        } catch (Skip) {
+            $this->climate->cyan('Skip function ' . $name);
         }
+        $this->indentLevel--;
 
         $multiReturn = $this->functionDef->hasMultiReturn();
         $cppReturnType = $multiReturn
@@ -3987,13 +4005,12 @@ CODE;
 
         $code = $functionDeclCode . ' {' . PHP_EOL;
         $this->indentLevel++;
-        $code .= $this->genScopeVarDecl();
-        $code .= $this->genNativeObjectParameterChecks($this->functionDef);
-        $code .= "\n";
+        $preamble = $this->genScopeVarDecl();
+        $preamble .= $this->genNativeObjectParameterChecks($this->functionDef);
         // Runtime union/nullable parameter type checks
         foreach ($this->functionDef->argInfoList as $i => $argInfo) {
             if (!empty($argInfo->typeCheck)) {
-                $code .= $this->genUnionParamCheck($argInfo, $i);
+                $preamble .= $this->genUnionParamCheck($argInfo, $i);
             }
         }
         // Constructor Property Promotion happens after parameter type validation.
@@ -4001,7 +4018,10 @@ CODE;
             if (!$argInfo->property) {
                 continue;
             }
-            $code .= $this->genPropertyPromotion($argInfo);
+            $preamble .= $this->genPropertyPromotion($argInfo);
+        }
+        if ($preamble !== '') {
+            $code .= $preamble . PHP_EOL;
         }
         $this->indentLevel--;
         // 构建 PHP 级别的函数名用于 debug backtrace

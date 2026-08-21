@@ -662,7 +662,7 @@ trait CallArgumentGenerator
     protected function materializeCallArgValue(NodeAbstract $value, string $expr): string
     {
         // A Native property fetch is a typed C++ pointer, never an INDIRECT
-        // zval. Passing it through php_deindirect() would box the pointer as a
+        // zval. Passing it through php::deindirect() would box the pointer as a
         // bool/Variant and break the Native ABI. Dynamic Zend calls reject the
         // value before reaching here; direct Native calls keep it unchanged.
         if ($this->isNativeObjectClass($this->detectClassOfExpr($value))) {
@@ -678,7 +678,7 @@ trait CallArgumentGenerator
         if (!$this->shouldMaterializeCallArg($value)) {
             return $expr;
         }
-        return 'php_deindirect(' . $expr . ')';
+        return 'php::deindirect(' . $expr . ')';
     }
 
     protected function shouldMaterializeCallArg(NodeAbstract $value): bool
@@ -836,7 +836,7 @@ trait CallArgumentGenerator
         }
         $expr = $this->parseIdentifier($arg->value);
         if ($this->isVarExpr($arg->value) and $arg->value->name === 'GLOBALS') {
-            return 'php_globals_array()';
+            return 'php::globalsArray()';
         }
         if ($this->isVarExpr($arg->value) and $this->isStdContainer($arg->value->name)) {
             return $this->convertArrayExpr($expr . '_ref');
@@ -850,7 +850,7 @@ trait CallArgumentGenerator
             return $this->parseArg($arg);
         }
         if ($this->isVarExpr($arg->value) and $arg->value->name === 'GLOBALS') {
-            return 'php_globals_array()';
+            return 'php::globalsArray()';
         }
         if ($this->isVarExpr($arg->value) and $this->isStdContainer($arg->value->name)) {
             return $this->convertArrayExpr($this->parseIdentifier($arg->value) . '_ref');

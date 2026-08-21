@@ -8,8 +8,6 @@
 
 namespace TypePhp\Generator;
 
-use TypePhp\CompilerBase;
-
 class Symbol
 {
     public static function getStaticProperty(): string
@@ -39,12 +37,12 @@ class Symbol
 
     public static function getCalledCe(): string
     {
-        return CompilerBase::PREFIX . 'get_called_ce(this_)';
+        return 'php::getCalledCe(this_)';
     }
 
     public static function getCalledClass(): string
     {
-        return CompilerBase::PREFIX . 'get_called_class(this_)';
+        return 'php::getCalledClass(this_)';
     }
 
     public static function constant(): string

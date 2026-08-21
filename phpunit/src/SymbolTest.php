@@ -4,7 +4,6 @@ namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
 use TypePhp\Generator\Symbol;
-use TypePhp\CompilerBase;
 
 class SymbolTest extends TestCase
 {
@@ -45,16 +44,12 @@ class SymbolTest extends TestCase
 
     public function testGetCalledCe(): void
     {
-        $result = Symbol::getCalledCe();
-        $this->assertStringContainsString(CompilerBase::PREFIX, $result);
-        $this->assertStringContainsString('get_called_ce', $result);
+        $this->assertSame('php::getCalledCe(this_)', Symbol::getCalledCe());
     }
 
     public function testGetCalledClass(): void
     {
-        $result = Symbol::getCalledClass();
-        $this->assertStringContainsString(CompilerBase::PREFIX, $result);
-        $this->assertStringContainsString('get_called_class', $result);
+        $this->assertSame('php::getCalledClass(this_)', Symbol::getCalledClass());
     }
 
     public function testSafeIndex(): void

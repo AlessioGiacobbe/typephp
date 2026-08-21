@@ -31,7 +31,7 @@ trait ClosureGenerator
             // PHP flattens a trait method into the consuming class. A closure
             // declared in that method therefore uses the consuming class as
             // its lexical scope, never the trait's own class entry.
-            $scope = 'php_get_called_ce(this_)';
+            $scope = 'php::getCalledCe(this_)';
         } else {
             $scope = $this->class
                 ? $this->getClassEntryPtr($this->getFullClassName())
