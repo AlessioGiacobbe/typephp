@@ -117,6 +117,6 @@ final class LocalVariableInitializerTest extends \BaseTest
         self::assertStringContainsString('php::Var runtimeClassConstant;', $code);
         self::assertStringContainsString('runtimeClassConstant = php::constant(', $code);
         self::assertStringContainsString('php::Var dynamicClass;', $code);
-        self::assertStringContainsString('dynamicClass = php::constant(', $code);
+        self::assertStringContainsString('dynamicClass = php::classConstant(', $code);
     }
 }

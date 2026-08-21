@@ -1,7 +1,7 @@
 <?php
 use native_types;
 
-function simple()
+function simple(): void
 {
     $a = 0;
     $total_count = 10000000;
@@ -19,7 +19,7 @@ function simple()
 
 /****/
 
-function simplecall()
+function simplecall(): void
 {
     $total = 0;
     for ($i = 0; $i < 1000000; $i++)
@@ -29,28 +29,28 @@ function simplecall()
 
 /****/
 
-function hallo($a) {
+function hallo(string $a): void {
 }
 
-function simpleucall() {
+function simpleucall(): void {
   for ($i = 0; $i < 1000000; $i++)
     hallo("hallo");
 }
 
 /****/
 
-function hallo2($a) {
+function hallo2(string $a): void {
 }
 
 
-function simpleudcall() {
+function simpleudcall(): void {
   for ($i = 0; $i < 1000000; $i++)
     hallo2("hallo");
 }
 
 /****/
 
-function mandel() {
+function mandel(): void {
   $w1=50;
   $h1=150;
   $recen=-.45;
@@ -90,7 +90,7 @@ function mandel() {
 
 /****/
 
-function mandel2() {
+function mandel2(): void {
   $b = " .:,;!/>)|&IH%*#";
   //float r, i, z, Z, t, c, C;
   for ($y=30; printf("\n"), $C = $y*0.1 - 1.5, $y--;){
@@ -104,20 +104,20 @@ function mandel2() {
 
 /****/
 
-function Ack(int $m, int $n){
+function Ack(int $m, int $n): int {
   if($m == 0) return $n+1;
   if($n == 0) return Ack($m-1, 1);
   return Ack($m - 1, Ack($m, ($n - 1)));
 }
 
-function ackermann(int $n) {
+function ackermann(int $n): void {
   $r = Ack(3, $n);
   print "Ack(3,$n): $r\n";
 }
 
 /****/
 
-function ary($n) {
+function ary(int $n): void {
   for ($i=0; $i<$n; $i++) {
     $X[$i] = $i;
   }
@@ -130,7 +130,7 @@ function ary($n) {
 
 /****/
 
-function ary2($n) {
+function ary2(int $n): void {
   for ($i=0; $i<$n;) {
     $X[$i] = $i; ++$i;
     $X[$i] = $i; ++$i;
@@ -163,7 +163,7 @@ function ary2($n) {
 
 /****/
 
-function ary3(int $n) {
+function ary3(int $n): void {
   for ($i=0; $i<$n; $i++) {
     $X[$i] = $i + 1;
     $Y[$i] = 0;
@@ -190,7 +190,7 @@ function fibo(int $n): void {
 
 /****/
 
-function hash1(int $n) {
+function hash1(int $n): void {
   for ($i = 1; $i <= $n; $i++) {
     $X[dechex($i)] = $i;
   }
@@ -203,7 +203,7 @@ function hash1(int $n) {
 
 /****/
 
-function hash2(int $n) {
+function hash2(int $n): void {
   for ($i = 0; $i < $n; $i++) {
     $hash1["foo_$i"] = $i;
     $hash2["foo_$i"] = 0;
@@ -218,12 +218,12 @@ function hash2(int $n) {
 
 /****/
 
-function gen_random (int $n) {
+function gen_random(int $n): float {
     global $LAST;
     return( ($n * ($LAST = ($LAST * IA + IC) % IM)) / IM );
 }
 
-function heapsort_r(int $n, &$ra) {
+function heapsort_r(int $n, array &$ra): void {
     $l = ($n >> 1) + 1;
     $ir = $n;
 
@@ -255,7 +255,7 @@ function heapsort_r(int $n, &$ra) {
     }
 }
 
-function heapsort(int $N) {
+function heapsort(int $N): void {
   global $LAST;
 
   define("IM", 139968);
@@ -272,7 +272,7 @@ function heapsort(int $N) {
 
 /****/
 
-function mkmatrix ($rows, $cols) {
+function mkmatrix(int $rows, int $cols): array {
     $count = 1;
     $mx = array();
     for ($i=0; $i<$rows; $i++) {
@@ -283,7 +283,7 @@ function mkmatrix ($rows, $cols) {
     return ($mx);
 }
 
-function mmult ($rows, $cols, $m1, $m2) {
+function mmult(int $rows, int $cols, array $m1, array $m2): array {
     $m3 = array();
     for ($i=0; $i<$rows; $i++) {
     for ($j=0; $j<$cols; $j++) {
@@ -297,7 +297,7 @@ function mmult ($rows, $cols, $m1, $m2) {
     return($m3);
 }
 
-function matrix(int $n) {
+function matrix(int $n): void {
   $SIZE = 30;
   $m1 = mkmatrix($SIZE, $SIZE);
   $m2 = mkmatrix($SIZE, $SIZE);
@@ -309,7 +309,7 @@ function matrix(int $n) {
 
 /****/
 
-function nestedloop($n) {
+function nestedloop(int $n): void {
   $x = 0;
   for ($a=0; $a<$n; $a++)
     for ($b=0; $b<$n; $b++)
@@ -323,7 +323,7 @@ function nestedloop($n) {
 
 /****/
 
-function sieve(int $n) {
+function sieve(int $n): void {
   $count = 0;
   while ($n-- > 0) {
     $count = 0;
@@ -342,7 +342,7 @@ function sieve(int $n) {
 
 /****/
 
-function strcat($n) {
+function strcat(int $n): void {
   $str = "";
   while ($n-- > 0) {
     $str .= "hello\n";
@@ -359,13 +359,13 @@ function gethrtime(): float
     return (($hrtime[0] * 1000000000.0 + $hrtime[1]) / 1000000000.0);
 }
 
-function start_test()
+function start_test(): float
 {
     ob_start();
     return gethrtime();
 }
 
-function end_test($start, $name)
+function end_test(float $start, string $name): float
 {
     global $total;
     $end = gethrtime();
@@ -379,7 +379,7 @@ function end_test($start, $name)
     return gethrtime();
 }
 
-function total()
+function total(): void
 {
     global $total;
     $pad = str_repeat("-", 24);
@@ -389,7 +389,7 @@ function total()
     echo "Total" . $pad . $num . "\n";
 }
 
-function main()
+function main(): void
 {
     if (function_exists("date_default_timezone_set")) {
         date_default_timezone_set("UTC");

@@ -946,6 +946,7 @@ CODE;
         }
 
         $code .= "// class \n";
+        $code .= $this->genRequestArrayDefaultStorage();
         foreach ($this->getClassLikesWithConstants() as $classDef) {
             if ($classDef instanceof ClassDef
                 && !$classDef->nativeObject
@@ -962,6 +963,7 @@ CODE;
                 }
             }
         }
+        $code .= $this->genRequestArrayDefaultInitializers();
 
         $code .= "// clang-format off\n";
         $code .= "static const zend_function_entry ext_functions[] = {\n";
@@ -1107,6 +1109,7 @@ CODE;
         foreach ($this->nativeStaticInitializers as $name => $_) {
             $code .= $this->escapeGlobalVar($name) . ' = false;' . PHP_EOL;
         }
+        $code .= $this->genRequestArrayDefaultCleanup();
         foreach ($this->constants as $name => $const) {
             if ($const->type !== Type::VAR) {
                 continue;
@@ -1974,6 +1977,134 @@ CODE;
         return implode(PHP_EOL, $lines) . PHP_EOL;
     }
 
+    /** @return array<PropertyDef> */
+    private function getRequestArrayDefaultProperties(ClassDef $classDef): array
+    {
+        $properties = [];
+        foreach ($classDef->properties as $property) {
+            if (!$property->isStatic()
+                && $property->requiresRuntimeDefaultInit
+                && $property->arrayInitPlan !== null
+            ) {
+                $properties[] = $property;
+            }
+        }
+        return $properties;
+    }
+
+    private function getRequestArrayDefaultInitializedName(ClassDef $classDef): string
+    {
+        return self::PREFIX . 'request_array_defaults_initialized_' . $classDef->getNamespacedName();
+    }
+
+    private function getRequestArrayDefaultInitializerName(ClassDef $classDef): string
+    {
+        return self::PREFIX . 'ensure_request_array_defaults_' . $classDef->getNamespacedName();
+    }
+
+    private function getRequestArrayDefaultTemplateName(ClassDef $classDef, PropertyDef $property): string
+    {
+        return self::PREFIX . 'request_array_default_'
+            . $this->getNativeName($property->name, $classDef->namespace, $classDef->name);
+    }
+
+    private function indentGeneratedBlock(string $code, int $level): string
+    {
+        $code = rtrim($code, "\r\n");
+        if ($code === '') {
+            return '';
+        }
+        $indent = str_repeat('    ', $level);
+        return $indent . str_replace("\n", "\n{$indent}", $code) . PHP_EOL;
+    }
+
+    private function genRequestArrayDefaultStorage(): string
+    {
+        $code = '';
+        foreach ($this->symbols->classes() as $classDef) {
+            if ($classDef->trait || $classDef->enum || $classDef->nativeObject) {
+                continue;
+            }
+            $properties = $this->getRequestArrayDefaultProperties($classDef);
+            if (!$properties) {
+                continue;
+            }
+            $code .= 'THREAD_LOCAL bool '
+                . $this->getRequestArrayDefaultInitializedName($classDef)
+                . ' = false;' . PHP_EOL;
+            foreach ($properties as $property) {
+                $code .= 'THREAD_LOCAL php::Var '
+                    . $this->getRequestArrayDefaultTemplateName($classDef, $property)
+                    . ';' . PHP_EOL;
+            }
+        }
+        return $code === '' ? '' : "// request array property defaults\n{$code}";
+    }
+
+    private function genRequestArrayDefaultInitializers(): string
+    {
+        $code = '';
+        foreach ($this->symbols->classes() as $classDef) {
+            if ($classDef->trait || $classDef->enum || $classDef->nativeObject) {
+                continue;
+            }
+            $properties = $this->getRequestArrayDefaultProperties($classDef);
+            if (!$properties) {
+                continue;
+            }
+
+            $initialized = $this->getRequestArrayDefaultInitializedName($classDef);
+            $code .= 'static inline void '
+                . $this->getRequestArrayDefaultInitializerName($classDef)
+                . '() {' . PHP_EOL;
+            $code .= "    if (UNEXPECTED(!{$initialized})) {" . PHP_EOL;
+
+            foreach ($properties as $index => $_property) {
+                $code .= "        php::Var prepared_default_{$index};" . PHP_EOL;
+            }
+            foreach ($properties as $index => $property) {
+                $plan = $property->arrayInitPlan;
+                $code .= '        do {' . PHP_EOL;
+                $code .= $this->indentGeneratedBlock($plan->init, 3);
+                $code .= "            prepared_default_{$index} = {$plan->expr};" . PHP_EOL;
+                $code .= $this->indentGeneratedBlock($plan->clean, 3);
+                $code .= '        } while (0);' . PHP_EOL;
+            }
+            foreach ($properties as $index => $property) {
+                $template = $this->getRequestArrayDefaultTemplateName($classDef, $property);
+                $code .= "        {$template} = std::move(prepared_default_{$index});" . PHP_EOL;
+            }
+            $code .= "        {$initialized} = true;" . PHP_EOL;
+            $code .= '    }' . PHP_EOL;
+            $code .= '}' . PHP_EOL . PHP_EOL;
+        }
+        return $code;
+    }
+
+    private function genRequestArrayDefaultCleanup(): string
+    {
+        $code = '';
+        foreach ($this->symbols->classes() as $classDef) {
+            if ($classDef->trait || $classDef->enum || $classDef->nativeObject) {
+                continue;
+            }
+            $properties = $this->getRequestArrayDefaultProperties($classDef);
+            if (!$properties) {
+                continue;
+            }
+            $initialized = $this->getRequestArrayDefaultInitializedName($classDef);
+            $code .= "if ({$initialized}) {" . PHP_EOL;
+            foreach ($properties as $property) {
+                $code .= '    '
+                    . $this->getRequestArrayDefaultTemplateName($classDef, $property)
+                    . '.unset();' . PHP_EOL;
+            }
+            $code .= "    {$initialized} = false;" . PHP_EOL;
+            $code .= '}' . PHP_EOL;
+        }
+        return $code === '' ? '' : "// request array property defaults\n{$code}";
+    }
+
     public function genClassPropertyInit(): string
     {
         $code = '';
@@ -1988,41 +2119,64 @@ CODE;
             if ($classDef && !$classDef->trait && !$classDef->enum) {
                 $className = $classDef->getNamespacedName();
                 $handlers = "property_handlers_{$className}";
+                $requestArrayDefaults = $this->getRequestArrayDefaultProperties($classDef);
+                $ensureRequestArrayDefaults = $requestArrayDefaults
+                    ? $this->getRequestArrayDefaultInitializerName($classDef) . '();' . PHP_EOL
+                    : '';
                 $initBlock = '';
                 foreach ($classDef->properties as $property) {
-                    if ($property->isStatic() || $property->default === null) {
+                    // Scalar/null/empty-array defaults already live in the
+                    // Zend class default-property table generated by
+                    // gen_stub.php. Only values represented there by a
+                    // placeholder (for example non-empty arrays and enum
+                    // cases) belong in the per-object initialization path.
+                    if ($property->isStatic()
+                        || $property->default === null
+                        || !$property->requiresRuntimeDefaultInit
+                    ) {
                         continue;
                     }
                     if ($property->arrayInitPlan) {
-                        $init = "auto value = {$property->arrayInitPlan->expr};\n";
-                        $init .= 'zend_update_property(' . $ce . ', obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
-                        $init .= "php::throwErrorIfOccurred();\n";
-                        $initBlock .= $this->wrapArrayInitPlan($property->arrayInitPlan, $init);
+                        $initBlock .= 'target.attr(' . $property->runtimeDefaultOffset
+                            . ', php::AttrMode::Update) = '
+                            . $this->getRequestArrayDefaultTemplateName($classDef, $property)
+                            . ';' . PHP_EOL;
                     } else {
-                        // Scalar / constant / null default value. Wrap it in a
-                        // php::Var so it can be stored as a zval in the object's
-                        // property table via zend_update_property. Each property is
-                        // wrapped in its own block so the local `value` does not
-                        // clash with siblings declared in the same create_object body.
+                        // Runtime-only constant value (for example an enum
+                        // case). Wrap it in php::Var and write the already
+                        // resolved backing slot directly. Each property uses a
+                        // separate block so its local `value` cannot clash with
+                        // siblings in the same create_object body.
                         $default = $property->type === Type::FLOAT
                             ? $this->convertFloatExpr($property->default)
                             : $property->default;
                         $init = "do {\n";
                         $init .= "auto value = php::Var({$default});\n";
-                        $init .= 'zend_update_property(' . $ce . ', obj, ' . $this->genZendStrl($property->name) . ", value.ptr());\n";
-                        $init .= "php::throwErrorIfOccurred();\n";
+                        $init .= 'target.attr(' . $property->runtimeDefaultOffset
+                            . ", php::AttrMode::Update) = value;\n";
                         $init .= "} while (0);\n";
                         $initBlock .= $init;
                     }
                 }
 
                 $delegateToParentAllocator = $this->parentHasCustomCreateObjectOnPhp84($classDef);
-                $buildCreateBody = function () use ($classDef, $className, $handlers, $initBlock, $delegateToParentAllocator): string {
+                $buildCreateBody = function () use (
+                    $classDef,
+                    $className,
+                    $handlers,
+                    $ensureRequestArrayDefaults,
+                    $initBlock,
+                    $delegateToParentAllocator,
+                ): string {
                     $body = $classDef->ctorInit;
+                    $body .= $ensureRequestArrayDefaults;
                     $body .= "auto obj = typephp_create_object_with_defaults(\n";
                     $body .= "class_type, create_object_{$className}, ";
                     $body .= ($delegateToParentAllocator ? 'true' : 'false') . ",\n";
                     $body .= "[&](zend_object *obj) {\n";
+                    if ($initBlock !== '') {
+                        $body .= "php::Object target{obj};\n";
+                    }
                     $body .= $initBlock;
                     $body .= "});\n";
                     $body .= $classDef->ctorClean;
@@ -2030,7 +2184,7 @@ CODE;
                 };
 
                 $code .= "typephp_install_property_handlers({$ce}, &{$handlers});\n";
-                if ($classDef->requireCtor || $this->classHasAsymmetricOrHookedProperty($classDef)) {
+                if ($classDef->requireCtor) {
                     $code .= "create_object_{$className} = php_get_create_object_fn({$ce});\n";
                     $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
                     $code .= $buildCreateBody();
@@ -2039,46 +2193,6 @@ CODE;
             }
         }
         return $code;
-    }
-
-    /**
-     * Whether the given class (or any of its ancestors) declares an asymmetric
-     * visibility property (private(set)/protected(set)) or a hooked property
-     * (getter/setter). Such classes install a custom write_property handler, and
-     * on PHP >= 8.4 that handler lives in the class's default object handlers, so
-     * the engine's object_properties_init would reject inherited default values
-     * unless we generate our own create_object that initializes with the standard
-     * handlers first.
-     */
-    private function classHasAsymmetricOrHookedProperty(ClassDef $classDef): bool
-    {
-        $current = $classDef;
-        $seen = [];
-        while ($current !== null) {
-            $key = strtolower(ltrim($current->getNamespacedName(), '\\'));
-            if (isset($seen[$key])) {
-                break;
-            }
-            $seen[$key] = true;
-            foreach ($current->properties as $property) {
-                if ($property->isPrivateSet()
-                    || $property->isProtectedSet()
-                    || $property->getter !== null
-                    || $property->setter !== null
-                ) {
-                    return true;
-                }
-            }
-            if (!$current->extends) {
-                break;
-            }
-            $parent = $this->getClassDef($current->extends);
-            if ($parent === null) {
-                break;
-            }
-            $current = $parent;
-        }
-        return false;
     }
 
     private function parentHasCustomCreateObjectOnPhp84(ClassDef $classDef): bool
@@ -2093,12 +2207,9 @@ CODE;
         $parent = $this->getClassDef($classDef->extends);
         while ($parent !== null) {
             foreach ($parent->properties as $property) {
-                if (!$property->isStatic() && $property->default !== null) {
+                if (!$property->isStatic() && $property->requiresRuntimeDefaultInit) {
                     return true;
                 }
-            }
-            if ($this->classHasAsymmetricOrHookedProperty($parent)) {
-                return true;
             }
             if ($parent->extends === '') {
                 break;
@@ -3655,7 +3766,11 @@ CODE;
             }
             $defaultPropCount = 0;
             foreach ($classDef->properties as $property) {
-                if (!$property->isStatic() && $property->default !== null) {
+                if (!$property->isStatic() && $property->requiresRuntimeDefaultInit) {
+                    $property->runtimeDefaultOffset = $this->getPropertyOffset(
+                        $classDef->getNamespacedName(false),
+                        $property->name,
+                    );
                     $defaultPropCount++;
                 }
             }

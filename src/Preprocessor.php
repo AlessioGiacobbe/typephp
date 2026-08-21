@@ -1435,6 +1435,7 @@ class Preprocessor extends CompilerBase
         $propDef->readonly = (bool) (($flags | $this->classDef->flags) & Modifiers::READONLY);
         $propDef->class = $class;
         $propDef->arrayInitPlan = $arrayInitPlan;
+        $propDef->requiresRuntimeDefaultInit = $this->propertyDefaultRequiresRuntimeInit($defaultNode);
         $propDef->promoted = $promoted;
         if ($typeNode instanceof NullableType || $typeNode instanceof UnionType || $typeNode instanceof IntersectionType) {
             $typeInfo = $this->buildTypeCheckFromNode($typeNode);
@@ -1443,6 +1444,30 @@ class Preprocessor extends CompilerBase
         }
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
+    }
+
+    /**
+     * gen_stub emits compile-time scalar values and empty arrays exactly into
+     * the internal class default-property table. Non-empty arrays are emitted
+     * there as an empty-array placeholder, while enum cases need a live object;
+     * both must therefore be restored by create_object. Keep an unresolved
+     * expression on that conservative runtime path as well.
+     */
+    private function propertyDefaultRequiresRuntimeInit(?NodeAbstract $default): bool
+    {
+        if ($default === null) {
+            return false;
+        }
+        if ($default instanceof Node\Expr\Array_) {
+            return $default->items !== [];
+        }
+
+        // A null result includes enum cases and constants which cannot be
+        // resolved safely during preprocessing. Their runtime initialization
+        // must not be removed merely because their source syntax resembles a
+        // scalar constant expression.
+        $type = $this->detectDefaultValueType($default);
+        return $type === null || $type === 'array';
     }
 
     /**

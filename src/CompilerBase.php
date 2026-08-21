@@ -1337,6 +1337,25 @@ class CompilerBase implements PropertyAccessContext
         return $helper . '(' . $id . ', ' . $this->getLiteralString($className) . ')';
     }
 
+    /**
+     * Resolve a process-stable class once at function entry. This keeps class
+     * table/cache lookup out of loops containing `new KnownClass()` while
+     * leaving runtime-provided classes at their original expression site.
+     */
+    protected function getLocalClassEntryPtr(string $className): string
+    {
+        if (!$this->isProcessStableClass($className)) {
+            return $this->getClassEntryPtr($className);
+        }
+        if (isset($this->context->classEntryPtrs[$className])) {
+            return $this->context->classEntryPtrs[$className];
+        }
+
+        $entry = $this->genTmpVarName();
+        $this->context->classEntryPtrs[$className] = $entry;
+        return $entry;
+    }
+
     /** The declaring class controls visibility; the runtime called class does not. */
     protected function getCallableScopeExpr(): string
     {
@@ -3859,7 +3878,7 @@ class CompilerBase implements PropertyAccessContext
                             . $this->getNativeObjectInitializerName($className) . '(this_); '
                             . self::PREFIX . $nativeCtor . '(this_' . $nativeArgs . '); })';
                     }
-                    $cePtr = $this->getClassEntryPtr($className);
+                    $cePtr = $this->getLocalClassEntryPtr($className);
                 }
             } else {
                 $cePtr = $className;
@@ -5102,6 +5121,10 @@ class CompilerBase implements PropertyAccessContext
                 . ', this_);' . PHP_EOL;
         }
         $code .= $this->genLocalVarDecl($this->context->localVars);
+        foreach ($this->context->classEntryPtrs as $className => $entry) {
+            $code .= $this->getIndent() . 'zend_class_entry *' . $entry . ' = '
+                . $this->getClassEntryPtr($className) . ';' . PHP_EOL;
+        }
         if ($this->context->nativeObjects !== []) {
             $rootSlots = [];
             foreach ($this->context->nativeObjects as $name => $_class) {

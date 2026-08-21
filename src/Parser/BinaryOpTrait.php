@@ -567,6 +567,20 @@ trait BinaryOpTrait
     protected function getOrderedOperandTmpType(NodeAbstract $expr, string $value): string
     {
         if (
+            ($expr instanceof Expr\PostInc
+                || $expr instanceof Expr\PostDec
+                || $expr instanceof Expr\PreInc
+                || $expr instanceof Expr\PreDec)
+            && $this->isVarExpr($expr->var)
+        ) {
+            $type = $this->getVarType($this->parseIdentifier($expr->var));
+            if ($this->nativeTypes && $this->isNativeType($type)) {
+                return $type;
+            }
+            return Type::VAR;
+        }
+
+        if (
             $expr instanceof Expr\BinaryOp
             || $expr instanceof Expr\FuncCall
             || $expr instanceof Expr\MethodCall
@@ -647,6 +661,14 @@ trait BinaryOpTrait
         $items = [];
         $this->flattenConcatExpr($expr, $items);
 
+        // C++ does not order regular function arguments. The two-argument
+        // overload is therefore only safe for scalar operands whose parsing
+        // and conversion cannot execute user code or mutate state. All other
+        // concatenations use the braced-list overload, whose elements are
+        // sequenced left-to-right by C++17.
+        $useTwoOperandOverload = $prefixExpressions === []
+            && $this->canUseTwoOperandConcatOverload($items);
+
         $argList = $prefixExpressions;
         foreach ($items as $item) {
             // Keep one operand so concat still performs PHP string coercion.
@@ -672,7 +694,35 @@ trait BinaryOpTrait
             $argList[] = $this->prepareConcatOperand($parsed, $type);
         }
 
+        if ($useTwoOperandOverload && count($argList) === 2) {
+            return Symbol::concat() . '(' . $argList[0] . ', ' . $argList[1] . ')';
+        }
+
         return Symbol::concat() . '({' . implode(', ', $argList) . '})';
+    }
+
+    protected function canUseTwoOperandConcatOverload(array $items): bool
+    {
+        if (count($items) !== 2) {
+            return false;
+        }
+        foreach ($items as $item) {
+            // Even a scalar-typed binary expression may emit a warning or
+            // throw (division by zero, failed conversion, overloaded object
+            // operation). Restrict the unordered overload to values that are
+            // already materialized and cannot execute during argument setup.
+            if (!($item instanceof Node\Scalar || $this->isVarExpr($item))
+                || $this->shouldMaterializeOrderedOperand($item)
+                || !in_array(
+                    $this->detectTypeOfExpr($item),
+                    [Type::STR, Type::INT, Type::FLOAT, Type::BOOL],
+                    true,
+                )
+            ) {
+                return false;
+            }
+        }
+        return true;
     }
 
     protected function prepareConcatOperand(string $expr, string $type): string

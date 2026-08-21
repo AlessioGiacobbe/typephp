@@ -50,10 +50,10 @@ class OperatorTest extends \BaseTest
         $cppFile = $compiler->convertFile($testFile);
         $cpp = file_get_contents($cppFile);
 
-        $this->assertMatchesRegularExpression(
-            '/return php::toBool\(php::call\([^\n]+\)\);/',
-            $cpp,
-        );
+        // Ordered operands may be materialized before the return statement,
+        // but the dynamic call result must still cross an explicit Bool
+        // conversion boundary before C++ logical operators consume it.
+        $this->assertStringContainsString('php::toBool(php::call(', $cpp);
     }
 
     public function testLiteralIntDivideByZeroDoesNotCompile(): void

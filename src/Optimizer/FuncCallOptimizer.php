@@ -402,13 +402,49 @@ trait FuncCallOptimizer
     protected function resolveArg(Node\Expr\FuncCall $expr, int $index, string $type): string
     {
         $base = ($type[0] ?? '') === self::ARG_OPTIONAL ? substr($type, 1) : $type;
+        $arg = $expr->args[$index]->value;
+        $raw = ($base === self::ARG_TYPE_REF) ? $this->getRefArg($expr, $index) : $this->getArg($expr, $index);
 
         if ($base === self::ARG_TYPE_ARRAY) {
-            return $this->convertStdContainerArrayExpr($expr, $index, $this->getArg($expr, $index));
+            if ($this->argumentAlreadyHasExactType($arg, Type::ARRAY)) {
+                return $raw;
+            }
+            return $this->convertStdContainerArrayExpr($expr, $index, $raw);
         }
 
-        $raw = ($base === self::ARG_TYPE_REF) ? $this->getRefArg($expr, $index) : $this->getArg($expr, $index);
+        $exactType = match ($base) {
+            self::ARG_TYPE_STR => Type::STR,
+            self::ARG_TYPE_INT => Type::INT,
+            self::ARG_TYPE_FLOAT => Type::FLOAT,
+            self::ARG_TYPE_BOOL => Type::BOOL,
+            default => null,
+        };
+        if ($exactType !== null && $this->argumentAlreadyHasExactType($arg, $exactType)) {
+            return $raw;
+        }
+
         return $this->applyArgConversion($raw, $type);
+    }
+
+    protected function argumentAlreadyHasExactType(Node\Expr $arg, string $type): bool
+    {
+        if ($this->isVarExpr($arg)) {
+            return !$this->isStdContainer($arg->name)
+                && $this->hasVar($arg->name)
+                && $this->getVarType($arg->name) === $type;
+        }
+
+        // Semantic type information is not enough here: a dynamically read
+        // typed property, for example, is still represented by php::Variant.
+        // Limit the shortcut to expressions whose generated C++ value has a
+        // fixed representation without an implicit PHPX conversion.
+        $fixedRepresentation = $arg instanceof Node\Scalar
+            || $arg instanceof Node\Expr\Cast
+            || $arg instanceof Node\Expr\Array_
+            || $arg instanceof Node\Expr\BinaryOp\Concat
+            || $arg instanceof Node\Expr\ConstFetch;
+
+        return $fixedRepresentation && $this->detectTypeOfExpr($arg) === $type;
     }
 
     protected function applyArgConversion(string $cxxExpr, string $type): string

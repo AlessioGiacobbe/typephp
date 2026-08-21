@@ -348,7 +348,7 @@ function main()
     $x->call(N);
     $t = end_test($t, '$this->f()', $overhead);
     $x->read_const(N);
-    $t = end_test($t, '$x = Foo::TEST', $overhead);
+    $t = end_test($t, '$x = $this::TEST', $overhead);
     create_object(N);
     $t = end_test($t, 'new Foo()', $overhead);
     read_const(N);

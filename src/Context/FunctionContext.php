@@ -68,6 +68,8 @@ class FunctionContext
      * @var array<string, string>
      */
     public array $ceWrappers = [];
+    /** @var array<string, string> Process-stable class name => function-local zend_class_entry* variable. */
+    public array $classEntryPtrs = [];
     /** Reusable php::CallableScope local, created only when this function performs scoped calls. */
     public ?string $callableScopeVar = null;
     /** This generated body needs a temporary lexical scope on the nearest user-code frame. */
@@ -124,6 +126,7 @@ class FunctionContext
         $this->unsafeObjectProps = [];
         $this->staticPropRefs = [];
         $this->ceWrappers = [];
+        $this->classEntryPtrs = [];
         $this->callableScopeVar = null;
         $this->tmpVarIndex = 0;
         $this->scopeLayouts = [];
@@ -167,6 +170,7 @@ class FunctionContext
         $this->objectProps = [];
         $this->hoistedProps = [];
         $this->staticPropRefs = [];
+        $this->classEntryPtrs = [];
         $this->scopeLayouts = [];
         $this->scopeLevel = 0;
         $this->inLoop = false;

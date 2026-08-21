@@ -86,7 +86,9 @@ class NativePropertyTest extends \BaseTest
 
         $code = file_get_contents($outputFile);
         $this->assertStringContainsString('typephp_static_int_ref(this_.attr(', $code);
-        $this->assertStringContainsString('&= (~php::toInt(php::constant(', $code);
+        // A TypePHP class constant is available during conversion and is
+        // folded before the native property operation is emitted.
+        $this->assertStringContainsString('&= (~php::toInt(1L));', $code);
     }
 
     public function testNativePropertyWriteConvertsOnlyWhenTypesDiffer(): void

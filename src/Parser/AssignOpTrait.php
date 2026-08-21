@@ -19,7 +19,11 @@ use PhpParser\NodeAbstract;
 
 trait AssignOpTrait
 {
-    protected function parseAssignArrayDim(NodeAbstract $left, NodeAbstract $right): string
+    protected function parseAssignArrayDim(
+        NodeAbstract $left,
+        NodeAbstract $right,
+        bool $resultUnused = false,
+    ): string
     {
         if ($left instanceof Expr\ArrayDimFetch && $left->dim !== null) {
             $this->assertNotNativeObjectArrayKey($left->dim);
@@ -58,9 +62,6 @@ trait AssignOpTrait
 
         $value = $this->parseExprAsValue($right);
 
-        $tmp = $this->genTmpVarName();
-        $this->addLocalVar($tmp, Type::VAR);
-
         // item(dim, true) updates an existing reference's value, while offsetSet()
         // replaces the array bucket and breaks the reference. Keep offsetSet() for
         // ArrayAccess objects; dynamically typed/reference containers need a
@@ -68,10 +69,26 @@ trait AssignOpTrait
         $arrayType = $this->getVarType($array);
 
         if ($left->dim === null) {
+            if ($resultUnused
+                && $arrayType === Type::ARRAY
+                && $this->canEmitDirectArrayWriteOperand($right)
+            ) {
+                return $code . $array . '.append(' . $value . ')';
+            }
+            $tmp = $this->addTmpVar(Type::VAR);
             return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet(" . self::VALUE_NULL . ", {$tmp})" . '), ' . $tmp . ')';
         }
         $dim = $this->parseIdentifier($left->dim);
 
+        if ($resultUnused
+            && $arrayType === Type::ARRAY
+            && !$this->shouldMaterializeOrderedOperand($left->dim)
+            && $this->canEmitDirectArrayWriteOperand($right)
+        ) {
+            return $code . $array . '.item(' . $dim . ', true) = ' . $value;
+        }
+
+        $tmp = $this->addTmpVar(Type::VAR);
         if ($arrayType === Type::ARRAY) {
             return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.item({$dim}, true) = {$tmp}" . '), ' . $tmp . ')';
         }
@@ -156,6 +173,7 @@ trait AssignOpTrait
             $left,
             $right,
             $this->canFoldLocalInitializerIntoDeclaration($v),
+            $v->getAttribute(self::ATTR_STATEMENT_EXPRESSION, false),
         );
     }
 
@@ -283,6 +301,7 @@ trait AssignOpTrait
         Expr $left,
         Expr $right,
         bool $foldIntoDeclaration = false,
+        bool $resultUnused = false,
     ): string
     {
         $this->assertImmutableMutationTarget($left);
@@ -635,7 +654,7 @@ trait AssignOpTrait
             if ($this->isStdContainerExpr($left)) {
                 return $this->parseStdContainerAssign($left, $right);
             }
-            return $this->parseAssignArrayDim($left, $right);
+            return $this->parseAssignArrayDim($left, $right, $resultUnused);
         } elseif ($this->isArrayDimFetch($left) and $this->isPropertyFetch($left->var)) {
             return $this->parseAssignPropertyArrayDim($left, $right);
         } elseif ($this->isArrayDimFetch($left) and $this->isStaticPropertyFetch($left->var)) {
@@ -891,6 +910,12 @@ trait AssignOpTrait
             if ($this->isStdContainerExpr($node->var)) {
                 return $this->parseStdContainerAssignOp($node, $op);
             }
+            if ($this->canUpdateKnownArraySlotInPlace($node, $op)) {
+                $array = $this->parseWritableIdentifier($node->var->var);
+                $dim = $this->parseIdentifier($node->var->dim);
+                return $array . '.item(' . $dim . ', true) ' . $op . ' '
+                    . $this->parseExprAsValue($node->expr);
+            }
             /**
              * $count[$r] -= 1;
              * 需要转为下面语句：
@@ -1093,6 +1118,41 @@ trait AssignOpTrait
         };
 
         return 'php::' . $class . '::' . $method . '(' . $leftExpr . ', ' . $convertedRight . ')';
+    }
+
+    private function canUpdateKnownArraySlotInPlace(Expr\AssignOp $node, string $op): bool
+    {
+        if (!$node->getAttribute(self::ATTR_STATEMENT_EXPRESSION, false)
+            || !$node->var instanceof Expr\ArrayDimFetch
+            || $node->var->dim === null
+            || !$this->isVarExpr($node->var->var)
+            || $this->shouldMaterializeOrderedOperand($node->var->dim)
+            || !$this->canEmitDirectArrayWriteOperand($node->expr)
+        ) {
+            return false;
+        }
+
+        $array = $this->parseIdentifier($node->var->var);
+        return $this->hasVar($array)
+            && $this->getVarType($array) === Type::ARRAY
+            && in_array($op, ['+=', '-=', '*=', '/=', '%=', '<<=', '>>=', '&=', '|=', '^='], true);
+    }
+
+    private function canEmitDirectArrayWriteOperand(NodeAbstract $expr): bool
+    {
+        if (!$this->shouldMaterializeOrderedOperand($expr)) {
+            return true;
+        }
+        if (!$expr instanceof Expr\ArrayDimFetch
+            || $expr->dim === null
+            || !$this->isVarExpr($expr->var)
+            || $this->shouldMaterializeOrderedOperand($expr->dim)
+        ) {
+            return false;
+        }
+
+        $array = $this->parseIdentifier($expr->var);
+        return $this->hasVar($array) && $this->getVarType($array) === Type::ARRAY;
     }
 
     protected function parseAssignOpConcat(Expr\AssignOp\Concat $expr): string

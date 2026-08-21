@@ -177,14 +177,41 @@ trait ClassConstantFetchTrait
     protected function parseDynamicClassConstFetch(Expr\ClassConstFetch $expr): string
     {
         $const = $this->escapeString($this->parseIdentifier($expr->name));
+
+        // PhpParser represents `$this::CONST` as a dynamic class target even
+        // though the receiver class is the class currently being compiled.
+        // TypePHP class constants are compile-time data, so do not route this
+        // common path through get_class(), string concatenation and ZendVM's
+        // global constant table.
+        if ($this->isVarExpr($expr->class)
+            && $this->parseVariable($expr->class) === 'this_'
+            && $this->classDef
+            && $this->hasClass($this->getFullClassName())
+        ) {
+            $nativeConst = $this->findNativeClassConst(
+                $expr,
+                $this->getFullClassName(),
+                $const,
+            );
+            if ($nativeConst !== false) {
+                return $nativeConst;
+            }
+        }
+
         $target = $this->materializeDynamicClassConstTarget($expr->class);
 
         if ($const === 'class') {
             return 'php::fn::get_class(' . $target . ')';
         }
 
-        $className = '(' . $target . '.isObject() ? php::fn::get_class(' . $target . ') : ' . $target . ')';
-        return Symbol::constant() . '(php::concat({' . $className . ', "::", ' . $this->getLiteralString($const) . '}))';
+        $scope = $this->methodDef && $this->classDef
+            ? $this->getClassEntryPtr($this->getFullClassName())
+            : 'nullptr';
+        return 'php::classConstant('
+            . $target . ', '
+            . $this->getLiteralString($const) . ', '
+            . $scope
+            . ')';
     }
 
     protected function parseDynamicClassConstNameFetch(Expr\ClassConstFetch $expr): string

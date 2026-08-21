@@ -18,7 +18,7 @@ final class StringConcatAssignTest extends \BaseTest
 
         self::assertIsString($code);
         self::assertGreaterThanOrEqual(3, substr_count($code, 'value.append('));
-        self::assertStringContainsString('value.append(php::concat({', $code);
+        self::assertStringContainsString('value.append(php::concat(', $code);
         self::assertStringNotContainsString('value = php::concat({value,', $code);
     }
 }

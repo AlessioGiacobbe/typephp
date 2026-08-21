@@ -25,6 +25,7 @@
 - [重建 PHPX WASM 静态库](PHPX_WASM_BUILD.md)：增量重编 `libphpx.a`、数值依赖重建与完整 SDK 重建边界。
 - [核心重构计划](REFACTORING_PLAN.md)
 - [作用域管理设计](SCOPE_MANAGEMENT.md)：`CallableScope`、`UserCodeScopeGuard` 与 `FakeScopeGuard` 的职责和使用边界。
+- [Zend Object 创建与属性默认值初始化](OBJECT_CREATION.md)：`gen_stub.php` 默认属性表、自定义 `create_object` 的触发条件、执行流程与性能边界。
 - [Native Class Object 设计](NATIVE_CLASS_OBJECT.md) 与 [实现验收矩阵](NATIVE_CLASS_IMPLEMENTATION_AUDIT.md)。
 - [PHP 8.4 Property Hook 集成设计](PROPERTY_HOOKS.md)：编译期 lowering、Zend Hook 元数据、对象内省及 PHPX ABI 边界。
 - [Interface Property Hook 实现方案](INTERFACE_PROPERTY_HOOKS.md)：接口属性契约、编译期方差检查及 PHP 8.4 抽象 Hook 元数据。

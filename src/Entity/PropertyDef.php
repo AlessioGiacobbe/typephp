@@ -27,6 +27,10 @@ class PropertyDef
     public string $typeStr = '';
     public bool $promoted = false;
     public bool $readonly = false;
+    /** The generated Zend property table cannot represent this default exactly. */
+    public bool $requiresRuntimeDefaultInit = false;
+    /** Cached declared-property offset used by the runtime default initializer. */
+    public string $runtimeDefaultOffset = '';
     public ?string $getter = null;
     public ?string $setter = null;
     public bool $virtual = false;
