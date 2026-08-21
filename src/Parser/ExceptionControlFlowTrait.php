@@ -45,7 +45,7 @@ trait ExceptionControlFlowTrait
 
     protected function parseTryCatch(mixed $v): string
     {
-        $code = $this->parseBeforeStmtLines() . PHP_EOL;
+        $code = $this->parseBeforeStmtLines();
         $code .= 'try {';
         $finally = $v->finally;
         $stmts = $finally ? $this->injectFinallyBeforeReturn($v->stmts, $finally->stmts) : $v->stmts;
@@ -68,23 +68,23 @@ trait ExceptionControlFlowTrait
 
         $code .= PHP_EOL;
         $code .= $this->parseBlockStmts($stmts);
-        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $code .= $this->getIndent() . '}';
 
         $exVar = $this->genTmpVarName();
         $this->addLocalVar($exVar, Type::VAR);
 
-        $code .= 'catch(zend_object *_ex) {' . PHP_EOL;
+        $code .= ' catch (zend_object *_ex) {' . PHP_EOL;
+        $this->indentLevel++;
         $code .= $this->getIndent() . $exVar . ' = php::catchException();' . PHP_EOL;
         if ($catches) {
             $catchMatched = $this->genTmpVarName();
             $code .= $this->getIndent() . 'bool ' . $catchMatched . ' = false;' . PHP_EOL;
-            $this->indentLevel++;
             foreach ($catches as $catch) {
-                $code .= $this->parseCatch($catch, $exVar, $catchMatched, $finally?->stmts ?? []);
+                $code .= $this->parseCatch($catch, $exVar, $catchMatched, $finally?->stmts ?? []) . PHP_EOL;
             }
-            $this->indentLevel--;
         }
-        $code .= '}' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
 
         if ($finally) {
             $code .= $this->parseStmts($finally->stmts);
@@ -93,7 +93,11 @@ trait ExceptionControlFlowTrait
         $rethrow = $this->inGeneratorBody
             ? 'typephp_fiber_rethrow(' . $exVar . ');'
             : 'php::throwException(php::Object(' . $exVar . '));';
-        $code .= 'if (' . $exVar . ') {' . PHP_EOL . $this->getIndent() . $rethrow . PHP_EOL . $this->getIndent() . '}';
+        $code .= 'if (' . $exVar . ') {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $rethrow . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}';
 
         return $code;
     }
@@ -199,7 +203,7 @@ trait ExceptionControlFlowTrait
             $this->addLocalVar($var, Type::OBJECT);
         }
 
-        $code = $this->parseBeforeStmtLines() . PHP_EOL;
+        $code = $this->parseBeforeStmtLines();
         $code .= $this->getIndent() . 'if (!' . $catchMatched . ' && ' . $exVar . ' && ';
         $conditions = [];
         foreach ($types as $type) {

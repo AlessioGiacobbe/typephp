@@ -72,6 +72,26 @@ trait TypeCheckGenerator
         return $code;
     }
 
+    protected function genStrictScalarArgConversion(
+        ArgInfo $argInfo,
+        string $valueExpr,
+        string $callableName,
+        string $argNoExpr
+    ): string {
+        $helper = match ($argInfo->type) {
+            Type::INT => 'php::toIntArgExact',
+            Type::FLOAT => 'php::toFloatArgExact',
+            Type::BOOL => 'php::toBoolArgExact',
+            Type::STR => 'php::toStringArgExact',
+            default => throw new \LogicException('Not a strict scalar type: ' . $argInfo->type),
+        };
+        $paramName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
+
+        return $helper . '(' . $valueExpr . ', '
+            . $this->getLiteralString($callableName) . ', ' . $argNoExpr . ', '
+            . $this->getLiteralString($paramName) . ')';
+    }
+
     protected function genStrictScalarReturnCheck(string $valueExpr, string $returnType): string
     {
         if (!$this->isStrictScalarType($returnType)) {

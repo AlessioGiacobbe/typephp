@@ -694,18 +694,25 @@ trait PropertyAccessTrait
                 . ', ' . $tmpVar . '.typeStr())';
         }
 
-        $coercion = $this->compositeTypeNeedsIntToFloatCoercion($typeCheck)
-            ? 'if (' . $tmpVar . '.isInt()) { ' . $tmpVar . ' = php::toFloat(' . $tmpVar . '); } '
-            : '';
+        $code = '([&]() -> ' . Type::VAR . ' {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $tmpVar . ' = ' . $rightExpr . ';' . PHP_EOL;
+        if ($this->compositeTypeNeedsIntToFloatCoercion($typeCheck)) {
+            $code .= $this->getIndent() . 'if (' . $tmpVar . '.isInt()) {' . PHP_EOL;
+            $this->indentLevel++;
+            $code .= $this->getIndent() . $tmpVar . ' = php::toFloat(' . $tmpVar . ');' . PHP_EOL;
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+        }
+        $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . implode(' || ', $conditions) . '))) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . $throwExpr . ';' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $code .= $this->getIndent() . 'return ' . $tmpVar . ';' . PHP_EOL;
+        $this->indentLevel--;
 
-        return '([&]() -> ' . Type::VAR . ' { '
-            . $tmpVar . ' = ' . $rightExpr . '; '
-            . $coercion
-            . 'if (UNEXPECTED(!(' . implode(' || ', $conditions) . '))) { '
-            . $throwExpr . '; '
-            . '} '
-            . 'return ' . $tmpVar . '; '
-            . '}())';
+        return $code . $this->getIndent() . '}())';
     }
 
     private function getObjectPropertyAssignTypeCheck(PropertyDef $def): array

@@ -18,7 +18,8 @@ trait ConditionalControlTrait
             $arms[] = [$elseif->cond, $elseif->stmts];
         }
 
-        return $this->parseBeforeStmtLines() . PHP_EOL . $this->getIndent() . $this->parseIfChain($arms, $v->else, 0) . PHP_EOL;
+        return $this->parseBeforeStmtLines()
+            . $this->parseIfChain($arms, $v->else, 0) . PHP_EOL;
     }
 
     protected function parseIfChain(array $arms, ?Node\Stmt\Else_ $else, int $index): string
@@ -27,16 +28,22 @@ trait ConditionalControlTrait
             if (!$else || $this->isEmptyStmtList($else->stmts)) {
                 return '';
             }
-            return $this->parseBlockStmts($else->stmts);
+            return $this->parseStmts($else->stmts);
         }
 
         [$cond, $stmts] = $arms[$index];
         $code = $this->genConditionWithCapturedStmts($cond, 'if ');
         $code .= $this->parseBlockStmts($stmts);
-        $tail = $this->parseIfChain($arms, $else, $index + 1);
-        if ($tail !== '') {
+        $hasTail = isset($arms[$index + 1]) || ($else && !$this->isEmptyStmtList($else->stmts));
+        if ($hasTail) {
             $code .= $this->getIndent() . '} else {' . PHP_EOL;
+            $this->indentLevel++;
+            $tail = $this->parseIfChain($arms, $else, $index + 1);
             $code .= $tail;
+            $this->indentLevel--;
+            if (!str_ends_with($tail, PHP_EOL)) {
+                $code .= PHP_EOL;
+            }
         }
         $code .= $this->getIndent() . '}';
         return $code;
@@ -56,4 +63,3 @@ trait ConditionalControlTrait
      * 逻辑比较的运算，必须返回 bool 类型.
      */
 }
-

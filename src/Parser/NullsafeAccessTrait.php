@@ -85,17 +85,22 @@ trait NullsafeAccessTrait
         $last = array_key_last($list);
         $tmpFn = $this->genTmpVarName();
 
-        $code = $comment . 'auto ' . $tmpFn . ' = [&]() -> ' . Type::VAR . '{' . PHP_EOL;
+        $code = $comment . 'auto ' . $tmpFn . ' = [&]() -> ' . Type::VAR . ' {' . PHP_EOL;
+        $this->indentLevel++;
 
         foreach ($list as $key => $item) {
             $tmpVar = $this->addTmpVar($key !== $last ? Type::OBJECT : Type::VAR);
             $ownedTmpVars[] = $tmpVar;
             if ($item[3]) {
-                $code .= "if ({$object}.isNull()) { return " . self::VALUE_NULL . '; }';
+                $code .= $this->getIndent() . "if ({$object}.isNull()) {" . PHP_EOL;
+                $this->indentLevel++;
+                $code .= $this->getIndent() . 'return ' . self::VALUE_NULL . ';' . PHP_EOL;
+                $this->indentLevel--;
+                $code .= $this->getIndent() . '}' . PHP_EOL;
             }
             if ($item[0] == 'property') {
                 $update = $this->escapeAttrMode($this->isPropertyFetchUpdate($item[2]));
-                $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});";
+                $code .= $this->getIndent() . "{$tmpVar} = {$object}.attr({$item[1]}, {$update});" . PHP_EOL;
             } else {
                 $methodName = $this->isNamedMethod($item[4]->name)
                     ? $this->parseIdentifier($item[4]->name)
@@ -110,22 +115,24 @@ trait NullsafeAccessTrait
                 $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $beforeStmtCount);
                 $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $afterStmtCount);
                 if ($argBeforeStmts) {
-                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argBeforeStmts) . PHP_EOL;
+                    $code .= $this->formatCapturedStmtLines($argBeforeStmts);
                 }
                 if ($requiresDynamicScope && $this->methodDef) {
                     $code .= $this->getIndent()
                         . "{$tmpVar} = php::callScoped({$object}, {$item[1]}, "
-                        . $this->getCallableScopeExpr() . ", {$args});";
+                        . $this->getCallableScopeExpr() . ", {$args});" . PHP_EOL;
                 } else {
-                    $code .= $this->getIndent() . "{$tmpVar} = {$object}.call({$item[1]}, {$args});";
+                    $code .= $this->getIndent() . "{$tmpVar} = {$object}.call({$item[1]}, {$args});" . PHP_EOL;
                 }
                 if ($argAfterStmts) {
-                    $code .= $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $argAfterStmts) . PHP_EOL;
+                    $code .= $this->formatCapturedStmtLines($argAfterStmts);
                 }
             }
             $object = $tmpVar;
         }
-        $code .= $this->getIndent() . "return {$object}; };";
+        $code .= $this->getIndent() . "return {$object};" . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '};';
         $this->context->beforeStmtLines[] = $code;
 
         // C++ temporaries are function-scoped; release their zvals at the PHP statement boundary.

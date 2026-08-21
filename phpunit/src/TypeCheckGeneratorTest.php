@@ -103,4 +103,34 @@ class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
         $this->assertStringContainsString('php::throwReturnTypeError(', $returnCode);
         $this->assertStringNotContainsString('must be of type', $returnCode);
     }
+
+    public function testDynamicStrictScalarArgumentsUseInlinePhpxConversions(): void
+    {
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $this->setProtectedProperty($compiler, 'noLiteralStrings', true);
+
+        foreach ([
+            Type::INT => 'php::toIntArgExact',
+            Type::FLOAT => 'php::toFloatArgExact',
+            Type::BOOL => 'php::toBoolArgExact',
+            Type::STR => 'php::toStringArgExact',
+        ] as $type => $helper) {
+            $argInfo = new ArgInfo();
+            $argInfo->name = 'value';
+            $argInfo->phpName = 'value';
+            $argInfo->type = $type;
+
+            $expr = $this->invokeMethod(
+                $compiler,
+                'genStrictScalarArgConversion',
+                [$argInfo, 'dynamic_value', 'Foo\\Bar::run', '2'],
+            );
+
+            $this->assertSame(
+                $helper . '(dynamic_value, php::Str{ZEND_STRL("Foo\\\\Bar::run")}, 2, php::Str{ZEND_STRL("value")})',
+                $expr,
+            );
+            $this->assertStringNotContainsString('[&]', $expr);
+        }
+    }
 }

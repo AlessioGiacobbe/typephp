@@ -3469,13 +3469,18 @@ CODE;
         // Zend's C frames: those frames perform their cleanup after the handler
         // returns with EG(exception) set. Convert back to normal Zend exception
         // propagation at the outermost wrapper.
-        $cppCode = 'try {' . PHP_EOL;
+        $this->indentLevel++;
+        $cppCode = $this->getIndent() . 'try {' . PHP_EOL;
+        $this->indentLevel++;
 
-        $cppCode .= $this->genParameterCountCheck(
+        $argCountCheck = $this->genParameterCountCheck(
             $functionDef->argCountRequired,
             count($functionDef->argInfoList),
             $functionDef->hasVariadicArg(),
         );
+        if ($argCountCheck !== '') {
+            $cppCode .= $this->getIndent() . rtrim($argCountCheck) . PHP_EOL;
+        }
 
         $callParams = '';
         foreach ($functionDef->argInfoList as $k => $argInfo) {
@@ -3494,7 +3499,7 @@ CODE;
                     $cppCode .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
                 }
                 $this->indentLevel--;
-                $cppCode .= '}' . PHP_EOL;
+                $cppCode .= $this->getIndent() . '}' . PHP_EOL;
                 $cppCode .= $this->genExtraNamedVariadicArgs($var);
             } else {
                 if ($argInfo->default !== '') {
@@ -3562,11 +3567,14 @@ CODE;
         } else {
             $cppCode .= $this->getIndent() . $fn . '(' . $callParams . ');' . PHP_EOL;
         }
-        $cppCode .= '}' . PHP_EOL;
-        $cppCode .= 'catch (zend_object *) {' . PHP_EOL;
+        $this->indentLevel--;
+        $cppCode .= $this->getIndent() . '} catch (zend_object *) {' . PHP_EOL;
+        $this->indentLevel++;
         $cppCode .= $this->getIndent() . '/* EG(exception) is already set; return control to ZendVM for frame cleanup. */' . PHP_EOL;
-        $cppCode .= '}' . PHP_EOL;
-        $cppCode .= '}' . PHP_EOL . PHP_EOL;
+        $this->indentLevel--;
+        $cppCode .= $this->getIndent() . '}' . PHP_EOL;
+        $this->indentLevel--;
+        $cppCode .= $this->getIndent() . '}' . PHP_EOL . PHP_EOL;
 
         return $cppCode;
     }
@@ -3577,13 +3585,14 @@ CODE;
          * 对于常驻内存型应用，执行完当前逻辑后，会立即进入长时间的事件循环等待。
          * 因此，这些变量仅作为临时用途，用完后应即刻销毁，无需长期持有。
          */
-        $cppCode = "const char *value = " . $this->genCharPtr($entryFile, true) . ';' . PHP_EOL;
-        $cppCode .= 'php::Var &_SERVER = ' . $this->escapeGlobalVar('_SERVER') . ';' . PHP_EOL;
-        $cppCode .= '_SERVER.item("PHP_SELF", true) = value;'. PHP_EOL;
-        $cppCode .= '_SERVER.item("SCRIPT_NAME", true) = value;'. PHP_EOL;
-        $cppCode .= '_SERVER.item("SCRIPT_FILENAME", true) = value;'. PHP_EOL;
-        $cppCode .= '_SERVER.item("PATH_TRANSLATED", true) = value;'. PHP_EOL;
-        $cppCode .= '_SERVER.item("DOCUMENT_ROOT", true) = "";' . PHP_EOL;
+        $indent = $this->getIndent();
+        $cppCode = $indent . "const char *value = " . $this->genCharPtr($entryFile, true) . ';' . PHP_EOL;
+        $cppCode .= $indent . 'php::Var &_SERVER = ' . $this->escapeGlobalVar('_SERVER') . ';' . PHP_EOL;
+        $cppCode .= $indent . '_SERVER.item("PHP_SELF", true) = value;'. PHP_EOL;
+        $cppCode .= $indent . '_SERVER.item("SCRIPT_NAME", true) = value;'. PHP_EOL;
+        $cppCode .= $indent . '_SERVER.item("SCRIPT_FILENAME", true) = value;'. PHP_EOL;
+        $cppCode .= $indent . '_SERVER.item("PATH_TRANSLATED", true) = value;'. PHP_EOL;
+        $cppCode .= $indent . '_SERVER.item("DOCUMENT_ROOT", true) = "";' . PHP_EOL;
 
         return $cppCode . PHP_EOL;
     }
@@ -3608,8 +3617,10 @@ CODE;
     protected function genMethodWrapper(ClassDef $classDef, MethodDef $methodDef): string
     {
         $name = $classDef->getNamespacedName();
-        $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . '){' . PHP_EOL;
+        $cppCode = 'ZEND_METHOD(' . $name . ', ' . $methodDef->name . ') {' . PHP_EOL;
+        $this->indentLevel++;
         $cppCode .= $this->getIndent() . Type::OBJECT . ' this_(&execute_data->This);' . PHP_EOL;
+        $this->indentLevel--;
         $fn = self::PREFIX . $this->getNativeMethodName($classDef, $methodDef);
         $cppCode .= $this->genWrapperFunctionArgs(
             $fn,
@@ -5056,7 +5067,7 @@ CODE;
     private function genFunctionWrapper(FunctionDef $functionDef): string
     {
         $name = $this->escapeZendFnName($functionDef->getNamespacedName());
-        $cppCode = 'ZEND_FUNCTION(' . $name . '){' . PHP_EOL;
+        $cppCode = 'ZEND_FUNCTION(' . $name . ') {' . PHP_EOL;
         $fn = self::PREFIX . $this->getNativeName($functionDef->name, $functionDef->namespace);
         $cppCode .= $this->genWrapperFunctionArgs($fn, $functionDef, $functionDef->getNamespacedName());
 

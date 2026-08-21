@@ -27,7 +27,7 @@ trait ForeachTrait
                 if ($item->value instanceof Expr\List_) {
                     $nestedTmpVar = $this->genTmpVarName();
                     $this->addLocalVar($nestedTmpVar, Type::VAR);
-                    $code .= $this->getIndent() . ' ' . $nestedTmpVar . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
+                    $code .= $this->getIndent() . $nestedTmpVar . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
                     $code .= $this->parseForeachItemAsList($nestedTmpVar, $item->value->items);
                     continue;
                 }
@@ -35,7 +35,7 @@ trait ForeachTrait
                 if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
                     $this->addLocalVar($var, Type::VAR);
                 }
-                $code .= $this->getIndent() . ' ' . $var . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
+                $code .= $this->getIndent() . $var . ' = ' . $listTmpVar . '.item(' . $key . ');' . PHP_EOL;
             } else {
                 $this->fatalError($item, 'Unsupported foreach item type');
             }
@@ -56,7 +56,7 @@ trait ForeachTrait
 
         $keyVar = $this->parseIdentifier($node->keyVar);
         $this->checkVar($node, $keyVar, $defaultType);
-        return $this->getIndent() . ' ' . $keyVar . ' = ' . $keyExpr . ';' . PHP_EOL;
+        return $this->getIndent() . $keyVar . ' = ' . $keyExpr . ';' . PHP_EOL;
     }
 
     protected function parseForeachValueAssignment(Foreach_ $node, string $valueExpr, ?string $valueRefExpr = null): string
@@ -75,7 +75,7 @@ trait ForeachTrait
             }
             $listTmpVar = $this->genTmpVarName();
             $this->addLocalVar($listTmpVar, Type::VAR);
-            return $this->getIndent() . ' ' . $listTmpVar . ' = ' . $valueExpr . ';' . PHP_EOL
+            return $this->getIndent() . $listTmpVar . ' = ' . $valueExpr . ';' . PHP_EOL
                 . $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
         }
 
@@ -106,7 +106,7 @@ trait ForeachTrait
                     $this->fatalError($node, 'Cannot bind foreach reference to native variable of type ' . $this->getVarType($valueVar));
                 }
             }
-            return $this->getIndent() . ' ' . $valueRefExpr . '(' . $valueVar . ');' . PHP_EOL;
+            return $this->getIndent() . $valueRefExpr . '(' . $valueVar . ');' . PHP_EOL;
         }
 
         if ($this->isVarExpr($node->valueVar)) {
@@ -114,7 +114,7 @@ trait ForeachTrait
                 $this->checkVar($node, $valueVar);
             }
         }
-        return $this->getIndent() . ' ' . $valueVar . ' = ' . $valueExpr . ';' . PHP_EOL;
+        return $this->getIndent() . $valueVar . ' = ' . $valueExpr . ';' . PHP_EOL;
     }
 
     protected function parseForeachIterable(Foreach_ $node, string $iterableVar): string
@@ -138,8 +138,8 @@ trait ForeachTrait
         $body = $this->parseForeachBody($node);
         $this->indentLevel--;
 
-        $code .= $this->parseBeforeStmtLines() . PHP_EOL;
-        $code .= $body . PHP_EOL;
+        $code .= $this->parseBeforeStmtLines();
+        $code .= $body;
         $code .= $this->getIndent() . '}';
         $this->indentLevel--;
         $code .= PHP_EOL . $this->getIndent() . '}';

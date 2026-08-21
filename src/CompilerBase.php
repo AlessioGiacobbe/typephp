@@ -1653,7 +1653,12 @@ class CompilerBase implements PropertyAccessContext
         if (!$stmts) {
             return '';
         }
-        return $this->getIndent() . implode(PHP_EOL . $this->getIndent(), $stmts) . PHP_EOL;
+
+        $code = '';
+        foreach ($stmts as $stmt) {
+            $code .= $this->formatStatementFragment($stmt) . PHP_EOL;
+        }
+        return $code;
     }
 
     protected function genConditionWithCapturedStmts(NodeAbstract $cond, string $openPrefix): string
@@ -1673,7 +1678,7 @@ class CompilerBase implements PropertyAccessContext
             $condExpr = '(' . $condExpr . ')';
         }
         $condExpr = $this->convertConditionExpr($cond, $condExpr);
-        $code .= $openPrefix . '(' . $condExpr . ') {' . PHP_EOL;
+        $code .= $this->getIndent() . $openPrefix . '(' . $condExpr . ') {' . PHP_EOL;
         return $code;
     }
 
@@ -1815,11 +1820,46 @@ class CompilerBase implements PropertyAccessContext
 
         $code = '';
         foreach ($lines as $line) {
-            $code .= $this->getIndent() . $line . PHP_EOL;
+            $code .= $this->formatStatementFragment($line) . PHP_EOL;
         }
         $this->context->leaveScope();
 
         return $code;
+    }
+
+    /**
+     * Statement lowerers may return a multi-line fragment. Some nested lines
+     * already carry their absolute indentation, while simple statements do
+     * not. Apply the current scope indentation to every unindented physical
+     * line instead of only the first line of the fragment.
+     */
+    protected function formatStatementFragment(string $fragment): string
+    {
+        $indent = $this->getIndent();
+        $fragment = rtrim($fragment, "\r\n");
+        $lines = preg_split('/\R/', $fragment);
+        if ($lines === false) {
+            return $indent . $fragment;
+        }
+
+        $firstContentLine = true;
+        foreach ($lines as &$line) {
+            if ($line === '') {
+                continue;
+            }
+            if ($firstContentLine) {
+                // A fragment represents one statement at the current scope.
+                // Its first physical line must not retain indentation captured
+                // from an intermediate expression-lowering context.
+                $line = $indent . ltrim($line);
+                $firstContentLine = false;
+            } elseif ($line[0] !== ' ' && $line[0] !== "\t") {
+                $line = $indent . $line;
+            }
+        }
+        unset($line);
+
+        return implode(PHP_EOL, $lines);
     }
 
     protected function assertMustUseResultIsConsumed(NodeAbstract $expr): void

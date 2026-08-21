@@ -245,11 +245,11 @@ trait AssignOpTrait
     protected function parseAssignToList(Expr $left, Expr $right): string
     {
         $items = $left->items;
-        $code  = '{';
+        $code  = '{' . PHP_EOL;
         $this->indentLevel++;
         $tmpVar = $this->genTmpVarName();
         $this->addLocalVar($tmpVar, Type::VAR);
-        $code .= $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($right) . '; ';
+        $code .= $this->getIndent() . $tmpVar . ' = ' . $this->parseExpr($right) . ';' . PHP_EOL;
         foreach ($items as $k => $item) {
             if (!$item) {
                 continue;
@@ -259,14 +259,16 @@ trait AssignOpTrait
                 if ($item->value instanceof Expr\List_) {
                     $nestedTmp = $this->genTmpVarName();
                     $this->addLocalVar($nestedTmp, Type::ARRAY);
-                    $code .= "{$nestedTmp} = {$tmpVar}.item({$key}); ";
-                    $code .= $this->parseAssignToList($item->value, new Variable($nestedTmp));
+                    $code .= $this->getIndent() . "{$nestedTmp} = {$tmpVar}.item({$key});" . PHP_EOL;
+                    $code .= $this->getIndent()
+                        . $this->parseAssignToList($item->value, new Variable($nestedTmp))
+                        . PHP_EOL;
                 } else {
                     $var = $this->parseWritableIdentifier($item->value);
                     if ($this->isVarExpr($item->value) and !$this->hasVar($var)) {
                         $this->addLocalVar($var, Type::VAR);
                     }
-                    $code .= "{$var} = {$tmpVar}.item({$key}); ";
+                    $code .= $this->getIndent() . "{$var} = {$tmpVar}.item({$key});" . PHP_EOL;
                 }
             } else {
                 abort($item);
@@ -274,7 +276,7 @@ trait AssignOpTrait
         }
         $this->indentLevel--;
 
-        return $code . '}';
+        return $code . $this->getIndent() . '}';
     }
 
     protected function parseAssignFinally(

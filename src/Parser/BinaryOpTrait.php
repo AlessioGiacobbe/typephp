@@ -909,20 +909,24 @@ trait BinaryOpTrait
         $shortCircuitValue = $op === '&&' ? 'false' : 'true';
         $rightCondition = $op === '&&' ? $leftBool : '!(' . $leftBool . ')';
 
-        $code = '[&]() -> bool {';
-        $code .= $this->getIndent() . 'if (' . $rightCondition . ') {';
+        $code = '[&]() -> bool {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'if (' . $rightCondition . ') {' . PHP_EOL;
+        $this->indentLevel++;
         $code .= $this->formatCapturedStmtLines($rightBeforeStmts);
         if ($rightAfterStmts) {
             $rightTmpVar = $this->addTmpVar(Type::VAR);
-            $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';';
+            $code .= $this->getIndent() . $rightTmpVar . ' = ' . $rightExpr . ';' . PHP_EOL;
             $code .= $this->formatCapturedStmtLines($rightAfterStmts);
             $rightExpr = $rightTmpVar;
             $rightBool = $this->convertPythonObjectToBool($right, $rightExpr)
                 ?? $this->convertBoolExpr($rightExpr, $this->detectTypeOfExpr($right));
         }
-        $code .= $this->getIndent() . 'return ' . $rightBool . ';';
-        $code .= $this->getIndent() . '}';
-        $code .= $this->getIndent() . 'return ' . $shortCircuitValue . ';';
+        $code .= $this->getIndent() . 'return ' . $rightBool . ';' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $code .= $this->getIndent() . 'return ' . $shortCircuitValue . ';' . PHP_EOL;
+        $this->indentLevel--;
         $code .= $this->getIndent() . '}()';
 
         return $code;

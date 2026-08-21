@@ -69,20 +69,26 @@ trait SelectionExpressionTrait
             $ternaryType = $nativeSelection
                 ? $this->getNativeObjectPointerType($nativeClass)
                 : $this->getNormalAssignType($typeChanged ? Type::VAR : $ifType);
-            $code = '[&]() -> ' . $ternaryType . '{';
+            $code = '[&]() -> ' . $ternaryType . ' {' . PHP_EOL;
+            $this->indentLevel++;
             $code .= $this->formatCapturedStmtLines($condBeforeStmts);
             if ($condAfterStmts) {
                 $condTmpVar = $this->addTmpVar(Type::VAR);
-                $code .= $this->getIndent() . "{$condTmpVar} = {$cond};";
+                $code .= $this->getIndent() . "{$condTmpVar} = {$cond};" . PHP_EOL;
                 $code .= $this->formatCapturedStmtLines($condAfterStmts);
                 $cond = $condTmpVar;
             }
             $cond = $this->convertConditionExpr($expr->cond, $cond);
-            $code .= $this->getIndent() . 'if (' . $cond . ') {';
+            $code .= $this->getIndent() . 'if (' . $cond . ') {' . PHP_EOL;
+            $this->indentLevel++;
             $code .= $this->formatTernaryReturn($expr->if, $if, $ifBeforeStmts, $ifAfterStmts, $ternaryType, $ifType, $nativeClass);
-            $code .= $this->getIndent() . '} else {';
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '} else {' . PHP_EOL;
+            $this->indentLevel++;
             $code .= $this->formatTernaryReturn($expr->else, $else, $elseBeforeStmts, $elseAfterStmts, $ternaryType, $elseType, $nativeClass);
-            $code .= $this->getIndent() . '}';
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
+            $this->indentLevel--;
             $code .= $this->getIndent() . '}()';
             return $code;
         }
@@ -114,13 +120,13 @@ trait SelectionExpressionTrait
             } else {
                 $tmpVar = $this->addTmpVar($returnType);
             }
-            $code .= $this->getIndent() . "{$tmpVar} = {$value};";
+            $code .= $this->getIndent() . "{$tmpVar} = {$value};" . PHP_EOL;
             $code .= $this->formatCapturedStmtLines($afterStmts);
-            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+            $code .= $this->getIndent() . 'return ' . $tmpVar . ';' . PHP_EOL;
         } else {
             $code .= $returnType === Type::VAR
-                ? $this->getIndent() . 'return php::Var(' . $value . ');'
-                : $this->getIndent() . 'return ' . $value . ';';
+                ? $this->getIndent() . 'return php::Var(' . $value . ');' . PHP_EOL
+                : $this->getIndent() . 'return ' . $value . ';' . PHP_EOL;
         }
         return $code;
     }
@@ -152,7 +158,8 @@ trait SelectionExpressionTrait
             $var = $tmpVar;
         }
 
-        $code = '[&]() -> ' . $returnType . '{';
+        $code = '[&]() -> ' . $returnType . ' {' . PHP_EOL;
+        $this->indentLevel++;
         $default = null;
         foreach ($expr->arms as $arm) {
             if ($arm->conds === null) {
@@ -160,14 +167,15 @@ trait SelectionExpressionTrait
                 continue;
             }
             $matched = $this->genTmpVarName();
-            $code .= $this->getIndent() . 'bool ' . $matched . ' = false;';
+            $code .= $this->getIndent() . 'bool ' . $matched . ' = false;' . PHP_EOL;
             foreach ($arm->conds as $cond) {
                 if ($this->isMatchExpr($cond)) {
                     $this->fatalError($arm, 'Match expression cannot be used as a condition');
                 }
                 $this->assertExprCanBeUsedAsValue($cond, 'match arm condition');
                 [$condValue, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($cond);
-                $code .= $this->getIndent() . 'if (!' . $matched . ') {';
+                $code .= $this->getIndent() . 'if (!' . $matched . ') {' . PHP_EOL;
+                $this->indentLevel++;
                 $code .= $this->formatCapturedStmtLines($beforeStmts);
                 if ($afterStmts) {
                     $condClass = $this->detectClassOfExpr($cond);
@@ -178,7 +186,7 @@ trait SelectionExpressionTrait
                     } else {
                         $condTmpVar = $this->addTmpVar(Type::VAR);
                     }
-                    $code .= $this->getIndent() . "{$condTmpVar} = {$condValue};";
+                    $code .= $this->getIndent() . "{$condTmpVar} = {$condValue};" . PHP_EOL;
                     $code .= $this->formatCapturedStmtLines($afterStmts);
                     $condValue = $condTmpVar;
                 }
@@ -197,27 +205,38 @@ trait SelectionExpressionTrait
                         // its expression must still be evaluated for effects.
                         $comparison = '(static_cast<void>(' . $condValue . '), false)';
                     }
-                    $code .= $this->getIndent() . $matched . ' = (' . $comparison . ');';
+                    $code .= $this->getIndent() . $matched . ' = (' . $comparison . ');' . PHP_EOL;
                 } else {
-                    $code .= $this->getIndent() . $matched . ' = php::same(' . $var . ', ' . $condValue . ');';
+                    $code .= $this->getIndent() . $matched . ' = php::same(' . $var . ', ' . $condValue . ');' . PHP_EOL;
                 }
-                $code .= $this->getIndent() . '}';
+                $this->indentLevel--;
+                $code .= $this->getIndent() . '}' . PHP_EOL;
             }
-            $code .= $this->getIndent() . 'if (' . $matched . ') {';
+            $code .= $this->getIndent() . 'if (' . $matched . ') {' . PHP_EOL;
+            $this->indentLevel++;
             $code .= $this->formatMatchReturn($arm->body, $nativeClass);
-            $code .= $this->getIndent() . '}';
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
         }
 
         if ($default) {
-            $code .= $this->getIndent() . '{';
+            $code .= $this->getIndent() . '{' . PHP_EOL;
+            $this->indentLevel++;
             $code .= $this->formatMatchReturn($default, $nativeClass);
-            $code .= $this->getIndent() . '}';
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
         } else {
+            $code .= $this->getIndent() . '{' . PHP_EOL;
+            $this->indentLevel++;
             $code .= $nativeSelection
-                ? $this->getIndent() . '{ php::throwException("UnhandledMatchError", "Unhandled match case"); return nullptr; }'
-                : $this->getIndent() . '{ return php::throwException("UnhandledMatchError", "Unhandled match case"); }';
+                ? $this->getIndent() . 'php::throwException("UnhandledMatchError", "Unhandled match case");' . PHP_EOL
+                    . $this->getIndent() . 'return nullptr;' . PHP_EOL
+                : $this->getIndent() . 'return php::throwException("UnhandledMatchError", "Unhandled match case");' . PHP_EOL;
+            $this->indentLevel--;
+            $code .= $this->getIndent() . '}' . PHP_EOL;
         }
-        $code .= '}()';
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}()';
 
         return $code;
     }
@@ -238,11 +257,11 @@ trait SelectionExpressionTrait
             } else {
                 $tmpVar = $this->addTmpVar(Type::VAR);
             }
-            $code .= $this->getIndent() . "{$tmpVar} = {$value};";
+            $code .= $this->getIndent() . "{$tmpVar} = {$value};" . PHP_EOL;
             $code .= $this->formatCapturedStmtLines($afterStmts);
-            $code .= $this->getIndent() . 'return ' . $tmpVar . ';';
+            $code .= $this->getIndent() . 'return ' . $tmpVar . ';' . PHP_EOL;
         } else {
-            $code .= $this->getIndent() . 'return ' . $value . ';';
+            $code .= $this->getIndent() . 'return ' . $value . ';' . PHP_EOL;
         }
         return $code;
     }
@@ -332,21 +351,27 @@ trait SelectionExpressionTrait
         $this->addLocalVar($leftTmp, $pointerType);
         $this->addNativeObject($leftTmp, $nativeClass);
 
-        $code = '[&]() -> ' . $pointerType . '{';
+        $code = '[&]() -> ' . $pointerType . ' {' . PHP_EOL;
+        $this->indentLevel++;
         $code .= $this->formatCapturedStmtLines($leftBefore);
-        $code .= $this->getIndent() . $leftTmp . ' = ' . $leftValue . ';';
+        $code .= $this->getIndent() . $leftTmp . ' = ' . $leftValue . ';' . PHP_EOL;
         $code .= $this->formatCapturedStmtLines($leftAfter);
-        $code .= $this->getIndent() . 'if (' . $leftTmp . ' != nullptr) { return ' . $leftTmp . '; }';
+        $code .= $this->getIndent() . 'if (' . $leftTmp . ' != nullptr) {' . PHP_EOL;
+        $this->indentLevel++;
+        $code .= $this->getIndent() . 'return ' . $leftTmp . ';' . PHP_EOL;
+        $this->indentLevel--;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
         $code .= $this->formatCapturedStmtLines($rightBefore);
         if ($rightAfter) {
             $rightTmp = $this->genTmpVarName();
             $this->addLocalVar($rightTmp, $pointerType);
             $this->addNativeObject($rightTmp, $nativeClass);
-            $code .= $this->getIndent() . $rightTmp . ' = ' . $rightValue . ';';
+            $code .= $this->getIndent() . $rightTmp . ' = ' . $rightValue . ';' . PHP_EOL;
             $code .= $this->formatCapturedStmtLines($rightAfter);
             $rightValue = $rightTmp;
         }
-        $code .= $this->getIndent() . 'return ' . $rightValue . ';';
+        $code .= $this->getIndent() . 'return ' . $rightValue . ';' . PHP_EOL;
+        $this->indentLevel--;
         return $code . $this->getIndent() . '}()';
     }
 
