@@ -1590,7 +1590,7 @@ class CompilerBase implements PropertyAccessContext
             $class = 'Stmt_Expression(' . $v->expr->getType() . ')';
         }
 
-        return $this->getIndent() . '// ' . $class . ' [' . $v->getStartLine() . ':' . $v->getEndLine() . ']';
+        return '// ' . $class . ' [' . $v->getStartLine() . ':' . $v->getEndLine() . ']';
     }
 
     /**
@@ -1698,8 +1698,10 @@ class CompilerBase implements PropertyAccessContext
             $this->context->afterStmtLines  = [];
             $result                = '';
             $this->writeLog('Line ' . $this->getLine($v) . ': ' . $class);
-            $lines[] = $this->genDebugInfo($v);
-            $lines[] = $this->getComment($v, $class);
+            if ($this->debug) {
+                $lines[] = $this->genDebugInfo($v);
+                $lines[] = $this->getComment($v, $class);
+            }
             switch ($class) {
                 case 'Stmt_Expression':
                     $v->expr->setAttribute(self::ATTR_STATEMENT_EXPRESSION, true);
@@ -3681,6 +3683,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function formatCppLineComment(string $label, string $text): string
     {
+        if (!$this->debug) {
+            return '';
+        }
         $lines = explode("\n", str_replace(["\r\n", "\r"], "\n", $text));
         $padding = str_repeat(' ', strlen($label));
         $comments = [];

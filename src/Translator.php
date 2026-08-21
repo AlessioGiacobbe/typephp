@@ -532,7 +532,7 @@ class Translator extends Preprocessor
         $this->formatCppCode($file);
     }
 
-    public function convertFile(string $file): string
+    public function convertFile(string $file): ?string
     {
         $previousPhase = $this->enterCompilerPhase(self::PHASE_CONVERT);
         try {
@@ -543,17 +543,35 @@ class Translator extends Preprocessor
                 try {
                     $cppCode = $this->doConvert($phpCode);
                     $cppFile = $this->getCppFile($file);
-                    $this->save($cppCode, $cppFile);
+                    if ($cppCode === '') {
+                        $this->removeEmptyTranslationUnitArtifacts($cppFile);
+                    } else {
+                        $this->save($cppCode, $cppFile);
+                    }
                     $this->phpSrcFiles[] = $file;
                     // 生成 stub 文件，依赖 convert 阶段的 use 等信息
                     $this->genStubFile($this->file);
-                    return $cppFile;
+                    return $cppCode === '' ? null : $cppFile;
                 } catch (Redo $e) {
                     continue;
                 }
             }
         } finally {
             $this->restoreCompilerPhase($previousPhase);
+        }
+    }
+
+    /**
+     * Remove artifacts left by an earlier build when a PHP source no longer
+     * emits a C++ translation unit. Trait-only files are the common case.
+     */
+    private function removeEmptyTranslationUnitArtifacts(string $cppFile): void
+    {
+        $objectFile = $this->getObjectFile($cppFile);
+        foreach ([$cppFile, $objectFile, $this->getMiscObjectCacheMetadataFile($objectFile)] as $artifact) {
+            if (is_file($artifact) && !unlink($artifact)) {
+                throw new \RuntimeException("Unable to remove stale generated artifact: {$artifact}");
+            }
         }
     }
 
@@ -2557,7 +2575,7 @@ CODE;
                     $cppCode .= $this->parseClass($v);
                     break;
                 case 'Stmt_Use':
-                    $cppCode .= $this->parseUse($v) . PHP_EOL;
+                    $this->parseUse($v);
                     break;
                 case 'Stmt_GroupUse':
                     $this->parseGroupUse($v);
@@ -2601,6 +2619,15 @@ CODE;
         foreach ($this->constData as $name => $data) {
             $constDataCode .= 'static const unsigned char ' . $name . '[] = {' . $data . '};' . PHP_EOL;
         }
+
+        // Preparing and converting a compile-time-only source is still
+        // required for diagnostics, symbol collection and trait AST
+        // composition. Avoid creating a header-only .cc file when that work
+        // produced no C++ entity.
+        if (trim($constDataCode . $cppCode) === '') {
+            return '';
+        }
+
         $constDataCode .= PHP_EOL;
 
         return $this->genIncludeHeaderFiles() . $constDataCode . $cppCode;
@@ -2741,7 +2768,7 @@ CODE;
                     $code .= $this->parseFunction($v2) . PHP_EOL;
                     break;
                 case 'Stmt_Use':
-                    $code .= $this->parseUse($v2) . PHP_EOL;
+                    $this->parseUse($v2);
                     break;
                 case 'Stmt_GroupUse':
                     $this->parseGroupUse($v2);

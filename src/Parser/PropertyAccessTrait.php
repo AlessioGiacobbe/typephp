@@ -661,7 +661,7 @@ trait PropertyAccessTrait
         if ($rightType !== Type::VAR && $this->canAssignStaticTypeToObjectProperty($def, $rightType)) {
             return $rightExpr;
         }
-        if ($rightType === Type::VAR && ($helper = $this->getNativeScalarPropertyTypeCheckHelper($def)) !== null) {
+        if ($rightType === Type::VAR && ($helper = $this->getFixedPropertyTypeCheckHelper($def)) !== null) {
             return $helper . '(' . $rightExpr . ', ' . $this->genCharPtr($this->getObjectPropertyTypeCheckDisplayName($left), true) . ')';
         }
 
@@ -745,7 +745,7 @@ trait PropertyAccessTrait
         ], true);
     }
 
-    protected function getNativeScalarPropertyTypeCheckHelper(PropertyDef $def): ?string
+    protected function getFixedPropertyTypeCheckHelper(PropertyDef $def): ?string
     {
         if (!empty($def->typeCheck) || $def->class !== '' || $def->nullable) {
             return null;
@@ -755,6 +755,8 @@ trait PropertyAccessTrait
             Type::INT => 'php::toIntExact',
             Type::FLOAT => 'php::toFloatExact',
             Type::BOOL => 'php::toBoolExact',
+            Type::STR => 'php::toStringExact',
+            Type::ARRAY => 'php::toArrayExact',
             default => null,
         };
     }

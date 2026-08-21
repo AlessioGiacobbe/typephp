@@ -45,7 +45,9 @@ trait NullsafeAccessTrait
 
         $list = [];
         $ownedTmpVars = [];
-        $comment = $this->formatCppLineComment('Nullsafe Operator: ', $this->printer->prettyPrint([$expr]));
+        $comment = $this->debug
+            ? $this->formatCppLineComment('Nullsafe Operator: ', $this->printer->prettyPrint([$expr])) . PHP_EOL
+            : '';
 
         while (1) {
             if ($expr instanceof Expr\NullsafePropertyFetch) {
@@ -83,7 +85,7 @@ trait NullsafeAccessTrait
         $last = array_key_last($list);
         $tmpFn = $this->genTmpVarName();
 
-        $code = $comment . PHP_EOL . 'auto ' . $tmpFn . ' = [&]() -> ' . Type::VAR . '{' . PHP_EOL;
+        $code = $comment . 'auto ' . $tmpFn . ' = [&]() -> ' . Type::VAR . '{' . PHP_EOL;
 
         foreach ($list as $key => $item) {
             $tmpVar = $this->addTmpVar($key !== $last ? Type::OBJECT : Type::VAR);

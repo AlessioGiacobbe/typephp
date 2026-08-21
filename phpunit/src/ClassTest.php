@@ -557,7 +557,7 @@ class ClassTest extends \BaseTest
         $cppFile = $compiler->convertFile($testFile);
 
         $this->assertStringContainsString(
-            '// Stmt_Expression(Expr_StaticCall)',
+            'this_.call(php_get_persistent_method(',
             file_get_contents($cppFile),
         );
     }

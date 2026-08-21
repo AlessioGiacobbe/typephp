@@ -190,7 +190,9 @@ trait FunctionCallTrait
             }
             $placeHolder = $this->identifierToStr($expr->name);
             $fn = $this->getFuncPtr($name);
-            $this->context->beforeStmtLines[] = $this->formatCppLineComment('Func Call: ', $name . '()');
+            if ($this->debug) {
+                $this->context->beforeStmtLines[] = $this->formatCppLineComment('Func Call: ', $name . '()');
+            }
         } else {
             $tmpVar = $this->addTmpVar(Type::VAR);
             $this->context->beforeStmtLines[] = $tmpVar . ' = ' . $this->parseExpr($expr->name) . ';';

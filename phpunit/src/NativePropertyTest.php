@@ -100,7 +100,11 @@ class NativePropertyTest extends \BaseTest
         $code = file_get_contents($outputFile);
         $this->assertStringContainsString(' = nativeValue;', $code);
         $this->assertStringContainsString(' = php::toIntExact(dynamicValue, "NativePropertyWriteConversionBox::$value");', $code);
+        $this->assertStringContainsString(' = php::toStringExact(dynamicName, "NativePropertyWriteConversionBox::$name");', $code);
+        $this->assertStringContainsString(' = php::toArrayExact(dynamicItems, "NativePropertyWriteConversionBox::$items");', $code);
         $this->assertStringNotContainsString(' = php::toInt(nativeValue);', $code);
+        $this->assertStringNotContainsString('php::toString(([&]() -> php::Var', $code);
+        $this->assertStringNotContainsString('php::toArray(([&]() -> php::Var', $code);
     }
 
     public function testNativeThisPropertyWriteUsesExactHelperOnNativeReference(): void

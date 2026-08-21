@@ -58,15 +58,10 @@ trait TypeCheckGenerator
         }
 
         $paramName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
-        $format = $this->genCharPtr($callableName . '(): Argument #', true)
-            . ' ZEND_LONG_FMT '
-            . $this->genCharPtr(
-                ' ($' . $paramName . ') must be of type ' . $this->strictScalarTypeName($argInfo->type)
-                    . ', %s given',
-                true
-            );
-        $throwExpr = 'php::throwExceptionEx(zend_ce_type_error, 0, ' . $format . ', '
-            . $argNoExpr . ', ' . $valueExpr . '.typeStr())';
+        $throwExpr = 'php::throwArgumentTypeError(' . $valueExpr . ', '
+            . $this->getLiteralString($callableName) . ', ' . $argNoExpr . ', '
+            . $this->getLiteralString($paramName) . ', '
+            . $this->getLiteralString($this->strictScalarTypeName($argInfo->type)) . ')';
 
         $code = $this->getIndent() . 'if (UNEXPECTED(!('
             . $this->genStrictScalarCondition($valueExpr, $argInfo->type) . '))) {' . PHP_EOL;
@@ -84,17 +79,13 @@ trait TypeCheckGenerator
         }
 
         $fnName = $this->getTypeCheckCallableName();
-        $format = $this->genCharPtr(
-            $fnName . '(): Return value must be of type ' . $this->strictScalarTypeName($returnType)
-                . ', %s returned',
-            true
-        );
-
         $code = $this->getIndent() . 'if (UNEXPECTED(!('
             . $this->genStrictScalarCondition($valueExpr, $returnType) . '))) {' . PHP_EOL;
         $this->indentLevel++;
-        $code .= $this->getIndent() . 'php::throwExceptionEx(zend_ce_type_error, 0, '
-            . $format . ', ' . $valueExpr . '.typeStr());' . PHP_EOL;
+        $code .= $this->getIndent() . 'php::throwReturnTypeError(' . $valueExpr . ', '
+            . $this->getLiteralString($fnName) . ', '
+            . $this->getLiteralString($this->strictScalarTypeName($returnType)) . ', '
+            . $this->escapeBool(true) . ');' . PHP_EOL;
         $this->indentLevel--;
         $code .= $this->getIndent() . '}' . PHP_EOL;
         return $code;
@@ -392,11 +383,9 @@ trait TypeCheckGenerator
     {
         $fnName = $this->getTypeCheckCallableName();
         $paramName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
-        $format = $this->genCharPtr($fnName . '(): Argument #', true)
-            . ' ZEND_LONG_FMT '
-            . $this->genCharPtr(' ($' . $paramName . ') must be of type ' . $argInfo->typeStr . ', %s given', true);
-        return 'php::throwExceptionEx(zend_ce_type_error, 0, ' . $format . ', '
-            . $argNoExpr . ', ' . $valueExpr . '.typeStr())';
+        return 'php::throwArgumentTypeError(' . $valueExpr . ', '
+            . $this->getLiteralString($fnName) . ', ' . $argNoExpr . ', '
+            . $this->getLiteralString($paramName) . ', ' . $this->getLiteralString($argInfo->typeStr) . ')';
     }
 
     protected function genUnionReturnCheck(string $varName): string
@@ -421,12 +410,12 @@ trait TypeCheckGenerator
         $fnName = $this->getTypeCheckCallableName();
         $typeStr = $this->functionDef->returnTypeStr;
 
-        $format = $this->genCharPtr($fnName . '(): Return value must be of type ' . $typeStr . ', %s given', true);
-
         $code = $this->genCompositeIntToFloatCoercion($varName, $typeCheck);
         $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
-        $code .= $this->getIndent() . 'php::throwExceptionEx(zend_ce_type_error, 0, ' . $format . ', ' . $varName . '.typeStr());' . PHP_EOL;
+        $code .= $this->getIndent() . 'php::throwReturnTypeError(' . $varName . ', '
+            . $this->getLiteralString($fnName) . ', ' . $this->getLiteralString($typeStr) . ', '
+            . $this->escapeBool(false) . ');' . PHP_EOL;
         $this->indentLevel--;
         $code .= $this->getIndent() . '}' . PHP_EOL;
 
@@ -515,11 +504,9 @@ trait TypeCheckGenerator
     protected function genClosureParamTypeErrorExpr(ArgInfo $argInfo, string $valueExpr, string $argNoExpr): string
     {
         $paramName = $argInfo->phpName ?: $this->unescapeVarName($argInfo->name);
-        $format = $this->genCharPtr('{closure}(): Argument #', true)
-            . ' ZEND_LONG_FMT '
-            . $this->genCharPtr(' ($' . $paramName . ') must be of type ' . $argInfo->typeStr . ', %s given', true);
-        return 'php::throwExceptionEx(zend_ce_type_error, 0, ' . $format . ', '
-            . $argNoExpr . ', ' . $valueExpr . '.typeStr())';
+        return 'php::throwArgumentTypeError(' . $valueExpr . ', '
+            . $this->getLiteralString('{closure}') . ', ' . $argNoExpr . ', '
+            . $this->getLiteralString($paramName) . ', ' . $this->getLiteralString($argInfo->typeStr) . ')';
     }
 
     protected function genClosureReturnCheck(string $varName): string
@@ -542,12 +529,12 @@ trait TypeCheckGenerator
 
         $orExpr = implode(' || ', $conditions);
         $typeStr = $this->context->closureReturnTypeStr;
-        $format = $this->genCharPtr('{closure}(): Return value must be of type ' . $typeStr . ', %s given', true);
-
         $code = $this->genCompositeIntToFloatCoercion($varName, $typeCheck);
         $code .= $this->getIndent() . 'if (UNEXPECTED(!(' . $orExpr . '))) {' . PHP_EOL;
         $this->indentLevel++;
-        $code .= $this->getIndent() . 'php::throwExceptionEx(zend_ce_type_error, 0, ' . $format . ', ' . $varName . '.typeStr());' . PHP_EOL;
+        $code .= $this->getIndent() . 'php::throwReturnTypeError(' . $varName . ', '
+            . $this->getLiteralString('{closure}') . ', ' . $this->getLiteralString($typeStr) . ', '
+            . $this->escapeBool(false) . ');' . PHP_EOL;
         $code .= $this->getIndent() . 'return php::null;' . PHP_EOL;
         $this->indentLevel--;
         $code .= $this->getIndent() . '}' . PHP_EOL;

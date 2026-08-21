@@ -580,10 +580,12 @@ trait MethodCallTrait
                 }
                 $this->fatalError($expr, "Cannot call method `{$methodName}()` on variable of type {$type}");
             }
-            $this->context->beforeStmtLines[] = $this->formatCppLineComment(
-                'Method Call: ',
-                $object . '->' . $this->parseIdentifier($expr->name) . '()'
-            );
+            if ($this->debug) {
+                $this->context->beforeStmtLines[] = $this->formatCppLineComment(
+                    'Method Call: ',
+                    $object . '->' . $this->parseIdentifier($expr->name) . '()'
+                );
+            }
             $nativeFunc = false;
             try {
                 $nativeFunc = $this->findNativeMethod($expr, $object, $this->parseIdentifier($expr->name));
@@ -808,10 +810,12 @@ trait MethodCallTrait
             $method = $this->parseIdentifier($expr->name);
             $methodPtr = $this->identifierToStr($expr->name, literal: true);
             $fn = Symbol::getCalledCe() . ', php::getMethod(' . Symbol::getCalledCe() . ', ' . $methodPtr . ')';
-            $this->context->beforeStmtLines[] = $this->formatCppLineComment(
-                'Static Method Call: ',
-                'static::' . $method . '()'
-            );
+            if ($this->debug) {
+                $this->context->beforeStmtLines[] = $this->formatCppLineComment(
+                    'Static Method Call: ',
+                    'static::' . $method . '()'
+                );
+            }
             $placeHolder = $this->genArray([Symbol::getCalledClass(), $methodPtr]);
             // 用于在按引用参数检测时解析方法签名（late static binding 在当前类层级中解析）
             $rtFunc = $method;
@@ -829,10 +833,12 @@ trait MethodCallTrait
             $method = $this->parseIdentifier($expr->name);
             $rtFunc = $method;
             $rtClass = $class;
-            $this->context->beforeStmtLines[] = $this->formatCppLineComment(
-                'Static Method Call: ',
-                $class . '::' . $method . '()'
-            );
+            if ($this->debug) {
+                $this->context->beforeStmtLines[] = $this->formatCppLineComment(
+                    'Static Method Call: ',
+                    $class . '::' . $method . '()'
+                );
+            }
 
             if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
                 $callScope = [$this->genCharPtr($class, true), $this->genCharPtr($method)];

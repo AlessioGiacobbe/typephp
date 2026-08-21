@@ -18,7 +18,7 @@ trait ConditionalControlTrait
             $arms[] = [$elseif->cond, $elseif->stmts];
         }
 
-        return $this->parseBeforeStmtLines() . PHP_EOL . $this->parseIfChain($arms, $v->else, 0) . PHP_EOL;
+        return $this->parseBeforeStmtLines() . PHP_EOL . $this->getIndent() . $this->parseIfChain($arms, $v->else, 0) . PHP_EOL;
     }
 
     protected function parseIfChain(array $arms, ?Node\Stmt\Else_ $else, int $index): string

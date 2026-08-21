@@ -66,10 +66,8 @@ trait DeclarationSymbolTrait
         return Type::VAR;
     }
 
-
-    protected function parseUse(Node\Stmt\Use_ $v2): string
+    protected function parseUse(Node\Stmt\Use_ $v2): void
     {
-        $code = '';
         foreach ($v2->uses as $use) {
             $id = $this->parseIdentifier($use->name);
             $type = $use->type !== Node\Stmt\Use_::TYPE_UNKNOWN ? $use->type : $v2->type;
@@ -107,7 +105,6 @@ trait DeclarationSymbolTrait
                 }
             }
         }
-        return $code;
     }
 
     protected function parseGroupUse(Node\Stmt\GroupUse $node): void

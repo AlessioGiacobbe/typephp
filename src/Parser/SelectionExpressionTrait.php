@@ -286,8 +286,11 @@ trait SelectionExpressionTrait
         $this->checkVarMustExist($right, $rightExpr);
 
         $tmpVar = $this->addTmpVar(Type::VAR);
+        $comment = $this->debug
+            ? $this->formatCppLineComment('Expr: ', $this->printer->prettyPrintExpr($expr)) . PHP_EOL
+            : '';
         if ($rightBeforeStmts || $rightAfterStmts) {
-            $code = $this->formatCppLineComment('Expr: ', $this->printer->prettyPrintExpr($expr)) . PHP_EOL .
+            $code = $comment .
                 'if (' . $condExpr . ') {' . PHP_EOL .
                 $this->getIndent() . $tmpVar . ' = ' . $leftExpr . ';' . PHP_EOL .
                 '} else {' . PHP_EOL;
@@ -305,7 +308,7 @@ trait SelectionExpressionTrait
             $code .= '}';
             $this->context->beforeStmtLines[] = $code;
         } else {
-            $this->context->beforeStmtLines[] = $this->formatCppLineComment('Expr: ', $this->printer->prettyPrintExpr($expr)) . PHP_EOL .
+            $this->context->beforeStmtLines[] = $comment .
                 $tmpVar . ' = ' . $condExpr . ' ? ' . $leftExpr . ' : ' . $rightExpr . ';';
         }
         $expr->setAttribute('replace', $tmpVar);

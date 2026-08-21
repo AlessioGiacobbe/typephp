@@ -250,6 +250,7 @@ trait SourcePipelineTrait
     public function convert(array $files): array
     {
         $sourceFiles = [];
+        $validSourceCount = 0;
         // 生成 C++ 文件
         foreach ($files as $k => $file) {
             try {
@@ -260,7 +261,10 @@ trait SourcePipelineTrait
                 } else {
                     continue;
                 }
-                $sourceFiles[] = $cppFile;
+                $validSourceCount++;
+                if ($cppFile !== null) {
+                    $sourceFiles[] = $cppFile;
+                }
             } catch (Unsupported $e) {
                 echo ' unsupported syntax: ' . $e->getMessage() . "\n";
                 echo ' skip: ' . $file . "\n";
@@ -268,7 +272,11 @@ trait SourcePipelineTrait
             }
         }
 
-        if (empty($sourceFiles)) {
+        // A valid PHP input may intentionally emit no standalone translation
+        // unit (for example a compile-time trait or an interface). The shared
+        // extension source still carries its runtime metadata, so only reject
+        // an input set in which no supported source was converted at all.
+        if ($validSourceCount === 0) {
             $this->stop('No valid source file found');
         }
 

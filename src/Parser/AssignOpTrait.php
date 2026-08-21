@@ -678,7 +678,7 @@ trait AssignOpTrait
         $leftExprType = $this->detectTypeOfExpr($left);
         $rightExprType = $this->detectTypeOfExpr($right);
         if ($propertyWriteTarget !== null && ($propertyDef = $this->getNativePropertyDef($left)) !== null) {
-            $effectiveRightType = $rightExprType === Type::VAR && $this->getNativeScalarPropertyTypeCheckHelper($propertyDef) !== null
+            $effectiveRightType = $rightExprType === Type::VAR && $this->getFixedPropertyTypeCheckHelper($propertyDef) !== null
                 ? $propertyDef->type
                 : $rightExprType;
             return $var . ' = ' . $this->convertNativePropertyWriteExpr($propertyDef->type, $effectiveRightType, $rightExpr);
@@ -1007,7 +1007,7 @@ trait AssignOpTrait
         if ($rightType === Type::VAR) {
             $rightExpr = $this->wrapObjectPropertyAssignTypeCheck($node->var, $node->expr, $rightExpr);
         }
-        $effectiveRightType = $rightType === Type::VAR && $this->getNativeScalarPropertyTypeCheckHelper($def) !== null
+        $effectiveRightType = $rightType === Type::VAR && $this->getFixedPropertyTypeCheckHelper($def) !== null
             ? $def->type
             : $rightType;
 

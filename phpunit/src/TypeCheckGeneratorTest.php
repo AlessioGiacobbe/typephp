@@ -4,6 +4,7 @@ use TypePhp\Entity\ArgInfo;
 use TypePhp\CompilerTest;
 use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\FunctionDef;
+use TypePhp\Type;
 
 class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
 {
@@ -30,6 +31,7 @@ class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
         $argInfo->name = 'value';
         $argInfo->typeStr = 'int|string';
 
+        $this->setProtectedProperty($compiler, 'noLiteralStrings', true);
         $functionDef->returnTypeCheck = [['kind' => 'isInt'], ['kind' => 'isString']];
         $functionDef->returnTypeStr = 'int|string';
 
@@ -41,7 +43,10 @@ class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
         $returnCode = $this->invokeMethod($compiler, 'genUnionReturnCheck', ['retval']);
 
         $this->assertSame('Foo\\Bar\\Demo::run', $callableName);
-        $this->assertStringContainsString('Foo\\\\Bar\\\\Demo::run(): Argument #', $paramExpr);
+        $this->assertStringContainsString('php::throwArgumentTypeError(', $paramExpr);
+        $this->assertStringContainsString('Foo\\\\Bar\\\\Demo::run', $paramExpr);
+        $this->assertStringNotContainsString('must be of type', $paramExpr);
+        $this->assertStringContainsString('php::throwReturnTypeError(', $returnCode);
         $this->assertStringContainsString('Foo\\\\Bar\\\\Demo::run', $returnCode);
     }
 
@@ -53,6 +58,7 @@ class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
         $argInfo->name = 'value';
         $argInfo->typeStr = 'int|string';
 
+        $this->setProtectedProperty($compiler, 'noLiteralStrings', true);
         $functionDef->returnTypeCheck = [['kind' => 'isInt'], ['kind' => 'isString']];
         $functionDef->returnTypeStr = 'int|string';
 
@@ -64,7 +70,37 @@ class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
         $returnCode = $this->invokeMethod($compiler, 'genUnionReturnCheck', ['retval']);
 
         $this->assertSame('Foo\\Bar\\run', $callableName);
-        $this->assertStringContainsString('Foo\\\\Bar\\\\run(): Argument #', $paramExpr);
+        $this->assertStringContainsString('php::throwArgumentTypeError(', $paramExpr);
+        $this->assertStringContainsString('Foo\\\\Bar\\\\run', $paramExpr);
+        $this->assertStringNotContainsString('must be of type', $paramExpr);
+        $this->assertStringContainsString('php::throwReturnTypeError(', $returnCode);
         $this->assertStringContainsString('Foo\\\\Bar\\\\run', $returnCode);
+    }
+
+    public function testStrictScalarChecksKeepTheFastCheckAndDelegateColdErrors(): void
+    {
+        $compiler = CompilerTest::create(ROOT_PATH);
+        $functionDef = new FunctionDef('run', 'php::Int', 'Foo\\Bar');
+        $argInfo = new ArgInfo();
+        $argInfo->name = 'value';
+        $argInfo->phpName = 'value';
+        $argInfo->type = Type::INT;
+
+        $this->setProtectedProperty($compiler, 'classDef', null);
+        $this->setProtectedProperty($compiler, 'functionDef', $functionDef);
+
+        $paramCode = $this->invokeMethod(
+            $compiler,
+            'genStrictScalarParamCheck',
+            [$argInfo, 'raw_value', 'Foo\\Bar\\run', '1'],
+        );
+        $returnCode = $this->invokeMethod($compiler, 'genStrictScalarReturnCheck', ['retval', Type::INT]);
+
+        $this->assertStringContainsString('raw_value.isInt()', $paramCode);
+        $this->assertStringContainsString('php::throwArgumentTypeError(', $paramCode);
+        $this->assertStringNotContainsString('must be of type', $paramCode);
+        $this->assertStringContainsString('retval.isInt()', $returnCode);
+        $this->assertStringContainsString('php::throwReturnTypeError(', $returnCode);
+        $this->assertStringNotContainsString('must be of type', $returnCode);
     }
 }
