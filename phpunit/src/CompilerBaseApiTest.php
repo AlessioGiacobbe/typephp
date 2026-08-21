@@ -970,6 +970,54 @@ YAML);
         }
     }
 
+    public function testGeneratedRuntimeSymbolsUseProjectNamespace(): void
+    {
+        global $translator;
+        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/extension_clean_maps.php';
+
+        foreach ([
+            CompilerBase::BUILD_MODE_EXT => 'isolated_ext',
+            CompilerBase::BUILD_MODE_BIN => 'isolated_bin',
+            CompilerBase::BUILD_MODE_LIB => 'isolated_lib',
+        ] as $mode => $target) {
+            $compiler = CompilerTest::create(ROOT_PATH);
+            $translator = $compiler;
+            $compiler->setBuildMode($mode);
+            $compiler->setTargetName($target);
+            $compiler->addFiles([$testFile]);
+            $compiler->prepareFile($testFile);
+            $compiler->convertFile($testFile);
+
+            $dataFile = $this->testDir . '/' . $target . '_data_decl.h';
+            $compiler->genDataDeclarations($dataFile);
+            $data = file_get_contents($dataFile);
+            $extension = file_get_contents($compiler->genExtension());
+            $namespace = 'typephp_' . $target;
+
+            $this->assertStringContainsString('namespace ' . $namespace . ' {', $data, $mode);
+            $this->assertStringContainsString('using namespace ' . $namespace . ';', $data, $mode);
+            $this->assertStringContainsString('zend_class_entry *php_get_class(', $data, $mode);
+            $this->assertStringContainsString('namespace ' . $namespace . ' {', $extension, $mode);
+            $this->assertStringContainsString('zend_class_entry *php_get_class(', $extension, $mode);
+
+            if ($mode === CompilerBase::BUILD_MODE_BIN) {
+                $this->assertStringContainsString('zend_module_entry *php_embed_get_module()', $extension);
+                $this->assertStringContainsString(
+                    'return &' . $namespace . '::' . $namespace . '_module_entry;',
+                    $extension,
+                );
+            } elseif ($mode === CompilerBase::BUILD_MODE_LIB) {
+                $this->assertStringNotContainsString('zend_module_entry *php_embed_get_module()', $extension);
+                $this->assertStringContainsString(
+                    'zend_module_entry *php_' . $target . '_embed_get_module()',
+                    $extension,
+                );
+            } else {
+                $this->assertStringNotContainsString('php_embed_get_module', $extension, $mode);
+            }
+        }
+    }
+
     public function testFunctionPointerCacheRejectsClassMethodNames(): void
     {
         $this->expectException(\LogicException::class);

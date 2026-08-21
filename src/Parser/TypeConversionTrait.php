@@ -266,11 +266,14 @@ trait TypeConversionTrait
     {
         $this->assertNativeObjectReferenceForbidden($expr, $expr);
         $this->checkLeftValue($expr);
+        if ($expr instanceof Node\Expr\ArrayDimFetch) {
+            return $this->parseArrayDimFetchUpdate($expr) . '.toReference()';
+        }
         $var = $this->parseIdentifier($expr);
         if ($this->isVarExpr($expr) and $this->isNativeTypeVar($var)) {
             $this->context->localVars[$var] = Type::VAR;
         }
-        return $this->parseIdentifier($expr) . '.toReference()';
+        return $var . '.toReference()';
     }
 
 }

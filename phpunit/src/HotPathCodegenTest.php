@@ -11,8 +11,8 @@ final class HotPathCodegenTest extends \BaseTest
         self::assertStringContainsString('items.item(0L, true) = value;', $code);
         self::assertStringContainsString('items.append(value);', $code);
         self::assertStringContainsString('items.item(0L, true) += value;', $code);
-        self::assertStringContainsString('items.item(0L, true) += other.item(0L, false);', $code);
-        self::assertStringContainsString('items.item(2L, true) = other.item(0L, false);', $code);
+        self::assertStringContainsString('items.item(0L, true) += other.get(0L);', $code);
+        self::assertStringContainsString('items.item(2L, true) = other.get(0L);', $code);
         self::assertStringContainsString('items.offsetSet(0L,', $code);
     }
 
@@ -34,6 +34,27 @@ final class HotPathCodegenTest extends \BaseTest
 
         self::assertMatchesRegularExpression('/php::Int (tmp_var_\d+) = 0;[\s\S]*?\\1 = php::toInt\(limit--\);/', $code);
         self::assertDoesNotMatchRegularExpression('/php::Var (tmp_var_\d+);[\s\S]*?\\1 = limit--;/', $code);
+    }
+
+    public function testTypedReadsAndSimpleShorthandTernariesUseFastPaths(): void
+    {
+        $code = $this->compileFixture();
+
+        self::assertMatchesRegularExpression(
+            '/hash\.get\(_literal_strings\[\d+\]\)/',
+            $code,
+        );
+        self::assertStringContainsString('str.offsetGet(0L)', $code);
+        self::assertStringNotContainsString('php::notEmpty(hash, {},', $code);
+        self::assertStringNotContainsString('php::notEmpty(flag, {},', $code);
+        self::assertStringContainsString('php::toBool(hash)', $code);
+        self::assertStringContainsString('php::toBool(flag)', $code);
+
+        // Compound receivers retain the evaluate-once chain implementation.
+        self::assertMatchesRegularExpression(
+            '/php::notEmpty\(hash, \{\{php::ArrayDimFetch, php::Var\(_literal_strings\[\d+\]\)\}\}, tmp_var_\d+\)/',
+            $code,
+        );
     }
 
     private function compileFixture(): string

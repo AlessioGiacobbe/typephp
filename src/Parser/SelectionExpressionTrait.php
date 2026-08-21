@@ -284,15 +284,25 @@ trait SelectionExpressionTrait
             $this->checkVarMustExist($left, $leftExpr);
         }
 
-        $condExpr = $this->parseChainedExpr($left, $op, true);
-        $chainOpResult = $left->getAttribute('chainOpResult');
-        if ($chainOpResult) {
-            $leftExpr = $chainOpResult;
-        }
         $leftType = $this->detectTypeOfExpr($left);
-        if ($op === self::OP_NOT_EMPTY
-            && in_array($leftType, [Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL], true)) {
-            $condExpr = '((' . $condExpr . '), ' . $this->convertBoolExpr($leftExpr, $leftType) . ')';
+        $simpleShorthand = $op === self::OP_NOT_EMPTY
+            && $this->isVarExpr($left)
+            && $leftType !== Type::REF;
+        if ($simpleShorthand) {
+            // A local variable is already a stable value. Avoid routing it
+            // through the generic operation-chain walker, which otherwise
+            // copies the value into a Variant result before testing it.
+            $condExpr = $this->convertConditionExpr($left, $leftExpr);
+        } else {
+            $condExpr = $this->parseChainedExpr($left, $op, true);
+            $chainOpResult = $left->getAttribute('chainOpResult');
+            if ($chainOpResult) {
+                $leftExpr = $chainOpResult;
+            }
+            if ($op === self::OP_NOT_EMPTY
+                && in_array($leftType, [Type::BIGINT, Type::BIGFLOAT, Type::DECIMAL], true)) {
+                $condExpr = '((' . $condExpr . '), ' . $this->convertBoolExpr($leftExpr, $leftType) . ')';
+            }
         }
 
         $rightBeforeStmtCount = count($this->context->beforeStmtLines);
@@ -303,6 +313,19 @@ trait SelectionExpressionTrait
         $this->context->beforeStmtLines = array_slice($this->context->beforeStmtLines, 0, $rightBeforeStmtCount);
         $this->context->afterStmtLines = array_slice($this->context->afterStmtLines, 0, $rightAfterStmtCount);
         $this->checkVarMustExist($right, $rightExpr);
+
+        if ($simpleShorthand && !$rightBeforeStmts && !$rightAfterStmts) {
+            // C++'s conditional operator evaluates the condition first and
+            // only the selected branch. Explicit Variant materialization is
+            // needed when the PHP branch types differ; otherwise C++ could
+            // choose a common scalar type (for example bool -> int).
+            $rightType = $this->detectTypeOfExpr($right);
+            if ($leftType !== $rightType) {
+                $leftExpr = 'php::Var(' . $leftExpr . ')';
+                $rightExpr = 'php::Var(' . $rightExpr . ')';
+            }
+            return '(' . $condExpr . ') ? (' . $leftExpr . ') : (' . $rightExpr . ')';
+        }
 
         $tmpVar = $this->addTmpVar(Type::VAR);
         $comment = $this->debug

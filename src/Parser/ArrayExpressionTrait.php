@@ -203,9 +203,10 @@ trait ArrayExpressionTrait
             return $this->parseStdContainerDimFetch($node);
         }
 
+        $isGlobals = $this->isVarExpr($node->var) && $node->var->name === 'GLOBALS';
         $var = $write ? $this->parseWritableIdentifier($node->var) : $this->parseIdentifier($node->var);
         if ($this->isVarExpr($node->var)) {
-            if ($var === 'GLOBALS') {
+            if ($isGlobals) {
                 return $this->parseGlobalsArrayDimFetch($node);
             }
             if (!$this->hasVar($var)) {
@@ -235,6 +236,32 @@ trait ArrayExpressionTrait
             }
         } else {
             $dim = $this->parseIdentifier($node->dim);
+            // Only fixed local variables and parameters are emitted as
+            // php::Array or php::Str. Globals/statics, properties, and call
+            // expressions may carry the same PHP type while their C++ storage
+            // remains php::Variant.
+            $fixedReceiver = $this->isVarExpr($node->var)
+                && !$this->hasScopeGlobalVar($var)
+                && !$this->hasStaticVar($var);
+            if (!$write && $fixedReceiver) {
+                $receiverType = $this->detectTypeOfExpr($node->var);
+                $dimType = $this->detectTypeOfExpr($node->dim);
+                if ($receiverType === Type::STR) {
+                    $offset = $dimType === Type::INT ? $dim : 'php::toInt(' . $dim . ')';
+                    return $var . '.offsetGet(' . $offset . ')';
+                }
+                if ($receiverType === Type::ARRAY) {
+                    if ($dimType === Type::INT) {
+                        return $var . '.get(' . $dim . ')';
+                    }
+                    if ($dimType === Type::FLOAT) {
+                        return $var . '.get(php::toInt(' . $dim . '))';
+                    }
+                    if ($dimType === Type::STR) {
+                        return $var . '.get(' . $dim . ')';
+                    }
+                }
+            }
             return $var . '.item(' . $dim . ', ' . $this->escapeBool($write) . ')';
         }
     }

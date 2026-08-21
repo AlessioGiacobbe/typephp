@@ -32,3 +32,15 @@ function hotPathCodegen(int $limit): int
 
     return $assigned + $length + strlen($safe) + strlen($ordered) + $value;
 }
+
+function hotPathTypedReads(array $hash, string $str, bool $flag, int $fallback): void
+{
+    $hashValue = $hash['value'];
+    $stringValue = $str[0];
+    $arraySelection = $hash ?: null;
+    $boolSelection = $flag ?: $fallback;
+
+    // A compound left operand still needs the generic chain helper so the
+    // array lookup is evaluated exactly once.
+    $chainedSelection = $hash['value'] ?: $fallback;
+}

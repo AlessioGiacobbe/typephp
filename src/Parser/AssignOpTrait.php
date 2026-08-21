@@ -911,6 +911,10 @@ trait AssignOpTrait
                 return $this->parseStdContainerAssignOp($node, $op);
             }
             if ($this->canUpdateKnownArraySlotInPlace($node, $op)) {
+                if ($this->isVarExpr($node->var->var) && $node->var->var->name === 'GLOBALS') {
+                    $slot = $this->parseGlobalsArrayDimFetch($node->var);
+                    return $slot . ' ' . $op . ' ' . $this->parseExprAsValue($node->expr);
+                }
                 $array = $this->parseWritableIdentifier($node->var->var);
                 $dim = $this->parseIdentifier($node->var->dim);
                 return $array . '.item(' . $dim . ', true) ' . $op . ' '
