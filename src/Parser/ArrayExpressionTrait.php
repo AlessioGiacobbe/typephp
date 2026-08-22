@@ -289,9 +289,11 @@ trait ArrayExpressionTrait
             } elseif ($item->key) {
                 $this->assertExprCanBeUsedAsValue($item->key, 'array key');
                 $key = $this->parseArrayKey($item->key);
-                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.set(' . $key . ', ' . $value . ');';
+                $method = $item->byRef ? 'set' : 'setValue';
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.' . $method . '(' . $key . ', ' . $value . ');';
             } else {
-                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.append(' . $value . ');';
+                $method = $item->byRef ? 'append' : 'appendValue';
+                $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.' . $method . '(' . $value . ');';
             }
         }
 

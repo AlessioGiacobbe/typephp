@@ -73,7 +73,7 @@ trait AssignOpTrait
                 && $arrayType === Type::ARRAY
                 && $this->canEmitDirectArrayWriteOperand($right)
             ) {
-                return $code . $array . '.append(' . $value . ')';
+                return $code . $array . '.appendValue(' . $value . ')';
             }
             $tmp = $this->addTmpVar(Type::VAR);
             return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet(" . self::VALUE_NULL . ", {$tmp})" . '), ' . $tmp . ')';
