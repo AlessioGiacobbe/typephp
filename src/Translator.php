@@ -1062,8 +1062,8 @@ CODE;
                 continue;
             }
             if (isset($this->nativeGlobalObjects[$name])) {
-                $code .= 'php::nativeGcRegisterRequestRoot(reinterpret_cast<void **>(&'
-                    . $this->escapeGlobalVar($name) . '));' . PHP_EOL;
+                $code .= 'php::nativeGcRegisterRequestRoot(&'
+                    . $this->escapeGlobalVar($name) . ');' . PHP_EOL;
                 continue;
             }
             $code .= 'php::initGlobal(' . $this->genCharPtr($name) . ', ' . $this->escapeGlobalVar($name) . ');' . PHP_EOL;

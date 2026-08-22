@@ -25,6 +25,7 @@
 - [重建 PHPX WASM 静态库](PHPX_WASM_BUILD.md)：增量重编 `libphpx.a`、数值依赖重建与完整 SDK 重建边界。
 - [核心重构计划](REFACTORING_PLAN.md)
 - [作用域管理设计](SCOPE_MANAGEMENT.md)：`CallableScope`、`UserCodeScopeGuard` 与 `FakeScopeGuard` 的职责和使用边界。
+- [运行时初始化与关闭流程](RUNTIME_LIFECYCLE.html)：PHP、PHPX、TypePHP 与项目四层生命周期，覆盖 bin/ext/lib、多模块及 WASM。
 - [C++ 命名空间、前缀与符号 ABI](CPP_SYMBOL_NAMING.md)：`typephp_`、`php::`、`typephp_<project>` 与用户 callable `php_` 的职责边界和冲突规则。
 - [Zend Object 创建与属性默认值初始化](OBJECT_CREATION.md)：`gen_stub.php` 默认属性表、自定义 `create_object` 的触发条件、执行流程与性能边界。
 - [Native Class Object 设计](NATIVE_CLASS_OBJECT.md) 与 [实现验收矩阵](NATIVE_CLASS_IMPLEMENTATION_AUDIT.md)。

@@ -5154,7 +5154,7 @@ class CompilerBase implements PropertyAccessContext
                 // nativeClone do the same for lifecycle callbacks). Only
                 // function-owned pointer slots must be registered here.
                 if ($name !== 'this_' && !$this->hasArgument($name) && $this->hasLocalVar($name)) {
-                    $rootSlots[] = 'reinterpret_cast<void **>(&' . $name . ')';
+                    $rootSlots[] = '&' . $name;
                 }
             }
             if ($rootSlots !== []) {
