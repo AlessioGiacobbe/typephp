@@ -816,6 +816,10 @@ class Translator extends Preprocessor
 
         $code = $this->genIncludeHeaderFiles();
 
+        if ($this->isBuildModeEmbed()) {
+            $code .= '#include <typephp_runtime.h>' . PHP_EOL;
+        }
+
         if ($this->isBuildModeLib() && !$this->isWindows()) {
             // PHPX's embedded runtime references this CLI-only symbol even when main() is disabled.
             $code .= 'extern "C" void save_ps_args(int, char **) {}' . PHP_EOL;
@@ -1007,12 +1011,12 @@ CODE;
         $code .= 'PHP_MINIT_FUNCTION(' . $this->getModuleName() . ') {' . PHP_EOL;
         $code .= 'zend_try {' . PHP_EOL;
         $code .= '// class/interface class entries' . PHP_EOL;
-        if (!$this->isWasiTarget()) {
-            $code .= 'typephp_register_fiber_generator_class();' . PHP_EOL;
-        }
         $code .= 'if (typephp_install_reflection_attribute_handlers() != SUCCESS) {' . PHP_EOL;
         $code .= $this->getIndent() . 'return FAILURE;' . PHP_EOL;
         $code .= '}' . PHP_EOL;
+        if (!$this->isWasiTarget()) {
+            $code .= 'typephp_register_fiber_generator_class();' . PHP_EOL;
+        }
         $code .= $this->genClassPropertyInit() . PHP_EOL;
 
         $code .= '// register symbols' . PHP_EOL;
@@ -1036,6 +1040,9 @@ CODE;
         $code .= 'for (auto &slot : ' . self::PREFIX . self::PERSISTENT_PROP_MAP . ') {' . PHP_EOL;
         $code .= $this->getIndent() . 'php::resetPersistentCache(slot);' . PHP_EOL;
         $code .= '}' . PHP_EOL;
+        if (!$this->isWasiTarget()) {
+            $code .= 'typephp_unregister_fiber_generator_class();' . PHP_EOL;
+        }
         $code .= 'typephp_uninstall_reflection_attribute_handlers();' . PHP_EOL;
         $code .= 'return SUCCESS;' . PHP_EOL;
         $code .= '}' . PHP_EOL . PHP_EOL;
@@ -1248,7 +1255,7 @@ CODE;
             $code .= '}  // namespace ' . $projectNamespace . PHP_EOL;
         } elseif ($this->isBuildModeEmbed()) {
             $code .= '}  // namespace ' . $projectNamespace . PHP_EOL . PHP_EOL;
-            $code .= 'zend_module_entry *' . self::PREFIX . $this->targetName . '_embed_get_module() {' . PHP_EOL;
+            $code .= 'TYPEPHP_EMBED_GET_MODULE_FUNCTION(' . $this->targetName . ') {' . PHP_EOL;
             $code .= $this->getIndent() . 'return &' . $projectNamespace . '::' . $moduleName . '_module_entry;' . PHP_EOL;
             $code .= '}' . PHP_EOL;
         } else {
@@ -1452,11 +1459,6 @@ CODE;
     public function compile(array $sourceFiles): array
     {
         $job = $this->maxJob;
-
-        if (!$this->isWasiTarget()) {
-            $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_fiber_generator.cc';
-        }
-        $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_helper.cc';
 
         // embed 需要 main 函数，以及 cli 的内置函数定义
         if ($this->isBuildModeEmbed()) {
@@ -1918,6 +1920,7 @@ CODE;
                 $this->symbols->functions(),
                 $package,
                 $world,
+                $this->targetName,
                 fn (FunctionDef $function): string => self::PREFIX
                     . $this->getNativeName($function->name, $function->namespace),
             );

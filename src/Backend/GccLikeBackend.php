@@ -160,6 +160,13 @@ abstract class GccLikeBackend extends CompilerBackend
                 $flags .= ' -Wl,-z,defs';
             }
 
+            // A macOS PHP extension intentionally leaves Zend/PHP symbols for
+            // the host SAPI to resolve. Linking libphp.dylib would create a
+            // second runtime, so use the platform's standard bundle behavior.
+            if (($config['build_mode'] ?? null) === 'ext' && $this->platform instanceof \TypePhp\Platform\Macos) {
+                $flags .= ' -undefined dynamic_lookup';
+            }
+
             if ($this->platform instanceof \TypePhp\Platform\Macos && !empty($config['install_name'])) {
                 $flags .= ' ' . $this->platform->getCurrentInstallNameOption($config['install_name']);
             }

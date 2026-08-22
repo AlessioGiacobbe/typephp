@@ -18,8 +18,10 @@ enum DemoBlockType {
 
 static constexpr int DEMO_WATER_LEVEL_C = 4;
 
-extern "C" int typephp_runtime_init(int argc, char **argv);
-extern "C" void typephp_runtime_shutdown();
+#include <typephp_runtime.h>
+
+TYPEPHP_RUNTIME_INIT_FUNCTION(typephp_world);
+TYPEPHP_RUNTIME_SHUTDOWN_FUNCTION(typephp_world);
 
 static bool g_typephp_world_initialized = false;
 
@@ -31,7 +33,7 @@ static int typephp_world_ensure_runtime()
 
     char app_name[] = "typephp_world";
     char *argv[] = {app_name, nullptr};
-    if (typephp_runtime_init(1, argv) != 0) {
+    if (TYPEPHP_RUNTIME_INIT(typephp_world)(1, argv) != 0) {
         return 0;
     }
 
@@ -50,7 +52,7 @@ TYPEPHP_WORLD_API void typephp_world_shutdown()
         return;
     }
 
-    typephp_runtime_shutdown();
+    TYPEPHP_RUNTIME_SHUTDOWN(typephp_world)();
     g_typephp_world_initialized = false;
 }
 

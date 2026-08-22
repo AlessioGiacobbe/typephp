@@ -25,6 +25,7 @@ trait NativeCommandOptionsTrait
         $userDefines = $this->userDefines;
         if ($this->isBuildModeEmbed()) {
             $userDefines[] = 'TYPEPHP_PROJECT_NAME=' . $this->targetName;
+            $userDefines[] = 'TYPEPHP_RUNTIME_EXPORTS=1';
         }
         if ($this->isBuildModeLib()) {
             $userDefines[] = 'TYPEPHP_NO_MAIN=1';

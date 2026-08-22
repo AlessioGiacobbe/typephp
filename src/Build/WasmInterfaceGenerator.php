@@ -18,8 +18,12 @@ final class WasmInterfaceGenerator
         iterable $functions,
         string $package,
         string $world,
+        string $runtimeProject,
         callable $nativeName,
     ): array {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $runtimeProject)) {
+            throw new RuntimeException("Invalid TypePHP runtime project name `{$runtimeProject}`");
+        }
         $exports = [];
         $names = [];
         foreach ($functions as $function) {
@@ -86,8 +90,9 @@ final class WasmInterfaceGenerator
             'runtime' => [
                 'threading' => 'nts',
                 'lifecycle' => 'wit-resource',
-                'init-symbol' => 'typephp_runtime_init',
-                'shutdown-symbol' => 'typephp_runtime_shutdown',
+                'project' => $runtimeProject,
+                'init-symbol' => 'typephp_' . $runtimeProject . '_runtime_init',
+                'shutdown-symbol' => 'typephp_' . $runtimeProject . '_runtime_shutdown',
                 'error-model' => 'result',
             ],
             'functions' => $exports,
@@ -170,10 +175,11 @@ final class WasmInterfaceGenerator
             '#include <new>',
             '#include <phpx.h>',
             '#include <typephp_helper.h>',
+            '#include <typephp_runtime.h>',
             '#include "' . $this->cName($manifest['world']) . '.h"',
             '',
-            'extern "C" int typephp_runtime_init(int argc, char **argv);',
-            'extern "C" void typephp_runtime_shutdown();',
+            'TYPEPHP_RUNTIME_INIT_FUNCTION(' . $manifest['runtime']['project'] . ');',
+            'TYPEPHP_RUNTIME_SHUTDOWN_FUNCTION(' . $manifest['runtime']['project'] . ');',
             '',
             'struct ' . $prefix . '_runtime_t {',
             '    bool call_active = false;',
@@ -229,14 +235,14 @@ final class WasmInterfaceGenerator
             '    }',
             '    char program[] = "typephp-component";',
             '    char *argv[] = {program, nullptr};',
-            '    if (typephp_runtime_init(1, argv) != 0) {',
+            '    if (TYPEPHP_RUNTIME_INIT(' . $manifest['runtime']['project'] . ')(1, argv) != 0) {',
             '        runtime_failed = true;',
             '        set_error(error, "Unable to initialize the TypePHP runtime");',
             '        return false;',
             '    }',
             '    auto *runtime = new (std::nothrow) ' . $prefix . '_runtime_t();',
             '    if (runtime == nullptr) {',
-            '        typephp_runtime_shutdown();',
+            '        TYPEPHP_RUNTIME_SHUTDOWN(' . $manifest['runtime']['project'] . ')();',
             '        set_error(error, "Unable to allocate the TypePHP runtime resource");',
             '        return false;',
             '    }',
@@ -248,7 +254,7 @@ final class WasmInterfaceGenerator
             'extern "C" void ' . $prefix . '_runtime_destructor(' . $prefix . '_runtime_t *runtime) {',
             '    delete runtime;',
             '    if (runtime_started) {',
-            '        typephp_runtime_shutdown();',
+            '        TYPEPHP_RUNTIME_SHUTDOWN(' . $manifest['runtime']['project'] . ')();',
             '    }',
             '    runtime_started = false;',
             '    runtime_failed = false;',

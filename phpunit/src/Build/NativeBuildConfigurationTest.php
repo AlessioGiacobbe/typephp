@@ -80,6 +80,43 @@ final class NativeBuildConfigurationTest extends TestCase
         }
     }
 
+    public function testNativeModulesDoNotFallBackToStaticPhpx(): void
+    {
+        $phpxDir = $this->temporaryDirectory('phpx-static-module');
+        mkdir($phpxDir . '/lib', 0777, true);
+        touch($phpxDir . '/lib/libphpx.a');
+
+        $restore = $this->withPhpxHome($phpxDir);
+        try {
+            foreach ([CompilerTest::BUILD_MODE_EXT, CompilerTest::BUILD_MODE_LIB] as $mode) {
+                $compiler = $this->newCompiler(new Linux());
+                $compiler->setBuildMode($mode);
+                self::assertNull($compiler->findPhpxLibraryForTest(), $mode);
+            }
+        } finally {
+            $restore();
+        }
+    }
+
+    public function testUnixExtensionDoesNotLinkEmbedPhpLibrary(): void
+    {
+        $phpxDir = $this->temporaryDirectory('phpx-extension-link');
+        mkdir($phpxDir . '/lib', 0777, true);
+        touch($phpxDir . '/lib/libphpx.so');
+
+        $restore = $this->withPhpxHome($phpxDir);
+        try {
+            $compiler = $this->newCompiler(new Linux());
+            $compiler->setBuildMode(CompilerTest::BUILD_MODE_EXT);
+            $libraries = $compiler->getLibrariesForTest();
+
+            self::assertNotContains('php', $libraries);
+            self::assertContains($phpxDir . '/lib/libphpx.so', $libraries);
+        } finally {
+            $restore();
+        }
+    }
+
     public function testPhpxDirPrefersPhpxHomeOverVendor(): void
     {
         $root = $this->temporaryDirectory('phpx-priority-root');
@@ -132,6 +169,11 @@ final class NativeBuildConfigurationTest extends TestCase
             public function validatePhpxLibraryForTest(): void
             {
                 $this->validatePhpxLibrary();
+            }
+
+            public function getLibrariesForTest(): array
+            {
+                return $this->getLibraries();
             }
         };
 

@@ -383,8 +383,8 @@ Scope 修改至少应覆盖以下层次：
 | `CallableScope` 及 public helper 声明 | `vendor/swoole/phpx/include/phpx.h` |
 | callable 解析与包装 | `vendor/swoole/phpx/src/core/base.cc`、`vendor/swoole/phpx/src/core/closure.cc` |
 | `FakeScopeGuard` | `vendor/swoole/phpx/include/phpx_fake_scope_guard.h` |
-| `UserCodeScopeGuard` | `vendor/swoole/phpx/src/misc/typephp_helper.h`、`typephp_main.cc` |
-| `php::getCallableScope()` | `vendor/swoole/phpx/src/misc/typephp_helper.h` |
+| `UserCodeScopeGuard` | `vendor/swoole/phpx/include/typephp_helper.h`、`src/core/scope.cc` |
+| `php::getCallableScope()` | `vendor/swoole/phpx/include/typephp_helper.h` |
 | callback 标记和 Scope 变量生成 | `src/CompilerBase.php` |
 | callback 参数包装 | `src/Generator/CallArgumentGenerator.php` |
 | Closure/Fiber fallback guard | `src/Generator/ClosureGenerator.php`、`FiberGenerator.php` |

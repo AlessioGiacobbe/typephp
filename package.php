@@ -405,7 +405,7 @@ if (!is_dir($phpxDir)) {
     mustCopy($phpxLibFile, "{$topLevelDir}/phpx/lib/phpx.lib");
     echo "  复制: phpx.lib -> phpx/lib/\n";
     
-    // 复制 phpx/src/misc 目录（辅助工具和头文件）
+    // 复制 phpx/src/misc 目录（Embed/CLI 运行时适配代码）
     mustCreateDirectory("{$topLevelDir}/phpx/src/misc");
     // 排除 .obj 文件（MSVC 目标文件）和 .d 文件（依赖文件）
     copyDirectory($phpxMiscDir, "{$topLevelDir}/phpx/src/misc", [], null, ['obj', 'd']);
@@ -478,7 +478,8 @@ $requiredArchiveEntries = [
     "{$topLevelDir}/{$phpCoreLibRelativePath}",
     "{$topLevelDir}/phpx/include/phpx.h",
     "{$topLevelDir}/phpx/lib/phpx.lib",
-    "{$topLevelDir}/phpx/src/misc/typephp_helper.cc",
+    "{$topLevelDir}/phpx/include/typephp_helper.h",
+    "{$topLevelDir}/phpx/include/typephp_runtime.h",
 ];
 foreach ($windowsLinkLibraryFiles as $libraryFile) {
     $requiredArchiveEntries[] = "{$topLevelDir}/SDK/lib/{$libraryFile}";
@@ -536,7 +537,7 @@ echo "  - WINDOWS-SETUP.txt (Windows 环境变量与 PHPX_HOME 配置说明)\n";
 echo "  - phpx.dll (PHPX 运行时库)\n";
 echo "  - phpx/include/ (PHPX 头文件)\n";
 echo "  - phpx/lib/ (PHPX 库文件)\n";
-echo "  - phpx/src/misc/ (PHPX 辅助工具和头文件)\n";
+echo "  - phpx/src/misc/ (PHPX Embed/CLI runtime adapters)\n";
 echo "  - PHP 运行时环境 (完整目录结构)\n";
 echo "  - vendor/ (Composer 依赖包，无需再次安装)\n";
 echo "  - composer.json (Composer 配置文件)\n";
@@ -616,6 +617,7 @@ function packageUnixLike(): void
         "{$wasiSdkSourceRoot}/include/php/Zend/zend_config.h",
         "{$wasiSdkSourceRoot}/include/php/ext/date/lib/timelib_config.h",
         "{$wasiSdkSourceRoot}/include/phpx/phpx.h",
+        "{$wasiSdkSourceRoot}/include/phpx/phpx_python.h",
         "{$wasiSdkSourceRoot}/include/phpx/typephp_helper.h",
         "{$wasiSdkSourceRoot}/include/gmp.h",
         "{$wasiSdkSourceRoot}/include/mpfr.h",

@@ -122,8 +122,12 @@ trait NativeBuildConfigurationTrait
             $libraries[] = 'libmpdec-4.0.1.dll.lib';
             $libraries[] = 'libmpdec++-4.0.1.dll.lib';
         } else {
-            // Linux/macOS: extension 和 bin 模式都需要添加 php 库
-            $libraries[] = 'php';
+            // Unix PHP extensions resolve Zend/PHP symbols from the host SAPI.
+            // Linking libphp.so here would load a second ZendVM and give PHPX a
+            // different set of compiler/executor globals from the host process.
+            if (!$this->isBuildModeExt()) {
+                $libraries[] = 'php';
+            }
             $libraries[] = 'gmp';
             $libraries[] = 'gmpxx';
             $libraries[] = 'mpfr';
@@ -155,6 +159,14 @@ trait NativeBuildConfigurationTrait
             return $phpxLibPath;
         }
 
+        // Stateful PHPX runtime facilities (global Zend handlers and internal
+        // classes) must have one process-wide owner when a native module is
+        // loaded into another process. Statically linking PHPX into each
+        // extension/library would duplicate that state.
+        if (!$this->isWasiTarget() && ($this->isBuildModeExt() || $this->isBuildModeLib())) {
+            return null;
+        }
+
         $phpxStaticPath = $this->getPhpxDir() . '/lib/libphpx.a';
         return is_file($phpxStaticPath) ? $phpxStaticPath : null;
     }
@@ -170,8 +182,10 @@ trait NativeBuildConfigurationTrait
             $buildHint = 'Build PHPX first (for example, run `nmake phpx` in ' . $this->getPhpxDir() . '\\build)';
         } else {
             $sharedLibExt = ltrim($platform->getSharedLibraryExtension(), '.');
-            $expected = $this->getPhpxDir() . '/lib/libphpx.' . $sharedLibExt
-                . ' or ' . $this->getPhpxDir() . '/lib/libphpx.a';
+            $expected = $this->getPhpxDir() . '/lib/libphpx.' . $sharedLibExt;
+            if ($this->isWasiTarget() || (!$this->isBuildModeExt() && !$this->isBuildModeLib())) {
+                $expected .= ' or ' . $this->getPhpxDir() . '/lib/libphpx.a';
+            }
             $buildHint = 'Build phpx first (e.g. run `cmake --build ' . $this->getPhpxDir() . '/build`)';
         }
 

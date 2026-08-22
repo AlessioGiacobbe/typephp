@@ -41,7 +41,7 @@ typephp_call_parent_constructor(object, constructor, args);
 typephp_call_parent_clone(object, clone_method);
 typephp_install_property_handlers(class_entry, handlers);
 typephp_write_property_scoped(object, member, value, scope);
-typephp_runtime_init(argc, argv);
+TYPEPHP_RUNTIME_INIT(project)(argc, argv);
 ```
 
 ### 2.1 使用边界
@@ -286,9 +286,27 @@ class User
 
 ```cpp
 php_<project>_embed_get_module();
+typephp_<project>_runtime_init(argc, argv);
+typephp_<project>_runtime_shutdown();
 ```
 
-它是 binary/library embed runtime 与当前项目 module entry 的连接点。该名称包含项目名并由构建器和 `typephp_main.cc` 成对生成，不得作为通用 helper 命名模板。
+这些是 binary/library embed runtime 与当前项目 module entry 的连接点。定义和引用统一通过
+`TYPEPHP_EMBED_GET_MODULE_FUNCTION()`、`TYPEPHP_RUNTIME_INIT_FUNCTION()`、
+`TYPEPHP_RUNTIME_SHUTDOWN_FUNCTION()` 及对应的符号宏生成，风格与 Zend 的
+`PHP_MINIT_FUNCTION()`/`PHP_MINIT()` 一致。最终符号包含项目名，不得作为通用 helper 命名模板。
+
+### 5.4 多扩展进程中的公共运行时
+
+TypePHP 扩展不得分别编译或静态链接包含进程级 Zend 状态的 PHPX 实现。Reflection handler、
+`FiberGenerator` class entry、作用域和 Property Hook 运行时均由共享的 `libphpx` 唯一提供：
+
+- host 模式的 extension/library 必须链接 `libphpx.so`、`libphpx.dylib` 或 `phpx.dll`，不能回退到 `libphpx.a`；
+- Unix PHP extension 不链接 Embed `libphp.so`，Zend/PHP 符号由加载它的 SAPI 提供；
+- macOS extension 使用 `-undefined dynamic_lookup` 解析宿主符号；
+- binary 和独立 WASI 程序仍可以静态链接，因为每个进程或 Wasm 实例只有一份运行时。
+
+`src/core/typephp_*.cc` 只承载 TypePHP 专属的 `typephp_*` 运行时；`php::` ZendAPI 包装应放在不带
+`typephp_` 前缀的 core 源文件中，例如 `src/core/scope.cc`。
 
 ## 6. 名称选择流程
 
@@ -334,5 +352,5 @@ tests/compiler/basic/helper-symbol-collision.phpt
 | callable 组合冲突检测 | `src/Preprocessor.php` |
 | `typephp_<project>` 生成及项目私有表 | `src/Translator.php` |
 | TypePHP extension 前缀常量 | `src/Metadata/Constants.php` |
-| PHPX/TypePHP helper 分类 | `vendor/swoole/phpx/src/misc/typephp_helper.h` |
+| PHPX/TypePHP helper 分类 | `vendor/swoole/phpx/include/typephp_helper.h` |
 | embed module accessor 拼接 | `vendor/swoole/phpx/src/misc/typephp_main.cc` |

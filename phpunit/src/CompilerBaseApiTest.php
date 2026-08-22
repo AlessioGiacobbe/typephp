@@ -934,6 +934,7 @@ YAML);
             $options = $this->invokeMethod('getCommonCompileCommandOptions');
 
             $this->assertContains('TYPEPHP_PROJECT_NAME=module_accessor', $options['user_defines'], $mode);
+            $this->assertContains('TYPEPHP_RUNTIME_EXPORTS=1', $options['user_defines'], $mode);
             $this->assertSame(
                 [],
                 array_values(array_filter(
@@ -1021,15 +1022,15 @@ YAML);
             $this->assertStringContainsString('zend_class_entry *get_class(', $extension, $mode);
             $this->assertStringContainsString('static void module_init()', $extension, $mode);
             $this->assertStringContainsString('static void module_clean()', $extension, $mode);
+            $this->assertStringContainsString('typephp_register_fiber_generator_class();', $extension, $mode);
+            $this->assertStringContainsString('typephp_unregister_fiber_generator_class();', $extension, $mode);
             $this->assertStringNotContainsString('php_app_init', $extension, $mode);
             $this->assertStringNotContainsString('php_app_clean', $extension, $mode);
 
             if ($mode === CompilerBase::BUILD_MODE_BIN || $mode === CompilerBase::BUILD_MODE_LIB) {
                 $this->assertStringNotContainsString('zend_module_entry *php_embed_get_module()', $extension);
-                $this->assertStringContainsString(
-                    'zend_module_entry *php_' . $target . '_embed_get_module()',
-                    $extension,
-                );
+                $this->assertStringContainsString('#include <typephp_runtime.h>', $extension);
+                $this->assertStringContainsString('TYPEPHP_EMBED_GET_MODULE_FUNCTION(' . $target . ')', $extension);
                 $this->assertStringContainsString(
                     'return &' . $namespace . '::' . $namespace . '_module_entry;',
                     $extension,

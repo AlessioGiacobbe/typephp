@@ -378,6 +378,17 @@ class BackendOptionsTest extends TestCase
         $this->assertStringContainsString('-shared', $options);
     }
 
+    public function testMacosExtensionResolvesPhpSymbolsFromHost(): void
+    {
+        $compiler = new Clang(new Macos());
+        $options = $compiler->buildLinkOptions([
+            'build_mode' => 'ext',
+        ]);
+
+        self::assertStringContainsString('-dynamiclib', $options);
+        self::assertStringContainsString('-undefined dynamic_lookup', $options);
+    }
+
     /**
      * 测试 GCC 链接选项 - RPATH
      */

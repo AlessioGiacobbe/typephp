@@ -104,6 +104,7 @@ required_files=(
     include/php/main/php.h
     include/php/main/php_config.h
     include/phpx/phpx.h
+    include/phpx/phpx_python.h
     include/phpx/typephp_helper.h
     include/zlib.h
     include/zconf.h

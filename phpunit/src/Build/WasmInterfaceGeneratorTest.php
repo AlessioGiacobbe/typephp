@@ -28,6 +28,7 @@ final class WasmInterfaceGeneratorTest extends TestCase
             [$function],
             'acme:demo@1.0.0',
             'demo',
+            'demo',
             static fn (): string => 'php_app__greetuser',
         );
 
@@ -45,6 +46,8 @@ final class WasmInterfaceGeneratorTest extends TestCase
         );
         self::assertStringContainsString('auto result = php_app__greetuser(', $adapter);
         self::assertStringContainsString('catch (zend_object *exception)', $adapter);
+        self::assertStringContainsString('TYPEPHP_RUNTIME_INIT(demo)(1, argv)', $adapter);
+        self::assertSame('typephp_demo_runtime_init', $manifest['runtime']['init-symbol']);
         self::assertSame(
             "acme:demo/api@1.0.0#create-runtime\n"
             . "acme:demo/api@1.0.0#[method]runtime.greet-user\n",
@@ -67,6 +70,7 @@ final class WasmInterfaceGeneratorTest extends TestCase
             [$first, $second],
             'acme:demo@1.0.0',
             'demo',
+            'demo',
             static fn (FunctionDef $function): string => $function->name,
         );
     }
@@ -82,6 +86,7 @@ final class WasmInterfaceGeneratorTest extends TestCase
         (new WasmInterfaceGenerator())->buildManifest(
             [$function],
             'acme:demo@1.0.0',
+            'demo',
             'demo',
             static fn (): string => 'php_dynamicvalue',
         );

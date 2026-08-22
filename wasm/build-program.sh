@@ -149,6 +149,7 @@ required_headers=(
     php/Zend/zend_config.h
     php/ext/date/lib/timelib_config.h
     phpx/phpx.h
+    phpx/phpx_python.h
     phpx/typephp_helper.h
     zlib.h
     zconf.h

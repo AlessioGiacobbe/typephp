@@ -94,7 +94,7 @@ npm run dev
 command 模式具有生成的 C++ `main()` 入口。入口依次调用：
 
 ```text
-typephp_runtime_init(argc, argv)
+typephp_<project>_runtime_init(argc, argv)
     → php_embed_init()
     → PHP/SAPI module startup 与 MINIT
     → PHP request startup 与 RINIT
@@ -103,7 +103,7 @@ typephp_runtime_init(argc, argv)
 
 执行 TypePHP main()
 
-typephp_runtime_shutdown()
+typephp_<project>_runtime_shutdown()
     → 当前应用的 RSHUTDOWN 与模块清理
     → php_embed_shutdown()
     → PHP request/module/SAPI shutdown
@@ -132,7 +132,8 @@ try {
 }
 ```
 
-`createRuntime()` 内部调用 `typephp_runtime_init(1, argv)`。Host 只需要调用这一层稳定接口，不应直接调用 `php_embed_init()`、MINIT、RINIT 或任何 Zend C API。
+`createRuntime()` 内部通过 `TYPEPHP_RUNTIME_INIT(<project>)(1, argv)` 调用项目级初始化符号。Host
+只需要调用这一层稳定接口，不应直接调用 `php_embed_init()`、MINIT、RINIT 或任何 Zend C API。
 
 当前初始化顺序如下：
 
@@ -156,7 +157,7 @@ try {
 
 ### 释放 resource 才会执行 RSHUTDOWN
 
-释放 WIT `runtime` resource 会调用 `typephp_runtime_shutdown()`：
+释放 WIT `runtime` resource 会通过 `TYPEPHP_RUNTIME_SHUTDOWN(<project>)()` 调用项目级关闭符号：
 
 1. 调用当前 TypePHP 应用模块的 RSHUTDOWN，清理 TypePHP 请求级对象和全局数据。
 2. 注销并关闭当前应用模块，执行相应模块清理。
