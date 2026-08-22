@@ -1214,14 +1214,24 @@ CODE;
             // CLI script fields always identify main()'s canonical absolute file.
             $entryFile = $entryFunction->sourceFile;
             $entryFileArg = $this->genCharPtr($entryFile, true);
-            $entryPrefix = str_repeat("\n", max(0, $entryFunction->startLine - 1));
+            $entryLineOffset = max(0, $entryFunction->startLine - 1);
             if (count($entryFunction->argInfoList) == 2) {
-                $entryScript = $entryPrefix . 'global $argc, $argv; main($argc, $argv);';
+                $entryScript = 'global $argc, $argv; main($argc, $argv);';
             } else {
-                $entryScript = $entryPrefix . 'main();';
+                $entryScript = 'main();';
             }
 
-            $code .= 'php::eval(' . $this->genCharPtr($entryScript, true) . ', ' . $entryFileArg . ');' . PHP_EOL;
+            $entryScriptArg = $this->genCharPtr($entryScript, true);
+            if ($entryLineOffset > 0) {
+                // entryLineOffset is main()'s source start line minus one. The
+                // generated std::string(N, '\n') supplies N padding newlines at
+                // runtime, so the eval() entry call is reported on main()'s
+                // original PHP source line. Constructing the padding at runtime
+                // avoids embedding hundreds of escaped newlines in the C++ file.
+                $entryScriptArg = 'std::string(' . $entryLineOffset . ", '\\n') + " . $entryScriptArg;
+            }
+
+            $code .= 'php::eval(' . $entryScriptArg . ', ' . $entryFileArg . ');' . PHP_EOL;
         }
 
         $code .= 'return SUCCESS;' . PHP_EOL;
