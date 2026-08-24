@@ -92,7 +92,8 @@ final class ConstantExpressionValidator
             || $expression instanceof Expr\PropertyFetch
             || $expression instanceof Expr\NullsafePropertyFetch
             || $expression instanceof Expr\New_
-            || ($this->php85 && ($expression instanceof Expr\Cast
+            || ($this->php85 && (($expression instanceof Expr\Cast
+                    && !$expression instanceof Expr\Cast\Void_)
                 || $expression instanceof Expr\Closure
                 || $expression instanceof Expr\FuncCall
                 || $expression instanceof Expr\StaticCall));

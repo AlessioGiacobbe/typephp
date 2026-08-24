@@ -8,12 +8,20 @@
 
 namespace TypePhp\Parser;
 
-use TypePhp\Type;
-
 use PhpParser\Node\Expr;
+use TypePhp\Transform\VoidCastValidationVisitor;
+use TypePhp\Type;
 
 trait UnaryExpressionTrait
 {
+    protected function parseCastVoid(Expr\Cast\Void_ $node): string
+    {
+        if (!$node->getAttribute(VoidCastValidationVisitor::ALLOWED_ATTRIBUTE, false)) {
+            $this->fatalError($node, 'The (void) cast can only be used as a statement');
+        }
+        return 'static_cast<void>(' . $this->parseExpr($node->expr) . ')';
+    }
+
     protected function parseBitwiseNot(Expr\BitwiseNot $expr): string
     {
         $pythonOperator = $this->parsePythonUnaryOperator($expr);

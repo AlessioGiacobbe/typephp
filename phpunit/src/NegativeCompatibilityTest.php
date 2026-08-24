@@ -306,6 +306,79 @@ function main(): void
 }
 PHP,
         ];
+
+        yield 'void cast result assignment' => [
+            'prepare',
+            'The (void) cast can only be used as a statement',
+            <<<'PHP'
+<?php
+function result(): int
+{
+    return 1;
+}
+function main(): void
+{
+    $value = (void) result(); // @diagnostic
+}
+PHP,
+        ];
+
+        yield 'void cast return value' => [
+            'prepare',
+            'The (void) cast can only be used as a statement',
+            <<<'PHP'
+<?php
+function result(): int
+{
+    return 1;
+}
+function invalid(): mixed
+{
+    return (void) result(); // @diagnostic
+}
+PHP,
+        ];
+
+        yield 'void cast argument value' => [
+            'prepare',
+            'The (void) cast can only be used as a statement',
+            <<<'PHP'
+<?php
+function consume(mixed $value): void
+{
+}
+function main(): void
+{
+    consume((void) 1); // @diagnostic
+}
+PHP,
+        ];
+
+        yield 'void cast condition value' => [
+            'prepare',
+            'The (void) cast can only be used as a statement',
+            <<<'PHP'
+<?php
+function main(): void
+{
+    if ((void) true) { // @diagnostic
+    }
+}
+PHP,
+        ];
+
+        yield 'void cast final for condition' => [
+            'prepare',
+            'The (void) cast can only be used as a statement',
+            <<<'PHP'
+<?php
+function main(): void
+{
+    for (; (void) true; ) { // @diagnostic
+    }
+}
+PHP,
+        ];
     }
 
     private function diagnosticLine(string $source, string $diagnostic): int

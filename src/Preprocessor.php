@@ -30,6 +30,7 @@ use TypePhp\Transform\FunctionAttributeLowering;
 use TypePhp\Transform\ConstantExpressionValidationVisitor;
 use TypePhp\Transform\RuntimeAttributeFactoryLowering;
 use TypePhp\Transform\Visitor;
+use TypePhp\Transform\VoidCastValidationVisitor;
 use TypePhp\NativeClass\NativeGlobalDiscovery;
 use TypePhp\NativeClass\NativeGlobalTypeResolver;
 use PhpParser\Modifiers;
@@ -281,6 +282,9 @@ class Preprocessor extends CompilerBase
 
             $traverser = new NodeTraverser();
             $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
+            $traverser->addVisitor(new VoidCastValidationVisitor(
+                fn (Node $node, string $message) => $this->fatalError($node, $message),
+            ));
             $traverser->addVisitor(new Visitor(
                 fn (Node $node, string $message) => $this->warning($node, $message),
                 $this->file,

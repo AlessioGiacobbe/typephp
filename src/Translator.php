@@ -47,6 +47,7 @@ use TypePhp\Transform\Visitor;
 use TypePhp\Transform\ConstructorLowering;
 use TypePhp\Transform\ConstantExpressionValidationVisitor;
 use TypePhp\Transform\RuntimeAttributeFactoryLowering;
+use TypePhp\Transform\VoidCastValidationVisitor;
 use PhpParser\Modifiers;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
@@ -2685,6 +2686,9 @@ CODE;
         $ast = $this->parser->parse($phpCode);
         $traverser = new NodeTraverser();
         $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
+        $traverser->addVisitor(new VoidCastValidationVisitor(
+            fn (Node $node, string $message) => $this->fatalError($node, $message),
+        ));
         $traverser->addVisitor(new Visitor(sourceFile: $this->file));
         $traverser->addVisitor(new ConstantExpressionValidationVisitor(
             $this->phpVersion,

@@ -910,6 +910,8 @@ class CompilerBase implements PropertyAccessContext
                 return $this->parseCastArray($expr);
             case 'Expr_Cast_Object':
                 return $this->parseCastObject($expr);
+            case 'Expr_Cast_Void':
+                return $this->parseCastVoid($expr);
             case 'Expr_ConstFetch':
                 return $this->parseConstFetch($expr);
             case 'Expr_UnaryMinus':
@@ -1181,6 +1183,9 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseExprAsValue(NodeAbstract $expr): string
     {
+        if ($expr instanceof Expr\Cast\Void_) {
+            return $this->parseExpr($expr);
+        }
         $value = $this->wrapVoidExprAsNull($expr, $this->parseExpr($expr));
         return $this->normalizeNativeObjectValueExpr($expr, $value);
     }
@@ -2970,6 +2975,8 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_Cast_Bool':
             case 'Scalar_Bool':
                 return Type::BOOL;
+            case 'Expr_Cast_Void':
+                return Type::VOID;
             case 'Expr_Array':
             case 'Expr_Cast_Array':
                 return Type::ARRAY;

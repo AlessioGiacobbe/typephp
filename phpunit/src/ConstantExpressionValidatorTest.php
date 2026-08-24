@@ -68,6 +68,11 @@ final class ConstantExpressionValidatorTest extends PHPUnit\Framework\TestCase
             '8.5',
             'Constant expression contains invalid operations',
         ];
+        yield 'PHP 8.5 void cast is a statement' => [
+            '(void) 1',
+            '8.5',
+            'Constant expression contains invalid operations',
+        ];
         yield 'first-class callable before PHP 8.5' => [
             'strlen(...)',
             '8.4',

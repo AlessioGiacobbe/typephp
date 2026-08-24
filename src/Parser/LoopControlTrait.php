@@ -7,9 +7,8 @@
 
 namespace TypePhp\Parser;
 
-use TypePhp\Type;
-
 use PhpParser\Node;
+use TypePhp\Type;
 
 trait LoopControlTrait
 {
@@ -38,12 +37,17 @@ trait LoopControlTrait
         $list_cond_expr = [];
         $hasCondStmts = false;
         foreach ($cond as $expr) {
-            $this->assertExprCanBeUsedAsCondition($expr, 'for condition');
+            $voidCast = $expr instanceof Node\Expr\Cast\Void_;
+            if (!$voidCast) {
+                $this->assertExprCanBeUsedAsCondition($expr, 'for condition');
+            }
             [$condExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($expr);
             $condExpr = $this->stringifyParsedExpr($condExpr);
             $hasCondStmts = $hasCondStmts || $beforeStmts || $afterStmts;
-            $list_cond[] = [$expr, $condExpr, $beforeStmts, $afterStmts];
-            $list_cond_expr[] = $this->convertConditionExpr($expr, $condExpr);
+            $list_cond[] = [$expr, $condExpr, $beforeStmts, $afterStmts, $voidCast];
+            $list_cond_expr[] = $voidCast
+                ? $condExpr
+                : $this->convertConditionExpr($expr, $condExpr);
         }
 
         $code .= $this->parseBeforeStmtLines() . PHP_EOL;
@@ -55,8 +59,13 @@ trait LoopControlTrait
             } else {
                 $condResult = $this->genTmpVarName();
                 $condCode .= $this->getIndent() . 'bool ' . $condResult . ' = true;' . PHP_EOL;
-                foreach ($list_cond as [$condNode, $condExpr, $beforeStmts, $afterStmts]) {
+                foreach ($list_cond as [$condNode, $condExpr, $beforeStmts, $afterStmts, $voidCast]) {
                     $condCode .= $this->formatCapturedStmtLines($beforeStmts);
+                    if ($voidCast) {
+                        $condCode .= $this->getIndent() . $condExpr . ';' . PHP_EOL;
+                        $condCode .= $this->formatCapturedStmtLines($afterStmts);
+                        continue;
+                    }
                     if ($afterStmts) {
                         $tmpVar = $this->addTmpVar(Type::VAR);
                         $condCode .= $this->getIndent() . $tmpVar . ' = ' . $condExpr . ';' . PHP_EOL;
