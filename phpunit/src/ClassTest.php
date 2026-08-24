@@ -460,6 +460,46 @@ class ClassTest extends \BaseTest
         $this->compile('override-valid.php');
     }
 
+    public function testOverrideAcceptsParentPropertiesIncludingPromotedAndHookedProperties(): void
+    {
+        $this->compile('override-property-valid.php');
+    }
+
+    public function testPropertyOverrideRequiresMatchingParentProperty(): void
+    {
+        $this->exec(
+            'OverridePropertyMissing::$value has #[\\Override] attribute, but no matching parent class property exists',
+            'override-property-missing.php',
+        );
+    }
+
+    public function testPropertyOverrideCannotHidePrivateParentProperty(): void
+    {
+        $this->exec(
+            'Declaration of `OverridePropertyPrivateChild::$value` conflicts with private property '
+                . '`OverridePropertyPrivateParent::$value`; property shadowing across inheritance is not allowed',
+            'override-property-private-parent.php',
+        );
+    }
+
+    public function testPropertyOverrideIsRejectedOnInterfaceProperty(): void
+    {
+        $this->exec(
+            'OverridePropertyInterface::$value has #[\\Override] attribute, '
+                . 'but no matching parent class property exists',
+            'override-property-interface.php',
+        );
+    }
+
+    public function testPropertyOverrideOnTraitIsValidatedAtUseSite(): void
+    {
+        $this->exec(
+            'OverridePropertyTraitConsumer::$value has #[\\Override] attribute, '
+                . 'but no matching parent class property exists',
+            'override-property-trait-missing.php',
+        );
+    }
+
     public function testOverrideRequiresMatchingParentMethod(): void
     {
         $this->exec(
@@ -500,10 +540,10 @@ class ClassTest extends \BaseTest
         );
     }
 
-    public function testOverrideRejectsNonMethodTargets(): void
+    public function testOverrideRejectsNonMethodOrPropertyTargets(): void
     {
         $this->expectException(\TypePhp\Exception\SyntaxError::class);
-        $this->expectExceptionMessage('Override can only be applied to methods');
+        $this->expectExceptionMessage('Override can only be applied to methods or properties');
         $this->compile('override-invalid-target.php');
     }
 

@@ -58,12 +58,12 @@ Interface Property Hook 不应伪装成普通属性或 lowering 后的普通方�
 
 ## 4. PHPX 与 Zend 元数据
 
-现有 `php::registerPropertyHooks()` 用于具有真实 AOT getter/setter 的具体类，不能复用于抽象 Interface Hook。
+现有 `typephp_register_property_hooks()` 用于具有真实 AOT getter/setter 的具体类，不能复用于抽象 Interface Hook。
 
 PHPX 增加独立 helper：
 
 ```cpp
-php::registerAbstractPropertyHooks(
+typephp_register_abstract_property_hooks(
     zend_class_entry *interface_ce,
     zend_property_info *property_info,
     bool readable,

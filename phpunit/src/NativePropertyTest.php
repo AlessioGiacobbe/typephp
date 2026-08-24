@@ -162,6 +162,15 @@ class NativePropertyTest extends \BaseTest
         $this->exec('Cannot access private property `value` of class `NativePrivateOwner`', 'native-property-private-other-class.php');
     }
 
+    public function testNativeClassCannotHideParentPrivateProperty(): void
+    {
+        $this->exec(
+            'Declaration of `NativePrivateShadowChild::$value` conflicts with private property '
+                . '`NativePrivateShadowParent::$value`; property shadowing across inheritance is not allowed',
+            'native-property-private-shadow.php',
+        );
+    }
+
     public function testCannotAccessProtectedNativePropertyFromUnrelatedClass(): void
     {
         $this->exec('Cannot access protected property `value` of class `NativeProtectedOwner`', 'native-property-protected-unrelated-class.php');

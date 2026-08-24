@@ -1454,6 +1454,11 @@ class Preprocessor extends CompilerBase
         }
 
         $propDef = new PropertyDef($name, $flags, $type, $default, $nullable);
+        $propDef->overrideRequired = (bool) $errorNode->getAttribute(
+            FunctionAttributeLowering::OVERRIDE_ATTRIBUTE,
+            false,
+        );
+        $propDef->node = $errorNode;
         if ($typeNode !== null
             && !$typeNode instanceof NullableType
             && !$typeNode instanceof UnionType
@@ -1737,6 +1742,9 @@ class Preprocessor extends CompilerBase
             foreach ($v->hooks as $hook) {
                 $kind = strtolower($hook->name->toString());
                 if ($kind === 'get') {
+                    if ($hook->byRef) {
+                        $this->fatalError($hook, 'Property get hooks returning by reference are not supported');
+                    }
                     $propDef->getter = PropertyHookLowering::getterName($propName);
                 } elseif ($kind === 'set') {
                     $propDef->setter = PropertyHookLowering::setterName($propName);
@@ -1958,6 +1966,9 @@ class Preprocessor extends CompilerBase
         if ($property->flags & (Modifiers::PRIVATE | Modifiers::PROTECTED)) {
             $this->fatalError($property, 'Property in interface cannot be protected or private');
         }
+        if ($property->flags & Modifiers::FINAL) {
+            $this->fatalError($property, 'Property in interface cannot be final');
+        }
         if ($property->flags & Modifiers::STATIC) {
             $this->fatalError($property, 'Cannot declare hooks for static property');
         }
@@ -1973,6 +1984,9 @@ class Preprocessor extends CompilerBase
             }
             $kind = strtolower($hook->name->toString());
             if ($kind === 'get') {
+                if ($hook->byRef) {
+                    $this->fatalError($hook, 'Property get hooks returning by reference are not supported');
+                }
                 if ($readable) {
                     $this->fatalError($hook, 'Cannot redeclare property hook "get"');
                 }
@@ -1997,6 +2011,14 @@ class Preprocessor extends CompilerBase
         $nullable = $property->type instanceof NullableType;
         foreach ($property->props as $prop) {
             $name = $this->parseIdentifier($prop->name);
+            if ($property->getAttribute(FunctionAttributeLowering::OVERRIDE_ATTRIBUTE, false)) {
+                $this->fatalCompileTimeAttribute(
+                    $property,
+                    'Override',
+                    "{$this->interfaceDef->getNamespacedName(false)}::\${$name} has #[\\Override] attribute, "
+                        . 'but no matching parent class property exists',
+                );
+            }
             if ($this->interfaceDef->hasProperty($name)) {
                 $this->fatalError($property, "Duplicate property `{$name}`");
             }

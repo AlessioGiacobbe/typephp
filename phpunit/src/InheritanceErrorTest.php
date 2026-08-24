@@ -148,6 +148,38 @@ class InheritanceErrorTest extends TestCase
         $this->exec('Cannot override final method', 'inheritance_error_final_method.php');
     }
 
+    public function testCannotOverrideFinalPropertyHook(): void
+    {
+        $this->exec(
+            'Cannot override final property hook FinalPropertyHookParent::$value::get()',
+            'inheritance_error_final_property_hook.php',
+        );
+    }
+
+    public function testCannotOverrideFinalProperty(): void
+    {
+        $this->exec(
+            'Cannot override final property FinalPropertyParent::$value',
+            'inheritance_error_final_property.php',
+        );
+    }
+
+    public function testCannotOverrideFinalHookedProperty(): void
+    {
+        $this->exec(
+            'Cannot override final property FinalHookedPropertyParent::$value',
+            'inheritance_error_final_hooked_property.php',
+        );
+    }
+
+    public function testPrivateSetPropertyIsImplicitlyFinal(): void
+    {
+        $this->exec(
+            'Cannot override final property PrivateSetPropertyParent::$value',
+            'inheritance_error_private_set_property.php',
+        );
+    }
+
     public function testInterfaceMethodStaticMismatch()
     {
         $this->exec('must be compatible', 'interface_method_static_mismatch.php');

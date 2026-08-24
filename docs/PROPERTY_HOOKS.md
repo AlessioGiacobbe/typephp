@@ -44,7 +44,7 @@ public string $name {
 `gen_stub.php` 声明属性并取得 `zend_property_info *` 后生成：
 
 ```cpp
-php::registerPropertyHooks(
+typephp_register_property_hooks(
     class_entry,
     property_info,
     getter_method_name,
@@ -56,7 +56,7 @@ php::registerPropertyHooks(
 
 ## 3. PHPX 注册流程
 
-PHPX 的 `registerPropertyHooks()` 只在 PHP 8.4 及以上版本实现。
+PHPX 的 `typephp_register_property_hooks()` 只在 PHP 8.4 及以上版本实现，并位于 TypePHP 专用 helper 中。
 
 ### 3.1 查找 AOT 实现方法
 

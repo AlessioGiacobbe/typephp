@@ -76,6 +76,14 @@ final class InterfacePropertyHookTest extends TestCase
         );
     }
 
+    public function testFinalInterfacePropertyIsRejected(): void
+    {
+        $this->assertCompileError(
+            'interface_property_hook_final.php',
+            'Property in interface cannot be final',
+        );
+    }
+
     public function testExplicitSetterParameterIsRejectedUntilItsIndependentTypeIsModeled(): void
     {
         $this->assertCompileError(

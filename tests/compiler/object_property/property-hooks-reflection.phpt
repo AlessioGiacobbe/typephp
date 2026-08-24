@@ -6,7 +6,7 @@ PHP 8.4 property hooks expose Zend reflection metadata
 final class ReflectedPropertyHooks
 {
     public string $virtual {
-        get => 'value';
+        final get => 'value';
         set {
         }
     }
@@ -25,5 +25,5 @@ function main(): void
 --EXPECT--
 bool(true)
 bool(true)
-get:$virtual::get:not-final
+get:$virtual::get:final
 set:$virtual::set:not-final

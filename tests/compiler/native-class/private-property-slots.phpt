@@ -1,37 +1,37 @@
 --TEST--
-Native class: parent and child private properties use independent native slots
+Native class: inherited methods retain access to distinct private properties
 --FILE--
 <?php
 
 #[Native]
 class NativePrivateBase
 {
-    private int $value = 10;
+    private int $baseValue = 10;
 
     public function baseValue(): int
     {
-        return $this->value;
+        return $this->baseValue;
     }
 
     public function setBaseValue(int $value): void
     {
-        $this->value = $value;
+        $this->baseValue = $value;
     }
 }
 
 #[Native]
 class NativePrivateChild extends NativePrivateBase
 {
-    private int $value = 20;
+    private int $childValue = 20;
 
     public function childValue(): int
     {
-        return $this->value;
+        return $this->childValue;
     }
 
     public function setChildValue(int $value): void
     {
-        $this->value = $value;
+        $this->childValue = $value;
     }
 }
 

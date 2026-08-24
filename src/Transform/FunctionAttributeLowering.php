@@ -37,8 +37,19 @@ final class FunctionAttributeLowering
                 $node->setAttribute(self::IMMUTABLE_ATTRIBUTE, true);
                 continue;
             }
+            if ($name === 'Override'
+                && ($node instanceof Stmt\Property || ($node instanceof Node\Param && $node->isPromoted()))
+            ) {
+                // Property override validation needs the fully linked parent
+                // class, so preserve only an internal marker and consume the
+                // compile-time attribute before stub generation.
+                CompileTimeAttribute::consume($node, $name);
+                $node->setAttribute(self::OVERRIDE_ATTRIBUTE, true);
+                continue;
+            }
             if (!$node instanceof Stmt\Function_ && !$node instanceof Stmt\ClassMethod) {
-                throw new SyntaxError($name . ' can only be applied to functions or methods');
+                $target = $name === 'Override' ? 'methods or properties' : 'functions or methods';
+                throw new SyntaxError($name . ' can only be applied to ' . $target);
             }
             CompileTimeAttribute::consume($node, $name);
             $node->setAttribute('typephp' . $name, true);

@@ -3602,6 +3602,7 @@ class PropertyInfo extends VariableLike
             $this->phpVersionIdMinimumCompatibility
         );
         $code .= $stringInit;
+        $code .= "\ttypephp_prepare_property_redeclaration(class_entry, {$nameCode});\n";
 
         if ($this->exposedDocComment) {
             $commentCode = "property_{$propertyName}_comment";
@@ -3635,7 +3636,7 @@ class PropertyInfo extends VariableLike
             if ($this->abstractHooks) {
                 $getter = isset($this->hooks['get']) ? 'true' : 'false';
                 $setter = isset($this->hooks['set']) ? 'true' : 'false';
-                $code .= "\tphp::registerAbstractPropertyHooks(class_entry, property_{$propertyName}, {$getter}, {$setter});\n";
+                $code .= "\ttypephp_register_abstract_property_hooks(class_entry, property_{$propertyName}, {$getter}, {$setter});\n";
             } else {
                 $getter = isset($this->hooks['get'])
                     ? 'std::string_view{"' . addslashes($this->hooks['get']) . '"}'
@@ -3643,7 +3644,7 @@ class PropertyInfo extends VariableLike
                 $setter = isset($this->hooks['set'])
                     ? 'std::string_view{"' . addslashes($this->hooks['set']) . '"}'
                     : 'std::string_view{}';
-                $code .= "\tphp::registerPropertyHooks(class_entry, property_{$propertyName}, {$getter}, {$setter});\n";
+                $code .= "\ttypephp_register_property_hooks(class_entry, property_{$propertyName}, {$getter}, {$setter});\n";
             }
         }
 
@@ -3658,7 +3659,9 @@ class PropertyInfo extends VariableLike
             $flags->addForVersionsAbove("ZEND_ACC_STATIC", PHP_70_VERSION_ID);
         }
 
-        if ($this->flags & Modifiers::FINAL) {
+        // PHP 8.4 makes private(set) properties implicitly final. Preserve
+        // that fact in Zend metadata as well as in TypePHP's override checks.
+        if ($this->flags & (Modifiers::FINAL | Modifiers::PRIVATE_SET)) {
             $flags->addForVersionsAbove("ZEND_ACC_FINAL", PHP_84_VERSION_ID);
         }
 
@@ -4066,6 +4069,13 @@ class ClassInfo {
 
         foreach ($this->propertyInfos as $property) {
             $code .= $property->getDeclaration($allConstInfos);
+        }
+
+        if ($this->type === 'class' && isset($this->extends[0])) {
+            // Internal classes are linked to their parent before their own
+            // properties are declared. Restore PHP's per-hook inheritance
+            // after those declarations have replaced inherited metadata.
+            $code .= "\ttypephp_finalize_property_hook_inheritance(class_entry);\n";
         }
 
         // Zend merges interface property contracts immediately. Declare the

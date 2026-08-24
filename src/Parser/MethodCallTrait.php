@@ -17,9 +17,86 @@ use TypePhp\Exception\DynamicCall;
 use TypePhp\Exception\PlaceHolder;
 use TypePhp\Generator\Symbol;
 use TypePhp\Resolver\Reflection;
+use TypePhp\Transform\PropertyHookLowering;
 
 trait MethodCallTrait
 {
+    private function parseParentPropertyHookCall(Expr\StaticCall $expr): ?string
+    {
+        if (!$expr->class instanceof Expr\StaticPropertyFetch
+            || !$expr->class->class instanceof Node\Name
+            || strtolower($expr->class->class->toString()) !== 'parent'
+            || !$expr->class->name instanceof Node\VarLikeIdentifier
+            || !$expr->name instanceof Node\Identifier
+        ) {
+            return null;
+        }
+
+        $kind = strtolower($expr->name->toString());
+        if ($kind !== 'get' && $kind !== 'set') {
+            return null;
+        }
+        if ($expr->isFirstClassCallable()) {
+            $this->fatalError($expr, 'Cannot create Closure for parent property hook call');
+        }
+
+        $property = $expr->class->name->toString();
+        $activeHook = $this->methodDef?->node?->getAttribute(PropertyHookLowering::METHOD_ATTRIBUTE);
+        if (!is_array($activeHook)) {
+            $this->fatalError(
+                $expr,
+                "Must not use parent::\${$property}::{$kind}() outside a property hook",
+            );
+        }
+        if (($activeHook['property'] ?? null) !== $property) {
+            $this->fatalError(
+                $expr,
+                "Must not use parent::\${$property}::{$kind}() in a different property (\$"
+                    . ($activeHook['property'] ?? '') . ')',
+            );
+        }
+        if (($activeHook['kind'] ?? null) !== $kind) {
+            $this->fatalError(
+                $expr,
+                "Must not use parent::\${$property}::{$kind}() in a different property hook ("
+                    . ($activeHook['kind'] ?? '') . ')',
+            );
+        }
+        if (!$this->classDef?->extends) {
+            $this->fatalError($expr, 'Cannot use "parent" when current class scope has no parent');
+        }
+
+        $parentClass = $this->classDef->extends;
+        $declaringClass = $parentClass;
+        $parentProperty = null;
+        while ($declaringClass !== '') {
+            $parentDef = $this->getClassDef($declaringClass);
+            if ($parentDef === null) {
+                break;
+            }
+            if ($parentDef->hasProperty($property)) {
+                $parentProperty = $parentDef->getProperty($property);
+                break;
+            }
+            $declaringClass = $parentDef->extends;
+        }
+        if ($parentProperty === null) {
+            $this->fatalError($expr, "Undefined property {$parentClass}::\${$property}");
+        }
+        if ($parentProperty->isPrivate()) {
+            $this->fatalError($expr, "Cannot access private property {$declaringClass}::\${$property}");
+        }
+
+        $hookKind = $kind === 'get' ? 'ZEND_PROPERTY_HOOK_GET' : 'ZEND_PROPERTY_HOOK_SET';
+        $function = 'typephp_get_parent_property_hook('
+            . $this->getClassEntryPtr($parentClass) . ', '
+            . $this->getLiteralString($property) . ', ' . $hookKind . ')';
+        if ($expr->args === []) {
+            return 'this_.call(' . $function . ')';
+        }
+        return 'this_.call(' . $function . ', ' . $this->parseCallArgs($expr->args) . ')';
+    }
+
     protected function runtimeMethodRequiresDynamicScope(
         string $class,
         string $method,
@@ -756,6 +833,10 @@ trait MethodCallTrait
     protected function parseStaticCall(Expr\StaticCall $expr): string
     {
         $this->validateImmutableCall($expr);
+        $parentPropertyHookCall = $this->parseParentPropertyHookCall($expr);
+        if ($parentPropertyHookCall !== null) {
+            return $parentPropertyHookCall;
+        }
         if (!$this->isNameExpr($expr->class)) {
             $this->assertNotNativeObjectDynamicClassTarget($expr->class, $expr);
         }

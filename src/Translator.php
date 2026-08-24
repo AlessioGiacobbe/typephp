@@ -46,6 +46,7 @@ use TypePhp\Resolver\ClassConstantValueTrait;
 use TypePhp\Transform\Visitor;
 use TypePhp\Transform\ConstructorLowering;
 use TypePhp\Transform\ConstantExpressionValidationVisitor;
+use TypePhp\Transform\PropertyHookLowering;
 use TypePhp\Transform\RuntimeAttributeFactoryLowering;
 use TypePhp\Transform\VoidCastValidationVisitor;
 use PhpParser\Modifiers;
@@ -4051,7 +4052,17 @@ CODE;
                 }
                 if ($methodDef->flags & Modifiers::FINAL) {
                     _final_error:
-                    $message = 'Cannot override final method `' . $extends . '::' . $name . '()`';
+                    $hook = $v->getAttribute(PropertyHookLowering::METHOD_ATTRIBUTE);
+                    if (is_array($hook)
+                        && isset($hook['property'], $hook['kind'])
+                        && is_string($hook['property'])
+                        && is_string($hook['kind'])
+                    ) {
+                        $message = 'Cannot override final property hook '
+                            . $extends . '::$' . $hook['property'] . '::' . $hook['kind'] . '()';
+                    } else {
+                        $message = 'Cannot override final method `' . $extends . '::' . $name . '()`';
+                    }
                     $this->fatalGeneratedMethodAttributeIfAny($v, $message, $extends, $name);
                     $this->fatalError($v,
                         $message);
@@ -4804,6 +4815,7 @@ CODE;
     {
         $classDef = $this->classDef;
         $className = $this->getFullClassName();
+        $matchedOverrides = [];
         $chainNode = $classDef;
         while ($chainNode->extends && !$chainNode->inheritedFromInternalClass) {
             $parentClass = $chainNode->extends;
@@ -4814,21 +4826,28 @@ CODE;
             foreach ($this->classDef->properties as $name => $childProp) {
                 if ($chainNode->hasProperty($name)) {
                     $parentProp = $chainNode->getProperty($name);
-                    // A parent private property would be a separate PHP slot
-                    // hidden by the child declaration. Zend-backed TypePHP
-                    // classes still forbid that dual-slot model, while Native
-                    // classes have declaring-class-qualified C++ fields and
-                    // can represent it without a runtime property table.
-                    // Public/protected declarations instead
-                    // describe the same inherited property slot and must obey
-                    // PHP-compatible type, visibility and readonly rules.
+                    // TypePHP deliberately forbids the two independent slots
+                    // PHP would create when a child hides a parent private
+                    // property. This applies equally to Zend-backed and Native
+                    // classes, even though Native storage could represent it.
                     if ($parentProp->flags & Modifiers::PRIVATE) {
-                        if ($classDef->nativeObject) {
-                            continue;
-                        }
                         $this->fatalError($classStmt,
                             "Declaration of `{$className}::\${$name}` conflicts with private property " .
                             "`{$parentClass}::\${$name}`; property shadowing across inheritance is not allowed");
+                    }
+                    $matchedOverrides[$name] = true;
+                    // PHP inherits get and set independently. A child may
+                    // override only one hook, or redeclare the property
+                    // without hooks while retaining both parent hooks.
+                    $childProp->getter ??= $parentProp->getter;
+                    $childProp->setter ??= $parentProp->setter;
+                    // PHP 8.4 treats private(set) properties as implicitly
+                    // final because a child cannot widen their write scope.
+                    if ($parentProp->flags & (Modifiers::FINAL | Modifiers::PRIVATE_SET)) {
+                        $this->fatalError(
+                            $classStmt,
+                            "Cannot override final property {$parentClass}::\${$name}"
+                        );
                     }
                     if ($childProp->type !== $parentProp->type || $childProp->class !== $parentProp->class) {
                         $this->fatalError($classStmt,
@@ -4852,6 +4871,23 @@ CODE;
                     }
                 }
             }
+        }
+
+        if ($classStmt instanceof Node\Stmt\Trait_) {
+            // A trait property is validated after it is composed into the
+            // consuming class, where the actual parent chain is known.
+            return;
+        }
+        foreach ($classDef->properties as $name => $property) {
+            if (!$property->overrideRequired || isset($matchedOverrides[$name])) {
+                continue;
+            }
+            $this->fatalCompileTimeAttribute(
+                $property->node ?? $classStmt,
+                'Override',
+                "{$className}::\${$name} has #[\\Override] attribute, "
+                    . 'but no matching parent class property exists',
+            );
         }
     }
 

@@ -88,7 +88,13 @@ final class CompileTimeAttributeRegistry
             $add($name, [self::TARGET_PARAMETER], $name . ' can only be applied to function or method parameters', self::ARGUMENTS_NONE, self::PHASE_FUNCTION_LEAVE);
         }
         $add('Validate', [self::TARGET_PARAMETER], 'Validate can only be applied to function or method parameters', self::ARGUMENTS_VALIDATE, self::PHASE_FUNCTION_LEAVE);
-        $add('Override', [self::TARGET_METHOD], 'Override can only be applied to methods', self::ARGUMENTS_NONE, self::PHASE_ENTER);
+        $add(
+            'Override',
+            [self::TARGET_METHOD, self::TARGET_PROPERTY],
+            'Override can only be applied to methods or properties',
+            self::ARGUMENTS_NONE,
+            self::PHASE_ENTER,
+        );
         $add('MustUse', [self::TARGET_FUNCTION, self::TARGET_METHOD], 'MustUse can only be applied to functions or methods', self::ARGUMENTS_NONE, self::PHASE_ENTER);
         $add('Immutable', [self::TARGET_METHOD, self::TARGET_PROPERTY_HOOK, self::TARGET_PARAMETER], 'Immutable can only be applied to methods, property hooks, or function parameters', self::ARGUMENTS_NONE, self::PHASE_ENTER);
         $add('Hot', [self::TARGET_FUNCTION, self::TARGET_METHOD], 'Hot can only be applied to functions or methods', self::ARGUMENTS_NONE, self::PHASE_ENTER, true, ['Cold']);

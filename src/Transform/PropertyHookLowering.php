@@ -101,7 +101,11 @@ final class PropertyHookLowering
             }
 
             $method = new Stmt\ClassMethod($methodName, [
-                'flags' => Modifiers::PUBLIC | Modifiers::FINAL,
+                // Hidden methods participate in inheritance exactly like the
+                // corresponding hooks. Marking every generated method final
+                // rejects legal child hook overrides and also forces PHPX to
+                // erase final unconditionally from the Zend hook metadata.
+                'flags' => Modifiers::PUBLIC | ($hook->flags & Modifiers::FINAL),
                 'byRef' => $kind === 'get' && $hook->byRef,
                 'params' => $params,
                 'returnType' => $returnType,
@@ -165,7 +169,9 @@ final class PropertyHookLowering
     private static function visibilityMarker(string $name, array $attributes): Stmt\ClassMethod
     {
         return new Stmt\ClassMethod($name, [
-            'flags' => Modifiers::PUBLIC | Modifiers::FINAL,
+            // A child declaration may replace the generated visibility marker.
+            // This method is metadata for the object handler, not a final PHP API.
+            'flags' => Modifiers::PUBLIC,
             'returnType' => new Node\Identifier('void'),
             'stmts' => [],
         ], $attributes);

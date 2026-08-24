@@ -8,6 +8,7 @@
 
 namespace TypePhp\Entity;
 
+use PhpParser\NodeAbstract;
 use PhpParser\Modifiers;
 use TypePhp\ArrayDef\ArrayDefinition;
 
@@ -34,6 +35,9 @@ class PropertyDef
     public ?string $getter = null;
     public ?string $setter = null;
     public bool $virtual = false;
+    /** The source property carries TypePHP's compile-time #[Override] contract. */
+    public bool $overrideRequired = false;
+    public ?NodeAbstract $node = null;
 
     public function __construct(string $name, int $flags, string $type, ?string $default = null, bool $nullable = false)
     {

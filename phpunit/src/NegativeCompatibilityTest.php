@@ -185,6 +185,20 @@ function main(): void
 PHP,
         ];
 
+        yield 'property get hook reference return' => [
+            'prepare',
+            'Property get hooks returning by reference are not supported',
+            <<<'PHP'
+<?php
+final class ReferencePropertyHook
+{
+    public string $value {
+        &get => $this->value; // @diagnostic
+    }
+}
+PHP,
+        ];
+
         yield 'arrow function reference return' => [
             'convert',
             'Closure and arrow functions cannot return by reference',
