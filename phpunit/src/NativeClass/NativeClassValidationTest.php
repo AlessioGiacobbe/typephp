@@ -98,6 +98,15 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-anonymous.php');
     }
 
+    public function testRejectsNativeClassDeclaredInStubFile(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage(
+            '#[Native] cannot be used in .stub.php; Native class layout must be owned by the TypePHP compiler',
+        );
+        $this->compile('native-class-stub.stub.php');
+    }
+
     public function testRejectsUntypedProperty(): void
     {
         $this->expectException(TestError::class);

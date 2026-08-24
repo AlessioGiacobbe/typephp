@@ -14,6 +14,7 @@ use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitor\NameResolver;
 use PhpParser\Parser;
 use PhpParser\PrettyPrinter;
+use TypePhp\Exception\SyntaxError;
 use TypePhp\Transform\CompileTimeAttribute;
 use TypePhp\Transform\CompileTimeAttributeRegistry;
 
@@ -103,6 +104,14 @@ final class LibraryImportStubGenerator
         if ($this->hasNoExportAttribute($stmt)) {
             return null;
         }
+        if ($stmt instanceof Node\Stmt\Class_ && $this->hasNativeAttribute($stmt)) {
+            $name = isset($stmt->namespacedName)
+                ? $stmt->namespacedName->toString()
+                : ($stmt->name?->toString() ?? '<anonymous>');
+            throw new SyntaxError(
+                "Native class `{$name}` cannot be exported through a library stub; mark it with #[NoExport]",
+            );
+        }
 
         $comments = array_filter(
             $stmt->getComments(),
@@ -161,6 +170,18 @@ final class LibraryImportStubGenerator
         }
 
         return null;
+    }
+
+    private function hasNativeAttribute(Node\Stmt\Class_ $class): bool
+    {
+        foreach ($class->attrGroups as $group) {
+            foreach ($group->attrs as $attribute) {
+                if (CompileTimeAttribute::is($attribute, 'Native')) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private function hasNoExportAttribute(Node $node): bool

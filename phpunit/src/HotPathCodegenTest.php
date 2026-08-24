@@ -9,7 +9,7 @@ final class HotPathCodegenTest extends \BaseTest
         $code = $this->compileFixture();
 
         self::assertStringContainsString('items.item(0L, true) = value;', $code);
-        self::assertStringContainsString('items.append(value);', $code);
+        self::assertStringContainsString('items.appendValue(value);', $code);
         self::assertStringContainsString('items.item(0L, true) += value;', $code);
         self::assertStringContainsString('items.item(0L, true) += other.get(0L);', $code);
         self::assertStringContainsString('items.item(2L, true) = other.get(0L);', $code);

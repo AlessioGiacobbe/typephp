@@ -954,6 +954,24 @@ class Preprocessor extends CompilerBase
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
         $this->classDef->nativeObject = NativeClassAttributeLowering::isNative($class);
         $this->classDef->exported = !$this->hasNoExportAttribute($class);
+        if ($this->classDef->nativeObject && $this->stubFile) {
+            $this->fatalCompileTimeAttribute(
+                $class,
+                'Native',
+                '#[Native] cannot be used in .stub.php; Native class layout must be owned by the TypePHP compiler',
+            );
+        }
+        if ($this->classDef->nativeObject
+            && $this->classDef->exported
+            && $this->isBuildModeLib()
+            && !$this->isWasiTarget()
+        ) {
+            $this->fatalCompileTimeAttribute(
+                $class,
+                'Native',
+                "Native class `{$fullClassName}` cannot be exported through a library stub; mark it with #[NoExport]",
+            );
+        }
         $this->classDef->methodsForTarget = $this->parseMethodsForTarget($class);
         $this->addClass($fullClassName, $this->classDef);
 

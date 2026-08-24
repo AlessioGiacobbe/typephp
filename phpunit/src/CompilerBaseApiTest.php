@@ -1415,6 +1415,56 @@ YAML);
         $this->assertSame(['prime2'], $consumer->getLinkLibs());
     }
 
+    public function testLibraryBuildRejectsExportedNativeClass(): void
+    {
+        global $translator;
+        $translator = $this->compiler;
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
+
+        $file = $this->fixturePath('library_exported_native.php');
+        $this->compiler->addFiles([$file]);
+
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage(
+            'Native class `LibraryExportedNative` cannot be exported through a library stub; mark it with #[NoExport]',
+        );
+        $this->compiler->prepareFile($file);
+    }
+
+    public function testNoExportNativeClassIsOmittedFromLibraryStub(): void
+    {
+        global $translator;
+        $translator = $this->compiler;
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
+        $this->setPropertyValue('outputDir', $this->testDir);
+        $this->compiler->setTargetName('hidden_native');
+
+        $file = $this->fixturePath('library_hidden_native.php');
+        $this->compiler->addFiles([$file]);
+        $this->compiler->prepareFile($file);
+        $this->compiler->convertFile($file);
+
+        $stub = file_get_contents($this->compiler->genLibraryImportStub([$file]));
+        $this->assertStringContainsString('function library_visible_value(): int', $stub);
+        $this->assertStringNotContainsString('LibraryHiddenNative', $stub);
+        $this->assertStringNotContainsString('#[Native]', $stub);
+    }
+
+    public function testLibraryStubGeneratorRejectsExportedNativeClassWithoutPrepare(): void
+    {
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
+        $this->setPropertyValue('outputDir', $this->testDir);
+        $this->compiler->setTargetName('exported_native');
+
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage(
+            'Native class `LibraryExportedNative` cannot be exported through a library stub; mark it with #[NoExport]',
+        );
+        $this->compiler->genLibraryImportStub([
+            $this->fixturePath('library_exported_native.php'),
+        ]);
+    }
+
     public function testNoExportFollowsPhpNamespaceResolution(): void
     {
         $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
