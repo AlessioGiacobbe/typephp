@@ -83,6 +83,7 @@ These items should be documented with the exact boundary.
 |---|---|---|
 | Variable variables (`$$var`) | Pending | Add a function-local symbol table mirror for dynamic locals, and disable or synchronize native locals that escape into dynamic lookup. |
 | Closure or arrow function returning by reference | Pending | Closure metadata and wrappers must preserve return-by-reference and emit `ReturnRef`. |
+| PHP 8.5 closures in constants, parameter defaults or property defaults | Pending | Use context-aware runtime initializers: cache constants and property defaults per request, create parameter defaults per omitted call, and never place request-local zvals in persistent MINIT storage. |
 | Closure and arrow function by-reference parameters | Pending | Closure arginfo must preserve by-reference parameters and call lowering must pass reference slots. |
 | By-reference variadic parameters (`&...$args`) | Pending | Variadic storage must preserve references instead of copying values. |
 | By-reference parameters with default values | Pending | Need PHP-compatible handling for omitted arguments using temporary default values while still binding references for passed arguments. |

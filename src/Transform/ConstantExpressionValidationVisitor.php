@@ -10,6 +10,8 @@ namespace TypePhp\Transform;
 
 use Closure;
 use PhpParser\Node;
+use PhpParser\Node\Expr;
+use PhpParser\NodeFinder;
 use PhpParser\NodeVisitorAbstract;
 use TypePhp\Exception\SyntaxError;
 
@@ -25,6 +27,7 @@ use TypePhp\Exception\SyntaxError;
 final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
 {
     private readonly ConstantExpressionValidator $validator;
+    private readonly bool $php85;
 
     /** @param null|Closure(Node, string): never $fatalError */
     public function __construct(
@@ -33,6 +36,7 @@ final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
     )
     {
         $this->validator = new ConstantExpressionValidator($phpVersion);
+        $this->php85 = version_compare($phpVersion, '8.5', '>=');
     }
 
     public function enterNode(Node $node): null
@@ -60,6 +64,10 @@ final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
 
         if ($node instanceof Node\Stmt\ClassConst) {
             foreach ($node->consts as $constant) {
+                $this->rejectUnsupportedClosure(
+                    $constant->value,
+                    'Closures in constant declarations are not supported by TypePHP',
+                );
                 $this->validator->validate($constant->value, allowDynamic: false);
             }
             return null;
@@ -68,6 +76,10 @@ final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
         if ($node instanceof Node\Stmt\Property) {
             foreach ($node->props as $property) {
                 if ($property->default !== null) {
+                    $this->rejectUnsupportedClosure(
+                        $property->default,
+                        'Closures in property default values are not supported by TypePHP',
+                    );
                     $this->validator->validate($property->default, allowDynamic: false);
                 }
             }
@@ -80,17 +92,44 @@ final class ConstantExpressionValidationVisitor extends NodeVisitorAbstract
         }
 
         if ($node instanceof Node\Param && $node->default !== null) {
+            $this->rejectUnsupportedClosure(
+                $node->default,
+                'Closures in parameter default values are not supported by TypePHP',
+            );
             $this->validator->validate($node->default, allowDynamic: true);
             return null;
         }
 
         if ($node instanceof Node\Stmt\Const_) {
             foreach ($node->consts as $constant) {
+                $this->rejectUnsupportedClosure(
+                    $constant->value,
+                    'Closures in constant declarations are not supported by TypePHP',
+                );
                 $this->validator->validate($constant->value, allowDynamic: true);
             }
             return null;
         }
 
         return null;
+    }
+
+    private function rejectUnsupportedClosure(Expr $expression, string $message): void
+    {
+        if (!$this->php85) {
+            return;
+        }
+
+        $closure = (new NodeFinder())->findFirstInstanceOf($expression, Expr\Closure::class);
+        if ($closure === null) {
+            return;
+        }
+
+        // TODO(PHP 8.5): Lower closures in constant-expression declaration
+        // values to context-aware runtime initializer plans. Constants and
+        // properties cache a Closure per request, while parameter defaults
+        // create one per omitted call. Never store a request-local zval in
+        // persistent MINIT class metadata.
+        throw new SyntaxError($message);
     }
 }

@@ -177,10 +177,6 @@ final class ConstantExpressionValidatorTest extends PHPUnit\Framework\TestCase
             'function f(int $seed) { static $value = loadValue($seed); }',
             '8.4',
         ];
-        yield 'PHP 8.5 class constant allows static closure' => [
-            'class C { const VALUE = static function (): int { return 1; }; }',
-            '8.5',
-        ];
         yield 'PHP 8.5 property allows scalar cast' => ['class C { public int $value = (int) 1.5; }', '8.5'];
     }
 
@@ -231,6 +227,41 @@ final class ConstantExpressionValidatorTest extends PHPUnit\Framework\TestCase
             'class C { const VALUE = static function (): int { return 1; }; }',
             '8.4',
             'Constant expression contains invalid operations',
+        ];
+        yield 'PHP 8.5 global constant closure is not supported by TypePHP' => [
+            'const VALUE = static function (): int { return 1; };',
+            '8.5',
+            'Closures in constant declarations are not supported by TypePHP',
+        ];
+        yield 'PHP 8.5 class constant closure is not supported by TypePHP' => [
+            'class C { const VALUE = static function (): int { return 1; }; }',
+            '8.5',
+            'Closures in constant declarations are not supported by TypePHP',
+        ];
+        yield 'PHP 8.5 nested class constant closure is not supported by TypePHP' => [
+            'class C { const VALUE = [static function (): int { return 1; }]; }',
+            '8.5',
+            'Closures in constant declarations are not supported by TypePHP',
+        ];
+        yield 'PHP 8.5 parameter default closure is not supported by TypePHP' => [
+            'function f(Closure $value = static function (): int { return 1; }) {}',
+            '8.5',
+            'Closures in parameter default values are not supported by TypePHP',
+        ];
+        yield 'PHP 8.5 property default closure is not supported by TypePHP' => [
+            'class C { public Closure $value = static function (): int { return 1; }; }',
+            '8.5',
+            'Closures in property default values are not supported by TypePHP',
+        ];
+        yield 'PHP 8.5 nested parameter default closure is not supported by TypePHP' => [
+            'function f(mixed $value = [static function (): int { return 1; }]) {}',
+            '8.5',
+            'Closures in parameter default values are not supported by TypePHP',
+        ];
+        yield 'PHP 8.5 nested property default closure is not supported by TypePHP' => [
+            'class C { public mixed $value = [static function (): int { return 1; }]; }',
+            '8.5',
+            'Closures in property default values are not supported by TypePHP',
         ];
     }
 

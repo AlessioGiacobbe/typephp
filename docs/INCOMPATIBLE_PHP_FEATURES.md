@@ -19,6 +19,7 @@
 - PHP 8.4 Reflection Lazy Object 不能用于 TypePHP AOT 类。AOT 类以 persistent internal class 注册，而 Zend 的 `zend_object_make_lazy()` 明确拒绝 internal class；运行时动态加载的 ZendPHP user class 不受此限制。
 - 支持 `private(set)` 与 `protected(set)` 非对称属性可见性，并通过 PHP 8.4+ 的类级对象 handler 执行同等作用域检查。
 - 不支持闭包或箭头函数按引用返回。
+- 暂不支持 PHP 8.5 在全局常量、类常量、参数默认值或属性默认值中使用 `static function`；初始化表达式内嵌套的闭包同样会在编译期被拒绝。
 - `__construct()` 不允许返回值。
 - 参数默认值不允许出现在必填参数之前（`PHP`允许，但会直接丢弃此默认参数）。
 - 不支持引用可变参数 `&...$args`。
