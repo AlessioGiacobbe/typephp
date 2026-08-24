@@ -2214,10 +2214,6 @@ CODE;
                     return $body . "return obj;\n";
                 };
 
-                // TODO(PHP 8.5 clone-with): typephp_install_property_handlers()
-                // must preserve these custom handlers on the cloned object and
-                // provide compatible clone_obj_with behavior. Zend's default
-                // clone path currently drops hook dispatch for TypePHP classes.
                 $code .= "typephp_install_property_handlers({$ce}, &{$handlers});\n";
                 if ($classDef->requireCtor) {
                     $code .= "create_object_{$className} = php::getCreateObjectFn({$ce});\n";

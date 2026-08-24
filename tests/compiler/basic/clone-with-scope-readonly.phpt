@@ -6,8 +6,6 @@ if (PHP_VERSION_ID < 80500) {
     die('skip requires PHP 8.5');
 }
 ?>
---XFAIL--
-TypePHP internal classes do not yet preserve private/protected/readonly property scope during clone-with
 --FILE--
 <?php
 
@@ -34,6 +32,16 @@ class CloneWithScopeBase
     {
         return [$this->privateValue, $this->protectedValue, $this->readonlyValue];
     }
+
+    public function withInvalidPrivate(): self
+    {
+        return clone($this, ['privateValue' => 'invalid']);
+    }
+
+    public function reinitializeReadonly(int $value): void
+    {
+        $this->readonlyValue = $value;
+    }
 }
 
 class CloneWithScopeChild extends CloneWithScopeBase
@@ -53,6 +61,23 @@ function main(): void
     var_dump($source->values());
     var_dump($privateCopy->values());
     var_dump($protectedCopy->values());
+
+    // PHP leaves readonly slots omitted from the update array reinitializable
+    // once on the clone. A slot explicitly updated by clone-with is locked.
+    $protectedCopy->reinitializeReadonly(31);
+    var_dump($protectedCopy->values());
+
+    try {
+        $privateCopy->reinitializeReadonly(40);
+    } catch (Error $error) {
+        echo $error->getMessage(), "\n";
+    }
+
+    try {
+        $source->withInvalidPrivate();
+    } catch (TypeError $error) {
+        echo $error::class, ":private\n";
+    }
 
     try {
         clone($source, ['protectedValue' => 99]);
@@ -92,5 +117,15 @@ array(3) {
   [2]=>
   int(3)
 }
+array(3) {
+  [0]=>
+  int(1)
+  [1]=>
+  int(20)
+  [2]=>
+  int(31)
+}
+Cannot modify readonly property CloneWithScopeBase::$readonlyValue
+TypeError:private
 Cannot access protected property CloneWithScopeChild::$protectedValue
 Cannot modify protected(set) readonly property CloneWithScopeBase::$readonlyValue from global scope

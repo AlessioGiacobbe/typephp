@@ -82,7 +82,6 @@ These items should be documented with the exact boundary.
 | Feature | Classification | Implementation Direction |
 |---|---|---|
 | PHP 8.5 `#[NoDiscard]` | Pending | Preserve PHP's warning behavior and timing consistently for native direct calls and Zend runtime fallbacks. TypePHP's compile-time `#[MustUse]` remains a separate feature. |
-| PHP 8.5 clone-with for scoped/readonly/hooked TypePHP properties | Pending | Preserve the lexical class scope in the Zend call frame and teach TypePHP's custom object handlers to clone through `clone_obj_with` without losing hook handlers. Public/dynamic properties and callable/error paths already delegate correctly to a PHP 8.5 runtime. |
 | Variable variables (`$$var`) | Pending | Add a function-local symbol table mirror for dynamic locals, and disable or synchronize native locals that escape into dynamic lookup. |
 | Closure or arrow function returning by reference | Pending | Closure metadata and wrappers must preserve return-by-reference and emit `ReturnRef`. |
 | PHP 8.5 closures in constants, parameter defaults or property defaults | Pending | Use context-aware runtime initializers: cache constants and property defaults per request, create parameter defaults per omitted call, and never place request-local zvals in persistent MINIT storage. |
