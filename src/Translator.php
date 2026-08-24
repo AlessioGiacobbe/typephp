@@ -2985,7 +2985,7 @@ CODE;
             }
 
             foreach ($classStmt->traits as $trait1) {
-                $traitFullName = $this->getNamespacedClassName($trait1->toString());
+                $traitFullName = $this->getNamespacedClassName($this->parseIdentifier($trait1));
                 if (!$this->hasClass($traitFullName)) {
                     $this->fatalError($classStmt, "Trait `{$traitFullName}` not found");
                 }

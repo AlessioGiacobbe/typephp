@@ -18,6 +18,14 @@ use TypePhp\Diagnostics\CompileTimeAttributeDiagnostic;
 
 class Visitor extends NodeVisitorAbstract
 {
+    private string $namespaceMagicName = '';
+    private string $propertyMagicName = '';
+    /** @var list<array{string, int}> */
+    private array $propertyMagicContextStack = [];
+    private int $propertyMagicBoundaryDepth = 0;
+    /** @var array<int, true> */
+    private array $propertyMagicBoundaries = [];
+
     /** @param null|Closure(Node, string): void $warning */
     public function __construct(
         private readonly ?Closure $warning = null,
@@ -25,8 +33,51 @@ class Visitor extends NodeVisitorAbstract
     ) {
     }
 
-    public function enterNode(Node $node): null
+    public function enterNode(Node $node): null|Node
     {
+        if ($node instanceof Stmt\Namespace_) {
+            $this->namespaceMagicName = $node->name?->toString() ?? '';
+        }
+        if ($node instanceof Node\Name\Relative) {
+            // namespace\name is bound to the current namespace and never
+            // participates in imports or global function/constant fallback.
+            $resolved = $node->getAttribute('resolvedName');
+            $name = $resolved instanceof Node\Name
+                ? $resolved->toString()
+                : ltrim($this->namespaceMagicName . '\\' . $node->toString(), '\\');
+            return new Node\Name\FullyQualified($name, $node->getAttributes());
+        }
+
+        if ($node instanceof Stmt\Property) {
+            $this->propertyMagicContextStack[] = [
+                $this->propertyMagicName,
+                $this->propertyMagicBoundaryDepth,
+            ];
+            $this->propertyMagicName = $node->props[0]->name->toString();
+            $this->propertyMagicBoundaryDepth = 0;
+        } elseif ($node instanceof Node\PropertyItem) {
+            // Multi-property declarations resolve __PROPERTY__ separately for
+            // every initializer. Attributes on the declaration use the first
+            // property, matching ZendPHP.
+            $this->propertyMagicName = $node->name->toString();
+        } elseif ($this->propertyMagicName !== ''
+            && (($node instanceof Node\FunctionLike && !$node instanceof Node\PropertyHook)
+                || $node instanceof Stmt\ClassLike)
+        ) {
+            ++$this->propertyMagicBoundaryDepth;
+            $this->propertyMagicBoundaries[spl_object_id($node)] = true;
+        }
+
+        if ($node instanceof Node\Scalar\MagicConst\Property) {
+            $value = $this->propertyMagicBoundaryDepth === 0
+                ? $this->propertyMagicName
+                : '';
+            return new Node\Scalar\String_($value, $node->getAttributes());
+        }
+        if ($node instanceof Node\Scalar\MagicConst\Namespace_) {
+            return new Node\Scalar\String_($this->namespaceMagicName, $node->getAttributes());
+        }
+
         $this->guard($node, static fn () => CompileTimeAttribute::validateNode($node));
         $this->guard($node, static fn () => NativeClassAttributeLowering::lower($node), 'Native');
         $this->guard($node, static fn () => FunctionAttributeLowering::lower($node));
@@ -38,6 +89,19 @@ class Visitor extends NodeVisitorAbstract
 
     public function leaveNode(Node $node): null
     {
+        $nodeId = spl_object_id($node);
+        if (isset($this->propertyMagicBoundaries[$nodeId])) {
+            unset($this->propertyMagicBoundaries[$nodeId]);
+            --$this->propertyMagicBoundaryDepth;
+        }
+        if ($node instanceof Stmt\Property) {
+            [$this->propertyMagicName, $this->propertyMagicBoundaryDepth]
+                = array_pop($this->propertyMagicContextStack);
+        }
+        if ($node instanceof Stmt\Namespace_) {
+            $this->namespaceMagicName = '';
+        }
+
         if ($node instanceof Stmt\Function_ || $node instanceof Stmt\ClassMethod || $node instanceof Node\Expr\Closure) {
             $this->guard(
                 $node,

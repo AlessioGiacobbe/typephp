@@ -893,6 +893,8 @@ class CompilerBase implements PropertyAccessContext
             case 'Scalar_MagicConst_Method':
             case 'Scalar_MagicConst_Class':
             case 'Scalar_MagicConst_Trait':
+            case 'Scalar_MagicConst_Namespace':
+            case 'Scalar_MagicConst_Property':
                 return $this->parseMagicConst($expr);
             case 'Scalar_InterpolatedString':
                 return $this->parseInterpolatedString($expr);
@@ -3788,12 +3790,12 @@ class CompilerBase implements PropertyAccessContext
                 $classDef->name = new Node\Identifier($className);
                 // 继承父类和接口可能是 use 的名称，需要转换成全限定名称
                 if ($classDef->extends !== null) {
-                    $parentClass = $this->getNamespacedClassName($classDef->extends->toString());
+                    $parentClass = $this->getNamespacedClassName($this->parseIdentifier($classDef->extends));
                     $classDef->extends = new Node\Name\FullyQualified($parentClass);
                 }
                 if (!empty($classDef->implements)) {
                     foreach ($classDef->implements as $i => $iface) {
-                        $ifaceName = $this->getNamespacedClassName($iface->toString());
+                        $ifaceName = $this->getNamespacedClassName($this->parseIdentifier($iface));
                         $classDef->implements[$i] = new Node\Name\FullyQualified($ifaceName);
                     }
                 }

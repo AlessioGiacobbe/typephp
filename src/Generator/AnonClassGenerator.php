@@ -49,7 +49,7 @@ trait AnonClassGenerator
                 continue;
             }
             foreach ($stmt->traits as $traitName) {
-                $fullName = $this->getNamespacedClassName($traitName->toString());
+                $fullName = $this->getNamespacedClassName($this->parseIdentifier($traitName));
                 if (!$this->hasClass($fullName)) {
                     $this->fatalError($stmt, "Trait `{$fullName}` not found");
                 }

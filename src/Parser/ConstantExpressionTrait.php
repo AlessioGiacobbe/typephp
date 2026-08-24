@@ -147,6 +147,13 @@ trait ConstantExpressionTrait
                 return '"' . $this->escapeString($this->file) . '"';
             case 'Scalar_MagicConst_Line':
                 return (string) $expr->getStartLine();
+            case 'Scalar_MagicConst_Namespace':
+                return '"' . $this->escapeString($this->namespace) . '"';
+            case 'Scalar_MagicConst_Property':
+                // Visitor normally folds this constant before property hooks
+                // are lowered to generated methods. Keep the fallback aligned
+                // with PHP, where it is an empty string outside a property.
+                return '""';
             case 'Scalar_MagicConst_Function':
                 return '"' . $this->escapeString($function) . '"';
             case 'Scalar_MagicConst_Class':

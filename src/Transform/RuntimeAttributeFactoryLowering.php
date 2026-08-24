@@ -178,10 +178,15 @@ final class RuntimeAttributeFactoryLowering extends NodeVisitorAbstract
         $context = $this->classStack === []
             ? ['namespace' => '', 'parent' => '']
             : $this->classStack[array_key_last($this->classStack)];
-        $traverser->addVisitor(new class($context['namespace'], $context['parent']) extends NodeVisitorAbstract {
+        $traverser->addVisitor(new class(
+            $context['namespace'],
+            $context['parent'],
+            $this->namespace,
+        ) extends NodeVisitorAbstract {
             public function __construct(
                 private readonly string $class,
                 private readonly string $parent,
+                private readonly string $namespace,
             ) {
             }
 
@@ -197,6 +202,13 @@ final class RuntimeAttributeFactoryLowering extends NodeVisitorAbstract
                     }
                 }
                 if ($node instanceof Node\Name) {
+                    // Attribute factories are created while the outer
+                    // traverser is entering the Attribute node, before its
+                    // argument names have been visited by NameResolver.
+                    if ($node instanceof Node\Name\Relative) {
+                        $name = ltrim($this->namespace . '\\' . $node->toString(), '\\');
+                        return new Node\Name\FullyQualified($name, $node->getAttributes());
+                    }
                     $resolved = $node->getAttribute('resolvedName');
                     if ($resolved instanceof Node\Name) {
                         return new Node\Name\FullyQualified($resolved->toString(), $resolved->getAttributes());
