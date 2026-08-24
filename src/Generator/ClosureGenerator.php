@@ -150,6 +150,8 @@ trait ClosureGenerator
         $isGenerator = $this->closureContainsYield($expr);
         if ($isGenerator) {
             $this->validateGeneratorClosure($expr, $params);
+        } elseif ($expr->byRef) {
+            $this->fatalError($expr, 'Closure and arrow functions cannot return by reference');
         }
         $tmpVar = $this->genTmpVarName();
 

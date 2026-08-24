@@ -25,7 +25,6 @@
 - 不支持引用可变参数 `&...$args`。
 - 联合类型、交叉类型、`nullable` 类型仍以 `mixed/any` 作为 C++ 表示，但静态阶段会利用已知表达式类型提前拒绝确定不兼容的参数、返回值和属性赋值；动态值仍保留运行时 type check。
 - 局部变量类型一旦被静态推断为具体 native 类型，不支持在同一作用域内重新赋值为不兼容类型。
-- attribute 参数不支持非空数组值和 `new` 表达式。
 
 ## declare
 
@@ -56,7 +55,7 @@
 
 - `match` 的 arm condition 不能是 `match` 表达式。
 - `foreach` by reference 的 value 只能是变量。
-- `foreach` by reference 不支持 list destructuring。
+- `foreach` list destructuring 不支持按引用绑定元素。
 - `std::vector`、`std::map`、`std::ordered_map` 在 `foreach` 期间禁止追加、插入、`unset()` 或整体替换；已有元素的非结构性更新仍可使用赋值运算符完成。
 - 固定 native typed object property 不允许按 PHP 未初始化语义自由 `unset()`。
 - native 类型变量执行 `unset()` 不会产生标准 PHP 的变量删除语义。

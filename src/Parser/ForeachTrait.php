@@ -23,6 +23,9 @@ trait ForeachTrait
                 continue;
             }
             if ($item instanceof ArrayItem) {
+                if ($item->byRef) {
+                    $this->fatalError($item, 'Foreach list destructuring cannot bind items by reference');
+                }
                 $key = $item->key ? $this->parseArrayKey($item->key) : (string) $k;
                 if ($item->value instanceof Expr\List_) {
                     $nestedTmpVar = $this->genTmpVarName();
@@ -65,10 +68,6 @@ trait ForeachTrait
             $this->fatalError($node, 'Cannot use & with foreach');
         }
 
-        if ($node->byRef and !$this->isVarExpr($node->valueVar)) {
-            $this->fatalError($node, 'Foreach by reference only supports variable as value');
-        }
-
         if ($node->valueVar instanceof Expr\List_) {
             if ($node->byRef) {
                 $this->fatalError($node, 'Foreach by reference cannot use list destructuring');
@@ -77,6 +76,10 @@ trait ForeachTrait
             $this->addLocalVar($listTmpVar, Type::VAR);
             return $this->getIndent() . $listTmpVar . ' = ' . $valueExpr . ';' . PHP_EOL
                 . $this->parseForeachItemAsList($listTmpVar, $node->valueVar->items);
+        }
+
+        if ($node->byRef and !$this->isVarExpr($node->valueVar)) {
+            $this->fatalError($node, 'Foreach by reference only supports variable as value');
         }
 
         if ($this->isArrayDimFetch($node->valueVar)) {

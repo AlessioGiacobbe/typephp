@@ -96,12 +96,11 @@ These items should be documented with the exact boundary.
 | `echo` with assignment expressions | Pending | Requires expression lowering that preserves evaluation order and returns the assigned value. |
 | Nested `match` expressions in arm conditions | Pending | Requires recursive match lowering and temporary value ordering. |
 | `foreach` by-reference value targets beyond simple variables | Pending | Requires explicit lvalue/reference target modeling. |
-| `foreach` by-reference with list destructuring | Pending | Requires by-reference foreach value lowering followed by destructuring assignment. |
+| `foreach` list destructuring with by-reference items | Pending | Requires destructuring assignment to preserve references for selected list elements. |
 | Dynamic `ClassName::class` | Pending | Runtime class-name resolution can be used when the class expression is dynamic. |
 | `static::class` in runtime contexts | Pending / Partial | Runtime contexts can use called-class lookup. True compile-time constant contexts should remain unsupported. |
 | Dynamic property chains, class names, function names and callbacks in native-optimized paths | Partial | Supported through a Zend runtime fallback. Native dispatch is only an optimization; automatic by-reference argument conversion remains unsupported. |
 | First-class callable stored in nullable `Closure` typed property | Pending / Partial | Requires stable runtime lifetime, refcount and typed-property write handling. |
-| Attribute arguments containing arrays or `new` expressions | Pending | Requires full constant-expression and attribute metadata generation support. |
 | Static analysis of union, intersection and nullable types | Pending optimization | Requires a real union/intersection type lattice instead of treating these as `mixed/any` during static analysis. |
 
 ## Partial Support and Behavioral Differences
