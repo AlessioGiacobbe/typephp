@@ -3420,9 +3420,12 @@ class CompilerBase implements PropertyAccessContext
         array $args,
         string $funcName = '',
         string $className = '',
-        bool $separateNamedArgs = true
+        bool $separateNamedArgs = true,
+        string $scope = '',
     ): string {
-        return 'php::call(' . $callable . ', ' . $this->parseCallArgs($args, $funcName, $className, $separateNamedArgs) . ')';
+        $scopeArg = $scope === '' ? '' : $scope . ', ';
+        return 'php::call(' . $scopeArg . $callable . ', '
+            . $this->parseCallArgs($args, $funcName, $className, $separateNamedArgs) . ')';
     }
 
     protected function genRuntimeObjectMethodCall(

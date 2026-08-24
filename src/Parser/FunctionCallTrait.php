@@ -71,6 +71,7 @@ trait FunctionCallTrait
 
     protected function parseFuncCall(Expr\FuncCall $expr): string
     {
+        $runtimeCallScope = null;
         $this->validateImmutableCall($expr);
         $pythonCall = $this->parsePythonFunctionCall($expr);
         if ($pythonCall !== null) {
@@ -100,6 +101,15 @@ trait FunctionCallTrait
         } elseif ($expr->name->getType() === 'Name' or $expr->name->getType() === 'Name_FullyQualified') {
             $name = $this->parseIdentifier($expr->name);
             $globalName = ltrim($name, '\\');
+            if ($globalName === 'clone' && !$expr->isFirstClassCallable() && $this->class) {
+                // PHP 8.5 clone-with applies property updates in the lexical
+                // scope of the call site. Direct AOT method calls do not leave
+                // a Zend execute frame on top, so preserve that scope while
+                // invoking the builtin clone() implementation.
+                $runtimeCallScope = $this->classDef?->trait
+                    ? 'php::FakeScopeGuard::current()'
+                    : $this->getClassEntryPtr($this->getFullClassName());
+            }
             if ($globalName === 'get_called_class' && $this->classDef?->nativeObject) {
                 $this->fatalError(
                     $expr,
@@ -200,10 +210,16 @@ trait FunctionCallTrait
             $name = '';
         }
         if (empty($expr->args)) {
-            return 'php::call(' . $fn . ')';
+            $scopeArg = $runtimeCallScope === null ? '' : $runtimeCallScope . ', ';
+            return 'php::call(' . $scopeArg . $fn . ')';
         }
         try {
-            return $this->genRuntimeFunctionCall($fn, $expr->args, $name);
+            return $this->genRuntimeFunctionCall(
+                $fn,
+                $expr->args,
+                $name,
+                scope: $runtimeCallScope ?? '',
+            );
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($placeHolder);
         }
