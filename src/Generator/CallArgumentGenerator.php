@@ -160,11 +160,11 @@ trait CallArgumentGenerator
                 $this->context->beforeStmtLines[] = $variadicVar . '.merge(' . $this->parseArrayArg($arg) . ');';
             } elseif ($variadicName !== null) {
                 $value = $this->getTypeConvertedArg($arg, $argInfo, $callableName, $variadicArgIndex);
-                $this->context->beforeStmtLines[] = $variadicVar . '.set('
+                $this->context->beforeStmtLines[] = $variadicVar . '.setValue('
                     . $this->getLiteralString($variadicName) . ', ' . $value . ');';
             } else {
                 $value = $this->getTypeConvertedArg($arg, $argInfo, $callableName, $variadicArgIndex);
-                $this->context->beforeStmtLines[] = $variadicVar . '.append(' . $value . ');';
+                $this->context->beforeStmtLines[] = $variadicVar . '.appendValue(' . $value . ');';
             }
         }
 
@@ -178,37 +178,6 @@ trait CallArgumentGenerator
         }
         ksort($resolvedArgs);
         return implode(', ', $resolvedArgs);
-    }
-
-    protected function parseNamedCallArgs(array $args, int $firstIndex, array $listArgs): string
-    {
-        $namedArgs = [];
-        foreach ($args as $i => $arg) {
-            if ($i < $firstIndex) {
-                continue;
-            }
-            if ($arg->name === null) {
-                $this->fatalError($arg, 'Named argument must follow positional argument');
-            }
-            if (!$this->isIdExpr($arg->name)) {
-                $this->fatalError($arg, 'Named argument must be a string');
-            }
-            if (array_key_exists($arg->name->name, $namedArgs)) {
-                $this->fatalError($arg, "Duplicate named argument `{$arg->name->name}`");
-            }
-            $namedArgs[$arg->name->name] = $this->parseCallArgValue($arg);
-        }
-
-        $tmpVar = $this->genTmpVarName();
-
-        $array = Type::ARRAY . ' ' . $tmpVar . ';';
-        foreach ($namedArgs as $k => $v) {
-            $array .= $tmpVar . '.set(' . $this->getLiteralString($k) . ', ' . $v . ');' . PHP_EOL;
-        }
-        $this->context->beforeStmtLines[] = $array;
-        $this->context->afterStmtLines[] = $tmpVar . '.unset();';
-
-        return Symbol::argList() . '{' . implode(', ', $listArgs) . '}, ' . $tmpVar . '.array()';
     }
 
     protected function isReferenceArgument($funcName, $className, $argIndex): bool

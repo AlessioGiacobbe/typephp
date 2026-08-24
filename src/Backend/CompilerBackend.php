@@ -51,28 +51,6 @@ abstract class CompilerBackend
     }
 
     /**
-     * 编译单个文件
-     */
-    abstract public function compileFile(
-        string $sourceFile,
-        string $outputFile,
-        array $includePaths = [],
-        array $defines = [],
-        array $flags = []
-    ): string;
-
-    /**
-     * 链接目标文件
-     */
-    abstract public function linkObjects(
-        array $objectFiles,
-        string $outputFile,
-        array $libraryPaths = [],
-        array $libraries = [],
-        array $flags = []
-    ): string;
-
-    /**
      * 构建完整的编译命令
      */
     abstract public function buildCompileCommand(

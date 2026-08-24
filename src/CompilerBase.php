@@ -94,7 +94,6 @@ use PhpParser\Node\Expr\CallLike;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\FunctionLike;
 use PhpParser\NodeAbstract;
-use PhpParser\NodeFinder;
 use PhpParser\Parser;
 use PhpParser\ParserFactory;
 use PhpParser\PhpVersion;
@@ -1204,11 +1203,6 @@ class CompilerBase implements PropertyAccessContext
         return self::OBJECT_PROP . $object . self::NAMESPACE_SEPARATOR . $prop;
     }
 
-    protected function getObjectPropVarInfo(string $object, string $prop): array
-    {
-        return $this->context->objectProps[$this->getObjectPropVarName($object, $prop)];
-    }
-
     protected function getObjectPropInfoByVar(string $var): ?array
     {
         return $this->context->objectProps[$var] ?? null;
@@ -1483,11 +1477,6 @@ class CompilerBase implements PropertyAccessContext
      * as native PHP float (double) are auto-converted.
      */
     private function getBigIntLiteralString(Node\Scalar $expr): string
-    {
-        return $this->stripNumericUnderscores($expr->getAttribute('rawValue'));
-    }
-
-    private function getDecimalLiteralString(Node\Scalar $expr): string
     {
         return $this->stripNumericUnderscores($expr->getAttribute('rawValue'));
     }
@@ -2892,15 +2881,6 @@ class CompilerBase implements PropertyAccessContext
         foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentInterface) {
             $this->collectInterfaceAndParents($parentInterface, $interfaces);
         }
-    }
-
-    protected function resetReturnType(Node\Stmt\Return_ $node, string $type): void
-    {
-        $oriType = $this->functionDef->returnType;
-        $this->functionDef->returnType = $type;
-        // 返回值变更，需要重新解析
-        $this->climate->cyan("Return type changed ({$oriType} -> {$type}) at line {$node->getLine()} retrying...");
-        throw new Redo();
     }
 
     protected function detectVarType($var): string
@@ -4928,17 +4908,6 @@ class CompilerBase implements PropertyAccessContext
      * The outer descriptor list is a union (OR); an allOf entry represents an
      * intersection (AND). Nullable is represented by an isNull union member.
      */
-    protected function mustNoCall(NodeAbstract $node): void
-    {
-        $nodeFinder = new NodeFinder();
-        $r1 = $nodeFinder->findInstanceOf($node, Expr\StaticCall::class);
-        $r2 = $nodeFinder->findInstanceOf($node, Expr\MethodCall::class);
-        $r3 = $nodeFinder->findInstanceOf($node, Expr\FuncCall::class);
-        if (count($r1) + count($r2) + count($r3) > 0) {
-            $this->fatalError($node, 'Calling function or method is not allowed');
-        }
-    }
-
     protected function checkAccessible(ClassDef $classDef, int $flags): bool
     {
         return $this->checkAccessibleByClassName($classDef->getNamespacedName(false), $flags);

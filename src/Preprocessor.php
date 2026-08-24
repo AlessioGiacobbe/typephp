@@ -455,7 +455,13 @@ class Preprocessor extends CompilerBase
         return $name;
     }
 
-    protected function findSymbolUsing(NodeAbstract $ast)
+    /**
+     * Collect per-file symbol dependencies for the incremental compilation cache.
+     *
+     * The cache does not consume this graph yet, but this collector is retained
+     * intentionally so cache invalidation can later be based on symbol usage.
+     */
+    protected function findSymbolUsing(NodeAbstract $ast): void
     {
         $nodeFinder = new NodeFinder();
         $functionCalls = $nodeFinder->findInstanceOf($ast, Node\Expr\FuncCall::class);
@@ -485,8 +491,7 @@ class Preprocessor extends CompilerBase
             }
         }
         // 依赖去重
-        $depClasses = array_unique($this->symbolCallInFile[$this->file]);
-        $this->symbolCallInFile[$this->file] = $depClasses;
+        $this->symbolCallInFile[$this->file] = array_unique($this->symbolCallInFile[$this->file]);
     }
 
     protected function prepareNamespace(Node\Stmt\Namespace_ $node): void

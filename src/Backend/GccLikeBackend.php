@@ -181,76 +181,7 @@ abstract class GccLikeBackend extends CompilerBackend
         return $flags;
     }
 
-    /** 获取平台特定的完整链接选项 */
-    protected function getPlatformFullLinkFlags(array $options): string
-    {
-        $flags = '';
-
-        if (!empty($options['shared'])) {
-            $flags .= ' ' . $this->platform->getSharedLinkFlag();
-        }
-
-        if (!empty($options['rpath'])) {
-            $flags .= ' ' . $this->platform->getRpathOptions($options['rpath']);
-        }
-
-        return $flags;
-    }
-
     // ──── 抽象方法实现 ────
-
-    public function compileFile(
-        string $sourceFile,
-        string $outputFile,
-        array $includePaths = [],
-        array $defines = [],
-        array $flags = []
-    ): string {
-        $cmd = $this->getCompilerCommand();
-        $cmd .= $this->getCompilerPrefixFlags();
-        $cmd .= ' -c ' . escapeshellarg($sourceFile);
-        $cmd .= ' -o ' . escapeshellarg($outputFile);
-
-        if (!empty($includePaths)) {
-            $cmd .= ' ' . $this->formatIncludePaths($includePaths);
-        }
-
-        foreach ($defines as $define) {
-            $cmd .= ' ' . $this->formatDefineFlag($define, '-D');
-        }
-
-        if (!empty($flags)) {
-            $cmd .= ' ' . implode(' ', $flags);
-        }
-
-        return $cmd;
-    }
-
-    public function linkObjects(
-        array $objectFiles,
-        string $outputFile,
-        array $libraryPaths = [],
-        array $libraries = [],
-        array $flags = []
-    ): string {
-        $cmd = $this->getLinkerCommand();
-        $cmd .= ' ' . $this->createResponseFile($objectFiles, $outputFile);
-        $cmd .= ' ' . $this->getLinkerOutputFlag() . ' ' . escapeshellarg($outputFile);
-
-        if (!empty($libraryPaths)) {
-            $cmd .= ' ' . $this->formatLibraryPaths($libraryPaths);
-        }
-
-        if (!empty($libraries)) {
-            $cmd .= ' ' . $this->formatLibraries($libraries);
-        }
-
-        if (!empty($flags)) {
-            $cmd .= ' ' . implode(' ', $flags);
-        }
-
-        return $cmd;
-    }
 
     public function buildCompileCommand(string $sourceFile, string $outputFile, array $options = []): string
     {
@@ -357,23 +288,4 @@ abstract class GccLikeBackend extends CompilerBackend
         return $cmd;
     }
 
-    public function buildFullCompileOptions(array $options = []): string
-    {
-        $cmd = $this->getCompilerPrefixFlags();
-        $cmd .= $this->buildSharedCompileFlags($options, true);
-        return $cmd;
-    }
-
-    public function buildFullLinkOptions(array $options = []): string
-    {
-        $cmd = '';
-
-        $cmd .= $this->getPlatformFullLinkFlags($options);
-
-        if (!empty($options['sanitize'])) {
-            $cmd .= ' -fsanitize=' . $options['sanitize'];
-        }
-
-        return $cmd;
-    }
 }

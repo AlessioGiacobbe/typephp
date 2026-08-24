@@ -81,17 +81,6 @@ class UtilsTest extends TestCase
     }
 
     // ========================================================================
-    // genZendStrl
-    // ========================================================================
-
-    public function testGenZendStrl(): void
-    {
-        $result = $this->invokeMethod('genZendStrl', 'name');
-        $this->assertStringStartsWith('ZEND_STRL("', $result);
-        $this->assertStringContainsString('name', $result);
-    }
-
-    // ========================================================================
     // genArray
     // ========================================================================
 
@@ -106,23 +95,6 @@ class UtilsTest extends TestCase
     {
         $result = $this->invokeMethod('genArray', []);
         $this->assertStringStartsWith(Type::ARRAY . '{', $result);
-    }
-
-    // ========================================================================
-    // genRawStr
-    // ========================================================================
-
-    public function testGenRawStr(): void
-    {
-        $result = $this->invokeMethod('genRawStr', 'hello');
-        $this->assertEquals('R"(hello)"', $result);
-    }
-
-    public function testGenRawStrMultiLine(): void
-    {
-        $result = $this->invokeMethod('genRawStr', "line1\nline2");
-        $this->assertStringStartsWith('R"(', $result);
-        $this->assertStringEndsWith(')"', $result);
     }
 
     // ========================================================================

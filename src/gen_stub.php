@@ -2827,7 +2827,7 @@ class ConstInfo extends VariableLike
         // Condition will be added by generateCodeWithConditions()
 
         if ($this->name instanceof ClassConstName) {
-            $code = $this->getClassConstDeclaration($value, $allConstInfos);
+            $code = $this->getClassConstDeclaration($value);
         } else {
             $code = $this->getGlobalConstDeclaration($value);
         }
@@ -2888,12 +2888,10 @@ class ConstInfo extends VariableLike
         throw new Exception("Unimplemented constant type: " . $value->type->name);
     }
 
-    /** @param array<string, ConstInfo> $allConstInfos */
-    private function getClassConstDeclaration(EvaluatedValue $value, array $allConstInfos): string
+    private function getClassConstDeclaration(EvaluatedValue $value): string
     {
         $constName = $this->name->getDeclarationName();
 
-        // TODO $allConstInfos is unused
         $zvalCode = $value->initializeZval("const_{$constName}_value");
 
         $code = "\n" . $zvalCode;

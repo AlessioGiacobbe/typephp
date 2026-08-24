@@ -197,7 +197,7 @@ trait ClosureGenerator
                 $code .= $this->getIndent() . Type::ARRAY . ' ' . $var . ';' . PHP_EOL;
                 $code .= $this->getIndent() . 'for (uint32_t i = ' . $i . '; i < php::getCallArgNum(); i++) {' . PHP_EOL;
                 $this->indentLevel++;
-                $code .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
+                $code .= $this->getIndent() . $var . '.appendValue(php::getCallArg(i));' . PHP_EOL;
                 $this->indentLevel--;
                 $code .= $this->getIndent() . '}' . PHP_EOL;
                 $code .= $this->genExtraNamedVariadicArgs($var);

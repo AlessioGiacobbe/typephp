@@ -157,7 +157,6 @@ class VarState
  * After build():
  *   - $builder->blocks: basic blocks with φ functions
  *   - $builder->ssaVars: all SSA variable definitions
- *   - $builder->getVarDefAtUse($varName, $blockId, $stmtIndex): get the SSA var for a use
  *   - $builder->getDefBlocks($varName): all blocks where $varName is defined
  */
 class SsaBuilder
@@ -178,9 +177,6 @@ class SsaBuilder
 
     /** @var array<string, int[]> Block IDs where each variable is defined */
     private array $defBlocks = [];
-
-    /** @var array<string, int> For each block and variable, the SSA var at block entry (after φ) */
-    private array $blockEntryVars = [];
 
     /** @var string[] Parameter names */
     private array $params = [];
@@ -232,22 +228,6 @@ class SsaBuilder
         $this->computeDominanceFrontier();
         $this->placePhiFunctions();
         $this->renameVariables();
-    }
-
-    /**
-     * Get the SSA variable that reaches a specific use point.
-     *
-     * @param string $varName   Original variable name (e.g., "x")
-     * @param int    $blockId   Block containing the use
-     * @param int    $stmtIndex Statement index within the block
-     * @return SsaVar|null The reaching SSA var, or null if undefined
-     */
-    public function getVarAtUse(string $varName, int $blockId, int $stmtIndex): ?SsaVar
-    {
-        $key = "{$blockId}:{$varName}:{$stmtIndex}";
-        // During renaming, we'd record use→def mappings here
-        // For now, walk the block backward from stmtIndex to find the definition
-        return $this->findReachingDef($varName, $blockId, $stmtIndex);
     }
 
     /**
@@ -1674,33 +1654,6 @@ class SsaBuilder
                 }
             }
         }
-    }
-
-    /**
-     * Find the reaching SSA definition for a variable at a given use point.
-     * Walks backward through the block's statements to find the most recent definition.
-     */
-    private function findReachingDef(string $varName, int $blockId, int $stmtIndex): ?SsaVar
-    {
-        $block = $this->blocks[$blockId];
-
-        // Check φ at block entry
-        if (isset($block->phi[$varName])) {
-            return $block->phi[$varName];
-        }
-
-        // Walk backward through statements in the block
-        for ($i = $stmtIndex - 1; $i >= 0; $i--) {
-            $defs = $this->getDefinedVars($block->stmts[$i]);
-            if (in_array($varName, $defs)) {
-                // We'd need the exact SsaVar from renaming pass — simplified return
-                return null;
-            }
-        }
-
-        // If not found in this block, search predecessors recursively
-        // (Simplified: return null for cross-block queries)
-        return null;
     }
 
     // =========================================================================

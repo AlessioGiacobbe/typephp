@@ -74,14 +74,12 @@ class Translator extends Preprocessor
     private ?ProjectYamlLoader $projectYamlLoader = null;
     private ?NativeBuilder $nativeBuilder = null;
     protected bool $verbose = false;
-    protected array $phpSrcFiles = [];
     protected array $ignorePaths = [];
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
 
     // Windows 资源文件配置（图标、版本信息等）
     protected array $resourceConfig = [];
-    protected bool $useRegisterSymbolsFn = false;
     protected array $globalHeaders = [
         'cstring',
         'phpx.h',
@@ -548,7 +546,6 @@ class Translator extends Preprocessor
                     } else {
                         $this->save($cppCode, $cppFile);
                     }
-                    $this->phpSrcFiles[] = $file;
                     // 生成 stub 文件，依赖 convert 阶段的 use 等信息
                     $this->genStubFile($this->file);
                     return $cppCode === '' ? null : $cppFile;
@@ -2944,7 +2941,7 @@ CODE;
         $needsAttributeSymbols = str_contains($headerCode, 'zend_add_function_attribute(')
             || str_contains($headerCode, 'zend_add_parameter_attribute(')
             || str_contains($headerCode, 'zend_add_global_constant_attribute(');
-        if ($this->useRegisterSymbolsFn || $needsAttributeSymbols) {
+        if ($needsAttributeSymbols) {
             if (preg_match('/\bstatic\s+void\s+(register_[A-Za-z0-9_]+_symbols)\s*\(\s*int\s+module_number\s*\)/', $headerCode, $matches)) {
                 $registerSymbolFn = $matches[1];
                 $this->registerSymbols[] = $registerSymbolFn;
@@ -3637,10 +3634,10 @@ CODE;
                     $rawVar = 'raw_' . $var;
                     $cppCode .= $this->getIndent() . Type::VAR . ' ' . $rawVar . ' = php::getCallArg(i);' . PHP_EOL;
                     $cppCode .= $this->genStrictScalarParamCheck($argInfo, $rawVar, $displayName, 'i + 1');
-                    $cppCode .= $this->getIndent() . $var . '.append('
+                    $cppCode .= $this->getIndent() . $var . '.appendValue('
                         . $this->convertExprFromType($argInfo->type, $rawVar) . ');' . PHP_EOL;
                 } else {
-                    $cppCode .= $this->getIndent() . $var . '.append(php::getCallArg(i));' . PHP_EOL;
+                    $cppCode .= $this->getIndent() . $var . '.appendValue(php::getCallArg(i));' . PHP_EOL;
                 }
                 $this->indentLevel--;
                 $cppCode .= $this->getIndent() . '}' . PHP_EOL;
@@ -3775,19 +3772,6 @@ CODE;
         return $cppCode;
     }
 
-    protected function getClassRegisterCeFunc(ClassDef|InterfaceDef $classDef): string
-    {
-        $cppCode = '';
-        $name = $classDef->getNamespacedName();
-        $argsDef = $this->getRegisterClassFunctionArgDef($classDef);
-        $param = $this->getRegisterClassFunctionArgs($classDef);
-        $cppCode .= 'zend_class_entry *' . $this->getRegisterClassFunction($name) . '(' . $argsDef . ') {' . PHP_EOL;
-        $cppCode .= $this->getIndent() . 'return register_class_' . $name . '(' . $param . ');' . PHP_EOL;
-        $cppCode .= '}' . PHP_EOL . PHP_EOL;
-
-        return $cppCode;
-    }
-
     protected function genClassWrapper(ClassDef|InterfaceDef $classDef): string
     {
         $cppCode = '';
@@ -3820,59 +3804,6 @@ CODE;
         }
 
         return $cppCode;
-    }
-
-    /**
-     * @param array<ConstantDef> $list
-     */
-    protected function genClassConstantList(array $list): string
-    {
-        $code = '';
-        foreach ($list as $const) {
-            $code .= $this->getIndent() . $this->genClassConstant($const);
-        }
-
-        return $code;
-    }
-
-    protected function genClassConstant(ConstantDef $const): string
-    {
-        return 'static const ' . $const->type . ' ' . $const->name . ';' . PHP_EOL;
-    }
-
-    /**
-     * @param array<PropertyDef> $list
-     */
-    protected function genClassPropertyList(array $list): string
-    {
-        $code = '';
-        foreach ($list as $prop) {
-            $code .= $this->getIndent() . $this->genClassProperty($prop);
-        }
-
-        return $code;
-    }
-
-    protected function genClassProperty(PropertyDef $prop): string
-    {
-        $code = $prop->type . ' ' . $prop->name;
-        if ($prop->default !== null) {
-            $code .= ' = ' . $prop->default;
-        }
-        return $code . ';' . PHP_EOL;
-    }
-
-    protected function genFunction(string $name, string $returnType, array $args = [], array $lines = []): string
-    {
-        $_args = [];
-        foreach ($args as $arg => $type) {
-            $_args[] = $type . ' ' . $arg;
-        }
-        $code = $returnType . ' ' . $name . '(' . implode(', ', $_args) . ') {' . PHP_EOL;
-        $code .= implode(PHP_EOL, $lines) . PHP_EOL;
-        $code .= '}' . PHP_EOL;
-
-        return $code;
     }
 
     /**
@@ -5237,89 +5168,6 @@ CODE;
             substr($fullName, $separator + 1),
             substr($fullName, 0, $separator),
         );
-    }
-
-    private function genClassNative(): string
-    {
-        $code = 'class ' . $this->class . ' { ';
-
-        $publicMethods = [];
-        $protectedMethods = [];
-        $privateMethods = [];
-        $publicConstants = [];
-        $protectedConstants = [];
-        $privateConstants = [];
-        $publicProperties = [];
-        $protectedProperties = [];
-        $privateProperties = [];
-
-        foreach ($this->classDef->constants as $const) {
-            if ($const->flags & Modifiers::PUBLIC) {
-                $publicConstants[] = $const;
-            }
-            if ($const->flags & Modifiers::PROTECTED) {
-                $protectedConstants[] = $const;
-            }
-            if ($const->flags & Modifiers::PRIVATE) {
-                $privateConstants[] = $const;
-            }
-        }
-        foreach ($this->classDef->methods as $method) {
-            if ($method->flags & Modifiers::PUBLIC) {
-                $publicMethods[] = $method;
-            }
-            if ($method->flags & Modifiers::PROTECTED) {
-                $protectedMethods[] = $method;
-            }
-            if ($method->flags & Modifiers::PRIVATE) {
-                $privateMethods[] = $method;
-            }
-        }
-        foreach ($this->classDef->properties as $property) {
-            if ($property->flags & Modifiers::PUBLIC) {
-                $publicProperties[] = $property;
-            }
-            if ($property->flags & Modifiers::PROTECTED) {
-                $protectedProperties[] = $property;
-            }
-            if ($property->flags & Modifiers::PRIVATE) {
-                $privateProperties[] = $property;
-            }
-        }
-
-        if ($privateConstants) {
-            $code .= 'private:' . PHP_EOL;
-            $code .= $this->genClassConstantList($privateConstants);
-        }
-
-        if ($protectedConstants) {
-            $code .= 'protected:' . PHP_EOL;
-            $code .= $this->genClassConstantList($protectedConstants);
-        }
-
-        if ($publicConstants) {
-            $code .= 'public:' . PHP_EOL;
-            $code .= $this->genClassConstantList($publicConstants);
-        }
-
-        if ($privateProperties) {
-            $code .= 'private:' . PHP_EOL;
-            $code .= $this->genClassPropertyList($privateProperties);
-        }
-
-        if ($protectedProperties) {
-            $code .= 'protected:' . PHP_EOL;
-            $code .= $this->genClassPropertyList($protectedProperties);
-        }
-
-        if ($publicProperties) {
-            $code .= 'public:' . PHP_EOL;
-            $code .= $this->genClassPropertyList($publicProperties);
-        }
-
-        $code .= '};' . PHP_EOL . PHP_EOL;
-
-        return $code;
     }
 
 }

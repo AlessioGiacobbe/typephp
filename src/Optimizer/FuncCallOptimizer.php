@@ -168,11 +168,11 @@ trait FuncCallOptimizer
             'is_null'            => ['handler' => 'genIsNull', 'nativeReceiver' => true],
             'get_class'          => ['handler' => 'genGetClassOptimized', 'nativeReceiver' => true],
             'get_parent_class'   => ['handler' => 'genGetParentClass', 'nativeReceiver' => true],
-            'function_exists'    => ['handler' => 'genFunctionExistsOptimized'],
-            'func_get_arg'       => ['handler' => 'genFuncGetArgOptimized'],
-            'func_get_args'      => ['handler' => 'genFuncGetArgsOptimized'],
-            'func_num_args'      => ['handler' => 'genFuncNumArgsOptimized'],
-            'compact'            => ['handler' => 'genCompactOptimized'],
+            'function_exists'    => ['handler' => 'genFunctionExists'],
+            'func_get_arg'       => ['handler' => 'genFuncGetArg'],
+            'func_get_args'      => ['handler' => 'genFuncGetArgs'],
+            'func_num_args'      => ['handler' => 'genFuncNumArgs'],
+            'compact'            => ['handler' => 'genCompact'],
 
             'array_keys'         => ['handler' => 'genArrayKeys'],
             'array_key_exists'   => ['handler' => 'genArrayKeyExists'],
@@ -757,31 +757,6 @@ trait FuncCallOptimizer
         return 'php::fn::get_parent_class(' . $this->parseIdentifier($arg) . ')';
     }
 
-    protected function genFunctionExistsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
-    {
-        return $this->genFunctionExists($n, $e);
-    }
-
-    protected function genFuncGetArgOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
-    {
-        return $this->genFuncGetArg($n, $e);
-    }
-
-    protected function genFuncGetArgsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
-    {
-        return $this->genFuncGetArgs($n, $e);
-    }
-
-    protected function genFuncNumArgsOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
-    {
-        return $this->genFuncNumArgs($n, $e);
-    }
-
-    protected function genCompactOptimized(string $n, Node\Expr\FuncCall $e, array $c): string
-    {
-        return $this->genCompactOrig($e);
-    }
-
     protected function genArrayKeys(string $n, Node\Expr\FuncCall $e, array $c): string
     {
         $cnt = count($e->args);
@@ -869,11 +844,7 @@ trait FuncCallOptimizer
         return 'php::fn::define(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ')';
     }
 
-    // =========================================================================
-    // Legacy helpers
-    // =========================================================================
-
-    protected function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr): string
+    protected function genFuncGetArgs(string $name, Node\Expr\FuncCall $expr, array $config): string
     {
         $this->warningUndefinedBehavior($expr);
         $funcDef = $this->functionDef;
@@ -890,7 +861,7 @@ trait FuncCallOptimizer
         return $this->genArray($list);
     }
 
-    protected function genFuncGetArg(string $name, Node\Expr\FuncCall $expr)
+    protected function genFuncGetArg(string $name, Node\Expr\FuncCall $expr, array $config): string
     {
         $this->warningUndefinedBehavior($expr);
         $position = $expr->args[0]->value;
@@ -911,7 +882,7 @@ trait FuncCallOptimizer
         }
     }
 
-    protected function genFuncNumArgs(string $name, Node\Expr\FuncCall $expr): string
+    protected function genFuncNumArgs(string $name, Node\Expr\FuncCall $expr, array $config): string
     {
         $this->warningUndefinedBehavior($expr);
         $funcDef = $this->functionDef;
@@ -923,7 +894,7 @@ trait FuncCallOptimizer
         return count($funcDef->argInfoList);
     }
 
-    protected function genFunctionExists(string $name, Node\Expr\FuncCall $expr): string
+    protected function genFunctionExists(string $name, Node\Expr\FuncCall $expr, array $config): string
     {
         $funcName = $expr->args[0]->value;
         if ($this->isScalarString($funcName)) {
@@ -943,16 +914,7 @@ trait FuncCallOptimizer
         return 'php::fn::function_exists(' . $this->parseIdentifier($funcName) . ')';
     }
 
-    protected function genGetClass(Node\Expr\FuncCall $expr): string
-    {
-        $object = $expr->args[0]->value;
-        if ($this->isVarExpr($object) and $this->isTypedObject($object->name)) {
-            return $this->getLiteralString($this->getObjectType($object->name));
-        }
-        return 'php::fn::get_class(' . $this->parseIdentifier($object) . ')';
-    }
-
-    protected function genCompactOrig(Node\Expr\FuncCall $expr): string
+    protected function genCompact(string $name, Node\Expr\FuncCall $expr, array $config): string
     {
         $list = [];
 

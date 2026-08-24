@@ -127,20 +127,4 @@ class Clang extends GccLikeBackend
         return parent::getPlatformLinkFlags($config);
     }
 
-    protected function getPlatformFullLinkFlags(array $options): string
-    {
-        if ($this->platform instanceof Windows) {
-            $flags = '';
-            if (!empty($options['debug'])) {
-                $flags .= ' /DEBUG';
-            }
-            if (!empty($options['no_console'])) {
-                $flags .= ' ' . $this->platform->getSubsystemOptions(true);
-            }
-            $flags .= ' ' . $this->platform->getCrtConfig();
-            return $flags;
-        }
-
-        return parent::getPlatformFullLinkFlags($options);
-    }
 }

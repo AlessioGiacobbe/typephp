@@ -447,16 +447,6 @@ trait PropertyAccessTrait
         return (new PropertyAssignTypeInfo())->isFixed($def);
     }
 
-    protected function assertCanAssignObjectProp(Expr\PropertyFetch $left, Expr $right): void
-    {
-        $this->assertCanAssignObjectProperty($left, $right, 'object property');
-    }
-
-    protected function assertCanAssignStaticProp(Expr\StaticPropertyFetch $left, Expr $right): void
-    {
-        $this->assertCanAssignObjectProperty($left, $right, 'static property');
-    }
-
     protected function preparePropertyWriteTarget(NodeAbstract $left, bool $allowReadonlyAssignment = false): ?PropertyWriteTarget
     {
         if ($left instanceof Expr\PropertyFetch) {
@@ -929,11 +919,6 @@ trait PropertyAccessTrait
         }
 
         return null;
-    }
-
-    protected function parsePropertyFetchRead(Expr\PropertyFetch $expr): string
-    {
-        return $this->parsePropertyFetchWithUpdate($expr, false);
     }
 
     protected function parsePropertyFetchUpdate(Expr\PropertyFetch $expr): string

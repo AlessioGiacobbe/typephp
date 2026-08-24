@@ -298,17 +298,6 @@ trait StdContainerTrait
         return $this->isStdArrayExpr($expr) || $this->getStdContainerInfo($expr) !== null;
     }
 
-    protected function fillStdArray(Expr\StaticCall $expr): string
-    {
-        if (!$this->isVarExpr($expr->args[0]->value) or !$this->isStdArray($this->parseIdentifier($expr->args[0]->value))) {
-            $this->fatalError($expr, 'fill() only support std::array');
-        }
-        $array = $this->parseIdentifier($expr->args[0]->value);
-        $info = $this->context->stdArrays[$array];
-        $value = $this->convertStdValueExpr($info, $expr->args[1]->value);
-        return "{$array}_ref.fill({$value})";
-    }
-
     protected function getStdArrayInfo(Expr\ArrayDimFetch $expr): ?array
     {
         $tmp = $expr->var;
@@ -734,11 +723,6 @@ trait StdContainerTrait
         }
         $class = $this->parseStdClassValueType($expr, $owner);
         return ['type' => Type::OBJECT, 'class' => $class];
-    }
-
-    protected function parseStdValueType(NodeAbstract $expr, string $owner): string
-    {
-        return $this->parseStdValueTypeInfo($expr, $owner)['type'];
     }
 
     protected function parseStdClassValueType(Expr\ClassConstFetch $expr, string $owner): string

@@ -36,14 +36,6 @@ trait NativeBuildConfigurationTrait
         return $includePaths;
     }
 
-    /**
-     * 解析包含路径
-     */
-    protected function parseIncludes(): string
-    {
-        return $this->getPlatform()->getIncludeFlags($this->getIncludePaths());
-    }
-
     protected function getLibraryPaths(): array
     {
         $platform = $this->getPlatform();
@@ -62,18 +54,6 @@ trait NativeBuildConfigurationTrait
         }
 
         return $libraryPaths;
-    }
-
-    protected function parseLdflags(): string
-    {
-        $flags = $this->getPlatform()->getLibraryPathFlags($this->getLibraryPaths());
-        
-        // 添加用户自定义的 ldflags
-        if (!empty($this->ldflags)) {
-            $flags .= ' ' . $this->ldflags;
-        }
-        
-        return $flags;
     }
 
     /**
@@ -203,14 +183,6 @@ trait NativeBuildConfigurationTrait
         if ($this->findPhpxLibrary() === null) {
             $this->error($this->getPhpxLibraryErrorMessage());
         }
-    }
-
-    /**
-     * 解析库文件
-     */
-    protected function parseLibs(): string
-    {
-        return $this->getPlatform()->getLibraryFlags($this->getLibraries());
     }
 
 }

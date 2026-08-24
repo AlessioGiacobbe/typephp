@@ -263,30 +263,6 @@ class AstNodeTypeTest extends TestCase
         $this->assertFalse($this->invoke('isMatchExpr', $cond));
     }
 
-    // ========================================================================
-    // isConstFetch
-    // ========================================================================
-
-    public function testIsConstFetch(): void
-    {
-        $this->assertTrue($this->invoke('isConstFetch', new Expr\ConstFetch(new Node\Name('FOO'))));
-        $this->assertFalse($this->invoke('isConstFetch', new Expr\Variable('a')));
-    }
-
-    // ========================================================================
-    // isAssignOp / isAssignExpr
-    // ========================================================================
-
-    public function testIsAssignOp(): void
-    {
-        $var = new Expr\Variable('a');
-        $val = new Node\Scalar\Int_(1);
-        // Assign is also an AssignOp
-        $this->assertTrue($this->invoke('isAssignOp', new Expr\Assign($var, $val)));
-        $this->assertTrue($this->invoke('isAssignOp', new Expr\AssignOp\Plus($var, $val)));
-        $this->assertFalse($this->invoke('isAssignOp', $var));
-    }
-
     public function testIsAssignExpr(): void
     {
         $var = new Expr\Variable('a');
@@ -421,7 +397,7 @@ class AstNodeTypeTest extends TestCase
             'isArrayDimFetch', 'isPropertyFetch', 'isStaticPropertyFetch',
             'isClassConstFetch', 'isNewExpr', 'isNameExpr', 'isFullNameExpr',
             'isFuncCallExpr', 'isRefvalCall', 'isMethodCall', 'isStaticCall',
-            'isMatchExpr', 'isConstFetch', 'isAssignOp', 'isAssignExpr',
+            'isMatchExpr', 'isAssignExpr',
             'isCallExpr', 'isPlaceholderExpr', 'isReturnExpr', 'isBreakExpr',
             'isThrowExpr', 'isExitExpr', 'isEmptyArray', 'isNull',
         ];

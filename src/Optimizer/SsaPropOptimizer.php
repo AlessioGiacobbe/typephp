@@ -391,13 +391,6 @@ trait SsaPropOptimizer
         return $this->unsafePropsFromEvents($events);
     }
 
-    protected function scanDangerousPropOp($stmt, string $objName): bool
-    {
-        $events = [];
-        $this->collectPropEvents($stmt, $objName, $events);
-        return $this->unsafePropsFromEvents($events) !== [];
-    }
-
     /**
      * @param array<int, array{kind: string, prop: string}> $events
      */
@@ -663,13 +656,6 @@ trait SsaPropOptimizer
         }
 
         return $unsafeProps;
-    }
-
-    protected function exprHasDangerousPropOp($expr, string $objName): bool
-    {
-        $events = [];
-        $this->collectPropEvents($expr, $objName, $events);
-        return $this->unsafePropsFromEvents($events) !== [];
     }
 
     /**
