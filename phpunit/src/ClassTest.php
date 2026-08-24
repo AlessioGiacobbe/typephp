@@ -679,6 +679,14 @@ class ClassTest extends \BaseTest
         );
     }
 
+    public function testFinalPromotedPropertyRequiresExplicitVisibility(): void
+    {
+        $this->exec(
+            'Final promoted property must explicitly declare public, protected, or private visibility',
+            'final-promoted-property-without-visibility.php',
+        );
+    }
+
     public function testTraitMayCallProtectedParentMethod()
     {
         // A protected parent method is reachable via parent:: from a trait,

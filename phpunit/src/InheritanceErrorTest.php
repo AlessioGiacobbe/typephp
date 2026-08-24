@@ -196,6 +196,14 @@ class InheritanceErrorTest extends TestCase
         );
     }
 
+    public function testCannotOverrideFinalPromotedProperty(): void
+    {
+        $this->exec(
+            'Cannot override final property FinalPromotedPropertyParent::$value',
+            'inheritance_error_final_promoted_property.php',
+        );
+    }
+
     public function testInterfaceMethodStaticMismatch()
     {
         $this->exec('must be compatible', 'interface_method_static_mismatch.php');

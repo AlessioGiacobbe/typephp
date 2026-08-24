@@ -88,6 +88,11 @@ class FunctionTest extends \BaseTest
         $this->exec('Unknown named argument `foo`', 'internal-call-unknown-named-arg.php');
     }
 
+    public function testExitRejectsUnknownNamedArgument(): void
+    {
+        $this->exec('Unknown named argument `text`', 'exit-unknown-named-argument.php');
+    }
+
     public function testInternalCallMissingRequiredNamedArgument()
     {
         $this->exec('Named argument `replace` is missing default value', 'internal-call-missing-required-named-arg.php');

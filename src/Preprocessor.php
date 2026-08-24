@@ -1411,6 +1411,15 @@ class Preprocessor extends CompilerBase
      */
     protected function addClassProperty(string $name, int $flags, ?NodeAbstract $typeNode, $defaultNode, bool $nullable, NodeAbstract $errorNode, bool $promoted = false): PropertyDef
     {
+        if ($promoted
+            && ($flags & Modifiers::FINAL)
+            && !($flags & Modifiers::VISIBILITY_MASK)
+        ) {
+            $this->fatalError(
+                $errorNode,
+                'Final promoted property must explicitly declare public, protected, or private visibility',
+            );
+        }
         $flags = $this->parseModifiers($flags);
         $this->validateAsymmetricPropertyDeclaration($name, $flags, $typeNode, $errorNode);
         [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);

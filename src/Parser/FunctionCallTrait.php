@@ -101,6 +101,10 @@ trait FunctionCallTrait
         } elseif ($expr->name->getType() === 'Name' or $expr->name->getType() === 'Name_FullyQualified') {
             $name = $this->parseIdentifier($expr->name);
             $globalName = ltrim($name, '\\');
+            $namedExit = $this->parseNamedExitMessageCall($globalName, $expr);
+            if ($namedExit !== null) {
+                return $namedExit;
+            }
             if ($globalName === 'clone' && !$expr->isFirstClassCallable() && $this->class) {
                 // PHP 8.5 clone-with applies property updates in the lexical
                 // scope of the call site. Direct AOT method calls do not leave
@@ -223,5 +227,28 @@ trait FunctionCallTrait
         } catch (PlaceHolder) {
             return $this->genPlaceHolder($placeHolder);
         }
+    }
+
+    private function parseNamedExitMessageCall(string $name, Expr\FuncCall $expr): ?string
+    {
+        if (!in_array(strtolower($name), ['exit', 'die'], true)
+            || $expr->isFirstClassCallable()
+            || count($expr->args) !== 1
+        ) {
+            return null;
+        }
+
+        $arg = $expr->args[0];
+        if (!$arg instanceof Node\Arg
+            || $arg->unpack
+            || $arg->name?->toString() !== 'message'
+        ) {
+            return null;
+        }
+
+        // PHP 8.4 exposes this builtin argument as $status. TypePHP also
+        // accepts the clearer $message alias and lowers it to the same AOT
+        // exit path without changing php-parser's call representation.
+        return $this->parseExit(new Expr\Exit_($arg->value, $expr->getAttributes()));
     }
 }

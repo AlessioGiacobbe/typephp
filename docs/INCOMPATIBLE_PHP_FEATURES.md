@@ -20,6 +20,7 @@
 - PHP 8.4 property hooks 会编译为 AOT getter/setter，并注册对应的 Zend hook 元数据；直接属性读写、Reflection 和对象遍历均受支持。当前不支持对 hook 属性取引用。
 - PHP 8.4 Reflection Lazy Object 不能用于 TypePHP AOT 类。AOT 类以 persistent internal class 注册，而 Zend 的 `zend_object_make_lazy()` 明确拒绝 internal class；运行时动态加载的 ZendPHP user class 不受此限制。
 - 支持 `private(set)` 与 `protected(set)` 非对称属性可见性，包括 constructor property promotion；Zend-backed 对象通过 PHP 8.4+ 类级 object handler 执行作用域检查，并保留 promoted/set visibility/implicit final 反射标志；Native 对象通过编译期访问检查执行同等作用域规则。
+- 支持 final constructor property promotion，但 TypePHP 要求同时显式声明 `public`、`protected` 或 `private`；不接受 PHP 8.5 的 `final int $value` 隐式 public promotion 写法。该语法作为 TypePHP 扩展不受所链接 `libphp` 的源码语法版本限制，使用 PHP 8.4 `libphp.so` 时仍然可用。
 - 不支持闭包或箭头函数按引用返回。
 - 暂不支持 PHP 8.5 在全局常量、类常量、参数默认值或属性默认值中使用 `static function`；初始化表达式内嵌套的闭包同样会在编译期被拒绝。
 - `__construct()` 不允许返回值。
@@ -37,6 +38,7 @@
 
 ## 调用与引用
 
+- `exit(message: $value)` 可作为 TypePHP named-argument 扩展使用；它与位置参数 `exit($value)` 进入同一退出路径。
 - TypePHP 使用严格参数数量规则：非 variadic 函数不接受声明范围之外的额外参数；`func_get_args()` 不会隐式放宽签名。
 - 已知签名的普通函数、普通方法和 native 直调支持引用参数及写回；不要把编译器内部跨 Trait 动态分派的限制误写成“TypePHP 不支持引用参数”。
 - 闭包和箭头函数不支持引用参数。
