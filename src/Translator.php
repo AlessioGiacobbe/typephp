@@ -4461,43 +4461,11 @@ CODE;
 
     private function isAcceptedTypeCovered(array $parentType, array $childTypes): bool
     {
-        foreach ($childTypes as $childType) {
-            if ($this->isAcceptedTypeCompatible($parentType, $childType)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private function isAcceptedTypeCompatible(array $parentType, array $childType): bool
-    {
-        $parentKind = $parentType['kind'] ?? null;
-        $childKind = $childType['kind'] ?? null;
-
-        if ($parentKind === 'instanceof' && $childKind === 'isObject') {
-            return true;
-        }
-        if ($parentKind !== $childKind) {
-            return false;
-        }
-
-        if ($parentKind === 'allOf') {
-            return $parentType == $childType;
-        }
-
-        if ($parentKind !== 'instanceof') {
-            return true;
-        }
-
-        $parentClass = $parentType['class'] ?? '';
-        $childClass = $childType['class'] ?? '';
-        if ($parentClass === $childClass) {
-            return true;
-        }
-        if ($parentClass === '' || $childClass === '') {
-            return false;
-        }
-        return $this->isInheritedFrom($parentClass, $childClass);
+        // Parameter contravariance requires every value accepted by the parent
+        // clause to also be accepted by at least one child clause. The same DNF
+        // clause-subtyping relation used for covariant returns applies here,
+        // with the parent clause as the narrower candidate.
+        return $this->isReturnTypeCoveredBy($parentType, $childTypes);
     }
 
     private function checkInterfaceImplementations(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void

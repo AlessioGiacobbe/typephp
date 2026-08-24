@@ -63,6 +63,11 @@ class InheritanceErrorTest extends TestCase
         $this->exec('must be compatible', 'inheritance_error_return_intersection_missing.php');
     }
 
+    public function testDnfReturnTypeCannotBeWidened(): void
+    {
+        $this->exec('must be compatible', 'inheritance_error_dnf_return_widened.php');
+    }
+
     public function testStaticReturnTypeCannotBeWidenedToSelf(): void
     {
         $this->exec('must be compatible', 'inheritance_error_return_static_widened.php');
@@ -86,6 +91,11 @@ class InheritanceErrorTest extends TestCase
     public function testParameterTypeCannotBeCovariant()
     {
         $this->exec('must be compatible', 'inheritance_error_param_covariant_class.php');
+    }
+
+    public function testDnfParameterTypeCannotBeNarrowed(): void
+    {
+        $this->exec('must be compatible', 'inheritance_error_dnf_param_narrowed.php');
     }
 
     public function testUnionParameterCannotNarrowUntypedParent()

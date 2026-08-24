@@ -71,6 +71,11 @@ final class DnfBox
     }
 }
 
+function dnf_dynamic_property_write(mixed $box, mixed $value): void
+{
+    $box->value = $value;
+}
+
 function main(): void
 {
     $both = new DnfBoth();
@@ -83,6 +88,23 @@ function main(): void
     var_dump($box->value instanceof DnfFallback);
     $box->value = $both;
     var_dump($box->value instanceof DnfBoth);
+
+    $dynamicBox = any(new DnfBox($fallback));
+    dnf_dynamic_property_write($dynamicBox, $both);
+    var_dump($dynamicBox->value instanceof DnfBoth);
+    echo (new ReflectionProperty(DnfBox::class, 'value'))->getType(), "\n";
+
+    $closureIdentity = function (
+        (DnfLeft&DnfRight)|DnfFallback $value,
+    ): (DnfLeft&DnfRight)|DnfFallback {
+        return $value;
+    };
+    var_dump($closureIdentity($both) instanceof DnfBoth);
+    var_dump($closureIdentity($fallback) instanceof DnfFallback);
+
+    $closureDynamicReturn = function (mixed $value): (DnfLeft&DnfRight)|DnfFallback {
+        return $value;
+    };
 
     $invalid = any(new DnfOnlyLeft());
     try {
@@ -100,6 +122,21 @@ function main(): void
     } catch (TypeError $error) {
         echo "property TypeError\n";
     }
+    try {
+        dnf_dynamic_property_write($dynamicBox, $invalid);
+    } catch (TypeError $error) {
+        echo "dynamic property TypeError\n";
+    }
+    try {
+        $closureIdentity($invalid);
+    } catch (TypeError $error) {
+        echo "closure parameter TypeError\n";
+    }
+    try {
+        $closureDynamicReturn($invalid);
+    } catch (TypeError $error) {
+        echo "closure return TypeError\n";
+    }
 }
 ?>
 --EXPECT--
@@ -108,6 +145,13 @@ string(8) "fallback"
 bool(true)
 bool(true)
 bool(true)
+bool(true)
+(DnfLeft&DnfRight)|DnfFallback
+bool(true)
+bool(true)
 parameter TypeError
 return TypeError
 property TypeError
+dynamic property TypeError
+closure parameter TypeError
+closure return TypeError

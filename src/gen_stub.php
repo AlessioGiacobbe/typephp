@@ -539,6 +539,8 @@ class StubType {
     /** @var SimpleType[] */
     public /* readonly */ array $types;
     public /* readonly */ bool $isIntersection;
+    /** @var ?array<int, array<int, SimpleType>> DNF union clauses, intersections contain multiple members. */
+    public /* readonly */ ?array $dnfClauses;
 
     public static function fromNode(Node $node): StubType {
         if ($node instanceof Node\UnionType || $node instanceof Node\IntersectionType) {
@@ -547,7 +549,23 @@ class StubType {
             foreach ($nestedTypeObjects as $typeObject) {
                 array_push($types, ...$typeObject->types);
             }
-            return new StubType($types, ($node instanceof Node\IntersectionType));
+            if ($node instanceof Node\UnionType) {
+                $dnfClauses = [];
+                $hasIntersection = false;
+                foreach ($node->types as $i => $memberNode) {
+                    $memberType = $nestedTypeObjects[$i];
+                    if ($memberNode instanceof Node\IntersectionType) {
+                        $dnfClauses[] = $memberType->types;
+                        $hasIntersection = true;
+                    } else {
+                        foreach ($memberType->types as $simpleType) {
+                            $dnfClauses[] = [$simpleType];
+                        }
+                    }
+                }
+                return new StubType($types, false, $hasIntersection ? $dnfClauses : null);
+            }
+            return new StubType($types, true);
         }
 
         if ($node instanceof Node\NullableType) {
@@ -614,9 +632,103 @@ class StubType {
     /**
      * @param SimpleType[] $types
      */
-    private function __construct(array $types, bool $isIntersection) {
+    private function __construct(array $types, bool $isIntersection, ?array $dnfClauses = null) {
         $this->types = $types;
         $this->isIntersection = $isIntersection;
+        $this->dnfClauses = $dnfClauses;
+    }
+
+    public function isDnf(): bool {
+        return $this->dnfClauses !== null;
+    }
+
+    public function getDnfTypeDeclarations(string $symbol): string {
+        assert($this->dnfClauses !== null);
+        $code = "static zend_type create_{$symbol}(uint32_t extra_flags)\n{\n";
+        $outerEntries = [];
+        foreach ($this->dnfClauses as $i => $clause) {
+            if (count($clause) === 1) {
+                $type = $clause[0];
+                if (!$type->isBuiltin) {
+                    $classVar = $symbol . '_class_' . $i;
+                    $escapedName = $type->toEscapedName();
+                    $code .= "\tzend_string *{$classVar} = zend_string_init_interned(\"{$escapedName}\", "
+                        . "sizeof(\"{$escapedName}\") - 1, true);\n";
+                    $code .= "\tzend_alloc_ce_cache({$classVar});\n";
+                    $outerEntries[] = '(zend_type) ZEND_TYPE_INIT_CLASS(' . $classVar . ', 0, 0)';
+                }
+                continue;
+            }
+
+            $intersection = $symbol . '_intersection_' . $i;
+            $code .= "\tzend_type_list *{$intersection} = (zend_type_list *) malloc("
+                . 'ZEND_TYPE_LIST_SIZE(' . count($clause) . "));\n";
+            $code .= "\t{$intersection}->num_types = " . count($clause) . ";\n";
+            foreach ($clause as $j => $type) {
+                assert(!$type->isBuiltin);
+                $classVar = $symbol . '_class_' . $i . '_' . $j;
+                $escapedName = $type->toEscapedName();
+                $code .= "\tzend_string *{$classVar} = zend_string_init_interned(\"{$escapedName}\", "
+                    . "sizeof(\"{$escapedName}\") - 1, true);\n";
+                $code .= "\tzend_alloc_ce_cache({$classVar});\n";
+                $code .= "\t{$intersection}->types[{$j}] = (zend_type) ZEND_TYPE_INIT_CLASS("
+                    . "{$classVar}, 0, 0);\n";
+            }
+            $outerEntries[] = '(zend_type) ZEND_TYPE_INIT_INTERSECTION(' . $intersection . ', 0)';
+        }
+
+        $code .= "\tzend_type_list *{$symbol} = (zend_type_list *) malloc("
+            . 'ZEND_TYPE_LIST_SIZE(' . count($outerEntries) . "));\n";
+        $code .= "\t{$symbol}->num_types = " . count($outerEntries) . ";\n";
+        foreach ($outerEntries as $i => $entry) {
+            $code .= "\t{$symbol}->types[{$i}] = {$entry};\n";
+        }
+        $masks = [];
+        foreach ($this->dnfClauses as $clause) {
+            if (count($clause) === 1 && $clause[0]->isBuiltin) {
+                $masks[] = $clause[0]->toTypeMask();
+            }
+        }
+        $flags = $masks === [] ? 'extra_flags' : implode('|', $masks) . '|extra_flags';
+        $code .= "\treturn (zend_type) ZEND_TYPE_INIT_UNION({$symbol}, {$flags});\n";
+        $code .= "}\n";
+        return $code;
+    }
+
+    public function getDnfTypeExpression(string $symbol, string $extraFlags): string {
+        assert($this->dnfClauses !== null);
+        return 'create_' . $symbol . '(' . $extraFlags . ')';
+    }
+
+    public function getZendTypeExpression(string $extraFlags): string {
+        assert(!$this->isDnf());
+        if (null !== $simpleType = $this->tryToSimpleType()) {
+            if ($simpleType->isBuiltin) {
+                return sprintf(
+                    'ZEND_TYPE_INIT_CODE(%s, %d, %s)',
+                    $simpleType->toTypeCode(),
+                    $this->isNullable() ? 1 : 0,
+                    $extraFlags,
+                );
+            }
+            return sprintf(
+                'ZEND_TYPE_INIT_CLASS_CONST("%s", %d, %s)',
+                $simpleType->toEscapedName(),
+                $this->isNullable() ? 1 : 0,
+                $extraFlags,
+            );
+        }
+
+        $arginfoType = $this->toArginfoType();
+        if ($arginfoType->hasClassType()) {
+            return sprintf(
+                'ZEND_TYPE_INIT_CLASS_CONST_MASK("%s", %s|%s)',
+                $arginfoType->toClassTypeString(),
+                $arginfoType->toTypeMask(),
+                $extraFlags,
+            );
+        }
+        return sprintf('ZEND_TYPE_INIT_MASK(%s|%s)', $arginfoType->toTypeMask(), $extraFlags);
     }
 
     public function isScalar(): bool {
@@ -723,13 +835,33 @@ class StubType {
             return $a === $b;
         }
 
-        if (count($a->types) !== count($b->types)) {
+        if ($a->isIntersection !== $b->isIntersection
+            || ($a->dnfClauses === null) !== ($b->dnfClauses === null)
+            || count($a->types) !== count($b->types)
+        ) {
             return false;
         }
 
         for ($i = 0; $i < count($a->types); $i++) {
             if (!$a->types[$i]->equals($b->types[$i])) {
                 return false;
+            }
+        }
+
+        if ($a->dnfClauses !== null) {
+            if (count($a->dnfClauses) !== count($b->dnfClauses)) {
+                return false;
+            }
+            foreach ($a->dnfClauses as $i => $clause) {
+                $otherClause = $b->dnfClauses[$i];
+                if (count($clause) !== count($otherClause)) {
+                    return false;
+                }
+                foreach ($clause as $j => $type) {
+                    if (!$type->equals($otherClause[$j])) {
+                        return false;
+                    }
+                }
             }
         }
 
@@ -863,11 +995,28 @@ class ArgInfo {
         return $this->defaultValue;
     }
 
-    public function toZendInfo(): string {
+    public function toZendInfo(?string $dnfSymbol = null, bool $deferDnfInitialization = false): string {
         $argKind = $this->isVariadic ? "ARG_VARIADIC" : "ARG";
         $argDefaultKind = $this->hasProperDefaultValue() ? "_WITH_DEFAULT_VALUE" : "";
         $argType = $this->type;
         if ($argType !== null) {
+            if ($argType->isDnf() && $dnfSymbol !== null) {
+                $flags = sprintf(
+                    '_ZEND_ARG_INFO_FLAGS(%s, %d, 0)',
+                    $this->sendBy,
+                    $this->isVariadic ? 1 : 0,
+                );
+                $default = $this->isVariadic ? 'NULL' : $this->getDefaultValueAsArginfoString();
+                $typeExpression = $deferDnfInitialization
+                    ? 'ZEND_TYPE_INIT_NONE(' . $flags . ')'
+                    : $argType->getDnfTypeExpression($dnfSymbol, $flags);
+                return sprintf(
+                    "\t{ \"%s\", %s, %s },\n",
+                    $this->name,
+                    $typeExpression,
+                    $default,
+                );
+            }
             if (null !== $simpleArgType = $argType->tryToSimpleType()) {
                 if ($simpleArgType->isBuiltin) {
                     return sprintf(
@@ -911,6 +1060,16 @@ class ArgInfo {
             $argKind, $argDefaultKind, $this->sendBy, $this->name,
             $this->hasProperDefaultValue() ? ", " . $this->getDefaultValueAsArginfoString() : ""
         );
+    }
+
+    public function getDnfInitialization(string $target, string $dnfSymbol): string {
+        assert($this->type?->isDnf());
+        $flags = sprintf(
+            '_ZEND_ARG_INFO_FLAGS(%s, %d, 0)',
+            $this->sendBy,
+            $this->isVariadic ? 1 : 0,
+        );
+        return "\t{$target}.type = " . $this->type->getDnfTypeExpression($dnfSymbol, $flags) . ";\n";
     }
 }
 
@@ -1191,8 +1350,47 @@ class ReturnInfo {
         $this->refcount = $refcount;
     }
 
-    public function beginArgInfo(string $funcInfoName, int $minArgs): string {
+    public function beginArgInfo(
+        string $funcInfoName,
+        int $minArgs,
+        ?string $dnfSymbol = null,
+        bool $deferDnfInitialization = false,
+    ): string {
+        $effectiveType = $this->type ?? $this->phpDocType;
+        if ($deferDnfInitialization) {
+            $flags = sprintf(
+                '_ZEND_ARG_INFO_FLAGS(%d, 0, %d)',
+                $this->byRef ? 1 : 0,
+                $this->tentativeReturnType ? 1 : 0,
+            );
+            if ($effectiveType?->isDnf()) {
+                assert($dnfSymbol !== null);
+                $typeExpression = 'ZEND_TYPE_INIT_NONE(' . $flags . ')';
+            } elseif ($effectiveType !== null) {
+                $typeExpression = $effectiveType->getZendTypeExpression($flags);
+            } else {
+                $typeExpression = 'ZEND_TYPE_INIT_NONE(' . $flags . ')';
+            }
+            return sprintf(
+                "static zend_internal_arg_info %s[] = {\n"
+                    . "\t{ (const char*)(uintptr_t)(%d), %s, NULL },\n",
+                $funcInfoName,
+                $minArgs,
+                $typeExpression,
+            );
+        }
         return $this->beginArgInfoCompatible($funcInfoName, $minArgs);
+    }
+
+    public function getDnfInitialization(string $target, string $dnfSymbol): string {
+        $effectiveType = $this->type ?? $this->phpDocType;
+        assert($effectiveType?->isDnf());
+        $flags = sprintf(
+            '_ZEND_ARG_INFO_FLAGS(%d, 0, %d)',
+            $this->byRef ? 1 : 0,
+            $this->tentativeReturnType ? 1 : 0,
+        );
+        return "\t{$target}.type = " . $effectiveType->getDnfTypeExpression($dnfSymbol, $flags) . ";\n";
     }
 
     /**
@@ -1504,6 +1702,22 @@ class FuncInfo {
 
     public function getArgInfoName(): string {
         return $this->name->getArgInfoName();
+    }
+
+    public function hasDnfArgInfo(): bool {
+        if ($this->return->getMethodSynopsisType()?->isDnf()) {
+            return true;
+        }
+        foreach ($this->args as $argInfo) {
+            if ($argInfo->type?->isDnf()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function getDnfArgInfoInitializerName(): string {
+        return 'init_' . $this->getArgInfoName() . '_dnf_types';
     }
 
     public function getDeclarationKey(): string
@@ -2246,6 +2460,12 @@ OUPUT_EXAMPLE
 
     /** @param FuncInfo[] $generatedFuncInfos */
     public function findEquivalent(array $generatedFuncInfos): ?FuncInfo {
+        // DNF arginfo owns runtime-allocated nested type lists and its matching
+        // initializer. Keep a distinct structure for every method instead of
+        // aliasing another method's arginfo without its initialization path.
+        if ($this->hasDnfArgInfo()) {
+            return null;
+        }
         foreach ($generatedFuncInfos as $generatedFuncInfo) {
             // TODO 从数组遍历元素，调用方法，在编译期无法获得元素的类型，因此判断作用域，必须为 public 方法
             if ($generatedFuncInfo->equalsApartFromNameAndRefcount($this)) {
@@ -2256,16 +2476,53 @@ OUPUT_EXAMPLE
     }
 
     public function toArgInfoCode(?int $minPHPCompatability): string {
-        $code = $this->return->beginArgInfo(
-            $this->getArgInfoName(),
+        $argInfoName = $this->getArgInfoName();
+        $returnType = $this->return->getMethodSynopsisType();
+        $returnDnfSymbol = null;
+        $argDnfSymbols = [];
+        $code = '';
+        // Internal function tables are registered before MINIT, so global
+        // functions retain the flattened fallback used historically. Class
+        // methods can install their full DNF metadata immediately before the
+        // class entry is registered and Zend validates inheritance.
+        $deferDnfInitialization = $this->isMethod() && $this->hasDnfArgInfo();
+
+        if ($deferDnfInitialization && $returnType?->isDnf()) {
+            $returnDnfSymbol = $argInfoName . '_return_dnf';
+            $code .= $returnType->getDnfTypeDeclarations($returnDnfSymbol);
+        }
+        foreach ($this->args as $i => $argInfo) {
+            if ($deferDnfInitialization && $argInfo->type?->isDnf()) {
+                $argDnfSymbols[$i] = $argInfoName . '_arg_' . $i . '_dnf';
+                $code .= $argInfo->type->getDnfTypeDeclarations($argDnfSymbols[$i]);
+            }
+        }
+
+        $code .= $this->return->beginArgInfo(
+            $argInfoName,
             $this->numRequiredArgs,
+            $returnDnfSymbol,
+            $deferDnfInitialization,
         );
 
-        foreach ($this->args as $argInfo) {
-            $code .= $argInfo->toZendInfo();
+        foreach ($this->args as $i => $argInfo) {
+            $code .= $argInfo->toZendInfo(
+                $argDnfSymbols[$i] ?? null,
+                $deferDnfInitialization,
+            );
         }
 
         $code .= "ZEND_END_ARG_INFO()";
+        if ($deferDnfInitialization) {
+            $code .= "\nstatic void " . $this->getDnfArgInfoInitializerName() . "()\n{\n";
+            if ($returnDnfSymbol !== null) {
+                $code .= $this->return->getDnfInitialization("{$argInfoName}[0]", $returnDnfSymbol);
+            }
+            foreach ($argDnfSymbols as $i => $symbol) {
+                $code .= $this->args[$i]->getDnfInitialization("{$argInfoName}[" . ($i + 1) . "]", $symbol);
+            }
+            $code .= "}\n";
+        }
         return $code . "\n";
     }
 
@@ -2578,6 +2835,10 @@ abstract class VariableLike
 
         $typeCode = "";
         if ($this->type) {
+            if ($this->type->isDnf()) {
+                assert($this instanceof PropertyInfo);
+                return $this->type->getDnfTypeExpression($this->getDnfTypeFactorySymbol(), '0');
+            }
             $arginfoType = $this->type->toArginfoType();
             if ($arginfoType->hasClassType()) {
                 if (count($arginfoType->classTypes) >= 2) {
@@ -3242,6 +3503,20 @@ class PropertyInfo extends VariableLike
         return "property";
     }
 
+    public function getDnfTypeFactorySymbol(): string
+    {
+        return 'property_' . implode('_', $this->name->class->getParts())
+            . '_' . $this->name->getDeclarationName() . '_dnf';
+    }
+
+    public function getDnfTypeFactoryCode(): string
+    {
+        if (!$this->type?->isDnf()) {
+            return '';
+        }
+        return $this->type->getDnfTypeDeclarations($this->getDnfTypeFactorySymbol());
+    }
+
     protected function getFieldSynopsisDefaultLinkend(): string
     {
         $className = str_replace(["\\", "_"], ["-", "-"], $this->name->class->toLowerString());
@@ -3697,6 +3972,15 @@ class ClassInfo {
         $this->isUndocumentable = $isUndocumentable;
     }
 
+    public function getDnfPropertyTypeFactoryCode(): string
+    {
+        $code = '';
+        foreach ($this->propertyInfos as $propertyInfo) {
+            $code .= $propertyInfo->getDnfTypeFactoryCode();
+        }
+        return $code;
+    }
+
     /** @param array<string, ConstInfo> $allConstInfos */
     public function getRegistration(array $allConstInfos): string
     {
@@ -3719,6 +4003,12 @@ class ClassInfo {
         $code .= "static zend_class_entry *" . Translator::PREFIX . "register_class_$escapedName(" . (empty($params) ? "void" : implode(", ", $params)) . ")\n";
 
         $code .= "{\n";
+
+        foreach ($this->funcInfos as $funcInfo) {
+            if ($funcInfo->hasDnfArgInfo()) {
+                $code .= "\t" . $funcInfo->getDnfArgInfoInitializerName() . "();\n";
+            }
+        }
 
         $flags = $this->getFlagsByPhpVersion();
 
@@ -5478,6 +5768,13 @@ function generateArgInfoCode(
 ): string {
     $code = "/* This is a generated file, edit the .stub.php file instead.\n"
         . " * Stub hash: $stubHash */\n";
+
+    foreach ($fileInfo->classInfos as $classInfo) {
+        $code .= $classInfo->getDnfPropertyTypeFactoryCode();
+    }
+    if (!str_ends_with($code, "*/\n")) {
+        $code .= "\n";
+    }
 
     $generatedFuncInfos = [];
 
