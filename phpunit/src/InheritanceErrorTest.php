@@ -156,6 +156,14 @@ class InheritanceErrorTest extends TestCase
         );
     }
 
+    public function testCannotOverrideFinalPropertySetHook(): void
+    {
+        $this->exec(
+            'Cannot override final property hook FinalPropertySetHookParent::$value::set()',
+            'inheritance_error_final_property_set_hook.php',
+        );
+    }
+
     public function testCannotOverrideFinalProperty(): void
     {
         $this->exec(
@@ -177,6 +185,14 @@ class InheritanceErrorTest extends TestCase
         $this->exec(
             'Cannot override final property PrivateSetPropertyParent::$value',
             'inheritance_error_private_set_property.php',
+        );
+    }
+
+    public function testPromotedPrivateSetPropertyIsImplicitlyFinal(): void
+    {
+        $this->exec(
+            'Cannot override final property PromotedPrivateSetParent::$value',
+            'inheritance_error_promoted_private_set_property.php',
         );
     }
 

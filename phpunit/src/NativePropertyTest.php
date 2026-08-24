@@ -171,6 +171,14 @@ class NativePropertyTest extends \BaseTest
         );
     }
 
+    public function testCannotWritePromotedPrivateSetNativePropertyOutsideDeclaringClass(): void
+    {
+        $this->exec(
+            'Cannot modify private(set) property `NativePromotedPrivateSetExternalWrite::$value`',
+            'native-promoted-private-set-external-write.php',
+        );
+    }
+
     public function testCannotAccessProtectedNativePropertyFromUnrelatedClass(): void
     {
         $this->exec('Cannot access protected property `value` of class `NativeProtectedOwner`', 'native-property-protected-unrelated-class.php');

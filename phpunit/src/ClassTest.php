@@ -663,6 +663,22 @@ class ClassTest extends \BaseTest
         $this->exec('Cannot override private method `Base::doWork()`', 'override-private-method.php');
     }
 
+    public function testPromotedAsymmetricPropertyRequiresType(): void
+    {
+        $this->exec(
+            'Property with asymmetric visibility PromotedAsymmetricUntyped::$value must have type',
+            'promoted-asymmetric-untyped.php',
+        );
+    }
+
+    public function testPromotedAsymmetricPropertyRejectsWiderSetVisibility(): void
+    {
+        $this->exec(
+            'Visibility of property PromotedAsymmetricWiderSet::$value must not be weaker than set visibility',
+            'promoted-asymmetric-wider-set.php',
+        );
+    }
+
     public function testTraitMayCallProtectedParentMethod()
     {
         // A protected parent method is reachable via parent:: from a trait,

@@ -93,7 +93,6 @@ These items should be documented with the exact boundary.
 | Calls with unpack plus trailing named arguments staying native | Pending | Normalize and reorder call arguments in IR before native-call selection. |
 | Dynamic `parent::method()` name | Pending | Needs runtime parent method lookup with correct call scope. |
 | Private typed property access on cloned objects through variables | Pending / Partial | Requires a complete declaring-class-aware access resolver. |
-| `ReflectionProperty::isPromoted()` for constructor-promoted properties | Pending | Generated class metadata should record promoted-property flags. |
 | `echo` with assignment expressions | Pending | Requires expression lowering that preserves evaluation order and returns the assigned value. |
 | Nested `match` expressions in arm conditions | Pending | Requires recursive match lowering and temporary value ordering. |
 | `foreach` by-reference value targets beyond simple variables | Pending | Requires explicit lvalue/reference target modeling. |
@@ -112,7 +111,7 @@ These items should be documented with the exact boundary.
 | Dynamic calls and callbacks | Partial | Zend runtime fallback handles dynamic calls and callbacks. By-reference arguments still need explicit `refval()` / `toRef()`, and native-call optimization is not guaranteed. |
 | Dynamic properties and dynamic property chains | Partial | Dynamic property reads and writes use the runtime property API; native property optimization is not guaranteed. |
 | Native typed properties | Partial / Intentional Rule | Fast native paths may not preserve every PHP dynamic state transition. Unknown or incompatible values can fall back to `setProperty()`. |
-| Reflection metadata | Partial | Runtime declarations exist, but some AOT-specific metadata such as promoted-property flags may be incomplete. |
+| Reflection metadata | Partial | Runtime declarations preserve constructor-promotion and asymmetric-visibility flags; other AOT-specific metadata may still be incomplete. |
 
 ## Self-hosting Compatibility Notes
 

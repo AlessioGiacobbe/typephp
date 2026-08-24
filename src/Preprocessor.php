@@ -1412,6 +1412,7 @@ class Preprocessor extends CompilerBase
     protected function addClassProperty(string $name, int $flags, ?NodeAbstract $typeNode, $defaultNode, bool $nullable, NodeAbstract $errorNode, bool $promoted = false): PropertyDef
     {
         $flags = $this->parseModifiers($flags);
+        $this->validateAsymmetricPropertyDeclaration($name, $flags, $typeNode, $errorNode);
         [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);
         $this->assertSupportedNativeObjectTypeNode($typeNode, self::DECL_TYPE_OF_PROPERTY, $errorNode);
         $nullableNative = $this->resolveNullableNativeObjectType(
@@ -1478,6 +1479,36 @@ class Preprocessor extends CompilerBase
         }
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
+    }
+
+    private function validateAsymmetricPropertyDeclaration(
+        string $name,
+        int $flags,
+        ?NodeAbstract $typeNode,
+        NodeAbstract $errorNode,
+    ): void {
+        if (!($flags & (Modifiers::PRIVATE_SET | Modifiers::PROTECTED_SET))) {
+            return;
+        }
+
+        $className = $this->classDef->getNamespacedName(false);
+        if ($typeNode === null) {
+            $this->fatalError(
+                $errorNode,
+                "Property with asymmetric visibility {$className}::\${$name} must have type",
+            );
+        }
+
+        $readVisibility = $flags & Modifiers::PRIVATE
+            ? 1
+            : ($flags & Modifiers::PROTECTED ? 2 : 3);
+        $setVisibility = $flags & Modifiers::PRIVATE_SET ? 1 : 2;
+        if ($readVisibility < $setVisibility) {
+            $this->fatalError(
+                $errorNode,
+                "Visibility of property {$className}::\${$name} must not be weaker than set visibility",
+            );
+        }
     }
 
     /**
