@@ -1,23 +1,11 @@
 #include <cstdio>
 #include <cstdlib>
 
-unsigned rounds;
 double pi = 1.0;
 
 int main()
 {
-    auto infile = std::fopen("rounds.txt", "r");    // open file
-    if (infile == NULL) {
-        perror("open file");
-        return EXIT_FAILURE;
-    }
-    if (std::fscanf(infile, "%u", &rounds) != 1) {  // read from file
-        perror("read file");
-        return EXIT_FAILURE;
-    }
-    std::fclose(infile);                            // close file
-    
-    rounds += 2u; // do this outside the loop
+    const unsigned rounds = 100000000u + 2u; // rounds + 2, moved out of the loop
     
     for (long i=2u ; i < rounds ; ++i) // use ++i instead of i++
     {

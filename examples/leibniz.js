@@ -1,7 +1,6 @@
 "use strict";
 
-let fs = require("fs");
-let rounds = parseInt(fs.readFileSync("./rounds.txt", "utf8"));
+const rounds = 100000000;
 
 let x = 1.0;
 let pi = 1.0;

@@ -4,7 +4,7 @@ use native_types;
 function main()
 {
     ini_set("precision", 17);
-    $rounds = (int) file_get_contents("./rounds.txt", true);
+    $rounds = 100000000;
     $stop = $rounds + 2;
     var_dump($stop);
 

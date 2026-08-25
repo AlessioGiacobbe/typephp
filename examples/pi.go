@@ -1,15 +1,9 @@
 package main
 
-import (
-	"fmt"
-	"os"
-	"strconv"
-	"strings"
-)
+import "fmt"
 
 func main() {
-	file, _ := os.ReadFile("rounds.txt")
-	rounds, _ := strconv.Atoi(strings.TrimSpace(string(file)))
+	const rounds = 100000000
 
 	x := 1.0
 	pi := 1.0
