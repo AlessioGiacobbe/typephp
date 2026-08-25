@@ -1426,10 +1426,22 @@ class CompilerBase implements PropertyAccessContext
 
     protected function getMethodPtr(string $class, string $method): string
     {
-        $funcId = $this->getFuncId($class . '::' . $method);
+        $key = $class . '::' . $method;
+        $funcId = $this->getFuncId($key);
         $classId = $this->getClassId($class);
-        // 方法的稳定性与所属类一致，因此 class_id 必定落在同一张表中
-        $helper = isset($this->persistentFuncMap[$class . '::' . $method]) ? 'get_persistent_method' : 'get_method';
+        $persistentMethod = isset($this->persistentFuncMap[$key]);
+        $persistentClass = isset($this->persistentClassMap[$class]);
+        if ($persistentMethod !== $persistentClass) {
+            throw new \LogicException(sprintf(
+                'Cache lifetime mismatch for %s: method ID %d is %s, class ID %d is %s',
+                $key,
+                $funcId,
+                $persistentMethod ? 'persistent' : 'request-local',
+                $classId,
+                $persistentClass ? 'persistent' : 'request-local',
+            ));
+        }
+        $helper = $persistentMethod ? 'get_persistent_method' : 'get_method';
         return $helper . '(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
     }
 

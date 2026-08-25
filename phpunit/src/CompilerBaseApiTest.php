@@ -98,6 +98,20 @@ class CompilerBaseApiTest extends TestCase
         $this->assertSame([], $this->getPropertyValue('persistentFuncMap'));
     }
 
+    public function testMethodCacheRejectsMismatchedLifetimeDomains(): void
+    {
+        $this->setPropertyValue('classMap', ['LateKnownClass' => 0]);
+        $this->setPropertyValue('classIndex', 1);
+        $this->setPropertyValue('persistentFuncMap', ['LateKnownClass::run' => 0]);
+        $this->setPropertyValue('persistentFuncIndex', 1);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(
+            'Cache lifetime mismatch for LateKnownClass::run: method ID 0 is persistent, class ID 0 is request-local',
+        );
+        $this->invokeMethod('getMethodPtr', 'LateKnownClass', 'run');
+    }
+
     private function fixturePath(string $file): string
     {
         return __DIR__ . '/../code/compiler_api/' . $file;
