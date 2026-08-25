@@ -192,18 +192,25 @@ cd build && make test-name
 
 ## 测试覆盖率检查
 
-查看当前测试覆盖的 PHP 语法特性：
+覆盖清单直接从 PHPT 和相关 PHPUnit fixture 的源码生成：
 
 ```bash
-# 统计测试文件数量
-ls tests/compiler/*.phpt | wc -l
+# 查看带明确分母的摘要
+php bin/analyze-test-coverage.php
 
-# 查看所有测试文件
-ls tests/compiler/*.phpt | sort
+# 生成 PHP 版本 × 特性 × 三类测试证据的完整矩阵
+php bin/analyze-test-coverage.php \
+  --format=markdown \
+  --output=build/test-coverage.md
 
-# 查看测试覆盖总结
-cat tests/compiler/README_TEST_COVERAGE.md
+# CI 使用 JSON，并在解析问题或失效 fixture 引用时失败
+php bin/analyze-test-coverage.php \
+  --format=json \
+  --output=build/test-coverage.json \
+  --strict
 ```
+
+报告分别计算 AST 节点、正向编译、运行语义和负向诊断覆盖率，并明确列出每个分母；不会生成含义不清的单一总百分比。分类规则及 JSON 字段说明见 [测试覆盖清单](../../docs/TEST_COVERAGE_ANALYZER.md)。
 
 ## 常见问题
 

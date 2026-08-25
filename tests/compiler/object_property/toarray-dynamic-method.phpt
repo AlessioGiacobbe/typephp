@@ -1,5 +1,5 @@
 --TEST--
-Dynamic toArray() dispatch supports real methods and __call
+Dynamic toArray() supports scalar conversion, declared methods and object-property fallback
 --FILE--
 <?php
 
@@ -13,6 +13,8 @@ class DynamicToArrayValue
 
 class DynamicToArrayMagicOnly
 {
+    public int $value = 9;
+
     public function __call(string $name, array $arguments): array
     {
         return ['magic' => $name];
@@ -29,40 +31,57 @@ function callDynamicToArray(mixed $value): array
     return $value->toArray();
 }
 
-function dumpDynamicToArrayError(object $value): void
+function callScalarToArray(int $value): array
 {
-    try {
-        callDynamicToArray(eraseToMixed($value));
-    } catch (Error $error) {
-        echo $error->getMessage(), "\n";
-    }
+    return $value->toArray();
 }
 
 function main(): void
 {
+    var_dump(callScalarToArray(42));
+    var_dump(callDynamicToArray(null));
+    var_dump(callDynamicToArray('value'));
+    var_dump(callDynamicToArray(['key' => 7]));
     var_dump(callDynamicToArray(eraseToMixed(new DynamicToArrayValue())));
-    dumpDynamicToArrayError(new stdClass());
     var_dump((new DynamicToArrayMagicOnly())->toArray());
     var_dump(callDynamicToArray(eraseToMixed(new DynamicToArrayMagicOnly())));
 
     $plain = new stdClass();
     $plain->value = 7;
+    var_dump(callDynamicToArray($plain));
     var_dump((array) $plain);
 }
 ?>
 --EXPECT--
 array(1) {
+  [0]=>
+  int(42)
+}
+array(0) {
+}
+array(1) {
+  [0]=>
+  string(5) "value"
+}
+array(1) {
+  ["key"]=>
+  int(7)
+}
+array(1) {
   ["value"]=>
   int(42)
 }
-Invalid callback stdClass::toArray, class stdClass does not have a method "toArray"
 array(1) {
-  ["magic"]=>
-  string(7) "toArray"
+  ["value"]=>
+  int(9)
 }
 array(1) {
-  ["magic"]=>
-  string(7) "toArray"
+  ["value"]=>
+  int(9)
+}
+array(1) {
+  ["value"]=>
+  int(7)
 }
 array(1) {
   ["value"]=>

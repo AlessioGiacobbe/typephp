@@ -549,25 +549,12 @@ trait MethodCallTrait
                 if ($receiverClass === '' && !$this->isVarExpr($expr->var)) {
                     $receiverClass = $this->detectClassOfExpr($expr->var);
                 }
-                // A statically known object method preserves keyword priority
-                // while avoiding the generic PHPX conversion helper.
+                // A declared conversion method is called directly. Otherwise
+                // php::toArray() applies the PHP-compatible object-property
+                // fallback (and invokes a real toArray() method when present).
                 $useDeclaredToArray = $methodName === 'toArray'
                     && $receiverClass !== ''
                     && $this->objectTypeDeclaresMethod($receiverClass, $methodName);
-                $useMagicToArray = $methodName === 'toArray'
-                    && $receiverClass !== ''
-                    && $this->objectTypeDeclaresMethod($receiverClass, '__call');
-                if ($methodName === 'toArray'
-                    && $receiverClass !== ''
-                    && !$useDeclaredToArray
-                    && !$useMagicToArray
-                    && ($this->hasClass($receiverClass) || $this->isInternalClass($receiverClass))
-                ) {
-                    $this->fatalError(
-                        $expr,
-                        "Class `{$receiverClass}` must define `toArray()` for this conversion",
-                    );
-                }
                 if (!$useDeclaredToArray) {
                     return $this->genToConvertCall($object, $methodName, $receiverType);
                 }

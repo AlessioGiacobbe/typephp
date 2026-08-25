@@ -20,16 +20,12 @@ class ClassTest extends \BaseTest
         $this->compile('zend-class-to-array-return-type.php');
     }
 
-    public function testKnownZendClassMustDefineToArray(): void
+    public function testKnownZendClassWithoutToArrayUsesPropertyFallback(): void
     {
-        $this->expectException(\TypePhp\Exception\TestError::class);
-        $this->expectExceptionMessage(
-            'Class `ZendWithoutToArray` must define `toArray()` for this conversion',
-        );
         $this->compile('zend-class-to-array-missing.php');
     }
 
-    public function testKnownZendClassMayResolveToArrayThroughMagicCall(): void
+    public function testKnownZendClassWithMagicCallStillUsesArrayConversion(): void
     {
         $this->compile('zend-class-to-array-magic.php');
     }
