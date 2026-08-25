@@ -1277,6 +1277,19 @@ class CompilerBase implements PropertyAccessContext
     {
         if (str_contains($funcName, '::')) {
             [$class] = explode('::', $funcName, 2);
+
+            // Class and method caches use parallel lifetime domains. Once a
+            // class has been assigned an ID, keep every subsequently resolved
+            // method in the same domain even if the class becomes visible in
+            // the symbol repository later in the prepare pass. Otherwise a
+            // request-local class ID may be used to index persistentClassMap.
+            if (isset($this->classMap[$class])) {
+                return false;
+            }
+            if (isset($this->persistentClassMap[$class])) {
+                return true;
+            }
+
             return $this->isProcessStableClass($class);
         }
         if ($this->hasFunction($funcName)) {

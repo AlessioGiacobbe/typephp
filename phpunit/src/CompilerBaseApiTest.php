@@ -78,6 +78,26 @@ class CompilerBaseApiTest extends TestCase
         return $m->invoke($this->compiler, ...$args);
     }
 
+    public function testMethodCacheKeepsPreviouslyAssignedClassLifetime(): void
+    {
+        // The two maps have independent ID spaces. This reproduces the tpc
+        // bootstrap ordering where both classes occupied slot zero.
+        $this->setPropertyValue('classMap', ['LateKnownClass' => 0]);
+        $this->setPropertyValue('classIndex', 1);
+        $this->setPropertyValue('persistentClassMap', ['StableResolver' => 0]);
+        $this->setPropertyValue('persistentClassIndex', 1);
+
+        $methodPtr = $this->invokeMethod('getMethodPtr', 'LateKnownClass', 'run');
+
+        $this->assertStringStartsWith('get_method(0, ', $methodPtr);
+        $this->assertStringContainsString(', 0, ', $methodPtr);
+        $this->assertSame(
+            ['LateKnownClass::run' => 0],
+            $this->getPropertyValue('funcMap'),
+        );
+        $this->assertSame([], $this->getPropertyValue('persistentFuncMap'));
+    }
+
     private function fixturePath(string $file): string
     {
         return __DIR__ . '/../code/compiler_api/' . $file;
