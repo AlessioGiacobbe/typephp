@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "230c2948c23aa6b500c006a3846c8acf",
+    "content-hash": "0f52f2f55a2120be93f51f4e0003bacc",
     "packages": [
         {
             "name": "ajaxray/ansikit",
@@ -342,21 +342,22 @@
         },
         {
             "name": "swoole/phpx",
-            "version": "v2.4.3",
+            "version": "v2.6.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/swoole/phpx.git",
-                "reference": "6424c2b9bd4e910fc7e446b1ece5699818c08454"
+                "reference": "bf24803c07f84780003356f06cb98b713d32d4f7"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/swoole/phpx/zipball/6424c2b9bd4e910fc7e446b1ece5699818c08454",
-                "reference": "6424c2b9bd4e910fc7e446b1ece5699818c08454",
+                "url": "https://api.github.com/repos/swoole/phpx/zipball/bf24803c07f84780003356f06cb98b713d32d4f7",
+                "reference": "bf24803c07f84780003356f06cb98b713d32d4f7",
                 "shasum": ""
             },
             "require": {
                 "league/climate": "^3.10",
-                "marcj/topsort": "^2.0"
+                "marcj/topsort": "^2.0",
+                "php": ">=8.4 <8.6"
             },
             "require-dev": {
                 "friendsofphp/php-cs-fixer": "^3.75",
@@ -381,9 +382,9 @@
             ],
             "support": {
                 "issues": "https://github.com/swoole/phpx/issues",
-                "source": "https://github.com/swoole/phpx/tree/v2.4.3"
+                "source": "https://github.com/swoole/phpx/tree/v2.6.3"
             },
-            "time": "2026-07-31T09:43:58+00:00"
+            "time": "2026-08-24T11:56:43+00:00"
         },
         {
             "name": "symfony/polyfill-ctype",
@@ -1460,6 +1461,70 @@
                 "source": "https://github.com/phar-io/version/tree/3.2.1"
             },
             "time": "2022-02-21T01:04:05+00:00"
+        },
+        {
+            "name": "phpstan/phpstan",
+            "version": "2.2.9",
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/phpstan/phpstan/zipball/13d6b4f347bad222da436580c8304fa6f83e6bd0",
+                "reference": "13d6b4f347bad222da436580c8304fa6f83e6bd0",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^7.4|^8.0"
+            },
+            "conflict": {
+                "phpstan/phpstan-shim": "*"
+            },
+            "bin": [
+                "phpstan",
+                "phpstan.phar"
+            ],
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "bootstrap.php"
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Ondřej Mirtes"
+                },
+                {
+                    "name": "Markus Staab"
+                },
+                {
+                    "name": "Vincent Langlet"
+                }
+            ],
+            "description": "PHPStan - PHP Static Analysis Tool",
+            "keywords": [
+                "dev",
+                "static analysis"
+            ],
+            "support": {
+                "docs": "https://phpstan.org/user-guide/getting-started",
+                "forum": "https://github.com/phpstan/phpstan/discussions",
+                "issues": "https://github.com/phpstan/phpstan/issues",
+                "security": "https://github.com/phpstan/phpstan/security/policy",
+                "source": "https://github.com/phpstan/phpstan-src"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/ondrejmirtes",
+                    "type": "github"
+                },
+                {
+                    "url": "https://github.com/phpstan",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-08-22T07:38:16+00:00"
         },
         {
             "name": "phpunit/php-code-coverage",
@@ -4856,12 +4921,12 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": [],
+    "stability-flags": {},
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
         "php": ">=8.4 <8.6"
     },
-    "platform-dev": [],
-    "plugin-api-version": "2.1.0"
+    "platform-dev": {},
+    "plugin-api-version": "2.9.0"
 }
