@@ -11,6 +11,7 @@
 /.php-cs-fixer.cache
 /.phpunit.cache
 /__pycache__
+/composer.lock
 *.o
 *.dll
 *.so
