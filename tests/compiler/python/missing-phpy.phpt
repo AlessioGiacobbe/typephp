@@ -2,6 +2,7 @@
 Using a Python module without phpy raises a catchable PHP Error
 --ENV--
 PHPRC=tests/compiler/python/empty.ini
+PHP_INI_SCAN_DIR={PWD}/empty-ini-dir
 --FILE--
 <?php
 use python\math;

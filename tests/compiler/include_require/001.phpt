@@ -2,6 +2,7 @@
 include/require unwind safely when ZendVM calls a compiled function that throws
 --ENV--
 PHPRC=tests/compiler/include_require/no-leak.ini
+PHP_INI_SCAN_DIR={PWD}/empty-ini-dir
 --FILE--
 <?php
 declare(strict_types=1);

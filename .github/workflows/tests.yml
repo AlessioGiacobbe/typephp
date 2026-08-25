@@ -44,7 +44,7 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           extensions: embed
-          ini-values: precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, log_errors=0
+          ini-values: precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
           tools: composer:v2
 
       - name: Patch php_hash.h C++ compatibility
@@ -115,7 +115,7 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           extensions: embed, curl, redis, mbstring, ffi
-          ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, log_errors=0
+          ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
           tools: composer:v2
 
       - name: Patch php_hash.h C++ compatibility
@@ -181,7 +181,7 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           extensions: embed, curl, redis, mbstring, ffi
-          ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, log_errors=0
+          ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, opcache.jit=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
           tools: composer:v2
 
       - name: Patch php_hash.h C++ compatibility
@@ -238,7 +238,7 @@ jobs:
       - name: Run compiler PHPT suite with bootstrap compiler
         run: |
           mkdir -p build
-          php run-tests.php -q -j4 --compiler ./tpc \
+          php run-tests.php -q -j8 --compiler ./tpc \
             -w build/failed-tests.txt -W build/test-results.txt tests/compiler
 
       - name: Upload PHPT failure artifacts

@@ -4,8 +4,15 @@ ref call arg
 <?php
 function main()
 {
+    $path = tempnam(sys_get_temp_dir(), 'typephp-ref-');
     $zip = new ZipArchive();
-    $path = realpath(__DIR__ . '/../../../../data/test.zip');
+    $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    for ($idx = 0; $idx < 4; $idx++) {
+        $zip->addFromString('entry-' . $idx, 'data');
+        $zip->setExternalAttributesIndex($idx, ZipArchive::OPSYS_UNIX, 0100644 << 16);
+    }
+    $zip->close();
+
     if ($zip->open($path) === TRUE) {
         for ($idx = 0; $s = $zip->statIndex($idx); $idx++) {
             $rs = $zip->getExternalAttributesIndex($idx, $opsys, $attr);
@@ -14,6 +21,7 @@ function main()
         $zip->close();
         echo "OK\n";
     }
+    unlink($path);
 
     $str = "first=value&arr[]=foo+bar&arr[]=baz";
     parse_str($str, $output);
@@ -27,19 +35,19 @@ function main()
 bool(true)
 int(0)
 int(3)
-int(1107099648)
+int(2175008768)
 bool(true)
 int(1)
 int(3)
-int(2176057344)
+int(2175008768)
 bool(true)
 int(2)
 int(3)
-int(2176057344)
+int(2175008768)
 bool(true)
 int(3)
 int(3)
-int(2176057344)
+int(2175008768)
 OK
 value
 foo bar
