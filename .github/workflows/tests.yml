@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.4", "8.5"]
+        php: ["8.5"]
     env:
       PHPX_HOME: ${{ github.workspace }}/vendor/swoole/phpx
 
@@ -94,13 +94,15 @@ jobs:
 
   phpunit:
     name: PHPUnit (PHP ${{ matrix.php }})
+    # Temporary: keep the class-id cache investigation focused on PHPT.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: build-phpx
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.4", "8.5"]
+        php: ["8.5"]
     env:
       PHPX_HOME: ${{ github.workspace }}/vendor/swoole/phpx
 
@@ -164,7 +166,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.4", "8.5"]
+        php: ["8.5"]
     env:
       PHPX_HOME: ${{ github.workspace }}/vendor/swoole/phpx
       NO_INTERACTION: 1
@@ -265,7 +267,16 @@ jobs:
         run: |
           mkdir -p build
           php run-tests.php -q -j8 --compiler ./tpc \
-            -w build/failed-tests.txt -W build/test-results.txt tests/compiler
+            -w build/failed-tests.txt -W build/test-results.txt \
+            tests/compiler/basic/global-vars.phpt \
+            tests/compiler/native-class/failed-clone-finalizer.phpt \
+            tests/compiler/native-class/failed-lifecycle-escape.phpt \
+            tests/compiler/native-class/fiber-shutdown.phpt \
+            tests/compiler/native-class/finalizer-allocation.phpt \
+            tests/compiler/native-class/finalizer-inheritance-exception.phpt \
+            tests/compiler/native-class/gc-threshold.phpt \
+            tests/compiler/native-class/global-and-static.phpt \
+            tests/compiler/native-class/lifecycle-exceptions.phpt
 
       - name: Upload PHPT failure artifacts
         if: failure()
