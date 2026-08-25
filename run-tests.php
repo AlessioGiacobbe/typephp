@@ -1686,6 +1686,9 @@ escape:
         error("$testsInProgress test batches “in progress”, which is less than zero. THIS SHOULD NOT HAPPEN.");
     }
 
+    if ($PHP_FAILED_TESTS['FAILED']) {
+        copy_aot_generated_sources_for_artifact($aot_parallel_root);
+    }
     remove_directory($aot_parallel_root);
     $aot_parallel_root = null;
 }
@@ -4621,6 +4624,48 @@ function ensure_directory_exists(string $directory): void
 {
     if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
         throw new RuntimeException('Cannot create directory: ' . $directory);
+    }
+}
+
+/**
+ * Preserve generated C++ and header files before the parallel PHPT workspace
+ * is removed. CI sets TYPEPHP_PHPT_GENERATED_ARTIFACT_DIR to a directory under
+ * the checkout so actions/upload-artifact can include these diagnostics.
+ */
+function copy_aot_generated_sources_for_artifact(string $sourceRoot): void
+{
+    $artifactRoot = getenv('TYPEPHP_PHPT_GENERATED_ARTIFACT_DIR');
+    if (!is_string($artifactRoot) || $artifactRoot === '' || !is_dir($sourceRoot)) {
+        return;
+    }
+
+    $sourceRoot = rtrim($sourceRoot, '/\\');
+    $destinationRoot = rtrim($artifactRoot, '/\\')
+        . DIRECTORY_SEPARATOR . basename($sourceRoot);
+
+    try {
+        $copied = 0;
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($sourceRoot, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY,
+        );
+        foreach ($iterator as $entry) {
+            if (!$entry->isFile() || !in_array(strtolower($entry->getExtension()), ['cc', 'h'], true)) {
+                continue;
+            }
+
+            $relativePath = substr($entry->getPathname(), strlen($sourceRoot) + 1);
+            $destination = $destinationRoot . DIRECTORY_SEPARATOR . $relativePath;
+            ensure_directory_exists(dirname($destination));
+            if (!copy($entry->getPathname(), $destination)) {
+                throw new RuntimeException('Cannot copy generated source: ' . $entry->getPathname());
+            }
+            $copied++;
+        }
+        fwrite(STDERR, "Preserved {$copied} generated PHPT source files in {$destinationRoot}" . PHP_EOL);
+    } catch (Throwable $e) {
+        fwrite(STDERR, 'Warning: failed to preserve PHPT generated sources: '
+            . $e->getMessage() . PHP_EOL);
     }
 }
 
