@@ -223,7 +223,7 @@ jobs:
       - name: Run compiler PHPT suite with bootstrap compiler
         run: |
           mkdir -p build
-          php run-tests.php -q -j8 --compiler ./tpc \
+          php run-tests.php -q -j8  \
             -w build/failed-tests.txt -W build/test-results.txt tests/compiler
 
       - name: Upload PHPT failure artifacts
