@@ -43,7 +43,6 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-          extensions: embed
           ini-values: precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
           tools: composer:v2
 
@@ -114,7 +113,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-          extensions: embed, curl, redis, mbstring, ffi
+          extensions: curl, redis, mbstring, ffi
           ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
           tools: composer:v2
 
@@ -180,7 +179,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-          extensions: embed, curl, redis, mbstring, ffi
+          extensions: curl, redis, mbstring, ffi
           ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, opcache.jit=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
           tools: composer:v2
 
@@ -190,7 +189,32 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev
+          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev \
+            "libphp${{ matrix.php }}-embed"
+
+      - name: Configure version-matched PHP embed library
+        shell: bash
+        run: |
+          embed_package="libphp${{ matrix.php }}-embed"
+          php_version="$(php-config --version)"
+          embed_version="$(dpkg-query --show --showformat='${Version}' "${embed_package}")"
+          case "${embed_version}" in
+            "${php_version}"*) ;;
+            *) echo "PHP embed package ${embed_version} does not match PHP ${php_version}" >&2; exit 1 ;;
+          esac
+          embed_library="$(dpkg-query --listfiles "${embed_package}" \
+            | sed -n '/\/libphp[0-9][^/]*\.so$/ { p; q; }')"
+          test -n "${embed_library}"
+          test -f "${embed_library}"
+
+          php_home="${RUNNER_TEMP}/typephp-php-${{ matrix.php }}"
+          mkdir -p "${php_home}/bin" "${php_home}/include" "${php_home}/lib"
+          ln -s "$(command -v php-config)" "${php_home}/bin/php-config"
+          ln -s "$(php-config --include-dir)" "${php_home}/include/php"
+          ln -s "${embed_library}" "${php_home}/lib/libphp.so"
+
+          echo "PHP_HOME=${php_home}" >> "${GITHUB_ENV}"
+          echo "Using ${embed_library} from ${embed_package} ${embed_version} for PHP ${php_version}"
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
@@ -220,7 +244,8 @@ jobs:
         shell: bash
         run: |
           test -f "${PHPX_HOME}/lib/libphpx.so"
-          echo "LD_LIBRARY_PATH=${PHPX_HOME}/lib:$(php-config --prefix)/lib" >> "${GITHUB_ENV}"
+          test -f "${PHP_HOME}/lib/libphp.so"
+          echo "LD_LIBRARY_PATH=${PHPX_HOME}/lib:${PHP_HOME}/lib" >> "${GITHUB_ENV}"
 
       - name: Build bootstrap TypePHP compiler
         run: |
@@ -232,6 +257,7 @@ jobs:
         run: |
           php -v
           php --ini
+          ldd ./tpc | grep -E 'libphp(x)?\.so'
           cmake --version
           c++ --version
 
