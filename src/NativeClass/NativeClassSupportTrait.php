@@ -1383,11 +1383,38 @@ trait NativeClassSupportTrait
         if ($methodDef === null) {
             $this->fatalError($node, "Native class `{$class}` must define `{$method}()` for this conversion");
         }
-        $function = $methodDef->functionDef;
+        $this->assertNativeObjectKeywordMethodSignature(
+            $node,
+            $class,
+            $resolvedMethod,
+            $methodDef->functionDef,
+            $expectedType,
+        );
+        return $resolvedMethod;
+    }
+
+    protected function assertNativeObjectKeywordMethodSignature(
+        NodeAbstract $node,
+        string $class,
+        string $method,
+        FunctionDef $function,
+        string $expectedType,
+    ): void {
         if ($function->argInfoList !== []) {
-            $this->fatalError($node, "Native conversion method `{$class}::{$resolvedMethod}()` must not accept arguments");
+            $this->fatalError($node, "Native conversion method `{$class}::{$method}()` must not accept arguments");
         }
-        if ($function->returnsByRef || $function->returnNullable || $function->returnType !== $expectedType) {
+        $hasExactReturnType = $function->returnType === $expectedType;
+        if ($expectedType === Type::VAR) {
+            // Type::VAR also represents an omitted return type and several
+            // other dynamic PHP types internally. A Native toAny() bridge is
+            // only valid when the author explicitly opts into mixed/any.
+            $hasExactReturnType = in_array(
+                strtolower($function->returnTypeStr),
+                ['mixed', 'any'],
+                true,
+            );
+        }
+        if ($function->returnsByRef || $function->returnNullable || !$hasExactReturnType) {
             $expectedTypeName = match ($expectedType) {
                 Type::INT => 'int',
                 Type::FLOAT => 'float',
@@ -1399,15 +1426,14 @@ trait NativeClassSupportTrait
                 Type::BIGFLOAT => 'BigFloat',
                 Type::DECIMAL => 'Decimal',
                 Type::OBJECT => 'object',
-                Type::VAR => 'mixed',
+                Type::VAR => 'mixed` or `any',
                 default => $expectedType,
             };
             $this->fatalError(
                 $node,
-                "Native conversion method `{$class}::{$resolvedMethod}()` must return exactly `{$expectedTypeName}`",
+                "Native conversion method `{$class}::{$method}()` must return exactly `{$expectedTypeName}`",
             );
         }
-        return $resolvedMethod;
     }
 
     protected function parseNativeObjectExplicitConversion(NodeAbstract $expr, string $method): ?string

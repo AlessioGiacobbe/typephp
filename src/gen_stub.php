@@ -2598,8 +2598,32 @@ class EvaluatedValue
 
         $isUnknownConstValue = false;
 
+        $evaluator = null;
         $evaluator = new ConstExprEvaluator(
-            static function (Expr $expr) use ($allConstInfos, &$isUnknownConstValue) {
+            static function (Expr $expr) use (
+                $allConstInfos,
+                &$isUnknownConstValue,
+                &$evaluator,
+            ) {
+                // php-parser's ConstExprEvaluator predates PHP 8.5 constant
+                // expression casts. Keep the compatibility logic in TypePHP:
+                // validation has already rejected void and disallowed object
+                // casts before declaration values reach gen_stub.php.
+                if ($expr instanceof Expr\Cast) {
+                    $value = $evaluator->evaluateDirectly($expr->expr);
+                    return match (true) {
+                        $expr instanceof Expr\Cast\Int_ => (int) $value,
+                        $expr instanceof Expr\Cast\Double => (float) $value,
+                        $expr instanceof Expr\Cast\Bool_ => (bool) $value,
+                        $expr instanceof Expr\Cast\String_ => (string) $value,
+                        $expr instanceof Expr\Cast\Array_ => (array) $value,
+                        $expr instanceof Expr\Cast\Object_ => (object) $value,
+                        default => throw new Exception(
+                            "Unsupported constant expression cast " . $expr->getType()
+                        ),
+                    };
+                }
+
                 // $expr is a ConstFetch with a name of a C macro here
                 if (!($expr instanceof Expr\ConstFetch) and !($expr instanceof Expr\ClassConstFetch)) {
                     _error:

@@ -2,6 +2,38 @@
 
 class ClassTest extends \BaseTest
 {
+    public function testOrdinaryClassCannotDeclareToAnyKeywordMethod(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage(
+            'Method name `toAny()` is reserved for a TypePHP keyword method and cannot be declared here',
+        );
+        $this->compile('reserved-to-any-method.php');
+    }
+
+    public function testOrdinaryClassCannotDeclareToRefKeywordMethodCaseInsensitively(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage(
+            'Method name `TOREF()` is reserved for a TypePHP keyword method and cannot be declared here',
+        );
+        $this->compile('reserved-to-ref-method.php');
+    }
+
+    public function testInterfaceCannotDeclareToAnyKeywordMethod(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage('Method name `toAny()` is reserved for a TypePHP keyword method');
+        $this->compile('reserved-keyword-interface-method.php');
+    }
+
+    public function testTraitCannotDeclareToRefKeywordMethod(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage('Method name `toRef()` is reserved for a TypePHP keyword method');
+        $this->compile('reserved-keyword-trait-method.php');
+    }
+
     public function testRuntimeAttributesSupportLiteralAndConstantArrays(): void
     {
         $this->compile('preprocessor/attribute_array_argument.php');
@@ -10,6 +42,13 @@ class ClassTest extends \BaseTest
     public function testRuntimeAttributesSupportNewExpressionArguments(): void
     {
         $this->compile('preprocessor/attribute_new_expression_argument.php');
+    }
+
+    public function testGlobalConstantAttributesAreForbidden(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Attributes on global constants are not supported by TypePHP');
+        $this->compile('global-constant-attribute.php');
     }
 
     public function testGetterGeneratesPublicMethodsForInstanceProperties(): void
@@ -860,6 +899,20 @@ class ClassTest extends \BaseTest
         $this->expectException(\TypePhp\Exception\SyntaxError::class);
         $this->expectExceptionMessage('Constant expression contains invalid operations');
         $this->compile('property-default-invalid-expression.php');
+    }
+
+    public function testClassConstantRejectsObjectCast(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Object casts are not supported in this context');
+        $this->compile('class-constant-object-cast.php');
+    }
+
+    public function testPropertyDefaultRejectsObjectCast(): void
+    {
+        $this->expectException(\TypePhp\Exception\SyntaxError::class);
+        $this->expectExceptionMessage('Object casts are not supported in this context');
+        $this->compile('property-default-object-cast.php');
     }
 
     public function testPropertyDefaultArrayForIntTypeFailsAtCompileTime()

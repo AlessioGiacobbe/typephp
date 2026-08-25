@@ -473,6 +473,31 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-to-object-return-type.php');
     }
 
+    public function testRejectsUndefinedNativeObjectToAnyKeyword(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('Native class `NativeWithoutToAny` must define `toAny()` for this conversion');
+        $this->compile('native-class-to-any-undefined.php');
+    }
+
+    public function testRejectsUntypedNativeObjectToAnyReturn(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage(
+            'Native conversion method `NativeUntypedToAny::toAny()` must return exactly `mixed` or `any`',
+        );
+        $this->compile('native-class-to-any-untyped-return.php');
+    }
+
+    public function testRejectsWrongNativeObjectToAnyReturnType(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage(
+            'Native conversion method `NativeWrongToAnyReturn::toAny()` must return exactly `mixed` or `any`',
+        );
+        $this->compile('native-class-to-any-wrong-return.php');
+    }
+
     public function testRejectsNativeObjectReferenceFunction(): void
     {
         $this->expectException(TestError::class);

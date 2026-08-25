@@ -21,6 +21,7 @@
 - PHP 8.4 Reflection Lazy Object 不能用于 TypePHP AOT 类。AOT 类以 persistent internal class 注册，而 Zend 的 `zend_object_make_lazy()` 明确拒绝 internal class；运行时动态加载的 ZendPHP user class 不受此限制。
 - 支持 `private(set)` 与 `protected(set)` 非对称属性可见性，包括 constructor property promotion；Zend-backed 对象通过 PHP 8.4+ 类级 object handler 执行作用域检查，并保留 promoted/set visibility/implicit final 反射标志；Native 对象通过编译期访问检查执行同等作用域规则。
 - 支持 final constructor property promotion，但 TypePHP 要求同时显式声明 `public`、`protected` 或 `private`；不接受 PHP 8.5 的 `final int $value` 隐式 public promotion 写法。该语法作为 TypePHP 扩展不受所链接 `libphp` 的源码语法版本限制，使用 PHP 8.4 `libphp.so` 时仍然可用。
+- TypePHP 禁止在全局或命名空间常量声明上使用 attributes；PHP 8.5 global constant attributes 不在支持范围内。class constant attributes 不受此限制。
 - 不支持闭包或箭头函数按引用返回。
 - 暂不支持 PHP 8.5 在全局常量、类常量、参数默认值或属性默认值中使用 `static function`；初始化表达式内嵌套的闭包同样会在编译期被拒绝。
 - `__construct()` 不允许返回值。
@@ -50,6 +51,7 @@
 ## 对象模型
 
 - `toInt()`、`toString()`、`toArray()` 等保留关键词方法先于普通对象方法解析；需要参数的同名业务方法不按普通对象方法语义调用。
+- `toAny()` 和 `toRef()` 是不可覆盖的 TypePHP 关键词方法，普通 class-like 声明不得定义同名方法（方法名按 PHP 规则大小写不敏感）。Native class 仅可显式定义返回 `mixed/any` 的 `toAny()` 转换方法，不提供隐式转换；Native class 不支持 `toRef()`。
 - 固定值类型属性未显式初始化时使用类型零值，不保留 ZendPHP 的完整 uninitialized 状态；因此 `??` 等依赖 uninitialized 状态的表达式可能不同。
 - 禁止子类用同名 `private` 属性隐藏父类私有属性；`public` / `protected` 同名声明视为同一个继承 property slot，仍须满足类型、可见性和 `readonly` 兼容性要求。
 - 为避免 typed property 写入路径引入额外动态检查，native typed property 在右值类型不确定或与属性类型不一致时会退化为 `setProperty()`；部分标量赋值可能遵循 Zend 弱类型转换，而不是 AOT 默认 strict 语义。

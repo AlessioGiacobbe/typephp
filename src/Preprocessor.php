@@ -1800,6 +1800,7 @@ class Preprocessor extends CompilerBase
         $this->resetMethod();
         $name = $this->getMethodName($v);
         $this->method = $name;
+        $this->assertKeywordMethodMayBeDeclared($v, $name, $this->classDef->nativeObject);
         $this->assertNativeMagicMethodSupported($v, $name);
         $flags = $this->parseModifiers($v->flags);
         $abstract = $flags & Modifiers::ABSTRACT;
@@ -1867,6 +1868,16 @@ class Preprocessor extends CompilerBase
             $this->classDef->addAbstractMethod($name, $flags, $this->methodDef);
         }
 
+        if ($this->classDef->nativeObject && strtolower($name) === 'toany') {
+            $this->assertNativeObjectKeywordMethodSignature(
+                $v,
+                $this->classDef->getNamespacedName(false),
+                $name,
+                $this->methodDef->functionDef,
+                Type::VAR,
+            );
+        }
+
         $fullClassName = $this->getFullClassName();
 
         $fullMethodName = $fullClassName . '::' . $this->method;
@@ -1887,6 +1898,25 @@ class Preprocessor extends CompilerBase
         }
 
         $this->resetMethod();
+    }
+
+    private function assertKeywordMethodMayBeDeclared(
+        Node\Stmt\ClassMethod $method,
+        string $name,
+        bool $nativeClass,
+    ): void {
+        $normalized = strtolower($name);
+        if ($normalized !== 'toany' && $normalized !== 'toref') {
+            return;
+        }
+        if ($nativeClass && $normalized === 'toany') {
+            return;
+        }
+
+        $this->fatalError(
+            $method,
+            "Method name `{$name}()` is reserved for a TypePHP keyword method and cannot be declared here",
+        );
     }
 
     /**
@@ -1968,6 +1998,7 @@ class Preprocessor extends CompilerBase
 
             if ($stmt instanceof Node\Stmt\ClassMethod) {
                 $methodName = $this->getMethodName($stmt);
+                $this->assertKeywordMethodMayBeDeclared($stmt, $methodName, false);
                 if ($this->interfaceDef->hasMethod($methodName)) {
                     $this->fatalError($stmt, "Duplicate method `{$methodName}`");
                 }

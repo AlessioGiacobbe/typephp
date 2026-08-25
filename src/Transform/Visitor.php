@@ -35,6 +35,9 @@ class Visitor extends NodeVisitorAbstract
 
     public function enterNode(Node $node): null|Node
     {
+        if ($node instanceof Stmt\Const_ && $node->attrGroups !== []) {
+            throw new SyntaxError('Attributes on global constants are not supported by TypePHP');
+        }
         if ($node instanceof Stmt\Namespace_) {
             $this->namespaceMagicName = $node->name?->toString() ?? '';
         }

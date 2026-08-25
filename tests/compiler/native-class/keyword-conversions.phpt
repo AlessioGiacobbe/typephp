@@ -32,6 +32,11 @@ class NativeConversions
     {
         return 'value=' . $this->value;
     }
+
+    public function toAny(): mixed
+    {
+        return $this->value;
+    }
 }
 
 #[Native]
@@ -43,6 +48,15 @@ class NativeMagicString
     }
 }
 
+#[Native]
+class NativeExplicitAnyConversion
+{
+    public function toAny(): any
+    {
+        return 'explicit-any';
+    }
+}
+
 function main(): void
 {
     $value = new NativeConversions();
@@ -51,6 +65,8 @@ function main(): void
     var_dump($value->toFloat());
     var_dump($value->toBool());
     var_dump($value->toString());
+    var_dump($value->toAny());
+    var_dump((new NativeExplicitAnyConversion())->toAny());
     var_dump((array) $value);
     var_dump((int) $value);
     var_dump((float) $value);
@@ -75,6 +91,8 @@ int(7)
 float(7.5)
 bool(true)
 string(7) "value=7"
+int(7)
+string(12) "explicit-any"
 array(1) {
   [0]=>
   int(7)

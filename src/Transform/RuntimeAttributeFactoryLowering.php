@@ -127,6 +127,9 @@ final class RuntimeAttributeFactoryLowering extends NodeVisitorAbstract
         return (new NodeFinder())->findFirst($value, static function (Node $node): bool {
             return $node instanceof Expr\New_
                 || $node instanceof Expr\Closure
+                // A PHP 8.5 array cast may produce a non-empty array even
+                // though it is not represented by an Array_ AST node.
+                || $node instanceof Expr\Cast\Array_
                 || $node instanceof Expr\Cast\Object_
                 || (($node instanceof Expr\FuncCall || $node instanceof Expr\StaticCall)
                     && $node->isFirstClassCallable());
