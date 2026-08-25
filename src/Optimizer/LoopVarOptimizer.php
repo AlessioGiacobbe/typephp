@@ -87,7 +87,7 @@ trait LoopVarOptimizer
     }
 
     /**
-     * @param array<string, array{id: int}> $safeVars
+     * @param array<string, array{id: int, nonNegative: bool, inclusiveSafe: bool}> $safeVars
      * @param array<string, array{allowed?: array<int, bool>, deps?: array<string, bool>}> $candidates
      */
     protected function collectLoopVarCandidates(array $stmts, array $safeVars, array &$candidates): void
@@ -154,7 +154,7 @@ trait LoopVarOptimizer
     }
 
     /**
-     * @param array<string, array{id: int}> $safeVars
+     * @param array<string, array{id: int, nonNegative: bool, inclusiveSafe: bool}> $safeVars
      */
     protected function trackLoopSafeAssignment(NodeAbstract $expr, array &$safeVars): void
     {
@@ -191,7 +191,7 @@ trait LoopVarOptimizer
     }
 
     /**
-     * @param array<string, array{id: int}> $safeVars
+     * @param array<string, array{id: int, nonNegative: bool, inclusiveSafe: bool}> $safeVars
      * @param array<string, array{allowed?: array<int, bool>, deps?: array<string, bool>}> $candidates
      */
     protected function tryCollectWhilePostDecCandidate(Stmt\While_ $stmt, array $safeVars, array &$candidates): void
@@ -216,7 +216,7 @@ trait LoopVarOptimizer
     }
 
     /**
-     * @param array<string, array{id: int}> $safeVars
+     * @param array<string, array{id: int, nonNegative: bool, inclusiveSafe: bool}> $safeVars
      * @param array<string, array{allowed?: array<int, bool>, deps?: array<string, bool>}> $candidates
      */
     protected function tryCollectForCounterCandidate(Stmt\For_ $stmt, array $safeVars, array &$candidates): void
@@ -294,7 +294,7 @@ trait LoopVarOptimizer
     }
 
     /**
-     * @param array<string, array{id: int}> $safeVars
+     * @param array<string, array{id: int, nonNegative: bool, inclusiveSafe: bool}> $safeVars
      * @return array{vars: array<string, bool>, intVars: array<string, bool>}|null
      */
     protected function matchLoopBound(NodeAbstract $expr, string $counterName, array $safeVars, int $step): ?array
@@ -343,7 +343,7 @@ trait LoopVarOptimizer
     }
 
     /**
-     * @param array<string, array{id: int}> $safeVars
+     * @param array<string, array{id: int, nonNegative: bool, inclusiveSafe: bool}> $safeVars
      * @return array{nonNegative: bool, inclusiveSafe: bool}|null
      */
     protected function detectLoopIntExprInfo(NodeAbstract $expr, array $safeVars): ?array
@@ -433,7 +433,7 @@ trait LoopVarOptimizer
     }
 
     /**
-     * @param array<string, array{id: int}> $safeVars
+     * @param array<string, array{id: int, nonNegative: bool, inclusiveSafe: bool}> $safeVars
      * @return array<string, bool>
      */
     protected function collectLoopExprSafeIntVars(NodeAbstract $expr, array $safeVars): array

@@ -515,6 +515,10 @@ trait MethodCallTrait
 
         $magicMethod = false;
         $method = $this->methodNameToStr($expr->name, literal: true);
+        // Keep the statically named method available to every later branch.
+        // Re-checking isNamedMethod() does not prove the earlier assignment to
+        // static analyzers and previously left the object path uninitialized.
+        $methodName = $this->isNamedMethod($expr->name) ? $expr->name->toString() : '';
 
         $pythonFacadeCall = $this->parsePythonNativeFacadeMethodCall($expr, $object);
         if ($pythonFacadeCall !== null) {
@@ -523,7 +527,6 @@ trait MethodCallTrait
 
         // Keyword methods are dispatched before all receiver-specific logic.
         if ($this->isNamedMethod($expr->name)) {
-            $methodName = $expr->name->toString();
             $receiverType = $this->isVarExpr($expr->var) ? $this->getVarType($object) : $this->detectTypeOfExpr($expr->var);
             if ($receiverType === Type::VOID) {
                 $receiverType = Type::VAR;
@@ -592,7 +595,6 @@ trait MethodCallTrait
         if (($this->isVarExpr($expr->var) || $materializedNativeReceiver) and $this->isNamedMethod($expr->name)) {
             $type = $this->getVarType($object);
             if ($class !== '' && $this->isNativeObjectClass($class)) {
-                $methodName = $expr->name->toString();
                 // Native objects have their own C++ virtual thunk for an
                 // overridden family; do not let the Zend-object devirtualizer
                 // downgrade this call to the dynamic path.
@@ -647,7 +649,6 @@ trait MethodCallTrait
             }
             // 引用参数允许方法调用：有class信息走原生调用，无class信息走动态调用
             if (!$this->checkArgType($type, Type::OBJECT) and $type !== Type::REF) {
-                $methodName = $expr->name->toString();
                 // 非对象类型可使用内置方法
                 $fn = $this->findUniversalMethodAnyType($type, $methodName);
                 if ($fn) {
@@ -711,7 +712,6 @@ trait MethodCallTrait
                 $type = Type::VAR;
             }
             if ($type !== Type::VAR && !$this->checkArgType($type, Type::OBJECT)) {
-                $methodName = $expr->name->toString();
                 $fn = $this->findUniversalMethodAnyType($type, $methodName);
                 if ($fn) {
                     // Wrap receiver in type conversion for direct_method handlers

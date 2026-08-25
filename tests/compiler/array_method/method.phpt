@@ -101,7 +101,11 @@ function main()
     Assert::eq($a->product(), array_product($a));
 
     $array = array("Neo", "Morpheus", "Trinity", "Cypher", "Tank");
-    Assert::notEq($array->rand(2), array_rand($array, 2));
+    $randomKeys = $array->rand(2);
+    Assert::eq(count($randomKeys), 2);
+    Assert::true($randomKeys[0] !== $randomKeys[1]);
+    Assert::true(array_key_exists($randomKeys[0], $array));
+    Assert::true(array_key_exists($randomKeys[1], $array));
 
     $array = array(1, 2, 3, 4, 5);
     Assert::eq($array->reduce('_sum'), array_reduce($array, '_sum'));

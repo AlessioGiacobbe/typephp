@@ -197,6 +197,7 @@ class PlatformTest extends TestCase
         
         $config = $platform->getCrtConfig();
         $this->assertEquals('/NODEFAULTLIB:LIBCMT', $config);
+        $this->assertSame('/DLL', $platform->getSharedLinkFlag());
     }
 
     /**
@@ -310,6 +311,8 @@ class PlatformTest extends TestCase
         $platform = new Linux();
         
         $this->assertEquals('-shared', $platform->getSharedLinkFlag());
+        $this->assertSame('', $platform->getSubsystemOptions(true));
+        $this->assertSame('', $platform->getCrtConfig());
     }
 
     /**

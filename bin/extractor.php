@@ -48,7 +48,7 @@ function showUsage(): void
 USAGE;
 }
 
-function main(array $argv): void
+function extractorMain(array $argv): void
 {
     // 解析命令行参数
     $options = [
@@ -153,5 +153,5 @@ function main(array $argv): void
 
 // 运行主函数
 if (php_sapi_name() === 'cli') {
-    main($argv);
+    extractorMain($argv);
 }

@@ -8,6 +8,21 @@ namespace TypePhp\Platform;
  */
 abstract class UnixPlatform extends PlatformBase
 {
+    public function getSharedLinkFlag(): string
+    {
+        return '-shared';
+    }
+
+    public function getSubsystemOptions(bool $noConsole): string
+    {
+        return '';
+    }
+
+    public function getCrtConfig(): string
+    {
+        return '';
+    }
+
     public function getTargetExtension(string $buildMode): string
     {
         if ($buildMode === 'lib') {

@@ -98,6 +98,11 @@ class Windows extends PlatformBase
         return '.dll';
     }
 
+    public function getSharedLinkFlag(): string
+    {
+        return '/DLL';
+    }
+
     public function getPathSeparator(): string
     {
         return '\\';

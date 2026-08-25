@@ -28,7 +28,7 @@ class Extractor
     public function extractFunctions(string $filename, array $prefixes = ['php_']): array
     {
         if (!file_exists($filename)) {
-            throw new RuntimeException("文件不存在: {$filename}");
+            throw new \RuntimeException("文件不存在: {$filename}");
         }
 
         $this->info("分析文件: {$filename}");
@@ -82,7 +82,7 @@ class Extractor
             try {
                 $functions    = $this->extractFunctions($file, $prefixes);
                 $allFunctions = array_merge($allFunctions, $functions);
-            } catch (Exception $e) {
+            } catch (\Throwable $e) {
                 $this->error("处理文件 {$file} 失败: " . $e->getMessage());
             }
         }
@@ -120,7 +120,7 @@ class Extractor
         $output = shell_exec($cmd);
 
         if ($output === null) {
-            throw new RuntimeException('ctags 执行失败');
+            throw new \RuntimeException('ctags 执行失败');
         }
 
         // 解析 JSON 输出

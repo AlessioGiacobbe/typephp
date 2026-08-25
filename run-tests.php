@@ -134,7 +134,7 @@ Options:
 
     --compiler <path>
                 Use specified compiler binary (default: ./bin/tpc.php).
-                For bootstrap testing, use: --compiler ./swoole_compiler
+                For bootstrap testing, use: --compiler ./tpc
 
     --target <target>
                 Select the execution backend: native (default), wasm-component,

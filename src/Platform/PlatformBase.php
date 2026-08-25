@@ -49,6 +49,21 @@ abstract class PlatformBase
     abstract public function getSharedLibraryExtension(): string;
 
     /**
+     * 获取生成共享库所需的链接器选项
+     */
+    abstract public function getSharedLinkFlag(): string;
+
+    /**
+     * 获取无控制台程序的子系统选项；不适用的平台返回空字符串
+     */
+    abstract public function getSubsystemOptions(bool $noConsole): string;
+
+    /**
+     * 获取平台 C 运行库链接配置；不适用的平台返回空字符串
+     */
+    abstract public function getCrtConfig(): string;
+
+    /**
      * 获取路径分隔符
      */
     abstract public function getPathSeparator(): string;

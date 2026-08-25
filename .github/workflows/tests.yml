@@ -32,6 +32,12 @@ jobs:
       - name: Checkout TypePHP
         uses: actions/checkout@v4
 
+      - name: Checkout phpy
+        uses: actions/checkout@v4
+        with:
+          repository: swoole/phpy
+          path: third_party/phpy
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -46,7 +52,7 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config
+          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
@@ -62,6 +68,14 @@ jobs:
           cmake --build "${PHPX_HOME}/build" --target phpx --parallel 2
           test -f "${PHPX_HOME}/lib/libphpx.so"
 
+      - name: Build phpy
+        working-directory: third_party/phpy
+        run: |
+          phpize
+          ./configure
+          make -j2
+          test -f modules/phpy.so
+
       - name: Upload PHPX library
         uses: actions/upload-artifact@v4
         with:
@@ -69,6 +83,14 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           path: vendor/swoole/phpx/lib/libphpx.so
+
+      - name: Upload phpy extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpy-php-${{ matrix.php }}
+          if-no-files-found: error
+          retention-days: 1
+          path: third_party/phpy/modules/phpy.so
 
   phpunit:
     name: PHPUnit (PHP ${{ matrix.php }})
@@ -101,7 +123,7 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config
+          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
@@ -111,6 +133,21 @@ jobs:
         with:
           name: libphpx-php-${{ matrix.php }}
           path: vendor/swoole/phpx/lib
+
+      - name: Download phpy extension
+        uses: actions/download-artifact@v4
+        with:
+          name: phpy-php-${{ matrix.php }}
+          path: third_party/phpy/modules
+
+      - name: Enable phpy extension
+        shell: bash
+        run: |
+          php_ini_dir="$(php-config --ini-dir)"
+          echo "extension=${GITHUB_WORKSPACE}/third_party/phpy/modules/phpy.so" \
+            | sudo tee "${php_ini_dir}/90-phpy.ini"
+          echo "PHP_INI_SCAN_DIR=${php_ini_dir}" >> "${GITHUB_ENV}"
+          php --ri phpy
 
       - name: Configure native library path
         shell: bash
@@ -152,7 +189,7 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config
+          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
@@ -163,11 +200,32 @@ jobs:
           name: libphpx-php-${{ matrix.php }}
           path: vendor/swoole/phpx/lib
 
+      - name: Download phpy extension
+        uses: actions/download-artifact@v4
+        with:
+          name: phpy-php-${{ matrix.php }}
+          path: third_party/phpy/modules
+
+      - name: Enable phpy extension
+        shell: bash
+        run: |
+          php_ini_dir="$(php-config --ini-dir)"
+          echo "extension=${GITHUB_WORKSPACE}/third_party/phpy/modules/phpy.so" \
+            | sudo tee "${php_ini_dir}/90-phpy.ini"
+          echo "PHP_INI_SCAN_DIR=${php_ini_dir}" >> "${GITHUB_ENV}"
+          php --ri phpy
+
       - name: Configure native library path
         shell: bash
         run: |
           test -f "${PHPX_HOME}/lib/libphpx.so"
           echo "LD_LIBRARY_PATH=${PHPX_HOME}/lib:$(php-config --prefix)/lib" >> "${GITHUB_ENV}"
+
+      - name: Build bootstrap TypePHP compiler
+        run: |
+          php bin/tpc.php project.yml --job 2 --no-progress
+          test -x ./tpc
+          ./tpc --version
 
       - name: Show build environment
         run: |
@@ -176,10 +234,11 @@ jobs:
           cmake --version
           c++ --version
 
-      - name: Run compiler PHPT suite
+      - name: Run compiler PHPT suite with bootstrap compiler
         run: |
           mkdir -p build
-          php run-tests.php -q -j2 -w build/failed-tests.txt -W build/test-results.txt tests/compiler
+          php run-tests.php -q -j8 --compiler ./tpc \
+            -w build/failed-tests.txt -W build/test-results.txt tests/compiler
 
       - name: Upload PHPT failure artifacts
         if: failure()
