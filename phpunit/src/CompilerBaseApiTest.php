@@ -1015,7 +1015,7 @@ YAML);
         $this->assertArrayNotHasKey('cxxflags', $options);
     }
 
-    public function testEmbeddedCompileOptionsPassProjectNameForModuleAccessor(): void
+    public function testEmbeddedCompileOptionsKeepProjectNameOutOfCommonPchOptions(): void
     {
         $this->compiler->setTargetName('module_accessor');
 
@@ -1023,8 +1023,8 @@ YAML);
             $this->setPropertyValue('buildMode', $mode);
             $options = $this->invokeMethod('getCommonCompileCommandOptions');
 
-            $this->assertContains('TYPEPHP_PROJECT_NAME=module_accessor', $options['user_defines'], $mode);
-            $this->assertContains('TYPEPHP_RUNTIME_EXPORTS=1', $options['user_defines'], $mode);
+            $this->assertNotContains('TYPEPHP_PROJECT_NAME=module_accessor', $options['user_defines'], $mode);
+            $this->assertNotContains('TYPEPHP_RUNTIME_EXPORTS=1', $options['user_defines'], $mode);
             $this->assertSame(
                 [],
                 array_values(array_filter(
@@ -1034,6 +1034,59 @@ YAML);
                 $mode,
             );
         }
+    }
+
+    public function testProjectRuntimeEntryHasTargetDefineWithoutPchOrObjectCache(): void
+    {
+        $this->compiler->setTargetName('module_accessor');
+        $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_BIN);
+        $this->setPropertyValue('precompiledHeader', [
+            'header' => '/tmp/typephp_pch.hpp',
+            'artifact' => '/tmp/typephp_pch.hpp.gch',
+        ]);
+
+        $phpxDir = $this->invokeMethod('getPhpxDir');
+        $entry = $phpxDir . '/src/misc/typephp_main.cc';
+        $options = $this->invokeMethod('getSourceCompileCommandOptions', $entry, null);
+
+        $this->assertContains('TYPEPHP_PROJECT_NAME=module_accessor', $options['user_defines']);
+        $this->assertContains('TYPEPHP_RUNTIME_EXPORTS=1', $options['user_defines']);
+        $this->assertArrayNotHasKey('forced_include', $options->toArray());
+        $this->assertArrayNotHasKey('precompiled_header', $options->toArray());
+        $this->assertFalse($this->compiler->hasMiscObjectFileCache($entry));
+        $this->assertStringContainsString(
+            DIRECTORY_SEPARATOR . 'phpx-misc' . DIRECTORY_SEPARATOR . 'module_accessor' . DIRECTORY_SEPARATOR,
+            $this->compiler->getObjectFile($entry),
+        );
+    }
+
+    public function testProjectIndependentMiscObjectsUseSharedCacheScope(): void
+    {
+        $phpxDir = $this->invokeMethod('getPhpxDir');
+        foreach (['typephp_runtime.cc', 'php_cli_process_title.c', 'ps_title.c'] as $sourceName) {
+            $object = $this->compiler->getObjectFile($phpxDir . '/src/misc/' . $sourceName);
+            $this->assertStringContainsString(
+                DIRECTORY_SEPARATOR . 'phpx-misc' . DIRECTORY_SEPARATOR . 'shared' . DIRECTORY_SEPARATOR,
+                $object,
+                $sourceName,
+            );
+        }
+    }
+
+    public function testProjectIndependentMiscObjectCacheSurvivesTargetNameChange(): void
+    {
+        $phpxDir = $this->invokeMethod('getPhpxDir');
+        $source = $phpxDir . '/src/misc/ps_title.c';
+
+        $this->compiler->setTargetName('first_project');
+        $object = $this->compiler->getObjectFile($source);
+        file_put_contents($object, 'object');
+        touch($object, time() + 10);
+        $this->invokeMethod('writeMiscObjectCacheMetadata', $source, $object);
+
+        $this->compiler->setTargetName('second_project');
+        $this->assertSame($object, $this->compiler->getObjectFile($source));
+        $this->assertTrue($this->compiler->hasMiscObjectFileCache($source));
     }
 
     public function testMacosNativeBuildOptionsIncludeHomebrewSearchPaths(): void

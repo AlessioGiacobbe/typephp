@@ -23,10 +23,6 @@ trait NativeCommandOptionsTrait
         }
 
         $userDefines = $this->userDefines;
-        if ($this->isBuildModeEmbed()) {
-            $userDefines[] = 'TYPEPHP_PROJECT_NAME=' . $this->targetName;
-            $userDefines[] = 'TYPEPHP_RUNTIME_EXPORTS=1';
-        }
         if ($this->isBuildModeLib()) {
             $userDefines[] = 'TYPEPHP_NO_MAIN=1';
             $userDefines[] = $this->getLibraryExportsMacroName() . '=1';
@@ -108,6 +104,18 @@ trait NativeCommandOptionsTrait
         }
 
         return $options;
+    }
+
+    protected function getProjectRuntimeEntryCompileCommandOptions(): CompileOptions
+    {
+        $values = $this->getCompileCommandOptions()->toArray();
+        // TYPEPHP_PROJECT_NAME is deliberately confined to the small,
+        // project-specific entry translation unit. Defining it while loading
+        // the common PCH would make every output target require a distinct PCH.
+        unset($values['forced_include'], $values['precompiled_header']);
+        $values['user_defines'][] = 'TYPEPHP_RUNTIME_EXPORTS=1';
+        $values['user_defines'][] = 'TYPEPHP_PROJECT_NAME=' . $this->targetName;
+        return new CompileOptions($values);
     }
 
     protected function getLinkCommandOptions(): LinkOptions

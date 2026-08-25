@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "11856d5d63148d99436c5b7ff7f6c866",
+    "content-hash": "3262f7344d1d75ad17fdbf19f9f8896d",
     "packages": [
         {
             "name": "ajaxray/ansikit",
@@ -342,16 +342,16 @@
         },
         {
             "name": "swoole/phpx",
-            "version": "v2.6.3",
+            "version": "v2.6.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/swoole/phpx.git",
-                "reference": "bf24803c07f84780003356f06cb98b713d32d4f7"
+                "reference": "87a532b30fad8ff7b0a4afac6cd8aacc0fd01cbd"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/swoole/phpx/zipball/bf24803c07f84780003356f06cb98b713d32d4f7",
-                "reference": "bf24803c07f84780003356f06cb98b713d32d4f7",
+                "url": "https://api.github.com/repos/swoole/phpx/zipball/87a532b30fad8ff7b0a4afac6cd8aacc0fd01cbd",
+                "reference": "87a532b30fad8ff7b0a4afac6cd8aacc0fd01cbd",
                 "shasum": ""
             },
             "require": {
@@ -382,9 +382,9 @@
             ],
             "support": {
                 "issues": "https://github.com/swoole/phpx/issues",
-                "source": "https://github.com/swoole/phpx/tree/v2.6.3"
+                "source": "https://github.com/swoole/phpx/tree/v2.6.4"
             },
-            "time": "2026-08-24T11:56:43+00:00"
+            "time": "2026-08-25T08:02:28+00:00"
         },
         {
             "name": "symfony/polyfill-ctype",

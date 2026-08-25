@@ -240,7 +240,11 @@ class Preprocessor extends CompilerBase
         $normalizedMiscDir = str_replace('\\', '/', $this->getPhpxDir() . '/src/misc/');
         if (str_starts_with($normalizedFile, $normalizedMiscDir)) {
             $separator = $this->getPlatform()->getPathSeparator();
-            $objectDir = $this->buildDir . $separator . 'phpx-misc' . $separator . $this->targetName;
+            // Only typephp_main.cc contains project-specific symbols. All
+            // other PHPX misc sources are target-independent and share their
+            // cached object files within the build directory.
+            $cacheScope = $this->isProjectRuntimeEntryFile($cppFile) ? $this->targetName : 'shared';
+            $objectDir = $this->buildDir . $separator . 'phpx-misc' . $separator . $cacheScope;
             if (!is_dir($objectDir)) {
                 mkdir($objectDir, 0777, true);
             }
@@ -248,6 +252,13 @@ class Preprocessor extends CompilerBase
         }
 
         return $info['dirname'] . $this->getPlatform()->getPathSeparator() . $info['filename'] . $ext;
+    }
+
+    protected function isProjectRuntimeEntryFile(string $file): bool
+    {
+        $normalizedFile = str_replace('\\', '/', $file);
+        $runtimeEntry = str_replace('\\', '/', $this->getPhpxDir() . '/src/misc/typephp_main.cc');
+        return $normalizedFile === $runtimeEntry;
     }
 
     public function prepareFile(string $file): void

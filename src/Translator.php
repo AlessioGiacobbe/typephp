@@ -13,6 +13,7 @@ use Ajaxray\AnsiKit\Components\Progressbar;
 use MJS\TopSort\Implementations\StringSort;
 use TypePhp\Analysis\SsaBuilder;
 use TypePhp\Backend\CompilerFactory;
+use TypePhp\Build\CompileOptions;
 use TypePhp\Build\FileScanner;
 use TypePhp\Build\NativeCommandOptionsTrait;
 use TypePhp\Build\NativeBuilder;
@@ -1310,6 +1311,11 @@ CODE;
      */
     public function hasMiscObjectFileCache(string $cppFile): bool
     {
+        // This translation unit emits project-specific runtime symbols and is
+        // intentionally rebuilt for every target.
+        if ($this->isProjectRuntimeEntryFile($cppFile)) {
+            return false;
+        }
         if ($this->climate->arguments->defined('force') || $this->enableProfiler) {
             return false;
         }
@@ -1433,24 +1439,21 @@ CODE;
 
     public function compileFile(string $cppFile, string $objectFile, bool $parallel = false): void
     {
-        if ($this->isPhpxMiscFile($cppFile) && $this->hasMiscObjectFileCache($cppFile)) {
+        $isCacheableMiscFile = $this->isPhpxMiscFile($cppFile)
+            && !$this->isProjectRuntimeEntryFile($cppFile);
+        if ($isCacheableMiscFile && $this->hasMiscObjectFileCache($cppFile)) {
             if (!$parallel) {
                 $this->climate->darkGray('[cache] skip: ' . $cppFile);
             }
             return;
         }
 
-        $isMiscFile = $this->isPhpxMiscFile($cppFile);
-        if ($isMiscFile) {
+        if ($isCacheableMiscFile) {
             $this->invalidateMiscObjectCache($objectFile);
         }
 
         $language = $this->getLanguageFromExtension($cppFile);
-        $options = match ($language) {
-            null => $this->getCompileCommandOptions(),
-            'c' => $this->getCCompileCommandOptions(),
-            default => $this->getNativeCompileCommandOptions($language),
-        };
+        $options = $this->getSourceCompileCommandOptions($cppFile, $language);
         $result = $this->getNativeBuilder()->compile($cppFile, $objectFile, $options, $language, $parallel);
         if (!$parallel) {
             $this->climate->comment($result['command']);
@@ -1464,19 +1467,28 @@ CODE;
             $this->error('compile failed: ' . $cppFile);
         }
 
-        if ($isMiscFile) {
+        if ($isCacheableMiscFile) {
             $this->writeMiscObjectCacheMetadata($cppFile, $objectFile);
         }
+    }
+
+    protected function getSourceCompileCommandOptions(string $sourceFile, ?string $language): CompileOptions
+    {
+        if ($this->isProjectRuntimeEntryFile($sourceFile)) {
+            return $this->getProjectRuntimeEntryCompileCommandOptions();
+        }
+
+        return match ($language) {
+            null => $this->getCompileCommandOptions(),
+            'c' => $this->getCCompileCommandOptions(),
+            default => $this->getNativeCompileCommandOptions($language),
+        };
     }
 
     protected function buildCompileFileCommand(string $sourceFile, string $objectFile): string
     {
         $language = $this->getLanguageFromExtension($sourceFile);
-        $options = match ($language) {
-            null => $this->getCompileCommandOptions(),
-            'c' => $this->getCCompileCommandOptions(),
-            default => $this->getNativeCompileCommandOptions($language),
-        };
+        $options = $this->getSourceCompileCommandOptions($sourceFile, $language);
         return $this->getNativeBuilder()->compileCommand($sourceFile, $objectFile, $options, $language);
     }
 
@@ -1486,6 +1498,13 @@ CODE;
 
         // embed 需要 main 函数，以及 cli 的内置函数定义
         if ($this->isBuildModeEmbed()) {
+            $runtimeSource = $this->getPhpxDir() . '/src/misc/typephp_runtime.cc';
+            // PHPX 2.6.3 keeps the common runtime in typephp_main.cc. Newer
+            // PHPX versions split it out so the object can be shared across
+            // projects. Keep the old layout buildable during release rollout.
+            if (is_file($runtimeSource)) {
+                $sourceFiles[] = $runtimeSource;
+            }
             $sourceFiles[] = $this->getPhpxDir() . '/src/misc/typephp_main.cc';
         }
 
