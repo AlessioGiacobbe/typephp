@@ -1243,9 +1243,24 @@ PHP_RSHUTDOWN_FUNCTION({$moduleName}) {
     module_clean();
     return SUCCESS;
 }
+CODE;
+
+        if ($this->extensionDependencies === []) {
+            $moduleHeader = '    STANDARD_MODULE_HEADER,';
+        } else {
+            $dependencyArray = $moduleName . '_module_deps';
+            $code .= PHP_EOL . 'static const zend_module_dep ' . $dependencyArray . '[] = {' . PHP_EOL;
+            foreach ($this->extensionDependencies as $dependency) {
+                $code .= '    ZEND_MOD_REQUIRED(' . $this->genCharPtr($dependency, true) . ')' . PHP_EOL;
+            }
+            $code .= '    ZEND_MOD_END' . PHP_EOL . '};' . PHP_EOL;
+            $moduleHeader = "    STANDARD_MODULE_HEADER_EX,\n    nullptr,\n    {$dependencyArray},";
+        }
+
+        $code .= <<<CODE
 
 zend_module_entry {$moduleName}_module_entry = {
-    STANDARD_MODULE_HEADER,
+{$moduleHeader}
     "{$moduleName}",
     ext_functions,
     PHP_MINIT({$moduleName}),
@@ -2560,6 +2575,27 @@ CODE;
         if (!empty($linkPaths) && is_array($linkPaths)) {
             foreach ($linkPaths as $linkPath) {
                 $this->linkPaths[] = $this->resolvePath((string) $linkPath, $projectDir, 'Link path');
+            }
+        }
+
+        // Required PHP modules. These are emitted as zend_module_dep entries;
+        // they are unrelated to native libraries configured through link-libs.
+        if (array_key_exists('extension-dependencies', $cfg)) {
+            $dependencies = $cfg['extension-dependencies'];
+            if (!is_array($dependencies)) {
+                $this->error('`extension-dependencies` must be array');
+            }
+            foreach ($dependencies as $dependency) {
+                if (!is_string($dependency) || trim($dependency) === '') {
+                    $this->error('Each `extension-dependencies` entry must be a non-empty string');
+                }
+                $dependency = trim($dependency);
+                if (str_contains($dependency, "\0")) {
+                    $this->error('Extension dependency names must not contain NUL bytes');
+                }
+                if (!in_array($dependency, $this->extensionDependencies, true)) {
+                    $this->extensionDependencies[] = $dependency;
+                }
             }
         }
 

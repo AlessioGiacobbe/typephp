@@ -373,6 +373,8 @@ class CompilerBase implements PropertyAccessContext
     protected string $ldflags = '';
     protected array $linkLibs = [];    // --link-lib / -l: user-specified libraries to link
     protected array $linkPaths = [];   // --link-path / -L: user-specified library search paths
+    /** @var list<string> Required PHP modules recorded in zend_module_entry.deps. */
+    protected array $extensionDependencies = [];
     protected int $floatPrecision = 17;
     protected bool $debug = false;
     protected bool $formatCode = false;   // --format: enable clang-format (disabled by default)
@@ -995,6 +997,12 @@ class CompilerBase implements PropertyAccessContext
     public function getLinkPaths(): array
     {
         return $this->linkPaths;
+    }
+
+    /** @return list<string> */
+    public function getExtensionDependencies(): array
+    {
+        return $this->extensionDependencies;
     }
 
     public function getMarch(): string

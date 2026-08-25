@@ -117,6 +117,18 @@ TypePHP 和 PHPX 的最低运行时版本均为 PHP 8.4。`--php-version` 与实
 
 传入 `project.yml` 时，命令行参数优先于 YAML 中的同名配置。项目文件格式参见用户文档及代码中的项目配置解析器。
 
+### PHP 扩展依赖
+
+程序依赖其他 PHP 扩展时，可以将必需模块写入 Zend 模块依赖表：
+
+```yaml
+extension-dependencies:
+  - pdo_mysql
+  - curl
+```
+
+编译器会为每一项生成 `ZEND_MOD_REQUIRED`。Zend 在加载 TypePHP 模块时检查这些扩展是否已加载。该配置不表示原生链接库；C/C++ 链接依赖仍使用 `link-libs`。
+
 ## 查看权威帮助
 
 命令行实现可能继续演进，发布版本的实际参数以以下命令为准：

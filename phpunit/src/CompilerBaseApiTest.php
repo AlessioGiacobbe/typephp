@@ -431,6 +431,10 @@ link-libs:
 link-paths:
   - /usr/local/lib
   - /opt/custom/lib
+extension-dependencies:
+  - pdo_mysql
+  - curl
+  - curl
 YAML);
 
         $this->invokeMethod('parseProjectYaml', $projectFile);
@@ -449,8 +453,60 @@ YAML);
         $this->assertTrue($this->compiler->isLtoEnabled());
         $this->assertSame(['curl', 'ssl'], $this->compiler->getLinkLibs());
         $this->assertSame(['/usr/local/lib', '/opt/custom/lib'], $this->compiler->getLinkPaths());
+        $this->assertSame(['pdo_mysql', 'curl'], $this->compiler->getExtensionDependencies());
         $this->assertSame('/tmp/project-build', $this->compiler->getBuildDir());
         $this->assertTrue($this->getPropertyValue('formatCode'));
+    }
+
+    public function testParseProjectYamlRejectsInvalidExtensionDependencies(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+extension-dependencies: curl
+YAML);
+
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage('`extension-dependencies` must be array');
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+    }
+
+    public function testExtensionDependenciesAreWrittenToZendModuleEntry(): void
+    {
+        global $translator;
+        $translator = $this->compiler;
+        $this->compiler->setBuildMode(CompilerBase::BUILD_MODE_EXT);
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+extension-dependencies:
+  - pdo_mysql
+  - curl
+YAML);
+        $files = $this->invokeMethod('parseProjectYaml', $projectFile);
+        $this->compiler->addFiles($files);
+        foreach ($files as $file) {
+            $this->compiler->prepareFile($file);
+            $this->compiler->convertFile($file);
+        }
+
+        $extension = file_get_contents($this->compiler->genExtension());
+
+        $this->assertStringContainsString(
+            "static const zend_module_dep typephp_app_module_deps[] = {\n"
+            . "    ZEND_MOD_REQUIRED(\"pdo_mysql\")\n"
+            . "    ZEND_MOD_REQUIRED(\"curl\")\n"
+            . "    ZEND_MOD_END\n"
+            . '};',
+            $extension,
+        );
+        $this->assertStringContainsString(
+            "zend_module_entry typephp_app_module_entry = {\n"
+            . "    STANDARD_MODULE_HEADER_EX,\n"
+            . "    nullptr,\n"
+            . "    typephp_app_module_deps,",
+            $extension,
+        );
     }
 
     public function testParseProjectYamlSupportsCustomFilenameAndRelativeBuildDir(): void
