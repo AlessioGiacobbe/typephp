@@ -2753,8 +2753,12 @@ class EvaluatedValue
                 }
                 // getCExpr() emits a C string literal here. sizeof() preserves
                 // embedded NUL bytes, unlike strlen().
-                $code .= "\tzend_string *$forStringDef = zend_string_init($cExpr, sizeof($cExpr) - 1, 1);\n";
-                $code .= "\tZVAL_STR(&$zvalName, $forStringDef);\n";
+                // Internal class metadata is persistent. PHP 8.5 rejects
+                // refcounted zvals in persistent property defaults, so a
+                // persistent-but-refcounted zend_string is not sufficient.
+                // Interning also makes the value safe to share under ZTS.
+                $code .= "\tzend_string *$forStringDef = zend_string_init_interned($cExpr, sizeof($cExpr) - 1, 1);\n";
+                $code .= "\tZVAL_INTERNED_STR(&$zvalName, $forStringDef);\n";
             }
         } elseif ($this->type->isArray()) {
             $code .= "\tZVAL_EMPTY_ARRAY(&$zvalName);\n";
