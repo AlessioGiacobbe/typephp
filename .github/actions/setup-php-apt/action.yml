@@ -21,23 +21,32 @@ runs:
         sudo apt-get install --yes software-properties-common
         sudo add-apt-repository --yes ppa:ondrej/php
         sudo apt-get update
-        sudo apt-get install --yes \
+        php_packages=( \
           "php${PHP_VERSION}-cli" \
           "php${PHP_VERSION}-common" \
           "php${PHP_VERSION}-curl" \
           "php${PHP_VERSION}-dev" \
           "php${PHP_VERSION}-mbstring" \
-          "php${PHP_VERSION}-opcache" \
           "php${PHP_VERSION}-readline" \
           "php${PHP_VERSION}-redis" \
           "php${PHP_VERSION}-xml" \
           "php${PHP_VERSION}-zip" \
-          "libphp${PHP_VERSION}-embed"
+          "libphp${PHP_VERSION}-embed" \
+        )
+        if apt-cache show "php${PHP_VERSION}-opcache" >/dev/null 2>&1; then
+          php_packages+=("php${PHP_VERSION}-opcache")
+        fi
+        sudo apt-get install --yes "${php_packages[@]}"
 
         sudo update-alternatives --set php "/usr/bin/php${PHP_VERSION}"
         sudo update-alternatives --set phpize "/usr/bin/phpize${PHP_VERSION}"
         sudo update-alternatives --set php-config "/usr/bin/php-config${PHP_VERSION}"
-        sudo phpenmod -v "${PHP_VERSION}" ffi opcache
+        sudo phpenmod -v "${PHP_VERSION}" ffi
+        if test -f "/etc/php/${PHP_VERSION}/mods-available/opcache.ini"; then
+          sudo phpenmod -v "${PHP_VERSION}" opcache
+        else
+          echo "OPcache is not available in the PPA for PHP ${PHP_VERSION}"
+        fi
 
         php_ini_dir="/etc/php/${PHP_VERSION}/cli/conf.d"
         printf '%s\n' \
@@ -80,6 +89,9 @@ runs:
         echo "PHP_EMBED_LIBRARY=${embed_library}" >> "${GITHUB_ENV}"
 
         test "$(php -r 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;')" = "${PHP_VERSION}"
-        php -r 'foreach (["curl", "ffi", "mbstring", "redis", "xml", "zip", "Zend OPcache"] as $extension) { if (!extension_loaded($extension)) { fwrite(STDERR, "Missing PHP extension: $extension\n"); exit(1); } }'
+        php -r 'foreach (["curl", "ffi", "mbstring", "redis", "xml", "zip"] as $extension) { if (!extension_loaded($extension)) { fwrite(STDERR, "Missing PHP extension: $extension\n"); exit(1); } }'
+        if test -f "/etc/php/${PHP_VERSION}/mods-available/opcache.ini"; then
+          php -r 'if (!extension_loaded("Zend OPcache")) { fwrite(STDERR, "Missing PHP extension: Zend OPcache\n"); exit(1); }'
+        fi
         composer --version
         echo "Using ${embed_library} from ${embed_package} ${embed_version}"
