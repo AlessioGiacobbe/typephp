@@ -1383,25 +1383,28 @@ trait NativeClassSupportTrait
         if ($methodDef === null) {
             $this->fatalError($node, "Native class `{$class}` must define `{$method}()` for this conversion");
         }
-        $this->assertNativeObjectKeywordMethodSignature(
+        $this->assertKeywordConversionMethodSignature(
             $node,
             $class,
             $resolvedMethod,
             $methodDef->functionDef,
             $expectedType,
+            true,
         );
         return $resolvedMethod;
     }
 
-    protected function assertNativeObjectKeywordMethodSignature(
+    protected function assertKeywordConversionMethodSignature(
         NodeAbstract $node,
         string $class,
         string $method,
         FunctionDef $function,
         string $expectedType,
+        bool $nativeClass,
     ): void {
+        $kind = $nativeClass ? 'Native conversion method' : 'Conversion method';
         if ($function->argInfoList !== []) {
-            $this->fatalError($node, "Native conversion method `{$class}::{$method}()` must not accept arguments");
+            $this->fatalError($node, "{$kind} `{$class}::{$method}()` must not accept arguments");
         }
         $hasExactReturnType = $function->returnType === $expectedType;
         if ($expectedType === Type::VAR) {
@@ -1431,7 +1434,7 @@ trait NativeClassSupportTrait
             };
             $this->fatalError(
                 $node,
-                "Native conversion method `{$class}::{$method}()` must return exactly `{$expectedTypeName}`",
+                "{$kind} `{$class}::{$method}()` must return exactly `{$expectedTypeName}`",
             );
         }
     }

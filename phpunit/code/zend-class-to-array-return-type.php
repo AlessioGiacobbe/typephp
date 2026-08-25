@@ -1,7 +1,6 @@
 <?php
 
-#[Native]
-class InvalidNativeConversion
+class ZendToArrayWrongReturn
 {
     public function toArray(): string
     {

@@ -540,6 +540,15 @@ final class NativeClassValidationTest extends \BaseTest
         $this->compile('native-class-keyword-return-type.php');
     }
 
+    public function testRejectsNativeToArrayParametersAtDeclaration(): void
+    {
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage(
+            'Native conversion method `NativeToArrayWithParameters::toArray()` must not accept arguments',
+        );
+        $this->compile('native-class-to-array-parameters.php');
+    }
+
     public function testRejectsMissingNativeKeywordMethod(): void
     {
         $this->expectException(TestError::class);

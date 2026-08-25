@@ -1868,13 +1868,24 @@ class Preprocessor extends CompilerBase
             $this->classDef->addAbstractMethod($name, $flags, $this->methodDef);
         }
 
-        if ($this->classDef->nativeObject && strtolower($name) === 'toany') {
-            $this->assertNativeObjectKeywordMethodSignature(
+        $normalizedMethod = strtolower($name);
+        if ($this->classDef->nativeObject && $normalizedMethod === 'toany') {
+            $this->assertKeywordConversionMethodSignature(
                 $v,
                 $this->classDef->getNamespacedName(false),
                 $name,
                 $this->methodDef->functionDef,
                 Type::VAR,
+                true,
+            );
+        } elseif ($normalizedMethod === 'toarray') {
+            $this->assertKeywordConversionMethodSignature(
+                $v,
+                $this->classDef->getNamespacedName(false),
+                $name,
+                $this->methodDef->functionDef,
+                Type::ARRAY,
+                $this->classDef->nativeObject,
             );
         }
 
@@ -2007,6 +2018,16 @@ class Preprocessor extends CompilerBase
                 $methodDef->node = $stmt;
                 $methodDef->functionDef = $this->parseFunctionDecl($stmt);
                 $methodDef->functionDef->method = true;
+                if (strtolower($methodName) === 'toarray') {
+                    $this->assertKeywordConversionMethodSignature(
+                        $stmt,
+                        $this->interfaceDef->getNamespacedName(false),
+                        $methodName,
+                        $methodDef->functionDef,
+                        Type::ARRAY,
+                        false,
+                    );
+                }
                 $this->interfaceDef->addMethod($methodDef);
                 $this->resetMethod();
                 $this->resetFunction();

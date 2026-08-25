@@ -448,7 +448,7 @@ trait UniversalMethodCall
             'toFloat'     => 'php::toFloat(' . $receiver . ')',
             'toString'    => 'php::toString(' . $receiver . ')',
             'toBool'      => 'php::toBool(' . $receiver . ')',
-            'toArray'     => 'php::toArray(' . $receiver . ')',
+            'toArray'     => 'php::callToArray(' . $receiver . ')',
             'toStream'    => 'php::toStream(' . $receiver . ')',
             'toBigInt'    => 'php::BigInt::newInstance(' . $receiver . ')',
             'toBigFloat'  => 'php::BigFloat::newInstance(' . $receiver . ')',

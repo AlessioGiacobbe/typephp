@@ -554,6 +554,20 @@ trait MethodCallTrait
                 $useDeclaredToArray = $methodName === 'toArray'
                     && $receiverClass !== ''
                     && $this->objectTypeDeclaresMethod($receiverClass, $methodName);
+                $useMagicToArray = $methodName === 'toArray'
+                    && $receiverClass !== ''
+                    && $this->objectTypeDeclaresMethod($receiverClass, '__call');
+                if ($methodName === 'toArray'
+                    && $receiverClass !== ''
+                    && !$useDeclaredToArray
+                    && !$useMagicToArray
+                    && ($this->hasClass($receiverClass) || $this->isInternalClass($receiverClass))
+                ) {
+                    $this->fatalError(
+                        $expr,
+                        "Class `{$receiverClass}` must define `toArray()` for this conversion",
+                    );
+                }
                 if (!$useDeclaredToArray) {
                     return $this->genToConvertCall($object, $methodName, $receiverType);
                 }

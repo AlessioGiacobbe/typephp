@@ -2,6 +2,38 @@
 
 class ClassTest extends \BaseTest
 {
+    public function testZendToArrayDeclarationCannotAcceptParameters(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage(
+            'Conversion method `ZendToArrayWithParameters::toArray()` must not accept arguments',
+        );
+        $this->compile('zend-class-to-array-parameters.php');
+    }
+
+    public function testZendToArrayDeclarationMustReturnArray(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage(
+            'Conversion method `ZendToArrayWrongReturn::toArray()` must return exactly `array`',
+        );
+        $this->compile('zend-class-to-array-return-type.php');
+    }
+
+    public function testKnownZendClassMustDefineToArray(): void
+    {
+        $this->expectException(\TypePhp\Exception\TestError::class);
+        $this->expectExceptionMessage(
+            'Class `ZendWithoutToArray` must define `toArray()` for this conversion',
+        );
+        $this->compile('zend-class-to-array-missing.php');
+    }
+
+    public function testKnownZendClassMayResolveToArrayThroughMagicCall(): void
+    {
+        $this->compile('zend-class-to-array-magic.php');
+    }
+
     public function testOrdinaryClassCannotDeclareToAnyKeywordMethod(): void
     {
         $this->expectException(\TypePhp\Exception\TestError::class);
