@@ -19,7 +19,7 @@ env:
 jobs:
   build-phpx:
     name: Build PHPX (PHP ${{ matrix.php }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -38,16 +38,20 @@ jobs:
           repository: swoole/phpy
           path: third_party/phpy
 
-      - name: Setup PHP from PPA
-        uses: ./.github/actions/setup-php-apt
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
+          coverage: none
+          ini-values: precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
+          tools: composer:v2
 
       - name: Patch php_hash.h C++ compatibility
         uses: ./.github/actions/patch-php-headers
 
       - name: Install native build dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev
 
       - name: Install Composer dependencies
@@ -90,7 +94,7 @@ jobs:
 
   phpunit:
     name: PHPUnit (PHP ${{ matrix.php }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: build-phpx
     strategy:
@@ -104,16 +108,21 @@ jobs:
       - name: Checkout TypePHP
         uses: actions/checkout@v4
 
-      - name: Setup PHP from PPA
-        uses: ./.github/actions/setup-php-apt
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
+          coverage: none
+          extensions: curl, redis, mbstring, ffi
+          ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
+          tools: composer:v2
 
       - name: Patch php_hash.h C++ compatibility
         uses: ./.github/actions/patch-php-headers
 
       - name: Install native build dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev
 
       - name: Install Composer dependencies
@@ -134,21 +143,22 @@ jobs:
       - name: Enable phpy extension
         shell: bash
         run: |
-          php_ini_dir="/etc/php/${{ matrix.php }}/cli/conf.d"
+          php_ini_dir="$(php-config --ini-dir)"
           echo "extension=${GITHUB_WORKSPACE}/third_party/phpy/modules/phpy.so" \
             | sudo tee "${php_ini_dir}/90-phpy.ini"
+          echo "PHP_INI_SCAN_DIR=${php_ini_dir}" >> "${GITHUB_ENV}"
           php --ri phpy
 
       - name: Configure native library path
         shell: bash
-        run: echo "LD_LIBRARY_PATH=${PHPX_HOME}/lib:${PHP_HOME}/lib" >> "${GITHUB_ENV}"
+        run: echo "LD_LIBRARY_PATH=${PHPX_HOME}/lib:$(php-config --prefix)/lib" >> "${GITHUB_ENV}"
 
       - name: Run PHPUnit
         run: vendor/bin/phpunit
 
   phpt:
     name: PHPT (PHP ${{ matrix.php }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 180
     needs: build-phpx
     strategy:
@@ -164,17 +174,47 @@ jobs:
       - name: Checkout TypePHP
         uses: actions/checkout@v4
 
-      - name: Setup PHP from PPA
-        uses: ./.github/actions/setup-php-apt
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
+          coverage: none
+          extensions: curl, redis, mbstring, ffi
+          ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, opcache.jit=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
+          tools: composer:v2
 
       - name: Patch php_hash.h C++ compatibility
         uses: ./.github/actions/patch-php-headers
 
       - name: Install native build dependencies
         run: |
-          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev
+          sudo apt-get update
+          sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev \
+            "libphp${{ matrix.php }}-embed"
+
+      - name: Configure version-matched PHP embed library
+        shell: bash
+        run: |
+          embed_package="libphp${{ matrix.php }}-embed"
+          php_version="$(php-config --version)"
+          embed_version="$(dpkg-query --show --showformat='${Version}' "${embed_package}")"
+          case "${embed_version}" in
+            "${php_version}"*) ;;
+            *) echo "PHP embed package ${embed_version} does not match PHP ${php_version}" >&2; exit 1 ;;
+          esac
+          embed_library="$(dpkg-query --listfiles "${embed_package}" \
+            | sed -n '/\/libphp[0-9][^/]*\.so$/ { p; q; }')"
+          test -n "${embed_library}"
+          test -f "${embed_library}"
+
+          php_home="${RUNNER_TEMP}/typephp-php-${{ matrix.php }}"
+          mkdir -p "${php_home}/bin" "${php_home}/include" "${php_home}/lib"
+          ln -s "$(command -v php-config)" "${php_home}/bin/php-config"
+          ln -s "$(php-config --include-dir)" "${php_home}/include/php"
+          ln -s "${embed_library}" "${php_home}/lib/libphp.so"
+
+          echo "PHP_HOME=${php_home}" >> "${GITHUB_ENV}"
+          echo "Using ${embed_library} from ${embed_package} ${embed_version} for PHP ${php_version}"
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
@@ -194,9 +234,10 @@ jobs:
       - name: Enable phpy extension
         shell: bash
         run: |
-          php_ini_dir="/etc/php/${{ matrix.php }}/cli/conf.d"
+          php_ini_dir="$(php-config --ini-dir)"
           echo "extension=${GITHUB_WORKSPACE}/third_party/phpy/modules/phpy.so" \
             | sudo tee "${php_ini_dir}/90-phpy.ini"
+          echo "PHP_INI_SCAN_DIR=${php_ini_dir}" >> "${GITHUB_ENV}"
           php --ri phpy
 
       - name: Configure native library path
