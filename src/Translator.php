@@ -777,13 +777,19 @@ class Translator extends Preprocessor
             $lines[] = $pythonModuleDeclarations;
         }
 
-        $lines[] = 'zend_class_entry *get_class(int class_id, const php::Str &class_name);';
-        $lines[] = 'zend_function *get_func(int func_id, const php::Str &func_name);';
-        $lines[] = 'zend_function *get_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name);';
-        $lines[] = 'zend_class_entry *get_persistent_class(int class_id, const php::Str &class_name);';
-        $lines[] = 'zend_function *get_persistent_func(int func_id, const php::Str &func_name);';
-        $lines[] = 'zend_function *get_persistent_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name);';
-        $lines[] = 'uint32_t get_persistent_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name);' . PHP_EOL;
+        $lines[] = 'enum class RequestClassId : uint32_t {};';
+        $lines[] = 'enum class PersistentClassId : uint32_t {};';
+        $lines[] = 'enum class RequestFuncId : uint32_t {};';
+        $lines[] = 'enum class PersistentFuncId : uint32_t {};';
+        $lines[] = 'enum class PersistentPropertyId : uint32_t {};' . PHP_EOL;
+
+        $lines[] = 'zend_class_entry *get_class(RequestClassId class_id, const php::Str &class_name);';
+        $lines[] = 'zend_function *get_func(RequestFuncId func_id, const php::Str &func_name);';
+        $lines[] = 'zend_function *get_method(RequestFuncId func_id, const php::Str &method_name, RequestClassId class_id, const php::Str &class_name);';
+        $lines[] = 'zend_class_entry *get_persistent_class(PersistentClassId class_id, const php::Str &class_name);';
+        $lines[] = 'zend_function *get_persistent_func(PersistentFuncId func_id, const php::Str &func_name);';
+        $lines[] = 'zend_function *get_persistent_method(PersistentFuncId func_id, const php::Str &method_name, PersistentClassId class_id, const php::Str &class_name);';
+        $lines[] = 'uint32_t get_persistent_prop(PersistentPropertyId prop_id, const php::Str &prop_name, const php::Str &class_name);' . PHP_EOL;
 
         foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
@@ -876,49 +882,56 @@ class Translator extends Preprocessor
         $code .= "// functions \n";
 
         $code .= <<<'CODE'
-zend_class_entry *get_class(int class_id, const php::Str &class_name) {
-    if (UNEXPECTED(php_class_map[class_id] == nullptr)) {
-        php_class_map[class_id] = php::getClassEntrySafe(class_name);
+zend_class_entry *get_class(RequestClassId class_id, const php::Str &class_name) {
+    const auto index = static_cast<uint32_t>(class_id);
+    if (UNEXPECTED(php_class_map[index] == nullptr)) {
+        php_class_map[index] = php::getClassEntrySafe(class_name);
     }
-    return php_class_map[class_id];
+    return php_class_map[index];
 }
 
-zend_function *get_func(int func_id, const php::Str &func_name) {
-    if (UNEXPECTED(php_func_map[func_id] == nullptr)) {
-        php_func_map[func_id] = php::getFunction(func_name);
+zend_function *get_func(RequestFuncId func_id, const php::Str &func_name) {
+    const auto index = static_cast<uint32_t>(func_id);
+    if (UNEXPECTED(php_func_map[index] == nullptr)) {
+        php_func_map[index] = php::getFunction(func_name);
     }
-    return php_func_map[func_id];
+    return php_func_map[index];
 }
 
-zend_function *get_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
-    if (UNEXPECTED(php_func_map[func_id] == nullptr)) {
+zend_function *get_method(RequestFuncId func_id, const php::Str &method_name, RequestClassId class_id, const php::Str &class_name) {
+    const auto index = static_cast<uint32_t>(func_id);
+    if (UNEXPECTED(php_func_map[index] == nullptr)) {
         auto ce = get_class(class_id, class_name);
-        php_func_map[func_id] = php::getMethod(ce, method_name);
+        php_func_map[index] = php::getMethod(ce, method_name);
     }
-    return php_func_map[func_id];
+    return php_func_map[index];
 }
 
-zend_class_entry *get_persistent_class(int class_id, const php::Str &class_name) {
-    return php::getPersistentCache(php_persistent_class_map[class_id], [&]() {
+zend_class_entry *get_persistent_class(PersistentClassId class_id, const php::Str &class_name) {
+    const auto index = static_cast<uint32_t>(class_id);
+    return php::getPersistentCache(php_persistent_class_map[index], [&]() {
         return php::getClassEntrySafe(class_name);
     });
 }
 
-zend_function *get_persistent_func(int func_id, const php::Str &func_name) {
-    return php::getPersistentCache(php_persistent_func_map[func_id], [&]() {
+zend_function *get_persistent_func(PersistentFuncId func_id, const php::Str &func_name) {
+    const auto index = static_cast<uint32_t>(func_id);
+    return php::getPersistentCache(php_persistent_func_map[index], [&]() {
         return php::getFunction(func_name);
     });
 }
 
-zend_function *get_persistent_method(int func_id, const php::Str &method_name, int class_id, const php::Str &class_name) {
-    return php::getPersistentCache(php_persistent_func_map[func_id], [&]() {
+zend_function *get_persistent_method(PersistentFuncId func_id, const php::Str &method_name, PersistentClassId class_id, const php::Str &class_name) {
+    const auto index = static_cast<uint32_t>(func_id);
+    return php::getPersistentCache(php_persistent_func_map[index], [&]() {
         auto ce = get_persistent_class(class_id, class_name);
         return php::getMethod(ce, method_name);
     });
 }
 
-uint32_t get_persistent_prop(int prop_id, const php::Str &prop_name, int class_id, const php::Str &class_name) {
-    auto value = php::getPersistentCache(php_persistent_property_map[prop_id], [&]() {
+uint32_t get_persistent_prop(PersistentPropertyId prop_id, const php::Str &prop_name, const php::Str &class_name) {
+    const auto index = static_cast<uint32_t>(prop_id);
+    auto value = php::getPersistentCache(php_persistent_property_map[index], [&]() {
         return php::getPropertyOffset(class_name, prop_name) + 1024;
     });
     return value - 1024;

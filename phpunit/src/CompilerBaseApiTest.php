@@ -89,8 +89,8 @@ class CompilerBaseApiTest extends TestCase
 
         $methodPtr = $this->invokeMethod('getMethodPtr', 'LateKnownClass', 'run');
 
-        $this->assertStringStartsWith('get_method(0, ', $methodPtr);
-        $this->assertStringContainsString(', 0, ', $methodPtr);
+        $this->assertStringStartsWith('get_method(RequestFuncId{0}, ', $methodPtr);
+        $this->assertStringContainsString(', RequestClassId{0}, ', $methodPtr);
         $this->assertSame(
             ['LateKnownClass::run' => 0],
             $this->getPropertyValue('funcMap'),
@@ -1258,8 +1258,13 @@ YAML);
             'static php::PersistentCacheSlot<uint32_t> php_persistent_property_map',
             $extension,
         );
+        $this->assertStringContainsString('enum class RequestClassId : uint32_t {};', $data);
+        $this->assertStringContainsString('enum class PersistentClassId : uint32_t {};', $data);
+        $this->assertStringContainsString('enum class RequestFuncId : uint32_t {};', $data);
+        $this->assertStringContainsString('enum class PersistentFuncId : uint32_t {};', $data);
+        $this->assertStringContainsString('enum class PersistentPropertyId : uint32_t {};', $data);
         $this->assertStringContainsString('get_persistent_class', $extension);
-        $this->assertStringContainsString('php::getPersistentCache(php_persistent_class_map[class_id]', $extension);
+        $this->assertStringContainsString('php::getPersistentCache(php_persistent_class_map[index]', $extension);
         $this->assertStringContainsString('for (auto &slot : php_persistent_class_map)', $extension);
         $this->assertStringContainsString('php::resetPersistentCache(slot);', $extension);
         $this->assertStringNotContainsString('#ifdef ZTS', $data);

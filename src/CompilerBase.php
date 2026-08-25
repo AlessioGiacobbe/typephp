@@ -1358,8 +1358,10 @@ class CompilerBase implements PropertyAccessContext
     protected function getClassEntryPtr(string $className): string
     {
         $id = $this->getClassId($className);
-        $helper = isset($this->persistentClassMap[$className]) ? 'get_persistent_class' : 'get_class';
-        return $helper . '(' . $id . ', ' . $this->getLiteralString($className) . ')';
+        $persistent = isset($this->persistentClassMap[$className]);
+        $helper = $persistent ? 'get_persistent_class' : 'get_class';
+        $idType = $persistent ? 'PersistentClassId' : 'RequestClassId';
+        return $helper . '(' . $idType . '{' . $id . '}, ' . $this->getLiteralString($className) . ')';
     }
 
     /**
@@ -1420,8 +1422,10 @@ class CompilerBase implements PropertyAccessContext
             throw new \LogicException('Class methods must be resolved through getMethodPtr()');
         }
         $id = $this->getFuncId($funcName);
-        $helper = isset($this->persistentFuncMap[$funcName]) ? 'get_persistent_func' : 'get_func';
-        return $helper . '(' . $id . ', ' . $this->getLiteralString($funcName) . ')';
+        $persistent = isset($this->persistentFuncMap[$funcName]);
+        $helper = $persistent ? 'get_persistent_func' : 'get_func';
+        $idType = $persistent ? 'PersistentFuncId' : 'RequestFuncId';
+        return $helper . '(' . $idType . '{' . $id . '}, ' . $this->getLiteralString($funcName) . ')';
     }
 
     protected function getMethodPtr(string $class, string $method): string
@@ -1442,14 +1446,17 @@ class CompilerBase implements PropertyAccessContext
             ));
         }
         $helper = $persistentMethod ? 'get_persistent_method' : 'get_method';
-        return $helper . '(' . $funcId . ', ' . $this->getLiteralString($method) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
+        $funcIdType = $persistentMethod ? 'PersistentFuncId' : 'RequestFuncId';
+        $classIdType = $persistentClass ? 'PersistentClassId' : 'RequestClassId';
+        return $helper . '(' . $funcIdType . '{' . $funcId . '}, ' . $this->getLiteralString($method)
+            . ', ' . $classIdType . '{' . $classId . '}, ' . $this->getLiteralString($class) . ')';
     }
 
     protected function getPropertyOffset(string $class, string $prop): string
     {
         $propId = $this->getPropertyId($class, $prop);
-        $classId = $this->getClassId($class);
-        return 'get_persistent_prop(' . $propId . ', ' . $this->getLiteralString($prop) . ', ' . $classId . ', ' . $this->getLiteralString($class) . ')';
+        return 'get_persistent_prop(PersistentPropertyId{' . $propId . '}, '
+            . $this->getLiteralString($prop) . ', ' . $this->getLiteralString($class) . ')';
     }
 
     protected function writeLog($msg): void
