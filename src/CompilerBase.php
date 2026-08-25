@@ -316,6 +316,9 @@ class CompilerBase implements PropertyAccessContext
      */
     protected array $persistentPropMap = [];
     protected int $persistentPropIndex = 0;
+    /** @var array<string, array<Node\Stmt>> Prepared declaration ASTs keyed by real path. */
+    protected array $preparedFileAsts = [];
+    protected bool $declarationExpressionsFinalized = false;
     protected const array PHP_RUNTIME_TYPE_MAP = [
         'integer' => Type::INT,
         'double' => Type::FLOAT,
@@ -1277,19 +1280,6 @@ class CompilerBase implements PropertyAccessContext
     {
         if (str_contains($funcName, '::')) {
             [$class] = explode('::', $funcName, 2);
-
-            // Class and method caches use parallel lifetime domains. Once a
-            // class has been assigned an ID, keep every subsequently resolved
-            // method in the same domain even if the class becomes visible in
-            // the symbol repository later in the prepare pass. Otherwise a
-            // request-local class ID may be used to index persistentClassMap.
-            if (isset($this->classMap[$class])) {
-                return false;
-            }
-            if (isset($this->persistentClassMap[$class])) {
-                return true;
-            }
-
             return $this->isProcessStableClass($class);
         }
         if ($this->hasFunction($funcName)) {
@@ -1301,6 +1291,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function getClassId(string $className): int
     {
+        $this->assertCompilerPhase(self::PHASE_CONVERT, 'class cache ID allocation');
         if (isset($this->classMap[$className])) {
             return $this->classMap[$className];
         }
@@ -1319,6 +1310,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function getFuncId(string $funcName): int
     {
+        $this->assertCompilerPhase(self::PHASE_CONVERT, 'function cache ID allocation');
         if (isset($this->funcMap[$funcName])) {
             return $this->funcMap[$funcName];
         }
@@ -1346,6 +1338,7 @@ class CompilerBase implements PropertyAccessContext
      */
     protected function getPropertyId(string $className, string $propName): int
     {
+        $this->assertCompilerPhase(self::PHASE_CONVERT, 'property cache ID allocation');
         $key = $className . '::' . $propName;
         if (isset($this->persistentPropMap[$key])) {
             return $this->persistentPropMap[$key];
@@ -2869,6 +2862,9 @@ class CompilerBase implements PropertyAccessContext
                 if ($interfaceConstDef->type === Type::ARRAY) {
                     return self::PREFIX . $this->getNativeName($interfaceConstDef->name, $interfaceDef->namespace, $interfaceDef->name);
                 }
+                if (!$interfaceConstDef->codegenFinalized) {
+                    return false;
+                }
                 $expr->setAttribute('nativeConst', $interfaceConstDef);
                 return $interfaceConstDef->value;
             }
@@ -2887,6 +2883,13 @@ class CompilerBase implements PropertyAccessContext
         if ($constDef->type === Type::ARRAY) {
             return self::PREFIX . $this->getNativeName($constDef->name, $classDef->namespace, $classDef->name);
         } else {
+            // Forward constant references may be encountered while the
+            // declaration-expression pass is still visiting another file.
+            // Fall back to the Zend class-constant lookup instead of emitting
+            // an incomplete value; the lookup is cached in the convert phase.
+            if (!$constDef->codegenFinalized) {
+                return false;
+            }
             $expr->setAttribute('nativeConst', $constDef);
             return $constDef->value;
         }

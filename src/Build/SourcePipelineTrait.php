@@ -249,49 +249,59 @@ trait SourcePipelineTrait
 
     public function convert(array $files): array
     {
-        $sourceFiles = [];
-        $validSourceCount = 0;
-        // 生成 C++ 文件
-        foreach ($files as $k => $file) {
-            try {
-                if (FileScanner::isPhpFile($file)) {
-                    $cppFile = $this->convertFile($file);
-                } elseif (FileScanner::isNativeSourceFile($file)) {
-                    $cppFile = $file;
-                } else {
-                    continue;
+        $previousPhase = $this->enterCompilerPhase(self::PHASE_CONVERT);
+        try {
+            // All declarations are now known. Lower declaration constant
+            // expressions before translating any function body so cache IDs
+            // are assigned exclusively in the convert phase.
+            $this->finalizeDeclarationExpressions($files);
+
+            $sourceFiles = [];
+            $validSourceCount = 0;
+            // 生成 C++ 文件
+            foreach ($files as $k => $file) {
+                try {
+                    if (FileScanner::isPhpFile($file)) {
+                        $cppFile = $this->convertFile($file);
+                    } elseif (FileScanner::isNativeSourceFile($file)) {
+                        $cppFile = $file;
+                    } else {
+                        continue;
+                    }
+                    $validSourceCount++;
+                    if ($cppFile !== null) {
+                        $sourceFiles[] = $cppFile;
+                    }
+                } catch (Unsupported $e) {
+                    echo ' unsupported syntax: ' . $e->getMessage() . "\n";
+                    echo ' skip: ' . $file . "\n";
+                    unset($files[$k]);
                 }
-                $validSourceCount++;
-                if ($cppFile !== null) {
-                    $sourceFiles[] = $cppFile;
-                }
-            } catch (Unsupported $e) {
-                echo ' unsupported syntax: ' . $e->getMessage() . "\n";
-                echo ' skip: ' . $file . "\n";
-                unset($files[$k]);
             }
+
+            // A valid PHP input may intentionally emit no standalone translation
+            // unit (for example a compile-time trait or an interface). The shared
+            // extension source still carries its runtime metadata, so only reject
+            // an input set in which no supported source was converted at all.
+            if ($validSourceCount === 0) {
+                $this->stop('No valid source file found');
+            }
+
+            // A WASI library publishes WIT/Component exports rather than a native
+            // TypePHP shared-library ABI, so a PHP import stub would be misleading.
+            if ($this->isBuildModeLib() && !$this->isWasiTarget()) {
+                $this->genLibraryImportStub($files);
+            }
+
+            // 生成构建期内部头文件：函数声明、运行时数据声明
+            $this->genFunctionDeclarations($this->getIncludeDir() . "/php_{$this->targetName}_func_decl.h");
+            $this->genDataDeclarations($this->getIncludeDir() . "/php_{$this->targetName}_data_decl.h");
+            // 生成扩展模块源文件
+            $sourceFiles[] = $this->genExtension();
+
+            return $sourceFiles;
+        } finally {
+            $this->restoreCompilerPhase($previousPhase);
         }
-
-        // A valid PHP input may intentionally emit no standalone translation
-        // unit (for example a compile-time trait or an interface). The shared
-        // extension source still carries its runtime metadata, so only reject
-        // an input set in which no supported source was converted at all.
-        if ($validSourceCount === 0) {
-            $this->stop('No valid source file found');
-        }
-
-        // A WASI library publishes WIT/Component exports rather than a native
-        // TypePHP shared-library ABI, so a PHP import stub would be misleading.
-        if ($this->isBuildModeLib() && !$this->isWasiTarget()) {
-            $this->genLibraryImportStub($files);
-        }
-
-        // 生成构建期内部头文件：函数声明、运行时数据声明
-        $this->genFunctionDeclarations($this->getIncludeDir() . "/php_{$this->targetName}_func_decl.h");
-        $this->genDataDeclarations($this->getIncludeDir() . "/php_{$this->targetName}_data_decl.h");
-        // 生成扩展模块源文件
-        $sourceFiles[] = $this->genExtension();
-
-        return $sourceFiles;
     }
 }

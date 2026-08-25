@@ -19,6 +19,8 @@ class ArgInfo
     public string $type;
     public string $default = '';
     public ?ArrayInitPlan $arrayInitPlan = null;
+    /** Original declaration AST; lowered to $default only in the convert phase. */
+    public ?Expr $defaultExpr = null;
     public ?Expr $defaultValue = null;
     public string $class = '';
 
@@ -56,4 +58,9 @@ class ArgInfo
 
     /** Original union/nullable AST node. Only set when typeCheck is non-null. */
     public ?NodeAbstract $typeNode = null;
+
+    public function hasDefaultValue(): bool
+    {
+        return $this->defaultExpr !== null;
+    }
 }

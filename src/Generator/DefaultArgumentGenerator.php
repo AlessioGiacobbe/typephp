@@ -127,6 +127,6 @@ trait DefaultArgumentGenerator
             return true;
         }
 
-        return $argInfo->default !== '';
+        return $argInfo->hasDefaultValue();
     }
 }

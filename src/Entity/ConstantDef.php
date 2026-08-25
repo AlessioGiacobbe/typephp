@@ -19,6 +19,8 @@ class ConstantDef
     public string $arrayExpr = '';
     public string $class = '';
     public ?NodeAbstract $valueExpr = null;
+    /** True after the declaration AST has been lowered to C++ in convert. */
+    public bool $codegenFinalized = false;
     /** Explicit declared type (e.g. `const int FOO`); null for inferred/untyped constants. */
     public ?string $declaredType = null;
 

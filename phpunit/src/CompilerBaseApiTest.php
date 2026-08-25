@@ -80,6 +80,7 @@ class CompilerBaseApiTest extends TestCase
 
     public function testMethodCacheKeepsPreviouslyAssignedClassLifetime(): void
     {
+        $this->setPropertyValue('compilerPhase', 'convert');
         // The two maps have independent ID spaces. This reproduces the tpc
         // bootstrap ordering where both classes occupied slot zero.
         $this->setPropertyValue('classMap', ['LateKnownClass' => 0]);
@@ -100,6 +101,7 @@ class CompilerBaseApiTest extends TestCase
 
     public function testMethodCacheRejectsMismatchedLifetimeDomains(): void
     {
+        $this->setPropertyValue('compilerPhase', 'convert');
         $this->setPropertyValue('classMap', ['LateKnownClass' => 0]);
         $this->setPropertyValue('classIndex', 1);
         $this->setPropertyValue('persistentFuncMap', ['LateKnownClass::run' => 0]);
@@ -110,6 +112,78 @@ class CompilerBaseApiTest extends TestCase
             'Cache lifetime mismatch for LateKnownClass::run: method ID 0 is persistent, class ID 0 is request-local',
         );
         $this->invokeMethod('getMethodPtr', 'LateKnownClass', 'run');
+    }
+
+    public function testPrepareStoresDeclarationAstsWithoutAllocatingCacheIds(): void
+    {
+        $consumer = $this->testDir . '/consumer.php';
+        $declaration = $this->testDir . '/late.php';
+        file_put_contents($consumer, <<<'PHP'
+<?php
+namespace CachePhase;
+
+final class Defaults
+{
+    public const string VALUE = LateClass::VALUE;
+    public string $property = LateClass::VALUE;
+
+    public function read(string $value = LateClass::VALUE): string
+    {
+        return $value;
+    }
+}
+PHP);
+        file_put_contents($declaration, <<<'PHP'
+<?php
+namespace CachePhase;
+
+final class LateClass
+{
+    public const string VALUE = 'ready';
+}
+PHP);
+
+        // Deliberately prepare the consumer first. This was the bootstrap
+        // ordering that used to assign a request ID before LateClass became
+        // visible, then assign persistent IDs to later method lookups.
+        $this->compiler->prepareFile($consumer);
+        $this->compiler->prepareFile($declaration);
+
+        foreach (['classMap', 'persistentClassMap', 'funcMap', 'persistentFuncMap', 'persistentPropMap'] as $map) {
+            $this->assertSame([], $this->getPropertyValue($map), $map);
+        }
+        $defaults = $this->compiler->getClassDef('CachePhase\\Defaults');
+        $this->assertNotNull($defaults);
+        $this->assertInstanceOf(
+            \PhpParser\Node\Expr\ClassConstFetch::class,
+            $defaults->getConstant('VALUE')->valueExpr,
+        );
+        $this->assertSame('', $defaults->getConstant('VALUE')->value);
+        $this->assertNotNull($defaults->getProperty('property')->defaultExpr);
+        $this->assertTrue($defaults->getMethod('read')->functionDef->argInfoList[0]->hasDefaultValue());
+        $this->assertSame('', $defaults->getMethod('read')->functionDef->argInfoList[0]->default);
+
+        $this->setPropertyValue('compilerPhase', 'convert');
+        $this->compiler->finalizeDeclarationExpressions([$consumer, $declaration]);
+
+        $this->assertSame([], $this->getPropertyValue('classMap'));
+        $this->assertArrayHasKey(
+            'CachePhase\\LateClass',
+            $this->getPropertyValue('persistentClassMap'),
+        );
+        $this->assertNotSame('', $defaults->getConstant('VALUE')->value);
+        $this->assertNotNull($defaults->getProperty('property')->default);
+        $this->assertNotSame('', $defaults->getMethod('read')->functionDef->argInfoList[0]->default);
+    }
+
+    public function testCacheIdAllocationIsRejectedOutsideConvertPhase(): void
+    {
+        $this->setPropertyValue('compilerPhase', 'prepare');
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage(
+            'class cache ID allocation can only be used during convert phase, current phase is prepare',
+        );
+        $this->invokeMethod('getClassId', 'ForbiddenDuringPrepare');
     }
 
     private function fixturePath(string $file): string

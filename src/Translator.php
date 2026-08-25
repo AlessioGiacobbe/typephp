@@ -537,6 +537,9 @@ class Translator extends Preprocessor
     {
         $previousPhase = $this->enterCompilerPhase(self::PHASE_CONVERT);
         try {
+            if (!$this->declarationExpressionsFinalized) {
+                $this->finalizeDeclarationExpressions(array_keys($this->preparedFileAsts));
+            }
             $file = realpath($file);
             $phpCode = $this->loadFile($file);
             $this->localHeaders = [];
@@ -808,6 +811,16 @@ class Translator extends Preprocessor
     }
 
     public function genExtension(): string
+    {
+        $previousPhase = $this->enterCompilerPhase(self::PHASE_CONVERT);
+        try {
+            return $this->doGenExtension();
+        } finally {
+            $this->restoreCompilerPhase($previousPhase);
+        }
+    }
+
+    private function doGenExtension(): string
     {
         if ($this->isBuildModeBin()) {
             if (!$this->hasFunction(self::ENTRY_FUNCTION)) {
@@ -1860,7 +1873,7 @@ CODE;
                             . ' = ' . $this->genDefaultArgumentExpr($name, $argumentIndex);
                     } else {
                         $arg = $this->genArgumentDeclaration($argInfo);
-                        if ($argInfo->default !== '' && !$this->isConstructorNativeFunction($func)) {
+                        if ($argInfo->hasDefaultValue() && !$this->isConstructorNativeFunction($func)) {
                             $arg .= ' = ' . $this->genDefaultArgumentExpr($name, $argumentIndex);
                         }
                     }
@@ -3722,7 +3735,7 @@ CODE;
                 $cppCode .= $this->getIndent() . '}' . PHP_EOL;
                 $cppCode .= $this->genExtraNamedVariadicArgs($var);
             } else {
-                if ($argInfo->default !== '') {
+                if ($argInfo->hasDefaultValue()) {
                     $nativeName = str_starts_with($fn, self::PREFIX)
                         ? substr($fn, strlen(self::PREFIX))
                         : $fn;

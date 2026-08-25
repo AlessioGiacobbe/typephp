@@ -287,7 +287,7 @@ class PreprocessorTest extends TestCase
         $this->assertNotEmpty($functionDef->returnTypeCheck);
     }
 
-    public function testPrepareFileParsesInterfaceArrayConstantInitExpr(): void
+    public function testInterfaceArrayConstantIsLoweredOnlyDuringConvert(): void
     {
         $file = __DIR__ . '/../code/interface_array_constant.php';
 
@@ -298,6 +298,15 @@ class PreprocessorTest extends TestCase
         $constant = $interfaces['interfacearrayconstant']->constants['ITEMS'];
 
         $this->assertSame('php::Array', $constant->type);
+        $this->assertInstanceOf(\PhpParser\Node\Expr\Array_::class, $constant->valueExpr);
+        $this->assertSame('', $constant->value);
+        $this->assertSame([], $this->getProperty('classMap'));
+        $this->assertSame([], $this->getProperty('persistentClassMap'));
+        $this->assertSame([], $this->getProperty('funcMap'));
+        $this->assertSame([], $this->getProperty('persistentFuncMap'));
+
+        $this->setProperty('compilerPhase', 'convert');
+        $this->compiler->finalizeDeclarationExpressions([$file]);
         $this->assertStringContainsString('php::Array', $constant->value);
     }
 

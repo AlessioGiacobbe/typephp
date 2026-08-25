@@ -55,7 +55,7 @@ final class WasmInterfaceGenerator
 
             $parameters = [];
             foreach ($function->argInfoList as $argument) {
-                if ($argument->byRef || $argument->variadic || $argument->default !== '') {
+                if ($argument->byRef || $argument->variadic || $argument->hasDefaultValue()) {
                     throw new RuntimeException(
                         "WasmExport parameter \${$argument->phpName} of {$displayName}() cannot be by-reference, variadic, or optional"
                     );

@@ -17,7 +17,9 @@ trait DeclarationSymbolTrait
     {
         foreach ($v2->consts as $const) {
             $name  = $this->parseIdentifier($const->name);
-            $value = $this->parseIdentifier($const->value);
+            $value = $this->compilerPhase === self::PHASE_CONVERT
+                ? $this->parseIdentifier($const->value)
+                : '';
             if ($this->namespace) {
                 $name = $this->namespace . '\\' . $name;
             }
@@ -30,7 +32,10 @@ trait DeclarationSymbolTrait
         $constInfo                    = new \stdClass();
         $constInfo->value             = $value;
         $constInfo->valueExpr         = $valueExpr;
-        $constInfo->type              = $this->detectStrValueType($value);
+        $constInfo->type = $this->compilerPhase === self::PHASE_CONVERT
+            ? $this->detectStrValueType($value)
+            : Type::VAR;
+        $constInfo->codegenFinalized = $this->compilerPhase === self::PHASE_CONVERT;
         $constInfo->namespace = $this->namespace;
         $constInfo->name = $name;
         $this->constants[$this->escapeConstVar($name)] = $constInfo;

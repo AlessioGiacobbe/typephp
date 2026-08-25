@@ -99,7 +99,7 @@ trait CallArgumentGenerator
                             'Named calls to Native virtual methods cannot skip an earlier optional parameter',
                         );
                     }
-                    if ($argInfo->default === '') {
+                    if (!$argInfo->hasDefaultValue()) {
                         $errorNode = null;
                         foreach ($callArgs as $a) {
                             if ($a instanceof Node\Arg && $a->name) {

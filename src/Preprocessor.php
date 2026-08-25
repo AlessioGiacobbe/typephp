@@ -303,6 +303,11 @@ class Preprocessor extends CompilerBase
             $traverser->addVisitor(new ConstantExpressionValidationVisitor($this->phpVersion));
             $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
             $stmts = $traverser->traverse($ast);
+            // Keep the resolved declaration AST until convert. Defaults and
+            // constants are validated here, but their C++ expressions are not
+            // generated until the complete symbol table is available.
+            $this->preparedFileAsts[$this->file] = $stmts;
+            $this->declarationExpressionsFinalized = false;
             // CompilerTest and embedding users may invoke prepareFile()
             // directly instead of the project pipeline. Preserve same-file
             // forward Native references for that public entry path as well.
@@ -347,6 +352,218 @@ class Preprocessor extends CompilerBase
             }
         } finally {
             $this->restoreCompilerPhase($previousPhase);
+        }
+    }
+
+    /**
+     * Lower declaration-only constant expressions after every symbol is known.
+     *
+     * @param list<string> $files
+     */
+    public function finalizeDeclarationExpressions(array $files): void
+    {
+        $this->assertCompilerPhase(self::PHASE_CONVERT, 'declaration expression finalization');
+        if ($this->declarationExpressionsFinalized) {
+            return;
+        }
+        foreach ($files as $file) {
+            $path = realpath($file);
+            if ($path === false || !isset($this->preparedFileAsts[$path])) {
+                continue;
+            }
+            $this->loadFile($path);
+            $this->resetFile();
+            $this->resetFunction();
+            $this->resetMethod();
+            $this->resetClass();
+            $this->resetNamespace();
+            $this->finalizeDeclarationStatementList($this->preparedFileAsts[$path]);
+        }
+        $this->declarationExpressionsFinalized = true;
+    }
+
+    /** @param array<Node\Stmt> $statements */
+    private function finalizeDeclarationStatementList(array $statements): void
+    {
+        foreach ($statements as $statement) {
+            if ($statement instanceof Node\Stmt\Namespace_) {
+                $this->resetClass();
+                $this->resetMethod();
+                $this->resetFunction();
+                $this->resetNamespace();
+                $this->namespace = $statement->name ? $this->parseIdentifier($statement->name) : '';
+                $this->finalizeDeclarationStatementList($statement->stmts);
+                continue;
+            }
+            if ($statement instanceof Node\Stmt\Use_) {
+                $this->parseUse($statement);
+                continue;
+            }
+            if ($statement instanceof Node\Stmt\GroupUse) {
+                $this->parseGroupUse($statement);
+                continue;
+            }
+            if ($statement instanceof Node\Stmt\Class_
+                || $statement instanceof Node\Stmt\Trait_
+                || $statement instanceof Node\Stmt\Enum_
+            ) {
+                $this->finalizeClassDeclarationExpressions($statement);
+                continue;
+            }
+            if ($statement instanceof Node\Stmt\Interface_) {
+                $this->finalizeInterfaceDeclarationExpressions($statement);
+                continue;
+            }
+            if ($statement instanceof Node\Stmt\Function_) {
+                $this->resetClass();
+                $this->resetMethod();
+                $this->finalizePreparedFunctionDefaults(
+                    $statement,
+                    $this->getFunction($this->getFunctionName($statement)),
+                );
+                continue;
+            }
+            if ($statement instanceof Node\Stmt\Const_) {
+                $this->finalizeGlobalConstantExpressions($statement);
+            }
+        }
+    }
+
+    private function finalizeClassDeclarationExpressions(
+        Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class,
+    ): void {
+        $this->resetClass();
+        $this->class = $this->parseIdentifier($class->name);
+        $this->classDef = $this->getClass($this->getFullClassName());
+        foreach ($class->stmts as $statement) {
+            if ($statement instanceof Node\Stmt\ClassConst) {
+                foreach ($statement->consts as $constant) {
+                    $name = $this->parseIdentifier($constant->name);
+                    $this->finalizePreparedConstant(
+                        $this->classDef->getConstant($name),
+                        $constant->value,
+                    );
+                }
+                continue;
+            }
+            if ($statement instanceof Node\Stmt\Property) {
+                foreach ($statement->props as $property) {
+                    $name = $this->parseIdentifier($property->name);
+                    if ($property->default !== null && $this->classDef->hasProperty($name)) {
+                        $this->finalizePreparedProperty(
+                            $this->classDef->getProperty($name),
+                            $property->default,
+                        );
+                    }
+                }
+                continue;
+            }
+            if (!$statement instanceof Node\Stmt\ClassMethod) {
+                continue;
+            }
+            $name = $this->getMethodName($statement);
+            $this->resetMethod();
+            $this->method = $name;
+            $this->methodDef = $this->classDef->hasMethod($name)
+                ? $this->classDef->getMethod($name)
+                : ($this->classDef->hasAbstractMethod($name)
+                    ? $this->classDef->getAbstractMethod($name)
+                    : null);
+            if ($this->methodDef !== null && $this->methodDef->functionDef !== null) {
+                $this->finalizePreparedFunctionDefaults($statement, $this->methodDef->functionDef);
+            }
+        }
+    }
+
+    private function finalizeInterfaceDeclarationExpressions(Node\Stmt\Interface_ $interface): void
+    {
+        $this->resetClass();
+        $this->interface = $this->parseIdentifier($interface->name);
+        $this->interfaceDef = $this->getInterface($this->getFullClassLikeName());
+        foreach ($interface->stmts as $statement) {
+            if ($statement instanceof Node\Stmt\ClassConst) {
+                foreach ($statement->consts as $constant) {
+                    $name = $this->parseIdentifier($constant->name);
+                    $this->finalizePreparedConstant(
+                        $this->interfaceDef->constants[$name],
+                        $constant->value,
+                    );
+                }
+                continue;
+            }
+            if (!$statement instanceof Node\Stmt\ClassMethod) {
+                continue;
+            }
+            $name = $this->getMethodName($statement);
+            $this->resetMethod();
+            $this->method = $name;
+            $this->methodDef = $this->interfaceDef->methods[strtolower($name)] ?? null;
+            if ($this->methodDef !== null && $this->methodDef->functionDef !== null) {
+                $this->finalizePreparedFunctionDefaults($statement, $this->methodDef->functionDef);
+            }
+        }
+        $this->interface = '';
+        $this->interfaceDef = null;
+    }
+
+    private function finalizePreparedFunctionDefaults(
+        Node\Stmt\Function_|Node\Stmt\ClassMethod $function,
+        FunctionDef $functionDef,
+    ): void {
+        $this->resetFunction();
+        $this->function = $this->parseIdentifier($function->name);
+        $this->functionDef = $functionDef;
+        foreach ($function->params as $index => $parameter) {
+            if ($parameter->default === null || !isset($functionDef->argInfoList[$index])) {
+                continue;
+            }
+            $argument = $functionDef->argInfoList[$index];
+            $argument->default = '';
+            $argument->arrayInitPlan = null;
+            $this->lowerArgumentDefault($parameter, $argument);
+        }
+    }
+
+    private function finalizePreparedProperty(PropertyDef $property, Node\Expr $expression): void
+    {
+        $this->resetFunction();
+        $property->arrayInitPlan = null;
+        if ($expression instanceof Node\Expr\Array_) {
+            $property->arrayInitPlan = $this->buildLiteralArrayInitPlan($expression);
+            $property->default = $property->arrayInitPlan->expr;
+        } else {
+            $property->default = $this->parseIdentifier($expression);
+        }
+    }
+
+    private function finalizePreparedConstant(ConstantDef $constant, Node\Expr $expression): void
+    {
+        $this->resetFunction();
+        $constant->arrayExpr = '';
+        $constant->value = $this->parseIdentifier($expression);
+        if ($this->context->beforeStmtLines) {
+            if ($this->context->localVars) {
+                $constant->arrayExpr .= $this->genScopeVarDecl();
+            }
+            $constant->arrayExpr .= $this->parseBeforeStmtLines();
+        }
+        $constant->codegenFinalized = true;
+    }
+
+    private function finalizeGlobalConstantExpressions(Node\Stmt\Const_ $statement): void
+    {
+        foreach ($statement->consts as $constant) {
+            $name = $this->parseIdentifier($constant->name);
+            if ($this->namespace !== '') {
+                $name = $this->namespace . '\\' . $name;
+            }
+            $key = $this->escapeConstVar($name);
+            if (!isset($this->constants[$key])) {
+                continue;
+            }
+            $this->resetFunction();
+            $this->constants[$key]->value = $this->parseIdentifier($constant->value);
+            $this->constants[$key]->codegenFinalized = true;
         }
     }
 
@@ -679,28 +896,10 @@ class Preprocessor extends CompilerBase
                 $list[] = $this->genArgumentDeclaration($argInfo);
             }
             if ($param->default) {
-                $arrayInitPlan = $param->default instanceof Node\Expr\Array_
-                    ? $this->withoutLocalClassEntryHoisting(
-                        fn (): ArrayInitPlan => $this->buildLiteralArrayInitPlan($param->default),
-                    )
-                    : null;
-                if ($param->byRef) {
-                    if ($this->isEmptyArray($param->default)) {
-                        $argInfo->default = 'php::getEmptyArrayRef()';
-                        $argInfo->defaultValue = null;
-                    } elseif ($this->isNull($param->default)) {
-                        $argInfo->default = 'nullptr';
-                        $argInfo->defaultValue = null;
-                    } elseif ($arrayInitPlan) {
-                        $argInfo->default = 'php::newReference(' . $arrayInitPlan->expr . ')';
-                        $argInfo->arrayInitPlan = $arrayInitPlan;
-                    } else {
-                        $argInfo->default = 'php::newReference(' . $this->parseParamDefaultValue($param->default) . ')';
-                    }
-                } else {
-                    $argInfo->default = $arrayInitPlan ? $arrayInitPlan->expr : $this->parseParamDefaultValue($param->default);
-                    $argInfo->arrayInitPlan = $arrayInitPlan;
-                    $argInfo->defaultValue = $param->default;
+                $argInfo->defaultExpr = $param->default;
+                $argInfo->defaultValue = $param->default;
+                if ($this->compilerPhase === self::PHASE_CONVERT) {
+                    $this->lowerArgumentDefault($param, $argInfo);
                 }
             } elseif ($param->variadic) {
                 // 变长参数可以视为空数组默认值
@@ -711,6 +910,33 @@ class Preprocessor extends CompilerBase
         }
         $functionDef->params = implode(', ', $list);
         $functionDef->argCountRequired = $lastRequiredIndex + 1;
+    }
+
+    protected function lowerArgumentDefault(Node\Param $param, ArgInfo $argInfo): void
+    {
+        if ($param->default === null) {
+            return;
+        }
+        $arrayInitPlan = $param->default instanceof Node\Expr\Array_
+            ? $this->withoutLocalClassEntryHoisting(
+                fn (): ArrayInitPlan => $this->buildLiteralArrayInitPlan($param->default),
+            )
+            : null;
+        $argInfo->arrayInitPlan = $arrayInitPlan;
+        if ($param->byRef) {
+            if ($this->isEmptyArray($param->default)) {
+                $argInfo->default = 'php::getEmptyArrayRef()';
+                return;
+            }
+            if ($this->isNull($param->default)) {
+                $argInfo->default = 'nullptr';
+                return;
+            }
+            $value = $arrayInitPlan?->expr ?? $this->parseParamDefaultValue($param->default);
+            $argInfo->default = 'php::newReference(' . $value . ')';
+            return;
+        }
+        $argInfo->default = $arrayInitPlan?->expr ?? $this->parseParamDefaultValue($param->default);
     }
 
     protected function getFunctionDisplayName(FunctionDef $functionDef): string
@@ -1398,13 +1624,16 @@ class Preprocessor extends CompilerBase
     private function parseClassLikeConstant(Node\Const_ $const, int $flags, string $type, string $class = '', ?string $declaredType = null): ConstantDef
     {
         $constName = $this->parseIdentifier($const->name);
-        $constValue = $this->parseIdentifier($const->value);
+        $constValue = $this->compilerPhase === self::PHASE_CONVERT
+            ? $this->parseIdentifier($const->value)
+            : '';
 
         $constInfo = new ConstantDef($constName, $flags, $type, $constValue);
         $constInfo->valueExpr = $const->value;
         $constInfo->declaredType = $declaredType;
+        $constInfo->codegenFinalized = $this->compilerPhase === self::PHASE_CONVERT;
 
-        if ($this->context->beforeStmtLines) {
+        if ($constInfo->codegenFinalized && $this->context->beforeStmtLines) {
             $arrayExpr = '';
             if ($this->context->localVars) {
                 $arrayExpr .= $this->genScopeVarDecl();
@@ -1455,8 +1684,10 @@ class Preprocessor extends CompilerBase
         if ($defaultNode !== null) {
             $this->checkPropertyDefaultType($name, $typeNode, $defaultNode, $errorNode);
             if ($defaultNode instanceof Node\Expr\Array_) {
-                $arrayInitPlan = $this->buildLiteralArrayInitPlan($defaultNode);
-                $default = $arrayInitPlan->expr;
+                if ($this->compilerPhase === self::PHASE_CONVERT) {
+                    $arrayInitPlan = $this->buildLiteralArrayInitPlan($defaultNode);
+                    $default = $arrayInitPlan->expr;
+                }
                 // Only narrow the property type to `array` when the declared type
                 // cannot already hold an array. `mixed`/`iterable`/union/nullable
                 // types are represented as php::Var and can legally store an array,
@@ -1465,7 +1696,7 @@ class Preprocessor extends CompilerBase
                 if ($type !== Type::VAR) {
                     $type = Type::ARRAY;
                 }
-            } else {
+            } elseif ($this->compilerPhase === self::PHASE_CONVERT) {
                 $default = $this->parseIdentifier($defaultNode);
             }
         }
@@ -1489,6 +1720,7 @@ class Preprocessor extends CompilerBase
         }
         $propDef->readonly = (bool) (($flags | $this->classDef->flags) & Modifiers::READONLY);
         $propDef->class = $class;
+        $propDef->defaultExpr = $defaultNode;
         $propDef->arrayInitPlan = $arrayInitPlan;
         $propDef->requiresRuntimeDefaultInit = $this->propertyDefaultRequiresRuntimeInit($defaultNode);
         $propDef->promoted = $promoted;

@@ -19,6 +19,8 @@ class PropertyDef
     public int $flags;
     public ?string $default = null;
     public ?ArrayInitPlan $arrayInitPlan = null;
+    /** Original declaration AST; lowered to $default only in the convert phase. */
+    public ?NodeAbstract $defaultExpr = null;
     public ?ArrayDefinition $arrayDef = null;
     public bool $nullable = false;
     /** The declared type is TypePHP's unconstrained, reference-capable `any` type. */
