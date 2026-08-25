@@ -100,6 +100,12 @@ class FileScanner
             }
         }
 
+        // RecursiveDirectoryIterator follows filesystem directory-entry order,
+        // which differs between a fresh checkout and a long-lived worktree.
+        // Preparation allocates symbol-cache IDs while visiting this list, so
+        // keep both generated code and cache classification deterministic.
+        sort($files, SORT_STRING);
+
         return $files;
     }
 

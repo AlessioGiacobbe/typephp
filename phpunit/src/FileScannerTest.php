@@ -141,6 +141,15 @@ class FileScannerTest extends TestCase
         $scanner = new FileScanner($tmpDir);
         $files = $scanner->scan();
 
+        $this->assertSame([
+            $tmpDir . '/helper.c',
+            $tmpDir . '/lib.m',
+            $tmpDir . '/main.php',
+            $tmpDir . '/math.S',
+            $tmpDir . '/module.cc',
+            $tmpDir . '/sub/nested.cpp',
+        ], $files);
+
         // Python and Markdown should not be included
         $this->assertContains($tmpDir . '/main.php', $files);
         $this->assertContains($tmpDir . '/helper.c', $files);
