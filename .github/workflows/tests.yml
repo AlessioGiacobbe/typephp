@@ -44,6 +44,7 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           extensions: embed
+          ini-values: precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, log_errors=0
           tools: composer:v2
 
       - name: Patch php_hash.h C++ compatibility
@@ -114,7 +115,7 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           extensions: embed, curl, redis, mbstring, ffi
-          ini-values: ffi.enable=1
+          ini-values: ffi.enable=1, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, log_errors=0
           tools: composer:v2
 
       - name: Patch php_hash.h C++ compatibility
@@ -180,7 +181,7 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           extensions: embed, curl, redis, mbstring, ffi
-          ini-values: ffi.enable=1
+          ini-values: ffi.enable=1, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, log_errors=0
           tools: composer:v2
 
       - name: Patch php_hash.h C++ compatibility
