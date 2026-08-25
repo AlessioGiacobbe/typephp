@@ -2580,14 +2580,20 @@ CODE;
 
         // Required PHP modules. These are emitted as zend_module_dep entries;
         // they are unrelated to native libraries configured through link-libs.
-        if (array_key_exists('extension-dependencies', $cfg)) {
-            $dependencies = $cfg['extension-dependencies'];
+        $hasExtensionDependencies = array_key_exists('extension-dependencies', $cfg);
+        $hasExtensionDependenciesAlias = array_key_exists('ext-deps', $cfg);
+        if ($hasExtensionDependencies && $hasExtensionDependenciesAlias) {
+            $this->error('`extension-dependencies` and `ext-deps` cannot be used together');
+        }
+        if ($hasExtensionDependencies || $hasExtensionDependenciesAlias) {
+            $configKey = $hasExtensionDependencies ? 'extension-dependencies' : 'ext-deps';
+            $dependencies = $cfg[$configKey];
             if (!is_array($dependencies)) {
-                $this->error('`extension-dependencies` must be array');
+                $this->error("`{$configKey}` must be array");
             }
             foreach ($dependencies as $dependency) {
                 if (!is_string($dependency) || trim($dependency) === '') {
-                    $this->error('Each `extension-dependencies` entry must be a non-empty string');
+                    $this->error("Each `{$configKey}` entry must be a non-empty string");
                 }
                 $dependency = trim($dependency);
                 if (str_contains($dependency, "\0")) {

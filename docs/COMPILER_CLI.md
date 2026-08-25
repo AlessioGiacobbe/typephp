@@ -127,6 +127,8 @@ extension-dependencies:
   - curl
 ```
 
+`ext-deps` 是等价的简写名称。一个项目中只能使用其中一个配置名；同时出现 `extension-dependencies` 和 `ext-deps` 会产生配置错误。
+
 编译器会为每一项生成 `ZEND_MOD_REQUIRED`。Zend 在加载 TypePHP 模块时检查这些扩展是否已加载。该配置不表示原生链接库；C/C++ 链接依赖仍使用 `link-libs`。
 
 ## 查看权威帮助

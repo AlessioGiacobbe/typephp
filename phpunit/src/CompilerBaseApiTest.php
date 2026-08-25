@@ -471,6 +471,40 @@ YAML);
         $this->invokeMethod('parseProjectYaml', $projectFile);
     }
 
+    public function testParseProjectYamlSupportsExtDepsAlias(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+ext-deps:
+  - pdo_mysql
+  - curl
+  - curl
+YAML);
+
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+
+        $this->assertSame(['pdo_mysql', 'curl'], $this->compiler->getExtensionDependencies());
+    }
+
+    public function testParseProjectYamlRejectsBothExtensionDependencyNames(): void
+    {
+        $projectFile = $this->createProjectFile(<<<'YAML'
+sources:
+  - main.php
+extension-dependencies:
+  - pdo_mysql
+ext-deps:
+  - curl
+YAML);
+
+        $this->expectException(TestError::class);
+        $this->expectExceptionMessage(
+            '`extension-dependencies` and `ext-deps` cannot be used together',
+        );
+        $this->invokeMethod('parseProjectYaml', $projectFile);
+    }
+
     public function testExtensionDependenciesAreWrittenToZendModuleEntry(): void
     {
         global $translator;
@@ -479,7 +513,7 @@ YAML);
         $projectFile = $this->createProjectFile(<<<'YAML'
 sources:
   - main.php
-extension-dependencies:
+ext-deps:
   - pdo_mysql
   - curl
 YAML);
