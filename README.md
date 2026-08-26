@@ -7,8 +7,12 @@
 **A native AOT compiler for PHP**
 
 Compile PHP source code into native machine code ahead of time — producing
-standalone executables, PHP extensions, and static libraries — while keeping
+native executables, PHP extensions, and shared libraries — while keeping
 the PHP syntax you already know.
+
+[![Tests](https://github.com/swoole/typephp/actions/workflows/tests.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/tests.yml)
+[![PHP 8.4–8.5](https://img.shields.io/badge/PHP-8.4--8.5-777bb4.svg)](https://www.php.net/)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
 </div>
 
@@ -22,13 +26,44 @@ not interpret opcodes at runtime: it generates optimized native binaries that
 run directly on the CPU.
 
 It keeps familiar PHP syntax and adds compile-time type information, so the
-compiler can emit fast, statically-typed C++ for your hot paths — while the
-rest of your code continues to run on the battle-tested Zend engine.
+compiler can emit fast, statically-typed C++ for hot paths. Dynamic PHP values,
+internal functions, reflection, and object metadata continue to interoperate
+with the Zend runtime through PHPX; user functions are not executed as Zend
+opcodes after they have been compiled.
 
 TypePHP is **written entirely in PHP** and is **fully self-hosting**: the `tpc`
 compiler binary is built by compiling the compiler's own PHP source code with
 TypePHP. The bootstrap chain is pure PHP — no C or C++ glue in the compiler
 itself.
+
+TypePHP is under active development. It intentionally supports a defined,
+testable subset of PHP rather than claiming drop-in compatibility with every
+dynamic PHP program. Read [Compatibility model](#compatibility-model) and the
+[incompatible-feature list](docs/INCOMPATIBLE_PHP_FEATURES.md) before adopting
+it for an existing application.
+
+## How it works
+
+```text
+PHP source + .stub.php declarations + optional C/C++ sources
+                         │
+                         ▼
+        parse, validate, and collect declarations
+                         │
+                         ▼
+       lower function bodies and constants to C++17
+                         │
+                         ▼
+       native compiler + reusable object/PCH caches
+                         │
+                         ▼
+ executable | PHP extension | shared library | WASI component
+```
+
+The prepare phase builds the complete symbol model without allocating runtime
+cache IDs. Constants and declaration defaults retain their AST until the
+convert phase, where they are lowered after all project symbols are known.
+This two-phase design keeps multi-file and self-hosted builds deterministic.
 
 ## Features
 
@@ -37,19 +72,19 @@ itself.
   source into a native binary.
 - **True AOT compilation** — PHP is lowered to C++17, then to native machine
   code. No interpreter, no opcode cache, no JIT warm-up.
-- **Three build modes** — build a standalone `bin` executable, a loadable PHP
-  `ext` extension, or a `lib` static library from the same codebase.
+- **Three native build modes** — build a native `bin` executable, a loadable
+  PHP `ext` extension, or a reusable `lib` shared library from the same codebase.
 - **Native type system** — `int`, `float`, and `bool` map directly to C++
   scalar types (`int64_t`, `double`, `bool`) for orders-of-magnitude speedups
   on numeric code.
 - **High-precision numerics** — `bigInt` (GMP), `decimal` (libmpdec), and
-  `bigFloat` (MPFR) with zero-overhead arithmetic.
+  `bigFloat` (MPFR), with typed operators and method APIs.
 - **Strongly-typed containers** — `std::array`, `std::vector`, `std::map`, and
   `std::ordered_map` with compile-time element types; up to **10×** faster than
   PHP arrays and on par with C++ `std::vector`.
 - **Universal methods** — call methods directly on primitives
-  (`$s->upper()`, `$arr->contains()`, `$big->mul(2)`) with zero runtime
-  dispatch overhead.
+  (`$s->upper()`, `$arr->contains()`, `$big->mul(2)`); statically-known calls
+  are resolved directly at compile time.
 - **Mixed C++ / PHP** — call C++ functions from PHP (and vice versa) for
   performance-critical kernels.
 - **Compile-time functions & keywords** — `any()`, `refval()`, `objval()`,
@@ -57,6 +92,9 @@ itself.
   friends.
 - **Compile-time safety** — `#[Immutable]` read-only contracts and `#[ArrayDef]`
   array-shape metadata, checked at compile time with zero runtime cost.
+- **Compile-time code generation** — `#[Getter]`, `#[Setter]`, `#[With]`,
+  `#[Constructor]`, `#[Printer]`, and `#[Arrayable]` generate type-safe methods
+  from property declarations.
 - **Modern PHP support** — PHP 8.4 property hooks, asymmetric visibility,
   PHP 8.5 `clone()`-with, and `(void)` discard expressions.
 - **Cross-platform & WASM** — Linux, Windows, and macOS targets for x86-64 and
@@ -71,7 +109,7 @@ itself.
 | Compilation target | Native machine code | Bytecode | Machine code (trace) |
 | Startup / warm-up | None (already compiled) | Per-process warm-up | JIT warm-up |
 | Type-driven optimization | Compile-time, full-program | None | Limited, trace-based |
-| Standalone executable | Yes | No | No |
+| Native executable output | Yes | No | No |
 | Source code protection | Compiled to machine code | Bytecode (reversible) | Bytecode (reversible) |
 | Deterministic performance | Yes | No | No |
 
@@ -82,38 +120,45 @@ itself.
   [benchmark](#benchmark) below.
 - **Source protection.** Your source is compiled away — shipped artifacts are
   native binaries, not readable PHP files.
-- **Zero-dependency deployment.** Binary mode produces a single self-contained
-  executable that runs without a PHP runtime.
+- **Native process entry.** Binary mode starts directly from a native
+  executable and does not require the PHP CLI or a separate interpreter
+  process. The executable still embeds/links PHPX, `libphp`, and any configured
+  native libraries, which must be available in the deployment package.
 - **Gradual typing that actually pays off.** Add `use native_types`, `std::`
   containers, and type declarations only where performance matters; the rest
   stays ordinary PHP.
-- **Full PHP ecosystem interop.** Extension mode loads as a standard PHP
-  extension into `php-fpm`, so existing frameworks and tooling keep working.
+- **Zend ecosystem interop.** Extension mode loads as a standard PHP extension,
+  and projects can call supported internal functions and require other Zend
+  extensions explicitly.
 
 ## Requirements
 
-- **PHP 8.4 – 8.5** with the `embed` module (`libphp.so`)
+- **PHP 8.4 – 8.5** CLI, development headers, and `php-config`
+- The matching **PHP embed library** (`libphp.so`) for binary/shared-library
+  builds on Unix-like systems
 - **GCC 9+** (or Clang) with **C++17**
 - **CMake 3.24+**
+- **Composer 2**
 - High-precision math libraries: **GMP**, **MPFR** (libmpdec is bundled with PHPX)
 
 ```shell
 # Ubuntu/Debian
-sudo apt install libgmp-dev libmpfr-dev
+sudo apt install build-essential cmake pkg-config libgmp-dev libmpfr-dev
 
 # RHEL/CentOS/Fedora
-sudo dnf install gmp-devel mpfr-devel
+sudo dnf install gcc gcc-c++ cmake pkgconf-pkg-config gmp-devel mpfr-devel
 
 # Arch Linux
-sudo pacman -S gmp mpfr
+sudo pacman -S base-devel cmake pkgconf gmp mpfr
 ```
 
 > GMP powers `bigInt` and MPFR powers `bigFloat`. The `decimal` type is backed
 > by libmpdec, which is bundled with PHPX — no separate install required.
 
-The preview currently targets **Linux** as the primary development platform
-(Ubuntu 22.04 recommended). Windows and macOS packaging is supported through
-the same entry point.
+Linux is the primary development and CI platform. The compiler also has
+Windows, macOS, x86-64, ARM64, and WASI backends; availability of PHP embed,
+toolchain, and third-party libraries still determines which target can be
+built on a given host.
 
 ## Installation
 
@@ -136,11 +181,26 @@ instead:
 bin/tpc.php project.yml
 ```
 
+### From source
+
+```bash
+git clone https://github.com/swoole/typephp.git
+cd typephp
+composer install
+php bin/tpc.php --help
+```
+
+`PHPX_HOME` may point to a separate PHPX checkout or installation. `PHP_HOME`
+may point to the PHP embed prefix; it must contain `bin/php-config`, PHP headers,
+and `lib/libphp.so` on Unix-like systems.
+
 ### Building `libphp.so`
 
-`tpc` requires a PHP built with the `embed` SAPI. If `libphp.so` is missing on
-Linux, `tpc.php` can interactively download the PHP source and build it for
-you. See [Automatic libphp.so build](docs/LIBPHP_INSTALLER.md).
+Binary and shared-library builds require PHP's `embed` SAPI. If `libphp.so` is
+missing on Linux, `tpc.php` can interactively download the PHP source and build
+it for you. A PHP extension build resolves Zend symbols from the host SAPI and
+must not load a second `libphp`. See
+[Automatic libphp.so build](docs/LIBPHP_INSTALLER.md).
 
 ## Quick Start
 
@@ -164,17 +224,19 @@ bin/tpc.php hello.php
 ./hello
 ```
 
-Output:
+Example output (the exact PHP version and platform strings depend on the linked
+runtime):
 
 ```
 Hello World!
-string(5) "8.4.x"
+string(5) "8.x.x"
 string(16) "Linux ..."
 ```
 
 > Binary mode requires a global `main()` function. It may be declared with no
 > parameters, or as `main(int $argc, array $argv)` to receive command-line
-> arguments, and must return `void`.
+> arguments, and must return `void`. Top-level executable statements are not
+> allowed; executable code belongs in a function or method.
 
 ## Compilation Modes
 
@@ -183,8 +245,8 @@ TypePHP supports three build modes, selected with `-m` / `--mode`:
 | Mode | Flag | Output | Needs `main()` | Typical use |
 |---|---|---|---|---|
 | Binary | `-m bin` (default) | Executable | Yes | CLI tools, long-running services, standalone apps |
-| Extension | `-m ext` | `.so` / `.dll` | No | Web apps on `php-fpm`, drop-in PHP extension |
-| Library | `-m lib` | Static library | No | Embedding compiled code into other projects |
+| Extension | `-m ext` | PHP `.so` / `.dll` | No | Loading compiled functions/classes into a PHP SAPI |
+| Library | `-m lib` | Shared library plus generated `.stub.php` | No | Reusing a compiled TypePHP API from another project |
 
 ```bash
 # Binary (default)
@@ -193,11 +255,140 @@ bin/tpc.php app.php -o myapp
 # PHP extension
 bin/tpc.php extension/ -m ext -o my_extension
 
-# Static library
+# Shared library; also generates mylib.stub.php
 bin/tpc.php lib/ -m lib -o mylib
 ```
 
 See [Compilation modes](docs/COMPILATION_MODES.md) for details.
+
+## Project configuration
+
+For multi-file projects, keep repeatable build settings in `project.yml`:
+
+```yaml
+name: myapp
+mode: bin
+php-version: "8.5"
+optimize: 2
+job: 8
+build-dir: build
+cxx-std: c++17
+
+sources:
+  - src
+  - cpp-src
+  - path: src/php85
+    if: PHP_VERSION_ID >= 80500
+  - path: src/windows
+    if: PHP_OS_FAMILY == "Windows"
+
+ignore:
+  - src/experimental
+
+include-paths:
+  - native/include
+defines:
+  - FEATURE_FAST_PATH=1
+link-paths:
+  - native/lib
+link-libs:
+  - curl
+
+# Zend extension requirements, not native linker libraries.
+# `extension-dependencies` is the equivalent long name; do not use both.
+ext-deps:
+  - pdo_mysql
+  - curl
+```
+
+Paths are resolved relative to the YAML file. A source entry may be a file or
+directory; conditional entries support `PHP_VERSION`, `PHP_VERSION_ID`, and
+`PHP_OS_FAMILY`. CLI arguments override their YAML counterparts. Native linker
+dependencies belong in `link-libs`; `ext-deps` writes `ZEND_MOD_REQUIRED`
+entries so Zend can reject loading when a required PHP extension is missing.
+
+The build directory contains generated C++, dependency objects, and the
+precompiled-header cache. Reusing it makes incremental builds much faster;
+use `--force` only when the reusable PHPX objects must be rebuilt.
+
+See [Compiler CLI](docs/COMPILER_CLI.md) for all project keys and command-line
+precedence rules.
+
+## Compatibility model
+
+TypePHP follows PHP syntax and runtime behavior where they are compatible with
+ahead-of-time compilation, but it also makes several deliberate restrictions:
+
+- global scope is declaration-only; executable statements must be inside a
+  function or method;
+- binary mode has a strict `main()` signature;
+- `use native_types` opts scalar declarations into fixed native storage, so a
+  value cannot later change to an incompatible type;
+- statically-known calls and properties are compiled directly, while supported
+  dynamic operations use PHPX/Zend runtime fallbacks;
+- `.stub.php` files declare C++ or imported-library APIs and must contain empty
+  bodies; `#[Native]` classes are not permitted in stub files;
+- some highly dynamic reference, declaration, closure, and reflection patterns
+  remain intentionally unsupported.
+
+The compatibility boundary is part of the public contract and has both
+positive and negative tests. Consult
+[Incompatible PHP features](docs/INCOMPATIBLE_PHP_FEATURES.md) for the current,
+specific list instead of assuming that absence from this README means support.
+
+## Compile-time attributes and code generation
+
+TypePHP consumes its built-in code-generation attributes while lowering the
+class. The generated methods retain the declared property types and take part
+in the same conflict, inheritance, and final-method checks as explicitly
+declared methods.
+
+| Attribute | Target | Generated API |
+|---|---|---|
+| `#[Getter]` | Instance property, including a promoted property | `public function getName(): T` |
+| `#[Setter]` | Mutable instance property, including a promoted property | `public function setName(T $name): void` |
+| `#[With]` | Mutable instance property, including a promoted property | `public function withName(T $name): static`; clones the object, updates the clone, and returns it |
+| `#[Constructor]` | Declared instance property | Adds the property to a generated public `__construct()` |
+| `#[Printer]` | Named class | `public function __toString(): string` |
+| `#[Arrayable]` | Named class | `public function toArray(): array` |
+
+```php
+<?php
+
+#[Printer(fields: ['id', 'name'])]
+#[Arrayable(fields: ['id', 'name'])]
+final class User
+{
+    #[Constructor, Getter, With]
+    public int $id;
+
+    #[Constructor, Getter, Setter]
+    public string $name = 'guest';
+}
+
+function main(): void
+{
+    $user = new User(7);
+    $user->setName('Alice');
+
+    $copy = $user->withId(8);
+    echo $user->getId();       // 7
+    echo $copy->getId();       // 8
+    echo $user;                // User(id=7, name=Alice)
+    echo $user->toArray()['name'];
+}
+```
+
+Without `fields`, `#[Printer]` and `#[Arrayable]` use the class's own public
+instance properties. The positional form, such as `#[Arrayable(['id'])]`, is
+equivalent to `#[Arrayable(fields: ['id'])]`.
+
+`#[Getter]`, `#[Setter]`, and `#[With]` cannot target static properties or
+properties with hooks. `#[Setter]` and `#[With]` additionally reject readonly
+properties. `#[Constructor]` cannot be used when the class already declares
+`__construct()`, and required constructor properties must precede properties
+with defaults. A generated method name that conflicts with a declared or
+inherited final method is a compile-time error.
 
 ## Examples
 
@@ -326,7 +517,7 @@ Write performance-critical kernels in C++ and call them from PHP:
 
 using namespace php;
 
-var php_fast_sum(Int a, Int b) {
+Int php_fast_sum(Int a, Int b) {
     return a + b;
 }
 ```
@@ -334,7 +525,7 @@ var php_fast_sum(Int a, Int b) {
 ```php
 <?php
 // math.stub.php — declares the C++ function signature
-function fast_sum(int $a, int $b): int;
+function fast_sum(int $a, int $b): int {}
 ```
 
 ```php
@@ -344,6 +535,10 @@ function main(): void
     echo fast_sum(3, 4) . "\n";  // 7
 }
 ```
+
+Add `math.cpp`, `math.stub.php`, and the calling PHP source to the same project
+configuration. The `php_` C++ symbol prefix is the TypePHP callable ABI; stub
+functions provide type metadata only and must not contain an implementation.
 
 See [Mixed C++/PHP](docs/MIXED_CPP_PHP.md).
 
@@ -361,7 +556,13 @@ benchmarks that ship with the PHP source tree, compiled with `-O3`:
 
 Both benchmarks measure core PHP language performance — function calls, object
 property access, array/hash access, string handling, control flow, and more.
-See the full per-item report in [`bench.txt`](bench.txt).
+The checked-in workloads are [`examples/bench.php`](examples/bench.php) and
+[`examples/micro_bench.php`](examples/micro_bench.php).
+
+These numbers are a project measurement snapshot, not a performance guarantee.
+PHP version, compiler, CPU, optimization flags, and enabled extensions can all
+change the result; compare on the same machine with the same workload before
+making deployment decisions.
 
 ### std::array vs PHP array
 
@@ -375,7 +576,7 @@ A 10000×100000 element update loop, comparing PHP arrays against TypePHP's
 | C++ `std::vector` | 6.2 s |
 
 `std::array` is roughly **10× faster** than PHP arrays and performs
-identically to hand-written C++. See the full benchmark in
+close to the hand-written C++ result in this workload. See the benchmark in
 [Std containers](docs/STD_CONTAINERS.md).
 
 ## Command Line
@@ -419,13 +620,20 @@ Key options:
 | `-m`, `--mode <bin\|lib\|ext>` | Build mode (default `bin`) |
 | `-r`, `--run` | Run after a successful build |
 | `-j`, `--job <num>` | Parallel compile jobs (default `4`) |
+| `-f`, `--force` | Rebuild reusable PHPX objects instead of using the cache |
 | `--build-dir <dir>` | Directory for generated C++ and intermediates |
 | `--dry` | Generate C++ only, skip compile and link |
 | `--php-version <8.4\|8.5>` | PHP syntax version to accept |
 | `--cxx-std <ver>` | C++ standard (e.g. `c++17`, `c++20`) |
 | `--march <arch>` | Target instruction set (e.g. `native`) |
+| `--target-platform <triple>` | Cross-compilation target triple |
 | `--lto` | Enable link-time optimization |
 | `--sanitize <type>` | Enable a sanitizer (e.g. `address`) |
+| `--profile` | Enable Linux gperftools profiling |
+| `--format` | Format generated C++ with clang-format |
+| `--no-literal-strings` | Disable the literal-string table optimization |
+| `--no-progress`, `--no-color` | CI-friendly output controls |
+| `-I`, `-D`, `-L`, `-l` | Repeatable native include, define, library path, and library options |
 
 Run `bin/tpc.php --help` for the authoritative, up-to-date list. See
 [Compiler CLI](docs/COMPILER_CLI.md) for details, including Bash completion:
@@ -433,6 +641,24 @@ Run `bin/tpc.php --help` for the authoritative, up-to-date list. See
 ```bash
 source <(./tpc --generate-completion=bash)
 ```
+
+## Troubleshooting
+
+- **`libphp.so` is missing:** install/build the matching PHP embed SAPI, set
+  `PHP_HOME`, or let `bin/tpc.php` offer the interactive Linux installer.
+- **PHPX cannot be found:** set `PHPX_HOME` to a PHPX installation containing
+  `include/` and `lib/libphpx.so` (or the platform equivalent), then build PHPX
+  before compiling the project.
+- **Startup crashes or ABI errors:** the PHP headers, `php-config`, `libphp`,
+  and loaded extension ABI must agree on the PHP version and ZTS/NTS mode. Do
+  not mix artifacts from different PHP builds.
+- **Incremental builds are unexpectedly slow:** keep a stable `--build-dir` so
+  object and PCH caches can be reused. When an external test runner already
+  runs several tests concurrently, avoid multiplying that concurrency by an
+  unnecessarily large `tpc -j` value.
+- **A project compiles with `bin/tpc.php` but fails with `tpc`:** reproduce with
+  the self-hosted compiler. Bootstrap execution can expose dynamic-call or ABI
+  paths that the PHP-hosted compiler does not exercise.
 
 ## Python bridge
 
@@ -449,6 +675,42 @@ TypePHP ships a Python tool submodule that shares the `tpc` entry point:
 
 See [Python tool submodule](docs/python/tools.md).
 
+## Development and testing
+
+Install development dependencies and run the compiler unit suite:
+
+```bash
+composer install
+PHPX_HOME=/path/to/phpx vendor/bin/phpunit
+```
+
+PHPT is the end-to-end suite. Build the self-hosted compiler first and pass it
+explicitly to the test runner; using the Zend PHP executable as `--compiler`
+does not test the deployed compiler:
+
+```bash
+PHPX_HOME=/path/to/phpx php bin/tpc.php project.yml --job 2 --no-progress
+php run-tests.php -q -j8 --compiler ./tpc tests/compiler
+```
+
+Static analysis and the source-derived coverage matrix are separate checks:
+
+```bash
+composer analyse
+php bin/analyze-test-coverage.php
+php bin/analyze-test-coverage.php \
+  --format=markdown --output=build/test-coverage.md --strict
+```
+
+The coverage tool reports PHP version × feature × positive compilation ×
+runtime semantics × negative diagnostics, plus concrete PHP-parser AST nodes.
+It intentionally does not publish a single percentage without an explicit
+denominator. See [Test coverage analyzer](docs/TEST_COVERAGE_ANALYZER.md).
+
+GitHub Actions runs PHPUnit and self-hosted PHPT on PHP 8.4 and 8.5. Changes to
+compiler behavior should add a focused PHPUnit test for internal/code-generation
+rules and a PHPT whenever runtime output or diagnostics are observable.
+
 ## Documentation
 
 - [Quick Start](docs/QUICKSTART.md) — minimal compilation flow
@@ -458,10 +720,15 @@ See [Python tool submodule](docs/python/tools.md).
 - [Native types](docs/NATIVE_TYPES.md) — native scalar types
 - [High-precision types](docs/HIGH_PRECISION_TYPES.md) — BigInt / Decimal / BigFloat
 - [Std containers](docs/STD_CONTAINERS.md) — strongly-typed containers
-- [Universal methods](docs/UNIVERSAL_METHODS.md) — zero-overhead methods
+- [Universal methods](docs/UNIVERSAL_METHODS.md) — compile-time method resolution
 - [Compile-time functions](docs/COMPILE_TIME_FUNCTIONS.md) — `any()`, `refval()`, `objval()`, …
 - [Mixed C++/PHP](docs/MIXED_CPP_PHP.md) — C++/PHP interop
 - [`#[Immutable]`](docs/IMMUTABLE.md) — compile-time read-only contracts
+- [`#[ArrayDef]`](docs/ARRAY_DEF.md) — typed array-property contracts
+- [Property hooks](docs/PROPERTY_HOOKS.md) — PHP 8.4 hook lowering and runtime metadata
+- [Object storage models](docs/OBJECT_STORAGE_AND_PASSING_MODELS.md) — Zend object, Box, and Native class boundaries
+- [Generators](docs/YIELD_GENERATOR.md) — generator lowering and lifecycle
+- [Test coverage analyzer](docs/TEST_COVERAGE_ANALYZER.md) — AST and feature evidence matrix
 - [WASI build](docs/WASI_BUILD.md) — WASI targets
 
 ## License
