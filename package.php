@@ -3,9 +3,9 @@
 /**
  * TypePHP cross-platform release packager.
  *
- * Windows produces a self-contained PHP/PHPX SDK package. Linux and macOS
- * retain their system-runtime package layout while sharing the same version,
- * staging, archive verification, and cleanup rules.
+ * Windows produces a self-contained PHP/PHPX SDK package. Linux contains the
+ * tested ELF compiler and production Composer vendor tree, but no host native
+ * libraries. All platforms share version, staging, verification, and cleanup.
  */
 
 if (!chdir(__DIR__)) {
@@ -15,7 +15,7 @@ if (!chdir(__DIR__)) {
 if (in_array('--help', $argv ?? [], true) || in_array('-h', $argv ?? [], true)) {
     echo "Usage: php package.php\n\n";
     echo "Windows: requires PHP_HOME and PHPX_HOME; creates a self-contained SDK package.\n";
-    echo "Linux: requires UPX; packages the native binary and release metadata.\n";
+    echo "Linux: uses strip; packages the tested ELF and Composer vendor tree.\n";
     echo "macOS: uses strip when available; packages the native binary and release metadata.\n";
     echo "Supported architectures: 64-bit CPUs, including x86_64 and ARM64.\n";
     exit(0);
@@ -54,18 +54,10 @@ echo "PHP 目录: {$phpDir}\n";
 echo "phpx 目录: {$phpxDir}\n\n";
 
 $compilerExe = 'tpc.exe';
-$versionFile = 'version.txt';
-
 // ==================== 1. 版本号管理 ====================
 echo "[1/7] 处理版本号...\n";
 
-if (file_exists($versionFile)) {
-    $versionId = (int)trim(file_get_contents($versionFile));
-} else {
-    $versionId = 1000;
-}
-
-$versionId++;
+$versionId = resolvePackageVersion();
 
 echo "当前版本: {$versionId}\n\n";
 
@@ -93,7 +85,7 @@ echo "[3/7] 检查必要文件...\n";
 $requiredFiles = [
     $compilerExe,
     'README.md',
-    'LICENSE.md',
+    'LICENSE',
     'composer.json',
     'examples/hello.php',
 ];
@@ -239,49 +231,10 @@ PHPX_HOME must point to the bundled phpx directory. Its required files include:
 TEXT;
 mustWriteFile($windowsSetupFile, $windowsSetup);
 
-// ==================== 4. UPX 压缩（可选） ====================
-echo "[4/7] UPX 压缩优化...\n";
-
-$useUpx = false;
-
-// 检查 UPX 是否可用
-exec('where upx 2>nul', $upxOutput, $upxReturn);
-if ($upxReturn === 0) {
-    // 获取 UPX 版本
-    exec('upx --version 2>&1', $versionOutput);
-    $upxVersion = $versionOutput[0] ?? 'unknown';
-    echo "检测到 UPX: {$upxVersion}\n";
-    
-    // 只压缩暂存目录中的副本，不修改工作区内的原始 tpc.exe。
-    echo "使用 UPX 压缩 {$packagedCompilerExe} ...\n";
-    $originalSize = filesize($packagedCompilerExe);
-    exec('upx --best ' . escapeshellarg($packagedCompilerExe) . ' 2>&1', $upxOutput, $upxResult);
-    
-    if ($upxResult === 0) {
-        echo "✓ UPX 压缩完成\n";
-        
-        // 显示压缩效果
-        $compressedSize = filesize($packagedCompilerExe);
-        $originalSizeMB = round($originalSize / 1024 / 1024, 2);
-        $compressedSizeMB = round($compressedSize / 1024 / 1024, 2);
-        $compressionRatio = round((1 - $compressedSize / $originalSize) * 100, 2);
-        
-        echo "  原始大小: {$originalSizeMB} MB\n";
-        echo "  压缩后: {$compressedSizeMB} MB\n";
-        echo "  压缩率: {$compressionRatio}%\n";
-        
-        $useUpx = true;
-    } else {
-        echo "✗ UPX 压缩失败，重新复制未压缩的 tpc.exe\n";
-        mustCopy($compilerExe, $packagedCompilerExe);
-        $useUpx = false;
-    }
-} else {
-    echo "未找到 UPX，跳过压缩步骤\n";
-    echo "提示: 安装 UPX 可以显著减小编译器体积\n";
-}
-
-echo "\n";
+// ==================== 4. 保持标准 PE 格式 ====================
+// Windows 包依靠 ZIP 压缩。不要使用 UPX 改写 tpc.exe，以避免增加杀毒
+// 误报和运行时自解压带来的兼容性变量。
+echo "[4/7] 保持标准 PE 可执行文件，不使用 UPX\n\n";
 
 // ==================== 5. 准备 PHP 目录结构 ====================
 echo "[5/7] 准备 PHP 目录结构...\n";
@@ -326,7 +279,7 @@ mustCreateDirectory("{$topLevelDir}/examples");
 // 复制项目文件
 $projectFiles = [
     'README.md' => '.',
-    'LICENSE.md' => '.',
+    'LICENSE' => '.',
     'composer.json' => '.',
     'examples/hello.php' => 'examples',
 ];
@@ -509,17 +462,6 @@ removeDirectory($topLevelDir);
 $cleanupStage = false;
 echo "临时目录已清理\n";
 
-try {
-    mustWriteFile($versionFile, (string)$versionId);
-} catch (Throwable $error) {
-    if (is_file($outputFile) && !unlink($outputFile)) {
-        throw new RuntimeException(
-            "无法提交版本号，且无法删除未提交的压缩包 {$outputFile}: {$error->getMessage()}",
-            previous: $error,
-        );
-    }
-    throw $error;
-}
 $cleanupArchive = false;
 
 echo "\n";
@@ -541,7 +483,7 @@ echo "  - phpx/src/misc/ (PHPX Embed/CLI runtime adapters)\n";
 echo "  - PHP 运行时环境 (完整目录结构)\n";
 echo "  - vendor/ (Composer 依赖包，无需再次安装)\n";
 echo "  - composer.json (Composer 配置文件)\n";
-echo "  - README.md/LICENSE.md (文档)\n";
+echo "  - README.md/LICENSE (文档)\n";
 echo "  - examples/hello.php (PHP 示例代码)\n";
 echo "  - examples/win32-hello/ (Windows GUI 编程实例)\n";
 echo "  - examples/tetris-win32/ (俄罗斯方块游戏实例)\n\n";
@@ -551,6 +493,35 @@ echo "  2. set PHP_HOME=%CD%\n";
 echo "  3. set PHPX_HOME=%CD%\\phpx\n";
 echo "  4. set PATH=%CD%;%PATH%\n";
 echo "  5. 运行: tpc <your_script.php>\n\n";
+
+function resolvePackageVersion(): string
+{
+    $releaseVersion = getenv('TYPEPHP_PACKAGE_VERSION');
+    if (!is_string($releaseVersion) || trim($releaseVersion) === '') {
+        $releaseVersion = getenv('TYPEPHP_BUILD_ID');
+    }
+    if (!is_string($releaseVersion) || trim($releaseVersion) === '') {
+        $releaseVersion = getenv('GITHUB_RUN_NUMBER');
+    }
+    if (!is_string($releaseVersion) || trim($releaseVersion) === '') {
+        $releaseVersion = getenv('GITHUB_RUN_ID');
+    }
+    if (!is_string($releaseVersion) || trim($releaseVersion) === '') {
+        throw new RuntimeException(
+            'Set TYPEPHP_PACKAGE_VERSION for a release or TYPEPHP_BUILD_ID for a preview build',
+        );
+    }
+    $releaseVersion = trim($releaseVersion);
+    if (preg_match('/^v(?=\d)/i', $releaseVersion) === 1) {
+        $releaseVersion = substr($releaseVersion, 1);
+    }
+    if (preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/', $releaseVersion) !== 1) {
+        throw new RuntimeException(
+            'Package version contains characters that are unsafe in archive names',
+        );
+    }
+    return $releaseVersion;
+}
 
 function normalizeArchitecture(string $architecture): string
 {
@@ -595,50 +566,54 @@ function packageUnixLike(): void
     $arch = normalizeArchitecture(php_uname('m'));
 
     $binary = 'tpc';
-    $versionFile = 'version.txt';
-    $phpxSourceDir = getenv('PHPX_HOME');
-    if (!is_string($phpxSourceDir) || $phpxSourceDir === '' || !is_dir($phpxSourceDir)) {
-        $phpxSourceDir = 'vendor/swoole/phpx';
-    }
-    $phpxSourceDir = realpath($phpxSourceDir) ?: rtrim($phpxSourceDir, '/\\');
-    $wasiSdkSourceRoot = $phpxSourceDir . '/wasm/wasm32-wasip2';
-    $wasiSdkPackageRoot = 'vendor/swoole/phpx/wasm/wasm32-wasip2';
-    $requiredFiles = [
-        $binary,
-        'composer.json',
-        'README.md',
-        'LICENSE.md',
-        'examples/hello.php',
-        'completions/tpc.bash',
-        'wasm/build-program.sh',
-        "{$wasiSdkSourceRoot}/.typephp-wasi-sdk-abi",
-        "{$wasiSdkSourceRoot}/include/php/main/php.h",
-        "{$wasiSdkSourceRoot}/include/php/main/php_config.h",
-        "{$wasiSdkSourceRoot}/include/php/Zend/zend_config.h",
-        "{$wasiSdkSourceRoot}/include/php/ext/date/lib/timelib_config.h",
-        "{$wasiSdkSourceRoot}/include/phpx/phpx.h",
-        "{$wasiSdkSourceRoot}/include/phpx/phpx_python.h",
-        "{$wasiSdkSourceRoot}/include/phpx/typephp_helper.h",
-        "{$wasiSdkSourceRoot}/include/gmp.h",
-        "{$wasiSdkSourceRoot}/include/mpfr.h",
-        "{$wasiSdkSourceRoot}/include/decimal.hh",
-    ];
-    foreach (['libphp.a', 'libphpx.a', 'libgmp.a', 'libgmpxx.a', 'libmpfr.a', 'libmpdec.a', 'libmpdec++.a'] as $library) {
-        $requiredFiles[] = "{$wasiSdkSourceRoot}/lib/{$library}";
+    $requiredFiles = [$binary];
+    if ($osType === 'linux') {
+        $requiredFiles[] = 'vendor/autoload.php';
+        $requiredFiles[] = 'vendor/composer/installed.php';
+    } else {
+        $phpxSourceDir = getenv('PHPX_HOME');
+        if (!is_string($phpxSourceDir) || $phpxSourceDir === '' || !is_dir($phpxSourceDir)) {
+            $phpxSourceDir = 'vendor/swoole/phpx';
+        }
+        $phpxSourceDir = realpath($phpxSourceDir) ?: rtrim($phpxSourceDir, '/\\');
+        $wasiSdkSourceRoot = $phpxSourceDir . '/wasm/wasm32-wasip2';
+        $wasiSdkPackageRoot = 'vendor/swoole/phpx/wasm/wasm32-wasip2';
+        array_push(
+            $requiredFiles,
+            'composer.json',
+            'README.md',
+            'LICENSE',
+            'examples/hello.php',
+            'completions/tpc.bash',
+            'wasm/build-program.sh',
+            "{$wasiSdkSourceRoot}/.typephp-wasi-sdk-abi",
+            "{$wasiSdkSourceRoot}/include/php/main/php.h",
+            "{$wasiSdkSourceRoot}/include/php/main/php_config.h",
+            "{$wasiSdkSourceRoot}/include/php/Zend/zend_config.h",
+            "{$wasiSdkSourceRoot}/include/php/ext/date/lib/timelib_config.h",
+            "{$wasiSdkSourceRoot}/include/phpx/phpx.h",
+            "{$wasiSdkSourceRoot}/include/phpx/phpx_python.h",
+            "{$wasiSdkSourceRoot}/include/phpx/typephp_helper.h",
+            "{$wasiSdkSourceRoot}/include/gmp.h",
+            "{$wasiSdkSourceRoot}/include/mpfr.h",
+            "{$wasiSdkSourceRoot}/include/decimal.hh",
+        );
+        foreach (['libphp.a', 'libphpx.a', 'libgmp.a', 'libgmpxx.a', 'libmpfr.a', 'libmpdec.a', 'libmpdec++.a'] as $library) {
+            $requiredFiles[] = "{$wasiSdkSourceRoot}/lib/{$library}";
+        }
     }
     foreach ($requiredFiles as $file) {
         if (!is_file($file)) {
             throw new RuntimeException("Required package file not found: {$file}");
         }
     }
-    if (!class_exists('ZipArchive')) {
+    if ($osType !== 'linux' && !class_exists('ZipArchive')) {
         throw new RuntimeException('The ZipArchive extension is required');
     }
 
-    $versionId = is_file($versionFile) ? (int)trim((string)file_get_contents($versionFile)) : 1000;
-    $versionId++;
+    $versionId = resolvePackageVersion();
     $topLevelDir = "tpc_v{$versionId}_{$osType}_{$arch}";
-    $outputFile = $topLevelDir . '.zip';
+    $outputFile = $topLevelDir . ($osType === 'linux' ? '.tar.gz' : '.zip');
 
     echo "========================================\n";
     echo "TypePHP {$osType} package\n";
@@ -678,106 +653,147 @@ function packageUnixLike(): void
         throw new RuntimeException("Unable to mark executable: {$stagedBinary}");
     }
 
+    exec('command -v strip 2>/dev/null', $stripPath, $stripStatus);
+    if ($stripStatus !== 0) {
+        throw new RuntimeException('strip is required for Unix-like packaging');
+    }
+    $stripFlag = $osType === 'linux' ? '--strip-unneeded' : '-x';
+    exec(
+        'strip ' . $stripFlag . ' ' . escapeshellarg($stagedBinary) . ' 2>&1',
+        $stripOutput,
+        $stripStatus,
+    );
+    if ($stripStatus !== 0) {
+        throw new RuntimeException("strip failed:\n" . implode("\n", $stripOutput));
+    }
+
     if ($osType === 'linux') {
-        exec('command -v upx 2>/dev/null', $upxPath, $upxStatus);
-        if ($upxStatus !== 0) {
-            throw new RuntimeException(
-                'UPX is required for Linux packaging (for example: apt install upx-ucl)',
-            );
+        // Linux release binaries intentionally use the target system's libphp,
+        // libphpx, and other native dependencies. Composer sources and headers
+        // are portable, but test-built host libraries must not enter the archive.
+        mustCreateDirectory("{$topLevelDir}/vendor");
+        copyDirectory(
+            'vendor',
+            "{$topLevelDir}/vendor",
+            [],
+            null,
+            ['a', 'dll', 'dylib', 'exe', 'exp', 'lib', 'o', 'obj', 'pdb', 'so'],
+        );
+    } else {
+        mustCopy('composer.json', "{$topLevelDir}/composer.json");
+        mustCopy('README.md', "{$topLevelDir}/README.md");
+        mustCopy('LICENSE', "{$topLevelDir}/LICENSE");
+        mustCreateDirectory("{$topLevelDir}/examples");
+        mustCopy('examples/hello.php', "{$topLevelDir}/examples/hello.php");
+        mustCreateDirectory("{$topLevelDir}/completions");
+        mustCopy('completions/tpc.bash', "{$topLevelDir}/completions/tpc.bash");
+        copyDirectory('wasm', "{$topLevelDir}/wasm");
+        // Host tools are installed independently; only the target SDK is bundled.
+        copyDirectory(
+            "{$phpxSourceDir}/wasm",
+            "{$topLevelDir}/vendor/swoole/phpx/wasm",
+            ['bin'],
+        );
+    }
+
+    $requiredEntries = ["{$topLevelDir}/{$binary}"];
+    if ($osType === 'linux') {
+        $requiredEntries[] = "{$topLevelDir}/vendor/autoload.php";
+        $requiredEntries[] = "{$topLevelDir}/vendor/composer/installed.php";
+    } else {
+        array_push(
+            $requiredEntries,
+            "{$topLevelDir}/composer.json",
+            "{$topLevelDir}/README.md",
+            "{$topLevelDir}/LICENSE",
+            "{$topLevelDir}/examples/hello.php",
+            "{$topLevelDir}/completions/tpc.bash",
+            "{$topLevelDir}/wasm/build-program.sh",
+            "{$topLevelDir}/{$wasiSdkPackageRoot}/.typephp-wasi-sdk-abi",
+            "{$topLevelDir}/{$wasiSdkPackageRoot}/include/php/main/php.h",
+            "{$topLevelDir}/{$wasiSdkPackageRoot}/include/phpx/phpx.h",
+        );
+        foreach (['libphp.a', 'libphpx.a', 'libgmp.a', 'libgmpxx.a', 'libmpfr.a', 'libmpdec.a', 'libmpdec++.a'] as $library) {
+            $requiredEntries[] = "{$topLevelDir}/{$wasiSdkPackageRoot}/lib/{$library}";
         }
-        exec('upx --best ' . escapeshellarg($stagedBinary) . ' 2>&1', $upxOutput, $upxStatus);
-        if ($upxStatus !== 0) {
-            throw new RuntimeException("UPX failed:\n" . implode("\n", $upxOutput));
+    }
+    if ($osType === 'linux') {
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator(
+                "{$topLevelDir}/vendor",
+                FilesystemIterator::SKIP_DOTS,
+            ),
+            RecursiveIteratorIterator::LEAVES_ONLY,
+        );
+        foreach ($files as $file) {
+            if ($file->isFile() && isNativeLibraryPath($file->getPathname())) {
+                throw new RuntimeException(
+                    "Linux package unexpectedly contains a native library: {$file->getPathname()}",
+                );
+            }
+        }
+
+        exec('command -v tar 2>/dev/null', $tarPath, $tarStatus);
+        if ($tarStatus !== 0) {
+            throw new RuntimeException('tar is required for Linux packaging');
+        }
+        exec(
+            'tar -czf ' . escapeshellarg($outputFile) . ' ' . escapeshellarg($topLevelDir) . ' 2>&1',
+            $tarOutput,
+            $tarStatus,
+        );
+        if ($tarStatus !== 0) {
+            throw new RuntimeException("tar failed:\n" . implode("\n", $tarOutput));
+        }
+        exec('tar -tzf ' . escapeshellarg($outputFile) . ' 2>&1', $archiveEntries, $tarStatus);
+        if ($tarStatus !== 0) {
+            throw new RuntimeException("Unable to verify archive:\n" . implode("\n", $archiveEntries));
+        }
+        foreach ($requiredEntries as $entry) {
+            if (!in_array($entry, $archiveEntries, true)) {
+                throw new RuntimeException("Archive is missing required entry: {$entry}");
+            }
         }
     } else {
-        exec('command -v strip 2>/dev/null', $stripPath, $stripStatus);
-        if ($stripStatus === 0) {
-            exec('strip -x ' . escapeshellarg($stagedBinary) . ' 2>&1', $stripOutput, $stripStatus);
-            if ($stripStatus !== 0) {
-                throw new RuntimeException("strip failed:\n" . implode("\n", $stripOutput));
+        $zip = new ZipArchive();
+        if ($zip->open($outputFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            throw new RuntimeException("Unable to create archive: {$outputFile}");
+        }
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($topLevelDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY,
+        );
+        foreach ($files as $file) {
+            if (!$file->isFile()) {
+                continue;
             }
-        } else {
-            echo "Warning: strip was not found; packaging the unstripped binary\n";
+            $relativePath = str_replace('\\', '/', substr(
+                $file->getPathname(),
+                strlen($topLevelDir) + 1,
+            ));
+            if (!$zip->addFile($file->getPathname(), "{$topLevelDir}/{$relativePath}")) {
+                throw new RuntimeException("Unable to add archive entry: {$file->getPathname()}");
+            }
         }
-    }
-
-    mustCopy('composer.json', "{$topLevelDir}/composer.json");
-    mustCopy('README.md', "{$topLevelDir}/README.md");
-    mustCopy('LICENSE.md', "{$topLevelDir}/LICENSE.md");
-    mustCreateDirectory("{$topLevelDir}/examples");
-    mustCopy('examples/hello.php', "{$topLevelDir}/examples/hello.php");
-    mustCreateDirectory("{$topLevelDir}/completions");
-    mustCopy('completions/tpc.bash', "{$topLevelDir}/completions/tpc.bash");
-    copyDirectory('wasm', "{$topLevelDir}/wasm");
-    // Host build tools such as wit-bindgen are installed independently and
-    // discovered through PATH; only the target SDK belongs in the package.
-    copyDirectory("{$phpxSourceDir}/wasm", "{$topLevelDir}/vendor/swoole/phpx/wasm", ['bin']);
-
-    if (is_file($outputFile) && !unlink($outputFile)) {
-        throw new RuntimeException("Unable to remove existing archive: {$outputFile}");
-    }
-
-    $zip = new ZipArchive();
-    if ($zip->open($outputFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-        throw new RuntimeException("Unable to create archive: {$outputFile}");
-    }
-    $files = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($topLevelDir, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::LEAVES_ONLY,
-    );
-    foreach ($files as $file) {
-        if (!$file->isFile()) {
-            continue;
+        if (!$zip->close()) {
+            throw new RuntimeException("Unable to finish archive: {$outputFile}");
         }
-        $relativePath = str_replace('\\', '/', substr(
-            $file->getPathname(),
-            strlen($topLevelDir) + 1,
-        ));
-        if (!$zip->addFile($file->getPathname(), "{$topLevelDir}/{$relativePath}")) {
-            throw new RuntimeException("Unable to add archive entry: {$file->getPathname()}");
-        }
-    }
-    if (!$zip->close()) {
-        throw new RuntimeException("Unable to finish archive: {$outputFile}");
-    }
 
-    $requiredEntries = [
-        "{$topLevelDir}/{$binary}",
-        "{$topLevelDir}/composer.json",
-        "{$topLevelDir}/README.md",
-        "{$topLevelDir}/LICENSE.md",
-        "{$topLevelDir}/examples/hello.php",
-        "{$topLevelDir}/completions/tpc.bash",
-        "{$topLevelDir}/wasm/build-program.sh",
-        "{$topLevelDir}/{$wasiSdkPackageRoot}/.typephp-wasi-sdk-abi",
-        "{$topLevelDir}/{$wasiSdkPackageRoot}/include/php/main/php.h",
-        "{$topLevelDir}/{$wasiSdkPackageRoot}/include/phpx/phpx.h",
-    ];
-    foreach (['libphp.a', 'libphpx.a', 'libgmp.a', 'libgmpxx.a', 'libmpfr.a', 'libmpdec.a', 'libmpdec++.a'] as $library) {
-        $requiredEntries[] = "{$topLevelDir}/{$wasiSdkPackageRoot}/lib/{$library}";
-    }
-    $verificationZip = new ZipArchive();
-    if ($verificationZip->open($outputFile) !== true) {
-        throw new RuntimeException("Unable to verify archive: {$outputFile}");
-    }
-    foreach ($requiredEntries as $entry) {
-        if ($verificationZip->locateName($entry) === false) {
-            $verificationZip->close();
-            throw new RuntimeException("Archive is missing required entry: {$entry}");
+        $verificationZip = new ZipArchive();
+        if ($verificationZip->open($outputFile) !== true) {
+            throw new RuntimeException("Unable to verify archive: {$outputFile}");
         }
+        foreach ($requiredEntries as $entry) {
+            if ($verificationZip->locateName($entry) === false) {
+                $verificationZip->close();
+                throw new RuntimeException("Archive is missing required entry: {$entry}");
+            }
+        }
+        $verificationZip->close();
     }
-    $verificationZip->close();
 
     removeDirectory($topLevelDir);
     $cleanupStage = false;
-    try {
-        mustWriteFile($versionFile, (string)$versionId);
-    } catch (Throwable $error) {
-        if (is_file($outputFile)) {
-            @unlink($outputFile);
-        }
-        throw $error;
-    }
     $cleanupArchive = false;
 
     $sizeMb = formatMegabytes(filesize($outputFile));
@@ -787,6 +803,14 @@ function packageUnixLike(): void
 function formatMegabytes(int $bytes): string
 {
     return number_format($bytes / 1024 / 1024, 3, '.', '');
+}
+
+function isNativeLibraryPath(string $path): bool
+{
+    return preg_match(
+        '/\.(?:a|dll|dylib(?:\.\d+)*|exe|exp|lib|o|obj|pdb|so(?:\.\d+)*)$/i',
+        $path,
+    ) === 1;
 }
 
 /**
@@ -823,7 +847,14 @@ function copyDirectory(string $src, string $dest, array $excludeDirs = [], ?stri
         // 如果是文件，检查扩展名是否在排除列表中
         if (is_file($srcPath) && !empty($excludeExtensions)) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            if (in_array($ext, $excludeExtensions)) {
+            $versionedSharedLibrary = (
+                in_array('so', $excludeExtensions, true)
+                && preg_match('/\.so(?:\.\d+)*$/i', $file) === 1
+            ) || (
+                in_array('dylib', $excludeExtensions, true)
+                && preg_match('/\.dylib(?:\.\d+)*$/i', $file) === 1
+            );
+            if ($versionedSharedLibrary || in_array($ext, $excludeExtensions, true)) {
                 continue;
             }
         }
