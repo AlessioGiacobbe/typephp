@@ -25,8 +25,16 @@ It keeps familiar PHP syntax and adds compile-time type information, so the
 compiler can emit fast, statically-typed C++ for your hot paths — while the
 rest of your code continues to run on the battle-tested Zend engine.
 
+TypePHP is **written entirely in PHP** and is **fully self-hosting**: the `tpc`
+compiler binary is built by compiling the compiler's own PHP source code with
+TypePHP. The bootstrap chain is pure PHP — no C or C++ glue in the compiler
+itself.
+
 ## Features
 
+- **Self-hosting, written in PHP** — the TypePHP compiler is implemented
+  entirely in PHP and bootstraps itself: `tpc` compiles the compiler's own
+  source into a native binary.
 - **True AOT compilation** — PHP is lowered to C++17, then to native machine
   code. No interpreter, no opcode cache, no JIT warm-up.
 - **Three build modes** — build a standalone `bin` executable, a loadable PHP
@@ -87,20 +95,21 @@ rest of your code continues to run on the battle-tested Zend engine.
 - **PHP 8.4 – 8.5** with the `embed` module (`libphp.so`)
 - **GCC 9+** (or Clang) with **C++17**
 - **CMake 3.24+**
-- High-precision math libraries: **GMP**, **MPFR**, **libmpdec**
+- High-precision math libraries: **GMP**, **MPFR** (libmpdec is bundled with PHPX)
 
 ```shell
 # Ubuntu/Debian
-sudo apt install libgmp-dev libmpfr-dev libmpdec-dev
+sudo apt install libgmp-dev libmpfr-dev
 
 # RHEL/CentOS/Fedora
-sudo dnf install gmp-devel mpfr-devel libmpdec-devel
+sudo dnf install gmp-devel mpfr-devel
 
 # Arch Linux
-sudo pacman -S gmp mpfr mpdecimal
+sudo pacman -S gmp mpfr
 ```
 
-> GMP powers `bigInt`, MPFR powers `bigFloat`, and libmpdec powers `decimal`.
+> GMP powers `bigInt` and MPFR powers `bigFloat`. The `decimal` type is backed
+> by libmpdec, which is bundled with PHPX — no separate install required.
 
 The preview currently targets **Linux** as the primary development platform
 (Ubuntu 22.04 recommended). Windows and macOS packaging is supported through
@@ -339,6 +348,22 @@ function main(): void
 See [Mixed C++/PHP](docs/MIXED_CPP_PHP.md).
 
 ## Benchmark
+
+### PHP language benchmarks (from php-src)
+
+TypePHP runs the official `bench.php` and `micro_bench.php` language
+benchmarks that ship with the PHP source tree, compiled with `-O3`:
+
+| Benchmark | Interpreted PHP | TypePHP AOT (`-O3`) | Speedup |
+|---|---|---|---|
+| `bench.php` (total) | 5.034 s | **0.603 s** | ~8× |
+| `micro_bench.php` (total) | 13.045 s | **2.021 s** | ~6.5× |
+
+Both benchmarks measure core PHP language performance — function calls, object
+property access, array/hash access, string handling, control flow, and more.
+See the full per-item report in [`bench.txt`](bench.txt).
+
+### std::array vs PHP array
 
 A 10000×100000 element update loop, comparing PHP arrays against TypePHP's
 `std::array` and native C++:

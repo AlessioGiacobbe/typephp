@@ -19,6 +19,8 @@ env:
 jobs:
   build-phpx:
     name: Build PHPX (PHP ${{ matrix.php }})
+    # Skip the whole test pipeline when the push commit message contains `--skip-tests`.
+    if: ${{ !contains(github.event.head_commit.message || '', '--skip-tests') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -94,6 +96,7 @@ jobs:
 
   phpunit:
     name: PHPUnit (PHP ${{ matrix.php }})
+    if: ${{ !contains(github.event.head_commit.message || '', '--skip-tests') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: build-phpx
@@ -158,6 +161,7 @@ jobs:
 
   phpt:
     name: PHPT (PHP ${{ matrix.php }})
+    if: ${{ !contains(github.event.head_commit.message || '', '--skip-tests') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     needs: build-phpx

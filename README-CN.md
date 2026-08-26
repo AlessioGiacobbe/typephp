@@ -22,8 +22,14 @@ TypePHP 是一个 AOT（Ahead-Of-Time，提前编译）编译器，它把 PHP �
 它保留熟悉的 PHP 语法，同时引入编译期类型信息，让编译器为你的性能热点生成快速、
 静态类型的 C++ 代码，而其余代码仍运行在久经考验的 Zend 引擎上。
 
+TypePHP **完全由 PHP 语言编写**，并且**完全自举**：`tpc` 编译器二进制就是
+用 TypePHP 编译编译器自身的 PHP 源码得到的。整个自举链路是纯 PHP——编译器
+本身没有任何 C 或 C++ 胶水代码。
+
 ## 特性
 
+- **完全自举、纯 PHP 实现** —— TypePHP 编译器完全由 PHP 语言编写，并能自举：
+  用 `tpc` 编译编译器自身的源码，即可生成原生二进制。
 - **真正的 AOT 编译** —— PHP 先降级为 C++17，再编译为原生机器码。无解释器、
   无 opcode 缓存、无 JIT 预热。
 - **三种构建模式** —— 同一份代码可编译为独立 `bin` 可执行文件、可加载的 PHP
@@ -74,20 +80,21 @@ TypePHP 是一个 AOT（Ahead-Of-Time，提前编译）编译器，它把 PHP �
 - **PHP 8.4 – 8.5**，需包含 `embed` 模块（`libphp.so`）
 - **GCC 9+**（或 Clang），支持 **C++17**
 - **CMake 3.24+**
-- 高精度数学库：**GMP**、**MPFR**、**libmpdec**
+- 高精度数学库：**GMP**、**MPFR**（libmpdec 已随 PHPX 内置）
 
 ```shell
 # Ubuntu/Debian
-sudo apt install libgmp-dev libmpfr-dev libmpdec-dev
+sudo apt install libgmp-dev libmpfr-dev
 
 # RHEL/CentOS/Fedora
-sudo dnf install gmp-devel mpfr-devel libmpdec-devel
+sudo dnf install gmp-devel mpfr-devel
 
 # Arch Linux
-sudo pacman -S gmp mpfr mpdecimal
+sudo pacman -S gmp mpfr
 ```
 
-> GMP 用于 `bigInt`，MPFR 用于 `bigFloat`，libmpdec 用于 `decimal`。
+> GMP 用于 `bigInt`，MPFR 用于 `bigFloat`。`decimal` 底层是 libmpdec，
+> 已随 PHPX 内置，无需单独安装。
 
 预览版目前以 **Linux** 为主要开发平台（推荐 Ubuntu 22.04）。Windows 和 macOS
 打包通过同一入口点支持。
@@ -321,6 +328,21 @@ function main(): void
 详见[混合 C++/PHP](docs/MIXED_CPP_PHP.md)。
 
 ## 基准测试
+
+### PHP 语言基准（来自 php-src）
+
+TypePHP 使用 `-O3` 运行 PHP 源码树自带的官方 `bench.php` 与
+`micro_bench.php` 语言性能测试：
+
+| 基准 | 解释执行 PHP | TypePHP AOT（`-O3`） | 加速比 |
+|---|---|---|---|
+| `bench.php`（总计） | 5.034 秒 | **0.603 秒** | 约 8× |
+| `micro_bench.php`（总计） | 13.045 秒 | **2.021 秒** | 约 6.5× |
+
+两项基准覆盖 PHP 语言核心性能——函数调用、对象属性访问、数组/哈希访问、
+字符串处理、控制流等。完整逐项报告见 [`bench.txt`](bench.txt)。
+
+### std::array 对比 PHP 数组
 
 一个 10000×100000 的元素累加循环，对比 PHP 数组、TypePHP `std::array`
 与原生 C++：
