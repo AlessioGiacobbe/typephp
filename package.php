@@ -249,8 +249,10 @@ if (!is_dir($phpDir)) {
 } else {
     echo "复制 PHP 运行时文件...\n";
     // dev/php8ts.lib 与 SDK/lib/php8ts.lib 重复，可以排除。
+    // setup-php 会在 PHP_HOME 留下 PHP 发行包和 PhpManager 等 ZIP 下载缓存；
+    // 运行时和 SDK 已经展开，继续打包这些归档只会重复占用空间。
     // php8embed.lib 必须保留；部分 PHP SDK 仅在根目录提供该导入库。
-    copyDirectory($phpDir, $topLevelDir, ['dev/php8ts.lib']);
+    copyDirectory($phpDir, $topLevelDir, ['dev/php8ts.lib'], null, ['zip']);
 
     $packagedEmbedLib = "{$topLevelDir}/{$phpEmbedLibRelativePath}";
     if (!is_file($packagedEmbedLib)) {
