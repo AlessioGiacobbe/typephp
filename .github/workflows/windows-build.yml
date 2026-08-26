@@ -36,6 +36,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
+          extensions: zip
           tools: composer:v2
         env:
           fail-fast: true
@@ -52,6 +53,10 @@ jobs:
           $threadSafety = php -r 'echo PHP_ZTS ? "zts" : "nts";'
           if ($threadSafety -ne '${{ matrix.thread_safety }}') {
               throw "setup-php installed $threadSafety PHP, expected ${{ matrix.thread_safety }}"
+          }
+          $zipAvailable = php -r 'echo class_exists("ZipArchive") ? "yes" : "no";'
+          if ($zipAvailable -ne 'yes') {
+              throw 'setup-php did not enable the ZipArchive extension required by package.php'
           }
           $phpExe = (Get-Command php).Source
           $phpHome = Split-Path -Parent $phpExe
