@@ -1,0 +1,36 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 897706d..b4d85ec 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -355,14 +355,6 @@ if (IS_WINDOWS)
+         INTERFACE_INCLUDE_DIRECTORIES "${PHP_SDK_DIR}/include;${MPDECIMAL_DIR}/libmpdec++"
+     )
+ 
+-    # 复制 DLL 到输出目录
+-    file(GLOB MPDEC_DLLS "${PHP_LIBRARY_DIR}/libmpdec-4.0.1.dll" "${PHP_LIBRARY_DIR}/libmpdec++-4.0.1.dll")
+-    foreach(_dll ${MPDEC_DLLS})
+-        add_custom_command(TARGET phpx POST_BUILD
+-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_dll}" $<TARGET_FILE_DIR:phpx>
+-            COMMENT "Copying ${_dll} to output"
+-        )
+-    endforeach()
+ else()
+     # Linux/macOS: 内置编译 mpdecimal + libmpdec++
+     message(STATUS "Using bundled mpdecimal with uint128")
+@@ -419,6 +411,16 @@ set_target_properties(phpx PROPERTIES
+     CLEAN_DIRECT_OUTPUT 1
+ )
+ 
++if (IS_WINDOWS)
++    # Register post-build commands only after the phpx target exists.
++    file(GLOB MPDEC_DLLS "${PHP_LIBRARY_DIR}/libmpdec-4.0.1.dll" "${PHP_LIBRARY_DIR}/libmpdec++-4.0.1.dll")
++    foreach(_dll ${MPDEC_DLLS})
++        add_custom_command(TARGET phpx POST_BUILD
++            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_dll}" $<TARGET_FILE_DIR:phpx>
++            COMMENT "Copying ${_dll} to output")
++    endforeach()
++endif()
++
+ if (IS_WINDOWS)
+     target_link_libraries(phpx PRIVATE
+         ${PHP_LIBRARY}

@@ -7,7 +7,7 @@
 本文将介绍如何使用`Java`的`JNI`接口，实现在 `PHP` 代码中直接调用 `Java` 类库 —— 创建 `Java` 对象、调用方法、读写字段，就像在 `Java` 代码中操作一样自然。
 
 1. 本实例程序的代码全部由 `DeepSeek-4-Pro` 生成，耗时约为`50分钟`
-2. GitHub: <https://github.com/swoole/aot-compiler/tree/main/examples/jni>
+2. GitHub: <https://github.com/swoole/typephp/tree/main/examples/jni>
 
 ## 准备工作
 
