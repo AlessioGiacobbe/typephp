@@ -10,7 +10,10 @@ Compile PHP source code into native machine code ahead of time — producing
 native executables, PHP extensions, and shared libraries — while keeping
 the PHP syntax you already know.
 
-[![Tests](https://github.com/swoole/typephp/actions/workflows/tests.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/tests.yml)
+[![Linux x64](https://github.com/swoole/typephp/actions/workflows/linux-x64.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/linux-x64.yml)
+[![Linux ARM64](https://github.com/swoole/typephp/actions/workflows/linux-arm64.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/linux-arm64.yml)
+[![macOS ARM64](https://github.com/swoole/typephp/actions/workflows/macos-arm64.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/macos-arm64.yml)
+[![Windows x64](https://github.com/swoole/typephp/actions/workflows/windows-build.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/windows-build.yml)
 [![PHP 8.4–8.5](https://img.shields.io/badge/PHP-8.4--8.5-777bb4.svg)](https://www.php.net/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 

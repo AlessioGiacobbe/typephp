@@ -77,15 +77,16 @@ jobs:
               exit 1
           }
 
-          wait_for_workflow tests.yml TESTS_RUN_ID
+          wait_for_workflow linux-x64.yml TESTS_RUN_ID
           wait_for_workflow windows-build.yml WINDOWS_RUN_ID
-          wait_for_workflow platform-build.yml PLATFORM_RUN_ID
+          wait_for_workflow linux-arm64.yml LINUX_ARM64_RUN_ID
+          wait_for_workflow macos-arm64.yml MACOS_ARM64_RUN_ID
 
       - name: Download tested packages
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist/linux-x64 dist/windows dist/platforms
+          mkdir -p dist/linux-x64 dist/linux-arm64 dist/macos-arm64 dist/windows
           gh run download "${TESTS_RUN_ID}" \
               --repo "${GITHUB_REPOSITORY}" \
               --pattern 'release-linux-*' \
@@ -94,10 +95,14 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --pattern 'release-windows-*' \
               --dir dist/windows
-          gh run download "${PLATFORM_RUN_ID}" \
+          gh run download "${LINUX_ARM64_RUN_ID}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --pattern 'release-*' \
-              --dir dist/platforms
+              --pattern 'release-linux-arm64-*' \
+              --dir dist/linux-arm64
+          gh run download "${MACOS_ARM64_RUN_ID}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern 'release-macos-arm64-*' \
+              --dir dist/macos-arm64
 
           test "$(find dist -type f -name 'tpc_v*_linux_x64.tar.gz' | wc -l)" -eq 1
           test "$(find dist -type f -name 'tpc_v*_linux_arm64.tar.gz' | wc -l)" -eq 1

@@ -1,4 +1,4 @@
-name: tests
+name: Linux x64
 
 on:
   push:
@@ -17,12 +17,11 @@ env:
   COMPOSER_PROCESS_TIMEOUT: 0
 
 jobs:
-  build-phpx:
-    name: Build PHPX (PHP ${{ matrix.php }} ZTS)
-    # Skip the whole test pipeline when the push commit message contains `--skip-tests`.
-    if: ${{ startsWith(github.ref, 'refs/tags/') || !contains(github.event.head_commit.message || '', '--skip-tests') }}
+  build:
+    # Compilation is always required; `--skip-tests` only suppresses downstream test jobs.
+    name: Build - PHP ${{ matrix.php }} ZTS
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -69,6 +68,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev
 
+      - name: Configure ZTS PHP embed library
+        shell: bash
+        run: |
+          php_home="$(php-config --prefix)"
+          embed_library="${php_home}/lib/libphp.so"
+          test -x "${php_home}/bin/php-config"
+          test -f "${embed_library}"
+          echo "PHP_HOME=${php_home}" >> "${GITHUB_ENV}"
+          echo "Using ZTS PHP $(php-config --version) embed library: ${embed_library}"
+
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
 
@@ -79,7 +88,8 @@ jobs:
             -D CMAKE_BUILD_TYPE=Release \
             -D BUILD_TESTS=OFF \
             -D BUILD_EXT=OFF \
-            -D GITHUB_ACTION=ON
+            -D GITHUB_ACTION=ON \
+            -D php_dir="${PHP_HOME}"
           cmake --build "${PHPX_HOME}/build" --target phpx --parallel 2
           test -f "${PHPX_HOME}/lib/libphpx.so"
 
@@ -91,28 +101,45 @@ jobs:
           make -j2
           test -f modules/phpy.so
 
-      - name: Upload PHPX library
-        uses: actions/upload-artifact@v4
-        with:
-          name: libphpx-php-${{ matrix.php }}-zts
-          if-no-files-found: error
-          retention-days: 1
-          path: vendor/swoole/phpx/lib/libphpx.so
+      - name: Enable phpy extension
+        shell: bash
+        run: |
+          php_ini_dir="$(php-config --ini-dir)"
+          echo "extension=${GITHUB_WORKSPACE}/third_party/phpy/modules/phpy.so" \
+            | sudo tee "${php_ini_dir}/90-phpy.ini"
+          echo "PHP_INI_SCAN_DIR=${php_ini_dir}" >> "${GITHUB_ENV}"
+          php --ri phpy
 
-      - name: Upload phpy extension
+      - name: Configure native library path
+        shell: bash
+        run: echo "LD_LIBRARY_PATH=${PHPX_HOME}/lib:${PHP_HOME}/lib" >> "${GITHUB_ENV}"
+
+      - name: Build tpc
+        shell: bash
+        run: |
+          php bin/tpc.php project.yml --job 2 --no-progress
+          test -x ./tpc
+          file ./tpc
+          file ./tpc | grep -Eiq 'x86-64|x86_64|amd64'
+          ./tpc --version
+
+      - name: Upload Linux x64 build outputs
         uses: actions/upload-artifact@v4
         with:
-          name: phpy-php-${{ matrix.php }}-zts
+          name: tpc-linux-x64-php-${{ matrix.php }}-zts
           if-no-files-found: error
-          retention-days: 1
-          path: third_party/phpy/modules/phpy.so
+          retention-days: 7
+          path: |
+            tpc
+            vendor/swoole/phpx/lib/libphpx.so
+            third_party/phpy/modules/phpy.so
 
   phpunit:
-    name: PHPUnit (PHP ${{ matrix.php }} ZTS)
+    name: PHPUnit - PHP ${{ matrix.php }} ZTS
     if: ${{ startsWith(github.ref, 'refs/tags/') || !contains(github.event.head_commit.message || '', '--skip-tests') }}
     runs-on: ubuntu-22.04
     timeout-minutes: 30
-    needs: build-phpx
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -157,17 +184,20 @@ jobs:
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
 
-      - name: Download PHPX library
+      - name: Download Linux x64 build outputs
         uses: actions/download-artifact@v4
         with:
-          name: libphpx-php-${{ matrix.php }}-zts
-          path: vendor/swoole/phpx/lib
+          name: tpc-linux-x64-php-${{ matrix.php }}-zts
+          path: .
 
-      - name: Download phpy extension
-        uses: actions/download-artifact@v4
-        with:
-          name: phpy-php-${{ matrix.php }}-zts
-          path: third_party/phpy/modules
+      - name: Verify Linux x64 build outputs
+        shell: bash
+        run: |
+          test -f ./tpc
+          test -f "${PHPX_HOME}/lib/libphpx.so"
+          test -f third_party/phpy/modules/phpy.so
+          chmod +x ./tpc
+          file ./tpc | grep -Eiq 'x86-64|x86_64|amd64'
 
       - name: Enable phpy extension
         shell: bash
@@ -186,11 +216,11 @@ jobs:
         run: vendor/bin/phpunit
 
   phpt:
-    name: PHPT (PHP ${{ matrix.php }} ZTS)
+    name: PHPT - PHP ${{ matrix.php }} ZTS
     if: ${{ startsWith(github.ref, 'refs/tags/') || !contains(github.event.head_commit.message || '', '--skip-tests') }}
     runs-on: ubuntu-22.04
     timeout-minutes: 180
-    needs: build-phpx
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -248,17 +278,20 @@ jobs:
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
 
-      - name: Download PHPX library
+      - name: Download Linux x64 build outputs
         uses: actions/download-artifact@v4
         with:
-          name: libphpx-php-${{ matrix.php }}-zts
-          path: vendor/swoole/phpx/lib
+          name: tpc-linux-x64-php-${{ matrix.php }}-zts
+          path: .
 
-      - name: Download phpy extension
-        uses: actions/download-artifact@v4
-        with:
-          name: phpy-php-${{ matrix.php }}-zts
-          path: third_party/phpy/modules
+      - name: Verify Linux x64 build outputs
+        shell: bash
+        run: |
+          test -f ./tpc
+          test -f "${PHPX_HOME}/lib/libphpx.so"
+          test -f third_party/phpy/modules/phpy.so
+          chmod +x ./tpc
+          file ./tpc | grep -Eiq 'x86-64|x86_64|amd64'
 
       - name: Enable phpy extension
         shell: bash
@@ -276,14 +309,9 @@ jobs:
           test -f "${PHP_HOME}/lib/libphp.so"
           echo "LD_LIBRARY_PATH=${PHPX_HOME}/lib:${PHP_HOME}/lib" >> "${GITHUB_ENV}"
 
-      - name: Build bootstrap TypePHP compiler
-        run: |
-          php bin/tpc.php project.yml --job 2 --no-progress
-          test -x ./tpc
-          ./tpc --version
-
       - name: Show build environment
         run: |
+          ./tpc --version
           php -v
           php --ini
           ldd ./tpc | grep -E 'libphp(x)?[0-9.]*\.so'

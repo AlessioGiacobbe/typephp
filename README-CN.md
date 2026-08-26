@@ -9,7 +9,10 @@
 将 PHP 源码提前（AOT）编译为原生机器码，生成原生可执行文件、PHP 扩展和共享库，
 同时保留你熟悉的 PHP 语法。
 
-[![Tests](https://github.com/swoole/typephp/actions/workflows/tests.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/tests.yml)
+[![Linux x64](https://github.com/swoole/typephp/actions/workflows/linux-x64.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/linux-x64.yml)
+[![Linux ARM64](https://github.com/swoole/typephp/actions/workflows/linux-arm64.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/linux-arm64.yml)
+[![macOS ARM64](https://github.com/swoole/typephp/actions/workflows/macos-arm64.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/macos-arm64.yml)
+[![Windows x64](https://github.com/swoole/typephp/actions/workflows/windows-build.yml/badge.svg)](https://github.com/swoole/typephp/actions/workflows/windows-build.yml)
 [![PHP 8.4–8.5](https://img.shields.io/badge/PHP-8.4--8.5-777bb4.svg)](https://www.php.net/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
