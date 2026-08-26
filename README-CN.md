@@ -83,7 +83,7 @@ AST，待全部项目符号就绪后再在 convert 阶段解析。这一两阶�
   `#[Printer]` 和 `#[Arrayable]` 根据属性声明生成类型安全的方法。
 - **现代 PHP 支持** —— PHP 8.4 property hooks、非对称可见性、PHP 8.5
   `clone()`-with 以及 `(void)` 丢弃表达式。
-- **跨平台与 WASM** —— 面向 x86-64 和 ARM64 的 Linux、Windows、macOS 目标，
+- **跨平台与 WASM** —— 面向 x64 和 ARM64 的 Linux、Windows、macOS 目标，
   以及 WASI 0.2 和浏览器（Jco）输出。
 - **Python 桥接** —— 为 Python 模块生成 IDE helper，并将 Python 脚本转换为 TypePHP。
 
@@ -114,7 +114,8 @@ AST，待全部项目符号就绪后再在 convert 阶段解析。这一两阶�
 ## 前置要求
 
 - **PHP 8.4 – 8.5** CLI、开发头文件及 `php-config`
-- 在类 Unix 系统构建二进制/共享库时，需要与 PHP 匹配的 **embed 库**（`libphp.so`）
+- 在类 Unix 系统构建二进制/共享库时，需要与 PHP 匹配的 **embed 库**
+  （`libphp.so` 或 `libphp.dylib`）
 - **GCC 9+**（或 Clang），支持 **C++17**
 - **CMake 3.24+**
 - **Composer 2**
@@ -134,9 +135,14 @@ sudo pacman -S base-devel cmake pkgconf gmp mpfr
 > GMP 用于 `bigInt`，MPFR 用于 `bigFloat`。`decimal` 底层是 libmpdec，
 > 已随 PHPX 内置，无需单独安装。
 
-Linux 是主要开发和 CI 平台。编译器也提供 Windows、macOS、x86-64、ARM64 和
+Linux x64 是主要开发及全量测试 CI 平台。编译器也提供 Windows、macOS、ARM64 和
 WASI 后端；具体主机能否构建某个目标，仍取决于 PHP embed、工具链和第三方库是否
 可用。
+
+原生 Release Assets 默认使用 PHP 8.5 ZTS 的最新版本构建，提供 Linux x64、Linux
+ARM64、macOS ARM64 和 Windows x64 四个平台包；不提供原生 NTS 或 32 位 x86 包。
+Linux 与 macOS 包包含编译器和 production Composer 依赖，Windows 包则包含完整且
+匹配的 PHP/PHPX 运行时与 SDK。
 
 ## 安装
 
@@ -601,7 +607,7 @@ source <(./tpc --generate-completion=bash)
 
 ## 常见问题
 
-- **缺少 `libphp.so`：** 安装或编译与当前 PHP 匹配的 embed SAPI，设置
+- **缺少 `libphp.so` / `libphp.dylib`：** 安装或编译与当前 PHP 匹配的 embed SAPI，设置
   `PHP_HOME`，或使用 `bin/tpc.php` 在 Linux 上提供的交互式安装流程。
 - **找不到 PHPX：** 将 `PHPX_HOME` 指向包含 `include/` 和
   `lib/libphpx.so`（或对应平台文件）的 PHPX 安装目录，并在编译项目前先构建 PHPX。

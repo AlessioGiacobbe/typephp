@@ -97,7 +97,7 @@ This two-phase design keeps multi-file and self-hosted builds deterministic.
   from property declarations.
 - **Modern PHP support** — PHP 8.4 property hooks, asymmetric visibility,
   PHP 8.5 `clone()`-with, and `(void)` discard expressions.
-- **Cross-platform & WASM** — Linux, Windows, and macOS targets for x86-64 and
+- **Cross-platform & WASM** — Linux, Windows, and macOS targets for x64 and
   ARM64, plus WASI 0.2 and browser (Jco) output.
 - **Python bridge** — generate IDE helpers for Python modules and convert
   Python scripts to TypePHP.
@@ -134,7 +134,7 @@ This two-phase design keeps multi-file and self-hosted builds deterministic.
 ## Requirements
 
 - **PHP 8.4 – 8.5** CLI, development headers, and `php-config`
-- The matching **PHP embed library** (`libphp.so`) for binary/shared-library
+- The matching **PHP embed library** (`libphp.so` or `libphp.dylib`) for binary/shared-library
   builds on Unix-like systems
 - **GCC 9+** (or Clang) with **C++17**
 - **CMake 3.24+**
@@ -155,10 +155,16 @@ sudo pacman -S base-devel cmake pkgconf gmp mpfr
 > GMP powers `bigInt` and MPFR powers `bigFloat`. The `decimal` type is backed
 > by libmpdec, which is bundled with PHPX — no separate install required.
 
-Linux is the primary development and CI platform. The compiler also has
-Windows, macOS, x86-64, ARM64, and WASI backends; availability of PHP embed,
+Linux x64 is the primary development and full-test CI platform. The compiler
+also has Windows, macOS, ARM64, and WASI backends; availability of PHP embed,
 toolchain, and third-party libraries still determines which target can be
 built on a given host.
+
+Native release assets are built with the latest PHP 8.5 ZTS release. TypePHP
+publishes Linux x64, Linux ARM64, macOS ARM64, and Windows x64 packages. Native
+NTS and 32-bit x86 packages are not provided. Linux and macOS archives contain
+the compiler and production Composer dependencies, while the Windows archive
+contains the complete matching PHP/PHPX runtime and SDK.
 
 ## Installation
 
@@ -644,7 +650,7 @@ source <(./tpc --generate-completion=bash)
 
 ## Troubleshooting
 
-- **`libphp.so` is missing:** install/build the matching PHP embed SAPI, set
+- **`libphp.so` / `libphp.dylib` is missing:** install/build the matching PHP embed SAPI, set
   `PHP_HOME`, or let `bin/tpc.php` offer the interactive Linux installer.
 - **PHPX cannot be found:** set `PHPX_HOME` to a PHPX installation containing
   `include/` and `lib/libphpx.so` (or the platform equivalent), then build PHPX

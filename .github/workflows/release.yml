@@ -79,23 +79,30 @@ jobs:
 
           wait_for_workflow tests.yml TESTS_RUN_ID
           wait_for_workflow windows-build.yml WINDOWS_RUN_ID
+          wait_for_workflow platform-build.yml PLATFORM_RUN_ID
 
       - name: Download tested packages
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist/linux dist/windows
+          mkdir -p dist/linux-x64 dist/windows dist/platforms
           gh run download "${TESTS_RUN_ID}" \
               --repo "${GITHUB_REPOSITORY}" \
               --pattern 'release-linux-*' \
-              --dir dist/linux
+              --dir dist/linux-x64
           gh run download "${WINDOWS_RUN_ID}" \
               --repo "${GITHUB_REPOSITORY}" \
               --pattern 'release-windows-*' \
               --dir dist/windows
+          gh run download "${PLATFORM_RUN_ID}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern 'release-*' \
+              --dir dist/platforms
 
-          test "$(find dist/linux -type f -name '*.tar.gz' | wc -l)" -eq 1
-          test "$(find dist/windows -type f -name '*.zip' | wc -l)" -eq 1
+          test "$(find dist -type f -name 'tpc_v*_linux_x64.tar.gz' | wc -l)" -eq 1
+          test "$(find dist -type f -name 'tpc_v*_linux_arm64.tar.gz' | wc -l)" -eq 1
+          test "$(find dist -type f -name 'tpc_v*_macos_arm64.tar.gz' | wc -l)" -eq 1
+          test "$(find dist -type f -name 'tpc_v*_windows_x64.zip' | wc -l)" -eq 1
 
       - name: Prepare release assets
         shell: bash
@@ -104,7 +111,7 @@ jobs:
           mkdir -p release-assets
           find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) \
               -exec cp '{}' release-assets/ \;
-          test "$(find release-assets -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 2
+          test "$(find release-assets -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 4
           (
               cd release-assets
               sha256sum ./*.tar.gz ./*.zip > SHA256SUMS

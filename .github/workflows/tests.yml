@@ -18,7 +18,7 @@ env:
 
 jobs:
   build-phpx:
-    name: Build PHPX (PHP ${{ matrix.php }})
+    name: Build PHPX (PHP ${{ matrix.php }} ZTS)
     # Skip the whole test pipeline when the push commit message contains `--skip-tests`.
     if: ${{ startsWith(github.ref, 'refs/tags/') || !contains(github.event.head_commit.message || '', '--skip-tests') }}
     runs-on: ubuntu-22.04
@@ -47,6 +47,19 @@ jobs:
           coverage: none
           ini-values: precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
           tools: composer:v2
+        env:
+          fail-fast: true
+          phpts: ts
+          update: true
+
+      - name: Verify ZTS PHP
+        shell: bash
+        run: |
+          php -r 'if (!PHP_ZTS) { fwrite(STDERR, "Expected a ZTS PHP build\n"); exit(1); }'
+          case "$(php -r 'echo PHP_VERSION;')" in
+            "${{ matrix.php }}"*) ;;
+            *) echo "setup-php installed an unexpected PHP version" >&2; exit 1 ;;
+          esac
 
       - name: Patch php_hash.h C++ compatibility
         uses: ./.github/actions/patch-php-headers
@@ -81,7 +94,7 @@ jobs:
       - name: Upload PHPX library
         uses: actions/upload-artifact@v4
         with:
-          name: libphpx-php-${{ matrix.php }}
+          name: libphpx-php-${{ matrix.php }}-zts
           if-no-files-found: error
           retention-days: 1
           path: vendor/swoole/phpx/lib/libphpx.so
@@ -89,13 +102,13 @@ jobs:
       - name: Upload phpy extension
         uses: actions/upload-artifact@v4
         with:
-          name: phpy-php-${{ matrix.php }}
+          name: phpy-php-${{ matrix.php }}-zts
           if-no-files-found: error
           retention-days: 1
           path: third_party/phpy/modules/phpy.so
 
   phpunit:
-    name: PHPUnit (PHP ${{ matrix.php }})
+    name: PHPUnit (PHP ${{ matrix.php }} ZTS)
     if: ${{ startsWith(github.ref, 'refs/tags/') || !contains(github.event.head_commit.message || '', '--skip-tests') }}
     runs-on: ubuntu-22.04
     timeout-minutes: 30
@@ -119,6 +132,19 @@ jobs:
           extensions: curl, redis, mbstring, ffi
           ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
           tools: composer:v2
+        env:
+          fail-fast: true
+          phpts: ts
+          update: true
+
+      - name: Verify ZTS PHP
+        shell: bash
+        run: |
+          php -r 'if (!PHP_ZTS) { fwrite(STDERR, "Expected a ZTS PHP build\n"); exit(1); }'
+          case "$(php -r 'echo PHP_VERSION;')" in
+            "${{ matrix.php }}"*) ;;
+            *) echo "setup-php installed an unexpected PHP version" >&2; exit 1 ;;
+          esac
 
       - name: Patch php_hash.h C++ compatibility
         uses: ./.github/actions/patch-php-headers
@@ -134,13 +160,13 @@ jobs:
       - name: Download PHPX library
         uses: actions/download-artifact@v4
         with:
-          name: libphpx-php-${{ matrix.php }}
+          name: libphpx-php-${{ matrix.php }}-zts
           path: vendor/swoole/phpx/lib
 
       - name: Download phpy extension
         uses: actions/download-artifact@v4
         with:
-          name: phpy-php-${{ matrix.php }}
+          name: phpy-php-${{ matrix.php }}-zts
           path: third_party/phpy/modules
 
       - name: Enable phpy extension
@@ -160,7 +186,7 @@ jobs:
         run: vendor/bin/phpunit
 
   phpt:
-    name: PHPT (PHP ${{ matrix.php }})
+    name: PHPT (PHP ${{ matrix.php }} ZTS)
     if: ${{ startsWith(github.ref, 'refs/tags/') || !contains(github.event.head_commit.message || '', '--skip-tests') }}
     runs-on: ubuntu-22.04
     timeout-minutes: 180
@@ -184,9 +210,22 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-          extensions: embed, curl, redis, mbstring, ffi
+          extensions: curl, redis, mbstring, ffi
           ini-values: ffi.enable=1, phpy.enable_operator_overloading=0, opcache.jit=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
           tools: composer:v2
+        env:
+          fail-fast: true
+          phpts: ts
+          update: true
+
+      - name: Verify ZTS PHP
+        shell: bash
+        run: |
+          php -r 'if (!PHP_ZTS) { fwrite(STDERR, "Expected a ZTS PHP build\n"); exit(1); }'
+          case "$(php -r 'echo PHP_VERSION;')" in
+            "${{ matrix.php }}"*) ;;
+            *) echo "setup-php installed an unexpected PHP version" >&2; exit 1 ;;
+          esac
 
       - name: Patch php_hash.h C++ compatibility
         uses: ./.github/actions/patch-php-headers
@@ -196,29 +235,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes build-essential cmake libgmp-dev libmpfr-dev pkg-config python3-dev
 
-      - name: Configure version-matched PHP embed library
+      - name: Configure ZTS PHP embed library
         shell: bash
         run: |
-          embed_package="libphp${{ matrix.php }}-embed"
-          php_version="$(php-config --version)"
-          embed_version="$(dpkg-query --show --showformat='${Version}' "${embed_package}")"
-          case "${embed_version}" in
-            "${php_version}"*) ;;
-            *) echo "PHP embed package ${embed_version} does not match PHP ${php_version}" >&2; exit 1 ;;
-          esac
-          embed_library="$(dpkg-query --listfiles "${embed_package}" \
-            | sed -n '/\/libphp[0-9][^/]*\.so$/ { p; q; }')"
-          test -n "${embed_library}"
+          php_home="$(php-config --prefix)"
+          embed_library="${php_home}/lib/libphp.so"
+          test -x "${php_home}/bin/php-config"
           test -f "${embed_library}"
-
-          php_home="${RUNNER_TEMP}/typephp-php-${{ matrix.php }}"
-          mkdir -p "${php_home}/bin" "${php_home}/include" "${php_home}/lib"
-          ln -s "$(command -v php-config)" "${php_home}/bin/php-config"
-          ln -s "$(php-config --include-dir)" "${php_home}/include/php"
-          ln -s "${embed_library}" "${php_home}/lib/libphp.so"
-
           echo "PHP_HOME=${php_home}" >> "${GITHUB_ENV}"
-          echo "Using ${embed_library} from ${embed_package} ${embed_version} for PHP ${php_version}"
+          echo "Using ZTS PHP $(php-config --version) embed library: ${embed_library}"
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
@@ -226,13 +251,13 @@ jobs:
       - name: Download PHPX library
         uses: actions/download-artifact@v4
         with:
-          name: libphpx-php-${{ matrix.php }}
+          name: libphpx-php-${{ matrix.php }}-zts
           path: vendor/swoole/phpx/lib
 
       - name: Download phpy extension
         uses: actions/download-artifact@v4
         with:
-          name: phpy-php-${{ matrix.php }}
+          name: phpy-php-${{ matrix.php }}-zts
           path: third_party/phpy/modules
 
       - name: Enable phpy extension
@@ -284,7 +309,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && matrix.php == '8.5'
         uses: actions/upload-artifact@v4
         with:
-          name: release-linux-php-${{ matrix.php }}
+          name: release-linux-x64-php-${{ matrix.php }}-zts
           if-no-files-found: error
           retention-days: 1
           path: tpc_v*_linux_*.tar.gz
@@ -293,7 +318,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: phpt-failures-php-${{ matrix.php }}
+          name: phpt-failures-linux-x64-php-${{ matrix.php }}-zts
           if-no-files-found: ignore
           retention-days: 7
           path: |

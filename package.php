@@ -15,9 +15,9 @@ if (!chdir(__DIR__)) {
 if (in_array('--help', $argv ?? [], true) || in_array('-h', $argv ?? [], true)) {
     echo "Usage: php package.php\n\n";
     echo "Windows: requires PHP_HOME and PHPX_HOME; creates a self-contained SDK package.\n";
-    echo "Linux: uses strip; packages the tested ELF and Composer vendor tree.\n";
-    echo "macOS: uses strip when available; packages the native binary and release metadata.\n";
-    echo "Supported architectures: 64-bit CPUs, including x86_64 and ARM64.\n";
+    echo "Linux: uses strip; packages the tested ELF and production Composer vendor tree.\n";
+    echo "macOS: uses strip; packages the tested Mach-O binary and production Composer vendor tree.\n";
+    echo "Supported architectures: 64-bit CPUs, including x64 and ARM64.\n";
     exit(0);
 }
 
@@ -529,7 +529,7 @@ function normalizeArchitecture(string $architecture): string
 {
     $architecture = strtolower(trim($architecture));
     $normalized = match ($architecture) {
-        'x86_64', 'x86-64', 'amd64', 'x64' => 'x86_64',
+        'x86_64', 'x86-64', 'amd64', 'x64' => 'x64',
         'aarch64', 'arm64', 'arm64b', 'arm64e' => 'arm64',
         'powerpc64', 'ppc64' => 'ppc64',
         'powerpc64le', 'ppc64le' => 'ppc64le',
@@ -568,54 +568,19 @@ function packageUnixLike(): void
     $arch = normalizeArchitecture(php_uname('m'));
 
     $binary = 'tpc';
-    $requiredFiles = [$binary];
-    if ($osType === 'linux') {
-        $requiredFiles[] = 'vendor/autoload.php';
-        $requiredFiles[] = 'vendor/composer/installed.php';
-    } else {
-        $phpxSourceDir = getenv('PHPX_HOME');
-        if (!is_string($phpxSourceDir) || $phpxSourceDir === '' || !is_dir($phpxSourceDir)) {
-            $phpxSourceDir = 'vendor/swoole/phpx';
-        }
-        $phpxSourceDir = realpath($phpxSourceDir) ?: rtrim($phpxSourceDir, '/\\');
-        $wasiSdkSourceRoot = $phpxSourceDir . '/wasm/wasm32-wasip2';
-        $wasiSdkPackageRoot = 'vendor/swoole/phpx/wasm/wasm32-wasip2';
-        array_push(
-            $requiredFiles,
-            'composer.json',
-            'README.md',
-            'LICENSE',
-            'examples/hello.php',
-            'completions/tpc.bash',
-            'wasm/build-program.sh',
-            "{$wasiSdkSourceRoot}/.typephp-wasi-sdk-abi",
-            "{$wasiSdkSourceRoot}/include/php/main/php.h",
-            "{$wasiSdkSourceRoot}/include/php/main/php_config.h",
-            "{$wasiSdkSourceRoot}/include/php/Zend/zend_config.h",
-            "{$wasiSdkSourceRoot}/include/php/ext/date/lib/timelib_config.h",
-            "{$wasiSdkSourceRoot}/include/phpx/phpx.h",
-            "{$wasiSdkSourceRoot}/include/phpx/phpx_python.h",
-            "{$wasiSdkSourceRoot}/include/phpx/typephp_helper.h",
-            "{$wasiSdkSourceRoot}/include/gmp.h",
-            "{$wasiSdkSourceRoot}/include/mpfr.h",
-            "{$wasiSdkSourceRoot}/include/decimal.hh",
-        );
-        foreach (['libphp.a', 'libphpx.a', 'libgmp.a', 'libgmpxx.a', 'libmpfr.a', 'libmpdec.a', 'libmpdec++.a'] as $library) {
-            $requiredFiles[] = "{$wasiSdkSourceRoot}/lib/{$library}";
-        }
-    }
+    $requiredFiles = [
+        $binary,
+        'vendor/autoload.php',
+        'vendor/composer/installed.php',
+    ];
     foreach ($requiredFiles as $file) {
         if (!is_file($file)) {
             throw new RuntimeException("Required package file not found: {$file}");
         }
     }
-    if ($osType !== 'linux' && !class_exists('ZipArchive')) {
-        throw new RuntimeException('The ZipArchive extension is required');
-    }
-
     $versionId = resolvePackageVersion();
     $topLevelDir = "tpc_v{$versionId}_{$osType}_{$arch}";
-    $outputFile = $topLevelDir . ($osType === 'linux' ? '.tar.gz' : '.zip');
+    $outputFile = $topLevelDir . '.tar.gz';
 
     echo "========================================\n";
     echo "TypePHP {$osType} package\n";
@@ -669,129 +634,58 @@ function packageUnixLike(): void
         throw new RuntimeException("strip failed:\n" . implode("\n", $stripOutput));
     }
 
-    if ($osType === 'linux') {
-        // Linux release binaries intentionally use the target system's libphp,
-        // libphpx, and other native dependencies. Composer sources and headers
-        // are portable, but test-built host libraries must not enter the archive.
-        mustCreateDirectory("{$topLevelDir}/vendor");
-        copyDirectory(
-            'vendor',
+    // Linux and macOS releases intentionally use the target system's libphp,
+    // libphpx, and other native dependencies. Composer sources and headers are
+    // portable, but test-built host libraries must not enter the archive.
+    mustCreateDirectory("{$topLevelDir}/vendor");
+    copyDirectory(
+        'vendor',
+        "{$topLevelDir}/vendor",
+        [],
+        null,
+        ['a', 'dll', 'dylib', 'exe', 'exp', 'lib', 'o', 'obj', 'pdb', 'so'],
+    );
+
+    $requiredEntries = [
+        "{$topLevelDir}/{$binary}",
+        "{$topLevelDir}/vendor/autoload.php",
+        "{$topLevelDir}/vendor/composer/installed.php",
+    ];
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(
             "{$topLevelDir}/vendor",
-            [],
-            null,
-            ['a', 'dll', 'dylib', 'exe', 'exp', 'lib', 'o', 'obj', 'pdb', 'so'],
-        );
-    } else {
-        mustCopy('composer.json', "{$topLevelDir}/composer.json");
-        mustCopy('README.md', "{$topLevelDir}/README.md");
-        mustCopy('LICENSE', "{$topLevelDir}/LICENSE");
-        mustCreateDirectory("{$topLevelDir}/examples");
-        mustCopy('examples/hello.php', "{$topLevelDir}/examples/hello.php");
-        mustCreateDirectory("{$topLevelDir}/completions");
-        mustCopy('completions/tpc.bash', "{$topLevelDir}/completions/tpc.bash");
-        copyDirectory('wasm', "{$topLevelDir}/wasm");
-        // Host tools are installed independently; only the target SDK is bundled.
-        copyDirectory(
-            "{$phpxSourceDir}/wasm",
-            "{$topLevelDir}/vendor/swoole/phpx/wasm",
-            ['bin'],
-        );
-    }
-
-    $requiredEntries = ["{$topLevelDir}/{$binary}"];
-    if ($osType === 'linux') {
-        $requiredEntries[] = "{$topLevelDir}/vendor/autoload.php";
-        $requiredEntries[] = "{$topLevelDir}/vendor/composer/installed.php";
-    } else {
-        array_push(
-            $requiredEntries,
-            "{$topLevelDir}/composer.json",
-            "{$topLevelDir}/README.md",
-            "{$topLevelDir}/LICENSE",
-            "{$topLevelDir}/examples/hello.php",
-            "{$topLevelDir}/completions/tpc.bash",
-            "{$topLevelDir}/wasm/build-program.sh",
-            "{$topLevelDir}/{$wasiSdkPackageRoot}/.typephp-wasi-sdk-abi",
-            "{$topLevelDir}/{$wasiSdkPackageRoot}/include/php/main/php.h",
-            "{$topLevelDir}/{$wasiSdkPackageRoot}/include/phpx/phpx.h",
-        );
-        foreach (['libphp.a', 'libphpx.a', 'libgmp.a', 'libgmpxx.a', 'libmpfr.a', 'libmpdec.a', 'libmpdec++.a'] as $library) {
-            $requiredEntries[] = "{$topLevelDir}/{$wasiSdkPackageRoot}/lib/{$library}";
+            FilesystemIterator::SKIP_DOTS,
+        ),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+    foreach ($files as $file) {
+        if ($file->isFile() && isNativeLibraryPath($file->getPathname())) {
+            throw new RuntimeException(
+                "{$osType} package unexpectedly contains a native library: {$file->getPathname()}",
+            );
         }
     }
-    if ($osType === 'linux') {
-        $files = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator(
-                "{$topLevelDir}/vendor",
-                FilesystemIterator::SKIP_DOTS,
-            ),
-            RecursiveIteratorIterator::LEAVES_ONLY,
-        );
-        foreach ($files as $file) {
-            if ($file->isFile() && isNativeLibraryPath($file->getPathname())) {
-                throw new RuntimeException(
-                    "Linux package unexpectedly contains a native library: {$file->getPathname()}",
-                );
-            }
-        }
 
-        exec('command -v tar 2>/dev/null', $tarPath, $tarStatus);
-        if ($tarStatus !== 0) {
-            throw new RuntimeException('tar is required for Linux packaging');
+    exec('command -v tar 2>/dev/null', $tarPath, $tarStatus);
+    if ($tarStatus !== 0) {
+        throw new RuntimeException('tar is required for Unix-like packaging');
+    }
+    exec(
+        'tar -czf ' . escapeshellarg($outputFile) . ' ' . escapeshellarg($topLevelDir) . ' 2>&1',
+        $tarOutput,
+        $tarStatus,
+    );
+    if ($tarStatus !== 0) {
+        throw new RuntimeException("tar failed:\n" . implode("\n", $tarOutput));
+    }
+    exec('tar -tzf ' . escapeshellarg($outputFile) . ' 2>&1', $archiveEntries, $tarStatus);
+    if ($tarStatus !== 0) {
+        throw new RuntimeException("Unable to verify archive:\n" . implode("\n", $archiveEntries));
+    }
+    foreach ($requiredEntries as $entry) {
+        if (!in_array($entry, $archiveEntries, true)) {
+            throw new RuntimeException("Archive is missing required entry: {$entry}");
         }
-        exec(
-            'tar -czf ' . escapeshellarg($outputFile) . ' ' . escapeshellarg($topLevelDir) . ' 2>&1',
-            $tarOutput,
-            $tarStatus,
-        );
-        if ($tarStatus !== 0) {
-            throw new RuntimeException("tar failed:\n" . implode("\n", $tarOutput));
-        }
-        exec('tar -tzf ' . escapeshellarg($outputFile) . ' 2>&1', $archiveEntries, $tarStatus);
-        if ($tarStatus !== 0) {
-            throw new RuntimeException("Unable to verify archive:\n" . implode("\n", $archiveEntries));
-        }
-        foreach ($requiredEntries as $entry) {
-            if (!in_array($entry, $archiveEntries, true)) {
-                throw new RuntimeException("Archive is missing required entry: {$entry}");
-            }
-        }
-    } else {
-        $zip = new ZipArchive();
-        if ($zip->open($outputFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-            throw new RuntimeException("Unable to create archive: {$outputFile}");
-        }
-        $files = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($topLevelDir, FilesystemIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::LEAVES_ONLY,
-        );
-        foreach ($files as $file) {
-            if (!$file->isFile()) {
-                continue;
-            }
-            $relativePath = str_replace('\\', '/', substr(
-                $file->getPathname(),
-                strlen($topLevelDir) + 1,
-            ));
-            if (!$zip->addFile($file->getPathname(), "{$topLevelDir}/{$relativePath}")) {
-                throw new RuntimeException("Unable to add archive entry: {$file->getPathname()}");
-            }
-        }
-        if (!$zip->close()) {
-            throw new RuntimeException("Unable to finish archive: {$outputFile}");
-        }
-
-        $verificationZip = new ZipArchive();
-        if ($verificationZip->open($outputFile) !== true) {
-            throw new RuntimeException("Unable to verify archive: {$outputFile}");
-        }
-        foreach ($requiredEntries as $entry) {
-            if ($verificationZip->locateName($entry) === false) {
-                $verificationZip->close();
-                throw new RuntimeException("Archive is missing required entry: {$entry}");
-            }
-        }
-        $verificationZip->close();
     }
 
     removeDirectory($topLevelDir);
