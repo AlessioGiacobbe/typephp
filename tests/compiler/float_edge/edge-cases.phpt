@@ -3,6 +3,7 @@ Float edge cases: NAN, INF, -INF
 --FILE--
 <?php
 function main(): void {
+    error_reporting(E_ERROR);
     var_dump(NAN);
     var_dump(INF);
     var_dump(-INF);
@@ -13,7 +14,10 @@ function main(): void {
     var_dump(is_infinite(1.5));
     var_dump(is_finite(INF));
     var_dump(is_finite(1.5));
-    echo NAN . "\n";
+    // Keep the NAN-to-string conversion at runtime so error_reporting() can
+    // suppress PHP 8.5's new warning in this cross-version value test.
+    $nan = NAN;
+    echo $nan . "\n";
     echo INF . "\n";
     echo -INF . "\n";
     var_dump(INF + INF);
