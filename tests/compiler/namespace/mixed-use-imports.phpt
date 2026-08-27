@@ -19,8 +19,8 @@ namespace Utils\Math {
 }
 
 namespace App {
-    use Utils\Str\slug;
-    use Utils\Str\prefix;
+    use function Utils\Str\slug;
+    use function Utils\Str\prefix;
     use function Utils\Math\double;
 
     class TextHelper {

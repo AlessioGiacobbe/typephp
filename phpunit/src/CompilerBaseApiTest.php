@@ -1883,7 +1883,7 @@ YAML);
 
     public function testGetNamespacedClassNameWithUseAlias(): void
     {
-        $this->setPropertyValue('useAliases', ['User' => 'App\\Entity\\User']);
+        $this->setPropertyValue('useAliases', ['user' => 'App\\Entity\\User']);
         $this->assertEquals(
             'App\\Entity\\User',
             $this->compiler->getNamespacedClassName('User')
@@ -1892,10 +1892,37 @@ YAML);
 
     public function testGetNamespacedClassNameWithUseAliasSubNamespace(): void
     {
-        $this->setPropertyValue('useAliases', ['Entity' => 'App\\Entity']);
+        $this->setPropertyValue('useAliases', ['entity' => 'App\\Entity']);
         $this->assertEquals(
             'App\\Entity\\User',
             $this->compiler->getNamespacedClassName('Entity\\User')
+        );
+    }
+
+    public function testExplicitClassAliasDoesNotImportTheOriginalShortName(): void
+    {
+        $use = new \PhpParser\Node\Stmt\Use_([
+            new \PhpParser\Node\UseItem(
+                new \PhpParser\Node\Name('Vendor\\Package\\Notes'),
+                new \PhpParser\Node\Identifier('NotesFactory'),
+            ),
+        ]);
+
+        $this->invokeMethod('parseUse', $use);
+        $this->setPropertyValue('namespace', 'Application\\Api');
+
+        $this->assertSame([], $this->getPropertyValue('useNamespaces'));
+        $this->assertSame(
+            ['notesfactory' => 'Vendor\\Package\\Notes'],
+            $this->getPropertyValue('useAliases'),
+        );
+        $this->assertSame(
+            'Vendor\\Package\\Notes',
+            $this->compiler->getNamespacedClassName('NOTESFACTORY'),
+        );
+        $this->assertSame(
+            'Application\\Api\\Notes',
+            $this->compiler->getNamespacedClassName('Notes'),
         );
     }
 
@@ -1956,7 +1983,7 @@ YAML);
 
     public function testGetNamespacedClassNameAliasPriority(): void
     {
-        $this->setPropertyValue('useAliases', ['User' => 'App\\Models\\User']);
+        $this->setPropertyValue('useAliases', ['user' => 'App\\Models\\User']);
         $this->setPropertyValue('useNamespaces', ['App\\Controllers']);
         // Alias should be checked first
         $this->assertEquals(

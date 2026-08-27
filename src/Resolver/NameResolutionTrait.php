@@ -29,8 +29,9 @@ trait NameResolutionTrait
 
         $ns2 = explode('\\', trim($class, '\\'));
 
-        if (isset($this->useAliases[$ns2[0]])) {
-            $ns = '\\' . $this->useAliases[$ns2[0]];
+        $aliasTarget = $this->getClassImportAlias($ns2[0]);
+        if ($aliasTarget !== null) {
+            $ns = '\\' . $aliasTarget;
             _return:
             if (count($ns2) > 1) {
                 $ns .= '\\' . implode('\\', array_slice($ns2, 1));
@@ -105,7 +106,7 @@ trait NameResolutionTrait
             }
             $resolved = $typeName;
             $firstSegment = explode('\\', $typeName, 2)[0];
-            $hasImportedPrefix = isset($this->useAliases[$firstSegment]);
+            $hasImportedPrefix = $this->getClassImportAlias($firstSegment) !== null;
             if (!$hasImportedPrefix) {
                 foreach ($this->useNamespaces as $useNamespace) {
                     $segments = explode('\\', trim($useNamespace, '\\'));
@@ -121,6 +122,11 @@ trait NameResolutionTrait
             return new Node\Name\FullyQualified($resolved, $type->getAttributes());
         }
         return $type;
+    }
+
+    private function getClassImportAlias(string $name): ?string
+    {
+        return $this->useAliases[strtolower($name)] ?? null;
     }
 
     /**

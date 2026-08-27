@@ -3369,28 +3369,19 @@ class CompilerBase implements PropertyAccessContext
         if ($funcName[0] == '\\') {
             $funcName = ltrim($funcName, '\\');
             $possibleFunctionNames = [$this->escapeName($funcName)];
+        } elseif (str_contains($funcName, '\\')) {
+            // Qualified function names use the class/namespace import table
+            // for their first segment, just like qualified class names.
+            $possibleFunctionNames = [
+                $this->escapeName($this->getNamespacedClassName($funcName)),
+            ];
         } else {
             $possibleFunctionNames = [$this->escapeName($funcName)];
-            if (isset($this->useAliases[$funcName])) {
-                $possibleFunctionNames[] = $this->escapeName($this->escapeNamespace($this->useAliases[$funcName]));
-            }
             if ($this->namespace) {
                 $possibleFunctionNames[] = $this->escapeNamespace($this->namespace) . self::NAMESPACE_SEPARATOR . $this->escapeName($funcName);
             }
             if (isset($this->useFunctions[$funcName])) {
                 $possibleFunctionNames[] = $this->escapeNamespace($this->useFunctions[$funcName]);
-            }
-            // 复杂命名空间规则，组合命名空间
-            // 例子：use foo\bar;  bar\fn();
-            foreach ($this->useNamespaces as $use) {
-                $ns1 = explode('\\', $use);
-                $ns2 = explode('\\', $funcName);
-                if ($ns1[array_key_last($ns1)] === $ns2[array_key_first($ns2)]) {
-                    $ns = array_merge($ns1, $ns2);
-                    array_splice($ns, array_key_last($ns1) + 1);
-                    $possibleFunctionNames[] = $this->escapeNamespace(implode('\\', $ns));
-                    break;
-                }
             }
         }
 

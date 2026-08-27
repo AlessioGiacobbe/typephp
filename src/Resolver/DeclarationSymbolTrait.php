@@ -103,9 +103,13 @@ trait DeclarationSymbolTrait
                 } elseif ($idLower === 'bigint_types') {
                     $this->bigintTypes = true;
                 } else {
-                    $this->useNamespaces[] = $id;
                     if ($use->alias) {
-                        $this->useAliases[$use->alias->toString()] = $id;
+                        // Class and namespace import aliases are case-insensitive.
+                        // An explicit alias replaces the implicit short name; it
+                        // must not also make the target's final segment available.
+                        $this->useAliases[strtolower($use->alias->toString())] = $id;
+                    } else {
+                        $this->useNamespaces[] = $id;
                     }
                 }
             }
