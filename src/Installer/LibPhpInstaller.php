@@ -2,6 +2,8 @@
 
 namespace TypePhp\Installer;
 
+use TypePhp\Platform\Linux;
+
 final class LibPhpInstaller
 {
     private const string RELEASE_API = 'https://www.php.net/releases/index.php?json=1&version=%s&max=100';
@@ -51,7 +53,12 @@ final class LibPhpInstaller
 
     public function hasLibPhp(string $prefix): bool
     {
-        return is_file($prefix . '/lib/libphp.so') || is_file($prefix . '/lib/libphp.a');
+        try {
+            (new Linux())->detectPhpLibs(rtrim($prefix, '/'));
+            return true;
+        } catch (\RuntimeException) {
+            return false;
+        }
     }
 
     public function installedVersion(string $prefix): ?string

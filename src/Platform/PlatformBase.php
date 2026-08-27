@@ -117,16 +117,19 @@ abstract class PlatformBase
             return [];
         }
 
-        $ext = ltrim($this->getSharedLibraryExtension(), '.');
         $warnings = [];
 
-        if (!is_file($phpDir . '/lib/libphp.' . $ext)) {
+        try {
+            $this->detectPhpLibs($phpDir);
+        } catch (\RuntimeException $e) {
+            $ext = ltrim($this->getSharedLibraryExtension(), '.');
             $warnings[] = [
                 'warning' => "The `libphp.{$ext}` is not found",
-                'info' => 'Run tpc.php in an interactive terminal to build it automatically, or set PHP_HOME',
+                'info' => $e->getMessage() . '. Run tpc.php in an interactive terminal to build it automatically, or set PHP_HOME',
             ];
         }
 
+        $ext = ltrim($this->getSharedLibraryExtension(), '.');
         if (!is_file($phpxDir . '/lib/libphpx.' . $ext)) {
             $warnings[] = [
                 'warning' => "The `libphpx.{$ext}` is not found",

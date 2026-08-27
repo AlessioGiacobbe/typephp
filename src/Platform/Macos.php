@@ -92,8 +92,8 @@ class Macos extends UnixPlatform
         }
 
         if ($phpDir !== null) {
-            $phpLibDir = $phpDir . '/lib';
-            if (is_dir($phpLibDir)) {
+            $phpLibDir = $this->resolvePhpLibDir($phpDir);
+            if ($phpLibDir !== null) {
                 $rpaths[] = $phpLibDir;
             }
         }

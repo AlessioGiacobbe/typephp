@@ -160,7 +160,7 @@ abstract class UnixPlatform extends PlatformBase
     {
         $phpConfigPath = $this->findPhpConfig($phpDir);
         if ($phpConfigPath) {
-            $includes = shell_exec("{$phpConfigPath} --includes 2>/dev/null");
+            $includes = shell_exec(escapeshellarg($phpConfigPath) . ' --includes 2>/dev/null');
             if ($includes) {
                 preg_match_all('/-I([^\s]+)/', $includes, $matches);
                 if (!empty($matches[1])) {
@@ -205,10 +205,38 @@ abstract class UnixPlatform extends PlatformBase
 
         $whichResult = trim(shell_exec('which php-config 2>/dev/null'));
         if ($whichResult && is_executable($whichResult)) {
-            return $whichResult;
+            $prefix = $this->getPhpConfigValue($whichResult, '--prefix');
+            $expected = realpath($phpDir) ?: rtrim($phpDir, '/');
+            $actual = $prefix === null ? null : (realpath($prefix) ?: rtrim($prefix, '/'));
+            if ($actual === $expected) {
+                return $whichResult;
+            }
         }
 
         return null;
+    }
+
+    protected function getPhpConfigValue(string $phpConfig, string $option): ?string
+    {
+        $value = shell_exec(escapeshellarg($phpConfig) . ' ' . escapeshellarg($option) . ' 2>/dev/null');
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+        return trim($value);
+    }
+
+    protected function resolvePhpLibDir(string $phpDir): ?string
+    {
+        $phpConfig = $this->findPhpConfig($phpDir);
+        if ($phpConfig !== null) {
+            $libDir = $this->getPhpConfigValue($phpConfig, '--lib-dir');
+            if ($libDir !== null && is_dir($libDir)) {
+                return rtrim($libDir, '/');
+            }
+        }
+
+        $libDir = rtrim($phpDir, '/') . '/lib';
+        return is_dir($libDir) ? $libDir : null;
     }
 
     /**
@@ -216,14 +244,8 @@ abstract class UnixPlatform extends PlatformBase
      */
     public function buildPhpLibPaths(string $phpDir): array
     {
-        $paths = [];
-
-        $libPath = $phpDir . '/lib';
-        if (is_dir($libPath)) {
-            $paths[] = $libPath;
-        }
-
-        return $paths;
+        $libPath = $this->resolvePhpLibDir($phpDir);
+        return $libPath === null ? [] : [$libPath];
     }
 
     /**
@@ -231,18 +253,39 @@ abstract class UnixPlatform extends PlatformBase
      */
     public function detectPhpLibs(string $phpDir): array
     {
-        $libPath = $phpDir . '/lib';
-
-        if (!is_dir($libPath)) {
-            throw new \RuntimeException("PHP lib directory not found: {$libPath}");
+        $libPath = $this->resolvePhpLibDir($phpDir);
+        if ($libPath === null) {
+            throw new \RuntimeException("PHP library directory not found for installation: {$phpDir}");
         }
 
         $ext = ltrim($this->getSharedLibraryExtension(), '.');
-        $embedLib = $libPath . '/libphp.' . $ext;
-        $staticLib = $libPath . '/libphp.a';
+        $embedLib = null;
+        $staticLib = null;
 
-        $hasEmbed = file_exists($embedLib);
-        $hasStatic = file_exists($staticLib);
+        $phpConfig = $this->findPhpConfig($phpDir);
+        $configuredEmbed = $phpConfig === null ? null : $this->getPhpConfigValue($phpConfig, '--lib-embed');
+        if ($configuredEmbed !== null) {
+            $configuredPath = str_starts_with($configuredEmbed, '/')
+                ? $configuredEmbed
+                : $libPath . '/' . $configuredEmbed;
+            if (is_file($configuredPath)) {
+                if (str_ends_with($configuredPath, '.a')) {
+                    $staticLib = $configuredPath;
+                } else {
+                    $embedLib = $configuredPath;
+                }
+            }
+        }
+
+        if ($embedLib === null && $staticLib === null) {
+            $sharedCandidate = $libPath . '/libphp.' . $ext;
+            $staticCandidate = $libPath . '/libphp.a';
+            $embedLib = is_file($sharedCandidate) ? $sharedCandidate : null;
+            $staticLib = is_file($staticCandidate) ? $staticCandidate : null;
+        }
+
+        $hasEmbed = $embedLib !== null;
+        $hasStatic = $staticLib !== null;
 
         if (!$hasEmbed && !$hasStatic) {
             throw new \RuntimeException("Neither libphp.{$ext} nor libphp.a found");
