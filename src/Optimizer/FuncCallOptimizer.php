@@ -731,7 +731,7 @@ trait FuncCallOptimizer
                 'Native classes do not support runtime class introspection; use `NativeClass::class`',
             );
         }
-        if ($this->isVarExpr($obj) && $this->isTypedObject($obj->name)) {
+        if ($this->isVarExpr($obj) && $this->isStableObject($obj->name)) {
             return $this->getLiteralString($this->getObjectType($obj->name));
         }
         return 'php::fn::get_class(' . $this->parseIdentifier($obj) . ')';

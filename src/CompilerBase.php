@@ -4589,7 +4589,7 @@ class CompilerBase implements PropertyAccessContext
             return $id;
         }
         if ($id === 'self') {
-            $id = $this->getNamespacedClassName($this->class);
+            $id = $this->getFullClassName();
         } elseif ($id === 'static') {
             return Symbol::getCalledClass();
         }

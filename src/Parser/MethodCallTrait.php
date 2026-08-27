@@ -830,6 +830,24 @@ trait MethodCallTrait
         return false;
     }
 
+    /**
+     * Materialize a dynamic static-call target exactly once and normalize it
+     * to the runtime class name accepted by PHP callbacks.
+     *
+     * PHP permits both an object and a class-name string before `::`. A
+     * declared object type is only an upper bound, so using it directly would
+     * lose late static binding when the runtime object is a subclass.
+     */
+    private function materializeDynamicStaticCallClassName(Expr $target): string
+    {
+        [$value, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($target);
+        $this->appendCapturedStmtLinesToContext($beforeStmts);
+        $classVar = $this->addTmpVar(Type::VAR);
+        $this->context->beforeStmtLines[] = $classVar . ' = ' . $value . ';';
+        $this->appendCapturedStmtLinesToContext($afterStmts);
+
+        return '(' . $classVar . '.isObject() ? php::fn::get_class(' . $classVar . ') : php::toString(' . $classVar . '))';
+    }
 
     protected function parseStaticCall(Expr\StaticCall $expr): string
     {
@@ -850,7 +868,10 @@ trait MethodCallTrait
         $callScope = [];
         $rtFunc = '';
         $rtClass = '';
-        $class = $this->parseIdentifier($expr->class);
+        $canUseDirectCallScope = $this->isNameExpr($expr->class) && $this->isIdExpr($expr->name);
+        $class = ($this->isNameExpr($expr->class) || $this->isVarExpr($expr->class))
+            ? $this->parseIdentifier($expr->class)
+            : '';
 
         if ($this->isNameExpr($expr->class)
             && $this->isIdExpr($expr->name)
@@ -870,19 +891,28 @@ trait MethodCallTrait
             return $this->parseParentMethodCall($expr);
         }
 
-        if ($this->isVarExpr($expr->class) or $this->isVarExpr($expr->name)) {
-            $var = $class;
-            if ($this->isTypedObject($var)) {
-                $class = $this->getObjectType($var);
+        if (!$this->isNameExpr($expr->class)) {
+            if ($this->isVarExpr($expr->class) && $this->isStableObject($class)) {
+                $class = $this->getObjectType($class);
                 goto _do_call;
             }
-            if ($this->getVarType($var) == Type::OBJECT) {
-                $fn = 'php::concat({' . $var . '.getClassName(), "::", ' . $this->methodNameToStr($expr->name) . '})';
-            } else {
-                $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->methodNameToStr($expr->name) . '})';
+            $className = $this->materializeDynamicStaticCallClassName($expr->class);
+            $fn = 'php::concat({' . $className . ', "::", ' . $this->methodNameToStr($expr->name) . '})';
+            if ($this->isVarExpr($expr->class) && $this->isIdExpr($expr->name)) {
+                $declaredClass = $this->getDeclaredObjectType($class);
+                if ($declaredClass !== '') {
+                    // Dispatch remains runtime-bound, but PHP requires an
+                    // overriding method to keep the reference signature
+                    // compatible with the declared base method.
+                    $rtFunc = $this->parseIdentifier($expr->name);
+                    $rtClass = $declaredClass;
+                }
             }
             $placeHolder = $fn;
-        } elseif ($this->isNameExpr($expr->class) and $class === 'static') {
+        } elseif ($this->isVarExpr($expr->name)) {
+            $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->methodNameToStr($expr->name) . '})';
+            $placeHolder = $fn;
+        } elseif ($class === 'static') {
             if ($this->classDef?->nativeObject) {
                 $this->fatalError(
                     $expr,
@@ -901,15 +931,16 @@ trait MethodCallTrait
             $placeHolder = $this->genArray([Symbol::getCalledClass(), $methodPtr]);
             // 用于在按引用参数检测时解析方法签名（late static binding 在当前类层级中解析）
             $rtFunc = $method;
-            $rtClass = $this->getNamespacedClassName($this->class);
-        } elseif ($this->isNameExpr($expr->class)) {
+            $rtClass = $this->getFullClassName();
+        } else {
             if ($class === 'self') {
-                $class = $this->class;
+                $class = $this->getFullClassName();
                 $self = true;
             } elseif ($class === 'std') {
                 return $this->parseStdCall($expr);
+            } else {
+                $class = $this->getNamespacedClassName($class);
             }
-            $class = $this->getNamespacedClassName($class);
 
             _do_call:
             $method = $this->parseIdentifier($expr->name);
@@ -922,7 +953,7 @@ trait MethodCallTrait
                 );
             }
 
-            if ($this->isNameExpr($expr->class) and $this->isIdExpr($expr->name)) {
+            if ($canUseDirectCallScope) {
                 $callScope = [$this->genCharPtr($class, true), $this->genCharPtr($method)];
             }
 
@@ -963,9 +994,6 @@ trait MethodCallTrait
             // reusable handlers and never stores transient trampolines.
             $fn = $this->getLiteralString($class . '::' . $method);
             $placeHolder = $this->genArray($callScope);
-        } else {
-            $fn = 'php::concat({' . $this->identifierToStr($expr->class) . ', "::", ' . $this->methodNameToStr($expr->name) . '})';
-            $placeHolder = $fn;
         }
 
         $call = 'php::call';
