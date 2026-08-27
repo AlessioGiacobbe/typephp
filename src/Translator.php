@@ -2795,39 +2795,24 @@ CODE;
 
         $cppCode = '';
         foreach ($stmts as $v) {
-            $type = $v->getType();
-            switch ($type) {
-                case 'Stmt_Declare':
-                    $this->parseDeclare($v);
-                    break;
-                case 'Stmt_Namespace':
-                    $cppCode .= $this->parseNamespace($v);
-                    break;
-                case 'Stmt_Class':
-                case 'Stmt_Trait':
-                case 'Stmt_Enum':
-                    $cppCode .= $this->parseClass($v);
-                    break;
-                case 'Stmt_Use':
-                    $this->parseUse($v);
-                    break;
-                case 'Stmt_GroupUse':
-                    $this->parseGroupUse($v);
-                    break;
-                case 'Stmt_Function':
-                    $cppCode .= $this->parseFunction($v) . PHP_EOL;
-                    break;
-                case 'Stmt_Const':
-                    $this->parseConstDef($v);
-                    break;
-                case 'Stmt_Interface':
-                    $this->validateInterfaceOverrideAttributes($v);
-                    break;
-                case 'Stmt_Nop':
-                    break;
-                default:
-                    $this->unsupportedSyntax($v);
-                    break;
+            if ($v instanceof Node\Stmt\Declare_) {
+                $this->parseDeclare($v);
+            } elseif ($v instanceof Node\Stmt\Namespace_) {
+                $cppCode .= $this->parseNamespace($v);
+            } elseif ($v instanceof Node\Stmt\Class_ || $v instanceof Node\Stmt\Trait_ || $v instanceof Node\Stmt\Enum_) {
+                $cppCode .= $this->parseClass($v);
+            } elseif ($v instanceof Node\Stmt\Use_) {
+                $this->parseUse($v);
+            } elseif ($v instanceof Node\Stmt\GroupUse) {
+                $this->parseGroupUse($v);
+            } elseif ($v instanceof Node\Stmt\Function_) {
+                $cppCode .= $this->parseFunction($v) . PHP_EOL;
+            } elseif ($v instanceof Node\Stmt\Const_) {
+                $this->parseConstDef($v);
+            } elseif ($v instanceof Node\Stmt\Interface_) {
+                $this->validateInterfaceOverrideAttributes($v);
+            } elseif (!$v instanceof Node\Stmt\Nop) {
+                $this->unsupportedSyntax($v);
             }
         }
 
@@ -2988,33 +2973,20 @@ CODE;
         $ns_end = '';
 
         foreach ($node->stmts as $v2) {
-            $type2 = $v2->getType();
-            switch ($type2) {
-                case 'Stmt_Class':
-                case 'Stmt_Trait':
-                case 'Stmt_Enum':
-                    $code .= $this->parseClass($v2);
-                    break;
-                case 'Stmt_Const':
-                    $this->parseConstDef($v2);
-                    break;
-                case 'Stmt_Function':
-                    $code .= $this->parseFunction($v2) . PHP_EOL;
-                    break;
-                case 'Stmt_Use':
-                    $this->parseUse($v2);
-                    break;
-                case 'Stmt_GroupUse':
-                    $this->parseGroupUse($v2);
-                    break;
-                case 'Stmt_Interface':
-                    $this->validateInterfaceOverrideAttributes($v2);
-                    break;
-                case 'Stmt_Nop':
-                    break;
-                default:
-                    $this->unsupportedSyntax($v2);
-                    break;
+            if ($v2 instanceof Node\Stmt\Class_ || $v2 instanceof Node\Stmt\Trait_ || $v2 instanceof Node\Stmt\Enum_) {
+                $code .= $this->parseClass($v2);
+            } elseif ($v2 instanceof Node\Stmt\Const_) {
+                $this->parseConstDef($v2);
+            } elseif ($v2 instanceof Node\Stmt\Function_) {
+                $code .= $this->parseFunction($v2) . PHP_EOL;
+            } elseif ($v2 instanceof Node\Stmt\Use_) {
+                $this->parseUse($v2);
+            } elseif ($v2 instanceof Node\Stmt\GroupUse) {
+                $this->parseGroupUse($v2);
+            } elseif ($v2 instanceof Node\Stmt\Interface_) {
+                $this->validateInterfaceOverrideAttributes($v2);
+            } elseif (!$v2 instanceof Node\Stmt\Nop) {
+                $this->unsupportedSyntax($v2);
             }
         }
         $code .= $ns_end;

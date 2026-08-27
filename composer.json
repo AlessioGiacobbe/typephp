@@ -37,7 +37,7 @@
   },
   "scripts": {
     "cs-fix": "php-cs-fixer fix $1",
-    "analyse": "phpstan analyse --memory-limit 512M -l 5 -c phpstan.neon",
+    "analyse": "phpstan analyse --memory-limit 1G -c phpstan.neon",
     "rector": "rector process --clear-cache"
   },
   "suggest": {

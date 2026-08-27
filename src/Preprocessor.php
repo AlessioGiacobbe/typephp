@@ -90,7 +90,7 @@ class Preprocessor extends CompilerBase
         return str_ends_with(strtolower($file), '.php');
     }
 
-    /** @param array<Node\Stmt> $ast */
+    /** @param list<Node> $ast */
     private function discoverNativeClassDeclarationsInAst(array $ast): void
     {
         $finder = new NodeFinder();
@@ -302,7 +302,7 @@ class Preprocessor extends CompilerBase
             ));
             $traverser->addVisitor(new ConstantExpressionValidationVisitor($this->phpVersion));
             $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
-            $stmts = $traverser->traverse($ast);
+            $stmts = $this->requireStatementList($traverser->traverse($ast));
             // Keep the resolved declaration AST until convert. Defaults and
             // constants are validated here, but their C++ expressions are not
             // generated until the complete symbol table is available.
@@ -314,45 +314,46 @@ class Preprocessor extends CompilerBase
             $this->discoverNativeClassDeclarationsInAst($stmts);
 
             foreach ($stmts as $v) {
-                $type = $v->getType();
-                switch ($type) {
-                    case 'Stmt_Namespace':
-                        $this->prepareNamespace($v);
-                        break;
-                    case 'Stmt_Enum':
-                    case 'Stmt_Class':
-                    case 'Stmt_Trait':
-                        $this->prepareClass($v);
-                        break;
-                    case 'Stmt_Interface':
-                        $this->parseInterface($v);
-                        break;
-                    case 'Stmt_Function':
-                        $this->prepareFunction($v);
-                        break;
-                    case 'Stmt_Use':
-                        $this->parseUse($v);
-                        break;
-                    case 'Stmt_GroupUse':
-                        $this->parseGroupUse($v);
-                        break;
-                    case 'Stmt_Declare':
-                    case 'Stmt_Nop':
-                        break;
-                    case 'Stmt_Const':
-                        $this->parseConstDef($v);
-                        break;
-                    case 'Stmt_Expression':
-                        $this->foundStrayCode($v);
-                        break;
-                    default:
-                        $this->fatalError($v, 'Unsupported statement: ' . $type);
-                        break;
+                if ($v instanceof Node\Stmt\Namespace_) {
+                    $this->prepareNamespace($v);
+                } elseif ($v instanceof Node\Stmt\Class_ || $v instanceof Node\Stmt\Enum_ || $v instanceof Node\Stmt\Trait_) {
+                    $this->prepareClass($v);
+                } elseif ($v instanceof Node\Stmt\Interface_) {
+                    $this->parseInterface($v);
+                } elseif ($v instanceof Node\Stmt\Function_) {
+                    $this->prepareFunction($v);
+                } elseif ($v instanceof Node\Stmt\Use_) {
+                    $this->parseUse($v);
+                } elseif ($v instanceof Node\Stmt\GroupUse) {
+                    $this->parseGroupUse($v);
+                } elseif ($v instanceof Node\Stmt\Const_) {
+                    $this->parseConstDef($v);
+                } elseif ($v instanceof Node\Stmt\Expression) {
+                    $this->foundStrayCode($v);
+                } elseif (!$v instanceof Node\Stmt\Declare_ && !$v instanceof Node\Stmt\Nop) {
+                    $this->fatalError($v, 'Unsupported statement: ' . $v->getType());
                 }
             }
         } finally {
             $this->restoreCompilerPhase($previousPhase);
         }
+    }
+
+    /**
+     * Root parser output must remain a statement list after declaration
+     * visitors have run. Validate that invariant before storing the AST.
+     *
+     * @param list<Node> $nodes
+     * @return list<Node\Stmt>
+     */
+    private function requireStatementList(array $nodes): array
+    {
+        foreach ($nodes as $node) {
+            if (!$node instanceof Node\Stmt) {
+                throw new \LogicException('Root AST traversal produced a non-statement node: ' . $node->getType());
+            }
+        }
+        return $nodes;
     }
 
     /**
@@ -735,33 +736,20 @@ class Preprocessor extends CompilerBase
 
         $this->namespace = $node->name ? $this->parseIdentifier($node->name) : '';
         foreach ($node->stmts as $v2) {
-            $type2 = $v2->getType();
-            switch ($type2) {
-                case 'Stmt_Class':
-                case 'Stmt_Enum':
-                case 'Stmt_Trait':
-                    $this->prepareClass($v2);
-                    break;
-                case 'Stmt_Function':
-                    $this->prepareFunction($v2);
-                    break;
-                case 'Stmt_Use':
-                    $this->parseUse($v2);
-                    break;
-                case 'Stmt_GroupUse':
-                    $this->parseGroupUse($v2);
-                    break;
-                case 'Stmt_Const':
-                    $this->parseConstDef($v2);
-                    break;
-                case 'Stmt_Interface':
-                    $this->parseInterface($v2);
-                    break;
-                case 'Stmt_Nop':
-                    break;
-                default:
-                    $this->foundStrayCode($v2);
-                    break;
+            if ($v2 instanceof Node\Stmt\Class_ || $v2 instanceof Node\Stmt\Enum_ || $v2 instanceof Node\Stmt\Trait_) {
+                $this->prepareClass($v2);
+            } elseif ($v2 instanceof Node\Stmt\Function_) {
+                $this->prepareFunction($v2);
+            } elseif ($v2 instanceof Node\Stmt\Use_) {
+                $this->parseUse($v2);
+            } elseif ($v2 instanceof Node\Stmt\GroupUse) {
+                $this->parseGroupUse($v2);
+            } elseif ($v2 instanceof Node\Stmt\Const_) {
+                $this->parseConstDef($v2);
+            } elseif ($v2 instanceof Node\Stmt\Interface_) {
+                $this->parseInterface($v2);
+            } elseif (!$v2 instanceof Node\Stmt\Nop) {
+                $this->foundStrayCode($v2);
             }
         }
     }

@@ -1,0 +1,17 @@
+parameters:
+  level: 5
+
+  paths:
+    - src
+    - bin
+
+  # Define CLI constants without executing bin/bootstrap.php inside PHPStan's
+  # process, where loading Composer's autoloader a second time is unsafe.
+  bootstrapFiles:
+    - phpstan-bootstrap.php
+
+  # gen_stub.php is maintained as a namespaced copy of php-src's generator.
+  # Analyze TypePHP-owned compiler code independently from upstream diagnostics.
+  excludePaths:
+    analyse:
+      - src/gen_stub.php

@@ -239,6 +239,11 @@ class CompilerBase implements PropertyAccessContext
     public const string VALUE_ZERO = 'php::zero';
     public const string VALUE_FALSE = 'php::false_';
     public const string VALUE_TRUE = 'php::true_';
+
+    protected function getBoolValue(Expr\ConstFetch $expr): string
+    {
+        return strcasecmp($expr->name->toString(), 'true') === 0 ? self::VALUE_TRUE : self::VALUE_FALSE;
+    }
     public const string LITERAL_STRINGS = '_literal_strings';
     public const string LITERAL_STRING_GETTER = 'get_str';
     public const string ANON_CLASS = '_anon_class_';
@@ -576,7 +581,7 @@ class CompilerBase implements PropertyAccessContext
         return $this->lang;
     }
 
-    protected function unsupportedSyntax(NodeAbstract $node): never
+    protected function unsupportedSyntax(Node $node): never
     {
         $message = 'Error: Unsupported ' . $this->getLang() . ' Syntax,';
         $message .= ' Line: ' . $this->getLine($node) . ', Type: ' . $this->getType($node) . PHP_EOL;
@@ -731,7 +736,7 @@ class CompilerBase implements PropertyAccessContext
         return '';
     }
 
-    public function parseExpr(NodeAbstract $expr): string
+    public function parseExpr(Node $expr): string
     {
         if ($expr->hasAttribute('replace')) {
             return $expr->getAttribute('replace');
@@ -744,217 +749,114 @@ class CompilerBase implements PropertyAccessContext
         if ($expr instanceof Node\Expr\BinaryOp) {
             $this->assertNativeObjectBinaryOperatorSupported($expr);
         }
-        switch ($type) {
-            case 'Expr_Isset':
-                return $this->parseIsset($expr);
-            case 'Expr_Empty':
-                return $this->parseEmpty($expr);
-            case 'Expr_Assign':
-                return $this->parseAssign($expr);
-            case 'Expr_AssignRef':
-                return $this->parseAssignRef($expr);
-            case 'Expr_Print':
-                return $this->parsePrint($expr);
-            case 'Expr_BinaryOp_Equal':
-                return $this->parseBinaryOpEqual($expr);
-            case 'Expr_BinaryOp_NotEqual':
-                return $this->parseBinaryOpNotEqual($expr);
-            case 'Expr_BinaryOp_Identical':
-                return $this->parseBinaryOpIdentical($expr);
-            case 'Expr_BinaryOp_NotIdentical':
-                return $this->parseBinaryOpNotIdentical($expr);
-            case 'Expr_BooleanNot':
-                return $this->parseBooleanNot($expr);
-            case 'Expr_BinaryOp_Plus':
-                return $this->parseBinaryOpPlus($expr);
-            case 'Expr_BinaryOp_Div':
-                return $this->parseBinaryOpDiv($expr);
-            case 'Expr_BinaryOp_Smaller':
-                return $this->parseBinaryOpSmaller($expr);
-            case 'Expr_BinaryOp_SmallerOrEqual':
-                return $this->parseBinaryOpSmallerOrEqual($expr);
-            case 'Expr_BinaryOp_GreaterOrEqual':
-                return $this->parseBinaryOpGreaterOrEqual($expr);
-            case 'Expr_BinaryOp_Spaceship':
-                return $this->parseBinaryOpSpaceship($expr);
-            case 'Expr_BinaryOp_Coalesce':
-                return $this->parseBinaryOpCoalesce($expr);
-            case 'Expr_PreInc':
-                return $this->parsePreInc($expr);
-            case 'Expr_PostInc':
-                return $this->parsePostInc($expr);
-            case 'Expr_PreDec':
-                return $this->parsePreDec($expr);
-            case 'Expr_PostDec':
-                return $this->parsePostDec($expr);
-            case 'Expr_AssignOp_Plus':
-                return $this->parseAssignOpPlus($expr);
-            case 'Expr_AssignOp_Minus':
-                return $this->parseAssignOpMinus($expr);
-            case 'Expr_AssignOp_Mul':
-                return $this->parseAssignOpMul($expr);
-            case 'Expr_AssignOp_Div':
-                return $this->parseAssignOpDiv($expr);
-            case 'Expr_AssignOp_Mod':
-                return $this->parseAssignOpMod($expr);
-            case 'Expr_AssignOp_Concat':
-                return $this->parseAssignOpConcat($expr);
-            case 'Expr_AssignOp_ShiftLeft':
-                return $this->parseAssignOpShiftLeft($expr);
-            case 'Expr_AssignOp_ShiftRight':
-                return $this->parseAssignOpShiftRight($expr);
-            case 'Expr_AssignOp_BitwiseAnd':
-                return $this->parseAssignOpBitwiseAnd($expr);
-            case 'Expr_AssignOp_BitwiseOr':
-                return $this->parseAssignOpBitwiseOr($expr);
-            case 'Expr_AssignOp_BitwiseXor':
-                return $this->parseAssignOpBitwiseXor($expr);
-            case 'Expr_AssignOp_Pow':
-                return $this->parseAssignOpPow($expr);
-            case 'Expr_AssignOp_Coalesce':
-                return $this->parseAssignOpCoalesce($expr);
-            case 'Expr_BinaryOp_Mul':
-                return $this->parseBinaryOpMul($expr);
-            case 'Expr_BinaryOp_Concat':
-                return $this->parseBinaryOpConcat($expr);
-            case 'Expr_BinaryOp_Greater':
-                return $this->parseBinaryOpGreater($expr);
-            case 'Expr_BinaryOp_LogicalAnd':
-            case 'Expr_BinaryOp_BooleanAnd':
-                return $this->parseBinaryOpLogicalAnd($expr);
-            case 'Expr_BinaryOp_LogicalOr':
-            case 'Expr_BinaryOp_BooleanOr':
-                return $this->parseBinaryOpLogicalOr($expr);
-            case 'Expr_BinaryOp_LogicalXor':
-                return $this->parseBinaryOpLogicalXor($expr);
-            case 'Expr_BinaryOp_Minus':
-                return $this->parseBinaryOpMinus($expr);
-            case 'Expr_Array':
-                return $this->parseArray($expr);
-            case 'Expr_ArrayDimFetch':
-                return $this->parseArrayDimFetch($expr);
-            case 'Expr_PropertyFetch':
-                return $this->parsePropertyFetch($expr);
-            case 'Expr_NullsafePropertyFetch':
-                return $this->parseNullsafePropertyFetch($expr);
-            case 'Expr_NullsafeMethodCall':
-                return $this->parseNullsafeMethodCall($expr);
-            case 'Expr_BinaryOp_ShiftLeft':
-                return $this->parseBinaryOpShiftLeft($expr);
-            case 'Expr_BinaryOp_ShiftRight':
-                return $this->parseBinaryOpShiftRight($expr);
-            case 'Expr_BinaryOp_BitwiseAnd':
-                return $this->parseBinaryOpBitwiseAnd($expr);
-            case 'Expr_BinaryOp_BitwiseOr':
-                return $this->parseBinaryOpBitwiseOr($expr);
-            case 'Expr_BinaryOp_BitwiseXor':
-                return $this->parseBinaryOpBitwiseXor($expr);
-            case 'Expr_BinaryOp_Pipe':
-                return $this->parsePipeOperator($expr);
-            case 'Expr_BitwiseNot':
-                return $this->parseBitwiseNot($expr);
-            case 'Expr_BinaryOp_Mod':
-                return $this->parseBinaryOpMod($expr);
-            case 'Expr_BinaryOp_Pow':
-                return $this->parseBinaryOpPow($expr);
-            case 'Expr_Ternary':
-                return $this->parseTernary($expr);
-            case 'Expr_Match':
-                return $this->parseMatch($expr);
-            case 'Expr_FuncCall':
-                return $this->parseFuncCall($expr);
-            case 'Expr_MethodCall':
-                return $this->parseMethodCall($expr);
-            case 'Expr_StaticCall':
-                return $this->parseStaticCall($expr);
-            case 'Expr_StaticPropertyFetch':
-                return $this->parseStaticPropertyFetch($expr);
-            case 'Expr_ClassConstFetch':
-                return $this->parseClassConstFetch($expr);
-            case 'Expr_Include':
-                return $this->parseInclude($expr);
-            case 'Expr_Eval':
-                return $this->parseEval($expr);
-            case 'Expr_New':
-                return $this->parseNew($expr);
-            case 'Expr_Clone':
-                return $this->parseClone($expr);
-            case 'Expr_Instanceof':
-                return $this->parseInstanceof($expr);
-            case 'Expr_Throw':
-                return $this->parseThrow($expr);
-            case 'Expr_ShellExec':
-                return $this->parseShellExec($expr);
-            case 'Expr_Closure':
-                return $this->parseClosure($expr);
-            case 'Expr_ArrowFunction':
-                return $this->parseArrowFunction($expr);
-            case 'Name_FullyQualified':
-                return $this->parseFullyQualifiedName($expr);
-            case 'Scalar_Int':
-            case 'Scalar_Float':
-            case 'Scalar_String':
-                return $this->parseIdentifier($expr);
-            case 'Expr_Variable':
-                $varName = $this->parseIdentifier($expr);
-                $this->requireVar($expr, $varName);
-                if ($this->isStdContainer($varName)) {
-                    return $varName . '_ref';
-                }
-                // $GLOBALS is an INDIRECT to &EG(symbol_table),
-                // whose refcount MUST NOT be directly manipulated.
-                // Use php::globalsArray() to create a separated copy.
-                if ($varName === 'GLOBALS') {
-                    return 'php::globalsArray()';
-                }
-                return $varName;
-            case 'Scalar_MagicConst_File':
-            case 'Scalar_MagicConst_Dir':
-            case 'Scalar_MagicConst_Line':
-            case 'Scalar_MagicConst_Function':
-            case 'Scalar_MagicConst_Method':
-            case 'Scalar_MagicConst_Class':
-            case 'Scalar_MagicConst_Trait':
-            case 'Scalar_MagicConst_Namespace':
-            case 'Scalar_MagicConst_Property':
-                return $this->parseMagicConst($expr);
-            case 'Scalar_InterpolatedString':
-                return $this->parseInterpolatedString($expr);
-            case 'Expr_Cast_Int':
-                return $this->parseCastInt($expr);
-            case 'Expr_Cast_Double':
-                return $this->parseCastDouble($expr);
-            case 'Expr_Cast_Bool':
-                return $this->parseCastBool($expr);
-            case 'Expr_Cast_String':
-                return $this->parseCastString($expr);
-            case 'Expr_Cast_Array':
-                return $this->parseCastArray($expr);
-            case 'Expr_Cast_Object':
-                return $this->parseCastObject($expr);
-            case 'Expr_Cast_Void':
-                return $this->parseCastVoid($expr);
-            case 'Expr_ConstFetch':
-                return $this->parseConstFetch($expr);
-            case 'Expr_UnaryMinus':
-                return $this->parseUnaryMinus($expr);
-            case 'Expr_UnaryPlus':
-                return $this->parseUnaryPlus($expr);
-            case 'InterpolatedStringPart':
-                return $this->parseInterpolatedStringPart($expr);
-            case 'Expr_ErrorSuppress':
-                return $this->parseErrorSuppress($expr);
-            case 'Expr_Exit':
-                return $this->parseExit($expr);
-            case 'Expr_Yield':
-                return $this->parseYieldExpr($expr);
-            case 'Expr_YieldFrom':
-                return $this->parseYieldFromExpr($expr);
-            default:
-                $this->unsupportedSyntax($expr);
-                break;
+        if ($expr instanceof Expr\Variable) {
+            $varName = $this->parseIdentifier($expr);
+            $this->requireVar($expr, $varName);
+            if ($this->isStdContainer($varName)) {
+                return $varName . '_ref';
+            }
+            // $GLOBALS is an INDIRECT to &EG(symbol_table), whose refcount
+            // MUST NOT be directly manipulated. Create a separated copy.
+            return $varName === 'GLOBALS' ? 'php::globalsArray()' : $varName;
         }
-        return '';
+
+        return match (true) {
+            $expr instanceof Expr\Isset_ => $this->parseIsset($expr),
+            $expr instanceof Expr\Empty_ => $this->parseEmpty($expr),
+            $expr instanceof Expr\Assign => $this->parseAssign($expr),
+            $expr instanceof Expr\AssignRef => $this->parseAssignRef($expr),
+            $expr instanceof Expr\Print_ => $this->parsePrint($expr),
+            $expr instanceof Expr\BinaryOp\Equal => $this->parseBinaryOpEqual($expr),
+            $expr instanceof Expr\BinaryOp\NotEqual => $this->parseBinaryOpNotEqual($expr),
+            $expr instanceof Expr\BinaryOp\Identical => $this->parseBinaryOpIdentical($expr),
+            $expr instanceof Expr\BinaryOp\NotIdentical => $this->parseBinaryOpNotIdentical($expr),
+            $expr instanceof Expr\BooleanNot => $this->parseBooleanNot($expr),
+            $expr instanceof Expr\BinaryOp\Plus => $this->parseBinaryOpPlus($expr),
+            $expr instanceof Expr\BinaryOp\Div => $this->parseBinaryOpDiv($expr),
+            $expr instanceof Expr\BinaryOp\Smaller => $this->parseBinaryOpSmaller($expr),
+            $expr instanceof Expr\BinaryOp\SmallerOrEqual => $this->parseBinaryOpSmallerOrEqual($expr),
+            $expr instanceof Expr\BinaryOp\GreaterOrEqual => $this->parseBinaryOpGreaterOrEqual($expr),
+            $expr instanceof Expr\BinaryOp\Spaceship => $this->parseBinaryOpSpaceship($expr),
+            $expr instanceof Expr\BinaryOp\Coalesce => $this->parseBinaryOpCoalesce($expr),
+            $expr instanceof Expr\PreInc => $this->parsePreInc($expr),
+            $expr instanceof Expr\PostInc => $this->parsePostInc($expr),
+            $expr instanceof Expr\PreDec => $this->parsePreDec($expr),
+            $expr instanceof Expr\PostDec => $this->parsePostDec($expr),
+            $expr instanceof Expr\AssignOp\Plus => $this->parseAssignOpPlus($expr),
+            $expr instanceof Expr\AssignOp\Minus => $this->parseAssignOpMinus($expr),
+            $expr instanceof Expr\AssignOp\Mul => $this->parseAssignOpMul($expr),
+            $expr instanceof Expr\AssignOp\Div => $this->parseAssignOpDiv($expr),
+            $expr instanceof Expr\AssignOp\Mod => $this->parseAssignOpMod($expr),
+            $expr instanceof Expr\AssignOp\Concat => $this->parseAssignOpConcat($expr),
+            $expr instanceof Expr\AssignOp\ShiftLeft => $this->parseAssignOpShiftLeft($expr),
+            $expr instanceof Expr\AssignOp\ShiftRight => $this->parseAssignOpShiftRight($expr),
+            $expr instanceof Expr\AssignOp\BitwiseAnd => $this->parseAssignOpBitwiseAnd($expr),
+            $expr instanceof Expr\AssignOp\BitwiseOr => $this->parseAssignOpBitwiseOr($expr),
+            $expr instanceof Expr\AssignOp\BitwiseXor => $this->parseAssignOpBitwiseXor($expr),
+            $expr instanceof Expr\AssignOp\Pow => $this->parseAssignOpPow($expr),
+            $expr instanceof Expr\AssignOp\Coalesce => $this->parseAssignOpCoalesce($expr),
+            $expr instanceof Expr\BinaryOp\Mul => $this->parseBinaryOpMul($expr),
+            $expr instanceof Expr\BinaryOp\Concat => $this->parseBinaryOpConcat($expr),
+            $expr instanceof Expr\BinaryOp\Greater => $this->parseBinaryOpGreater($expr),
+            $expr instanceof Expr\BinaryOp\LogicalAnd,
+            $expr instanceof Expr\BinaryOp\BooleanAnd => $this->parseBinaryOpLogicalAnd($expr),
+            $expr instanceof Expr\BinaryOp\LogicalOr,
+            $expr instanceof Expr\BinaryOp\BooleanOr => $this->parseBinaryOpLogicalOr($expr),
+            $expr instanceof Expr\BinaryOp\LogicalXor => $this->parseBinaryOpLogicalXor($expr),
+            $expr instanceof Expr\BinaryOp\Minus => $this->parseBinaryOpMinus($expr),
+            $expr instanceof Expr\Array_ => $this->parseArray($expr),
+            $expr instanceof Expr\ArrayDimFetch => $this->parseArrayDimFetch($expr),
+            $expr instanceof Expr\PropertyFetch => $this->parsePropertyFetch($expr),
+            $expr instanceof Expr\NullsafePropertyFetch => $this->parseNullsafePropertyFetch($expr),
+            $expr instanceof Expr\NullsafeMethodCall => $this->parseNullsafeMethodCall($expr),
+            $expr instanceof Expr\BinaryOp\ShiftLeft => $this->parseBinaryOpShiftLeft($expr),
+            $expr instanceof Expr\BinaryOp\ShiftRight => $this->parseBinaryOpShiftRight($expr),
+            $expr instanceof Expr\BinaryOp\BitwiseAnd => $this->parseBinaryOpBitwiseAnd($expr),
+            $expr instanceof Expr\BinaryOp\BitwiseOr => $this->parseBinaryOpBitwiseOr($expr),
+            $expr instanceof Expr\BinaryOp\BitwiseXor => $this->parseBinaryOpBitwiseXor($expr),
+            $expr instanceof Expr\BinaryOp\Pipe => $this->parsePipeOperator($expr),
+            $expr instanceof Expr\BitwiseNot => $this->parseBitwiseNot($expr),
+            $expr instanceof Expr\BinaryOp\Mod => $this->parseBinaryOpMod($expr),
+            $expr instanceof Expr\BinaryOp\Pow => $this->parseBinaryOpPow($expr),
+            $expr instanceof Expr\Ternary => $this->parseTernary($expr),
+            $expr instanceof Expr\Match_ => $this->parseMatch($expr),
+            $expr instanceof Expr\FuncCall => $this->parseFuncCall($expr),
+            $expr instanceof Expr\MethodCall => $this->parseMethodCall($expr),
+            $expr instanceof Expr\StaticCall => $this->parseStaticCall($expr),
+            $expr instanceof Expr\StaticPropertyFetch => $this->parseStaticPropertyFetch($expr),
+            $expr instanceof Expr\ClassConstFetch => $this->parseClassConstFetch($expr),
+            $expr instanceof Expr\Include_ => $this->parseInclude($expr),
+            $expr instanceof Expr\Eval_ => $this->parseEval($expr),
+            $expr instanceof Expr\New_ => $this->parseNew($expr),
+            $expr instanceof Expr\Clone_ => $this->parseClone($expr),
+            $expr instanceof Expr\Instanceof_ => $this->parseInstanceof($expr),
+            $expr instanceof Expr\Throw_ => $this->parseThrow($expr),
+            $expr instanceof Expr\ShellExec => $this->parseShellExec($expr),
+            $expr instanceof Expr\Closure => $this->parseClosure($expr),
+            $expr instanceof Expr\ArrowFunction => $this->parseArrowFunction($expr),
+            $expr instanceof Node\Name\FullyQualified => $this->parseFullyQualifiedName($expr),
+            $expr instanceof Node\Scalar\Int_,
+            $expr instanceof Node\Scalar\Float_,
+            $expr instanceof Node\Scalar\String_ => $this->parseIdentifier($expr),
+            $expr instanceof Node\Scalar\MagicConst => $this->parseMagicConst($expr),
+            $expr instanceof Node\Scalar\InterpolatedString => $this->parseInterpolatedString($expr),
+            $expr instanceof Expr\Cast\Int_ => $this->parseCastInt($expr),
+            $expr instanceof Expr\Cast\Double => $this->parseCastDouble($expr),
+            $expr instanceof Expr\Cast\Bool_ => $this->parseCastBool($expr),
+            $expr instanceof Expr\Cast\String_ => $this->parseCastString($expr),
+            $expr instanceof Expr\Cast\Array_ => $this->parseCastArray($expr),
+            $expr instanceof Expr\Cast\Object_ => $this->parseCastObject($expr),
+            $expr instanceof Expr\Cast\Void_ => $this->parseCastVoid($expr),
+            $expr instanceof Expr\ConstFetch => $this->parseConstFetch($expr),
+            $expr instanceof Expr\UnaryMinus => $this->parseUnaryMinus($expr),
+            $expr instanceof Expr\UnaryPlus => $this->parseUnaryPlus($expr),
+            $expr instanceof Node\InterpolatedStringPart => $this->parseInterpolatedStringPart($expr),
+            $expr instanceof Expr\ErrorSuppress => $this->parseErrorSuppress($expr),
+            $expr instanceof Expr\Exit_ => $this->parseExit($expr),
+            $expr instanceof Expr\Yield_ => $this->parseYieldExpr($expr),
+            $expr instanceof Expr\YieldFrom => $this->parseYieldFromExpr($expr),
+            default => $this->unsupportedSyntax($expr),
+        };
     }
 
     public function stop(string $string): never
@@ -1195,12 +1097,12 @@ class CompilerBase implements PropertyAccessContext
         // evaluated for side effects and then coerced from null.
     }
 
-    protected function isVoidValueExpr(NodeAbstract $expr): bool
+    protected function isVoidValueExpr(Node $expr): bool
     {
         return $this->detectTypeOfExpr($expr) === Type::VOID;
     }
 
-    protected function wrapVoidExprAsNull(NodeAbstract $expr, string $exprCode): string
+    protected function wrapVoidExprAsNull(Node $expr, string $exprCode): string
     {
         if (!$this->isVoidValueExpr($expr)) {
             return $exprCode;
@@ -1209,7 +1111,7 @@ class CompilerBase implements PropertyAccessContext
         return '((void) (' . $exprCode . '), ' . self::VALUE_NULL . ')';
     }
 
-    protected function parseExprAsValue(NodeAbstract $expr): string
+    protected function parseExprAsValue(Node $expr): string
     {
         if ($expr instanceof Expr\Cast\Void_) {
             return $this->parseExpr($expr);
@@ -1614,33 +1516,32 @@ class CompilerBase implements PropertyAccessContext
         return false;
     }
 
-    protected function parseIdentifier(NodeAbstract $expr): string
+    protected function parseIdentifier(Node $expr): string
     {
-        $type = $expr->getType();
-        switch ($type) {
-            case 'Expr_Variable':
-                return $this->parseVariable($expr);
-            case 'Name_FullyQualified':
-                return '\\' . $expr->name;
-            case 'Name':
-            case 'VarLikeIdentifier':
-            case 'Identifier':
-                return $expr->name;
-            case 'Scalar_Int':
-            case 'Scalar_Float':
-            case 'Scalar_String':
-                return $this->parseScalar($expr);
-            case 'Expr_ConstFetch':
-                return $this->parseConstFetch($expr);
-            case 'Expr_Assign':
-            case 'Expr_AssignRef':
-                if (!$this->isVarExpr($expr->var) && !$this->isPropertyFetch($expr->var) && !$this->isArrayDimFetch($expr->var)) {
-                    $this->fatalError($expr, 'When an assignment expression serves as an rvalue, it must be an assignment of a variable, property, or array element');
-                }
-                return $this->parseExprAsValue($expr);
-            default:
-                return $this->parseExprAsValue($expr);
+        if ($expr instanceof Variable) {
+            return $this->parseVariable($expr);
         }
+        if ($expr instanceof Node\Name\FullyQualified) {
+            return '\\' . $expr->toString();
+        }
+        if ($expr instanceof Node\Name || $expr instanceof Node\VarLikeIdentifier || $expr instanceof Node\Identifier) {
+            return $expr->toString();
+        }
+        if ($expr instanceof Node\Scalar\Int_
+            || $expr instanceof Node\Scalar\Float_
+            || $expr instanceof Node\Scalar\String_
+        ) {
+            return $this->parseScalar($expr);
+        }
+        if ($expr instanceof Expr\ConstFetch) {
+            return $this->parseConstFetch($expr);
+        }
+        if ($expr instanceof Expr\Assign || $expr instanceof Expr\AssignRef) {
+            if (!$this->isVarExpr($expr->var) && !$this->isPropertyFetch($expr->var) && !$this->isArrayDimFetch($expr->var)) {
+                $this->fatalError($expr, 'When an assignment expression serves as an rvalue, it must be an assignment of a variable, property, or array element');
+            }
+        }
+        return $this->parseExprAsValue($expr);
     }
 
     protected function parseParamDefaultValue(?NodeAbstract $default): ?string
@@ -4634,7 +4535,7 @@ class CompilerBase implements PropertyAccessContext
         return array_key_exists($name, $this->context->staticVars);
     }
 
-    protected function parseCastDouble(mixed $expr): string
+    protected function parseCastDouble(Expr\Cast\Double $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'cast operand');
         $native = $this->parseNativeObjectExplicitConversion($expr->expr, 'toFloat');

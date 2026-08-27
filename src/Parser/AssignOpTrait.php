@@ -1151,6 +1151,7 @@ trait AssignOpTrait
             Type::BIGINT   => ['BigInt',   ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod', '&' => 'bitAnd', '|' => 'bitOr', '^' => 'bitXor', '<<' => 'bitShiftLeft', '>>' => 'bitShiftRight']],
             Type::DECIMAL  => ['Decimal',  ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod']],
             Type::BIGFLOAT => ['BigFloat', ['+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div']],
+            default => $this->fatalError($errorNode, "Unsupported compound assignment type '{$leftType}'"),
         };
 
         $method = $opMap[$binaryOp] ?? null;
@@ -1164,6 +1165,7 @@ trait AssignOpTrait
             Type::BIGINT   => $isShift ? $rightExpr : $this->convertBigIntExpr($rightExpr, $rightType),
             Type::DECIMAL  => $this->convertDecimalExpr($rightExpr, $rightType, $rightNode),
             Type::BIGFLOAT => $this->convertBigFloatExpr($rightExpr, $rightType),
+            default => $this->fatalError($errorNode, "Unsupported compound assignment type '{$leftType}'"),
         };
 
         return 'php::' . $class . '::' . $method . '(' . $leftExpr . ', ' . $convertedRight . ')';
