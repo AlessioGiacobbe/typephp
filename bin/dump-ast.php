@@ -189,11 +189,12 @@ function printNodeArray(array $arr, string $indent, int|string $key): void
 
 function printNodeAttrs(array $arr, string $indent): void
 {
+    $type = $arr['type'];
     $hasAttrs = !empty($arr['attributes']);
     $attrs    = $arr['attributes'] ?? [];
     unset($arr['type'], $arr['attributes']);
 
-    echo $indent . "type: " . $arr['type'] . "\n";
+    echo $indent . "type: " . $type . "\n";
     echo $indent . "lines: " . $attrs['startLine'] . '-' . $attrs['endLine'] . "\n";
 
     if (isset($attrs['comments'])) {

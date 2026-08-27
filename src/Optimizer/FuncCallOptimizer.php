@@ -900,7 +900,7 @@ trait FuncCallOptimizer
                 return '(' . $argInfo->name . '.count() + ' . $i . ')';
             }
         }
-        return count($funcDef->argInfoList);
+        return (string) count($funcDef->argInfoList);
     }
 
     protected function genFunctionExists(string $name, Node\Expr\FuncCall $expr, array $config): string

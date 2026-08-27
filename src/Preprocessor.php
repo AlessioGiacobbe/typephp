@@ -46,6 +46,8 @@ use PhpParser\NodeVisitor\NameResolver;
 
 class Preprocessor extends CompilerBase
 {
+    protected string $targetName = 'app';
+
     /**
      * Discover Native class names before parsing any signatures or fields.
      *

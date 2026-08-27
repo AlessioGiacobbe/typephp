@@ -71,13 +71,11 @@ class Translator extends Preprocessor
     public const string VERSION = '0.6.6';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
 
-    protected string $targetName = 'app';
     protected bool $hasExplicitOutput = false;
     protected ?string $explicitOutputExtension = null;
     protected array $sourceDirs = [];
     private ?ProjectYamlLoader $projectYamlLoader = null;
     private ?NativeBuilder $nativeBuilder = null;
-    protected bool $verbose = false;
     protected array $ignorePaths = [];
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];

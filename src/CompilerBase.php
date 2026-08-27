@@ -275,6 +275,7 @@ class CompilerBase implements PropertyAccessContext
     protected const string PHASE_CONVERT = 'convert';
 
     protected string $lang = 'PHP';
+    protected bool $verbose = false;
     protected int $indentLevel = 0;
     protected string $indentStr = "\t";
     public string $mode = 'cli';

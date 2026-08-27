@@ -177,6 +177,6 @@ class ClassDef extends ClassLikeDef
 
     public function isAbstract(): bool
     {
-        return $this->flags & Modifiers::ABSTRACT;
+        return ($this->flags & Modifiers::ABSTRACT) !== 0;
     }
 }
