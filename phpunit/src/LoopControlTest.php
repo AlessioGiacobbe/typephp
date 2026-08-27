@@ -22,4 +22,12 @@ class LoopControlTest extends \BaseTest
     {
         $this->compile('control-flow/loop-switch-continue.php');
     }
+
+    public function testWhileConditionIsStillParsedBeforeItsBody(): void
+    {
+        $this->exec(
+            'Undefined variable `$results`',
+            'control-flow/while-body-defined-condition.php',
+        );
+    }
 }

@@ -148,6 +148,10 @@ trait LoopControlTrait
     protected function parseDo(Node\Stmt\Do_ $v): string
     {
         $stmts = $v->stmts;
+        // A do-while body always runs before its condition. Parse it first so
+        // variables introduced by the body are available while lowering the
+        // condition, matching PHP's execution order.
+        $bodyCode = $this->parseBlockStmts($stmts);
         $this->assertExprCanBeUsedAsCondition($v->cond, 'do-while condition');
         [$cond, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($v->cond);
         if ($beforeStmts || $afterStmts) {
@@ -167,7 +171,7 @@ trait LoopControlTrait
         }
         $code  = $this->parseBeforeStmtLines() . PHP_EOL;
         $code .= 'do {' . PHP_EOL;
-        $code .= $this->parseBlockStmts($stmts);
+        $code .= $bodyCode;
         $code .= $this->genLoopEndFlagCheck();
         $code .= $this->getIndent() . '} while (' . $cond . ');' . PHP_EOL;
 
