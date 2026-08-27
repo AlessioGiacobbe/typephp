@@ -823,6 +823,26 @@ trait AssignOpTrait
 
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
+        // Every analysis and lowering phase must see the same array key. Some
+        // of those helpers parse dynamic GLOBALS keys while determining the
+        // target type, so stabilizing only the final read and write is too
+        // late for side-effecting offsets such as $i++.
+        if ($node->var instanceof Expr\ArrayDimFetch
+            && $node->var->dim !== null
+            && $this->shouldMaterializeOrderedOperand($node->var->dim)
+        ) {
+            $originalAccess = $node->var;
+            $dim = $this->addTmpVar(Type::VAR);
+            $this->context->beforeStmtLines[] = $dim . ' = '
+                . $this->parseOrderedOperand($originalAccess->dim, false) . ';';
+            $node = clone $node;
+            $node->var = new Expr\ArrayDimFetch(
+                $originalAccess->var,
+                new Variable($dim, $originalAccess->dim->getAttributes()),
+                $originalAccess->getAttributes(),
+            );
+        }
+
         $this->assertImmutableMutationTarget($node->var);
         $this->assertNativeArrayAccessDirectWrite($node->var, false);
         $this->assertNativeObjectOperatorOperandSupported($node->var, $node, $op);
@@ -869,7 +889,8 @@ trait AssignOpTrait
             return $nativePropertyAssignOp;
         }
 
-        $var          = $this->parseWritableIdentifier($node->var);
+        $arrayDimFetch = $this->isArrayDimFetch($node->var);
+        $var          = $arrayDimFetch ? '' : $this->parseWritableIdentifier($node->var);
         $expr         = $this->isAssignOpConcat($op) ? '' : (string) $this->parseIdentifier($node->expr);
 
         if ($this->isVarExpr($node->var)) {
@@ -906,7 +927,7 @@ trait AssignOpTrait
             return $var . ' ' . $op . ' ' . $rightExprStr;
         }
 
-        if ($this->isArrayDimFetch($node->var)) {
+        if ($arrayDimFetch) {
             if ($this->isStdContainerExpr($node->var)) {
                 return $this->parseStdContainerAssignOp($node, $op);
             }
@@ -926,7 +947,8 @@ trait AssignOpTrait
              * $tmp_var = $count[$r] - 1;
              * $count[$r] = $tmp_var;.
              */
-            $type      = $this->detectVarType($node->var);
+            $isGlobals = $this->isVarExpr($node->var->var) && $node->var->var->name === 'GLOBALS';
+            $type      = $isGlobals ? Type::VAR : $this->detectVarType($node->var);
             $rightType = $this->detectTypeOfExpr($node->expr);
             $tmpVar    = $this->genTmpVarName();
             // PHP arrays are dynamically typed even when SSA can currently
@@ -934,8 +956,9 @@ trait AssignOpTrait
             // Zend arithmetic promotes overflowing integers to float instead
             // of evaluating a signed C++ expression with undefined behavior.
             $this->addLocalVar($tmpVar, Type::VAR);
-            $dim      = $this->parseIdentifier($node->var->dim);
-            $readVar  = $this->parseArrayDimFetchRead($node->var);
+            $stableAccess = $node->var;
+            $dim = $this->parseIdentifier($node->var->dim);
+            $readVar  = $this->parseArrayDimFetchRead($stableAccess);
             $binaryOp = $this->removeAssignOp($op);
 
             if ($binaryOp === '.') {
@@ -953,10 +976,10 @@ trait AssignOpTrait
                     $this->convertExprType($expr, $type, $rightType) . ';';
             }
 
-            if ($this->isVarExpr($node->var->var) && $node->var->var->name === 'GLOBALS') {
-                return $var . ' = ' . $tmpVar;
+            if ($isGlobals) {
+                return $this->parseGlobalsArrayDimFetch($stableAccess) . ' = ' . $tmpVar;
             }
-            return '(' . $this->parseArrayDimStore($node->var->var, $dim, $tmpVar) . ', ' . $tmpVar . ')';
+            return '(' . $this->parseArrayDimStore($stableAccess->var, $dim, $tmpVar) . ', ' . $tmpVar . ')';
         }
 
         if ($this->isPropertyFetch($node->var) and !$this->isNativePropertyAccess($node->var)) {
