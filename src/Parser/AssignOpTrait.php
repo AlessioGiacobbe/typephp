@@ -823,24 +823,11 @@ trait AssignOpTrait
 
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
-        // Every analysis and lowering phase must see the same array key. Some
-        // of those helpers parse dynamic GLOBALS keys while determining the
-        // target type, so stabilizing only the final read and write is too
-        // late for side-effecting offsets such as $i++.
         if ($node->var instanceof Expr\ArrayDimFetch
-            && $node->var->dim !== null
-            && $this->shouldMaterializeOrderedOperand($node->var->dim)
+            && !$this->canUpdateKnownArraySlotInPlace($node, $op)
         ) {
-            $originalAccess = $node->var;
-            $dim = $this->addTmpVar(Type::VAR);
-            $this->context->beforeStmtLines[] = $dim . ' = '
-                . $this->parseOrderedOperand($originalAccess->dim, false) . ';';
             $node = clone $node;
-            $node->var = new Expr\ArrayDimFetch(
-                $originalAccess->var,
-                new Variable($dim, $originalAccess->dim->getAttributes()),
-                $originalAccess->getAttributes(),
-            );
+            $node->var = $this->stabilizeAssignOpArrayAccess($node->var);
         }
 
         $this->assertImmutableMutationTarget($node->var);
@@ -1011,6 +998,41 @@ trait AssignOpTrait
             return $var . ' = php::toString(' . $this->parseFlattenedConcat($node->expr, [$var]) . ')';
         }
         return $var . ' ' . $op . ' (' . $expr . ')';
+    }
+
+    /**
+     * Evaluate every dynamic dimension of a compound-assignment target once,
+     * from the innermost access to the outermost access, before evaluating the
+     * right-hand side. Both the read and write lowering then reuse the cloned
+     * access path and cannot observe keys changed by a later dimension or RHS.
+     */
+    private function stabilizeAssignOpArrayAccess(Expr\ArrayDimFetch $access): Expr\ArrayDimFetch
+    {
+        $dimensions = [];
+        $base = $access;
+        while ($base instanceof Expr\ArrayDimFetch) {
+            $dimensions[] = $base;
+            $base = $base->var;
+        }
+
+        $stableAccess = $base;
+        foreach (array_reverse($dimensions) as $dimension) {
+            $dim = $dimension->dim;
+            $literal = $dim instanceof Node\Scalar\LNumber
+                || $dim instanceof Node\Scalar\DNumber
+                || $dim instanceof Node\Scalar\String_;
+            if ($dim !== null && !$literal) {
+                $tmp = $this->parseOrderedOperand($dim, false, true);
+                $dim = new Variable($tmp, $dim->getAttributes());
+            }
+            $stableAccess = new Expr\ArrayDimFetch(
+                $stableAccess,
+                $dim,
+                $dimension->getAttributes(),
+            );
+        }
+
+        return $stableAccess;
     }
 
     /**

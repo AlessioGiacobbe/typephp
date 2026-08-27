@@ -521,10 +521,10 @@ trait BinaryOpTrait
         return $this->parseOrderedOperand($expr, true);
     }
 
-    protected function parseOrderedOperand(NodeAbstract $expr, bool $numeric): string
+    protected function parseOrderedOperand(NodeAbstract $expr, bool $numeric, bool $forceMaterialize = false): string
     {
         $this->assertExprCanBeUsedAsValue($expr, 'operand');
-        if (!$this->shouldMaterializeOrderedOperand($expr)) {
+        if (!$forceMaterialize && !$this->shouldMaterializeOrderedOperand($expr)) {
             $value = $numeric ? $this->parseNumericIdentifier($expr) : $this->parseIdentifier($expr);
             return $this->normalizeNativeObjectValueExpr($expr, $value);
         }
