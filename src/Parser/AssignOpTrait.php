@@ -823,6 +823,13 @@ trait AssignOpTrait
 
     protected function parseAssignOp(Expr\AssignOp $node, string $op): string
     {
+        if ($node->var instanceof Expr\ArrayDimFetch
+            && !$this->canUpdateKnownArraySlotInPlace($node, $op)
+        ) {
+            $node = clone $node;
+            $node->var = $this->stabilizeAssignOpArrayAccess($node->var);
+        }
+
         $this->assertImmutableMutationTarget($node->var);
         $this->assertNativeArrayAccessDirectWrite($node->var, false);
         $this->assertNativeObjectOperatorOperandSupported($node->var, $node, $op);
@@ -869,7 +876,8 @@ trait AssignOpTrait
             return $nativePropertyAssignOp;
         }
 
-        $var          = $this->parseWritableIdentifier($node->var);
+        $arrayDimFetch = $this->isArrayDimFetch($node->var);
+        $var          = $arrayDimFetch ? '' : $this->parseWritableIdentifier($node->var);
         $expr         = $this->isAssignOpConcat($op) ? '' : (string) $this->parseIdentifier($node->expr);
 
         if ($this->isVarExpr($node->var)) {
@@ -906,7 +914,7 @@ trait AssignOpTrait
             return $var . ' ' . $op . ' ' . $rightExprStr;
         }
 
-        if ($this->isArrayDimFetch($node->var)) {
+        if ($arrayDimFetch) {
             if ($this->isStdContainerExpr($node->var)) {
                 return $this->parseStdContainerAssignOp($node, $op);
             }
@@ -926,7 +934,8 @@ trait AssignOpTrait
              * $tmp_var = $count[$r] - 1;
              * $count[$r] = $tmp_var;.
              */
-            $type      = $this->detectVarType($node->var);
+            $isGlobals = $this->isVarExpr($node->var->var) && $node->var->var->name === 'GLOBALS';
+            $type      = $isGlobals ? Type::VAR : $this->detectVarType($node->var);
             $rightType = $this->detectTypeOfExpr($node->expr);
             $tmpVar    = $this->genTmpVarName();
             // PHP arrays are dynamically typed even when SSA can currently
@@ -934,8 +943,9 @@ trait AssignOpTrait
             // Zend arithmetic promotes overflowing integers to float instead
             // of evaluating a signed C++ expression with undefined behavior.
             $this->addLocalVar($tmpVar, Type::VAR);
-            $dim      = $this->parseIdentifier($node->var->dim);
-            $readVar  = $this->parseArrayDimFetchRead($node->var);
+            $stableAccess = $node->var;
+            $dim = $this->parseIdentifier($node->var->dim);
+            $readVar  = $this->parseArrayDimFetchRead($stableAccess);
             $binaryOp = $this->removeAssignOp($op);
 
             if ($binaryOp === '.') {
@@ -953,10 +963,10 @@ trait AssignOpTrait
                     $this->convertExprType($expr, $type, $rightType) . ';';
             }
 
-            if ($this->isVarExpr($node->var->var) && $node->var->var->name === 'GLOBALS') {
-                return $var . ' = ' . $tmpVar;
+            if ($isGlobals) {
+                return $this->parseGlobalsArrayDimFetch($stableAccess) . ' = ' . $tmpVar;
             }
-            return '(' . $this->parseArrayDimStore($node->var->var, $dim, $tmpVar) . ', ' . $tmpVar . ')';
+            return '(' . $this->parseArrayDimStore($stableAccess->var, $dim, $tmpVar) . ', ' . $tmpVar . ')';
         }
 
         if ($this->isPropertyFetch($node->var) and !$this->isNativePropertyAccess($node->var)) {
@@ -988,6 +998,41 @@ trait AssignOpTrait
             return $var . ' = php::toString(' . $this->parseFlattenedConcat($node->expr, [$var]) . ')';
         }
         return $var . ' ' . $op . ' (' . $expr . ')';
+    }
+
+    /**
+     * Evaluate every dynamic dimension of a compound-assignment target once,
+     * from the innermost access to the outermost access, before evaluating the
+     * right-hand side. Both the read and write lowering then reuse the cloned
+     * access path and cannot observe keys changed by a later dimension or RHS.
+     */
+    private function stabilizeAssignOpArrayAccess(Expr\ArrayDimFetch $access): Expr\ArrayDimFetch
+    {
+        $dimensions = [];
+        $base = $access;
+        while ($base instanceof Expr\ArrayDimFetch) {
+            $dimensions[] = $base;
+            $base = $base->var;
+        }
+
+        $stableAccess = $base;
+        foreach (array_reverse($dimensions) as $dimension) {
+            $dim = $dimension->dim;
+            $literal = $dim instanceof Node\Scalar\LNumber
+                || $dim instanceof Node\Scalar\DNumber
+                || $dim instanceof Node\Scalar\String_;
+            if ($dim !== null && !$literal) {
+                $tmp = $this->parseOrderedOperand($dim, false, true);
+                $dim = new Variable($tmp, $dim->getAttributes());
+            }
+            $stableAccess = new Expr\ArrayDimFetch(
+                $stableAccess,
+                $dim,
+                $dimension->getAttributes(),
+            );
+        }
+
+        return $stableAccess;
     }
 
     /**
