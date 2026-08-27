@@ -904,9 +904,6 @@ trait BinaryOpTrait
         $leftType  = $this->detectTypeOfExpr($astLeft);
         $rightType = $this->detectTypeOfExpr($astRight);
 
-        if ($leftType === null || $rightType === null) {
-            return null;
-        }
         if (!in_array($leftType, $primitiveTypes, true) || !in_array($rightType, $primitiveTypes, true)) {
             return null;
         }
