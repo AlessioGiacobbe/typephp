@@ -6,7 +6,7 @@ class ClassMethodOverrideTest extends \BaseTest
 {
     public function testChildBeforeParentOverride(): void
     {
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $testFile = __DIR__ . '/../code/class-method-override-order.php';
         $compiler->addFiles([$testFile]);
         $compiler->prepareFile($testFile);
@@ -28,7 +28,7 @@ class ClassMethodOverrideTest extends \BaseTest
 
     public function testNamespacedOverrideKeysUseFullClassName(): void
     {
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $testFile = __DIR__ . '/../code/class-method-override-namespace.php';
         $compiler->addFiles([$testFile]);
         $compiler->prepareFile($testFile);

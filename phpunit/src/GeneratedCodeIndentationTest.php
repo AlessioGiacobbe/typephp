@@ -7,9 +7,9 @@ class GeneratedCodeIndentationTest extends \PHPUnit\Framework\TestCase
     public function testNestedStatementsAndZendWrappersAreConsistentlyIndented(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/generated-code-indentation.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/generated-code-indentation.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cppFile = $compiler->convertFile($source);

@@ -1,6 +1,33 @@
 <?php
 declare(strict_types=1);
 
+/*
+ * This file is derived from build/gen_stub.php in php-src and is not
+ * original TypePHP source code.
+ *
+ * Copyright (c) 1999-2024 The PHP Group. All rights reserved.
+ * The original code is distributed under the PHP License, version 3.01:
+ * https://www.php.net/license/3_01.txt
+ *
+ * TypePHP maintains local adaptations for its AOT compilation pipeline.
+ */
+
+namespace TypePhp\StubGenerator;
+
+use Closure;
+use DOMCdataSection;
+use DOMComment;
+use DOMDocument;
+use DOMElement;
+use DOMNode;
+use DOMText;
+use Error;
+use Exception;
+use PhpParser;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use RuntimeException;
+use TypePhp;
 use TypePhp\Exception\Skip;
 use TypePhp\Translator;
 use PhpParser\Comment\Doc as DocComment;
@@ -68,7 +95,7 @@ function processDirectory(string $dir, Context $context): array {
     );
     foreach ($it as $file) {
         $pathName = $file->getPathName();
-        if (substr($pathName, -9) === '.stub.php') {
+        if (str_ends_with($pathName, '.stub.php')) {
             $pathNames[] = $pathName;
         }
     }
@@ -544,7 +571,7 @@ class StubType {
 
     public static function fromNode(Node $node): StubType {
         if ($node instanceof Node\UnionType || $node instanceof Node\IntersectionType) {
-            $nestedTypeObjects = array_map(['StubType', 'fromNode'], $node->types);
+            $nestedTypeObjects = array_map([self::class, 'fromNode'], $node->types);
             $types = [];
             foreach ($nestedTypeObjects as $typeObject) {
                 array_push($types, ...$typeObject->types);
@@ -1961,9 +1988,9 @@ class FuncInfo {
         /* We create an attribute for xmlns, as libxml otherwise force it to be the first one */
         //$refentry->setAttribute("xmlns", "http://docbook.org/ns/docbook");
         $namespace = $doc->createAttribute('xmlns');
-        $namespace->value = "http://docbook.org/ns/docbook";
+        $namespace->value = "https://docbook.org/ns/docbook";
         $refentry->setAttributeNode($namespace);
-        $refentry->setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+        $refentry->setAttribute("xmlns:xlink", "https://www.w3.org/1999/xlink");
         $refentry->appendChild(new DOMText("\n "));
 
         /* Creation of <refnamediv> */
@@ -2571,7 +2598,12 @@ class EvaluatedValue
                 }
 
                 if ($expr instanceof Expr\ClassConstFetch) {
-                    $className = resolveClassConstFetchClassName($expr, ClassInfo::$currentClass);
+                    // TypePHP registers anonymous classes through eval(). Keep
+                    // file-level function calls independent of the eval scope.
+                    $className = \TypePhp\StubGenerator\resolveClassConstFetchClassName(
+                        $expr,
+                        ClassInfo::$currentClass,
+                    );
                     $originatingConstName = new ClassConstName(
                         new Name(ltrim($className, '\\')),
                         $expr->name->toString()

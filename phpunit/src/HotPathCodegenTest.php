@@ -61,9 +61,9 @@ final class HotPathCodegenTest extends \BaseTest
     {
         global $translator;
 
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/hot-path-codegen.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/hot-path-codegen.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $generated = $compiler->convertFile($source);

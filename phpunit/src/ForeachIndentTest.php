@@ -10,9 +10,9 @@ class ForeachIndentTest extends TestCase
     public function testObjectForeachRestoresCompilerIndentation(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $file = ROOT_PATH . '/phpunit/code/object-foreach-indent.php';
+        $file = TYPEPHP_ROOT_PATH . '/phpunit/code/object-foreach-indent.php';
         $compiler->addFiles([$file]);
         $compiler->prepareFile($file);
         $compiler->convertFile($file);

@@ -9,7 +9,7 @@ final class InterfacePropertyHookTest extends TestCase
     private function compileFixture(string $file): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $path = __DIR__ . '/../code/' . $file;
         $compiler->addFiles([$path]);

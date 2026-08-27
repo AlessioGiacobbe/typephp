@@ -34,7 +34,7 @@ class CompilerPhaseTest extends \PHPUnit\Framework\TestCase
 {
     public function testPropertyAccessResolverCannotBeUsedOutsideConvertPhase(): void
     {
-        $compiler = CompilerPhaseProbe::createProbe(ROOT_PATH);
+        $compiler = CompilerPhaseProbe::createProbe(TYPEPHP_ROOT_PATH);
 
         $this->expectException(TestError::class);
         $this->expectExceptionMessage('PropertyAccessResolver can only be used during convert phase');
@@ -44,7 +44,7 @@ class CompilerPhaseTest extends \PHPUnit\Framework\TestCase
 
     public function testPropertyAccessResolverCannotBeUsedDuringPreparePhase(): void
     {
-        $compiler = CompilerPhaseProbe::createProbe(ROOT_PATH);
+        $compiler = CompilerPhaseProbe::createProbe(TYPEPHP_ROOT_PATH);
         $compiler->enterPreparePhase();
 
         $this->expectException(TestError::class);
@@ -55,7 +55,7 @@ class CompilerPhaseTest extends \PHPUnit\Framework\TestCase
 
     public function testPropertyAccessResolverCanBeUsedDuringConvertPhase(): void
     {
-        $compiler = CompilerPhaseProbe::createProbe(ROOT_PATH);
+        $compiler = CompilerPhaseProbe::createProbe(TYPEPHP_ROOT_PATH);
         $compiler->enterConvertPhase();
 
         $this->assertTrue($compiler->probePropertyAccessResolver());

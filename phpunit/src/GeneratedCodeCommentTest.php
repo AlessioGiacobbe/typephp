@@ -8,14 +8,14 @@ final class GeneratedCodeCommentTest extends BaseTest
     {
         global $translator;
 
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         if ($debug) {
             $property = new ReflectionProperty($compiler, 'debug');
             $property->setValue($compiler, true);
         }
 
-        $source = ROOT_PATH . '/phpunit/code/generated-code-comments.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/generated-code-comments.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $generated = $compiler->convertFile($source);
@@ -28,9 +28,9 @@ final class GeneratedCodeCommentTest extends BaseTest
     {
         global $translator;
 
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/' . $file;
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/' . $file;
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $generated = $compiler->convertFile($source);

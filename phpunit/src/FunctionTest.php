@@ -40,7 +40,7 @@ class FunctionTest extends \BaseTest
     ): void
     {
         global $translator;
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/' . $filename;
         $compiler->addFiles([$testFile]);

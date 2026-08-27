@@ -71,11 +71,11 @@ if ($paths === []) {
 }
 
 try {
-    $analyzer = new TestCoverageAnalyzer(ROOT_PATH, $phpVersions);
+    $analyzer = new TestCoverageAnalyzer(TYPEPHP_ROOT_PATH, $phpVersions);
     $report = $analyzer->analyze(
         $paths,
-        $includePhpUnit ? ROOT_PATH . '/phpunit/src' : null,
-        $includePhpUnit ? ROOT_PATH . '/phpunit/code' : null,
+        $includePhpUnit ? TYPEPHP_ROOT_PATH . '/phpunit/src' : null,
+        $includePhpUnit ? TYPEPHP_ROOT_PATH . '/phpunit/code' : null,
     );
 } catch (Throwable $error) {
     fwrite(STDERR, 'Coverage analysis failed: ' . $error->getMessage() . PHP_EOL);
@@ -91,7 +91,7 @@ $rendered = match ($format) {
 if ($output === null) {
     echo $rendered;
 } else {
-    $outputPath = isAbsolutePath($output) ? $output : ROOT_PATH . DIRECTORY_SEPARATOR . $output;
+    $outputPath = isAbsolutePath($output) ? $output : TYPEPHP_ROOT_PATH . DIRECTORY_SEPARATOR . $output;
     $directory = dirname($outputPath);
     if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
         fwrite(STDERR, 'Unable to create output directory: ' . $directory . PHP_EOL);
@@ -101,7 +101,7 @@ if ($output === null) {
         fwrite(STDERR, 'Unable to write report: ' . $outputPath . PHP_EOL);
         exit(1);
     }
-    echo 'Wrote ', $format, ' coverage report: ', relativePath(ROOT_PATH, $outputPath), PHP_EOL;
+    echo 'Wrote ', $format, ' coverage report: ', relativePath(TYPEPHP_ROOT_PATH, $outputPath), PHP_EOL;
 }
 
 if ($strict && ($report['parse_errors'] !== [] || $report['unresolved_phpunit_fixtures'] !== [])) {

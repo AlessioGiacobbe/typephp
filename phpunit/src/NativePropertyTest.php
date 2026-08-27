@@ -9,7 +9,7 @@ class NativePropertyTest extends \BaseTest
     {
         global $translator;
 
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/' . $file;
         $compiler->addFiles([$testFile]);
@@ -17,7 +17,7 @@ class NativePropertyTest extends \BaseTest
         $compiler->convertFile($testFile);
 
         $this->addToAssertionCount(1);
-        return ROOT_PATH . '/build/phpunit/code/' . basename($file, '.php') . '.cc';
+        return TYPEPHP_ROOT_PATH . '/build/phpunit/code/' . basename($file, '.php') . '.cc';
     }
 
     public function testFindNativePropertyUsesFullClassNameAcrossBranches(): void

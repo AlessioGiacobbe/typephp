@@ -10,7 +10,7 @@ class DuplicateTest extends TestCase
     private function exec(string $expected, string $file): void
     {
         try {
-            $compiler = CompilerTest::create(ROOT_PATH);
+            $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
             $testFile = __DIR__ . '/../code/' . $file;
             $compiler->addFiles([$testFile]);
             $compiler->prepareFile($testFile);

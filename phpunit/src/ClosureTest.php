@@ -8,8 +8,8 @@ class ClosureTest extends \BaseTest
     {
         global $translator;
 
-        $testFile = ROOT_PATH . '/phpunit/code/closure/use-reference-capture.php';
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $testFile = TYPEPHP_ROOT_PATH . '/phpunit/code/closure/use-reference-capture.php';
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $compiler->addFiles([$testFile]);
         $compiler->prepareFile($testFile);

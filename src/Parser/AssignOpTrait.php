@@ -289,7 +289,7 @@ trait AssignOpTrait
                     $code .= $this->getIndent() . "{$var} = {$tmpVar}.item({$key});" . PHP_EOL;
                 }
             } else {
-                abort($item);
+                $this->unsupportedSyntax($item);
             }
         }
         $this->indentLevel--;

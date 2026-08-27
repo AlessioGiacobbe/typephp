@@ -12,9 +12,9 @@ final class PythonModuleTest extends TestCase
     public function testStaticallyResolvedPythonCallsUseNativeBridge(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/module-access.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/module-access.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -30,9 +30,9 @@ final class PythonModuleTest extends TestCase
     public function testDynamicPythonMethodNameStillUsesZendDispatch(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/dynamic-method.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/dynamic-method.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -44,9 +44,9 @@ final class PythonModuleTest extends TestCase
     public function testUsedModuleGeneratesLazyNativeBindingWithoutPhpyLinkage(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/module-access.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/module-access.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cppFile = $compiler->convertFile($source);
@@ -69,9 +69,9 @@ final class PythonModuleTest extends TestCase
     public function testUnusedPythonUseDoesNotGenerateModuleRuntimeState(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/unused-module.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/unused-module.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $compiler->convertFile($source);
@@ -94,9 +94,9 @@ final class PythonModuleTest extends TestCase
     public function testFullyQualifiedModuleAttributeUsesNamespaceConstantSyntax(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/fully-qualified-module-constant.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/fully-qualified-module-constant.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -132,9 +132,9 @@ final class PythonModuleTest extends TestCase
     public function testNestedModuleUsesPythonDottedImportName(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/nested-module.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/nested-module.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $compiler->convertFile($source);
@@ -147,9 +147,9 @@ final class PythonModuleTest extends TestCase
     public function testPhpFunctionAndConstantImportsResolvePythonSymbols(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/imported-symbols.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/imported-symbols.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -166,9 +166,9 @@ final class PythonModuleTest extends TestCase
     public function testFullyQualifiedModuleAccessDoesNotRequireUseDeclaration(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/fully-qualified-module.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/fully-qualified-module.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -187,9 +187,9 @@ final class PythonModuleTest extends TestCase
     public function testRelativePythonNameInsideNamespaceRemainsPhpName(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/relative-module-name.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/relative-module-name.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -204,11 +204,11 @@ final class PythonModuleTest extends TestCase
     public function testSameModuleAcrossFilesUsesOneRuntimeSlot(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $sources = [
-            ROOT_PATH . '/phpunit/code/python/module-access.php',
-            ROOT_PATH . '/phpunit/code/python/duplicate-module.php',
+            TYPEPHP_ROOT_PATH . '/phpunit/code/python/module-access.php',
+            TYPEPHP_ROOT_PATH . '/phpunit/code/python/duplicate-module.php',
         ];
         $compiler->addFiles($sources);
         foreach ($sources as $source) {
@@ -223,9 +223,9 @@ final class PythonModuleTest extends TestCase
     public function testPythonBuiltinsUseBuiltinsModuleAndPreserveKnownObjectTypes(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/builtins.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/builtins.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -258,9 +258,9 @@ final class PythonModuleTest extends TestCase
     public function testNestedPythonNameUsesModuleCallableSyntax(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/invalid-builtin-path.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/invalid-builtin-path.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -274,9 +274,9 @@ final class PythonModuleTest extends TestCase
     public function testConstructorOnlyProgramConfiguresObjectPreservingRuntimeLazily(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/constructor-only.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/constructor-only.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -290,9 +290,9 @@ final class PythonModuleTest extends TestCase
     public function testPythonOperatorsLowerToTheOperatorModule(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/operators.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/operators.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -309,9 +309,9 @@ final class PythonModuleTest extends TestCase
     public function testPythonObjectProtocolUsesNativeCallsAndZendHandlersWhereAppropriate(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/object-protocol.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/object-protocol.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -331,9 +331,9 @@ final class PythonModuleTest extends TestCase
     public function testPyObjectConversionMethodsUseTheNativeBridge(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/object-conversion-methods.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/object-conversion-methods.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $cpp = file_get_contents($compiler->convertFile($source));
@@ -351,9 +351,9 @@ final class PythonModuleTest extends TestCase
     private function compileFixture(string $file): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/python/' . $file;
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/python/' . $file;
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $compiler->convertFile($source);

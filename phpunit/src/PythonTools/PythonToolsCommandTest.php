@@ -130,7 +130,7 @@ final class PythonToolsCommandTest extends TestCase
      */
     private function runTpc(array $arguments): array
     {
-        $command = array_merge([PHP_BINARY, ROOT_PATH . '/bin/tpc.php'], $arguments);
+        $command = array_merge([PHP_BINARY, TYPEPHP_ROOT_PATH . '/bin/tpc.php'], $arguments);
         $process = proc_open($command, [
             0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],

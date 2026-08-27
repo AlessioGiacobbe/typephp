@@ -25,7 +25,7 @@ trait ConstantExpressionTrait
         }
 
         if ($expr->name->getType() != 'Name' and !($expr->name instanceof Node\Name\FullyQualified)) {
-            abort($expr);
+            $this->unsupportedSyntax($expr);
         }
         $name = $this->parseIdentifier($expr->name);
         $name = ltrim($name, '\\');
@@ -175,7 +175,7 @@ trait ConstantExpressionTrait
             case 'Scalar_MagicConst_Method':
                 return '"' . $this->escapeString($class) . '::' . $this->escapeString($this->method) . '"';
             default:
-                abort($expr);
+                $this->unsupportedSyntax($expr);
                 break;
         }
     }

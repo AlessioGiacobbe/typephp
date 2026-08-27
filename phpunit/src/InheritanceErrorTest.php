@@ -9,7 +9,7 @@ class InheritanceErrorTest extends TestCase
     private function exec(string $expected, string $file): void
     {
         try {
-            $compiler = CompilerTest::create(ROOT_PATH);
+            $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
             $testFile = __DIR__ . '/../code/' . $file;
             $compiler->addFiles([$testFile]);
             $compiler->prepareFile($testFile);
@@ -24,7 +24,7 @@ class InheritanceErrorTest extends TestCase
     private function assertCompiles(string $file): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/' . $file;
         $compiler->addFiles([$testFile]);
@@ -357,7 +357,7 @@ class InheritanceErrorTest extends TestCase
     public function testInterfaceArrayConstantInitializesRuntimeValue()
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/interface_array_constant.php';
         $compiler->addFiles([$testFile]);
@@ -371,7 +371,7 @@ class InheritanceErrorTest extends TestCase
     public function testInterfaceArrayConstantPropagatesToImplementingClass()
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/interface_array_constant_implements.php';
         $compiler->addFiles([$testFile]);

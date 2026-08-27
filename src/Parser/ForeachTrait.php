@@ -88,7 +88,7 @@ trait ForeachTrait
             }
             $array = $this->parseIdentifier($node->valueVar->var);
             if (!$this->hasVar($array) or $node->valueVar->dim === null) {
-                abort($node->valueVar);
+                $this->unsupportedSyntax($node->valueVar);
             }
             $dim = $this->parseIdentifier($node->valueVar->dim);
             return $this->getIndent() . "{$array}.offsetSet({$dim}, {$valueExpr});";

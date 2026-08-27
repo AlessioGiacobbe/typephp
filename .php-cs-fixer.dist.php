@@ -1,9 +1,9 @@
 <?php
 
 $header = <<<'EOF'
-This file is part of Swoole-Compiler(AOT).
+This file is part of TypePHP(AOT).
 
-@link     https://www.swoole.com/
+@link     https://www.swoole.com/aot/
 @contact  service@swoole.com
 EOF;
 

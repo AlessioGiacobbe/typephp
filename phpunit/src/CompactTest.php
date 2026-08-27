@@ -16,7 +16,7 @@ class CompactTest extends \BaseTest
     public function testCompactThisInsideClass(): void
     {
         $testFile = __DIR__ . '/../code/compact-this-inside-class.php';
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $compiler->addFiles([$testFile]);
         $compiler->prepareFile($testFile);
         $compiler->convertFile($testFile);

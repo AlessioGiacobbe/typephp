@@ -8,9 +8,9 @@ final class NativeScalarBinaryOperandTest extends \BaseTest
     {
         global $translator;
 
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/native-scalar-binary-operands.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/native-scalar-binary-operands.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $generated = $compiler->convertFile($source);
@@ -25,9 +25,9 @@ final class NativeScalarBinaryOperandTest extends \BaseTest
     {
         global $translator;
 
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
-        $source = ROOT_PATH . '/phpunit/code/dynamic-scalar-binary-operands.php';
+        $source = TYPEPHP_ROOT_PATH . '/phpunit/code/dynamic-scalar-binary-operands.php';
         $compiler->addFiles([$source]);
         $compiler->prepareFile($source);
         $generated = $compiler->convertFile($source);

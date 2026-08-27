@@ -56,6 +56,7 @@ use PhpParser\NodeAbstract;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitor\NameResolver;
 use PhpParser\NodeVisitor\CloningVisitor;
+use function TypePhp\StubGenerator\generateStubFile;
 
 class Translator extends Preprocessor
 {
@@ -2825,7 +2826,7 @@ CODE;
                 case 'Stmt_Nop':
                     break;
                 default:
-                    abort($v);
+                    $this->unsupportedSyntax($v);
                     break;
             }
         }
@@ -3012,7 +3013,7 @@ CODE;
                 case 'Stmt_Nop':
                     break;
                 default:
-                    abort($v2);
+                    $this->unsupportedSyntax($v2);
                     break;
             }
         }
@@ -3630,7 +3631,7 @@ CODE;
                     $this->parseTraitUse($v, $methodCodes);
                     break;
                 default:
-                    abort($v);
+                    $this->unsupportedSyntax($v);
                     break;
             }
         }

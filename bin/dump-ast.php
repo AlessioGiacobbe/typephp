@@ -8,7 +8,7 @@
  *
  * 示例:
  *   php bin/dump-ast.php examples/hello.php
- *   php bin/dump-ast.php src/functions.php
+ *   php bin/dump-ast.php src/compiler.php
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';

@@ -13,7 +13,7 @@ class BaseTest extends TestCase
     protected function compile(string $file): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/code/' . $file;
         $compiler->addFiles([$testFile]);

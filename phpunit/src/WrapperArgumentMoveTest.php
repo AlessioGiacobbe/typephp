@@ -8,7 +8,7 @@ final class WrapperArgumentMoveTest extends TestCase
     public function testWrapperConsumesOnlyDeadByValueWrappers(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $file = __DIR__ . '/../code/wrapper-argument-move.php';
         $compiler->addFiles([$file]);

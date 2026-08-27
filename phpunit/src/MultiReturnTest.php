@@ -8,7 +8,7 @@ final class MultiReturnTest extends TestCase
     public function testGeneratesTupleFastPathAndArrayCompatibilityAdapter(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $file = __DIR__ . '/../code/multi-return-tuple.php';
         $compiler->addFiles([$file]);

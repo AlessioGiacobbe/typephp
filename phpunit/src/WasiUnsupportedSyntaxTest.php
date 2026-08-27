@@ -11,7 +11,7 @@ class WasiUnsupportedSyntaxTest extends TestCase
     /** @dataProvider unsupportedConversionSyntaxProvider */
     public function testUnsupportedSyntaxFailsDuringWasiConversion(string $file, string $message): void
     {
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         (new \ReflectionClass($compiler))->getProperty('targetPlatform')->setValue($compiler, 'wasm32-wasip2');
         $source = __DIR__ . '/../code/' . $file;
         $compiler->addFiles([$source]);

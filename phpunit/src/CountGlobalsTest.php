@@ -23,7 +23,7 @@ class CountGlobalsTest extends \BaseTest
     {
         // $GLOBALS['key'] 数组访问形式应正常通过编译
         $testFile = __DIR__ . '/../code/globals-array-access.php';
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $compiler->addFiles([$testFile]);
         $compiler->prepareFile($testFile);
         $compiler->convertFile($testFile);

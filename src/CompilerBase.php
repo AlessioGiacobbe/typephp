@@ -30,6 +30,7 @@ use TypePhp\Entity\MethodDef;
 use TypePhp\Entity\PropertyDef;
 use TypePhp\Exception\DynamicCall;
 use TypePhp\Exception\Redo;
+use TypePhp\Exception\Unsupported;
 use TypePhp\Generator\AnonClassGenerator;
 use TypePhp\Generator\CallArgumentGenerator;
 use TypePhp\Generator\ClosureGenerator;
@@ -575,6 +576,22 @@ class CompilerBase implements PropertyAccessContext
         return $this->lang;
     }
 
+    protected function unsupportedSyntax(NodeAbstract $node): never
+    {
+        $message = 'Error: Unsupported ' . $this->getLang() . ' Syntax,';
+        $message .= ' Line: ' . $this->getLine($node) . ', Type: ' . $this->getType($node) . PHP_EOL;
+        if ($this->mode === 'cli') {
+            if (defined('TYPEPHP_DEBUG') && TYPEPHP_DEBUG) {
+                var_dump($node);
+                debug_print_backtrace();
+            }
+        } else {
+            header('Content-Type: application/json');
+            echo json_encode($node, JSON_PRETTY_PRINT);
+        }
+        throw new Unsupported($message);
+    }
+
     protected function getIndent(): string
     {
         return str_repeat($this->indentStr, $this->indentLevel);
@@ -934,7 +951,7 @@ class CompilerBase implements PropertyAccessContext
             case 'Expr_YieldFrom':
                 return $this->parseYieldFromExpr($expr);
             default:
-                abort($expr);
+                $this->unsupportedSyntax($expr);
                 break;
         }
         return '';
@@ -1501,7 +1518,7 @@ class CompilerBase implements PropertyAccessContext
             case 'Scalar_String':
                 return $expr->hasAttribute('noLiteralString') ? $this->getInlineString($expr->value) : $this->getLiteralString($expr->value);
             default:
-                abort($expr);
+                $this->unsupportedSyntax($expr);
                 break;
         }
         return '';
@@ -1873,7 +1890,7 @@ class CompilerBase implements PropertyAccessContext
                     $this->fatalError($v, 'Cannot declare function in function');
                     break;
                 default:
-                    abort($v);
+                    $this->unsupportedSyntax($v);
                     break;
             }
             $lines                 = array_merge($lines, $this->context->beforeStmtLines);

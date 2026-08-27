@@ -252,7 +252,7 @@ class BackendTest extends TestCase
         $dir = $this->createTemporaryDirectory('backend_link_failure');
         $target = $dir . '/app';
         $backend = new Gcc(new Linux(), 'false');
-        $compiler = new class(ROOT_PATH, $target, $backend) extends CompilerTest {
+        $compiler = new class(TYPEPHP_ROOT_PATH, $target, $backend) extends CompilerTest {
             public function __construct(
                 string $rootPath,
                 private readonly string $testTarget,

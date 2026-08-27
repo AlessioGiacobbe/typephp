@@ -415,14 +415,17 @@ PHP);
         $internalConstants = $this->getPropertyValue('internalConstants');
         $this->assertArrayHasKey('PHP_VERSION', $internalConstants);
         $this->assertArrayNotHasKey('ROOT_PATH', $internalConstants);
+        $this->assertArrayNotHasKey('TYPEPHP_ROOT_PATH', $internalConstants);
 
-        $code = $this->invokeMethod(
-            'parseConstFetch',
-            new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name('ROOT_PATH'))
-        );
+        foreach (['ROOT_PATH', 'TYPEPHP_ROOT_PATH'] as $constantName) {
+            $code = $this->invokeMethod(
+                'parseConstFetch',
+                new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name($constantName))
+            );
 
-        $this->assertStringStartsWith('php::constant(', $code);
-        $this->assertStringNotContainsString(ROOT_PATH, $code);
+            $this->assertStringStartsWith('php::constant(', $code);
+            $this->assertStringNotContainsString(TYPEPHP_ROOT_PATH, $code);
+        }
     }
 
     public function testUnqualifiedRuntimeConstantUsesNamespaceFallback(): void
@@ -1214,11 +1217,11 @@ YAML);
     {
         global $translator;
         foreach ([CompilerBase::BUILD_MODE_BIN, CompilerBase::BUILD_MODE_LIB, CompilerBase::BUILD_MODE_EXT] as $mode) {
-            $compiler = CompilerTest::create(ROOT_PATH);
+            $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
             $translator = $compiler;
             $compiler->setBuildMode($mode);
 
-            $testFile = ROOT_PATH . '/phpunit/code/compiler_api/extension_clean_maps.php';
+            $testFile = TYPEPHP_ROOT_PATH . '/phpunit/code/compiler_api/extension_clean_maps.php';
             $compiler->addFiles([$testFile]);
             $compiler->prepareFile($testFile);
             $compiler->convertFile($testFile);
@@ -1245,14 +1248,14 @@ YAML);
     public function testGeneratedRuntimeSymbolsUseProjectNamespace(): void
     {
         global $translator;
-        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/extension_clean_maps.php';
+        $testFile = TYPEPHP_ROOT_PATH . '/phpunit/code/compiler_api/extension_clean_maps.php';
 
         foreach ([
             CompilerBase::BUILD_MODE_EXT => 'isolated_ext',
             CompilerBase::BUILD_MODE_BIN => 'isolated_bin',
             CompilerBase::BUILD_MODE_LIB => 'isolated_lib',
         ] as $mode => $target) {
-            $compiler = CompilerTest::create(ROOT_PATH);
+            $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
             $translator = $compiler;
             $compiler->setBuildMode($mode);
             $compiler->setTargetName($target);
@@ -1303,11 +1306,11 @@ YAML);
     public function testPersistentSymbolCachesAreLazyAndZtsSafe(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $compiler->setBuildMode(CompilerBase::BUILD_MODE_EXT);
 
-        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/persistent_symbol_cache.php';
+        $testFile = TYPEPHP_ROOT_PATH . '/phpunit/code/compiler_api/persistent_symbol_cache.php';
         $compiler->addFiles([$testFile]);
         $compiler->prepareFile($testFile);
         $compiler->convertFile($testFile);
@@ -1354,7 +1357,7 @@ YAML);
         global $translator;
         $translator = $this->compiler;
 
-        $testFile = ROOT_PATH . '/phpunit/code/arrayable.php';
+        $testFile = TYPEPHP_ROOT_PATH . '/phpunit/code/arrayable.php';
         $this->compiler->addFiles([$testFile]);
         $this->compiler->prepareFile($testFile);
         $cppFile = $this->compiler->convertFile($testFile);
@@ -1373,7 +1376,7 @@ YAML);
         $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
         $this->compiler->setTargetName('prime2');
 
-        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/default_argument_abi.stub.php';
+        $testFile = TYPEPHP_ROOT_PATH . '/phpunit/code/compiler_api/default_argument_abi.stub.php';
         $this->compiler->addFiles([$testFile]);
         $this->compiler->prepareFile($testFile);
         $this->compiler->convertFile($testFile);
@@ -1436,7 +1439,7 @@ YAML);
         $this->setPropertyValue('buildMode', CompilerBase::BUILD_MODE_LIB);
         $this->compiler->setTargetName('prime2');
 
-        $testFile = ROOT_PATH . '/phpunit/code/compiler_api/prime2.stub.php';
+        $testFile = TYPEPHP_ROOT_PATH . '/phpunit/code/compiler_api/prime2.stub.php';
         $this->compiler->addFiles([$testFile]);
         $this->compiler->prepareFile($testFile);
         $this->compiler->convertFile($testFile);
@@ -1467,9 +1470,9 @@ YAML);
         $this->compiler->setTargetName('prime2');
 
         $files = [
-            ROOT_PATH . '/phpunit/code/compiler_api/library_import_php.php',
-            ROOT_PATH . '/phpunit/code/compiler_api/library_import_native.stub.php',
-            ROOT_PATH . '/phpunit/code/compiler_api/library_import_global.php',
+            TYPEPHP_ROOT_PATH . '/phpunit/code/compiler_api/library_import_php.php',
+            TYPEPHP_ROOT_PATH . '/phpunit/code/compiler_api/library_import_native.stub.php',
+            TYPEPHP_ROOT_PATH . '/phpunit/code/compiler_api/library_import_global.php',
         ];
         $this->compiler->addFiles($files);
         $cppFiles = [];
@@ -1728,7 +1731,7 @@ YAML);
         $this->compiler->setTargetName('namespace_rules');
 
         $stubFile = $this->compiler->genLibraryImportStub([
-            ROOT_PATH . '/phpunit/code/compiler_api/library_no_export_namespace.php',
+            TYPEPHP_ROOT_PATH . '/phpunit/code/compiler_api/library_no_export_namespace.php',
         ]);
         $stub = file_get_contents($stubFile);
 

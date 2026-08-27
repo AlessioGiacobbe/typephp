@@ -1,11 +1,15 @@
 <?php
 
+use TypePhp\StubGenerator\EvaluatedValue;
+use TypePhp\StubGenerator\VersionFlags;
+use const TypePhp\StubGenerator\PHP_70_VERSION_ID;
+
 final class GenStubVersionFlagsTest extends BaseTest
 {
     public function testPersistentStringMetadataUsesANonRefcountedInternedZval(): void
     {
         global $translator;
-        $translator = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $translator = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
 
         $value = EvaluatedValue::createFromExpression(
             new PhpParser\Node\Scalar\String_('PHP'),

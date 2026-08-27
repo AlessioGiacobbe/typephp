@@ -118,7 +118,7 @@ class ShiftBoundaryTest extends TestCase
     private function compileWithReporter(): object
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $reporter = new class implements DiagnosticReporter {
             /** @var list<string> */
@@ -147,7 +147,7 @@ class ShiftBoundaryTest extends TestCase
     private function compileNativeWithReporter(string $file): CompilerTest
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $compiler->setDiagnosticReporter(new class implements DiagnosticReporter {
             public function fatal(string $message): never

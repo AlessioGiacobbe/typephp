@@ -10,7 +10,7 @@ class FiberGeneratorTest extends TestCase
 {
     public function testWasiTargetRejectsGeneratorDuringPreparation(): void
     {
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $reflection = new \ReflectionClass($compiler);
         $reflection->getProperty('targetPlatform')->setValue($compiler, 'wasm32-wasip2');
         $file = __DIR__ . '/../../code/generator-conversion-error.php';
@@ -23,7 +23,7 @@ class FiberGeneratorTest extends TestCase
 
     public function testCompilerStateIsRestoredAfterGeneratorConversionError(): void
     {
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $file = __DIR__ . '/../../code/generator-conversion-error.php';
         $compiler->addFiles([$file]);
         $compiler->prepareFile($file);

@@ -38,7 +38,7 @@ final class CompileTimeAttributeRegistryTest extends TestCase
 
     public function testRegistryMatchesPublicCompileTimeAttributeDeclarations(): void
     {
-        $source = file_get_contents(ROOT_PATH . '/src/polyfills.php');
+        $source = file_get_contents(TYPEPHP_ROOT_PATH . '/src/polyfills.php');
         $this->assertNotFalse($source);
         preg_match_all(
             '/#\[Attribute\([^\]]+\)\]\s+final readonly class ([A-Za-z_][A-Za-z0-9_]*)/',

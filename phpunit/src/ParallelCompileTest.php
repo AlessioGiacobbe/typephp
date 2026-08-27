@@ -98,7 +98,7 @@ class ScriptedWaitCompiler extends CompilerTest
 
     public function __construct(private array $waitResults, private array $forkResults = [])
     {
-        parent::__construct(ROOT_PATH);
+        parent::__construct(TYPEPHP_ROOT_PATH);
         $this->noProgress = true;
     }
 

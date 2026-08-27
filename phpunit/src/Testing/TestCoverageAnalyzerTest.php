@@ -92,7 +92,7 @@ final class CoverageFixtureTest extends \PHPUnit\Framework\TestCase
 }
 PHP);
 
-        $analyzer = new TestCoverageAnalyzer(ROOT_PATH, ['8.4', '8.5']);
+        $analyzer = new TestCoverageAnalyzer(TYPEPHP_ROOT_PATH, ['8.4', '8.5']);
         $report = $analyzer->analyze(
             [$this->testRoot . '/phpt'],
             $this->testRoot . '/phpunit-src',

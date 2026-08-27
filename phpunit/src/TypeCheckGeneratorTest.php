@@ -24,7 +24,7 @@ class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
 
     public function testMethodTypeCheckErrorUsesClassQualifiedCallableName(): void
     {
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $classDef = new ClassDef('Demo', 0, 'Foo\\Bar');
         $functionDef = new FunctionDef('run', 'php::Var', 'Foo\\Bar');
         $argInfo = new ArgInfo();
@@ -52,7 +52,7 @@ class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
 
     public function testFunctionTypeCheckErrorUsesFunctionQualifiedCallableName(): void
     {
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $functionDef = new FunctionDef('run', 'php::Var', 'Foo\\Bar');
         $argInfo = new ArgInfo();
         $argInfo->name = 'value';
@@ -79,7 +79,7 @@ class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
 
     public function testStrictScalarChecksKeepTheFastCheckAndDelegateColdErrors(): void
     {
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $functionDef = new FunctionDef('run', 'php::Int', 'Foo\\Bar');
         $argInfo = new ArgInfo();
         $argInfo->name = 'value';
@@ -106,7 +106,7 @@ class TypeCheckGeneratorTest extends \PHPUnit\Framework\TestCase
 
     public function testDynamicStrictScalarArgumentsUseInlinePhpxConversions(): void
     {
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $this->setProtectedProperty($compiler, 'noLiteralStrings', true);
 
         foreach ([

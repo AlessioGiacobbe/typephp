@@ -12,8 +12,18 @@ function main(int $argc, array $argv): void
     // memory. The default CLI limit (commonly 128M) is too small for larger builds.
     ini_set('memory_limit', '-1');
 
-    if (!defined('ROOT_PATH')) {
-        define("ROOT_PATH", getcwd());
+    if (!defined('TYPEPHP_ROOT_PATH')) {
+        define('TYPEPHP_ROOT_PATH', getcwd());
+    }
+    if (!defined('TYPEPHP_DEBUG')) {
+        define('TYPEPHP_DEBUG', true);
+    }
+
+    // The Zend PHP entrypoint loads the consumer project's Composer autoloader
+    // in bin/bootstrap.php. The AOT compiler starts here directly and therefore
+    // must load the dependencies packaged alongside tpc itself.
+    if (!defined('TYPEPHP_PHP_SCRIPT_ENTRY')) {
+        require_once TYPEPHP_ROOT_PATH . '/vendor/autoload.php';
     }
 
     $completionStatus = CompletionCommand::execute($argv);
@@ -43,10 +53,9 @@ function main(int $argc, array $argv): void
         return;
     }
 
-    require_once ROOT_PATH . '/vendor/autoload.php';
     global $translator;
 
-    $translator = new Translator(ROOT_PATH);
+    $translator = new Translator(TYPEPHP_ROOT_PATH);
     $translator->setIndent('    ');
     // 扫描所有 PHP 文件，预处理
     $files = $translator->prepare($translator->parseArgv($argv));
@@ -173,7 +182,7 @@ function compileWasmProgram(array $argv): void
             $input,
             $buildDir,
             $workingDirectory,
-            ROOT_PATH . DIRECTORY_SEPARATOR . 'build',
+            TYPEPHP_ROOT_PATH . DIRECTORY_SEPARATOR . 'build',
             $profile,
         );
     } catch (RuntimeException $exception) {
@@ -240,7 +249,7 @@ function compileWasmProgram(array $argv): void
     }
 
     try {
-        $phpxDir = PhpxLocator::resolve(ROOT_PATH);
+        $phpxDir = PhpxLocator::resolve(TYPEPHP_ROOT_PATH);
     } catch (RuntimeException $exception) {
         fwrite(STDERR, "Unable to locate PHPX: {$exception->getMessage()}\n");
         exit(1);

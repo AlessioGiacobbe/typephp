@@ -10,7 +10,7 @@ final class NativeClassValidationTest extends \BaseTest
     {
         global $translator;
 
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $directory = dirname(__DIR__, 2) . '/code/native-class-forward';
         $files = [$directory . '/a.php', $directory . '/b.php'];
@@ -29,7 +29,7 @@ final class NativeClassValidationTest extends \BaseTest
     {
         global $translator;
 
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $directory = dirname(__DIR__, 2) . '/code/native-class-global-forward';
         $files = [$directory . '/a.php', $directory . '/b.php'];

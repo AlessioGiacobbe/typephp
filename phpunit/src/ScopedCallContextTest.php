@@ -5,7 +5,7 @@ class ScopedCallContextTest extends \BaseTest
     public function testMethodCreatesOneReusableCallableScope(): void
     {
         global $translator;
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/scoped-call-context-reuse.php';
         $compiler->addFiles([$testFile]);

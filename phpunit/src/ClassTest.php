@@ -256,7 +256,7 @@ class ClassTest extends \BaseTest
     public function testPrinterConvertsNonStringFieldsAndArrayablePreservesValues(): void
     {
         global $translator;
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/printer-arrayable-field-types.php';
         $compiler->addFiles([$testFile]);
@@ -298,7 +298,7 @@ class ClassTest extends \BaseTest
     public function testNotNullWarnsForExplicitlyNullableParameters(): void
     {
         global $translator;
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $reporter = new class implements \TypePhp\Diagnostics\DiagnosticReporter {
             /** @var list<string> */
@@ -433,7 +433,7 @@ class ClassTest extends \BaseTest
     public function testMethodsForUsesKeywordClassHierarchyAndObjectFallbackPriority(): void
     {
         global $translator;
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/methods-for-inheritance.php';
         $compiler->addFiles([$testFile]);
@@ -656,7 +656,7 @@ class ClassTest extends \BaseTest
     public function testConstructorCallsParentConstructorWithoutRequiredArguments(): void
     {
         global $translator;
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/constructor-parent-optional.php';
         $compiler->addFiles([$testFile]);
@@ -782,7 +782,7 @@ class ClassTest extends \BaseTest
     public function testSelfCanBePartOfUnionType()
     {
         global $translator;
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/union_type_self_allowed.php';
         $compiler->addFiles([$testFile]);
@@ -794,7 +794,7 @@ class ClassTest extends \BaseTest
     public function testParentCanBePartOfUnionType()
     {
         global $translator;
-        $compiler = \TypePhp\CompilerTest::create(ROOT_PATH);
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $testFile = __DIR__ . '/../code/union_type_parent_allowed.php';
         $compiler->addFiles([$testFile]);

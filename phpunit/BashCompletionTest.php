@@ -12,7 +12,7 @@ final class BashCompletionTest extends TestCase
     {
         self::assertSame(
             BashCompletion::render(),
-            file_get_contents(ROOT_PATH . '/completions/tpc.bash'),
+            file_get_contents(TYPEPHP_ROOT_PATH . '/completions/tpc.bash'),
         );
     }
 
@@ -46,7 +46,7 @@ final class BashCompletionTest extends TestCase
 
     public function testBashScriptSyntaxAndRepresentativeCompletions(): void
     {
-        $script = ROOT_PATH . '/completions/tpc.bash';
+        $script = TYPEPHP_ROOT_PATH . '/completions/tpc.bash';
         self::assertSame('', $this->runBash("bash -n " . escapeshellarg($script)));
         self::assertStringNotContainsString('mapfile', file_get_contents($script));
         self::assertSame(

@@ -1327,7 +1327,7 @@ class Preprocessor extends CompilerBase
                     $this->foundStrayCode($v);
                     break;
                 default:
-                    abort($v);
+                    $this->unsupportedSyntax($v);
                     break;
             }
         }

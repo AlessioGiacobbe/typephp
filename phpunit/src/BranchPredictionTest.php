@@ -8,7 +8,7 @@ final class BranchPredictionTest extends TestCase
     public function testGeneratesExpectedAndUnexpectedMacros(): void
     {
         global $translator;
-        $compiler = CompilerTest::create(ROOT_PATH);
+        $compiler = CompilerTest::create(TYPEPHP_ROOT_PATH);
         $translator = $compiler;
         $file = __DIR__ . '/../code/branch-prediction.php';
         $compiler->addFiles([$file]);
