@@ -693,7 +693,16 @@ trait FuncCallOptimizer
         if ($this->isNativeObjectClass($this->detectClassOfExpr($value))) {
             return '(' . $this->parseExprAsValue($value) . ' == nullptr)';
         }
-        return '(' . $this->parseExprAsValue($value) . ').isNull()';
+
+        $type = $this->detectTypeOfExpr($value);
+        $valueCode = $this->parseExprAsValue($value);
+        if ($this->isNativeType($type)) {
+            // Fixed native scalars cannot contain null. Keep evaluating the
+            // operand because a call or increment may still have side effects.
+            return '((void) (' . $valueCode . '), false)';
+        }
+
+        return '(' . $valueCode . ').isNull()';
     }
 
     protected function genIsCallable(string $n, Node\Expr\FuncCall $e, array $c): string|false
