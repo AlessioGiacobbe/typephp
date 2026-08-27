@@ -8,6 +8,7 @@
 
 namespace TypePhp\Transform;
 
+use Closure;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;
@@ -37,9 +38,14 @@ final class RuntimeAttributeFactoryLowering extends NodeVisitorAbstract
     private array $namespaceFactories = [];
     private string $namespace = '';
     private int $sequence = 0;
+    /** @var array<string, true> */
+    private array $declaredEnumCases = [];
 
-    public function __construct(private readonly string $sourceFile = '')
-    {
+    /** @param null|Closure(string, string): bool $enumCaseResolver */
+    public function __construct(
+        private readonly string $sourceFile = '',
+        private readonly ?Closure $enumCaseResolver = null,
+    ) {
     }
 
     public function enterNode(Node $node): null
@@ -53,12 +59,22 @@ final class RuntimeAttributeFactoryLowering extends NodeVisitorAbstract
         if ($node instanceof Stmt\ClassLike) {
             $class = $node->getAttribute('namespacedName');
             $parent = $node instanceof Stmt\Class_ ? $node->extends : null;
-            $this->classStack[] = [
+            $context = [
                 'namespace' => $class instanceof Node\Name
                     ? $class->toString()
                     : ltrim($this->namespace . '\\' . ($node->name?->toString() ?? ''), '\\'),
                 'parent' => $parent?->toString() ?? '',
             ];
+            $this->classStack[] = $context;
+            if ($node instanceof Stmt\Enum_) {
+                foreach ($node->stmts as $statement) {
+                    if ($statement instanceof Stmt\EnumCase) {
+                        $this->declaredEnumCases[
+                            strtolower($context['namespace']) . '::' . $statement->name->toString()
+                        ] = true;
+                    }
+                }
+            }
             return null;
         }
 
@@ -123,17 +139,67 @@ final class RuntimeAttributeFactoryLowering extends NodeVisitorAbstract
         if ($value instanceof Expr\Array_ && $value->items !== []) {
             return true;
         }
+        if ($value instanceof Expr\ClassConstFetch && $this->isEnumCaseFetch($value)) {
+            return true;
+        }
 
-        return (new NodeFinder())->findFirst($value, static function (Node $node): bool {
+        return (new NodeFinder())->findFirst($value, function (Node $node): bool {
             return $node instanceof Expr\New_
                 || $node instanceof Expr\Closure
                 // A PHP 8.5 array cast may produce a non-empty array even
                 // though it is not represented by an Array_ AST node.
                 || $node instanceof Expr\Cast\Array_
                 || $node instanceof Expr\Cast\Object_
+                || ($node instanceof Expr\ClassConstFetch && $this->isEnumCaseFetch($node))
                 || (($node instanceof Expr\FuncCall || $node instanceof Expr\StaticCall)
                     && $node->isFirstClassCallable());
         }) !== null;
+    }
+
+    private function isEnumCaseFetch(Expr\ClassConstFetch $fetch): bool
+    {
+        if (!$fetch->name instanceof Node\Identifier) {
+            return false;
+        }
+        $class = $this->resolveClassConstFetchClass($fetch);
+        if ($class === null) {
+            return false;
+        }
+        $case = $fetch->name->toString();
+        if (isset($this->declaredEnumCases[strtolower($class) . '::' . $case])) {
+            return true;
+        }
+        return $this->enumCaseResolver !== null
+            && ($this->enumCaseResolver)($class, $case);
+    }
+
+    private function resolveClassConstFetchClass(Expr\ClassConstFetch $fetch): ?string
+    {
+        if (!$fetch->class instanceof Node\Name) {
+            return null;
+        }
+
+        $name = $fetch->class->toString();
+        $lower = strtolower($name);
+        if (($lower === 'self' || $lower === 'static') && $this->classStack !== []) {
+            return $this->classStack[array_key_last($this->classStack)]['namespace'];
+        }
+        if ($lower === 'parent' && $this->classStack !== []) {
+            $parent = $this->classStack[array_key_last($this->classStack)]['parent'];
+            return $parent === '' ? null : ltrim($parent, '\\');
+        }
+
+        $resolved = $fetch->class->getAttribute('resolvedName');
+        if ($resolved instanceof Node\Name) {
+            return ltrim($resolved->toString(), '\\');
+        }
+        if ($fetch->class instanceof Node\Name\FullyQualified) {
+            return ltrim($name, '\\');
+        }
+        if ($fetch->class instanceof Node\Name\Relative) {
+            return ltrim($this->namespace . '\\' . $name, '\\');
+        }
+        return ltrim($this->namespace . '\\' . $name, '\\');
     }
 
     /** @return array{fullName: string, node: Stmt\Function_} */

@@ -4842,7 +4842,10 @@ class FileInfo {
         ));
         $nodeTraverser->addVisitor(new TypePhp\Transform\Visitor(sourceFile: $sourceFile));
         $nodeTraverser->addVisitor(new TypePhp\Transform\ConstantExpressionValidationVisitor($phpVersion));
-        $nodeTraverser->addVisitor(new TypePhp\Transform\RuntimeAttributeFactoryLowering($sourceFile));
+        $nodeTraverser->addVisitor(new TypePhp\Transform\RuntimeAttributeFactoryLowering(
+            $sourceFile,
+            static fn (string $class, string $case): bool => getTranslator()->isDeclaredEnumCase($class, $case),
+        ));
         $prettyPrinter = new class extends Standard {
             protected function pName_FullyQualified(PhpParser\Node\Name\FullyQualified $node): string {
                 return implode('\\', $node->getParts());

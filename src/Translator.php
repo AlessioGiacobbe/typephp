@@ -2781,7 +2781,10 @@ CODE;
             $this->phpVersion,
             fn (Node $node, string $message) => $this->fatalError($node, $message),
         ));
-        $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
+        $traverser->addVisitor(new RuntimeAttributeFactoryLowering(
+            $this->file,
+            fn (string $class, string $case): bool => $this->isDeclaredEnumCase($class, $case),
+        ));
 
         $stmts = $traverser->traverse($ast);
 

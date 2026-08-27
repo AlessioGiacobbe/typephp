@@ -303,7 +303,10 @@ class Preprocessor extends CompilerBase
                 $this->file,
             ));
             $traverser->addVisitor(new ConstantExpressionValidationVisitor($this->phpVersion));
-            $traverser->addVisitor(new RuntimeAttributeFactoryLowering($this->file));
+            $traverser->addVisitor(new RuntimeAttributeFactoryLowering(
+                $this->file,
+                fn (string $class, string $case): bool => $this->isDeclaredEnumCase($class, $case),
+            ));
             $stmts = $this->requireStatementList($traverser->traverse($ast));
             // Keep the resolved declaration AST until convert. Defaults and
             // constants are validated here, but their C++ expressions are not

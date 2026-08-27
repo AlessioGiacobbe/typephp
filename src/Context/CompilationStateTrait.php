@@ -192,6 +192,14 @@ trait CompilationStateTrait
         return $this->symbols->findClass($this->escapeClass($name));
     }
 
+    public function isDeclaredEnumCase(string $class, string $case): bool
+    {
+        $classDef = $this->getClassDef(ltrim($class, '\\'));
+        return $classDef !== null
+            && $classDef->enum
+            && array_key_exists($case, $classDef->enumCases);
+    }
+
     public function getParentClass(string $class): string
     {
         return $this->symbols->parent(strtolower(ltrim($class, '\\')));
