@@ -2,6 +2,11 @@
 
 class ClassTest extends \BaseTest
 {
+    public function testImportAliasesUseIndependentPhpSymbolDomains(): void
+    {
+        $this->compile('namespace/import-alias-domains.php');
+    }
+
     public function testZendToArrayDeclarationCannotAcceptParameters(): void
     {
         $this->expectException(\TypePhp\Exception\TestError::class);

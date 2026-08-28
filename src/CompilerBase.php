@@ -409,6 +409,8 @@ class CompilerBase implements PropertyAccessContext
     protected array $useAliases = [];
     protected array $useFunctions = [];
     protected array $useConstants = [];
+    /** @var array<int, array<string, string>> Import aliases separated by class/function/constant domain. */
+    protected array $useImportAliases = [];
 
     /**
      * 原始类名，不包含命名空间.
@@ -1033,6 +1035,7 @@ class CompilerBase implements PropertyAccessContext
         $this->useAliases = [];
         $this->useFunctions = [];
         $this->useConstants = [];
+        $this->useImportAliases = [];
         $this->namespace = '';
     }
 

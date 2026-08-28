@@ -145,6 +145,54 @@ function main(): void
 PHP,
         ];
 
+        yield 'duplicate implicit class import' => [
+            'prepare',
+            'Cannot use Webman\\Route\\Route as Route because the name is already in use',
+            <<<'PHP'
+<?php
+namespace DuplicateImport;
+
+use support\annotation\route\Route;
+use Webman\Route\Route; // @diagnostic
+
+function main(): void
+{
+}
+PHP,
+        ];
+
+        yield 'duplicate class import alias is case insensitive' => [
+            'prepare',
+            'Cannot use Second\\Package\\Route as route because the name is already in use',
+            <<<'PHP'
+<?php
+namespace DuplicateImport;
+
+use First\Package\Route as Route;
+use Second\Package\Route as route; // @diagnostic
+
+function main(): void
+{
+}
+PHP,
+        ];
+
+        yield 'duplicate function import alias is case insensitive' => [
+            'prepare',
+            'Cannot use function Second\\Package\\dispatch as handler because the name is already in use',
+            <<<'PHP'
+<?php
+namespace DuplicateImport;
+
+use function First\Package\dispatch as Handler;
+use function Second\Package\dispatch as handler; // @diagnostic
+
+function main(): void
+{
+}
+PHP,
+        ];
+
         yield 'closure reference parameter' => [
             'convert',
             'Closure cannot use reference parameter',

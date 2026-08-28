@@ -74,15 +74,15 @@ class Preprocessor extends CompilerBase
             }
             try {
                 $ast = $this->parser->parse($source);
+                $traverser = new NodeTraverser();
+                $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
+                $ast = $this->requireStatementList($traverser->traverse($ast));
             } catch (\PhpParser\Error) {
                 // prepareFile() owns the normal source diagnostic, including
                 // the filename and compiler formatting. Avoid reporting a
                 // syntax error twice from this declaration-only pass.
                 continue;
             }
-            $traverser = new NodeTraverser();
-            $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
-            $ast = $traverser->traverse($ast);
             $this->discoverNativeClassDeclarationsInAst($ast);
         }
     }
@@ -161,14 +161,14 @@ class Preprocessor extends CompilerBase
         foreach ($candidateSources as $source) {
             try {
                 $ast = $this->parser->parse($source);
+                $traverser = new NodeTraverser();
+                $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
+                $ast = $this->requireStatementList($traverser->traverse($ast));
             } catch (\PhpParser\Error) {
                 // prepareFile() has already emitted the authoritative syntax
                 // diagnostic. This pass must not report it a second time.
                 continue;
             }
-            $traverser = new NodeTraverser();
-            $traverser->addVisitor(new NameResolver(null, ['replaceNodes' => false]));
-            $ast = $traverser->traverse($ast);
             foreach ($discovery->discover($ast) as $slot) {
                 $this->registerNativeGlobalObject($slot['name'], $slot['class'], $slot['node']);
             }
@@ -307,7 +307,11 @@ class Preprocessor extends CompilerBase
                 $this->file,
                 fn (string $class, string $case): bool => $this->isDeclaredEnumCase($class, $case),
             ));
-            $stmts = $this->requireStatementList($traverser->traverse($ast));
+            try {
+                $stmts = $this->requireStatementList($traverser->traverse($ast));
+            } catch (\PhpParser\Error $error) {
+                $this->fatalPhpParserError($error);
+            }
             // Keep the resolved declaration AST until convert. Defaults and
             // constants are validated here, but their C++ expressions are not
             // generated until the complete symbol table is available.
@@ -342,6 +346,15 @@ class Preprocessor extends CompilerBase
         } finally {
             $this->restoreCompilerPhase($previousPhase);
         }
+    }
+
+    protected function fatalPhpParserError(\PhpParser\Error $error): never
+    {
+        $location = $this->file;
+        if ($error->getStartLine() > 0) {
+            $location .= ':' . $error->getStartLine();
+        }
+        $this->error($error->getRawMessage() . ' in ' . $location);
     }
 
     /**
