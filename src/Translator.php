@@ -3128,19 +3128,26 @@ CODE;
                             $aliasName = strtolower($alias['newName']);
                             if ($aliasName === $methodName) {
                                 if ($alias['newModifier']) {
-                                    $traitStmt->flags = $alias['newModifier'];
+                                    $traitStmt->flags = $this->applyTraitAliasModifier($traitStmt->flags, $alias['newModifier']);
                                 }
                             } elseif (!isset($methods[$aliasName]) && !isset($traitMethods[$aliasName])) {
                                 $aliasStmt = clone $traitStmt;
                                 $aliasStmt->name = new Node\Identifier($alias['newName']);
                                 if ($alias['newModifier']) {
-                                    $aliasStmt->flags = $alias['newModifier'];
+                                    $aliasStmt->flags = $this->applyTraitAliasModifier($aliasStmt->flags, $alias['newModifier']);
                                 }
                                 $aliasStmts[] = $aliasStmt;
                                 $traitMethods[$aliasName] = [$traitFullName, $aliasStmt];
                             }
                         }
                         if (isset($classDef->traitIgnored[$fullMethodName])) {
+                            unset($traitStmts[$k1]);
+                            continue;
+                        }
+                        if (isset($methods[$methodName])) {
+                            // The class's own method always wins: suppressed
+                            // trait copies must not take part in trait-vs-trait
+                            // conflict resolution.
                             unset($traitStmts[$k1]);
                             continue;
                         }
@@ -3167,17 +3174,25 @@ CODE;
                             }
 
                             if (!$newAbstract && $existingAbstract) {
-                                // New concrete replaces existing abstract
+                                // The new concrete method fulfills the abstract
+                                // requirement: drop the already-collected
+                                // abstract declaration and keep this one.
+                                foreach ($stmt->stmts as $k3 => $mergedStmt) {
+                                    if ($mergedStmt === $existingStmt) {
+                                        unset($stmt->stmts[$k3]);
+                                    }
+                                }
+                                foreach ($aliasStmts as $k3 => $pendingAliasStmt) {
+                                    if ($pendingAliasStmt === $existingStmt) {
+                                        unset($aliasStmts[$k3]);
+                                    }
+                                }
                                 $traitMethods[$methodName] = [$traitFullName, $traitStmt];
-                                unset($traitStmts[$k1]);
                                 continue;
                             }
 
                             // Both concrete — error
                             $this->fatalError($classStmt, "Trait `{$traitFullName}` method `{$methodName}` already exists");
-                        }
-                        if (isset($methods[$methodName])) {
-                            unset($traitStmts[$k1]);
                         }
                         $traitMethods[$methodName] = [$traitFullName, $traitStmt];
                     }
@@ -3241,6 +3256,20 @@ CODE;
             }
         }
 
+    }
+
+    /**
+     * Apply a trait alias modifier the way PHP does: a new visibility replaces
+     * only the visibility bits, and every other flag (static, final, abstract)
+     * is kept. A modifier without visibility (e.g. `as final`) keeps the
+     * original visibility.
+     */
+    private function applyTraitAliasModifier(int $flags, int $newModifier): int
+    {
+        if ($newModifier & Modifiers::VISIBILITY_MASK) {
+            $flags &= ~Modifiers::VISIBILITY_MASK;
+        }
+        return $flags | $newModifier;
     }
 
     private function cloneAstNode(Node $node): Node
