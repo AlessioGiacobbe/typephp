@@ -102,7 +102,12 @@ trait AssignOpTrait
         return $code . '((' . $tmp . ' = ' . $value . ', ' . "{$array}.offsetSet({$dim}, {$tmp})" . '), ' . $tmp . ')';
     }
 
-    protected function parseAssignPropertyFetch(NodeAbstract $left, NodeAbstract $right, ?PropertyWriteTarget $target = null): string
+    protected function parseAssignPropertyFetch(
+        NodeAbstract $left,
+        NodeAbstract $right,
+        ?PropertyWriteTarget $target = null,
+        bool $resultUnused = false,
+    ): string
     {
         if ($target !== null) {
             $this->assertCanAssignPropertyWrite($target, $right);
@@ -113,6 +118,15 @@ trait AssignOpTrait
             $rightExpr = $this->wrapPropertyWriteTypeCheck($target, $right, $rightExpr);
         } else {
             $rightExpr = $this->wrapObjectPropertyAssignTypeCheck($left, $right, $rightExpr);
+        }
+
+        if ($resultUnused
+            && $left instanceof Expr\PropertyFetch
+            && !$this->shouldMaterializeOrderedOperand($left->name)
+            && $this->canEmitDirectArrayWriteOperand($right)
+            && $this->canEmitDynamicPropertyTarget($target)
+        ) {
+            return $this->emitDynamicPropertyFetchWrite($left, $rightExpr, $target);
         }
 
         $tmp = $this->genTmpVarName();
@@ -494,7 +508,7 @@ trait AssignOpTrait
         }
 
         if ($propertyWriteTarget !== null && $this->shouldUseDynamicNativePropertyWrite($left, $type)) {
-            return $this->parseAssignPropertyFetch($left, $right, $propertyWriteTarget);
+            return $this->parseAssignPropertyFetch($left, $right, $propertyWriteTarget, $resultUnused);
         }
 
         if ($this->isVarExpr($left)) {
@@ -645,7 +659,7 @@ trait AssignOpTrait
                 }
             }
         } elseif ($this->isPropertyFetch($left) and !$this->isNativePropertyAccess($left)) {
-            return $this->parseAssignPropertyFetch($left, $right, $propertyWriteTarget);
+            return $this->parseAssignPropertyFetch($left, $right, $propertyWriteTarget, $resultUnused);
         } elseif ($this->isArrayDimFetch($left) and $this->isVarExpr($left->var)) {
             $tmp = $this->parseIdentifier($left->var);
             if ($this->getVarType($tmp) === Type::STR and $left->dim === null) {
