@@ -78,14 +78,36 @@ final class RuntimeAttributeFactoryLowering extends NodeVisitorAbstract
             return null;
         }
 
-        if (!$node instanceof Node\Attribute) {
-            return null;
+        return null;
+    }
+
+    public function leaveNode(Node $node): null
+    {
+        if ($node instanceof Node\Attribute) {
+            $this->lowerAttribute($node);
+        } elseif ($node instanceof Stmt\ClassLike) {
+            array_pop($this->classStack);
+        } elseif ($node instanceof Stmt\Namespace_) {
+            $factories = array_pop($this->namespaceFactories);
+            if ($factories !== []) {
+                array_push($node->stmts, ...$factories);
+            }
+            $this->namespace = '';
         }
-        if (CompileTimeAttributeRegistry::get($node->name->toString()) !== null) {
-            return null;
+        return null;
+    }
+
+    private function lowerAttribute(Node\Attribute $attribute): void
+    {
+        if (CompileTimeAttributeRegistry::get($attribute->name->toString()) !== null) {
+            return;
         }
 
-        foreach ($node->args as $argument) {
+        // Attribute children have now passed through NameResolver. Processing
+        // on enterNode() resolves imported enum names relative to the current
+        // namespace (for example `use A\\Status; Status::Active`) and misses
+        // the enum case, causing gen_stub to persist its backing scalar.
+        foreach ($attribute->args as $argument) {
             if (!$this->requiresFactory($argument->value)) {
                 continue;
             }
@@ -102,21 +124,6 @@ final class RuntimeAttributeFactoryLowering extends NodeVisitorAbstract
                 $this->globalFactories[] = $factory['node'];
             }
         }
-        return null;
-    }
-
-    public function leaveNode(Node $node): null
-    {
-        if ($node instanceof Stmt\ClassLike) {
-            array_pop($this->classStack);
-        } elseif ($node instanceof Stmt\Namespace_) {
-            $factories = array_pop($this->namespaceFactories);
-            if ($factories !== []) {
-                array_push($node->stmts, ...$factories);
-            }
-            $this->namespace = '';
-        }
-        return null;
     }
 
     public function afterTraverse(array $nodes): ?array
