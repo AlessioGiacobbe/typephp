@@ -287,9 +287,19 @@ trait FuncCallOptimizer
         $refInfo = $this->getArgReflectionInfo($name);
         $argTypeStr = $config['args'] ?? ($refInfo['args'] ?? '');
         $defaults = $config['defaults'] ?? [];
+        $variadicType = $config['variadicType'] ?? ($refInfo['variadicType'] ?? '');
+        $nullables = $refInfo['nullables'] ?? [];
+
+        if (!$this->hasOptimizerSafeTypedArguments(
+            $expr,
+            $argTypeStr,
+            $variadicType,
+            $nullables,
+        )) {
+            return false;
+        }
 
         if (!empty($config['variadic']) || ($refInfo['variadic'] ?? false)) {
-            $variadicType = $config['variadicType'] ?? $refInfo['variadicType'] ?? '';
             return $this->genVariadicCall($target, $expr, $variadicType);
         }
 
@@ -300,9 +310,78 @@ trait FuncCallOptimizer
             }
         }
 
-        $nullables = $refInfo['nullables'] ?? [];
         $args = $this->buildArgList($expr, $argTypeStr, $defaults, $nullables);
         return $target . '(' . implode(', ', $args) . ')';
+    }
+
+    protected function hasOptimizerSafeTypedArguments(
+        Node\Expr\FuncCall $expr,
+        string $argTypeStr,
+        string $variadicType,
+        array $nullables,
+    ): bool
+    {
+        // The optimized ABI conversions are safe for exact types and for
+        // strict PHP's int-to-float widening. Every other conversion would
+        // erase the runtime zval type before Zend can validate the parameter,
+        // so keep those calls on php::call().
+        $types = $argTypeStr === '' ? [] : explode('_', $argTypeStr);
+        foreach ($expr->args as $index => $arg) {
+            // Custom handlers call this helper too. They cannot lower an
+            // unpacked list as a fixed C++ ABI argument sequence.
+            if ($arg->unpack) {
+                return false;
+            }
+            $type = $types[$index] ?? $variadicType;
+            $base = ($type[0] ?? '') === self::ARG_OPTIONAL ? substr($type, 1) : $type;
+            if (!in_array($base, [
+                self::ARG_TYPE_STR,
+                self::ARG_TYPE_INT,
+                self::ARG_TYPE_FLOAT,
+                self::ARG_TYPE_BOOL,
+                self::ARG_TYPE_ARRAY,
+            ], true)) {
+                continue;
+            }
+            if ($this->isNull($arg->value)) {
+                if ($nullables[$index] ?? false) {
+                    continue;
+                }
+                return false;
+            }
+            $expected = match ($base) {
+                self::ARG_TYPE_STR => Type::STR,
+                self::ARG_TYPE_INT => Type::INT,
+                self::ARG_TYPE_FLOAT => Type::FLOAT,
+                self::ARG_TYPE_BOOL => Type::BOOL,
+                self::ARG_TYPE_ARRAY => Type::ARRAY,
+            };
+            $actual = $this->detectTypeOfExpr($arg->value);
+            if ($actual === $expected) {
+                continue;
+            }
+            if ($expected === Type::FLOAT && $actual === Type::INT) {
+                continue;
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function hasOptimizerSafeReflectedArguments(
+        string $name,
+        Node\Expr\FuncCall $expr,
+        array $config,
+    ): bool
+    {
+        $refInfo = $this->getArgReflectionInfo($name);
+        return $this->hasOptimizerSafeTypedArguments(
+            $expr,
+            $config['args'] ?? ($refInfo['args'] ?? ''),
+            $config['variadicType'] ?? ($refInfo['variadicType'] ?? ''),
+            $refInfo['nullables'] ?? [],
+        );
     }
 
     // =========================================================================
@@ -845,6 +924,9 @@ trait FuncCallOptimizer
 
     protected function genArrayKeys(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
+        if (!$this->hasOptimizerSafeReflectedArguments($n, $e, $c)) {
+            return false;
+        }
         $cnt = count($e->args);
         if ($cnt >= 3) {
             if ($this->detectTypeOfExpr($e->args[2]->value) !== Type::BOOL) {
@@ -859,8 +941,11 @@ trait FuncCallOptimizer
         return 'php::fn::array_keys(' . $this->getArg($e, 0) . ')';
     }
 
-    protected function genArrayKeyExists(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genArrayKeyExists(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
+        if (!$this->hasOptimizerSafeReflectedArguments($n, $e, $c)) {
+            return false;
+        }
         // The C++ receiver is PHP's second argument, but PHP still evaluates
         // the key first. Resolve both in source order before rearranging them.
         $key = $this->getArg($e, 0);
@@ -868,7 +953,7 @@ trait FuncCallOptimizer
         return $array . '.offsetExists(' . $key . ')';
     }
 
-    protected function genRound(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genRound(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
         $type = $this->detectTypeOfExpr($e->args[0]->value);
         if ($type === Type::DECIMAL) {
@@ -877,6 +962,9 @@ trait FuncCallOptimizer
                 return 'php::Decimal::round(' . $a0 . ', ' . $this->parseExpr($e->args[1]->value) . ')';
             }
             return 'php::Decimal::round(' . $a0 . ')';
+        }
+        if (!$this->hasOptimizerSafeReflectedArguments($n, $e, $c)) {
+            return false;
         }
         $args = count($e->args);
         if ($args >= 3) {
@@ -888,7 +976,7 @@ trait FuncCallOptimizer
         return 'php::fn::round(' . $this->getArg($e, 0) . ')';
     }
 
-    protected function genCount(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genCount(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
         $receiver = $e->args[0] ?? null;
         $nativeClass = $receiver instanceof Node\Arg
@@ -913,6 +1001,10 @@ trait FuncCallOptimizer
             ));
         }
 
+        if (!$this->hasOptimizerSafeReflectedArguments($n, $e, $c)) {
+            return false;
+        }
+
         $folded = $this->doFoldCountLiteral($e);
         if ($folded !== false) return $folded;
         if (count($e->args) >= 2) {
@@ -923,6 +1015,9 @@ trait FuncCallOptimizer
 
     protected function genDefine(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
+        if (!$this->hasOptimizerSafeReflectedArguments($n, $e, $c)) {
+            return false;
+        }
         $arg = $e->args[0]->value;
         if ($this->isScalarString($arg) && str_contains($arg->value, '::')) {
             $this->fatalError($e, 'Invalid define name `' . $arg->value . '`');
@@ -984,8 +1079,11 @@ trait FuncCallOptimizer
         return (string) count($funcDef->argInfoList);
     }
 
-    protected function genFunctionExists(string $name, Node\Expr\FuncCall $expr, array $config): string
+    protected function genFunctionExists(string $name, Node\Expr\FuncCall $expr, array $config): string|false
     {
+        if (!$this->hasOptimizerSafeReflectedArguments($name, $expr, $config)) {
+            return false;
+        }
         $funcName = $expr->args[0]->value;
         if ($this->isScalarString($funcName)) {
             $nameLower = strtolower(trim($funcName->value, '\\'));
