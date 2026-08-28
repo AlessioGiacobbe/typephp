@@ -30,6 +30,8 @@ incompatible with or more restrictive than standard PHP.
   corresponding Zend hook metadata; direct property reads/writes, Reflection,
   and object iteration are all supported. Taking a reference to a hooked
   property is currently not supported.
+- Interface property hooks do not currently support an explicitly declared
+  `set` parameter; use the implicit setter value parameter.
 - PHP 8.4 Reflection Lazy Objects cannot be used with TypePHP AOT classes. AOT
   classes are registered as persistent internal classes, and Zend's
   `zend_object_make_lazy()` explicitly rejects internal classes. Zend PHP user
@@ -49,6 +51,9 @@ incompatible with or more restrictive than standard PHP.
 - TypePHP forbids attributes on global or namespaced constant declarations; PHP
   8.5 global constant attributes are out of scope. Class constant attributes are
   not affected by this restriction.
+- A `.stub.php` file only declares Zend ABI symbols supplied by external C++ and
+  must not use `#[Native]` on its classes. Native Class object layouts must be
+  generated and owned by the TypePHP compiler.
 - Returning by reference from closures or arrow functions is not supported.
 - PHP 8.5 `static function` expressions in global constants, class constants,
   parameter defaults, or property defaults are not supported yet. Closures
@@ -113,17 +118,24 @@ incompatible with or more restrictive than standard PHP.
   property of the same name; `public` / `protected` declarations of the same name
   are treated as the same inherited property slot and must still satisfy the
   type, visibility, and `readonly` compatibility requirements.
-- To avoid introducing extra dynamic checks in the typed-property write path, a
-  native typed property falls back to `setProperty()` when the right-hand side's
-  type is unknown or inconsistent with the property type; some scalar
-  assignments may then follow Zend's weak type conversion instead of the AOT
-  default strict semantics.
+- Dynamic writes to typed properties still use strict type checks. When the
+  right-hand side cannot be determined at compile time, TypePHP preserves a
+  runtime check rather than falling back to Zend weak scalar conversion.
+- Native Classes use a separate fixed-layout object model. They cannot be used
+  as ordinary Zend Objects, PHP array keys/values, or arbitrary `mixed` values,
+  and they restrict dynamic members, references, static/readonly members, and
+  several operators. See [Native Class Object Design](NATIVE_CLASS_OBJECT.md)
+  for the complete boundary.
 
 ## Expressions and control flow
 
 - A `match` arm condition may not itself be a `match` expression.
 - The value target in a by-reference `foreach` may only be a variable.
 - `foreach` list destructuring does not support binding elements by reference.
+- On the non-`int/bool` lowering path, every non-empty `switch` case must end in
+  `return`, `break`, `continue`, `exit`, or `throw`; do not rely on implicit PHP
+  case fallthrough. The native `int/bool` switch path can currently retain C++
+  fallthrough, so project code should terminate every non-empty case explicitly.
 - Appending, inserting, `unset()`, and wholesale replacement of `std::vector`,
   `std::map`, and `std::ordered_map` are forbidden during a `foreach`;
   non-structural updates of existing elements can still be done with assignment
@@ -135,8 +147,9 @@ incompatible with or more restrictive than standard PHP.
 
 ## Runtime dynamic capabilities
 
-- `ClassName::class` only supports string literals or statically resolvable
-  class names.
+- Ordinary Zend objects and dynamic class expressions support runtime `::class`
+  and class-constant lookup. Native Classes still require the relevant class
+  target to be known at compile time.
 - `static::class` is not supported in positions that require a compile-time
   constant class name.
 - `__CLASS__` may only be used within a `class` definition (PHP allows
@@ -147,44 +160,17 @@ incompatible with or more restrictive than standard PHP.
   dynamic callbacks all go through the Zend runtime fallback and are not
   guaranteed to be natively optimized; reference parameters of dynamic calls
   still require an explicit `refval()` or `toRef()`.
-- When `Closure::bind()` binds a static closure that accesses private members,
-  the current behavior is not fully consistent with standard PHP.
-- Storing a first-class callable in a nullable typed `Closure` property
-  currently has runtime stability limitations.
+- `Closure::bind()`, `Closure::bindTo()`, and `Closure::call()` are not
+  supported. A closure cannot be rebound to an object or class scope in AOT
+  code.
 - All source files must be encoded as `UTF-8`.
 
-## Compiler bootstrapping and internal refactoring constraints
+## Generators
 
-This section describes the constraints that apply when the compiler itself is
-compiled with TypePHP. These are not additional PHP semantic differences for
-user code.
-
-- Before the refactoring, a statically resolvable `$this->method()` call within
-  the same core class generated a native C++ direct call. Reference parameters
-  were mapped directly to `php::Ref` or a C++ reference, and write-back
-  semantics worked normally.
-- After splitting the caller and callee into different traits, compiling the
-  trait body on its own makes it impossible to determine the final host class
-  from the trait's `$this`. The current method resolver may lower a cross-trait
-  call to a Zend method call, for example generating
-  `this_.call(..., php::ArgList{value})`.
-- The `ArgList` of a dynamic method call does not automatically promote ordinary
-  arguments to references based solely on the callee wrapper's arginfo. If the
-  callee method declares `&$value`, the wrapper fetches the argument through
-  `getCallArgByRef()`, while the caller passes an ordinary value; the result is a
-  `must be passed by reference` warning, and modifications made by the callee
-  cannot be written back to the caller.
-- Therefore, cross-trait APIs inside the compiler must not use reference output
-  parameters or a protocol in which a passed scalar or array is modified and
-  then read by the caller. They should return a result value, a tuple array, or
-  a DTO — for example, use `[$type, $class] = resolveTypeDecl(...)` instead of
-  `parseTypeDecl(..., &$class)`.
-- Internal helpers for string accumulation, array sorting, parse-result output,
-  and the like should preferably be designed around pure return values:
-  `$code .= format(...)`, `$files = sort(...)`. Only when the call is confirmed
-  to stay a native direct call may reference write-back be relied upon.
-- Every time a method is moved to a trait, a parent class, or a separate
-  component, at least one test covering that call must be recompiled with the
-  bootstrapped artifact; running tests only with `bin/tpc.php` cannot reveal
-  problems where "the source compiler works but the bootstrapped compiler
-  regresses".
+TypePHP generators use `FiberGenerator` rather than Zend `Generator`. Code must
+therefore not rely on `instanceof Generator`, `ReflectionGenerator`, Zend
+Generator's internal object layout, or identical exception traces. Generators
+do not support returning by reference, by-reference yield, by-reference
+`foreach`, by-reference parameters, or variadic parameters. Fiber and Generator
+are not currently supported by the WASI target. See
+[Generators](YIELD_GENERATOR.md) for the complete boundary.

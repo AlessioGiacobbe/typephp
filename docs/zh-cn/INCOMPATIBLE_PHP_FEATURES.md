@@ -18,10 +18,12 @@
 - 支持 PHP 8.5 `(void)` 显式丢弃语句；操作数仍会求值并保留副作用，不能在赋值、返回、参数或条件等值上下文中使用。
 - PHP 8.5 `clone()` / clone-with 依赖实际链接的 `libphp` 版本不低于 8.5。公开、动态、private/protected/readonly 和 property hook 属性，以及调用顺序、错误传播和 callable 路径均有 PHPT 覆盖。
 - PHP 8.4 property hooks 会编译为 AOT getter/setter，并注册对应的 Zend hook 元数据；直接属性读写、Reflection 和对象遍历均受支持。当前不支持对 hook 属性取引用。
+- Interface property hook 暂不支持为 `set` 显式声明参数；应使用隐式的 setter value 参数。
 - PHP 8.4 Reflection Lazy Object 不能用于 TypePHP AOT 类。AOT 类以 persistent internal class 注册，而 Zend 的 `zend_object_make_lazy()` 明确拒绝 internal class；运行时动态加载的 ZendPHP user class 不受此限制。
 - 支持 `private(set)` 与 `protected(set)` 非对称属性可见性，包括 constructor property promotion；Zend-backed 对象通过 PHP 8.4+ 类级 object handler 执行作用域检查，并保留 promoted/set visibility/implicit final 反射标志；Native 对象通过编译期访问检查执行同等作用域规则。
 - 支持 final constructor property promotion，但 TypePHP 要求同时显式声明 `public`、`protected` 或 `private`；不接受 PHP 8.5 的 `final int $value` 隐式 public promotion 写法。该语法作为 TypePHP 扩展不受所链接 `libphp` 的源码语法版本限制，使用 PHP 8.4 `libphp.so` 时仍然可用。
 - TypePHP 禁止在全局或命名空间常量声明上使用 attributes；PHP 8.5 global constant attributes 不在支持范围内。class constant attributes 不受此限制。
+- `.stub.php` 只声明由外部 C++ 提供的 Zend ABI 符号，禁止对其中的类使用 `#[Native]`；Native Class 的对象布局必须由 TypePHP 编译器生成并持有。
 - 不支持闭包或箭头函数按引用返回。
 - 暂不支持 PHP 8.5 在全局常量、类常量、参数默认值或属性默认值中使用 `static function`；初始化表达式内嵌套的闭包同样会在编译期被拒绝。
 - `__construct()` 不允许返回值。
@@ -54,35 +56,29 @@
 - `toAny()` 和 `toRef()` 是不可覆盖的 TypePHP 关键词方法，普通 class-like 声明不得定义同名方法（方法名按 PHP 规则大小写不敏感）。Native class 仅可显式定义返回 `mixed/any` 的 `toAny()` 转换方法，不提供隐式转换；Native class 不支持 `toRef()`。
 - 固定值类型属性未显式初始化时使用类型零值，不保留 ZendPHP 的完整 uninitialized 状态；因此 `??` 等依赖 uninitialized 状态的表达式可能不同。
 - 禁止子类用同名 `private` 属性隐藏父类私有属性；`public` / `protected` 同名声明视为同一个继承 property slot，仍须满足类型、可见性和 `readonly` 兼容性要求。
-- 为避免 typed property 写入路径引入额外动态检查，native typed property 在右值类型不确定或与属性类型不一致时会退化为 `setProperty()`；部分标量赋值可能遵循 Zend 弱类型转换，而不是 AOT 默认 strict 语义。
+- typed property 的动态写入路径仍执行 strict type check；右值类型在编译期无法确定时会保留运行时检查，而不会退化为 Zend 弱类型标量转换。
+- Native Class 使用独立的固定布局对象模型，不能被当作普通 Zend Object、PHP array key/value 或任意 `mixed` 值使用，并限制动态成员、引用、static/readonly 成员及部分操作符。完整边界参见 [Native Class Object 设计](NATIVE_CLASS_OBJECT.md)。
 
 ## 表达式与控制流
 
 - `match` 的 arm condition 不能是 `match` 表达式。
 - `foreach` by reference 的 value 只能是变量。
 - `foreach` list destructuring 不支持按引用绑定元素。
+- 非 `int/bool` lowering 路径中的非空 `switch` case 必须以 `return`、`break`、`continue`、`exit` 或 `throw` 结束；不要依赖 PHP 的隐式 case fallthrough。当前 `int/bool` native switch 路径仍可保留 C++ fallthrough，因此项目代码应统一显式终止每个非空 case。
 - `std::vector`、`std::map`、`std::ordered_map` 在 `foreach` 期间禁止追加、插入、`unset()` 或整体替换；已有元素的非结构性更新仍可使用赋值运算符完成。
 - 固定 native typed object property 不允许按 PHP 未初始化语义自由 `unset()`。
 - native 类型变量执行 `unset()` 不会产生标准 PHP 的变量删除语义。
 
 ## 运行时动态能力
 
-- `ClassName::class` 只支持字符串字面量或可静态解析的类名。
+- 普通 Zend 对象和动态类表达式支持运行时 `::class` 与 class constant lookup；Native Class 仍要求相关类目标能够在编译期确定。
 - `static::class` 在需要编译期常量类名的位置不支持。
 - `__CLASS__` 只允许在 `class` 定义的代码段中使用（`PHP`允许，返回空字符串）。
 - `__TRAIT__` 只允许在 `trait` 定义的代码段中使用（`PHP`允许，返回空字符串）。
 - 动态属性链、动态类名、动态函数名和动态回调会统一走 Zend runtime fallback，不保证 native 优化；动态调用的引用参数仍需显式使用 `refval()` 或 `toRef()`。
-- `Closure::bind()` 绑定静态闭包访问私有成员时，当前行为与标准 PHP 不完全一致。
-- first-class callable 存入 typed nullable `Closure` 属性后，当前存在运行时稳定性限制。
+- 不支持 `Closure::bind()`、`Closure::bindTo()` 和 `Closure::call()`；闭包不能在 AOT 代码中重新绑定对象或 class scope。
 - 所有源文件必须是 `UTF-8` 编码。
 
-## 编译器自举与内部重构约束
+## Generator
 
-本节描述编译器自身使用 TypePHP 编译时的约束，不是面向用户代码新增的 PHP 语义差异。
-
-- 重构前，同一核心类内可静态解析的 `$this->method()` 会生成 native C++ 直调。引用参数会直接映射为 `php::Ref` 或 C++ 引用，写回语义正常。
-- 将调用方和被调用方拆到不同 Trait 后，单独编译 Trait 本体时无法从 Trait 的 `$this` 确定最终宿主类。当前方法解析器可能将跨 Trait 调用降级为 Zend method call，例如生成 `this_.call(..., php::ArgList{value})`。
-- 动态 method call 的 `ArgList` 不会仅凭被调 wrapper 的 arginfo 自动把普通实参升级为引用。若被调方法声明 `&$value`，wrapper 会通过 `getCallArgByRef()` 取参；调用方传入的却是普通值，结果是 `must be passed by reference` 警告，并且被调方修改无法写回调用方。
-- 因此，编译器内部跨 Trait API 禁止使用引用输出参数和“修改传入标量/数组后由调用方读取”的协议。应返回结果值、元组数组或 DTO，例如用 `[$type, $class] = resolveTypeDecl(...)` 代替 `parseTypeDecl(..., &$class)`。
-- 对字符串累加、数组排序、解析结果输出等内部 helper，优先设计为纯返回值：`$code .= format(...)`、`$files = sort(...)`。只有确认调用会保持 native 直调时，才允许依赖引用写回。
-- 每次移动方法到 Trait、父类或独立组件后，必须使用自举产物重新编译至少一个覆盖该调用的测试；仅使用 `bin/tpc.php` 运行测试不能发现“源编译器正常、自举编译器退化”的问题。
+TypePHP generator 使用 `FiberGenerator` 而不是 Zend `Generator`，因此不能依赖 `instanceof Generator`、`ReflectionGenerator`、Zend Generator 的内部对象布局或完全相同的异常栈。Generator 不支持按引用返回、by-reference yield、按引用 `foreach`、引用参数或 variadic 参数；WASI target 暂不支持 Fiber 和 Generator。完整边界参见 [Generator](YIELD_GENERATOR.md)。
