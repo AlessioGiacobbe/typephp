@@ -524,9 +524,9 @@ TypePHP 使用 `-O3` 运行 PHP 源码树自带的官方 `bench.php` 与
 | `micro_bench.php`（总计） | 13.045 秒 | **2.021 秒** | 约 6.5× |
 
 两项基准覆盖 PHP 语言核心性能——函数调用、对象属性访问、数组/哈希访问、
-字符串处理、控制流等。仓库内的测试源码为
-[`examples/bench.php`](examples/bench.php)和
-[`examples/micro_bench.php`](examples/micro_bench.php)。
+字符串处理、控制流等。测试代码见 [`benchmark/bench.php`](benchmark/bench.php) 和
+[`benchmark/micro_bench.php`](benchmark/micro_bench.php)。其他专项性能回归测试
+统一放置在 [`benchmark/`](benchmark/) 目录中。
 
 这些数字是项目测量快照，不是性能保证。PHP 版本、编译器、CPU、优化参数和已启用
 扩展都会影响结果；在用于部署决策前，应在同一机器上使用相同 workload 自行对比。

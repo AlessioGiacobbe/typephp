@@ -1,0 +1,17 @@
+# TypePHP benchmarks
+
+This directory contains repeatable performance workloads used to guide and
+verify compiler/runtime optimizations. Benchmark results depend on the CPU,
+PHP build, compiler, and system load, so compare PHP and TypePHP on the same
+machine instead of committing absolute timing expectations.
+
+- `bench.php` and `micro_bench.php` are the original general workloads moved
+  from `examples/`.
+- `property-access/` builds and compares dynamic/static property access under
+  Zend PHP and TypePHP.
+
+Run the property benchmark from the repository root:
+
+```bash
+php benchmark/property-access/run.php
+```

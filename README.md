@@ -565,8 +565,9 @@ benchmarks that ship with the PHP source tree, compiled with `-O3`:
 
 Both benchmarks measure core PHP language performance — function calls, object
 property access, array/hash access, string handling, control flow, and more.
-The checked-in workloads are [`examples/bench.php`](examples/bench.php) and
-[`examples/micro_bench.php`](examples/micro_bench.php).
+The checked-in workloads are [`benchmark/bench.php`](benchmark/bench.php) and
+[`benchmark/micro_bench.php`](benchmark/micro_bench.php). Additional focused
+performance regressions live in the same [`benchmark/`](benchmark/) directory.
 
 These numbers are a project measurement snapshot, not a performance guarantee.
 PHP version, compiler, CPU, optimization flags, and enabled extensions can all

@@ -2274,7 +2274,33 @@ CODE;
                     return $body . "return obj;\n";
                 };
 
+                $needsHookReadHandler = false;
+                $needsHookWriteHandler = false;
+                foreach ($classDef->properties as $property) {
+                    if ($property->getter !== null) {
+                        $needsHookReadHandler = true;
+                        $needsHookWriteHandler = true;
+                    }
+                    if ($property->setter !== null || $property->isPrivateSet() || $property->isProtectedSet()) {
+                        $needsHookWriteHandler = true;
+                    }
+                }
+                if (!$needsHookReadHandler || !$needsHookWriteHandler) {
+                    $baseHandlers = "base_property_handlers_{$className}";
+                    // Keep the inherited handlers before PHPX installs the
+                    // TypePHP unset/clone table. Most classes have no hooks;
+                    // routing every ordinary property access through the hook
+                    // name lookup makes dynamic properties several times
+                    // slower even though the lookup can never succeed.
+                    $code .= "const auto *{$baseHandlers} = {$ce}->default_object_handlers;\n";
+                }
                 $code .= "typephp_install_property_handlers({$ce}, &{$handlers});\n";
+                if (!$needsHookReadHandler) {
+                    $code .= "{$handlers}.read_property = {$baseHandlers}->read_property;\n";
+                }
+                if (!$needsHookWriteHandler) {
+                    $code .= "{$handlers}.write_property = {$baseHandlers}->write_property;\n";
+                }
                 if ($classDef->requireCtor) {
                     $code .= "create_object_{$className} = php::getCreateObjectFn({$ce});\n";
                     $code .= "{$ce}->create_object = [](zend_class_entry *class_type) -> zend_object* {\n";
