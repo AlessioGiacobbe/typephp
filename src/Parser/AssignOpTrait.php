@@ -1303,7 +1303,26 @@ trait AssignOpTrait
         $this->assertReadonlyPropertyReferenceForbidden($expr->var, $expr, true);
         $this->assertReadonlyPropertyReferenceForbidden($expr->expr, $expr, false);
 
-        $left = $this->parseWritableIdentifier($expr->var);
+        $propertyReferenceTarget = null;
+        $nativeObjectProperty = $expr->var instanceof Expr\PropertyFetch
+            && $this->getNativePropertyClassDef($expr->var)?->nativeObject === true;
+        if ($expr->var instanceof Expr\PropertyFetch && !$nativeObjectProperty) {
+            // A property reference assignment must go through Zend's property
+            // metadata path. A plain Variant indirect slot cannot maintain
+            // typed-property reference sources safely. Parse the complete LHS
+            // before the RHS so PHP's source evaluation order is preserved.
+            $object = $this->parseOrderedOperand($expr->var->var, false);
+            $member = $this->isIdExpr($expr->var->name)
+                ? $this->propertyNameToStr($expr->var->name, literal: true)
+                : $this->parseOrderedOperand($expr->var->name, false, true);
+            $scope = $this->usesTraitPropertyScope($object)
+                ? 'php::FakeScopeGuard::current()'
+                : ($this->class ? $this->getClassEntryPtr($this->getFullClassName()) : 'nullptr');
+            $propertyReferenceTarget = [$object, $member, $scope];
+            $left = '';
+        } else {
+            $left = $this->parseWritableIdentifier($expr->var);
+        }
         // Keep this write-context form for every RHS kind. Re-parsing it as a
         // read later breaks append and missing-key targets such as
         // `$array[] =& $source`.
@@ -1397,8 +1416,10 @@ trait AssignOpTrait
         }
 
         $this->context->beforeStmtLines[] = $rightExpr . ';';
-        if ($expr->var instanceof Expr\PropertyFetch && $this->isNativePropertyAccess($expr->var)) {
-            return $left . '.rebindReference(' . $tmpVar . ')';
+        if ($propertyReferenceTarget !== null) {
+            [$object, $member, $scope] = $propertyReferenceTarget;
+            return 'typephp_rebind_property_reference('
+                . $object . ', ' . $member . ', ' . $tmpVar . ', ' . $scope . ')';
         }
         return $left . ' = &' . $tmpVar;
     }
