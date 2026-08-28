@@ -766,11 +766,15 @@ trait FuncCallOptimizer
         return 'php::fn::get_parent_class(' . $this->parseIdentifier($arg) . ')';
     }
 
-    protected function genArrayKeys(string $n, Node\Expr\FuncCall $e, array $c): string
+    protected function genArrayKeys(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
         $cnt = count($e->args);
         if ($cnt >= 3) {
-            return 'php::fn::array_keys_filter(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ', ' . $this->getArg($e, 2) . ')';
+            if ($this->detectTypeOfExpr($e->args[2]->value) !== Type::BOOL) {
+                return false;
+            }
+            return 'php::fn::array_keys_filter(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ', '
+                . $this->resolveArg($e, 2, self::ARG_TYPE_BOOL) . ')';
         }
         if ($cnt >= 2) {
             return 'php::fn::array_keys_filter(' . $this->getArg($e, 0) . ', ' . $this->getArg($e, 1) . ', false)';
