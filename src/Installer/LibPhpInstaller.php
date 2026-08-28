@@ -176,13 +176,10 @@ final class LibPhpInstaller
 
     private function currentConfigureOptions(): string
     {
-        $phpConfig = $this->sourcePhpDir !== null && is_executable($this->sourcePhpDir . '/bin/php-config')
-            ? $this->sourcePhpDir . '/bin/php-config'
-            : trim((string) shell_exec('command -v php-config 2>/dev/null'));
-        if ($phpConfig !== '') {
-            return trim($this->capture([$phpConfig, '--configure-options']));
-        }
-
+        // 优先使用 PHP_BINARY -i 的 Configure Command:输出保留每个参数的
+        // 引号,能正确处理 `CFLAGS=-g -O2` 这类含空格的值。而
+        // `php-config --configure-options` 会丢失引号,导致含空格的值被
+        // 错误拆分(例如 `-O2` 被当作独立参数传给 configure)。
         $info = $this->capture([PHP_BINARY, '-n', '-i']);
         if (preg_match('/^Configure Command =>\s*(.+)$/mi', $info, $match)) {
             $words = PhpBuildConfiguration::parseShellWords(trim($match[1]));
@@ -191,6 +188,22 @@ final class LibPhpInstaller
             }
             return implode(' ', array_map('escapeshellarg', $words));
         }
+
+        // 后备:php-config --configure-options。PPA 的多版本 PHP 共用
+        // /usr 前缀，因此 PHP_HOME=/usr 时必须优先 php-config8.x。
+        $versionedPhpConfig = $this->sourcePhpDir . '/bin/php-config'
+            . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+        if ($this->sourcePhpDir !== null && is_executable($versionedPhpConfig)) {
+            $phpConfig = $versionedPhpConfig;
+        } elseif ($this->sourcePhpDir !== null && is_executable($this->sourcePhpDir . '/bin/php-config')) {
+            $phpConfig = $this->sourcePhpDir . '/bin/php-config';
+        } else {
+            $phpConfig = trim((string) shell_exec('command -v php-config 2>/dev/null'));
+        }
+        if ($phpConfig !== '') {
+            return trim($this->capture([$phpConfig, '--configure-options']));
+        }
+
         throw new \RuntimeException('Unable to determine the current PHP configure options from php-config or php -i');
     }
 
