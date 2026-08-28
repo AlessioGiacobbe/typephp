@@ -84,6 +84,10 @@ class FunctionContext
     public bool $inLoop = false;
     /** True while parsing a for/foreach/while/do-while body. */
     public bool $inContinuableLoop = false;
+    /** Number of breakable constructs (loops and switches) enclosing the statement being parsed. */
+    public int $breakableDepth = 0;
+    /** True when the innermost enclosing breakable construct is a switch, not a loop. */
+    public bool $breakableIsSwitch = false;
     public bool $inClosure = false;
     public ?array $closureReturnTypeCheck = null;
     public string $closureReturnTypeStr = '';
