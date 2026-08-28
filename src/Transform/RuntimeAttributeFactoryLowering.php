@@ -278,9 +278,11 @@ final class RuntimeAttributeFactoryLowering extends NodeVisitorAbstract
                     }
                 }
                 if ($node instanceof Node\Name) {
-                    // Attribute factories are created while the outer
-                    // traverser is entering the Attribute node, before its
-                    // argument names have been visited by NameResolver.
+                    // Attribute factories are created in leaveNode(), after
+                    // their argument names have passed through NameResolver.
+                    // The compiler keeps the original node and records its
+                    // target in resolvedName, while the stub pipeline may
+                    // replace it with a FullyQualified node directly.
                     if ($node instanceof Node\Name\Relative) {
                         $name = ltrim($this->namespace . '\\' . $node->toString(), '\\');
                         return new Node\Name\FullyQualified($name, $node->getAttributes());
