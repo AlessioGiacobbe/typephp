@@ -1,5 +1,5 @@
 --TEST--
-array_keys optimized calls convert dynamic arguments and preserve evaluation order
+array_keys optimized calls preserve dynamic arguments, strict types, and evaluation order
 --FILE--
 <?php
 declare(strict_types=1);
@@ -27,6 +27,26 @@ function arrayKeysDynamicFilter(array &$events): mixed
     return '1';
 }
 
+function arrayKeysMixedBool(): mixed
+{
+    return true;
+}
+
+function arrayKeysMixedInt(): mixed
+{
+    return 1;
+}
+
+function arrayKeysMixedArray(): mixed
+{
+    return [];
+}
+
+function arrayKeysUnionInt(): bool|int
+{
+    return 1;
+}
+
 function main()
 {
     $values = ['integer' => 1, 'string' => '1'];
@@ -48,6 +68,29 @@ function main()
         arrayKeysDynamicStrict($events)
     ));
     var_dump($events);
+
+    var_dump(array_keys($values, '1', arrayKeysMixedBool()));
+
+    try {
+        array_keys($values, '1', arrayKeysMixedInt());
+        echo "mixed-int=missing TypeError\n";
+    } catch (TypeError $error) {
+        echo "mixed-int=TypeError\n";
+    }
+
+    try {
+        array_keys($values, '1', arrayKeysMixedArray());
+        echo "mixed-array=missing TypeError\n";
+    } catch (TypeError $error) {
+        echo "mixed-array=TypeError\n";
+    }
+
+    try {
+        array_keys($values, '1', arrayKeysUnionInt());
+        echo "union-int=missing TypeError\n";
+    } catch (TypeError $error) {
+        echo "union-int=TypeError\n";
+    }
 }
 ?>
 --EXPECT--
@@ -87,3 +130,10 @@ array(3) {
   [2]=>
   string(6) "strict"
 }
+array(1) {
+  [0]=>
+  string(6) "string"
+}
+mixed-int=TypeError
+mixed-array=TypeError
+union-int=TypeError
