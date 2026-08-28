@@ -145,6 +145,62 @@ function main(): void
 PHP,
         ];
 
+        yield 'break level exceeds enclosing depth' => [
+            'convert',
+            "Cannot 'break' 2 levels",
+            <<<'PHP'
+<?php
+function main(): void
+{
+    while (true) {
+        break 2; // @diagnostic
+    }
+}
+PHP,
+        ];
+
+        yield 'continue level exceeds enclosing depth' => [
+            'convert',
+            "Cannot 'continue' 2 levels",
+            <<<'PHP'
+<?php
+function main(): void
+{
+    while (true) {
+        continue 2; // @diagnostic
+    }
+}
+PHP,
+        ];
+
+        yield 'break level must be a positive integer literal' => [
+            'convert',
+            "'break' operator accepts only positive integer literals",
+            <<<'PHP'
+<?php
+function main(): void
+{
+    while (true) {
+        break 0; // @diagnostic
+    }
+}
+PHP,
+        ];
+
+        yield 'continue level must be a positive integer literal' => [
+            'convert',
+            "'continue' operator accepts only positive integer literals",
+            <<<'PHP'
+<?php
+function main(): void
+{
+    while (true) {
+        continue 1 + 1; // @diagnostic
+    }
+}
+PHP,
+        ];
+
         yield 'duplicate implicit class import' => [
             'prepare',
             'Cannot use Webman\\Route\\Route as Route because the name is already in use',
