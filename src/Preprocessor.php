@@ -861,8 +861,6 @@ class Preprocessor extends CompilerBase
             if ($param->variadic) {
                 if ($i !== $last) {
                     $this->fatalError($param, 'Variadic parameters must be the last parameter');
-                } elseif ($param->byRef) {
-                    $this->fatalError($param, 'Variadic parameters cannot be passed by reference');
                 }
             }
             if ($param->default && $i < $lastRequiredIndex) {
@@ -888,8 +886,12 @@ class Preprocessor extends CompilerBase
             if ($param->type === null || $param->type instanceof NullableType) {
                 $argInfo->nullable = true;
             }
-            if ($param->type instanceof NullableType || $param->type instanceof UnionType || $param->type instanceof IntersectionType) {
-                $typeInfo = $this->buildTypeCheckFromNode($param->type);
+            if (($param->byRef && $param->type !== null)
+                || $param->type instanceof NullableType
+                || $param->type instanceof UnionType
+                || $param->type instanceof IntersectionType
+            ) {
+                $typeInfo = $this->buildTypeCheckFromNode($param->type, $param->byRef);
                 if (!empty($typeInfo['check']) && !$this->isNativeObjectClass($argInfo->declaredClass)) {
                     $argInfo->typeCheck = $typeInfo['check'];
                     $argInfo->typeStr = $typeInfo['typeStr'];

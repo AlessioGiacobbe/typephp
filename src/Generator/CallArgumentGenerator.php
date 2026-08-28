@@ -144,9 +144,12 @@ trait CallArgumentGenerator
                 continue;
             }
 
-            // A single unpacked native array is already the ABI value. Reuse
-            // it directly instead of allocating and merging a temporary array.
-            if ($variadicArgCount === 1 && $arg->unpack && $this->isVarExpr($arg->value)) {
+            $argInfo = $functionDef->argInfoList[$variadicArgIndex];
+            // A single unpacked by-value native array is already the ABI
+            // value. A by-reference variadic must still separate the source
+            // and turn every element into a reference before entering the
+            // callee, matching Zend's argument-unpacking semantics.
+            if (!$argInfo->byRef && $variadicArgCount === 1 && $arg->unpack && $this->isVarExpr($arg->value)) {
                 $var = $this->parseIdentifier($arg->value);
                 if ($this->getVarType($var) === Type::ARRAY) {
                     $resolvedArgs[$variadicArgIndex] = $var;
@@ -155,16 +158,19 @@ trait CallArgumentGenerator
             }
 
             $variadicVar ??= $this->addTmpVar(Type::ARRAY);
-            $argInfo = $functionDef->argInfoList[$variadicArgIndex];
             if ($arg->unpack) {
-                $this->context->beforeStmtLines[] = $variadicVar . '.merge(' . $this->parseArrayArg($arg) . ');';
+                $method = $argInfo->byRef ? 'mergeReferences' : 'merge';
+                $this->context->beforeStmtLines[] = $variadicVar . '.' . $method
+                    . '(' . $this->parseArrayArg($arg) . ');';
             } elseif ($variadicName !== null) {
                 $value = $this->getTypeConvertedArg($arg, $argInfo, $callableName, $variadicArgIndex);
-                $this->context->beforeStmtLines[] = $variadicVar . '.setValue('
+                $method = $argInfo->byRef ? 'set' : 'setValue';
+                $this->context->beforeStmtLines[] = $variadicVar . '.' . $method . '('
                     . $this->getLiteralString($variadicName) . ', ' . $value . ');';
             } else {
                 $value = $this->getTypeConvertedArg($arg, $argInfo, $callableName, $variadicArgIndex);
-                $this->context->beforeStmtLines[] = $variadicVar . '.appendValue(' . $value . ');';
+                $method = $argInfo->byRef ? 'append' : 'appendValue';
+                $this->context->beforeStmtLines[] = $variadicVar . '.' . $method . '(' . $value . ');';
             }
         }
 
@@ -175,6 +181,15 @@ trait CallArgumentGenerator
         }
         if ($variadicVar !== null) {
             $resolvedArgs[$variadicArgIndex] = $variadicVar;
+            if ($functionDef->argInfoList[$variadicArgIndex]->byRef) {
+                // The aggregation array owns the second reference to every
+                // caller slot. Release it after the full PHP statement and
+                // also during C++ exception unwinding into a PHP catch block.
+                $cleanupGuard = $this->genTmpVarName();
+                $this->context->beforeStmtLines[] = 'php::ArrayCleanupGuard ' . $cleanupGuard
+                    . '{' . $variadicVar . '};';
+                $this->context->afterStmtLines[] = $cleanupGuard . '.cleanup();';
+            }
         }
         ksort($resolvedArgs);
         return implode(', ', $resolvedArgs);

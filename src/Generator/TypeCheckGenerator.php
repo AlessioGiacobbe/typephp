@@ -111,7 +111,7 @@ trait TypeCheckGenerator
         return $code;
     }
 
-    protected function buildTypeCheckFromNode(NodeAbstract $typeNode): array
+    protected function buildTypeCheckFromNode(NodeAbstract $typeNode, bool $includeSimpleType = false): array
     {
         $check = [];
         $typeStr = $this->typeCheckNodeToString($typeNode);
@@ -141,8 +141,11 @@ trait TypeCheckGenerator
             if (!empty($clause)) {
                 $check[] = count($clause) === 1 ? $clause[0] : ['kind' => 'allOf', 'types' => $clause];
             }
-        } else {
-            return ['check' => [], 'typeStr' => ''];
+        } elseif ($includeSimpleType) {
+            $clause = $this->buildTypeCheckClause($typeNode);
+            if (!empty($clause)) {
+                $check[] = count($clause) === 1 ? $clause[0] : ['kind' => 'allOf', 'types' => $clause];
+            }
         }
 
         if (empty($check)) {
