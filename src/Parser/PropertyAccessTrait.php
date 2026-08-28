@@ -41,7 +41,7 @@ trait PropertyAccessTrait
     {
         $scope = $this->usesTraitPropertyScope($object)
             ? 'php::FakeScopeGuard::current()'
-            : ($this->class ? $this->getClassEntryPtr($this->getFullClassName()) : 'nullptr');
+            : ($this->class ? $this->getLocalClassEntryPtr($this->getFullClassName()) : 'nullptr');
         return 'typephp_write_property_scoped('
             . $object . ', ' . $property . ', ' . $value . ', ' . $scope . ')';
     }

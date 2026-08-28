@@ -124,7 +124,7 @@ trait ForeachTrait
     {
         $iterator = $this->genTmpVarName();
         $byRef = $node->byRef ? 'true' : 'false';
-        $scope = $this->class ? $this->getClassEntryPtr($this->getFullClassName()) : 'nullptr';
+        $scope = $this->class ? $this->getLocalClassEntryPtr($this->getFullClassName()) : 'nullptr';
         $code = '{' . PHP_EOL;
         $this->indentLevel++;
         $code .= $this->getIndent() . "php::ForeachIterator $iterator{{$iterableVar}, $byRef, $scope};" . PHP_EOL;
