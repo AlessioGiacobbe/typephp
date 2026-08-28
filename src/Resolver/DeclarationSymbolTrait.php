@@ -80,11 +80,11 @@ trait DeclarationSymbolTrait
             if ($type === Node\Stmt\Use_::TYPE_FUNCTION) {
                 $this->useFunctions[$alias] = $id;
             } elseif ($type === Node\Stmt\Use_::TYPE_CONSTANT) {
-                $lastIndex = strrpos($id, '\\');
-                $cn = substr($id, $lastIndex + 1);
-                $ns = substr($id, 0, $lastIndex);
-                $fullName = $ns . '\\' . $cn;
-                $this->useConstants[$alias] = $fullName;
+                // $id is already the fully qualified constant name. Splitting
+                // and re-joining it on `\` corrupted single-segment imports:
+                // `use const PHP_EOL;` resolved to `\HP_EOL` because
+                // strrpos() returns false when there is no separator.
+                $this->useConstants[$alias] = $id;
             } else {
                 $idLower = strtolower($id);
                 if ($idLower === 'native_types') {
