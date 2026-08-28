@@ -151,7 +151,7 @@ function extractorMain(array $argv): void
     }
 }
 
-// 运行主函数
+// Run the main function.
 if (php_sapi_name() === 'cli') {
     extractorMain($argv);
 }

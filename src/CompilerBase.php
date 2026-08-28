@@ -288,12 +288,14 @@ class CompilerBase implements PropertyAccessContext
     protected int $classIndex = 0;
 
     /**
-     * 用户定义（请求生命周期）类名 → ID，运行期为 THREAD_LOCAL 缓存，RSHUTDOWN 清理
+     * User-defined (request-lifetime) class name → ID. Backed by a THREAD_LOCAL
+     * cache at runtime and cleared on RSHUTDOWN.
      * @var array<string, int>
      */
     protected array $classMap = [];
     /**
-     * 内置/编译产物（模块生命周期）类名 → ID，PHP 启动完成后惰性填充，RSHUTDOWN 不清理
+     * Built-in / compiled-output (module-lifetime) class name → ID. Lazily
+     * populated after PHP startup and NOT cleared on RSHUTDOWN.
      * @var array<string, int>
      */
     protected array $persistentClassMap = [];
@@ -305,21 +307,26 @@ class CompilerBase implements PropertyAccessContext
     protected int $funcIndex = 0;
 
     /**
-     * 用户定义（请求生命周期）函数/方法 → ID，运行期为 THREAD_LOCAL 缓存，RSHUTDOWN 清理
-     * key 为函数名或 `Class::method`
+     * User-defined (request-lifetime) function/method → ID. Backed by a
+     * THREAD_LOCAL cache at runtime and cleared on RSHUTDOWN.
+     * Key is a function name or `Class::method`.
      * @var array<string, int>
      */
     protected array $funcMap = [];
     /**
-     * 内置/编译产物（模块生命周期）函数/方法 → ID，PHP 启动完成后惰性填充，RSHUTDOWN 不清理
-     * key 为函数名或 `Class::method`
+     * Built-in / compiled-output (module-lifetime) function/method → ID. Lazily
+     * populated after PHP startup and NOT cleared on RSHUTDOWN.
+     * Key is a function name or `Class::method`.
      * @var array<string, int>
      */
     protected array $persistentFuncMap = [];
     protected int $persistentFuncIndex = 0;
     /**
-     * 内置/编译产物类的声明属性 offset 缓存，key 为 `Class::prop`，惰性填充，RSHUTDOWN 不清理。
-     * 属性解析仅覆盖编译类与内置类的声明属性（进程级稳定），用户类属性走字符串路径，不进缓存。
+     * Declared-property offset cache for built-in / compiled-output classes.
+     * Key is `Class::prop`; lazily populated and NOT cleared on RSHUTDOWN.
+     * Property resolution only covers declared properties of compiled classes
+     * and built-in classes (process-stable). User-class properties go through
+     * the string path and never enter this cache.
      */
     protected array $persistentPropMap = [];
     protected int $persistentPropIndex = 0;
@@ -345,10 +352,11 @@ class CompilerBase implements PropertyAccessContext
         'mixed' => Type::VAR,
         'null' => Type::VAR,
         'any' => Type::VAR,
-        // callable 类型，可以是字符串、数组、对象
-        // 1) 'foo' 函数名称字符串, 2) [ $obj, 'bar' ] 对象方法数组, 3) Closure 对象， 4) [ 'class', 'staticMethod'] 类名+静态方法数组
+        // The callable type can be a string, array, or object:
+        // 1) 'foo' function-name string, 2) [ $obj, 'bar' ] object-method array,
+        // 3) a Closure object, 4) [ 'class', 'staticMethod' ] class + static-method array.
         'callable' => Type::VAR,
-        // iterable 类型，可以是数组或者对象
+        // The iterable type can be an array or an object.
         'iterable' => Type::VAR,
         'stream' => Type::STREAM,
         'bigint' => Type::BIGINT,
@@ -361,13 +369,15 @@ class CompilerBase implements PropertyAccessContext
     protected array $internalConstants = [];
 
     /**
-     * 存储所有函数、类方法的声明，key 是 符号名称，Value 是函数、类方法所在的文件名称
+     * Stores the declaration of every function and class method. Key is the
+     * symbol name; value is the file in which the function or method is declared.
      * @var array<string, string>
      */
     protected array $symbolDeclInFile = [];
 
     /**
-     * 存储所有函数、类方法的调用，key 是 文件名称，Value 是函数、类方法调用的列表数组
+     * Stores every function / class-method call. Key is the file name; value is
+     * a list of the functions / class methods called within that file.
      * @var array<string, array<string>>
      */
     protected array $symbolCallInFile = [];
@@ -400,7 +410,7 @@ class CompilerBase implements PropertyAccessContext
     protected string $dir;
 
     /**
-     * 原始值，可能包含 `\\` 多层空间.
+     * The raw namespace value, which may contain `\\` multi-level separators.
      */
     protected string $namespace = '';
     protected string $method = '';
@@ -413,7 +423,7 @@ class CompilerBase implements PropertyAccessContext
     protected array $useImportAliases = [];
 
     /**
-     * 原始类名，不包含命名空间.
+     * The raw class name, without the namespace.
      */
     protected string $class = '';
     protected string $parentClass = '';
@@ -469,7 +479,7 @@ class CompilerBase implements PropertyAccessContext
     protected bool $bigintTypes = false;
     protected string $rootPath;
     protected string $buildDir;
-    protected string $outputDir = '';    // -o 参数指定的输出目录
+    protected string $outputDir = '';    // Output directory specified by the -o option
     protected int $debugLine = 0;
     protected CLImate $climate;
     protected bool $stubFile = false;
@@ -483,26 +493,28 @@ class CompilerBase implements PropertyAccessContext
     protected Parser $parser;
     protected string $phpVersion = self::DEFAULT_PHP_VERSION;
     protected PrettyPrinter $printer;
-    protected bool $isPhpZts = false;  // PHP 是否为线程安全版本
+    protected bool $isPhpZts = false;  // Whether the PHP build is thread-safe (ZTS)
 
-    // Windows 平台：保存检测到的 PHP lib 文件路径
-    protected string $windowsPhpEmbedLib = '';  // php8embed.lib 路径
-    protected string $windowsPhpCoreLib = '';   // php8ts.lib 或 php8.lib 路径
+    // Windows platform: store the detected PHP lib file paths.
+    protected string $windowsPhpEmbedLib = '';  // Path to php8embed.lib
+    protected string $windowsPhpCoreLib = '';   // Path to php8ts.lib or php8.lib
     
-    // 新的平台和编译器抽象层（可选使用）
+    // New platform and compiler abstraction layers (optional to use).
     protected ?PlatformBase $platform = null;
     protected ?CompilerBackend $compilerBackend = null;
 
     /**
-     * 在预处理阶段获取所有类的方法名称，检测子类和父类中存在的同名方法，解决动态绑定方法调用的问题
-     * `static::methodCall()`
-     * `$this->methodCall()` 子类和父类中存在同名方法
+     * Records all class method names collected during the preprocessing phase.
+     * Used to detect methods with the same name declared in both a child class
+     * and its parent class, resolving dynamic method-binding calls such as
+     * `static::methodCall()` and `$this->methodCall()` where a parent and a
+     * child class both define the method.
      * @var array<string, bool>
      */
     protected array $classMethodOverride = [];
 
     /**
-     * 存储所有类继承关系，类名必须全部为小写
+     * Stores all class inheritance relationships. Class names must be all lowercase.
      * @var array<string, string>
      */
     protected SymbolRepository $symbols;
@@ -1183,8 +1195,10 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * 判断类的符号指针是否在 PHP 模块生命周期内稳定（MINIT 注册，跨请求缓存安全）。
-     * 编译产物（本单元编译的类/接口）与 PHP 内置类/接口均满足条件。
+     * Determine whether a class's symbol pointer is stable across the PHP
+     * module lifetime (registered at MINIT, safe to cache across requests).
+     * Compiled output (classes/interfaces compiled in this unit) and PHP
+     * built-in classes/interfaces both satisfy this condition.
      */
     protected function isProcessStableClass(string $className): bool
     {
@@ -1196,8 +1210,9 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * 判断函数/方法符号指针是否在 PHP 模块生命周期内稳定。
-     * `Class::method` 形式的 key 以其所属类的稳定性为准。
+     * Determine whether a function/method symbol pointer is stable across the
+     * PHP module lifetime. For a `Class::method` key, stability is determined
+     * by the class it belongs to.
      */
     protected function isProcessStableFunction(string $funcName): bool
     {
@@ -1251,13 +1266,15 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * @param string $className 必须是带有命名空间的完整类名
+     * @param string $className Must be a fully-qualified class name (with namespace).
      *
-     * 注意：不存在与用户定义类对应的动态 propMap（区别于 classMap/funcMap）。
-     * 属性 offset 缓存的前提是编译期能解析出声明属性（PropertyAccessResolver
-     * 只接受编译类的 ClassDef 或内置类的反射声明属性），用户类在编译期不可见，
-     * 其属性访问一律走 `.attr(name)` 字符串路径，因此所有条目必然进程级稳定，
-     * 全部进入 persistentPropMap。
+     * Note: there is no dynamic propMap for user-defined classes (unlike
+     * classMap/funcMap). The property-offset cache assumes declared properties
+     * can be resolved at compile time (PropertyAccessResolver only accepts a
+     * compiled ClassDef or the reflected declared properties of a built-in
+     * class). User classes are not visible at compile time, so their property
+     * accesses always go through the `.attr(name)` string path. As a result,
+     * every entry is necessarily process-stable and goes into persistentPropMap.
      */
     protected function getPropertyId(string $className, string $propName): int
     {
@@ -1555,10 +1572,12 @@ class CompilerBase implements PropertyAccessContext
         }
         return $this->withoutLocalClassEntryHoisting(function () use ($default): string {
             /*
-             * 函数参数默认值只能为字面量，无法使用表达式获取值。
-             * 但 PHP 自 5.6 起支持在默认参数值中使用常量表达式，包括
-             * 类常量（self::FOO、ClassName::BAR、\Full\Class::BAZ），
-             * 编译器需要在编译期将其折叠为对应的字面量。
+             * Function parameter default values may only be literals; they
+             * cannot be obtained through an expression. Since PHP 5.6, however,
+             * constant expressions are allowed in default parameter values,
+             * including class constants (self::FOO, ClassName::BAR,
+             * \Full\Class::BAZ). The compiler must fold these into the
+             * corresponding literal at compile time.
              *
              * PHP 8.1 also permits `new` in selected default-value contexts.
              * These expressions are emitted into standalone helper functions,
@@ -1585,8 +1604,9 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * 在 for/foreach 等包含子语句的语句，之前检查当前待添加的代码是否为空，
-     * 如果不为空，需要将语句追加到 {} 作用域符号之前.
+     * For statements containing sub-statements (for/foreach, etc.), check
+     * whether the currently pending code is empty. If not, the pending
+     * statements must be emitted before the opening `{` scope brace.
      */
     protected function parseBeforeStmtLines(): string
     {
@@ -1914,7 +1934,7 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * 尽可能转为数字，优先级 浮点 > 整数 > 字符串.
+     * Convert to a number whenever possible, with priority float > integer > string.
      */
     protected function parseNumericIdentifier(NodeAbstract $expr): string
     {
@@ -2002,7 +2022,7 @@ class CompilerBase implements PropertyAccessContext
                 if ($this->classDef?->nativeObject) {
                     $this->fatalError($expr, 'Native classes do not support `new static()`');
                 }
-                // 无法在编译期获得 static 类的准确类名
+                // The exact class name of a `static` class cannot be obtained at compile time.
                 return '';
             } else {
                 return $this->getNamespacedClassName($class);
@@ -2104,10 +2124,10 @@ class CompilerBase implements PropertyAccessContext
 
     protected function detectDeclaredClassOfExpr(NodeAbstract $expr): string
     {
-        // 对象表达式有两类类型信息：
-        // 1. detectClassOfExpr() 返回“实际可推断的类”，例如 new Foo()、typed object 变量；
-        // 2. getDeclaredObjectType() 返回变量声明/首次赋值记录的 declared type，可能是接口或抽象类。
-        // 参数和属性赋值检查需要先使用实际类；实际类不可知时才退回 declared type。
+        // Object expressions carry two kinds of type information:
+        // 1. detectClassOfExpr() returns the "actually inferable class", e.g. new Foo() or a typed object variable;
+        // 2. getDeclaredObjectType() returns the declared type recorded at declaration/first assignment, which may be an interface or abstract class.
+        // Parameter and property-assignment checks prefer the actual class, falling back to the declared type only when the actual class is unknown.
         $class = $this->detectClassOfExpr($expr);
         if ($class !== '') {
             return $class;
@@ -2120,13 +2140,22 @@ class CompilerBase implements PropertyAccessContext
 
     protected function isObjectClassStaticallyAssignableTo(string $class, string $expected): bool
     {
-        // 这个函数只回答“编译器在静态阶段能否证明 $class is-a $expected”。
-        // 这里禁止使用 class_exists()/interface_exists()/is_a() 去查询当前运行编译器的 PHP 进程：
-        // - 编译器进程已加载的 Composer/工具类，不等价于被编译项目运行时可用的类；
-        // - 自举编译时还会把编译器自身依赖的外部库误判为项目静态类；
-        // - AOT 的静态判断必须只依赖 hasClass()/hasInterface() 记录的项目类图，或明确的内置类/接口。
-        // 如果类不属于这些集合，说明它是动态类/外部库类，不能在这里静态判定，应返回 false，
-        // 由调用处决定是延迟到运行时 php::toObject()/TypeCheck，还是因为确定 concrete mismatch 而 fatal。
+        // This function only answers "can the compiler prove at the static
+        // stage that $class is-a $expected". It must not use
+        // class_exists()/interface_exists()/is_a() to query the PHP process
+        // currently running the compiler:
+        // - Composer/tool classes already loaded in the compiler process are not
+        //   equivalent to classes available at runtime for the compiled project;
+        // - during bootstrapping, the compiler's own external dependencies would
+        //   be mistaken for the project's static classes;
+        // - AOT static analysis must rely only on the project class graph
+        //   recorded by hasClass()/hasInterface(), or on explicitly built-in
+        //   classes/interfaces.
+        // If a class is not in one of these sets, it is a dynamic / external
+        // library class and cannot be statically determined here. Return false
+        // and let the caller decide whether to defer to runtime
+        // php::toObject()/TypeCheck, or to fail fatally because of a
+        // determined concrete mismatch.
         $class = ltrim($class, '\\');
         $expected = ltrim($expected, '\\');
         if (strcasecmp($class, $expected) === 0) {
@@ -2146,10 +2175,13 @@ class CompilerBase implements PropertyAccessContext
 
     protected function isKnownConcreteObjectExpr(NodeAbstract $expr, string $class): bool
     {
-        // “已知 concrete object” 的要求比“表达式写着 new SomeClass”更严格：
-        // 只有 AOT 项目类图中的类或内置类，编译器才能在静态阶段确认其继承关系。
-        // 外部库类即使出现在 new 表达式中，也不能用当前编译器进程的反射信息判定，
-        // 否则会把编译器/Composer 运行环境泄漏进被编译项目的类型系统。
+        // "Known concrete object" is stricter than "the expression literally
+        // says new SomeClass": only classes in the AOT project class graph or
+        // built-in classes allow the compiler to confirm inheritance at the
+        // static stage. Even if an external library class appears in a new
+        // expression, it cannot be determined using the reflection info of the
+        // current compiler process; doing so would leak the compiler/Composer
+        // runtime environment into the type system of the compiled project.
         if ($class === '' || $this->isInterface($class) || $this->isAbstractClass($class)) {
             return false;
         }
@@ -2390,7 +2422,7 @@ class CompilerBase implements PropertyAccessContext
             $lines[] = 'return ' . $tuple . ';';
             return implode(PHP_EOL . $this->getIndent(), $lines);
         }
-        // 实际函数的返回值
+        // The return value of the actual function.
         $type = $this->detectTypeOfExpr($v->expr);
         // In ordinary PHP mode, int +/−/* int is only conditionally an int:
         // runtime overflow promotes the result to float. Keep the Variant
@@ -2488,7 +2520,7 @@ class CompilerBase implements PropertyAccessContext
         $expr = $this->parseExprAsValue($v->expr);
         $returnType = $this->getReturnType();
 
-        // 匿名函数的返回值一定是 var
+        // The return value of an anonymous function is always var.
         if (!$this->context->inClosure) {
             if ($returnType === Type::VOID) {
                 $this->fatalError($v, 'The return type is void, cannot return any value');
@@ -2511,7 +2543,7 @@ class CompilerBase implements PropertyAccessContext
         }
 
         $returnObjectCheckClass = '';
-        // 返回值的表达式是一个类的对象
+        // The return-value expression is an instance of a class.
         $objectClass = $this->detectDeclaredClassOfExpr($v->expr);
         $returnClass = $this->context->inClosure ? '' : $this->getReturnClass();
         if ($returnClass) {
@@ -2537,13 +2569,17 @@ class CompilerBase implements PropertyAccessContext
             [$code, $tmpVar] = $this->genUnionCheckedReturnAssignment($exprCode);
             $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
         } elseif (!$this->isVarExpr($v->expr) and !$this->isScalar($v->expr)) {
-            // return 如果使用了 Indirect 语句，可能会导致变量提前析构，出现悬空指针
-            // 将 Indirect 赋值给临时变量后，使用 Ctor::Copy 解除了 Indirect，保证内存安全
+            // If return uses an Indirect statement, the variable may be
+            // destructed early, producing a dangling pointer. Assign the
+            // Indirect to a temporary variable; Ctor::Copy releases the
+            // Indirect, guaranteeing memory safety.
             $tmpVar = $this->genTmpVarName();
-            // 必须提前声明变量，否则在末尾声明并 return 可能会被 gcc 优化掉
+            // The variable must be declared up front; otherwise declaring it at
+            // the end and returning it could be optimized away by gcc.
             $this->addLocalVar($tmpVar, $returnType);
             $code = $tmpVar . ' = (' . $exprCode . ');' . PHP_EOL;
-            // 解析表达式后可能会插入语句，因此需要在末尾添加 return 语句，而不是直接返回
+            // Parsing the expression may insert statements, so the return
+            // statement must be appended at the end rather than returned directly.
             $this->context->afterStmtLines[] = $this->getIndent() . 'return ' . $tmpVar . ';';
         } else {
             $code = 'return ' . $exprCode . ';';
@@ -2715,7 +2751,8 @@ class CompilerBase implements PropertyAccessContext
 
         $classDef = $this->getClass($class);
         $methodDef = null;
-        // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
+        // Search recursively: if the method is not defined in the child class,
+        // try to find it in the parent class.
         while (true) {
             if (!$classDef->hasMethod($method)) {
                 if (!$classDef->extends) {
@@ -2743,7 +2780,7 @@ class CompilerBase implements PropertyAccessContext
         if (!$this->checkAccessible($classDef, $methodDef->flags)) {
             $this->fatalError($expr, 'Method `' . $classDef->getNamespacedName() . '::' . $method . '()` is not accessible');
         }
-        // 函数调用占位符，不是真实的函数调用
+        // A function-call placeholder, not a real function call.
         if (count($expr->args) === 1 and $this->isPlaceholderExpr($expr->args[0])) {
             return false;
         }
@@ -2767,7 +2804,8 @@ class CompilerBase implements PropertyAccessContext
         $classDef = $this->getClass($class);
         $originClassDef = $classDef;
         $constDef = null;
-        // 递归查找，若子类中未定义方法，则尝试查找父类是否存在此方法
+        // Search recursively: if the constant is not defined in the child class,
+        // try to find it in the parent class.
         while (true) {
             if (!$classDef->hasConstant($const)) {
                 if (!$classDef->extends) {
@@ -3276,12 +3314,15 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * $GLOBALS['var'] 等价于 global $var; $var ，将字符串常量转为变量名称即可
-     * 仅限于字面量字符串可以转为变量名称，其他则使用 php::global() 函数获取
+     * Resolve a PHP function name to its native (compiled) name by trying
+     * every candidate form: absolute names, qualified names resolved through
+     * the class/namespace import table, unqualified names in the current
+     * namespace, and `use function` imports. Returns false when no compiled
+     * function matches.
      */
     protected function findNativeFunction(string $funcName): string|false
     {
-        // 绝对命名空间的函数
+        // Absolutely-qualified function name.
         if ($funcName[0] == '\\') {
             $funcName = ltrim($funcName, '\\');
             $possibleFunctionNames = [$this->escapeName($funcName)];
@@ -3759,13 +3800,14 @@ class CompilerBase implements PropertyAccessContext
             $this->assertNotNativeObjectDynamicClassTarget($expr->class, $expr);
         }
         $ctorClassName = '';
-        // 匿名类
+        // Anonymous class.
         if ($expr->class instanceof Node\Stmt\Class_) {
             if ($expr->class->name === null) {
                 $classDef = $expr->class;
                 $className = $this->genAnonClassName();
                 $classDef->name = new Node\Identifier($className);
-                // 继承父类和接口可能是 use 的名称，需要转换成全限定名称
+                // The inherited parent class and interfaces may be `use` names
+                // and need to be converted to fully-qualified names.
                 if ($classDef->extends !== null) {
                     $parentClass = $this->getNamespacedClassName($this->parseIdentifier($classDef->extends));
                     $classDef->extends = new Node\Name\FullyQualified($parentClass);
@@ -3777,7 +3819,9 @@ class CompilerBase implements PropertyAccessContext
                     }
                 }
                 $this->flattenEmbeddedClassTraits($classDef);
-                // 匿名类由根命名空间中的 eval 定义，内部导入的符号必须转为全限定名称。
+                // Anonymous classes are defined by eval in the root namespace,
+                // so symbols imported inside them must be converted to
+                // fully-qualified names.
                 $this->resolveAnonClassNames($classDef);
                 $this->context->beforeStmtLines[] = 'static THREAD_LOCAL bool ' . $className . '_defined = false;';
                 $classCode = $this->genEmbeddedCode($classDef);
@@ -4144,7 +4188,7 @@ class CompilerBase implements PropertyAccessContext
     protected function parseEval(Expr\Eval_ $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr->expr, 'eval operand');
-        // 对 eval() 指令的 PHP 代码段禁止字面量优化
+        // Disable literal-string optimization for the PHP code passed to eval().
         $expr->expr->setAttribute('noLiteralString', true);
         $source = $this->isNativeObjectClass($this->detectClassOfExpr($expr->expr))
             ? $this->parseExprToString($expr->expr)
@@ -4239,7 +4283,8 @@ class CompilerBase implements PropertyAccessContext
     }
 
     /**
-     * 左值只能为变量、数组、对象属性、对象静态属性
+     * The left value may only be a variable, array element, object property,
+     * or class static property.
      */
     protected function checkLeftValue(NodeAbstract $expr): void
     {
@@ -4282,7 +4327,8 @@ class CompilerBase implements PropertyAccessContext
                 return $nativePresence;
             }
         }
-        // TypePHP 编译器不允许操作未定义的变量，PHP 的 isset($var) 可能 $var 未定义
+        // The TypePHP compiler disallows operating on undefined variables;
+        // in PHP, isset($var) may be used with an undefined $var.
         $this->checkVarMustExist($node, $this->parseIdentifier($node));
         $fn = $this->getChainedFunc($op);
         $expr = $node;
@@ -4301,7 +4347,7 @@ class CompilerBase implements PropertyAccessContext
             // $getValue is true: fall through to use the chain+result mechanism,
             // which ensures the result type is TYPE_VAR (compatible with ternaries).
         }
-        // 单属性读取（非链式）
+        // Single property read (non-chained).
         if ($this->isPropertyFetch($expr) and $this->isVarExpr($expr->var) and $this->isIdExpr($expr->name)) {
             $prop = $this->parsePropertyFetch($expr);
             if ($this->isNativePropertyAccess($expr)) {
@@ -4371,7 +4417,8 @@ class CompilerBase implements PropertyAccessContext
             $node->setAttribute('chainOpResult', $result);
             return $fn . '(' . $var . ', {' . implode(', ', $list) . '}, ' . $result . ')';
         } else {
-            // toReference(var, {}) 返回空引用，空链时改用成员函数形式
+            // toReference(var, {}) returns an empty reference; use the member
+            // function form instead when the chain is empty.
             if ($op === self::OP_REFVAL && empty($list)) {
                 return $var . '.toReference()';
             }
@@ -4854,19 +4901,20 @@ class CompilerBase implements PropertyAccessContext
         if ($toType === Type::VAR or $fromType === Type::VAR) {
             return true;
         }
-        // 引用当前没有类型信息，按照 var 处理
+        // References currently carry no type information, so treat them as var.
         if ($toType === Type::REF or $fromType === Type::REF) {
             return true;
         }
-        // 类型一致，可以互相赋值
+        // Types are identical, so they can be assigned to each other.
         if ($toType === $fromType) {
             return true;
         }
-        // 原生类型可以互相转换，由 C++ 底层完成
+        // Native types can be converted between each other, handled by the C++ layer.
         if ($this->isNativeType($toType) and $this->isNativeType($fromType)) {
             return true;
         }
-        // BigInt/BigFloat/Decimal 与原生类型之间可能发生隐式转换，允许重新赋值
+        // Implicit conversions between BigInt/BigFloat/Decimal and native types
+        // are possible, so re-assignment is allowed.
         $bigTypes = [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT];
         if (in_array($toType, $bigTypes, true) or in_array($fromType, $bigTypes, true)) {
             return true;
@@ -4911,12 +4959,12 @@ class CompilerBase implements PropertyAccessContext
                 $scopeClassDef = $this->getClass($this->functionDef->attributeFactoryScope);
             }
         }
-        // 私有方法，只能当前的类使用
+        // Private methods can only be used by the current class.
         if ($flags & Modifiers::PRIVATE) {
             return $scopeClassDef !== null
                 && $this->isSameClassName($declaringClass, $scopeClassDef->getNamespacedName(false));
         }
-        // 保护方法，只能当前类和子类使用
+        // Protected methods can only be used by the current class and its subclasses.
         if ($flags & Modifiers::PROTECTED) {
             if (!$scopeClassDef) {
                 return false;
@@ -4926,12 +4974,14 @@ class CompilerBase implements PropertyAccessContext
                 $declaringClass
             );
         }
-        // 类外部调用，只允许调用 public 方法
+        // Calls from outside the class are only allowed for public methods.
         return true;
     }
 
     /**
-     * 沿继承链查找实际调用的构造函数，包括项目类继承的内部类构造函数。
+     * Walk the inheritance chain to find the constructor that is actually
+     * invoked, including constructors of internal classes inherited by project
+     * classes.
      *
      * @return array{className: string, flags: int}|null
      */

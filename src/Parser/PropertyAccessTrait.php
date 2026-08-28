@@ -595,13 +595,13 @@ trait PropertyAccessTrait
         }
 
         if ($def->class === '' or $this->isAbstractClass($def->class) or $this->isInterface($def->class) or !$this->hasClass($def->class)) {
-            // 属性 declared class 若是接口、抽象类或动态类，当前属性布局优化无法静态确认最终对象类型。
-            // 不在这里 fatal；后续 wrapObjectPropertyAssignTypeCheck() 会在需要时插入运行时检查。
+            // If the property's declared class is an interface, abstract class, or dynamic class, the current property layout optimization cannot statically determine the final object type.
+            // Do not report a fatal error here; wrapObjectPropertyAssignTypeCheck() inserts a runtime check later when needed.
             return;
         }
 
         $rightClass = $this->detectClassOfExpr($right);
-        // TODO 静态编译阶段无法获得准确的类型，需要在运行时检查
+        // TODO: the exact type cannot be determined at the static compilation stage; a runtime check is required
         if ($rightClass === '') {
             return;
         }

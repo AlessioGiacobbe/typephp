@@ -2,11 +2,11 @@
 <?php
 
 /**
- * 导出 PHP 文件的 AST 语法树结构
+ * Dump the AST syntax tree structure of a PHP file.
  *
- * 用法: php bin/dump-ast.php <file.php>
+ * Usage: php bin/dump-ast.php <file.php>
  *
- * 示例:
+ * Examples:
  *   php bin/dump-ast.php examples/hello.php
  *   php bin/dump-ast.php src/compiler.php
  */
@@ -231,7 +231,7 @@ function dumpNode(NodeAbstract $node, int $depth = 0): void
     $end     = $node->getEndLine();
     $subInfo = '';
 
-    // 为常见节点类型提取关键信息
+    // Extract key information for common node types.
     switch (true) {
         case $node instanceof Node\Expr\Variable:
             $subInfo = ' $' . ($node->name === null ? '(unset)' : (is_string($node->name) ? $node->name : '...'));

@@ -153,7 +153,7 @@ trait AssignOpTrait
             $this->addLocalVar($tmpVar, Type::VAR);
         }
 
-        // 翻转赋值链
+        // Reverse the assignment chain
         $chain = array_reverse($chain);
         $list  = [];
 
@@ -525,7 +525,7 @@ trait AssignOpTrait
                     return $copyAssign;
                 }
             }
-            // 类型推断，获取对象的类名，如果不是对象则返回空字符串
+            // Infer the type and obtain the object's class name; return an empty string for non-objects
             $rightClass = $this->detectClassOfExpr($right);
             $markNativeObjectNonNull = $this->context->scopeLevel <= 1
                 && !$this->hasScopeGlobalVar($var)
@@ -548,7 +548,7 @@ trait AssignOpTrait
                     $this->fatalError($right, "Cannot assign native object `{$rightClass}` to `{$leftClass}`");
                 }
             }
-            // 右值是一个对象，已获得类的名称，左值必须与右值的类一致
+            // The right-hand value is an object and its class name is known; the left-hand side must match the right-hand side's class
             if ($rightClass) {
                 if (!$this->hasVar($var)) {
                     if ($this->isNativeObjectClass($rightClass)) {
@@ -641,7 +641,7 @@ trait AssignOpTrait
                         }
                     }
                 }
-                // 变量第一次被赋值，确定其类型，由于 PHP 的变量作用域是 function 级的，在 for/while 块中声明的变量，可以在块外使用
+                // On first assignment the variable's type is determined. PHP variable scope is function-level, so variables declared in for/while blocks remain usable outside the block
                 if (!$this->hasVar($var)) {
                     $finalVarType = $this->getNormalAssignType($type);
                     $finalVarType = $this->isNativeType($finalVarType) ? $this->getNativeType($finalVarType) : $finalVarType;
@@ -944,9 +944,9 @@ trait AssignOpTrait
             }
             /**
              * $count[$r] -= 1;
-             * 需要转为下面语句：
+             * must be lowered to the following statements:
              * $tmp_var = $count[$r] - 1;
-             * $count[$r] = $tmp_var;.
+             * $count[$r] = $tmp_var;
              */
             $isGlobals = $this->isVarExpr($node->var->var) && $node->var->var->name === 'GLOBALS';
             $type      = $isGlobals ? Type::VAR : $this->detectVarType($node->var);

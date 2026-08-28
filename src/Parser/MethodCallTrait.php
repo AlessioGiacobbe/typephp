@@ -252,7 +252,7 @@ trait MethodCallTrait
         }
 
         $nativeFunc = $this->getNativeMethod($expr, $class, $method);
-        // 存在 Native 类，但是没有找到方法，可能是动态调用
+        // A Native class exists but the method was not found; this may be a dynamic call
         if (!$nativeFunc) {
             if ($this->hasClass($class) and $this->getNativeMethod($expr, $class, '__call', false)) {
                 throw new DynamicCall();
@@ -261,7 +261,7 @@ trait MethodCallTrait
 
         $fullMethodName = $this->getOverrideMethodName($class, $method);
 
-        // 存在子类同名方法，尝试去虚化
+        // A subclass declares a method with the same name, so try to devirtualize
         if ($this->isOverrideMethod($fullMethodName)) {
             if (!$this->canDevirtualize($object, $class, $method)) {
                 return false;
@@ -414,7 +414,7 @@ trait MethodCallTrait
         if (empty($expr->args)) {
             return 'this_.call(' . $methodPtr . ')';
         }
-        // 传入方法名与父类名，以便在按引用参数检测时解析方法签名
+        // Pass the method name and parent class so the method signature can be resolved when detecting by-reference arguments
         return 'this_.call(' . $methodPtr . ', ' . $this->parseCallArgs($expr->args, $method, $parentClass) . ')';
     }
 
@@ -465,10 +465,10 @@ trait MethodCallTrait
             if ($this->isTypedObject($object)) {
                 $class = $this->getObjectType($object);
             } elseif ($object === 'this_') {
-                // $this 在构造函数/方法中静态类型为当前类，便于解析抽象方法等按引用参数签名
+                // $this is statically typed as the current class inside a constructor/method, so abstract methods and other by-reference parameter signatures can be resolved
                 $class = $this->classDef !== null ? $this->classDef->getNamespacedName(false) : $this->class;
             } else {
-                // 接口和抽象类类型的变量没有具体对象类型，仍可从声明签名解析按引用参数。
+                // Variables of interface or abstract-class type have no concrete object type, but by-reference parameters can still be resolved from the declared signature.
                 $class = $this->getDeclaredObjectType($object);
             }
         }
@@ -591,7 +591,7 @@ trait MethodCallTrait
                 . $this->parseCallArgs($expr->args) . ')';
         }
 
-        // 可转为原生调用的 MethodCall
+        // Method calls that can be lowered to a native call
         if (($this->isVarExpr($expr->var) || $materializedNativeReceiver) and $this->isNamedMethod($expr->name)) {
             $type = $this->getVarType($object);
             if ($class !== '' && $this->isNativeObjectClass($class)) {
@@ -647,9 +647,9 @@ trait MethodCallTrait
                 return self::PREFIX . $nativeFunc . '(' . $receiver . ', '
                     . $this->parseNativeCallArgs($expr->args, $nativeFunc) . ')';
             }
-            // 引用参数允许方法调用：有class信息走原生调用，无class信息走动态调用
+            // Method calls are allowed on references: use a native call when class info is available, otherwise a dynamic call
             if (!$this->checkArgType($type, Type::OBJECT) and $type !== Type::REF) {
-                // 非对象类型可使用内置方法
+                // Non-object types can use built-in methods
                 $fn = $this->findUniversalMethodAnyType($type, $methodName);
                 if ($fn) {
                     if ($type === Type::STREAM) {
@@ -705,7 +705,7 @@ trait MethodCallTrait
             }
         }
 
-        // 表达式返回值也可使用内置方法：fn()->method(), $obj->fn()->method(), Foo::fn()->method(), $obj->prop->method()
+        // Expression results can also use built-in methods: fn()->method(), $obj->fn()->method(), Foo::fn()->method(), $obj->prop->method()
         if (!$this->isVarExpr($expr->var) and $this->isNamedMethod($expr->name)) {
             $type = $this->detectTypeOfExpr($expr->var);
             if ($type === Type::VOID) {
@@ -929,7 +929,7 @@ trait MethodCallTrait
                 );
             }
             $placeHolder = $this->genArray([Symbol::getCalledClass(), $methodPtr]);
-            // 用于在按引用参数检测时解析方法签名（late static binding 在当前类层级中解析）
+            // Used to resolve the method signature when detecting by-reference arguments (late static binding is resolved within the current class hierarchy)
             $rtFunc = $method;
             $rtClass = $this->getFullClassName();
         } else {
@@ -974,7 +974,7 @@ trait MethodCallTrait
                     } catch (PlaceHolder) {
                         return $this->genPlaceHolder($this->genArray($callScope));
                     }
-                    // 在方法定义中使用了当前类的方法 self::method()，依然应该传递 this_ 指针
+                    // When a method definition calls a current-class method via self::method(), the this_ pointer must still be passed
                     if ($this->methodDef and $self) {
                         $object = 'this_';
                     } else {
