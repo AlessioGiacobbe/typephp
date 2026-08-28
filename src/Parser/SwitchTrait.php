@@ -2,7 +2,7 @@
 /**
  * This file is part of TypePHP.
  *
- * Lowers switch cases, fallthrough, defaults, and loop-exit flags.
+ * Lowers switch cases, fallthrough, and defaults.
  */
 
 namespace TypePhp\Parser;
@@ -64,7 +64,6 @@ trait SwitchTrait
             }
             $this->indentLevel--;
             $code .= $this->getIndent() . '}' . PHP_EOL;
-            $code .= $this->genLoopEndFlagCheck();
             $this->indentLevel--;
             $code .= $this->getIndent() . '} while(0);' . PHP_EOL;
 
@@ -166,7 +165,6 @@ trait SwitchTrait
                 $code .= $this->getIndent() . '}' . PHP_EOL;
             }
         }
-        $code .= $this->genLoopEndFlagCheck();
         $this->indentLevel--;
         $code .= $this->getIndent() . '} while (0);';
 
