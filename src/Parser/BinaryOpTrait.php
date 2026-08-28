@@ -15,6 +15,7 @@ use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\BinaryOp;
 use PhpParser\NodeAbstract;
+use PhpParser\Modifiers;
 
 trait BinaryOpTrait
 {
@@ -152,6 +153,21 @@ trait BinaryOpTrait
         $folded = $this->tryFoldConstantIntArithmetic($left, $right, $op);
         if ($folded !== null) {
             return $folded;
+        }
+
+        // Declared int parameters use the native Int ABI even in ordinary PHP
+        // mode. A direct C++ +/−/* would therefore have undefined signed
+        // overflow, while PHP promotes the result to float. Route dynamic
+        // integer arithmetic through the encapsulated Variant operators unless
+        // the user explicitly selected `use native_types`. Fully constant
+        // expressions remain safe to emit directly after the checks above.
+        if (!$this->nativeTypes
+            && $leftType === Type::INT
+            && $rightType === Type::INT
+            && in_array($op, ['+', '-', '*'], true)
+            && $this->evaluateConstantIntArithmetic($left, $right, $op) === null
+        ) {
+            return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
@@ -641,8 +657,91 @@ trait BinaryOpTrait
 
     protected function parseBinaryOpPlus(Expr\BinaryOp\Plus $expr): string
     {
-        return $this->parsePythonBinaryOperator($expr)
+        $python = $this->parsePythonBinaryOperator($expr);
+        if ($python !== null) {
+            return $python;
+        }
+
+        return $this->tryParseFinalIntPropertyAddChain($expr)
             ?? $this->parseBinaryOp($expr->left, $expr->right, '+');
+    }
+
+    /**
+     * Lower a left-associated chain of stable declared-int property reads into
+     * one detached Variant accumulator.
+     *
+     * This keeps PHP overflow promotion and evaluation order in Variant's
+     * encapsulated operator+= while avoiding one owning temporary per binary
+     * AST node. The class/property must be final so a subclass cannot replace
+     * the declared property with a hook. Nullable, virtual and hooked
+     * properties stay on the general path.
+     */
+    protected function tryParseFinalIntPropertyAddChain(Expr\BinaryOp\Plus $expr): ?string
+    {
+        if ($this->nativeTypes) {
+            return null;
+        }
+
+        $operands = [];
+        $cursor = $expr;
+        while ($cursor instanceof Expr\BinaryOp\Plus) {
+            array_unshift($operands, $cursor->right);
+            $cursor = $cursor->left;
+        }
+        array_unshift($operands, $cursor);
+
+        if (count($operands) < 3) {
+            return null;
+        }
+
+        foreach ($operands as $operand) {
+            if (!$this->isStableFinalIntPropertyRead($operand)) {
+                return null;
+            }
+        }
+
+        $accumulator = $this->addTmpVar(Type::VAR);
+        foreach ($operands as $index => $operand) {
+            /** @var Expr\PropertyFetch $operand */
+            $value = $this->parsePropertyFetch($operand);
+            if ($index === 0) {
+                // Assignment into an already-declared Variant materializes an
+                // independent value. Do not use copy-initialization here:
+                // mandatory C++ copy elision could retain an Indirect alias.
+                $this->context->beforeStmtLines[] = $accumulator . ' = ' . $value . ';';
+            } else {
+                $this->context->beforeStmtLines[] = $accumulator . ' += ' . $value . ';';
+            }
+        }
+
+        return $accumulator;
+    }
+
+    protected function isStableFinalIntPropertyRead(NodeAbstract $operand): bool
+    {
+        if (!$operand instanceof Expr\PropertyFetch
+            || !$operand->var instanceof Expr\Variable
+            || !$this->isIdExpr($operand->name)
+        ) {
+            return false;
+        }
+
+        $class = $this->resolveObjectClassDef($operand->var);
+        $propertyName = $this->parseIdentifier($operand->name);
+        if ($class === null || !$class->hasProperty($propertyName)) {
+            return false;
+        }
+
+        $property = $class->getProperty($propertyName);
+        $stableDeclaration = ($class->flags & Modifiers::FINAL) !== 0
+            || ($property->flags & Modifiers::FINAL) !== 0;
+
+        return $stableDeclaration
+            && ($property->flags & Modifiers::STATIC) === 0
+            && $property->type === Type::INT
+            && !$property->nullable
+            && !$property->virtual
+            && $property->getter === null;
     }
 
     protected function parseBinaryOpMul(Expr\BinaryOp\Mul $expr): string

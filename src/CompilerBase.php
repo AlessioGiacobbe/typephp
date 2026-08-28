@@ -2390,6 +2390,15 @@ class CompilerBase implements PropertyAccessContext
         }
         // 实际函数的返回值
         $type = $this->detectTypeOfExpr($v->expr);
+        // In ordinary PHP mode, int +/−/* int is only conditionally an int:
+        // runtime overflow promotes the result to float. Keep the Variant
+        // representation through the return boundary so a declared scalar
+        // return type observes and rejects that float exactly as PHP does.
+        // `use native_types` intentionally opts into native C++ arithmetic
+        // semantics and is therefore excluded from this check.
+        if (!$this->nativeTypes && $type === Type::INT && $this->exprCanOverflowInt($v->expr)) {
+            $type = Type::VAR;
+        }
         $nativeExpressionClass = $this->detectClassOfExpr($v->expr);
         if ($this->context->inClosure && $this->isNativeObjectClass($nativeExpressionClass)) {
             $this->fatalError($v, 'Zend closures cannot return native objects');
