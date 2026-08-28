@@ -681,7 +681,16 @@ trait FuncCallOptimizer
         if (count($expr->args) !== 1 || !($expr->args[0] instanceof Node\Arg)) {
             return false;
         }
-        return ($this->detectTypeOfExpr($expr->args[0]->value) === $expectType) ? 'true' : false;
+        $value = $expr->args[0]->value;
+        if ($this->detectTypeOfExpr($value) !== $expectType) {
+            return false;
+        }
+        if ($value instanceof Node\Expr\Variable || $value instanceof Node\Scalar) {
+            return 'true';
+        }
+        // The argument can carry side effects (a call, an increment). Keep
+        // evaluating it, as genIsNull does for native scalar operands.
+        return '((void) (' . $this->parseExprAsValue($value) . '), true)';
     }
 
     // =========================================================================
