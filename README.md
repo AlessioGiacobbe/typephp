@@ -42,7 +42,7 @@ itself.
 TypePHP is under active development. It intentionally supports a defined,
 testable subset of PHP rather than claiming drop-in compatibility with every
 dynamic PHP program. Read [Compatibility model](#compatibility-model) and the
-[incompatible-feature list](docs/INCOMPATIBLE_PHP_FEATURES.md) before adopting
+[incompatible-feature list](docs/en/INCOMPATIBLE_PHP_FEATURES.md) before adopting
 it for an existing application.
 
 ## How it works
@@ -342,7 +342,7 @@ ahead-of-time compilation, but it also makes several deliberate restrictions:
 
 The compatibility boundary is part of the public contract and has both
 positive and negative tests. Consult
-[Incompatible PHP features](docs/INCOMPATIBLE_PHP_FEATURES.md) for the current,
+[Incompatible PHP features](docs/en/INCOMPATIBLE_PHP_FEATURES.md) for the current,
 specific list instead of assuming that absence from this README means support.
 
 ## Compile-time attributes and code generation
@@ -725,7 +725,7 @@ rules and a PHPT whenever runtime output or diagnostics are observable.
 - [Quick Start](docs/QUICKSTART.md) — minimal compilation flow
 - [Compilation modes](docs/COMPILATION_MODES.md) — `bin`, `ext`, `lib`
 - [Compiler CLI](docs/COMPILER_CLI.md) — CLI arguments and project config
-- [Incompatible PHP features](docs/INCOMPATIBLE_PHP_FEATURES.md) — current limits
+- [Incompatible PHP features](docs/en/INCOMPATIBLE_PHP_FEATURES.md) — current limits
 - [Native types](docs/NATIVE_TYPES.md) — native scalar types
 - [High-precision types](docs/HIGH_PRECISION_TYPES.md) — BigInt / Decimal / BigFloat
 - [Std containers](docs/STD_CONTAINERS.md) — strongly-typed containers

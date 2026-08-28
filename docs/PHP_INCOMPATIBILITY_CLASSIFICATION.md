@@ -10,8 +10,9 @@ The goal is to distinguish:
 - Features that are implementable but not supported yet.
 - Partial support where the current behavior is known to differ from PHP.
 
-The main compatibility checklist remains `INCOMPATIBLE_PHP_FEATURES.md`. This
-document explains how those items should be interpreted.
+The main compatibility checklist remains
+[INCOMPATIBLE_PHP_FEATURES.md](en/INCOMPATIBLE_PHP_FEATURES.md). This document
+explains how those items should be interpreted.
 
 ## Categories
 
