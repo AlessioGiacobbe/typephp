@@ -61,7 +61,10 @@ incompatible with or more restrictive than standard PHP.
 - `__construct()` may not have a return value.
 - A parameter with a default value may not appear before a required parameter
   (PHP permits this legacy pattern but treats the former parameter as required).
-- Variadic parameters by reference `&...$args` are not supported.
+- By-reference variadic parameters `&...$args` are supported for ordinary
+  functions and methods whose signature is known at compile time, including
+  direct, named, and unpacked arguments. A by-reference variadic declaration on
+  a dynamic Closure is not supported.
 - Union, intersection, and nullable types are still represented as `mixed/any`
   in C++, but the static analysis phase uses known expression types to reject
   definitely incompatible arguments, return values, and property assignments
@@ -88,7 +91,10 @@ incompatible with or more restrictive than standard PHP.
   functions, ordinary methods, and native direct calls with known signatures;
   do not mistakenly describe the compiler's internal cross-trait dynamic-dispatch
   limitation as "TypePHP does not support reference parameters".
-- Closures and arrow functions do not support reference parameters.
+- Closures and arrow functions support fixed by-reference parameters. Because a
+  Closure invocation is dynamically dispatched, the caller must still mark
+  reference arguments explicitly with `refval()` / `toRef()`; Zend callbacks
+  use the generated Closure arginfo automatically.
 - Reference assignment cannot create a reference from a complex static-property
   expression.
 - Calls whose argument signature cannot be determined at compile time — dynamic

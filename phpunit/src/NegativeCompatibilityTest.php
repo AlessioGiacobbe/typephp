@@ -193,31 +193,6 @@ function main(): void
 PHP,
         ];
 
-        yield 'closure reference parameter' => [
-            'convert',
-            'Closure cannot use reference parameter',
-            <<<'PHP'
-<?php
-function main(): void
-{
-    $callback = static function (&$value): void { // @diagnostic
-    };
-}
-PHP,
-        ];
-
-        yield 'arrow function reference parameter' => [
-            'convert',
-            'Closure cannot use reference parameter',
-            <<<'PHP'
-<?php
-function main(): void
-{
-    $callback = static fn (&$value): mixed => $value; // @diagnostic
-}
-PHP,
-        ];
-
         yield 'closure reference return' => [
             'convert',
             'Closure and arrow functions cannot return by reference',
@@ -260,14 +235,54 @@ function main(): void
 PHP,
         ];
 
-        yield 'reference variadic parameter' => [
-            'prepare',
-            'Variadic parameters cannot be passed by reference',
+        yield 'dynamic Closure reference variadic parameter' => [
+            'convert',
+            'By-reference variadic parameters are not supported on dynamic Closures',
             <<<'PHP'
 <?php
-function collect(&...$values): array // @diagnostic
+function main(): void
 {
-    return $values;
+    $callback = static function (&...$values): void { // @diagnostic
+    };
+}
+PHP,
+        ];
+
+        yield 'literal passed to reference variadic parameter' => [
+            'convert',
+            'The left value of assignment operation can only be variable, array item, object property, class static property',
+            <<<'PHP'
+<?php
+function collect(&...$values): void
+{
+}
+
+function main(): void
+{
+    collect(42); // @diagnostic
+}
+PHP,
+        ];
+
+        yield 'reference variadic override must preserve by-reference contract' => [
+            'convert',
+            'Declaration of `BrokenIncrementer::increment()` must be compatible with `IncrementContract::increment()`',
+            <<<'PHP'
+<?php
+interface IncrementContract
+{
+    public function increment(int &...$values): void;
+}
+
+class BrokenIncrementer implements IncrementContract // @diagnostic
+{
+    public function increment(int ...$values): void
+    {
+    }
+}
+
+function main(): void
+{
 }
 PHP,
         ];

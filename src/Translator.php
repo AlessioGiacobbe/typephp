@@ -3722,7 +3722,9 @@ CODE;
                 $cppCode .= $this->getIndent() . Type::ARRAY . ' ' . $var . ';' . PHP_EOL;
                 $cppCode .= $this->getIndent() . 'for (uint32_t i = ' . $k . '; i < php::getCallArgNum(); i++) {' . PHP_EOL;
                 $this->indentLevel++;
-                if ($this->isStrictScalarType($argInfo->type)) {
+                if ($argInfo->byRef) {
+                    $cppCode .= $this->getIndent() . $var . '.append(php::getCallArgByRef(i));' . PHP_EOL;
+                } elseif ($this->isStrictScalarType($argInfo->type)) {
                     $rawVar = 'raw_' . $var;
                     $cppCode .= $this->getIndent() . Type::VAR . ' ' . $rawVar . ' = php::getCallArg(i);' . PHP_EOL;
                     $cppCode .= $this->genStrictScalarParamCheck($argInfo, $rawVar, $displayName, 'i + 1');

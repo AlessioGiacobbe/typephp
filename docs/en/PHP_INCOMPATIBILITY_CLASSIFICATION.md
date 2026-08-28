@@ -77,6 +77,8 @@ These items should be documented with the exact boundary.
 | Reserved keyword methods such as `toArray()` | Intentional Rule | Conversion keywords are resolved before ordinary object methods to keep conversion lowering static and predictable. |
 | Zero-initialized fixed typed property slots | Intentional Rule / Partial | Native fixed-layout slots use their type's zero value instead of preserving every Zend uninitialized-property transition. |
 | Structural mutation of `std` containers during `foreach` | Intentional Rule | Native C++ iterators may be invalidated by append, insertion, erase or whole-container replacement. TypePHP rejects these operations inside the active loop while allowing non-structural element updates. |
+| Automatic reference inference for dynamic calls | Intentional Rule | A runtime callable may resolve to a function, method, or Closure unknown to the compiler. TypePHP does not mirror callable signatures at runtime; callers must use `refval()` / `toRef()` explicitly. |
+| By-reference variadic parameters on dynamic Closures | Intentional Rule | Supporting `&...` here would require signature-aware runtime argument packing. Statically resolved ordinary functions and methods support `&...`; dynamic Closures do not. |
 
 ## Implementable but Currently Unsupported
 
@@ -86,11 +88,7 @@ These items should be documented with the exact boundary.
 | Variable variables (`$$var`) | Pending | Add a function-local symbol table mirror for dynamic locals, and disable or synchronize native locals that escape into dynamic lookup. |
 | Closure or arrow function returning by reference | Pending | Closure metadata and wrappers must preserve return-by-reference and emit `ReturnRef`. |
 | PHP 8.5 closures in constants, parameter defaults or property defaults | Pending | Use context-aware runtime initializers: cache constants and property defaults per request, create parameter defaults per omitted call, and never place request-local zvals in persistent MINIT storage. |
-| Closure and arrow function by-reference parameters | Pending | Closure arginfo must preserve by-reference parameters and call lowering must pass reference slots. |
-| By-reference variadic parameters (`&...$args`) | Pending | Variadic storage must preserve references instead of copying values. |
-| By-reference parameters with default values | Pending | Need PHP-compatible handling for omitted arguments using temporary default values while still binding references for passed arguments. |
 | Reference assignment from complex static property expressions | Pending | Static property reference targets need complete lowering and lifetime handling. |
-| Dynamic calls automatically converting by-reference arguments | Pending | Runtime callable metadata or reflection can identify by-reference parameters and build reference arguments dynamically. |
 | Calls with unpack plus trailing named arguments staying native | Pending | Normalize and reorder call arguments in IR before native-call selection. |
 | Dynamic `parent::method()` name | Pending | Needs runtime parent method lookup with correct call scope. |
 | Private typed property access on cloned objects through variables | Pending / Partial | Requires a complete declaring-class-aware access resolver. |
