@@ -1684,6 +1684,8 @@ class CompilerBase implements PropertyAccessContext
         $lines     = [];
         $inLoopTop = $this->context->inLoop;
         $inContinuableLoopTop = $this->context->inContinuableLoop;
+        $breakableIsSwitchTop = $this->context->breakableIsSwitch;
+        $breakableDepthTop = $this->context->breakableDepth;
         $last = array_key_last($stmts);
         foreach ($stmts as $i => $v) {
             $class                 = $v->getType();
@@ -1715,37 +1717,37 @@ class CompilerBase implements PropertyAccessContext
                     $result = $this->parseReturn($v);
                     break;
                 case 'Stmt_For':
-                    $this->context->inLoop = true;
-                    $this->context->inContinuableLoop = true;
-                    $result       = $this->parseFor($v);
-                    $this->context->inLoop = $inLoopTop;
-                    $this->context->inContinuableLoop = $inContinuableLoopTop;
-                    break;
                 case 'Stmt_Foreach':
-                    $this->context->inLoop = true;
-                    $this->context->inContinuableLoop = true;
-                    $result       = $this->parseForeach($v);
-                    $this->context->inLoop = $inLoopTop;
-                    $this->context->inContinuableLoop = $inContinuableLoopTop;
-                    break;
                 case 'Stmt_Switch':
-                    $this->context->inLoop = true;
-                    $result       = $this->parseSwitch($v);
-                    $this->context->inLoop = $inLoopTop;
-                    break;
                 case 'Stmt_While':
-                    $this->context->inLoop = true;
-                    $this->context->inContinuableLoop = true;
-                    $result       = $this->parseWhile($v);
-                    $this->context->inLoop = $inLoopTop;
-                    $this->context->inContinuableLoop = $inContinuableLoopTop;
-                    break;
                 case 'Stmt_Do':
+                    $isSwitch = $class === 'Stmt_Switch';
                     $this->context->inLoop = true;
-                    $this->context->inContinuableLoop = true;
-                    $result       = $this->parseDo($v);
+                    if (!$isSwitch) {
+                        $this->context->inContinuableLoop = true;
+                    }
+                    $this->context->breakableIsSwitch = $isSwitch;
+                    $this->context->breakableDepth = $breakableDepthTop + 1;
+                    $result = match ($class) {
+                        'Stmt_For' => $this->parseFor($v),
+                        'Stmt_Foreach' => $this->parseForeach($v),
+                        'Stmt_Switch' => $this->parseSwitch($v),
+                        'Stmt_While' => $this->parseWhile($v),
+                        default => $this->parseDo($v),
+                    };
                     $this->context->inLoop = $inLoopTop;
                     $this->context->inContinuableLoop = $inContinuableLoopTop;
+                    $this->context->breakableIsSwitch = $breakableIsSwitchTop;
+                    $this->context->breakableDepth = $breakableDepthTop;
+                    // A multi-level break/continue exits the nested construct
+                    // with its countdown flag still set. The propagation check
+                    // must run before any trailing statement of this body.
+                    if ($inLoopTop) {
+                        $flagCheck = $this->genMultiLevelJumpCheck($breakableIsSwitchTop);
+                        if ($flagCheck !== '') {
+                            $result = rtrim($result, "\r\n") . PHP_EOL . $flagCheck;
+                        }
+                    }
                     break;
                 case 'Stmt_If':
                     $result = $this->parseIf($v);

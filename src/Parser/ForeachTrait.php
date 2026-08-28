@@ -48,7 +48,7 @@ trait ForeachTrait
 
     protected function parseForeachBody(Foreach_ $node): string
     {
-        return $this->parseStmts($node->stmts) . $this->genLoopEndFlagCheck();
+        return $this->parseStmts($node->stmts);
     }
 
     protected function parseForeachKeyAssignment(Foreach_ $node, string $keyExpr, string $defaultType = Type::VAR): string
