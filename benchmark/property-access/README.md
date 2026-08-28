@@ -1,8 +1,9 @@
 # Dynamic property benchmark
 
 This benchmark compares the same dynamic and static property operations under
-Zend PHP and a TypePHP `-O2` binary. Each metric is the best of seven rounds
-after three warm-up rounds and is reported in nanoseconds per property access.
+Zend PHP and a TypePHP `-O3` + LTO binary. Each metric is the best of seven
+rounds after three warm-up rounds and is reported in nanoseconds per property
+access.
 
 Run it from the repository root:
 

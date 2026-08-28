@@ -14,12 +14,22 @@ foreach ($argv as $argument) {
     }
 }
 
-/** @param list<string> $command */
-function runCommand(array $command, string $cwd, bool $capture): string
+/**
+ * @param list<string> $command
+ * @param array<string, string>|null $environment
+ */
+function runCommand(array $command, string $cwd, bool $capture, ?array $environment = null): string
 {
     $stdout = $capture ? ['pipe', 'w'] : STDOUT;
     $stderr = $capture ? ['pipe', 'w'] : STDERR;
-    $process = proc_open($command, [STDIN, $stdout, $stderr], $pipes, $cwd, null, ['bypass_shell' => true]);
+    $process = proc_open(
+        $command,
+        [STDIN, $stdout, $stderr],
+        $pipes,
+        $cwd,
+        $environment,
+        ['bypass_shell' => true],
+    );
     if (!is_resource($process)) {
         throw new RuntimeException('Failed to start: ' . implode(' ', $command));
     }
@@ -79,7 +89,19 @@ $php = parseResults(runCommand([
     '-r',
     'require ' . var_export($source, true) . '; main();',
 ], $root, true));
-$typephp = parseResults(runCommand([$binary], $root, true));
+$typephpEnvironment = null;
+if (PHP_OS_FAMILY !== 'Windows') {
+    $phpxHome = getenv('PHPX_HOME');
+    if (!is_string($phpxHome) || $phpxHome === '') {
+        $phpxHome = $root . '/vendor/swoole/phpx';
+    }
+    $typephpEnvironment = getenv();
+    $loaderVariable = PHP_OS_FAMILY === 'Darwin' ? 'DYLD_LIBRARY_PATH' : 'LD_LIBRARY_PATH';
+    $existingPath = $typephpEnvironment[$loaderVariable] ?? '';
+    $typephpEnvironment[$loaderVariable] = $phpxHome . '/lib'
+        . ($existingPath === '' ? '' : PATH_SEPARATOR . $existingPath);
+}
+$typephp = parseResults(runCommand([$binary], $root, true, $typephpEnvironment));
 
 echo "Metric                  PHP ns/op  TypePHP ns/op  TypePHP/PHP\n";
 echo "------------------------------------------------------------\n";
