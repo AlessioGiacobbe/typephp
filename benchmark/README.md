@@ -15,3 +15,8 @@ Run the property benchmark from the repository root:
 ```bash
 php benchmark/property-access/run.php
 ```
+
+The property benchmark builds the generated application with `-O3` and LTO.
+For meaningful results, link it against a Release build of PHPX as well; a
+Debug/`-O0` `libphpx` makes property helper calls several times slower and is
+not representative of a release package.
