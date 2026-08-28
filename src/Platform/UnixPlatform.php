@@ -3,8 +3,8 @@
 namespace TypePhp\Platform;
 
 /**
- * Unix-like 平台基类（Linux, macOS）
- * 包含 GCC/Clang 通用标志语法的共享实现
+ * Base class for Unix-like platforms (Linux, macOS).
+ * Contains the shared implementation of common GCC/Clang flag syntax.
  */
 abstract class UnixPlatform extends PlatformBase
 {
@@ -107,9 +107,10 @@ abstract class UnixPlatform extends PlatformBase
             return $phpDir;
         }
 
-        // Ubuntu/PPA 多版本环境下 php8.4 与 php-config8.4 并存，而
-        // php-config 可能被 update-alternatives 指向其它版本。优先依据
-        // PHP_BINARY 的版本后缀定位版本化 php-config，避免 ABI 错配。
+        // On Ubuntu/PPA multi-version installations, php8.4 and php-config8.4 coexist,
+        // while the unversioned php-config may be pointed at another version by
+        // update-alternatives. Prefer locating the versioned php-config from the
+        // version suffix of PHP_BINARY to avoid an ABI mismatch.
         $versionedConfig = $this->findVersionedPhpConfig(dirname(realpath(PHP_BINARY) ?: PHP_BINARY));
         if ($versionedConfig !== null) {
             $prefix = $this->getPhpConfigValue($versionedConfig, '--prefix');
@@ -144,7 +145,7 @@ abstract class UnixPlatform extends PlatformBase
     }
 
     /**
-     * 获取 RPATH 选项
+     * Get the RPATH options.
      */
     public function getRpathOptions(array $paths): string
     {
@@ -161,7 +162,7 @@ abstract class UnixPlatform extends PlatformBase
     }
 
     /**
-     * 获取 PIC 选项
+     * Get the PIC option.
      */
     public function getPicFlag(): string
     {
@@ -169,7 +170,7 @@ abstract class UnixPlatform extends PlatformBase
     }
 
     /**
-     * 构建 PHP 包含路径（使用 php-config 动态获取）
+     * Build the PHP include paths (obtained dynamically via php-config).
      */
     public function buildPhpIncludePaths(string $phpDir): array
     {
@@ -209,7 +210,7 @@ abstract class UnixPlatform extends PlatformBase
     }
 
     /**
-     * 查找 php-config 可执行文件
+     * Locate the php-config executable.
      */
     protected function findPhpConfig(string $phpDir): ?string
     {
@@ -273,14 +274,14 @@ abstract class UnixPlatform extends PlatformBase
             }
         }
 
-        // 依次返回第一个与当前 PHP 主次版本匹配的候选
+        // Return the first candidate whose major/minor version matches the current PHP.
         foreach (array_unique($candidates) as $config) {
             if ($this->phpConfigMatchesCurrentPhp($config)) {
                 return $config;
             }
         }
 
-        // 存在候选但版本均不匹配时给出明确错误
+        // Report a clear error when candidates exist but none matches the version.
         if ($candidates !== []) {
             $this->reportPhpConfigVersionMismatch($candidates[0]);
         }
@@ -296,7 +297,7 @@ abstract class UnixPlatform extends PlatformBase
     }
 
     /**
-     * 校验 php-config 的主次版本号是否与当前运行的 PHP 一致。
+     * Verify that php-config's major/minor version matches the currently running PHP.
      */
     private function phpConfigMatchesCurrentPhp(string $phpConfig): bool
     {
@@ -346,7 +347,7 @@ abstract class UnixPlatform extends PlatformBase
     }
 
     /**
-     * 构建 PHP 库路径
+     * Build the PHP library paths.
      */
     public function buildPhpLibPaths(string $phpDir): array
     {
@@ -355,7 +356,7 @@ abstract class UnixPlatform extends PlatformBase
     }
 
     /**
-     * 检测 PHP 库文件
+     * Detect the PHP library files.
      */
     public function detectPhpLibs(string $phpDir): array
     {

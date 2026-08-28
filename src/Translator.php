@@ -80,7 +80,7 @@ class Translator extends Preprocessor
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
 
-    // Windows 资源文件配置（图标、版本信息等）
+    // Windows resource file configuration (icon, version info, etc.)
     protected array $resourceConfig = [];
     protected array $globalHeaders = [
         'cstring',
@@ -112,8 +112,9 @@ class Translator extends Preprocessor
         $this->preprocessArgvAdvanced();
         $this->climate->arguments->parse();
 
-        // 只读取命令行参数，不立即应用（等待 YAML 解析后再应用）
-        // 这样可以确保优先级：命令行 > YAML > 默认值
+        // Only read the command-line arguments here; do not apply them yet
+        // (they are applied after YAML parsing). This preserves the priority:
+        // command line > YAML > defaults.
         $this->internalFunctions = [];
         foreach (get_defined_functions()['internal'] as $functionName) {
             $function = Reflection::getFunction($functionName);
@@ -133,13 +134,13 @@ class Translator extends Preprocessor
             exit(0);
         }
 
-        // 提前处理 --no-color，确保后续所有输出均为无颜色模式
+        // Handle --no-color early so all subsequent output is colorless.
         if ($this->climate->arguments->defined('no-color')) {
             $this->climate->forceAnsiOff();
         }
 
 
-        // 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
+        // Detect the OS, the compiler, and (on Windows) the PHP lib files.
         $this->detectPlatform();
     }
 
@@ -152,7 +153,8 @@ class Translator extends Preprocessor
 
         $constants = [];
         foreach ($groups as $groupName => $group) {
-            // 编译器进程中的用户常量属于被编译程序的运行时状态，不能在静态阶段展开。
+            // User constants in the compiler process belong to the compiled
+            // program's runtime state and must not be expanded in the static phase.
             if (strcasecmp((string) $groupName, 'user') === 0
                 || Reflection::isTypePhpExtension($groupName)
                 || !is_array($group)) {
@@ -166,7 +168,7 @@ class Translator extends Preprocessor
     }
 
     /**
-     * 检测操作系统、编译器以及 Windows 平台的 PHP lib 文件
+     * Detect the OS, the compiler, and (on Windows) the PHP lib files.
      */
     protected function detectPlatform(): void
     {
@@ -295,43 +297,45 @@ class Translator extends Preprocessor
     }
 
     /**
-     * 应用命令行参数（在 YAML 解析后调用，确保命令行参数优先级最高）
+     * Apply command-line arguments (called after YAML parsing so command-line
+     * arguments take the highest priority).
      */
     protected function applyCommandLineArguments(): void
     {
         $this->applyPhpVersionCommandLineArgument();
 
-        // 优化级别
+        // Optimization level
         if ($this->climate->arguments->defined('optimize')) {
             $this->optimizeLevel = $this->climate->arguments->get('optimize');
         }
 
-        // 构建模式
+        // Build mode
         if ($this->climate->arguments->defined('mode')) {
             $this->setBuildMode($this->climate->arguments->get('mode'));
         }
 
-        // 调试行号
+        // Debug line number
         if ($this->climate->arguments->defined('debug-line')) {
             $this->debugLine = intval($this->climate->arguments->get('debug-line'));
         }
 
-        // 最大并行任务数
+        // Maximum number of parallel jobs
         if ($this->climate->arguments->defined('job')) {
             $this->maxJob = intval($this->climate->arguments->get('job'));
         }
 
-        // 调试模式
+        // Debug mode
         if ($this->climate->arguments->defined('debug')) {
             $this->debug = true;
         }
 
-        // 禁用字面量字符串优化
+        // Disable literal string optimization
         if ($this->climate->arguments->defined('no-literal-strings')) {
             $this->noLiteralStrings = true;
         }
 
-        // 启用性能分析（需强制重编译 misc 文件以确保 PPROF_ON 宏生效，仅 Linux 支持）
+        // Enable profiling (forces recompilation of misc files so the PPROF_ON
+        // macro takes effect; Linux only)
         if ($this->climate->arguments->defined('profile')) {
             if (!$this->isLinux()) {
                 $this->climate->error('--profile is only supported on Linux (requires gperftools)');
@@ -340,12 +344,12 @@ class Translator extends Preprocessor
             $this->enableProfiler = true;
         }
 
-        // 禁用进度条
+        // Disable the progress bar
         if ($this->climate->arguments->defined('no-progress')) {
             $this->noProgress = true;
         }
 
-        // 隐藏控制台窗口
+        // Hide the console window
         if ($this->climate->arguments->defined('no-console')) {
             $this->noConsole = true;
         }
@@ -355,27 +359,27 @@ class Translator extends Preprocessor
             $this->sanitize = $this->climate->arguments->get('sanitize');
         }
 
-        // C++ 标准版本
+        // C++ standard version
         if ($this->climate->arguments->defined('cxx-std')) {
             $this->cxxStd = $this->climate->arguments->get('cxx-std');
         }
 
-        // 目标 CPU 指令集
+        // Target CPU instruction set
         if ($this->climate->arguments->defined('march')) {
             $this->march = $this->climate->arguments->get('march');
         }
 
-        // 交叉编译目标平台
+        // Cross-compilation target platform
         if ($this->climate->arguments->defined('target-platform')) {
             $this->targetPlatform = $this->climate->arguments->get('target-platform');
         }
 
-        // 输出文件名/路径
+        // Output file name/path
         if ($this->climate->arguments->defined('output')) {
             $this->setOutputPath($this->climate->arguments->get('output'));
         }
 
-        // 构建目录
+        // Build directory
         if ($this->climate->arguments->defined('build-dir')) {
             $buildDir = $this->climate->arguments->get('build-dir');
             if (!empty($buildDir)) {
@@ -383,35 +387,39 @@ class Translator extends Preprocessor
             }
         }
 
-        // 干运行模式
+        // Dry-run mode
         if ($this->climate->arguments->defined('dry')) {
             $this->dryRun = true;
         }
 
-        // 用户自定义 C++ include 路径（直接从 argv 解析以支持多值）
+        // User-defined C++ include paths (parsed directly from argv to support
+        // multiple values)
         if ($this->hasRepeatableArgvFlag(['-I', '--include-path'])) {
             $this->userIncludePaths = $this->parseRepeatableArgv(['-I', '--include-path']);
         }
-        // 用户自定义预处理器宏（直接从 argv 解析以支持多值）
+        // User-defined preprocessor macros (parsed directly from argv to support
+        // multiple values)
         if ($this->hasRepeatableArgvFlag(['-D', '--define'])) {
             $this->userDefines = $this->parseRepeatableArgv(['-D', '--define']);
         }
 
-        // 链接时优化
+        // Link-time optimization
         if ($this->climate->arguments->defined('lto')) {
             $this->enableLto = true;
         }
 
-        // clang-format 代码格式化（默认关闭，需显式 --format 开启）
+        // clang-format code formatting (disabled by default; requires explicit --format)
         if ($this->climate->arguments->defined('format')) {
             $this->enableCodeFormattingIfAvailable('--format');
         }
 
-        // 用户自定义链接库（直接从 argv 解析以支持多值）
+        // User-defined link libraries (parsed directly from argv to support
+        // multiple values)
         if ($this->hasRepeatableArgvFlag(['-l', '--link-lib'])) {
             $this->linkLibs = $this->parseRepeatableArgv(['-l', '--link-lib']);
         }
-        // 用户自定义库搜索路径（直接从 argv 解析以支持多值）
+        // User-defined library search paths (parsed directly from argv to support
+        // multiple values)
         if ($this->hasRepeatableArgvFlag(['-L', '--link-path'])) {
             $this->linkPaths = $this->parseRepeatableArgv(['-L', '--link-path']);
         }
@@ -426,25 +434,26 @@ class Translator extends Preprocessor
     }
 
     /**
-     * 从原始 $argv 中解析可重复参数，支持 -X val 和 --long val 两种形式。
-     * CLImate 的 multiple 选项只能保留最后一个值，因此需要手动解析。
+     * Parse repeatable arguments from the raw $argv, supporting both the
+     * "-X val" and "--long val" forms. CLImate's "multiple" option only keeps
+     * the last value, so these must be parsed manually.
      *
-     * @param string[] $flags 要匹配的标志列表，如 ['-I', '--include-path']
-     * @return string[] 收集到的所有值
+     * @param string[] $flags Flags to match, e.g. ['-I', '--include-path']
+     * @return string[] All collected values
      */
     protected function parseRepeatableArgv(array $flags): array
     {
         global $argv;
         $values = [];
         for ($i = 1; $i < count($argv); $i++) {
-            // 精确匹配标志（如 -I, --include-path）
+            // Exact flag match (e.g. -I, --include-path)
             if (in_array($argv[$i], $flags, true) && isset($argv[$i + 1]) && $argv[$i + 1] !== '' && $argv[$i + 1][0] !== '-') {
                 $values[] = $argv[$i + 1];
-                $i++; // 跳过值
+                $i++; // Skip the value
             }
-            // 合并形式：-I/path 或 --include-path=/path
+            // Combined form: -I/path or --include-path=/path
             elseif (!$this->isLongFlagWithEquals($argv[$i], $flags, $values)) {
-                // 检查短标志合并：-I/path
+                // Check short-flag combined form: -I/path
                 foreach ($flags as $flag) {
                     if (strlen($flag) === 2 && $flag[0] === '-') {
                         $short = substr($flag, 1);
@@ -485,7 +494,7 @@ class Translator extends Preprocessor
     }
 
     /**
-     * 处理 --flag=value 格式的长标志
+     * Handle long flags in the --flag=value form.
      */
     private function isLongFlagWithEquals(string $arg, array $flags, array &$values): bool
     {
@@ -551,7 +560,8 @@ class Translator extends Preprocessor
                     } else {
                         $this->save($cppCode, $cppFile);
                     }
-                    // 生成 stub 文件，依赖 convert 阶段的 use 等信息
+                    // Generate the stub file, which depends on the use statements
+                    // and other info collected during the convert phase.
                     $this->genStubFile($this->file);
                     return $cppCode === '' ? null : $cppFile;
                 } catch (Redo $e) {
@@ -583,8 +593,8 @@ class Translator extends Preprocessor
     }
 
     /**
-     * 初始化新的 Platform 和 Backend 抽象层
-     * 这是一个渐进式迁移，保持向后兼容
+     * Initialize the new Platform and Backend abstraction layers.
+     * This is an incremental migration that preserves backward compatibility.
      */
     protected function initializeNewArchitecture(): void
     {
@@ -592,7 +602,7 @@ class Translator extends Preprocessor
             $platform = $this->platform ?? PlatformFactory::create();
             $this->platform = $platform;
 
-            // 自动检测平台和编译器
+            // Auto-detect the platform and compiler
             $result = CompilerFactory::autoDetect($this->cppCompiler, $platform);
             $this->platform = $result['platform'];
             $this->compilerBackend = $result['compiler'];
@@ -601,7 +611,7 @@ class Translator extends Preprocessor
                 "Initialized new architecture: {$this->platform->getName()} + {$this->compilerBackend->getName()}"
             );
         } catch (\Exception $e) {
-            // 如果初始化失败，回退到旧逻辑
+            // Fall back to the legacy logic if initialization fails
             $this->climate->warning(
                 "Failed to initialize new architecture: {$e->getMessage()}. Using legacy mode."
             );
@@ -611,14 +621,14 @@ class Translator extends Preprocessor
     }
 
     /**
-     * 设置 C++ 编译器（从配置文件读取）
+     * Set the C++ compiler (read from the config file).
      */
     public function setCppCompiler(string $compiler): void
     {
         $this->cppCompiler = $compiler;
         $this->climate->info("Using compiler from config: {$this->cppCompiler}");
 
-        // 重新初始化 Backend
+        // Re-initialize the Backend
         $this->initializeNewArchitecture();
     }
 
@@ -641,7 +651,8 @@ class Translator extends Preprocessor
 
     public function setTargetName(string $name): void
     {
-        // 如果指定了路径（包含目录分隔符），提取目录和文件名
+        // If a path was given (contains a directory separator), split it into
+        // directory and file name.
         if (str_contains($name, '/') || str_contains($name, '\\')) {
             $this->outputDir = dirname($name);
             $name = basename($name);
@@ -874,7 +885,7 @@ class Translator extends Preprocessor
         }
 
         $code .= "// class entry \n";
-        // 确保数组大小至少为 1，避免 C/C++ 编译错误
+        // Ensure the array has at least one element to avoid C/C++ compile errors.
         $code .= 'static THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . max(1, count($this->classMap)) . '];' . PHP_EOL;
         // Internal/compiled symbols have module lifetime. They are initialized
         // lazily after PHP startup, so disable_functions/disable_classes have
@@ -888,7 +899,8 @@ class Translator extends Preprocessor
         $code .= $this->genPythonModuleStorage();
 
         $code .= "// property \n";
-        // 无动态 propMap：属性 offset 缓存仅覆盖编译类/内置类的声明属性（见 getPropertyId）
+        // No dynamic propMap: the property offset cache only covers declared
+        // properties of compiled/built-in classes (see getPropertyId).
         $code .= 'static php::PersistentCacheSlot<uint32_t> ' . self::PREFIX . self::PERSISTENT_PROP_MAP . '[' . max(1, count($this->persistentPropMap)) . ']{};' . PHP_EOL;
 
         $code .= "// functions \n";
@@ -1331,8 +1343,10 @@ CODE;
     }
 
     /**
-     * 检查 phpx/src/misc/ 下的源文件是否已有有效缓存，始终生效（除非指定 --force）。
-     * 缓存必须匹配编译命令和 PHP ABI，且 .o 文件必须不早于源文件和 phpx 头文件。
+     * Check whether source files under phpx/src/misc/ have a valid cache, always
+     * effective (unless --force is specified). The cache must match the compile
+     * command and the PHP ABI, and the .o file must not be older than the source
+     * files and phpx headers.
      */
     public function hasMiscObjectFileCache(string $cppFile): bool
     {
@@ -1427,7 +1441,7 @@ CODE;
     }
 
     /**
-     * 判断文件是否为 C++ 源文件
+     * Determine whether a file is a C++ source file.
      */
     protected function isCppFile(string $filePath): bool
     {
@@ -1436,10 +1450,10 @@ CODE;
     }
 
     /**
-     * 根据文件扩展名获取语言类型标识（用于 -x 参数）.
+     * Get the language type identifier from the file extension (used for the -x flag).
      *
-     * @return string|null 语言标识（c, assembler, objective-c, objective-c++），
-     *                     或 null 表示使用默认检测（C++ 文件）
+     * @return string|null Language identifier (c, assembler, objective-c, objective-c++),
+     *                     or null to use the default detection (C++ files).
      */
     protected function getLanguageFromExtension(string $filePath): ?string
     {
@@ -1455,7 +1469,7 @@ CODE;
     }
 
     /**
-     * 判断文件是否为原生编译型源文件（C/C++/汇编/ObjC 等）.
+     * Determine whether a file is a natively compiled source file (C/C++/asm/ObjC, etc.).
      */
     protected function isNativeSourceFile(string $filePath): bool
     {
@@ -1521,7 +1535,7 @@ CODE;
     {
         $job = $this->maxJob;
 
-        // embed 需要 main 函数，以及 cli 的内置函数定义
+        // The embed build needs the main function and the CLI's built-in function definitions.
         if ($this->isBuildModeEmbed()) {
             $runtimeSource = $this->getPhpxDir() . '/src/misc/typephp_runtime.cc';
             // PHPX 2.6.3 keeps the common runtime in typephp_main.cc. Newer
@@ -1540,14 +1554,14 @@ CODE;
 
         $this->preparePhpXPrecompiledHeader();
 
-        // Windows 平台：编译资源文件（图标、版本信息等）
+        // Windows: compile the resource file (icon, version info, etc.)
         $this->compileResourceFile();
 
         if (!$this->getPlatform()->supportsPcntlParallelCompile() or $job <= 1) {
             return $this->compileSourceFile($sourceFiles);
         }
 
-        // Unix/Linux/macOS 使用 pcntl 并行编译
+        // Unix/Linux/macOS compile in parallel using pcntl
         return $this->compileWithPcntl($sourceFiles, $job);
     }
 
@@ -1637,7 +1651,7 @@ CODE;
     }
 
     /**
-     * Unix/Linux/macOS 平台并行编译（使用 pcntl）
+     * Parallel compilation on Unix/Linux/macOS (using pcntl).
      */
     protected function pcntlWait(?int &$status): int
     {
@@ -1755,7 +1769,7 @@ CODE;
     {
         $targetFile = $this->getTargetFileName();
 
-        // Windows 平台：将 .res 资源文件加入链接
+        // Windows: add the .res resource file to the link
         if ($this->isWindows() && $this->hasResourceFile()) {
             $resFile = $this->getResourceResFile();
             if (file_exists($resFile)) {
@@ -2558,7 +2572,7 @@ CODE;
             $this->sanitize = (string) $sanitize;
         }
 
-        // 读取 cxx-flags
+        // Read cxx-flags
         $cxxFlags = $cfg['cxx-flags'] ?? null;
         if (!empty($cxxFlags)) {
             if (is_array($cxxFlags)) {
@@ -2568,25 +2582,25 @@ CODE;
             }
         }
 
-        // 读取 cxx-std
+        // Read cxx-std
         $cxxStd = $cfg['cxx-std'] ?? null;
         if (!empty($cxxStd)) {
             $this->cxxStd = $cxxStd;
         }
 
-        // 读取 march（目标 CPU 指令集）
+        // Read march (target CPU instruction set)
         $march = $cfg['march'] ?? null;
         if (!empty($march)) {
             $this->march = $march;
         }
 
-        // 读取 target-platform
+        // Read target-platform
         $targetPlatform = $cfg['target-platform'] ?? null;
         if (!empty($targetPlatform)) {
             $this->targetPlatform = (string) $targetPlatform;
         }
 
-        // 读取 build-dir
+        // Read build-dir
         $buildDir = $cfg['build-dir'] ?? null;
         if (!empty($buildDir)) {
             $this->setBuildDir($this->resolvePath((string) $buildDir, $projectDir, 'Build path'));
@@ -2596,7 +2610,7 @@ CODE;
             $this->dryRun = true;
         }
 
-        // 读取 ld-flags
+        // Read ld-flags
         $ldflags = $cfg['ld-flags'] ?? null;
         if (!empty($ldflags)) {
             if (is_array($ldflags)) {
@@ -2606,7 +2620,7 @@ CODE;
             }
         }
 
-        // 读取 include-paths
+        // Read include-paths
         $includePaths = $cfg['include-paths'] ?? null;
         if (!empty($includePaths) && is_array($includePaths)) {
             foreach ($includePaths as $includePath) {
@@ -2614,7 +2628,7 @@ CODE;
             }
         }
 
-        // 读取 defines
+        // Read defines
         $defines = $cfg['defines'] ?? null;
         if (!empty($defines) && is_array($defines)) {
             foreach ($defines as $define) {
@@ -2622,17 +2636,17 @@ CODE;
             }
         }
 
-        // 读取 lto
+        // Read lto
         if (!empty($cfg['lto'])) {
             $this->enableLto = true;
         }
 
-        // 读取 format
+        // Read format
         if (!empty($cfg['format'])) {
             $this->enableCodeFormattingIfAvailable('YAML format');
         }
 
-        // 读取 link-libs
+        // Read link-libs
         $linkLibs = $cfg['link-libs'] ?? null;
         if (!empty($linkLibs) && is_array($linkLibs)) {
             foreach ($linkLibs as $lib) {
@@ -2640,7 +2654,7 @@ CODE;
             }
         }
 
-        // 读取 link-paths
+        // Read link-paths
         $linkPaths = $cfg['link-paths'] ?? null;
         if (!empty($linkPaths) && is_array($linkPaths)) {
             foreach ($linkPaths as $linkPath) {
@@ -2675,7 +2689,8 @@ CODE;
             }
         }
 
-        // 读取 output/name。name 只表示目标名，不能按 YAML 目录解析成输出路径。
+        // Read output/name. `name` only denotes the target name; it must not be
+        // resolved against the YAML directory as an output path.
         $output = $cfg['output'] ?? null;
         if (!empty($output)) {
             $this->setOutputPath($this->resolvePath((string) $output, $projectDir, 'Output path'));
@@ -2683,19 +2698,19 @@ CODE;
             $this->setTargetName((string) $cfg['name']);
         }
 
-        // 读取 cpp-compiler
+        // Read cpp-compiler
         $cppCompiler = $cfg['cpp-compiler'] ?? null;
         if (!empty($cppCompiler)) {
             $this->setCppCompiler($cppCompiler);
         }
 
-        // 读取 mode/type/build-mode（支持 CLI/YAML 两套命名）
+        // Read mode/type/build-mode (supports both the CLI and YAML naming)
         $buildMode = $cfg['mode'] ?? $cfg['build-mode'] ?? $cfg['type'] ?? null;
         if (!empty($buildMode)) {
             $this->setBuildMode((string) $buildMode);
         }
 
-        // 读取 ignore（支持中横线和下划线）
+        // Read ignore (supports both hyphen and underscore)
         $ignore = $cfg['ignore'] ?? null;
         if (!empty($ignore)) {
             if (!is_array($ignore)) {
@@ -2713,13 +2728,13 @@ CODE;
             }
         }
 
-        // 读取 resource（Windows 资源配置：图标、版本信息）
+        // Read resource (Windows resource config: icon, version info)
         $resource = $cfg['resource'] ?? null;
         if (!empty($resource)) {
             if (!is_array($resource)) {
                 $this->error('`resource` must be array');
             }
-            // 验证图标文件是否存在
+            // Verify that the icon file exists
             if (!empty($resource['icon'])) {
                 $iconPath = $resource['icon'];
                 if (!preg_match('/^[A-Za-z]:\\|^\//', $iconPath)) {
@@ -2733,7 +2748,7 @@ CODE;
             $this->resourceConfig['_projectDir'] = $projectDir;
         }
 
-        // 读取 manifest（Windows 清单文件，与 resource 同级，缺省不携带）
+        // Read manifest (Windows manifest file, same level as resource, omitted by default)
         $manifest = $cfg['manifest'] ?? null;
         if (!empty($manifest)) {
             if (!is_string($manifest)) {
@@ -2893,7 +2908,7 @@ CODE;
 
             foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parent) {
                 $tmpCe = self::PREFIX . 'class_entry_' . $this->escapeCeName($parent);
-                // 不存在的接口，说明可能是内置接口
+                // A non-existent interface is likely a built-in interface
                 if (!$this->hasInterface($parent)) {
                     $sorter->add($tmpCe);
                 }
@@ -2917,7 +2932,7 @@ CODE;
             $deps = [];
             $parent = $classDef->extends;
             if ($parent) {
-                // 不存在的父类，说明可能是内置类
+                // A non-existent parent is likely a built-in class
                 $tmpCe = $this->getParentClassCe($classDef);
                 if (!$this->hasClass($parent)) {
                     $sorter->add($tmpCe);
@@ -3567,8 +3582,9 @@ CODE;
             );
         }
 
-        // 如果不是继承自内置类，需要检查父类是否存在，在预处理阶段只需检查了是否继承内置类
-        // 目前不允许继承自动态加载的自定义类
+        // When not inheriting from a built-in class, verify the parent exists.
+        // The preprocess phase only checks whether a built-in class is inherited.
+        // Currently, inheriting from an autoloaded custom class is not allowed.
         if ($this->classDef->extends and !$this->classDef->inheritedFromInternalClass) {
             $parentClass = $this->getNamespacedClassName($this->parseIdentifier($class->extends));
             if ($this->hasClass($parentClass)) {
@@ -3579,7 +3595,7 @@ CODE;
                         'Native and ZendVM-backed classes cannot inherit from each other'
                     );
                 }
-                // 父类是 final 无法继承
+                // The parent class is final and cannot be extended
                 if ($parent->flags & Modifiers::FINAL) {
                     $this->fatalError($class, "Class `{$this->class}` cannot extend final class `{$parentClass}`");
                 }
@@ -3787,7 +3803,9 @@ CODE;
             $isEntryFunction = $this->hasFunction(self::ENTRY_FUNCTION)
                 && $functionDef === $this->getFunction(self::ENTRY_FUNCTION);
             if ($this->isBuildModeBin() && $isEntryFunction) {
-                // $_SERVER 的初始化必须置于 main 入口函数内，以确保在其被访问前，运行环境及超全局上下文已完全就绪。
+                // $_SERVER initialization must live inside the main entry function so
+                // the runtime environment and superglobal context are fully ready
+                // before it is accessed.
                 $cppCode .= $this->registerServerEnvironment($functionDef->sourceFile);
             }
             $callParams = $functionDef->argInfoList ? rtrim($callParams, ',') : '';
@@ -3817,8 +3835,10 @@ CODE;
     private function registerServerEnvironment(string $entryFile): string
     {
         /**
-         * 对于常驻内存型应用，执行完当前逻辑后，会立即进入长时间的事件循环等待。
-         * 因此，这些变量仅作为临时用途，用完后应即刻销毁，无需长期持有。
+         * For long-running (resident) applications, control enters a long-lived
+         * event loop immediately after the current logic finishes. These
+         * variables are therefore only temporary and should be destroyed as soon
+         * as they are used, rather than held for the long term.
          */
         $indent = $this->getIndent();
         $cppCode = $indent . "const char *value = " . $this->genCharPtr($entryFile, true) . ';' . PHP_EOL;
@@ -3870,7 +3890,7 @@ CODE;
     {
         $cppCode = '';
 
-        // 接口没有方法实体
+        // Interfaces have no method bodies
         if ($classDef instanceof ClassDef && $classDef->trait === null) {
             if ($classDef->nativeObject) {
                 return '';
@@ -3927,14 +3947,15 @@ CODE;
         }
         $this->functionDef = $this->getFunction($name);
 
-        // 类方法不要保存到 functions 中
+        // Class methods are not stored in `functions`
         if ($this->methodDef) {
             $this->methodDef->functionDef = $this->functionDef;
         } else {
             $this->functionDefineInFile[$name] = $this->functionDef;
         }
 
-        // stub 函数，没有函数的具体实现，只有声明，实现在 C++ 或者 .so 中定义
+        // Stub functions have no concrete implementation, only a declaration;
+        // the implementation is defined in C++ or a .so file.
         if ($this->functionDef->stub) {
             $this->resetFunction();
             return '';
@@ -4062,7 +4083,7 @@ CODE;
             $code .= $preamble . PHP_EOL;
         }
         $this->indentLevel--;
-        // 构建 PHP 级别的函数名用于 debug backtrace
+        // Build the PHP-level function name for debug backtraces
         if ($this->class) {
             $debugName = $this->class . '::' . $this->function;
         } else {
@@ -4103,7 +4124,8 @@ CODE;
     }
 
     /**
-     * 检查父类方法是否可以被重写，私有方法不能被重写，方法签名必须兼容
+     * Check whether a parent method can be overridden: private methods cannot be
+     * overridden, and the signature must be compatible.
      */
     protected function checkParentMethodCanBeOverridden(Node\Stmt\ClassMethod $v, string $name): void
     {
@@ -4118,7 +4140,7 @@ CODE;
             if (!$extends) {
                 break;
             }
-            // 父类是内置类
+            // The parent class is a built-in class
             if ($classDef->inheritedFromInternalClass) {
                 $modifiers = Reflection::getClassMethodModifiers($extends, $name);
                 if ($modifiers & \ReflectionMethod::IS_PRIVATE) {
@@ -5066,7 +5088,8 @@ CODE;
                 && !$this->hasMatchingOverrideDeclaration($this->classDef, $name)) {
                 $this->fatalMissingOverride($v, $this->classDef->getNamespacedName(false), $name);
             }
-            // 预处理阶段没有父类的信息，只能在实现阶段检查
+            // The preprocess phase has no parent-class info, so the check can
+            // only run in the implementation phase.
             $this->checkParentMethodCanBeOverridden($v, $name);
             $methodCodes[$name] = $this->parseFunction($v);
         }

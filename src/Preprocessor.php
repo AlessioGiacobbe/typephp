@@ -180,7 +180,7 @@ class Preprocessor extends CompilerBase
         $sorter = new StringSort();
         $fileDeps = [];
 
-        // 构建依赖关系图
+        // Build the dependency graph
         foreach ($this->symbolCallInFile as $file => $symbols) {
             $deps = [];
             foreach ($symbols as $symbol) {
@@ -198,7 +198,7 @@ class Preprocessor extends CompilerBase
 
         $sortedFiles = $sorter->sort();
 
-        // 添加未参与依赖管理的文件（非 stub 文件且不在已排序列表中）
+        // Append files that do not participate in dependency management (non-stub files not present in the sorted list)
         foreach ($list as $file) {
             if (!$this->isStubFile($file) and !in_array($file, $sortedFiles)) {
                 $sortedFiles[] = $file;
@@ -237,7 +237,7 @@ class Preprocessor extends CompilerBase
         $info = pathinfo($cppFile);
         $ext = $this->getPlatform()->getObjectExtension();
 
-        // 保持与 cppFile 相同的路径分隔符
+        // Keep the same path separator as cppFile
         $normalizedFile = str_replace('\\', '/', $cppFile);
         $normalizedMiscDir = str_replace('\\', '/', $this->getPhpxDir() . '/src/misc/');
         if (str_starts_with($normalizedFile, $normalizedMiscDir)) {
@@ -719,7 +719,7 @@ class Preprocessor extends CompilerBase
 
         foreach ($functionCalls as $call) {
             if ($call->name instanceof Node\Name) {
-                // 内置函数不参与依赖管理
+                // Internal functions do not participate in dependency management
                 $funcName = strtolower($call->name->toString());
                 if (!$this->isInternalFunction($funcName)) {
                     $this->symbolCallInFile[$this->file][] = $funcName;
@@ -741,7 +741,7 @@ class Preprocessor extends CompilerBase
                 }
             }
         }
-        // 依赖去重
+        // Deduplicate dependencies
         $this->symbolCallInFile[$this->file] = array_unique($this->symbolCallInFile[$this->file]);
     }
 
@@ -846,7 +846,7 @@ class Preprocessor extends CompilerBase
             if ($this->stubFile && $this->stubImportLibrary === '' && !$param->type) {
                 throw new \RuntimeException('No type for ' . $phpName);
             }
-            // 构造方法属性定义语法（Constructor Property Promotion）
+            // Constructor property promotion syntax
             if ($param->isPromoted()) {
                 if (!$this->classDef or !$this->methodDef or $this->methodDef->name !== '__construct') {
                     $this->fatalError($param, 'Promoted properties are not supported');
@@ -910,7 +910,7 @@ class Preprocessor extends CompilerBase
                     $this->lowerArgumentDefault($param, $argInfo);
                 }
             } elseif ($param->variadic) {
-                // 变长参数可以视为空数组默认值
+                // A variadic parameter can be treated as an empty-array default value
                 $argInfo->default = '{}';
                 $argInfo->defaultValue = new Node\Expr\Array_();
             }
@@ -960,7 +960,7 @@ class Preprocessor extends CompilerBase
         // Local stubs define C++ native functions and require an explicit ABI return type.
         // Generated external stubs may preserve an untyped PHP declaration as php::Var.
         if ($this->stubFile && $this->stubImportLibrary === '' && !$v->returnType) {
-            // 以下魔术方法都不能声明返回值类型 __construct()/__destruct()/__clone()
+            // The following magic methods must not declare a return type: __construct()/__destruct()/__clone()
             if (($this->method and !in_array($this->method, ['__construct', '__destruct', '__clone'])) or !$this->method) {
                 $name = $this->class ? $this->class . '::' . $v->name : $v->name;
                 $this->fatalError($v, 'The return type of the function `' . $name . '` must be specified');
@@ -997,7 +997,7 @@ class Preprocessor extends CompilerBase
         if ($nullableNativeReturn !== null) {
             [$returnType, $class] = $nullableNativeReturn;
         }
-        // 构造、析构、克隆方法不能有返回值
+        // Constructor, destructor, and clone methods cannot have a return value
         if ($this->method and in_array($this->method, ['__construct', '__destruct', '__clone'])) {
             $returnType = Type::VOID;
         }
@@ -1077,7 +1077,7 @@ class Preprocessor extends CompilerBase
             $this->fatalError($v, 'Zend-backed constructors cannot accept or return native objects');
         }
 
-        // main 函数，返回值必须为 void 类型，参数必须为空或者 argc, argv 两个参数
+        // The main function must return void and take either no parameters or the two parameters argc and argv
         if (!$this->class and !$this->namespace and $fnName === self::ENTRY_FUNCTION) {
             if (count($v->params) > 0) {
                 if (count($v->params) != 2) {
@@ -1158,7 +1158,7 @@ class Preprocessor extends CompilerBase
             }
             $this->fatalError($v, "Duplicate function `{$name}`");
         }
-        // 禁止重定义内置函数
+        // Forbid redefining built-in functions
         if (!$this->methodDef and $this->isInternalFunction($name)) {
             $this->fatalError($v, "The function `{$name}` is a built-in function and cannot be redefined");
         }
@@ -1241,7 +1241,7 @@ class Preprocessor extends CompilerBase
                 $this->symbolCallInFile[$this->file][] = $parentClassLower;
             }
             $this->classDef->extends = $this->parentClass;
-            // 是否继承了内置类
+            // Whether it inherits from an internal class
             $this->classDef->inheritedFromInternalClass = $this->isInternalClass($parentClassLower);
         }
 
@@ -2146,11 +2146,11 @@ class Preprocessor extends CompilerBase
         $fullMethodNameLower = strtolower($fullMethodName);
         $fullClassNameLower = strtolower($fullClassName);
 
-        // 检查子类是否已覆盖此方法（子类先于父类被预处理的情况）
+        // Check whether a subclass already overrides this method (when the subclass is preprocessed before the parent)
         $isOverridden = $this->isMethodOverriddenInSubClasses($fullClassNameLower, $this->method);
         $this->classMethodOverride[$fullMethodNameLower] = $isOverridden;
 
-        // 查找父类是否有同名方法，递归向上标记父类方法已被覆盖
+        // Find whether a parent class has a method with the same name, and recursively mark the parent method as overridden
         while (($parentClass = $this->symbols->parent($fullClassNameLower)) !== '') {
             $parentMethodLower = strtolower($parentClass . '::' . $this->method);
             if (isset($this->classMethodOverride[$parentMethodLower])) {
@@ -2182,7 +2182,7 @@ class Preprocessor extends CompilerBase
     }
 
     /**
-     * 递归检查所有子类（及子类的子类）是否已定义了同名方法，用于处理子类先于父类被预处理的情况。
+     * Recursively check whether any subclass (and its subclasses) has defined a method with the same name; handles the case where a subclass is preprocessed before its parent.
      */
     private function isMethodOverriddenInSubClasses(string $classNameLower, string $method): bool
     {
@@ -2400,7 +2400,7 @@ class Preprocessor extends CompilerBase
                     // use THello1, THello2 {
                     //    hello as hello3;
                     // }
-                    // 未指定 trait，将添加所有 trait 的别名映射，在预处理阶段无法获取 trait 的方法列表
+                    // No trait specified: add alias mappings for all traits, since the trait's method list is unavailable during preprocessing
                     $traits = $traitUse->traits;
                 } else {
                     $traits[] = $adaptation->trait;
@@ -2409,9 +2409,9 @@ class Preprocessor extends CompilerBase
                     $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait));
                     $methodName = $adaptation->method->toString();
                     /*
-                     * 例如：
+                     * For example:
                      * use TraitA { TraitA::method as newMethod}
-                     * 这表示 TraitA::method() 会被重命名为 TraitA::newMethod()
+                     * This means TraitA::method() is renamed to TraitA::newMethod()
                      */
                     $aliases[$this->getFullMethodName($traitName, $methodName)][] = [
                         'newName' => $adaptation->newName ? $adaptation->newName->toString() : $methodName,
@@ -2425,9 +2425,9 @@ class Preprocessor extends CompilerBase
                 }
                 $methodName = $adaptation->method->toString();
                 /*
-                 * 例如：
+                 * For example:
                  * use TraitA { TraitA::method insteadof TraitB}
-                 * 这表示 TraitB::method() 将会被忽略，真正执行的是 TraitA::method()
+                 * This means TraitB::method() is ignored, and TraitA::method() is actually executed
                  */
                 foreach ($adaptation->insteadof as $trait2) {
                     $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait2));

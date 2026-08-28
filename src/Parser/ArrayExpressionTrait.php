@@ -18,7 +18,7 @@ trait ArrayExpressionTrait
     protected function parseArray(Expr\Array_ $node): string
     {
         $items = $node->items;
-        // 优化代码风格，空数组直接返回{}，否则会产生一些空洞内容
+        // Optimize code style: return {} directly for an empty array, otherwise it would produce empty entries
         if (count($items) === 0) {
             return Type::ARRAY . '{}';
         }
@@ -55,7 +55,7 @@ trait ArrayExpressionTrait
             }
         }
 
-        // 存在混合键，则需要拆分为多行插入
+        // Mixed keys are present, so split the insertion into multiple statements
         if ($hasReference or $hasUnpack or $hasVarKey or ($hasNextInsert && $hasKey) or ($hasIntKey and $hasStrKey)) {
             return $this->parseArrayMixed($node);
         }
@@ -82,7 +82,8 @@ trait ArrayExpressionTrait
     }
 
     /**
-     * 获取包含路径
+     * Resolve a `$GLOBALS[...]` array-dim fetch to its static slot when the key
+     * is a known global name, or to a php::global() lookup otherwise.
      */
 
     protected function parseGlobalsArrayDimFetch(Expr\ArrayDimFetch $node): string
@@ -270,7 +271,7 @@ trait ArrayExpressionTrait
     {
         $tmpVar = $this->genTmpVarName();
         $this->addLocalVar($tmpVar, Type::ARRAY);
-        // 释放临时变量，避免修改数组产生数组复制操作
+        // Release the temporary variable to avoid array copies when the array is modified
         $this->context->beforeStmtLines[] = $this->getIndent() . $tmpVar . '.clean();';
 
         $items = $node->items;

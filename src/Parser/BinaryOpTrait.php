@@ -24,7 +24,7 @@ trait BinaryOpTrait
         $this->assertExprCanBeUsedAsValue($left, 'binary operand');
         $this->assertExprCanBeUsedAsValue($right, 'binary operand');
 
-        // 运算逻辑，优先转为数字
+        // Arithmetic logic: convert to a numeric type first when possible
         $leftExpr  = $this->parseOrderedBinaryOperand($left);
         $rightExpr = $this->parseOrderedBinaryOperand($right);
 
@@ -927,7 +927,7 @@ trait BinaryOpTrait
     protected function parseCompareExpr(NodeAbstract $expr): string
     {
         $this->assertExprCanBeUsedAsValue($expr, 'comparison operand');
-        // PHPX 与 bool 值比较会出现重载错误，所以需要转换成 bool 值
+        // Comparing PHPX values with bool causes an overload error, so convert them to bool first
         if ($this->isScalarBool($expr)) {
             return $this->getBoolValue($expr);
         }

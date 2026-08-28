@@ -233,8 +233,9 @@ trait FuncCallOptimizer
             }
         }
 
-        // 检测参数中使用的变量是否已定义，若变量不存在则回退到动态调用路径
-        // 动态路径中的 parseCallArgs() 会给出明确的错误信息
+        // Check whether the variables used in the arguments are defined; if a variable
+        // does not exist, fall back to the dynamic call path, where parseCallArgs()
+        // produces a clear error message.
         foreach ($expr->args as $arg) {
             if (!$arg instanceof Node\Arg) {
                 continue;
@@ -269,7 +270,7 @@ trait FuncCallOptimizer
 
     protected function dispatchFuncCall(string $name, Node\Expr\FuncCall $expr, array $config): string|false
     {
-        // 命名参数 / unpack（...）展开需要运行时处理，回退到动态调用路径
+        // Named arguments and unpack (...) expansion require runtime handling; fall back to the dynamic call path.
         foreach ($expr->args as $arg) {
             if ($arg->name !== null || $arg->unpack) {
                 return false;

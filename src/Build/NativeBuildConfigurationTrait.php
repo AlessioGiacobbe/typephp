@@ -20,7 +20,7 @@ trait NativeBuildConfigurationTrait
             $this->getPhpxDir() . '/src/misc',
         ];
 
-        // 根据平台添加 PHP 包含路径
+        // Add the platform-specific PHP include paths
         if ($platform instanceof Windows) {
             $phpSdkPaths = $platform->buildPhpSdkIncludePaths($this->getPhpDir());
             $includePaths = array_merge($includePaths, $phpSdkPaths);
@@ -28,7 +28,7 @@ trait NativeBuildConfigurationTrait
             // Linux/macOS
             $phpPaths = $platform->buildPhpIncludePaths($this->getPhpDir());
             $includePaths = array_merge($includePaths, $phpPaths);
-            // 内置 mpdecimal 头文件目录
+            // Bundled mpdecimal header directories
             $includePaths[] = $this->getPhpxDir() . '/thirdparty/mpdecimal/libmpdec';
             $includePaths[] = $this->getPhpxDir() . '/thirdparty/mpdecimal/libmpdec++';
         }
@@ -43,7 +43,7 @@ trait NativeBuildConfigurationTrait
             $this->getPhpxDir() . '/lib',
         ];
 
-        // 根据平台添加 PHP 库路径
+        // Add the platform-specific PHP library paths
         if ($platform instanceof Windows) {
             $phpLibPaths = $platform->buildPhpSdkLibPaths($this->getPhpDir());
             $libraryPaths = array_merge($libraryPaths, $phpLibPaths);
@@ -57,45 +57,45 @@ trait NativeBuildConfigurationTrait
     }
 
     /**
-     * 获取库文件
+     * Get the library files to link against
      */
     protected function getLibraries(): array
     {
         $platform = $this->getPlatform();
         $libraries = [];
 
-        // phpx 库（根据平台使用不同的文件名格式）
+        // phpx library (file name format differs by platform)
         $phpxLibPath = $this->findPhpxLibrary();
         if ($phpxLibPath === null) {
             $this->error($this->getPhpxLibraryErrorMessage());
         }
         $libraries[] = $phpxLibPath;
 
-        // extension 和 bin 模式都需要链接 PHP 库
+        // Both extension and bin modes need to link the PHP library
         if ($platform instanceof Windows) {
-            // Windows: 根据构建模式选择不同的库
+            // Windows: pick different libraries based on the build mode
             if ($this->isBuildModeEmbed()) {
-                // bin 模式：需要同时链接 php8ts.lib 和 php8embed.lib
-                // 注意：php8ts.lib 必须在 php8embed.lib 之前，因为 embed 依赖 core
-                // php8ts.lib 提供 PHP 核心全局符号（executor_globals, compiler_globals, sapi_globals）
+                // bin mode: link both php8ts.lib and php8embed.lib
+                // Note: php8ts.lib must come before php8embed.lib because embed depends on core
+                // php8ts.lib provides the PHP core global symbols (executor_globals, compiler_globals, sapi_globals)
                 if (!empty($this->windowsPhpCoreLib)) {
-                    $libraries[] = $this->windowsPhpCoreLib;  // 不添加引号
+                    $libraries[] = $this->windowsPhpCoreLib;  // do not quote
                 }
-                // php8embed.lib 提供嵌入 API
+                // php8embed.lib provides the embed API
                 if (!empty($this->windowsPhpEmbedLib)) {
-                    $libraries[] = $this->windowsPhpEmbedLib;  // 不添加引号
+                    $libraries[] = $this->windowsPhpEmbedLib;  // do not quote
                 }
             } else {
-                // ext 模式：只使用 php8ts.lib 或 php8.lib（PHP 扩展）
+                // ext mode: use only php8ts.lib or php8.lib (PHP extension)
                 if (!empty($this->windowsPhpCoreLib)) {
-                    $libraries[] = $this->windowsPhpCoreLib;  // 不添加引号
+                    $libraries[] = $this->windowsPhpCoreLib;  // do not quote
                 }
             }
             
-            // 添加 Windows API 库（Win32 GUI 程序需要）
-            $libraries[] = 'user32.lib';   // Windows UI 函数（CreateWindow, MessageBox 等）
-            $libraries[] = 'gdi32.lib';    // GDI 图形函数
-            $libraries[] = 'kernel32.lib'; // 核心 Windows API
+            // Add the Windows API libraries (required by Win32 GUI programs)
+            $libraries[] = 'user32.lib';   // Windows UI functions (CreateWindow, MessageBox, etc.)
+            $libraries[] = 'gdi32.lib';    // GDI graphics functions
+            $libraries[] = 'kernel32.lib'; // Core Windows API
             $libraries[] = 'gmp.lib';
             $libraries[] = 'gmpxx.lib';
             $libraries[] = 'mpfr.lib';
@@ -117,10 +117,12 @@ trait NativeBuildConfigurationTrait
     }
 
     /**
-     * 解析 phpx 库文件路径，库不存在时返回 null。
+     * Resolve the phpx library file path, returning null when the library does
+     * not exist.
      *
-     * Windows 使用 phpx.lib（无 lib 前缀）；其他平台优先使用共享库
-     * （libphpx.so / libphpx.dylib），找不到时回退到静态库 libphpx.a。
+     * Windows uses phpx.lib (no lib prefix); other platforms prefer the shared
+     * library (libphpx.so / libphpx.dylib) and fall back to the static library
+     * libphpx.a when it is not found.
      */
     protected function findPhpxLibrary(): ?string
     {
@@ -131,8 +133,8 @@ trait NativeBuildConfigurationTrait
             return is_file($phpxLibPath) ? $phpxLibPath : null;
         }
 
-        // Linux/macOS：共享库优先，静态库兜底
-        // getSharedLibraryExtension() 返回的值可能带点或不带点，需要统一处理
+        // Linux/macOS: prefer the shared library, fall back to the static library
+        // getSharedLibraryExtension() may or may not include a leading dot, so normalize it
         $sharedLibExt = ltrim($platform->getSharedLibraryExtension(), '.');
         $phpxLibPath = $this->getPhpxDir() . '/lib/libphpx.' . $sharedLibExt;
         if (is_file($phpxLibPath)) {
@@ -152,7 +154,7 @@ trait NativeBuildConfigurationTrait
     }
 
     /**
-     * 生成 phpx 库缺失时的错误信息
+     * Generate the error message shown when the phpx library is missing
      */
     protected function getPhpxLibraryErrorMessage(): string
     {
@@ -175,8 +177,9 @@ trait NativeBuildConfigurationTrait
     }
 
     /**
-     * 前置检测 phpx 库是否可用，在编译开始前报错，
-     * 避免所有源文件编译完成后才在链接阶段失败。
+     * Verify the phpx library is available up front and fail before compilation
+     * starts, rather than only failing at link time after all source files have
+     * been compiled.
      */
     protected function validatePhpxLibrary(): void
     {

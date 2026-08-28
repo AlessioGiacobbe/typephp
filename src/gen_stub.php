@@ -2494,7 +2494,8 @@ OUPUT_EXAMPLE
             return null;
         }
         foreach ($generatedFuncInfos as $generatedFuncInfo) {
-            // TODO 从数组遍历元素，调用方法，在编译期无法获得元素的类型，因此判断作用域，必须为 public 方法
+            // TODO When iterating elements from an array and calling a method, the element type cannot be
+            // determined at compile time, so check the scope and require the method to be public.
             if ($generatedFuncInfo->equalsApartFromNameAndRefcount($this)) {
                 return $generatedFuncInfo;
             }
@@ -2695,7 +2696,8 @@ class EvaluatedValue
 
                     $constType = ($const->phpDocType ?? $const->type)->tryToSimpleType();
                     if ($constType) {
-                        // 这里返回的并不是真正的值，而是一个类型的占位符，最终的运算由编译器完成，此处仅用于 ArgInfo 处理
+                        // What is returned here is not the real value but a type placeholder; the final computation
+                        // is performed by the compiler. This is only used for ArgInfo processing.
                         if ($constType->isBool()) {
                             return true;
                         } elseif ($constType->isInt()) {
@@ -3488,7 +3490,7 @@ class StringBuilder {
         $versions = [
             PHP_85_VERSION_ID => self::PHP_85_KNOWN,
             PHP_84_VERSION_ID => self::PHP_84_KNOWN,
-            PHP_82_VERSION_ID => self::PHP_82_KNOWN, // 8.3 合并到 8.2
+            PHP_82_VERSION_ID => self::PHP_82_KNOWN, // 8.3 is merged into 8.2
             PHP_81_VERSION_ID => self::PHP_81_KNOWN,
         ];
 
@@ -3619,7 +3621,7 @@ class PropertyInfo extends VariableLike
             );
 
         if (!$useEmptyArrayDefault) {
-            // New 操作作为属性的默认值，需编译器处理 gen_stub 作为 null 值
+            // A New expression as a property default requires compiler handling; gen_stub treats it as a null value.
             if ($this->defaultValue === null || $this->defaultValue instanceof Expr\New_) {
                 $defaultValue = EvaluatedValue::null();
             } else {
@@ -5041,7 +5043,7 @@ class FileInfo {
                     $this->getMinimumPhpVersionIdCompatibility(),
                     $this->isUndocumentable
                 );
-                // 清理当前类名，避免污染
+                // Clear the current class name to avoid leaking it into subsequent classes.
                 ClassInfo::$currentClass = '';
                 continue;
             }
@@ -5253,7 +5255,7 @@ class FramelessFunctionInfo {
 }
 
 /**
- * 获取魔术方法的默认返回值类型。只有用户未显式声明类型时才使用。
+ * Get the default return type of a magic method. Used only when the user has not explicitly declared a type.
  */
 function getMagicMethodDefaultReturnType(FunctionOrMethodName $name): ?string
 {
@@ -5277,7 +5279,7 @@ function getMagicMethodDefaultReturnType(FunctionOrMethodName $name): ?string
 }
 
 /**
- * 获取魔术方法的默认参数类型。只有用户未显式声明类型时才使用。
+ * Get the default parameter type of a magic method. Used only when the user has not explicitly declared a type.
  */
 function getMagicMethodDefaultParamType(FunctionOrMethodName $name, int $index): ?string
 {
@@ -5934,7 +5936,7 @@ function generateFunctionEntries(?Name $className, array $funcInfos, ?string $co
         $underscoreName = implode("_", $className->getParts());
         $functionEntryName = "class_{$underscoreName}_methods";
     } else {
-        // 跳过生成 ext_functions
+        // Skip generating ext_functions.
         $functionEntryName = "ext_functions";
         return '';
     }

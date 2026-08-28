@@ -176,10 +176,11 @@ final class LibPhpInstaller
 
     private function currentConfigureOptions(): string
     {
-        // 优先使用 PHP_BINARY -i 的 Configure Command:输出保留每个参数的
-        // 引号,能正确处理 `CFLAGS=-g -O2` 这类含空格的值。而
-        // `php-config --configure-options` 会丢失引号,导致含空格的值被
-        // 错误拆分(例如 `-O2` 被当作独立参数传给 configure)。
+        // Prefer the "Configure Command:" output from `PHP_BINARY -i`, which preserves
+        // the quoting of each argument and can therefore handle values containing spaces
+        // such as `CFLAGS=-g -O2`. In contrast, `php-config --configure-options` drops the
+        // quotes, causing space-containing values to be split incorrectly (for example,
+        // `-O2` being passed to configure as a separate argument).
         $info = $this->capture([PHP_BINARY, '-n', '-i']);
         if (preg_match('/^Configure Command =>\s*(.+)$/mi', $info, $match)) {
             $words = PhpBuildConfiguration::parseShellWords(trim($match[1]));
@@ -189,8 +190,9 @@ final class LibPhpInstaller
             return implode(' ', array_map('escapeshellarg', $words));
         }
 
-        // 后备:php-config --configure-options。PPA 的多版本 PHP 共用
-        // /usr 前缀，因此 PHP_HOME=/usr 时必须优先 php-config8.x。
+        // Fallback: php-config --configure-options. On PPA multi-version installations
+        // several PHP versions share the /usr prefix, so when PHP_HOME=/usr the
+        // versioned php-config8.x must be preferred.
         $versionedPhpConfig = $this->sourcePhpDir . '/bin/php-config'
             . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
         if ($this->sourcePhpDir !== null && is_executable($versionedPhpConfig)) {

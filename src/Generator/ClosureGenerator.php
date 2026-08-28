@@ -285,7 +285,8 @@ trait ClosureGenerator
                     $this->fatalError($useItem->var, 'Incorrect Closure use syntax, only variable names are allowed');
                 }
                 if ($useItem->byRef) {
-                    // 闭包的 use 语法，若为引用类型，可以就地创建变量
+                    // For a closure use clause, a by-reference capture may create
+                    // the variable in place if it does not exist yet
                     if (!isset($oriContext->localVars[$var])
                         && !isset($oriContext->staticVars[$var])) {
                         $oriContext->localVars[$var] = Type::REF;

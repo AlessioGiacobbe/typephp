@@ -38,7 +38,7 @@ trait SwitchTrait
         $var_def .= $type . ' ' . $tmp_var . ' = ' . $condExpr . ';' . PHP_EOL;
         $var_def .= $this->formatCapturedStmtLines($condAfterStmts);
 
-        // 保存作用域，switch 可能会解析失败，在这个过程中会增加变量，需重置
+        // Save the scope; switch parsing may fail partway and add variables in the process, so it must be reset
         $localVars = $this->context->localVars;
         $code      = $this->parseBeforeStmtLines() . PHP_EOL;
 

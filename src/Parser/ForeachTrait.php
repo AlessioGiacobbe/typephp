@@ -220,8 +220,8 @@ trait ForeachTrait
     }
 
     /**
-     * 为了兼容已有代码，默认不使用原生类型，而是将整数和浮点数作为 php 变量处理
-     * 原生 int/float/bool 类型，是不支持自动转换的，例如如果 int 计算超过最大值后，会自动转为 float，除法若不能除尽，则会转为 float
-     * 某些情况下高性能计算，可能需要使用原生类型，使用 $a = std::int(0) 来显式地使用原生类型
+     * For backward compatibility, native types are not used by default; integers and floats are treated as php variables.
+     * Native int/float/bool types do not support automatic conversion. For example, an int computation that exceeds its maximum value is promoted to float, and a division that does not divide evenly becomes float.
+     * In some cases high-performance computation may need native types; use `$a = std::int(0)` to explicitly opt into native types.
      */
 }
