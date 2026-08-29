@@ -656,9 +656,54 @@ trait FuncCallOptimizer
         }
         $arg = $expr->args[0]->value;
         if ($arg instanceof Node\Expr\Array_) {
+            if (!$this->isCountFoldableArray($arg)) {
+                return false;
+            }
             return count($arg->items) . $this->getPlatform()->getIntegerLiteralSuffix();
         }
         return $this->genStdContainerCount($arg);
+    }
+
+    /**
+     * The number of AST items only equals the runtime element count when no
+     * item spreads another array, no key can collide with another key, and
+     * dropping the element expressions cannot lose an observable effect.
+     * Anything else keeps the runtime php::fn::count() call.
+     */
+    protected function isCountFoldableArray(Node\Expr\Array_ $array): bool
+    {
+        foreach ($array->items as $item) {
+            // [...$other] contributes an element count only known at runtime,
+            // and a key may collapse onto an earlier one: ['a' => 1, 'a' => 2]
+            // counts as one element, not two.
+            if ($item->unpack || $item->key !== null) {
+                return false;
+            }
+            if (!$this->isCountFoldableItem($item->value)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    protected function isCountFoldableItem(Node\Expr $value): bool
+    {
+        // ConstFetch also covers true, false and null.
+        if ($this->isScalar($value)
+            || $value instanceof Node\Expr\ConstFetch
+            || $value instanceof Node\Expr\ClassConstFetch
+        ) {
+            return true;
+        }
+        if ($value instanceof Node\Expr\UnaryMinus || $value instanceof Node\Expr\UnaryPlus) {
+            return $this->isCountFoldableItem($value->expr);
+        }
+        if ($value instanceof Node\Expr\Array_) {
+            return $this->isCountFoldableArray($value);
+        }
+        // A defined variable is a plain read; an undefined one must reach the
+        // dynamic path so it still reports the same diagnostic as PHP.
+        return $this->isVarExpr($value) && is_string($value->name) && $this->hasVar($value->name);
     }
 
     protected function doFoldKnownClass(Node\Expr\FuncCall $expr): string|false
