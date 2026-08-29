@@ -1,10 +1,20 @@
 <?php
+/**
+ * This file is part of TypePHP(AOT).
+ *
+ * @link     https://www.swoole.com/aot/
+ * @contact  service@swoole.com
+ */
 
 namespace TypePhp\Tests;
 
 use PHPUnit\Framework\TestCase;
 use TypePhp\CompilerTest;
 
+/**
+ * @internal
+ * @coversNothing
+ */
 class CountLiteralFoldTest extends TestCase
 {
     public function testUnfoldableArrayLiteralsKeepTheRuntimeCall(): void

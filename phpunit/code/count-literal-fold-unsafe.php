@@ -1,4 +1,11 @@
 <?php
+/**
+ * This file is part of TypePHP(AOT).
+ *
+ * @link     https://www.swoole.com/aot/
+ * @contact  service@swoole.com
+ */
+
 function bump(): int
 {
     echo "bump\n";
