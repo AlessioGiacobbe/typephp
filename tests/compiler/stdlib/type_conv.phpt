@@ -18,6 +18,14 @@ function main() {
     var_dump(intval(true));
     var_dump(intval(false));
 
+    // intval with an explicit base
+    var_dump(intval("ff", 16));
+    var_dump(intval("0x1A", 16));
+    var_dump(intval("101", 2));
+    var_dump(intval("777", 8));
+    $base = 16;
+    var_dump(intval("ff", $base));
+
     // floatval
     var_dump(floatval(42));
     var_dump(floatval("3.14"));
@@ -44,6 +52,11 @@ int(42)
 int(3)
 int(1)
 int(0)
+int(255)
+int(26)
+int(5)
+int(511)
+int(255)
 float(42)
 float(3.14)
 float(42)

@@ -527,8 +527,14 @@ trait FuncCallOptimizer
         return $target . '(' . implode(', ', $args) . ')';
     }
 
-    protected function dispatchConversion(Node\Expr\FuncCall $expr, string $convType): string
+    protected function dispatchConversion(Node\Expr\FuncCall $expr, string $convType): string|false
     {
+        // These four are lowered as single-argument Native casts, which cannot
+        // carry intval()'s $base. Any other arity must reach the runtime
+        // function instead of silently dropping the extra argument.
+        if (count($expr->args) !== 1) {
+            return false;
+        }
         $arg = $expr->args[0]->value;
         $type = $this->detectTypeOfExpr($arg);
         $nativeClass = $this->detectClassOfExpr($arg);
