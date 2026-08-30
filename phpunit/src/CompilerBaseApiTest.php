@@ -361,7 +361,7 @@ PHP);
 
     public function testGeneratedCValuesAreAlwaysSourceCodeStrings(): void
     {
-        $this->assertSame((string) M_E, $this->invokeMethod('genCValue', M_E));
+        $this->assertSame(M_E, (float) $this->invokeMethod('genCValue', M_E));
         $this->assertSame('1', $this->invokeMethod('genCValue', true));
         $this->assertSame('0', $this->invokeMethod('genCValue', false));
 
@@ -370,7 +370,7 @@ PHP);
             new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name('M_E'))
         );
         $this->assertIsString($code);
-        $this->assertSame((string) M_E, $code);
+        $this->assertSame(M_E, (float) $code);
     }
 
     public function testNumericStringIdentifiersGenerateSourceCodeStrings(): void
