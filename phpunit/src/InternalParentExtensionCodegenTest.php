@@ -43,11 +43,15 @@ PHP);
         $extension = file_get_contents($compiler->genExtension());
 
         self::assertStringContainsString(
-            'php_class_entry_ArrayObject = get_internal_class("ArrayObject");',
+            'php_class_entry_ArrayObject = php::getInternalClassEntrySafe("ArrayObject");',
             $extension,
         );
         self::assertStringNotContainsString(
             'php_class_entry_ArrayObject = php::getClassEntrySafe("ArrayObject");',
+            $extension,
+        );
+        self::assertStringNotContainsString(
+            "PHP_MINIT_FUNCTION(typephp_internal_parent) {\nzend_try {",
             $extension,
         );
     }

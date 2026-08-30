@@ -914,21 +914,6 @@ zend_class_entry *get_class(RequestClassId class_id, const php::Str &class_name)
     return php_class_map[index];
 }
 
-zend_class_entry *get_internal_class(const php::Str &class_name) {
-    // MINIT-only lookup. Internal classes and classes supplied by extension
-    // dependencies already live in CG(class_table), while EG(class_table) is
-    // not initialized yet on PHP 8.4. Never use this path for a PHP-script
-    // class: those classes are loaded at call time and belong in the
-    // RequestClassId cache, which is cleared at request shutdown.
-    zend_string *lcname = zend_string_tolower_ex(class_name.str(), true);
-    auto *ce = static_cast<zend_class_entry *>(zend_hash_find_ptr(CG(class_table), lcname));
-    zend_string_release_ex(lcname, true);
-    if (UNEXPECTED(ce == nullptr)) {
-        php::throwError("class '%s' is undefined", class_name.data());
-    }
-    return ce;
-}
-
 zend_function *get_func(RequestFuncId func_id, const php::Str &func_name) {
     const auto index = static_cast<uint32_t>(func_id);
     if (UNEXPECTED(php_func_map[index] == nullptr)) {
@@ -1061,7 +1046,6 @@ CODE;
 
         // minit begin
         $code .= 'PHP_MINIT_FUNCTION(' . $this->getModuleName() . ') {' . PHP_EOL;
-        $code .= 'zend_try {' . PHP_EOL;
         $code .= '// class/interface class entries' . PHP_EOL;
         $code .= 'if (typephp_install_reflection_attribute_handlers() != SUCCESS) {' . PHP_EOL;
         $code .= $this->getIndent() . 'return FAILURE;' . PHP_EOL;
@@ -1075,7 +1059,6 @@ CODE;
         foreach ($this->registerSymbols as $registerSymbolFn) {
             $code .= $registerSymbolFn . '(module_number);' . PHP_EOL;
         }
-        $code .= '} zend_end_try();' . PHP_EOL;
         $code .= 'return SUCCESS;' . PHP_EOL;
         $code .= '}' . PHP_EOL . PHP_EOL;
         // minit end
@@ -2812,7 +2795,7 @@ CODE;
         // deliberately separate from both persistentClassMap (module-lifetime
         // lazy call-site cache) and classMap (request-lifetime dynamic cache).
         return [
-            'func' => 'get_internal_class',
+            'func' => 'php::getInternalClassEntrySafe',
             'args' => '"' . substr($ce, strlen(self::PREFIX . 'class_entry_')) . '"',
         ];
     }
