@@ -395,7 +395,6 @@ class CompilerBase implements PropertyAccessContext
     protected array $linkPaths = [];   // --link-path / -L: user-specified library search paths
     /** @var list<string> Required PHP modules recorded in zend_module_entry.deps. */
     protected array $extensionDependencies = [];
-    protected int $floatPrecision = 17;
     protected bool $debug = false;
     protected bool $formatCode = false;   // --format: enable clang-format (disabled by default)
     protected bool $printBacktraceOnError = true;
@@ -4246,18 +4245,7 @@ class CompilerBase implements PropertyAccessContext
 
     protected function parseScalarFloat(Node\Scalar\Float_ $expr): string
     {
-        $value = $expr->value;
-
-        if (is_nan($value)) {
-            return self::VALUE_NAN;
-        }
-        if (is_infinite($value)) {
-            return $value > 0 ? self::VALUE_INF : '-' . self::VALUE_INF;
-        }
-        if (floor($value) == $value && abs($value) < 1e15) {
-            return number_format($value, 1, '.', '');
-        }
-        return sprintf('%.' . $this->floatPrecision . 'g', $value);
+        return $this->genFloatLiteral($expr->value);
     }
 
     protected function parseIsset(Expr\Isset_ $expr): string

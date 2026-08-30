@@ -490,15 +490,6 @@ trait BinaryOpTrait
         return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
     }
 
-    protected function genFloatLiteral(float $value): string
-    {
-        $text = sprintf('%.17g', $value);
-        // Make sure the literal is parsed as a C++ double.
-        if (!str_contains($text, '.') && !str_contains(strtolower($text), 'e')) {
-            $text .= '.0';
-        }
-        return $text;
-    }
 
     protected function shouldMaterializeOrderedOperand(NodeAbstract $expr): bool
     {

@@ -2827,8 +2827,10 @@ class EvaluatedValue
             // reduced constant string expressions. Emitting that value avoids
             // leaking heredoc/nowdoc source syntax into generated C++.
             return '"' . getTranslator()->escapeString((string) $this->value) . '"';
-        } elseif ($this->type->isInt() or $this->type->isFloat()) {
+        } elseif ($this->type->isInt()) {
             return strval($this->value);
+        } elseif ($this->type->isFloat()) {
+            return getTranslator()->genFloatLiteral((float) $this->value);
         } elseif ($this->type->isBool()) {
             return $this->value ? 'true' : 'false';
         }
