@@ -148,8 +148,13 @@ class OperatorTest extends \BaseTest
 
     public function testFloatLiteralEmissionIsLocaleIndependent(): void
     {
-        $previousLocale = setlocale(LC_ALL, 'de_DE.UTF-8', 'da_DK.UTF-8', 'en_DK.utf8');
+        $previousLocale = setlocale(LC_NUMERIC, 0);
         try {
+            $selectedLocale = setlocale(LC_NUMERIC, 'de_DE.UTF-8', 'da_DK.UTF-8', 'en_DK.utf8');
+            if ($selectedLocale === false || localeconv()['decimal_point'] !== ',') {
+                $this->markTestSkipped('No comma-decimal locale is available');
+            }
+
             global $translator;
             $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
             $translator = $compiler;
@@ -158,7 +163,7 @@ class OperatorTest extends \BaseTest
             $this->assertStringNotContainsString(',', $result);
         } finally {
             if ($previousLocale !== false) {
-                setlocale(LC_ALL, $previousLocale);
+                setlocale(LC_NUMERIC, $previousLocale);
             }
         }
     }
