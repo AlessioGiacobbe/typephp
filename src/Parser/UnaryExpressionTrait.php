@@ -125,6 +125,14 @@ trait UnaryExpressionTrait
         }
         $code = $this->parseExprAsValue($expr->expr);
 
+        // An operand that already starts with `-` (a nested unary minus, a
+        // negative literal) would paste into the C++ pre-decrement token:
+        // `- -$a` -> `--a`. Parenthesize exactly then, so plain literals
+        // keep their compact `-7L` form.
+        if (str_starts_with($code, '-')) {
+            return '-(' . $code . ')';
+        }
+
         return '-' . $code;
     }
 
