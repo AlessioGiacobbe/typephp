@@ -126,10 +126,10 @@ function valueToArray(mixed $value): mixed
     return $value;
 }
 
-// ─── 美化打印 ─────────────────────────────────────────────
+// ─── Pretty printing ──────────────────────────────────────
 
 /**
- * 用缩进打印 AST 结构，类似 json 的视觉风格
+ * Print the AST structure with indentation, similar to JSON's visual style.
  */
 function printAst(array $nodes, string $indent = ''): void
 {
@@ -221,7 +221,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "AST_ROOT: Program (L1-" . count($stmts) . " statements)\n\n";
 
 /**
- * 简洁的分层输出
+ * Concise hierarchical output.
  */
 function dumpNode(NodeAbstract $node, int $depth = 0): void
 {
