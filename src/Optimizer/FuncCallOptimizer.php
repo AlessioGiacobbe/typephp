@@ -674,9 +674,10 @@ trait FuncCallOptimizer
     {
         foreach ($array->items as $item) {
             // [...$other] contributes an element count only known at runtime,
-            // and a key may collapse onto an earlier one: ['a' => 1, 'a' => 2]
-            // counts as one element, not two.
-            if ($item->unpack || $item->key !== null) {
+            // a key may collapse onto an earlier one (['a' => 1, 'a' => 2]
+            // counts as one element, not two), and a by-reference item binds
+            // its source variable instead of reading it.
+            if ($item->unpack || $item->key !== null || $item->byRef) {
                 return false;
             }
             if (!$this->isCountFoldableItem($item->value)) {
@@ -686,24 +687,34 @@ trait FuncCallOptimizer
         return true;
     }
 
+    /**
+     * Only expressions whose evaluation is provably free of observable effects
+     * may be discarded. Variables, general constant and class constant
+     * fetches, interpolated strings and every other expression stay on the
+     * runtime path: they can be undefined, autoload, throw or call __get().
+     */
     protected function isCountFoldableItem(Node\Expr $value): bool
     {
-        // ConstFetch also covers true, false and null.
-        if ($this->isScalar($value)
-            || $value instanceof Node\Expr\ConstFetch
-            || $value instanceof Node\Expr\ClassConstFetch
+        // Node\Scalar\String_ is the literal string only; an interpolated
+        // string is a distinct Node\Scalar\InterpolatedString node.
+        if ($value instanceof Node\Scalar\Int_
+            || $value instanceof Node\Scalar\Float_
+            || $value instanceof Node\Scalar\String_
         ) {
             return true;
         }
+        // The language constants only. Any other name may be undefined and
+        // must still raise the same Error PHP raises.
+        if ($value instanceof Node\Expr\ConstFetch) {
+            return in_array(strtolower($value->name->toString()), ['true', 'false', 'null'], true);
+        }
         if ($value instanceof Node\Expr\UnaryMinus || $value instanceof Node\Expr\UnaryPlus) {
-            return $this->isCountFoldableItem($value->expr);
+            return $value->expr instanceof Node\Scalar\Int_ || $value->expr instanceof Node\Scalar\Float_;
         }
         if ($value instanceof Node\Expr\Array_) {
             return $this->isCountFoldableArray($value);
         }
-        // A defined variable is a plain read; an undefined one must reach the
-        // dynamic path so it still reports the same diagnostic as PHP.
-        return $this->isVarExpr($value) && is_string($value->name) && $this->hasVar($value->name);
+        return false;
     }
 
     protected function doFoldKnownClass(Node\Expr\FuncCall $expr): string|false

@@ -21,9 +21,11 @@ class CountLiteralFoldTest extends TestCase
     {
         $cpp = $this->compileToCpp('count-literal-fold-unsafe.php');
 
-        // Element side effects, a repeated key and a spread each make the
-        // number of AST items differ from the runtime element count.
-        self::assertSame(4, substr_count($cpp, 'php::fn::count('));
+        // Every call in the fixture must stay on the runtime path: element
+        // side effects, a repeated key, a spread, a by-reference item, a
+        // plain variable read, a constant or class constant fetch that may
+        // be undefined, and an interpolated string that may call __get().
+        self::assertSame(10, substr_count($cpp, 'php::fn::count('));
         self::assertStringContainsString('php_bump()', $cpp);
         self::assertStringContainsString('i++', $cpp);
     }
