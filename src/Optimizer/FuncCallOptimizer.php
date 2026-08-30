@@ -663,6 +663,12 @@ trait FuncCallOptimizer
 
     protected function doFoldKnownClass(Node\Expr\FuncCall $expr): string|false
     {
+        // An explicit $autoload argument must still be evaluated, including
+        // any side effects or exception it produces. Leave that form on the
+        // normal call path instead of duplicating argument semantics here.
+        if (count($expr->args) !== 1 || !($expr->args[0] instanceof Node\Arg)) {
+            return false;
+        }
         $cn = $expr->args[0]->value;
         if (!$this->isScalarString($cn) || !$this->hasClass($cn->value)) {
             return false;

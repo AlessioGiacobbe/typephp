@@ -35,6 +35,14 @@ class ClassExistsTraitFoldTest extends TestCase
         self::assertStringNotContainsString('= false;', $cpp);
     }
 
+    public function testExplicitAutoloadArgumentUsesNormalCallPath(): void
+    {
+        $cpp = $this->compileToCpp('class-exists-autoload-argument.php');
+
+        self::assertStringContainsString('php::fn::class_exists(', $cpp);
+        self::assertStringContainsString('php_autoloadflag()', $cpp);
+    }
+
     private function compileToCpp(string $file): string
     {
         global $translator;
