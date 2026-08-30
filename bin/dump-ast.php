@@ -17,7 +17,7 @@ use PhpParser\ParserFactory;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
 
-// ─── 参数解析 ─────────────────────────────────────────────
+// ─── Argument parsing ─────────────────────────────────────
 
 if ($argc < 2) {
     fprintf(STDERR, "用法: php %s <file.php>\n", $argv[0]);
@@ -36,7 +36,7 @@ if (!is_readable($filePath)) {
     exit(1);
 }
 
-// ─── 解析 ─────────────────────────────────────────────────
+// ─── Parsing ──────────────────────────────────────────────
 
 $code = file_get_contents($filePath);
 if ($code === false) {
@@ -54,10 +54,11 @@ try {
     exit(1);
 }
 
-// ─── AST 结构化输出 ───────────────────────────────────────
+// ─── AST structured output ────────────────────────────────
 
 /**
- * 将 AST 节点递归转换为可读的数组结构（便于 print_r / var_export 输出）
+ * Recursively convert an AST node into a readable array structure
+ * (suitable for print_r / var_export output).
  */
 function nodeToArray(NodeAbstract $node): array
 {
@@ -69,13 +70,13 @@ function nodeToArray(NodeAbstract $node): array
         ],
     ];
 
-    // 子属性
+    // Child sub-nodes
     foreach ($node->getSubNodeNames() as $name) {
         $value = $node->$name;
         $result[$name] = valueToArray($value);
     }
 
-    // 注释（若存在）
+    // Comments (if present)
     $comments = $node->getComments();
     if ($comments) {
         $result['attributes']['comments'] = [];
@@ -98,20 +99,20 @@ function valueToArray(mixed $value): mixed
         foreach ($value as $k => $v) {
             $arr[$k] = valueToArray($v);
         }
-        // 判断是否为列表（连续的 int key）
+        // Determine whether the value is a list (consecutive integer keys)
         if (array_is_list($arr) && count($arr) <= 1) {
             return $arr;
         }
-        // 非列表或元素较多时，只保留索引
+        // Non-lists or multi-element lists are kept as-is
         if (!array_is_list($arr)) {
             return $arr;
         }
-        // 对列表只返回列表
+        // Lists are returned as-is
         return $arr;
     }
 
     if (is_string($value)) {
-        // 过长的字符串截断显示
+        // Truncate overly long strings for display
         return mb_strlen($value) > 120 ? mb_substr($value, 0, 120) . '...' : $value;
     }
 
