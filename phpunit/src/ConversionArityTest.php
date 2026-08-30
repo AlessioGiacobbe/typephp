@@ -27,6 +27,21 @@ class ConversionArityTest extends TestCase
         self::assertSame(2, substr_count($cpp, '16L'));
     }
 
+    public function testUnpackedAndNamedArgumentsStayOnTheDynamicPath(): void
+    {
+        $cpp = $this->compileToCpp('intval-unpacked-argument.php');
+
+        // An unpacked argument is one Node\Arg whatever its runtime arity is,
+        // so the array itself must never be handed to a Native cast.
+        self::assertStringNotContainsString('php::toInt(', $cpp);
+        self::assertStringNotContainsString('php::toString(', $cpp);
+        self::assertStringNotContainsString('php::toFloat(', $cpp);
+        self::assertStringNotContainsString('php::toBool(', $cpp);
+
+        // Five full unpacks plus the partial intval('ff', ...[16]).
+        self::assertSame(6, substr_count($cpp, 'appendUnpacked('));
+    }
+
     public function testSingleArgumentConversionsStillLowerToNativeCasts(): void
     {
         $cpp = $this->compileToCpp('intval-single-argument.php');
