@@ -16,6 +16,12 @@ function main() {
     var_dump(class_exists("NonexistentClass"));
     var_dump(class_exists("NonexistentClass", false));
 
+    // A trait is not a class. The answer must not depend on whether the name
+    // is a literal the compiler can resolve at compile time.
+    var_dump(class_exists("MyTrait"));
+    $traitName = "MyTrait";
+    var_dump(class_exists($traitName));
+
     // interface_exists
     var_dump(interface_exists("MyInterface"));
     var_dump(interface_exists("NonexistentInterface"));
@@ -36,6 +42,8 @@ function main() {
 --EXPECT--
 bool(true)
 bool(true)
+bool(false)
+bool(false)
 bool(false)
 bool(false)
 bool(true)

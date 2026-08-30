@@ -667,6 +667,11 @@ trait FuncCallOptimizer
         if (!$this->isScalarString($cn) || !$this->hasClass($cn->value)) {
             return false;
         }
+        // The class table also carries traits, but a trait is not a class to
+        // class_exists(): PHP answers false for it and true for an enum.
+        if ($this->getClassDef($cn->value)?->trait !== null) {
+            return 'false';
+        }
         return $this->isNativeObjectClass($cn->value) ? 'false' : 'true';
     }
 
