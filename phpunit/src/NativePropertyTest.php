@@ -44,7 +44,7 @@ class NativePropertyTest extends \BaseTest
         $this->assertStringContainsString('= php::toInt(value);', $code);
     }
 
-    public function testNativeIntPropertyAssignOpUsesNativeReference(): void
+    public function testNativeIntPropertyAssignOpFollowsPhpSemantics(): void
     {
         try {
             $outputFile = $this->compileNativeProperty('native-property-assign-op-int.php');
@@ -52,12 +52,21 @@ class NativePropertyTest extends \BaseTest
             $this->fail($e->getMessage());
         }
 
+        // `+=` on an int property is lowered to the plain assignment
+        // `$p = $p + $x` through the PHP-semantics Variant operators: the raw
+        // scalar-reference compound (`typephp_static_int_ref(...) += ...`)
+        // has undefined signed overflow where PHP promotes to float and the
+        // typed-property store raises the TypeError.
         $code = file_get_contents($outputFile);
-        $this->assertStringContainsString('typephp_static_int_ref(this_.attr(', $code);
-        $this->assertStringContainsString('typephp_static_int_ref(box.attr(', $code);
-        $this->assertSame(2, substr_count($code, 'typephp_static_int_ref('));
-        $this->assertStringNotContainsString('this_.attr(get_persistent_prop(0, get_str(0), 0, get_str(1)), true) +=', $code);
-        $this->assertStringNotContainsString('box.attr(get_persistent_prop(0, get_str(0), 0, get_str(1)), true) +=', $code);
+        $this->assertStringNotContainsString('typephp_static_int_ref(', $code);
+        $this->assertMatchesRegularExpression(
+            '/this_\.attr\([^;]*php::AttrMode::Update\) = \(\(php::Var\(tmp_var_\d+\)\) \+ \(php::Var\(2LL\)\)\);/',
+            $code,
+        );
+        $this->assertMatchesRegularExpression(
+            '/box\.attr\([^;]*php::AttrMode::Update\) = \(\(php::Var\(tmp_var_\d+\)\) \+ \(php::Var\(2LL\)\)\);/',
+            $code,
+        );
     }
 
     public function testReadonlyPropertiesDoNotUseNativeScalarReferences(): void
