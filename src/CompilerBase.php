@@ -548,6 +548,23 @@ class CompilerBase implements PropertyAccessContext
         $this->diagnosticReporter = $reporter;
     }
 
+    /**
+     * Run $fn with diagnostics raised as exceptions instead of terminating
+     * the compiler, restoring the previous reporter afterwards. Lets a caller
+     * attempt an evaluation that is allowed to fail (e.g. a compile-time
+     * constant lookup that a later phase resolves independently).
+     */
+    protected function withThrowingDiagnostics(callable $fn): mixed
+    {
+        $previous = $this->diagnosticReporter;
+        $this->diagnosticReporter = new ThrowingDiagnosticReporter();
+        try {
+            return $fn();
+        } finally {
+            $this->diagnosticReporter = $previous;
+        }
+    }
+
     protected function getDiagnosticReporter(): DiagnosticReporter
     {
         if ($this->diagnosticReporter !== null) {

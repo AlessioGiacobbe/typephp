@@ -1750,7 +1750,13 @@ class Preprocessor extends CompilerBase
         $constDef = new ConstantDef($this->parseIdentifier($case->name), 0, Type::VAR, '');
         $constDef->valueExpr = $expr;
         try {
-            $value = $this->evaluateClassConstValue($case, $constDef, $this->getFullClassName(), $constDef->name);
+            // Diagnostics must not terminate the compiler here: the value may
+            // reference a class declared later in the file (forward
+            // references are legal in PHP), which this early pass cannot
+            // resolve yet.
+            $value = $this->withThrowingDiagnostics(
+                fn (): mixed => $this->evaluateClassConstValue($case, $constDef, $this->getFullClassName(), $constDef->name)
+            );
         } catch (\Throwable) {
             // The stub registration evaluates the expression independently; a
             // value this evaluator cannot resolve only loses the compile-time
