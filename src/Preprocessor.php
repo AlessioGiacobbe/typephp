@@ -49,6 +49,29 @@ class Preprocessor extends CompilerBase
 {
     use ClassConstantValueTrait;
 
+    /**
+     * Magic methods Zend rejects inside enum declarations. Enum cases are
+     * stateless singletons, so construction, destruction, cloning, (de)ser-
+     * ialization, string casting, and property magic are all forbidden;
+     * only __call, __callStatic, and __invoke remain legal.
+     */
+    private const array ENUM_FORBIDDEN_MAGIC_METHODS = [
+        '__construct' => true,
+        '__destruct' => true,
+        '__clone' => true,
+        '__get' => true,
+        '__set' => true,
+        '__unset' => true,
+        '__isset' => true,
+        '__sleep' => true,
+        '__wakeup' => true,
+        '__set_state' => true,
+        '__serialize' => true,
+        '__unserialize' => true,
+        '__tostring' => true,
+        '__debuginfo' => true,
+    ];
+
     protected string $targetName = 'app';
 
     /**
@@ -854,6 +877,11 @@ class Preprocessor extends CompilerBase
                 if (!$this->classDef or !$this->methodDef or $this->methodDef->name !== '__construct') {
                     $this->fatalError($param, 'Promoted properties are not supported');
                 }
+                // A variadic parameter collects arguments into an array, so no
+                // single value exists to promote into the property.
+                if ($param->variadic) {
+                    $this->fatalError($param, 'Cannot declare variadic promoted property');
+                }
                 $nullable = $param->type instanceof NullableType;
                 // Promoted property defaults belong to the constructor parameter,
                 // not to the property default table. The property itself must stay
@@ -990,6 +1018,15 @@ class Preprocessor extends CompilerBase
             if ($rtLower === 'self' || $rtLower === 'static' || $rtLower === 'parent') {
                 $returnTypeKeyword = $rtLower;
             }
+        }
+        // `self`/`static` return types need a class scope; Zend rejects them
+        // on free functions at compile time. `parent` is already rejected in
+        // parseTypeDecl for every declaration context.
+        if (($returnTypeKeyword === 'self' || $returnTypeKeyword === 'static')
+            && $v instanceof Node\Stmt\Function_
+            && $this->classDef === null
+        ) {
+            $this->fatalError($v->returnType, "Cannot use \"{$returnTypeKeyword}\" when no class scope is active");
         }
         [$returnType, $class] = $this->resolveTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
         $this->assertSupportedNativeObjectTypeNode($v->returnType, self::DECL_TYPE_OF_RETURN, $v);
@@ -1201,6 +1238,11 @@ class Preprocessor extends CompilerBase
 
         if ($class instanceof Node\Stmt\Class_) {
             $flags = $class->flags;
+        } elseif ($class instanceof Node\Stmt\Enum_) {
+            // Zend marks every enum class entry ZEND_ACC_FINAL, which is what
+            // rejects `class B extends E`. Carrying the flag here lets the
+            // regular final-class inheritance check cover enums as well.
+            $flags = Modifiers::PUBLIC | Modifiers::FINAL;
         } else {
             $flags = Modifiers::PUBLIC;
         }
@@ -1251,11 +1293,48 @@ class Preprocessor extends CompilerBase
         if ($class instanceof Node\Stmt\Enum_) {
             $this->classDef->enum = true;
             if ($class->scalarType !== null) {
+                $backingType = strtolower($class->scalarType->name);
+                if ($backingType !== 'int' && $backingType !== 'string') {
+                    $this->fatalError(
+                        $class->scalarType,
+                        "Enum backing type must be `int` or `string`, `{$class->scalarType->name}` given",
+                    );
+                }
                 $this->classDef->enumBackingType = $class->scalarType->name;
             }
         }
         if (!$class instanceof Node\Stmt\Trait_) {
             $this->classDef->implements = $this->parseImplements($class->implements);
+            $implemented = [];
+            foreach ($this->classDef->implements as $i => $interfaceName) {
+                $interfaceLower = strtolower($interfaceName);
+                $errorNode = $class->implements[$i] ?? $class;
+                if ($class instanceof Node\Stmt\Enum_
+                    && ($interfaceLower === 'unitenum' || $interfaceLower === 'backedenum')
+                ) {
+                    // Zend adds UnitEnum (and BackedEnum for backed enums)
+                    // itself; naming either explicitly is a compile-time error.
+                    if ($interfaceLower === 'backedenum' && $this->classDef->enumBackingType === null) {
+                        $this->fatalError(
+                            $errorNode,
+                            "Non-backed enum `{$fullClassName}` cannot implement interface `BackedEnum`",
+                        );
+                    }
+                    $interfaceDisplay = $interfaceLower === 'unitenum' ? 'UnitEnum' : 'BackedEnum';
+                    $this->fatalError(
+                        $errorNode,
+                        "Enum `{$fullClassName}` cannot implement previously implemented interface `{$interfaceDisplay}`",
+                    );
+                }
+                if (isset($implemented[$interfaceLower])) {
+                    $kind = $class instanceof Node\Stmt\Enum_ ? 'Enum' : 'Class';
+                    $this->fatalError(
+                        $errorNode,
+                        "{$kind} `{$fullClassName}` cannot implement previously implemented interface `{$interfaceName}`",
+                    );
+                }
+                $implemented[$interfaceLower] = true;
+            }
         } else {
             $this->classDef->trait = $class;
             // Trait members are compiled later in the consuming class, but
@@ -1329,6 +1408,19 @@ class Preprocessor extends CompilerBase
                     break;
                 case 'Stmt_EnumCase':
                     $caseName = $this->parseIdentifier($v->name);
+                    // Enum cases are class constants in Zend: a case may collide
+                    // with another case or with a `const` of the same name.
+                    if (array_key_exists($caseName, $this->classDef->enumCases)
+                        || $this->classDef->hasConstant($caseName)
+                    ) {
+                        $this->fatalError($v, "Cannot redefine class constant `{$fullClassName}::{$caseName}`");
+                    }
+                    if ($v->expr !== null && $this->classDef->enumBackingType === null) {
+                        $this->fatalError($v, "Case `{$caseName}` of non-backed enum `{$fullClassName}` must not have a value");
+                    }
+                    if ($v->expr === null && $this->classDef->enumBackingType !== null) {
+                        $this->fatalError($v, "Case `{$caseName}` of backed enum `{$fullClassName}` must have a value");
+                    }
                     $this->classDef->enumCases[$caseName] = $this->evaluateEnumCaseValue($v);
                     break;
                 case 'Stmt_ClassMethod':
@@ -1545,6 +1637,13 @@ class Preprocessor extends CompilerBase
     {
         $this->resetFunction();
         $flags = $this->parseModifiers($v->flags);
+        if ($v->type !== null && $this->typeDeclContainsCallable($v->type)) {
+            $constName = $v->consts !== [] ? $this->parseIdentifier($v->consts[0]->name) : '';
+            $this->fatalError(
+                $v,
+                "Class constant `{$this->classDef->getNamespacedName(false)}::{$constName}` cannot have type `{$this->typeCheckNodeToString($v->type)}`",
+            );
+        }
         [$declaredType, $class] = $v->type
             ? $this->resolveTypeDecl($v->type, self::DECL_TYPE_OF_CONST)
             : [null, ''];
@@ -1701,7 +1800,31 @@ class Preprocessor extends CompilerBase
             );
         }
         $flags = $this->parseModifiers($flags);
+        // A `readonly class` marks every property readonly, so the class-level
+        // flag participates in the same Zend declaration rules as an explicit
+        // per-property `readonly` modifier.
+        if (($flags | $this->classDef->flags) & Modifiers::READONLY) {
+            $className = $this->classDef->getNamespacedName(false);
+            if ($flags & Modifiers::STATIC) {
+                $this->fatalError($errorNode, "Static property `{$className}::\${$name}` cannot be readonly");
+            }
+            if ($typeNode === null) {
+                $this->fatalError($errorNode, "Readonly property `{$className}::\${$name}` must have type");
+            }
+            if ($defaultNode !== null) {
+                $this->fatalError($errorNode, "Readonly property `{$className}::\${$name}` cannot have default value");
+            }
+        }
         $this->validateAsymmetricPropertyDeclaration($name, $flags, $typeNode, $errorNode);
+        // `callable` is a runtime-context type (a string or array may or may
+        // not be callable depending on scope), so Zend forbids it in property
+        // types entirely - bare, nullable, or as a union member.
+        if ($typeNode !== null && $this->typeDeclContainsCallable($typeNode)) {
+            $this->fatalError(
+                $errorNode,
+                "Property `{$this->classDef->getNamespacedName(false)}::\${$name}` cannot have type `{$this->typeCheckNodeToString($typeNode)}`",
+            );
+        }
         [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);
         $this->assertSupportedNativeObjectTypeNode($typeNode, self::DECL_TYPE_OF_PROPERTY, $errorNode);
         $nullableNative = $this->resolveNullableNativeObjectType(
@@ -1771,6 +1894,164 @@ class Preprocessor extends CompilerBase
         }
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
+    }
+
+    /**
+     * Validate compound well-formedness before resolving, so every context a
+     * type declaration is parsed in (parameters, returns, properties, class
+     * and interface constants, closures) shares the same Zend rules.
+     */
+    protected function resolveTypeDecl(?NodeAbstract $type, int $what): array
+    {
+        $this->validateCompoundTypeDecl($type);
+        return parent::resolveTypeDecl($type, $what);
+    }
+
+    /**
+     * Compile-time well-formedness of compound type declarations, mirroring
+     * Zend: standalone-only types inside unions, invalid nullable targets,
+     * duplicate members (after alias/namespace resolution, with iterable
+     * expanded to array|Traversable), the bool/true/false overlaps, and
+     * non-class standard types inside intersections. Redundancy between whole
+     * DNF groups is not checked.
+     */
+    private function validateCompoundTypeDecl(?NodeAbstract $type): void
+    {
+        if ($type instanceof NullableType) {
+            $inner = $type->type;
+            if (!$inner instanceof Node\Identifier && !$inner instanceof Node\Name) {
+                return;
+            }
+            $innerLower = strtolower($this->parseIdentifier($inner));
+            if ($innerLower === 'mixed') {
+                $this->fatalError($type, 'Type `mixed` cannot be marked as nullable since mixed already includes null');
+            }
+            if ($innerLower === 'null') {
+                $this->fatalError($type, '`null` cannot be marked as nullable');
+            }
+            if ($innerLower === 'void' || $innerLower === 'never') {
+                $this->fatalError($type, "Type `{$innerLower}` can only be used as a standalone type");
+            }
+            return;
+        }
+        if ($type instanceof UnionType) {
+            $this->validateUnionTypeDecl($type);
+        } elseif ($type instanceof IntersectionType) {
+            $this->validateIntersectionTypeDecl($type);
+        }
+    }
+
+    private function validateUnionTypeDecl(UnionType $type): void
+    {
+        $seen = [];
+        $addMember = function (string $key, string $display, NodeAbstract $node) use (&$seen): void {
+            if (isset($seen[$key])) {
+                $this->fatalError($node, "Duplicate type `{$display}` is redundant");
+            }
+            $seen[$key] = true;
+        };
+        foreach ($type->types as $member) {
+            if ($member instanceof IntersectionType) {
+                // A DNF group: its members obey the intersection rules.
+                $this->validateIntersectionTypeDecl($member);
+                continue;
+            }
+            $name = $this->parseIdentifier($member);
+            $nameLower = strtolower($name);
+            if ($nameLower === 'mixed' || $nameLower === 'void' || $nameLower === 'never') {
+                $this->fatalError($member, "Type `{$nameLower}` can only be used as a standalone type");
+            }
+            if ($nameLower === 'bool' || $nameLower === 'false' || $nameLower === 'true') {
+                // Zend folds false/true into bool: a union may not repeat the
+                // overlap, and naming both literals asks for bool instead.
+                if (($nameLower === 'true' && isset($seen['false']))
+                    || ($nameLower === 'false' && isset($seen['true']))
+                ) {
+                    $this->fatalError($member, 'Type contains both `true` and `false`, `bool` must be used instead');
+                }
+                if ($nameLower === 'bool') {
+                    foreach (['false', 'true'] as $literal) {
+                        if (isset($seen[$literal])) {
+                            $this->fatalError($member, "Duplicate type `{$literal}` is redundant");
+                        }
+                    }
+                } elseif (isset($seen['bool'])) {
+                    $this->fatalError($member, "Duplicate type `{$nameLower}` is redundant");
+                }
+                $addMember($nameLower, $nameLower, $member);
+                continue;
+            }
+            if ($nameLower === 'iterable') {
+                // Zend expands iterable to array|Traversable before the
+                // redundancy check and reports the overlapping component.
+                $addMember('iterable', 'iterable', $member);
+                $addMember('array', 'array', $member);
+                $addMember('traversable', 'Traversable', $member);
+                continue;
+            }
+            if (isset($this->zendTypeMap[$nameLower])
+                || in_array($nameLower, ['self', 'parent', 'static'], true)
+            ) {
+                $addMember($nameLower, $nameLower, $member);
+                continue;
+            }
+            $resolved = $member instanceof Node\Name\FullyQualified
+                ? $member->toString()
+                : $this->getNamespacedClassName($name);
+            $addMember(strtolower($resolved), $resolved, $member);
+        }
+    }
+
+    private function validateIntersectionTypeDecl(IntersectionType $type): void
+    {
+        $seen = [];
+        foreach ($type->types as $member) {
+            $name = $this->parseIdentifier($member);
+            $nameLower = strtolower($name);
+            if ($nameLower === 'self' || $nameLower === 'parent' || $nameLower === 'static') {
+                // Rejected later by buildTypeCheckFromNode with its
+                // established "cannot be part of an intersection type" text.
+                continue;
+            }
+            if (in_array($nameLower, [
+                'int', 'float', 'bool', 'false', 'true', 'string', 'array',
+                'object', 'mixed', 'null', 'void', 'never', 'callable', 'iterable',
+            ], true)) {
+                $this->fatalError($member, "Type `{$nameLower}` cannot be part of an intersection type");
+            }
+            $resolved = $member instanceof Node\Name\FullyQualified
+                ? $member->toString()
+                : $this->getNamespacedClassName($name);
+            $resolvedLower = strtolower($resolved);
+            if (isset($seen[$resolvedLower])) {
+                $this->fatalError($member, "Duplicate type `{$resolved}` is redundant");
+            }
+            $seen[$resolvedLower] = true;
+        }
+    }
+
+    /**
+     * Whether a declared type mentions `callable` outside an intersection.
+     * Zend forbids callable in property and class-constant types; members of
+     * an intersection are rejected separately as non-class types.
+     */
+    private function typeDeclContainsCallable(NodeAbstract $typeNode): bool
+    {
+        if ($typeNode instanceof NullableType) {
+            return $this->typeDeclContainsCallable($typeNode->type);
+        }
+        if ($typeNode instanceof UnionType) {
+            foreach ($typeNode->types as $member) {
+                if ($this->typeDeclContainsCallable($member)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if ($typeNode instanceof IntersectionType) {
+            return false;
+        }
+        return strtolower($this->parseIdentifier($typeNode)) === 'callable';
     }
 
     private function validateAsymmetricPropertyDeclaration(
@@ -2028,6 +2309,12 @@ class Preprocessor extends CompilerBase
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
+        // Zend enum class entries have no property table at all: instance,
+        // static, and hooked properties are all rejected at compile time.
+        if ($this->classDef->enum) {
+            $this->fatalError($v, "Enum `{$this->classDef->getNamespacedName(false)}` cannot include properties");
+        }
+        $this->validateClassPropertyHookPlacement($v);
         $arrayDef = $this->parseArrayDefinition($v);
         if ($this->classDef->nativeObject) {
             if ($v->type === null) {
@@ -2078,6 +2365,74 @@ class Preprocessor extends CompilerBase
         $this->context = $oriCtx;
     }
 
+    /**
+     * Mirror Zend's compile-time placement rules for property hooks on class
+     * (and trait) properties; the interface path enforces its own subset in
+     * prepareInterfaceProperty(). Check order follows Zend 8.4 precedence:
+     * static, readonly, then the abstract-property rules.
+     */
+    private function validateClassPropertyHookPlacement(Node\Stmt\Property $v): void
+    {
+        $abstract = (bool) ($v->flags & Modifiers::ABSTRACT);
+        if ($v->hooks === [] && !$abstract) {
+            return;
+        }
+
+        $className = $this->classDef->getNamespacedName(false);
+        $propName = $v->props !== [] ? $this->parseIdentifier($v->props[0]->name) : '';
+        if ($v->hooks !== []) {
+            if ($v->flags & Modifiers::STATIC) {
+                $this->fatalError($v, 'Cannot declare hooks for static property');
+            }
+            // A readonly class marks every property readonly, exactly like an
+            // explicit per-property modifier.
+            if (($v->flags | $this->classDef->flags) & Modifiers::READONLY) {
+                $this->fatalError($v, 'Hooked properties cannot be readonly');
+            }
+        }
+
+        if ($abstract) {
+            if ($v->hooks === []) {
+                $this->fatalError($v, 'Only hooked properties may be declared abstract');
+            }
+            foreach ($v->props as $prop) {
+                if ($prop->default !== null) {
+                    $this->fatalError(
+                        $v,
+                        "Cannot specify default value for virtual hooked property {$className}::\${$propName}",
+                    );
+                }
+            }
+            $hasAbstractHook = false;
+            foreach ($v->hooks as $hook) {
+                if ($hook->body === null) {
+                    $hasAbstractHook = true;
+                    break;
+                }
+            }
+            if (!$hasAbstractHook) {
+                $this->fatalError(
+                    $v,
+                    "Abstract property `{$className}::\${$propName}` must specify at least one abstract hook",
+                );
+            }
+            if (!$this->classDef->trait && !($this->classDef->flags & Modifiers::ABSTRACT)) {
+                $this->fatalError(
+                    $v,
+                    "Non-abstract class `{$className}` contains abstract hooked property `\${$propName}`",
+                );
+            }
+            return;
+        }
+
+        // Without the abstract modifier every declared hook needs a body.
+        foreach ($v->hooks as $hook) {
+            if ($hook->body === null) {
+                $this->fatalError($hook, 'Non-abstract property hook must have a body');
+            }
+        }
+    }
+
     protected function prepareClassMethod(Node\Stmt\ClassMethod $v, Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): void
     {
         $this->resetMethod();
@@ -2085,6 +2440,15 @@ class Preprocessor extends CompilerBase
         $this->method = $name;
         $this->assertKeywordMethodMayBeDeclared($v, $name, $this->classDef->nativeObject);
         $this->assertNativeMagicMethodSupported($v, $name);
+        // Zend forbids every magic method in enums except __call, __callStatic,
+        // and __invoke: enum cases are singletons without state, construction,
+        // cloning, serialization, or property access.
+        if ($this->classDef->enum && isset(self::ENUM_FORBIDDEN_MAGIC_METHODS[strtolower($name)])) {
+            $this->fatalError(
+                $v,
+                "Enum `{$this->classDef->getNamespacedName(false)}` cannot include magic method `{$name}`",
+            );
+        }
         $flags = $this->parseModifiers($v->flags);
         $abstract = $flags & Modifiers::ABSTRACT;
         if ($this->classDef->nativeObject && ($flags & Modifiers::STATIC)) {
@@ -2125,6 +2489,22 @@ class Preprocessor extends CompilerBase
         } else {
             if ($this->classDef->hasMethod($name) || $this->classDef->hasAbstractMethod($name)) {
                 $this->fatalError($v, "Duplicate method `{$this->method}`");
+            }
+            // Enums can never be declared abstract, so an abstract method in an
+            // enum body can never be implemented (Zend rejects it at link time).
+            if ($class instanceof Node\Stmt\Enum_) {
+                $this->fatalError($v, "Enum `{$this->class}` cannot include abstract method `{$v->name}()`");
+            }
+            // A private method cannot be overridden, so an abstract private
+            // method could never be implemented. Traits are exempt since PHP
+            // 8.0: the consuming class provides the private implementation.
+            if (!$class instanceof Node\Stmt\Trait_ && ($flags & Modifiers::PRIVATE)) {
+                $this->fatalError($v, "Abstract function `{$this->class}::{$name}()` cannot be declared private");
+            }
+            // An abstract method declares a signature only; Zend rejects a body
+            // instead of silently discarding it.
+            if ($v->stmts !== null) {
+                $this->fatalError($v, "Abstract function `{$this->class}::{$name}()` cannot contain body");
             }
             if (!$class instanceof Node\Stmt\Trait_ && isset($class->flags) && !($class->flags & Modifiers::ABSTRACT)) {
                 $this->fatalError($v, "Non-abstract class {$this->class} contains abstract method {$v->name}");
@@ -2248,8 +2628,23 @@ class Preprocessor extends CompilerBase
         $interfaceName = $this->interfaceDef->getNamespacedName(false);
         $interfaceNameLower = strtolower($interfaceName);
 
+        $extendedInterfaces = [];
         foreach ($v->extends as $parent) {
             $parentName = $this->getNamespacedClassName($this->parseIdentifier($parent));
+            // An interface may only extend interfaces. The parent's kind is
+            // only known once its declaration has been prepared; a parent
+            // declared later is validated by the Translator instead.
+            if ($this->hasClass($parentName) || $this->isInternalClass($parentName)) {
+                $this->fatalError($parent, "`{$interfaceName}` cannot implement `{$parentName}` - it is not an interface");
+            }
+            $parentNameLower = strtolower($parentName);
+            if (isset($extendedInterfaces[$parentNameLower])) {
+                $this->fatalError(
+                    $parent,
+                    "Interface `{$interfaceName}` cannot implement previously implemented interface `{$parentName}`",
+                );
+            }
+            $extendedInterfaces[$parentNameLower] = true;
             $this->interfaceDef->extendsList[] = $parentName;
             if ($this->interfaceDef->extends === '') {
                 $this->interfaceDef->extends = $parentName;
@@ -2271,6 +2666,18 @@ class Preprocessor extends CompilerBase
             if ($stmt instanceof Node\Stmt\ClassConst) {
                 foreach ($stmt->consts as $const) {
                     $constName = $this->parseIdentifier($const->name);
+                    if ($stmt->flags & (Modifiers::PRIVATE | Modifiers::PROTECTED)) {
+                        $this->fatalError(
+                            $stmt,
+                            "Access type for interface constant `{$interfaceName}::{$constName}` must be public",
+                        );
+                    }
+                    if ($stmt->type !== null && $this->typeDeclContainsCallable($stmt->type)) {
+                        $this->fatalError(
+                            $stmt,
+                            "Class constant `{$interfaceName}::{$constName}` cannot have type `{$this->typeCheckNodeToString($stmt->type)}`",
+                        );
+                    }
                     if ($this->interfaceDef->hasConstant($constName)) {
                         $this->fatalError($stmt, "Duplicate constant `{$constName}`");
                     }
@@ -2293,6 +2700,20 @@ class Preprocessor extends CompilerBase
             if ($stmt instanceof Node\Stmt\ClassMethod) {
                 $methodName = $this->getMethodName($stmt);
                 $this->assertKeywordMethodMayBeDeclared($stmt, $methodName, false);
+                // Interface methods are implicitly public and abstract; Zend
+                // rejects the modifiers below in this exact precedence order.
+                if ($stmt->flags & (Modifiers::PRIVATE | Modifiers::PROTECTED)) {
+                    $this->fatalError($stmt, "Access type for interface method `{$interfaceName}::{$methodName}()` must be public");
+                }
+                if ($stmt->flags & Modifiers::ABSTRACT) {
+                    $this->fatalError($stmt, "Interface method `{$interfaceName}::{$methodName}()` must not be abstract");
+                }
+                if ($stmt->flags & Modifiers::FINAL) {
+                    $this->fatalError($stmt, "Interface method `{$interfaceName}::{$methodName}()` must not be final");
+                }
+                if ($stmt->stmts !== null) {
+                    $this->fatalError($stmt, "Interface function `{$interfaceName}::{$methodName}()` cannot contain body");
+                }
                 if ($this->interfaceDef->hasMethod($methodName)) {
                     $this->fatalError($stmt, "Duplicate method `{$methodName}`");
                 }
@@ -2337,6 +2758,12 @@ class Preprocessor extends CompilerBase
     {
         if ($property->hooks === []) {
             $this->fatalError($property, 'Interfaces may only include hooked properties');
+        }
+        if ($property->flags & Modifiers::ABSTRACT) {
+            $this->fatalError(
+                $property,
+                'Property in interface cannot be explicitly abstract. All interface members are implicitly abstract',
+            );
         }
         if ($property->flags & (Modifiers::PRIVATE | Modifiers::PROTECTED)) {
             $this->fatalError($property, 'Property in interface cannot be protected or private');
@@ -2386,6 +2813,12 @@ class Preprocessor extends CompilerBase
         $nullable = $property->type instanceof NullableType;
         foreach ($property->props as $prop) {
             $name = $this->parseIdentifier($prop->name);
+            if ($property->type !== null && $this->typeDeclContainsCallable($property->type)) {
+                $this->fatalError(
+                    $property,
+                    "Property `{$this->interfaceDef->getNamespacedName(false)}::\${$name}` cannot have type `{$this->typeCheckNodeToString($property->type)}`",
+                );
+            }
             if ($property->getAttribute(FunctionAttributeLowering::OVERRIDE_ATTRIBUTE, false)) {
                 $this->fatalCompileTimeAttribute(
                     $property,
