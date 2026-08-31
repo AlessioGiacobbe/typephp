@@ -3107,8 +3107,12 @@ CODE;
                 /** @var Node\Stmt\Trait_ $traitAst */
                 $traitAst = $this->cloneAstNode($traitDef->trait);
                 // Recursively flatten traits used by this trait before copying
-                // its members into the final class.
-                $this->composeTraitAst($traitAst, new Node\Name($traitFullName));
+                // its members into the final class. The nested TraitUse nodes
+                // must be resolved in the lexical context of the trait being
+                // expanded, not in the context of its eventual consumer.
+                $this->withTraitNameContext($traitFullName, function () use ($traitAst, $traitFullName): void {
+                    $this->composeTraitAst($traitAst, new Node\Name($traitFullName));
+                });
                 $traitStmts = $traitAst->stmts;
                 $aliasStmts = [];
                 foreach ($traitStmts as $k1 => $traitStmt) {
