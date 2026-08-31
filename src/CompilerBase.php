@@ -160,6 +160,7 @@ class CompilerBase implements PropertyAccessContext
     protected const string ATTR_STATEMENT_EXPRESSION = 'aotStatementExpression';
     protected const string ATTR_MULTI_RETURN_IMPL = 'aotMultiReturnImpl';
     protected const string ATTR_SCOPED_CALLBACK = 'aotScopedCallback';
+    protected const string ATTR_FORCE_FLOAT_LITERAL = 'aotForceFloatLiteral';
 
     /**
      * Keyword methods (to* builtins) with mandated return types.
@@ -3308,8 +3309,49 @@ class CompilerBase implements PropertyAccessContext
         if ($type === Type::BIGINT || $type === Type::DECIMAL || $type === Type::BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use ++ on ' . $type . '. Use += 1 instead (Big* types are immutable).');
         }
+        $incDec = $this->parseNativeIntIncDec($expr->var, '+', false, $expr);
+        if ($incDec !== null) {
+            return $incDec;
+        }
         $result = '++' . $this->parseWritableIdentifier($expr->var);
         return $result;
+    }
+
+    /**
+     * Lower ++/-- on a native int slot to the PHP-semantics plain assignment.
+     *
+     * A raw C++ ++/-- on a zend_long slot has undefined signed overflow at
+     * PHP_INT_MAX/PHP_INT_MIN, where PHP promotes the result to float. The
+     * plain assignment `$x = $x + 1` already routes through the encapsulated
+     * Variant operators and performs the established typed-slot coercion.
+     * Post-increment keeps its expression value (the old value) through a
+     * native temporary inside one comma expression, so no side effect is
+     * hoisted out of its evaluation position.
+     */
+    protected function parseNativeIntIncDec(
+        Expr $target,
+        string $op,
+        bool $returnOldValue,
+        NodeAbstract $sourceNode,
+    ): ?string {
+        if ($this->nativeTypes || !$this->isVarExpr($target)) {
+            return null;
+        }
+        $var = (string) $this->parseIdentifier($target);
+        if (!$this->hasVar($var) || $this->detectVarType($target) !== Type::INT) {
+            return null;
+        }
+        $attributes = $sourceNode->getAttributes();
+        $one = new Node\Scalar\Int_(1, $attributes);
+        $binary = $op === '+'
+            ? new Expr\BinaryOp\Plus($target, $one, $attributes)
+            : new Expr\BinaryOp\Minus($target, $one, $attributes);
+        $assign = $this->parseAssign(new Expr\Assign($target, $binary, $attributes));
+        if (!$returnOldValue) {
+            return '(' . $assign . ')';
+        }
+        $tmpVar = $this->addTmpVar(Type::INT);
+        return '(' . $tmpVar . ' = ' . $var . ', ' . $assign . ', ' . $tmpVar . ')';
     }
 
     /**
@@ -3701,6 +3743,10 @@ class CompilerBase implements PropertyAccessContext
                 $opName = $op === '+' ? '++' : '--';
                 $this->fatalError($expr, "Cannot use {$opName} on {$type}. Use " . ($op === '+' ? '+= 1' : '-= 1') . ' instead (Big* types are immutable).');
             }
+            $incDec = $this->parseNativeIntIncDec($expr->var, $op, true, $expr);
+            if ($incDec !== null) {
+                return $incDec;
+            }
             return $var . str_repeat($op, 2);
         }
         if ($this->isStaticPropertyFetch($expr->var)) {
@@ -3746,6 +3792,10 @@ class CompilerBase implements PropertyAccessContext
         $type = $this->detectVarType($expr->var);
         if ($type === Type::BIGINT || $type === Type::DECIMAL || $type === Type::BIGFLOAT) {
             $this->fatalError($expr, 'Cannot use -- on ' . $type . '. Use -= 1 instead (Big* types are immutable).');
+        }
+        $incDec = $this->parseNativeIntIncDec($expr->var, '-', false, $expr);
+        if ($incDec !== null) {
+            return $incDec;
         }
         $result = '--' . $this->parseWritableIdentifier($expr->var);
         return $result;

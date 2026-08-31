@@ -24,6 +24,8 @@ trait BinaryOpTrait
         $this->assertExprCanBeUsedAsValue($left, 'binary operand');
         $this->assertExprCanBeUsedAsValue($right, 'binary operand');
 
+        $this->demoteAutoDecimalLiteralAgainstFloat($left, $right);
+
         // Arithmetic logic: convert to a numeric type first when possible
         $leftExpr  = $this->parseOrderedBinaryOperand($left);
         $rightExpr = $this->parseOrderedBinaryOperand($right);
@@ -139,14 +141,50 @@ trait BinaryOpTrait
             return $constantDivisionByZero;
         }
 
-        if ($op === '%' and !($leftType === Type::INT and $rightType === Type::INT)) {
-            return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+        if ($op === '%') {
+            if (!($leftType === Type::INT and $rightType === Type::INT)) {
+                return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+            }
+            // PHP int modulo raises a catchable DivisionByZeroError for a
+            // zero divisor and defines PHP_INT_MIN % -1 as 0; the raw C++ '%'
+            // is undefined behavior for both. Route dynamic int modulo through
+            // the PHP mod function unless the user explicitly selected
+            // `use native_types`. Constant operands are folded below.
+            if (!$this->nativeTypes
+                && $this->evaluateConstantIntArithmetic($left, $right, '%') === null
+            ) {
+                return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+            }
         }
 
         if ($op === '<<' || $op === '>>') {
             $foldedShift = $this->tryFoldConstantShift($left, $right, $op, $leftExpr, $rightExpr);
             if ($foldedShift !== null) {
                 return $foldedShift;
+            }
+
+            // PHP shifts by >= the word size yield 0 (or -1 for a negative
+            // right-shifted value) and negative shift counts raise a catchable
+            // ArithmeticError, while the raw C++ shift is undefined behavior
+            // for both; a raw left shift into the sign bit is also undefined.
+            // Route dynamic int shifts through the encapsulated Variant
+            // operators unless the user explicitly selected `use native_types`.
+            // Constant shifts that C++ defines identically to PHP stay raw.
+            if (!$this->nativeTypes
+                && $leftType === Type::INT
+                && $rightType === Type::INT
+            ) {
+                $leftValue = $this->constantIntValue($left);
+                $shiftValue = $this->constantIntValue($right);
+                $safeConstantShift = $leftValue !== null
+                    && $shiftValue !== null
+                    && $leftValue >= 0
+                    && $shiftValue >= 0
+                    && $shiftValue < PHP_INT_SIZE * 8
+                    && ($op === '>>' || !$this->leftShiftTouchesSignBit($leftValue, $shiftValue));
+                if (!$safeConstantShift) {
+                    return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
+                }
             }
         }
 
@@ -168,6 +206,24 @@ trait BinaryOpTrait
             && $this->evaluateConstantIntArithmetic($left, $right, $op) === null
         ) {
             return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
+        }
+
+        // PHP division on native scalar operands cannot be emitted as a raw
+        // C++ '/': zend_long division truncates (7 / 2 is 3.5 in PHP, 3 in
+        // C++), division by zero must raise the catchable DivisionByZeroError
+        // (raw integer division is UB, raw double division yields INF/NAN),
+        // and PHP_INT_MIN / -1 promotes to float. Route dynamic division
+        // through the encapsulated Variant operator unless the user explicitly
+        // selected `use native_types`. Fully constant operands are folded
+        // above or are exact when emitted directly.
+        if (!$this->nativeTypes
+            && $op === '/'
+            && in_array($leftType, [Type::INT, Type::FLOAT], true)
+            && in_array($rightType, [Type::INT, Type::FLOAT], true)
+            && ($this->constantNumericValue($left, false) === null
+                || $this->constantNumericValue($right, false) === null)
+        ) {
+            return '((php::Var(' . $leftExpr . ')) / (php::Var(' . $rightExpr . ')))';
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
@@ -393,10 +449,13 @@ trait BinaryOpTrait
             return $value === null ? null : -$value;
         }
         if ($expr instanceof Node\Expr\ConstFetch) {
-            $name = strtolower($expr->name->toString());
+            // PHP constants are case-sensitive and unqualified names resolve
+            // through the namespace first, so only a fetch that provably
+            // names the global constant may fold to its value.
+            $name = $this->resolveGlobalFoldableConstantName($expr);
             return match ($name) {
-                'php_int_max' => PHP_INT_MAX,
-                'php_int_min' => PHP_INT_MIN,
+                'PHP_INT_MAX' => PHP_INT_MAX,
+                'PHP_INT_MIN' => PHP_INT_MIN,
                 default => null,
             };
         }
@@ -441,6 +500,34 @@ trait BinaryOpTrait
         };
     }
 
+    /**
+     * Resolve a constant fetch to the global constant name it provably
+     * denotes, or null when the fetch may refer to something else.
+     *
+     * A `use const` alias resolves to its target. A fully qualified name is
+     * already global. An unqualified name inside a namespace participates in
+     * PHP's runtime fallback (Namespace\NAME can be defined before the fetch
+     * executes), so it never provably names the global constant. A qualified
+     * relative name resolves inside a namespace/import and is never global.
+     */
+    protected function resolveGlobalFoldableConstantName(Node\Expr\ConstFetch $expr): ?string
+    {
+        $name = ltrim($expr->name->toString(), '\\');
+        if (isset($this->useConstants[$name])) {
+            return ltrim($this->useConstants[$name], '\\');
+        }
+        if ($expr->name instanceof Node\Name\FullyQualified) {
+            return $name;
+        }
+        if (!$expr->name->isUnqualified()) {
+            return null;
+        }
+        if ($this->namespace) {
+            return null;
+        }
+        return $name;
+    }
+
     protected function constantDivisionValue(int|float $left, int|float $right, bool $nativeSemantics): int|float|null
     {
         if ($right == 0) {
@@ -472,21 +559,25 @@ trait BinaryOpTrait
         string $leftExpr,
         string $rightExpr
     ): ?string {
-        if (($op !== '/' && $op !== '%') || $this->isZeroLiteral($right)) {
+        if ($op !== '/' && $op !== '%') {
             return null;
         }
 
-        $rightValue = $this->constantNumericValue($right, $this->nativeTypes);
-        if ($rightValue === null || $rightValue != 0) {
-            return null;
+        if (!$this->isZeroLiteral($right)) {
+            $rightValue = $this->constantNumericValue($right, $this->nativeTypes);
+            if ($rightValue === null || $rightValue != 0) {
+                return null;
+            }
         }
 
         if ($this->nativeTypes) {
             $this->fatalError($right, 'Constant division or modulo by zero has undefined behavior in C++ native mode');
         }
 
-        // Preserve PHP's catchable DivisionByZeroError for a nested constant
-        // zero. Literal zero keeps the compiler's established diagnostic.
+        // Preserve PHP's catchable DivisionByZeroError for a constant zero
+        // divisor, whether spelled as a literal or a folded expression. Even
+        // statically detectable, the operation only throws when the statement
+        // actually executes, so it must not reject compilation.
         return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
     }
 
@@ -759,8 +850,38 @@ trait BinaryOpTrait
         $useTwoOperandOverload = $prefixExpressions === []
             && $this->canUseTwoOperandConcatOverload($items);
 
+        // Zend lowers the left-associated chain i0.i1.i2... into one CONCAT
+        // opcode per node and reads a CV operand when its opcode executes:
+        // i0 and i1 are both read at the first op (after the side effects of
+        // both), and every later item ik at the k-th op (after the side
+        // effects of i0..ik, before those of later items). The flattened
+        // braced list hoists all captured side effects ahead of the whole
+        // expression, so a plain-variable item that Zend reads before a later
+        // item's side effects (`$m . ',' . ($m = 9)` must yield "1,9") is
+        // snapshotted into a temporary at its Zend read position.
+        $lastHoistingIndex = -1;
+        foreach ($items as $index => $item) {
+            if ($this->shouldMaterializeOrderedOperand($item)
+                || $this->isNativeObjectClass($this->detectClassOfExpr($item))
+            ) {
+                $lastHoistingIndex = $index;
+            }
+        }
+
+        // The first item is read together with the second at the first op,
+        // i.e. after the second item's side effects. Its snapshot is deferred
+        // until the second item has been lowered.
+        $deferFirstItemSnapshot = $lastHoistingIndex >= 2
+            && isset($items[1])
+            && $this->isSnapshotableVariableRead($items[0])
+            && !($this->isScalarString($items[1]) && $items[1]->value === '');
+
         $argList = $prefixExpressions;
-        foreach ($items as $item) {
+        foreach ($items as $index => $item) {
+            if ($deferFirstItemSnapshot && $index === 0) {
+                continue;
+            }
+
             // Keep one operand so concat still performs PHP string coercion.
             // Prefix expressions are operands too (for example, the left-hand
             // value of `.=`), so an empty RHS literal can be omitted there.
@@ -768,20 +889,34 @@ trait BinaryOpTrait
                 continue;
             }
 
+            $entryPosition = count($argList);
             $itemClass = $this->detectClassOfExpr($item);
             if ($this->isNativeObjectClass($itemClass)) {
                 $toString = new Expr\MethodCall($item, new Node\Identifier('toString'));
                 $argList[] = $this->parseOrderedOperand($toString, false);
-                continue;
+            } else {
+                $type = $this->detectTypeOfExpr($item);
+                // C++17 evaluates the braced-list elements in order. The
+                // temporary is still required because lowering a later operand
+                // may append captured beforeStmtLines ahead of the entire
+                // concat expression; without it, those statements could
+                // overtake an earlier Call.
+                $snapshotEarlierRead = $index >= 1
+                    && $index < $lastHoistingIndex
+                    && $this->isSnapshotableVariableRead($item);
+                $parsed = $this->parseOrderedOperand($item, false, $snapshotEarlierRead);
+                $argList[] = $this->prepareConcatOperand($parsed, $type);
             }
 
-            $type = $this->detectTypeOfExpr($item);
-            // C++17 evaluates the braced-list elements in order. The temporary
-            // is still required because lowering a later operand may append
-            // captured beforeStmtLines ahead of the entire concat expression;
-            // without it, those statements could overtake an earlier Call.
-            $parsed = $this->parseOrderedOperand($item, false);
-            $argList[] = $this->prepareConcatOperand($parsed, $type);
+            if ($deferFirstItemSnapshot && $index === 1) {
+                // Snapshot the first item now, after the second item's side
+                // effects, and keep its leading position in the operand list.
+                $firstType = $this->detectTypeOfExpr($items[0]);
+                $firstParsed = $this->parseOrderedOperand($items[0], false, true);
+                array_splice($argList, $entryPosition, 0, [
+                    $this->prepareConcatOperand($firstParsed, $firstType),
+                ]);
+            }
         }
 
         if ($useTwoOperandOverload && count($argList) === 2) {
@@ -789,6 +924,24 @@ trait BinaryOpTrait
         }
 
         return Symbol::concat() . '({' . implode(', ', $argList) . '})';
+    }
+
+    /**
+     * Whether an operand is a plain local variable read whose value can be
+     * snapshotted into a temporary to preserve left-to-right evaluation when
+     * a later operand hoists side-effecting statements. `$this` cannot be
+     * reassigned and $GLOBALS has dedicated lowering; both are left alone.
+     */
+    protected function isSnapshotableVariableRead(NodeAbstract $expr): bool
+    {
+        if (!$this->isVarExpr($expr) || !is_string($expr->name)) {
+            return false;
+        }
+        if ($expr->name === 'this' || $expr->name === 'GLOBALS') {
+            return false;
+        }
+        $var = (string) $this->parseIdentifier($expr);
+        return $this->hasVar($var) && !$this->isStdContainer($var);
     }
 
     protected function canUseTwoOperandConcatOverload(array $items): bool
@@ -951,6 +1104,7 @@ trait BinaryOpTrait
         if ($pythonOperator !== null) {
             return $pythonOperator;
         }
+        $this->demoteAutoDecimalLiteralAgainstFloat($expr->left, $expr->right);
         $left  = $this->parseCompareExpr($expr->left);
         $right = $this->parseCompareExpr($expr->right);
         $leftIsNative = $this->isNativeObjectClass($this->detectClassOfExpr($expr->left));
@@ -1113,8 +1267,36 @@ trait BinaryOpTrait
             ?? 'php::compare(' . $this->parseOrderedOperand($expr->left, false) . ', ' . $this->parseOrderedOperand($expr->right, false) . ')';
     }
 
+    /**
+     * When an auto-Decimal-classified float literal meets a float-typed
+     * expression in a binary operation, demote the literal to its exact
+     * double. PHP evaluates every float literal as a double, so rejecting
+     * the mix ("Cannot convert float expression to Decimal") refuses valid
+     * PHP — e.g. `0.1 + 0.2 == 0.30000000000000004` from a var_export round
+     * trip — and keeping the Decimal would change comparison semantics.
+     */
+    protected function demoteAutoDecimalLiteralAgainstFloat(NodeAbstract $left, NodeAbstract $right): void
+    {
+        if ($this->decimalTypes) {
+            return;
+        }
+        $leftType = $this->detectTypeOfExpr($left);
+        $rightType = $this->detectTypeOfExpr($right);
+        foreach ([[$left, $leftType, $rightType], [$right, $rightType, $leftType]] as [$node, $type, $otherType]) {
+            if ($type === Type::DECIMAL
+                && $otherType === Type::FLOAT
+                && $node instanceof Node\Scalar\Float_
+                && $this->isDecimalLiteral($node)
+            ) {
+                $node->setAttribute(self::ATTR_FORCE_FLOAT_LITERAL, true);
+            }
+        }
+    }
+
     protected function genBigNumericCmp(Expr\BinaryOp $expr, string $suffix = ''): ?string
     {
+        $this->demoteAutoDecimalLiteralAgainstFloat($expr->left, $expr->right);
+
         $leftType = $this->detectTypeOfExpr($expr->left);
         $rightType = $this->detectTypeOfExpr($expr->right);
 
@@ -1184,7 +1366,13 @@ trait BinaryOpTrait
     protected function guardLiteralDivisionByZero(NodeAbstract $right, string $op): void
     {
         if (($op === '/' or $op === '%' or $op === '/=' or $op === '%=') and $this->isZeroLiteral($right)) {
-            $this->fatalError($right, 'Cannot divide or modulo by zero');
+            if ($this->nativeTypes) {
+                $this->fatalError($right, 'Cannot divide or modulo by zero');
+            }
+            // PHP raises a catchable DivisionByZeroError at runtime, and only
+            // when the statement actually executes; dead or guarded code with
+            // a literal zero divisor is valid PHP. Warn instead of rejecting.
+            $this->warning($right, 'Division or modulo by zero throws DivisionByZeroError at runtime');
         }
     }
 
