@@ -577,21 +577,25 @@ trait BinaryOpTrait
         string $leftExpr,
         string $rightExpr
     ): ?string {
-        if (($op !== '/' && $op !== '%') || $this->isZeroLiteral($right)) {
+        if ($op !== '/' && $op !== '%') {
             return null;
         }
 
-        $rightValue = $this->constantNumericValue($right, $this->nativeTypes);
-        if ($rightValue === null || $rightValue != 0) {
-            return null;
+        if (!$this->isZeroLiteral($right)) {
+            $rightValue = $this->constantNumericValue($right, $this->nativeTypes);
+            if ($rightValue === null || $rightValue != 0) {
+                return null;
+            }
         }
 
         if ($this->nativeTypes) {
             $this->fatalError($right, 'Constant division or modulo by zero has undefined behavior in C++ native mode');
         }
 
-        // Preserve PHP's catchable DivisionByZeroError for a nested constant
-        // zero. Literal zero keeps the compiler's established diagnostic.
+        // Preserve PHP's catchable DivisionByZeroError for a constant zero
+        // divisor, whether spelled as a literal or a folded expression. Even
+        // statically detectable, the operation only throws when the statement
+        // actually executes, so it must not reject compilation.
         return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
     }
 
@@ -1318,7 +1322,13 @@ trait BinaryOpTrait
     protected function guardLiteralDivisionByZero(NodeAbstract $right, string $op): void
     {
         if (($op === '/' or $op === '%' or $op === '/=' or $op === '%=') and $this->isZeroLiteral($right)) {
-            $this->fatalError($right, 'Cannot divide or modulo by zero');
+            if ($this->nativeTypes) {
+                $this->fatalError($right, 'Cannot divide or modulo by zero');
+            }
+            // PHP raises a catchable DivisionByZeroError at runtime, and only
+            // when the statement actually executes; dead or guarded code with
+            // a literal zero divisor is valid PHP. Warn instead of rejecting.
+            $this->warning($right, 'Division or modulo by zero throws DivisionByZeroError at runtime');
         }
     }
 
