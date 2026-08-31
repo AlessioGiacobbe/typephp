@@ -4292,7 +4292,11 @@ CODE;
             if ($classDef->inheritedFromInternalClass) {
                 $modifiers = Reflection::getClassMethodModifiers($extends, $name);
                 if (!$isConstructor && ($modifiers & \ReflectionMethod::IS_PRIVATE)) {
-                    goto _error;
+                    // Private methods are not inherited: a child may redeclare
+                    // one with any signature. Zend ignores FINAL on private
+                    // methods outside constructors (declaring one only raises
+                    // a warning), so no final check applies here either.
+                    break;
                 }
                 if ($modifiers & \ReflectionMethod::IS_FINAL) {
                     goto _final_error;
@@ -4306,11 +4310,13 @@ CODE;
             if ($classDef->hasMethod($name)) {
                 $methodDef = $classDef->getMethod($name);
                 if (!$isConstructor && ($methodDef->flags & Modifiers::PRIVATE)) {
-                    _error:
-                    $message = 'Cannot override private method `' . $extends . '::' . $name . '()`';
-                    $this->fatalGeneratedMethodAttributeIfAny($v, $message, $extends, $name);
-                    $this->fatalError($v,
-                        $message);
+                    // See the internal-parent branch above: a private method
+                    // may be redeclared freely. Generated code stays correct
+                    // because private calls are devirtualized to the declaring
+                    // class's body (canDevirtualize()), matching PHP's
+                    // private-scope binding, and Native classes never give
+                    // private methods a virtual slot (isNativeVirtualMethod()).
+                    break;
                 }
                 if ($methodDef->flags & Modifiers::FINAL) {
                     _final_error:
