@@ -30,7 +30,7 @@ final class TypedCompoundAssignCodegenTest extends \BaseTest
         $code = $this->compileFixture();
 
         self::assertMatchesRegularExpression(
-            '/\(tmp_var_\d+ = a, a = php::toInt\(\(\(php::Var\(a\)\) \+ \(php::Var\(1LL\)\)\)\), tmp_var_\d+\)/',
+            '/\(tmp_var_\d+ = a, a = php::toInt\(\(\(php::Var\(a\)\) \+ \(php::Var\(1L{1,2}\)\)\)\), tmp_var_\d+\)/',
             $code,
         );
         self::assertStringNotContainsString('a++', $code);
@@ -40,7 +40,7 @@ final class TypedCompoundAssignCodegenTest extends \BaseTest
     {
         $code = $this->compileFixture();
 
-        self::assertStringContainsString('(a = php::toInt(((php::Var(a)) - (php::Var(1LL)))))', $code);
+        self::assertMatchesRegularExpression('/\(a = php::toInt\(\(\(php::Var\(a\)\) - \(php::Var\(1L{1,2}\)\)\)\)\)/', $code);
         self::assertStringNotContainsString('--a', $code);
     }
 

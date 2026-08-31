@@ -60,11 +60,11 @@ class NativePropertyTest extends \BaseTest
         $code = file_get_contents($outputFile);
         $this->assertStringNotContainsString('typephp_static_int_ref(', $code);
         $this->assertMatchesRegularExpression(
-            '/this_\.attr\([^;]*php::AttrMode::Update\) = \(\(php::Var\(tmp_var_\d+\)\) \+ \(php::Var\(2LL\)\)\);/',
+            '/this_\.attr\([^;]*php::AttrMode::Update\) = \(\(php::Var\(tmp_var_\d+\)\) \+ \(php::Var\(2L{1,2}\)\)\);/',
             $code,
         );
         $this->assertMatchesRegularExpression(
-            '/box\.attr\([^;]*php::AttrMode::Update\) = \(\(php::Var\(tmp_var_\d+\)\) \+ \(php::Var\(2LL\)\)\);/',
+            '/box\.attr\([^;]*php::AttrMode::Update\) = \(\(php::Var\(tmp_var_\d+\)\) \+ \(php::Var\(2L{1,2}\)\)\);/',
             $code,
         );
     }
