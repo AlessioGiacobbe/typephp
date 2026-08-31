@@ -82,6 +82,15 @@ class Translator extends Preprocessor
 
     // Windows resource file configuration (icon, version info, etc.)
     protected array $resourceConfig = [];
+
+    /**
+     * Memoized effective constant tables (constant name => constant and its
+     * original declaring class/interface), keyed by lowercased class-like
+     * name. See getEffectiveConstantTable().
+     *
+     * @var array<string, array<string, array{const: ConstantDef, origin: string}>>
+     */
+    private array $effectiveConstantTables = [];
     protected array $globalHeaders = [
         'cstring',
         'phpx.h',
@@ -2855,6 +2864,7 @@ CODE;
                 $this->parseConstDef($v);
             } elseif ($v instanceof Node\Stmt\Interface_) {
                 $this->validateInterfaceOverrideAttributes($v);
+                $this->validateInterfaceConstants($v);
             } elseif (!$v instanceof Node\Stmt\Nop) {
                 $this->unsupportedSyntax($v);
             }
@@ -3029,6 +3039,7 @@ CODE;
                 $this->parseGroupUse($v2);
             } elseif ($v2 instanceof Node\Stmt\Interface_) {
                 $this->validateInterfaceOverrideAttributes($v2);
+                $this->validateInterfaceConstants($v2);
             } elseif (!$v2 instanceof Node\Stmt\Nop) {
                 $this->unsupportedSyntax($v2);
             }
@@ -3678,6 +3689,7 @@ CODE;
         if (!$class instanceof Node\Stmt\Trait_) {
             $this->validateOverrideAttributes($class);
             $this->checkInterfaceImplementations($class);
+            $this->checkInheritedConstantContracts($class);
             $this->checkInheritedAbstractMethodsAreImplemented($class);
         }
         $code = $this->genNativeMethod($methodCodes);
@@ -5273,6 +5285,36 @@ CODE;
     }
 
     /**
+     * Parse an interface declaration and additionally record the
+     * accepted-types DNF of each typed constant, mirroring the
+     * parseClassConstDef() override above. The base implementation collapses
+     * composite declared types to a single variant type.
+     */
+    protected function parseInterface(Node\Stmt\Interface_ $v): void
+    {
+        parent::parseInterface($v);
+        $name = $this->parseIdentifier($v->name);
+        $interfaceName = $this->namespace === '' ? $name : $this->namespace . '\\' . $name;
+        if (!$this->hasInterface($interfaceName)) {
+            return;
+        }
+        $interfaceDef = $this->getInterface($interfaceName);
+        foreach ($v->stmts as $stmt) {
+            if (!$stmt instanceof Node\Stmt\ClassConst || $stmt->type === null) {
+                continue;
+            }
+            $typeInfo = $this->buildTypeCheckFromNode($stmt->type, true);
+            foreach ($stmt->consts as $const) {
+                $constName = $this->parseIdentifier($const->name);
+                if (isset($interfaceDef->constants[$constName])) {
+                    $interfaceDef->constants[$constName]->typeCheck = $typeInfo['check'];
+                    $interfaceDef->constants[$constName]->typeStr = $typeInfo['typeStr'];
+                }
+            }
+        }
+    }
+
+    /**
      * Accepted-types DNF for a constant's DECLARED type, or null when the
      * constant is untyped (no type contract to enforce on overrides).
      */
@@ -5313,6 +5355,206 @@ CODE;
             }
         }
         return true;
+    }
+
+    /**
+     * The constants visible on a class-like, keyed by name, each entry
+     * carrying its ConstantDef and the ORIGINAL declaring class or interface.
+     * Mirrors Zend's constants-table build order (parent class first, own
+     * declarations, then interfaces). Conflicts between ancestors are resolved
+     * silently here — first entry wins — because they are reported by the
+     * declaring type's own validation pass when it is compiled.
+     *
+     * @return array<string, array{const: ConstantDef, origin: string}>
+     */
+    private function getEffectiveConstantTable(ClassDef|InterfaceDef $def): array
+    {
+        $ownName = $def->getNamespacedName(false);
+        $key = strtolower($ownName);
+        if (isset($this->effectiveConstantTables[$key])) {
+            return $this->effectiveConstantTables[$key];
+        }
+        $table = [];
+        if ($def instanceof ClassDef) {
+            if ($def->extends !== '' && !$def->inheritedFromInternalClass && $this->hasClass($def->extends)) {
+                foreach ($this->getEffectiveConstantTable($this->getClass($def->extends)) as $name => $entry) {
+                    // Private constants are not inherited.
+                    if (!($entry['const']->flags & Modifiers::PRIVATE)) {
+                        $table[$name] = $entry;
+                    }
+                }
+            }
+            foreach ($def->constants as $name => $const) {
+                $table[$name] = ['const' => $const, 'origin' => $ownName];
+            }
+            $parents = $def->implements;
+        } else {
+            foreach ($def->constants as $name => $const) {
+                $table[$name] = ['const' => $const, 'origin' => $ownName];
+            }
+            $parents = $def->extendsList ?: ($def->extends ? [$def->extends] : []);
+        }
+        foreach ($parents as $interfaceName) {
+            if (!$this->hasInterface($interfaceName)) {
+                continue;
+            }
+            foreach ($this->getEffectiveConstantTable($this->getInterface($interfaceName)) as $name => $entry) {
+                $table[$name] ??= $entry;
+            }
+        }
+        return $this->effectiveConstantTables[$key] = $table;
+    }
+
+    /**
+     * Validate the class's constants against every constant contract arriving
+     * through an interface — implemented directly, inherited through a parent
+     * interface, or carried by an ancestor class (Zend keeps the original
+     * declaring interface in the inherited constants table, so a final or
+     * typed interface constant binds every transitive subclass):
+     *
+     *  - a final interface constant cannot be overridden;
+     *  - the same constant name arriving from two different declarations is
+     *    ambiguous unless the class declares it itself;
+     *  - an override of an interface constant must stay public;
+     *  - typed constants are covariant (see checkConstantOverride()).
+     */
+    private function checkInheritedConstantContracts(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void
+    {
+        $classDef = $this->classDef;
+        $className = $classDef->getNamespacedName(false);
+
+        // Constants visible before this class's interfaces are merged: the
+        // parent chain's effective table, then the class's own declarations.
+        $table = [];
+        if ($classDef->extends !== '' && !$classDef->inheritedFromInternalClass && $this->hasClass($classDef->extends)) {
+            foreach ($this->getEffectiveConstantTable($this->getClass($classDef->extends)) as $name => $entry) {
+                if (!($entry['const']->flags & Modifiers::PRIVATE)) {
+                    $table[$name] = $entry;
+                }
+            }
+        }
+        foreach ($classDef->constants as $name => $const) {
+            if (isset($table[$name]) && $this->hasInterface($table[$name]['origin'])) {
+                // The nearest inherited declaration originates in an interface
+                // reached through an ancestor class; class-chain declarations
+                // are validated by checkConstantOverride() instead.
+                $this->validateConstantAgainstInheritedEntry(
+                    $classStmt,
+                    'Class',
+                    $className,
+                    $name,
+                    ['const' => $const, 'origin' => $className],
+                    $table[$name],
+                );
+            }
+            $table[$name] = ['const' => $const, 'origin' => $className];
+        }
+
+        foreach ($classDef->implements as $interfaceName) {
+            if (!$this->hasInterface($interfaceName)) {
+                continue;
+            }
+            foreach ($this->getEffectiveConstantTable($this->getInterface($interfaceName)) as $name => $entry) {
+                if (!isset($table[$name])) {
+                    $table[$name] = $entry;
+                    continue;
+                }
+                $this->validateConstantAgainstInheritedEntry(
+                    $classStmt,
+                    'Class',
+                    $className,
+                    $name,
+                    $table[$name],
+                    $entry,
+                );
+            }
+        }
+    }
+
+    /**
+     * Validate an interface's own constants against the ones inherited from
+     * its parent interfaces, and inherited same-name constants against each
+     * other (Zend: ambiguous unless declared by the interface itself).
+     */
+    private function validateInterfaceConstants(Node\Stmt\Interface_ $interfaceStmt): void
+    {
+        $name = $this->parseIdentifier($interfaceStmt->name);
+        $interfaceName = $this->namespace === '' ? $name : $this->namespace . '\\' . $name;
+        if (!$this->hasInterface($interfaceName)) {
+            return;
+        }
+        $interfaceDef = $this->getInterface($interfaceName);
+
+        $table = [];
+        foreach ($interfaceDef->constants as $constName => $const) {
+            $table[$constName] = ['const' => $const, 'origin' => $interfaceName];
+        }
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentName) {
+            if (!$this->hasInterface($parentName)) {
+                continue;
+            }
+            foreach ($this->getEffectiveConstantTable($this->getInterface($parentName)) as $constName => $entry) {
+                if (!isset($table[$constName])) {
+                    $table[$constName] = $entry;
+                    continue;
+                }
+                $this->validateConstantAgainstInheritedEntry(
+                    $interfaceStmt,
+                    'Interface',
+                    $interfaceName,
+                    $constName,
+                    $table[$constName],
+                    $entry,
+                );
+            }
+        }
+    }
+
+    /**
+     * Zend's do_inherit_constant_check: $existing is the constant already in
+     * the type's table (its own declaration, or one inherited earlier), and
+     * $incoming the same-name constant arriving from another declaration.
+     *
+     * @param array{const: ConstantDef, origin: string} $existing
+     * @param array{const: ConstantDef, origin: string} $incoming
+     */
+    private function validateConstantAgainstInheritedEntry(
+        NodeAbstract $node,
+        string $kind,
+        string $typeName,
+        string $constName,
+        array $existing,
+        array $incoming,
+    ): void {
+        if ($existing['origin'] === $incoming['origin']) {
+            // The same original declaration reached through two paths
+            // (diamond inheritance) never conflicts.
+            return;
+        }
+        if ($incoming['const']->flags & Modifiers::FINAL) {
+            $this->fatalError($node,
+                "`{$existing['origin']}::{$constName}` cannot override final constant " .
+                "`{$incoming['origin']}::{$constName}`");
+        }
+        if ($existing['origin'] !== $typeName) {
+            $this->fatalError($node,
+                "{$kind} `{$typeName}` inherits both `{$existing['origin']}::{$constName}` and " .
+                "`{$incoming['origin']}::{$constName}`, which is ambiguous");
+        }
+
+        // The type's own declaration overrides the inherited constant.
+        $childConst = $existing['const'];
+        if ($this->getVisibilityRank($childConst->flags) < $this->getVisibilityRank($incoming['const']->flags)) {
+            $this->fatalError($node,
+                "Access level to `{$typeName}::{$constName}` must be public " .
+                "(as in interface `{$incoming['origin']}`)");
+        }
+        $parentAccepted = $this->getConstantAcceptedTypes($incoming['const']);
+        if ($parentAccepted !== null && !$this->isConstantTypeOverrideCompatible($childConst, $parentAccepted)) {
+            $this->fatalError($node,
+                "Declaration of `{$typeName}::{$constName}` must be compatible " .
+                "with `{$incoming['origin']}::{$constName}`");
+        }
     }
 
     private function checkConstantOverride(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $classStmt): void
