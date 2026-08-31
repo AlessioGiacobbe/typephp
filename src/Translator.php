@@ -3078,6 +3078,8 @@ CODE;
         $traitMethods = [];
         $traitConstants = [];
         $traitProperties = [];
+        $usedTraits = [];
+        $seenTraitMethods = [];
         $classDef = $this->getClass($className->toString());
 
         foreach ($stmt->stmts as $classStmt) {
@@ -3114,6 +3116,7 @@ CODE;
                 if (!$traitDef->trait) {
                     $this->fatalError($classStmt, "Trait `{$traitFullName}` not found");
                 }
+                $usedTraits[strtolower($traitFullName)] = $traitFullName;
 
                 /** @var Node\Stmt\Trait_ $traitAst */
                 $traitAst = $this->cloneAstNode($traitDef->trait);
@@ -3130,6 +3133,10 @@ CODE;
                             $traitStmt->setAttribute(self::TRAIT_METHOD_ATTRIBUTE, $traitStmt->name->toString());
                         }
                         $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
+                        // Methods arriving from nested traits are keyed under
+                        // the directly-used trait, matching how adaptation
+                        // keys are registered.
+                        $seenTraitMethods[$fullMethodName] = true;
                         // A trait method's `self`/`static`/`parent` return and parameter
                         // types refer to the class that uses the trait, not the trait
                         // itself. Re-resolve them on the cloned AST so the generated
@@ -3256,6 +3263,86 @@ CODE;
             }
         }
 
+        $this->validateTraitAdaptations($stmt, $classDef, $usedTraits, $seenTraitMethods);
+    }
+
+    /**
+     * After every trait is composed into $classDef, verify that each trait
+     * adaptation named a real trait and a real method, as Zend does when
+     * binding traits:
+     *
+     *  - an alias must reference a used trait, and its method must exist in
+     *    that trait (in any used trait when written without a qualifier);
+     *  - a precedence rule's traits must all be used, and the preferred
+     *    method must exist in the preferred trait (the overridden trait need
+     *    not declare it).
+     *
+     * @param array<string, string> $usedTraits    lowercased name => full name
+     * @param array<string, true>   $seenTraitMethods "trait::method" keys seen
+     *                              during composition (nested trait methods
+     *                              are keyed under the directly-used trait)
+     */
+    private function validateTraitAdaptations(
+        Node\Stmt\ClassLike $stmt,
+        ClassDef $classDef,
+        array $usedTraits,
+        array $seenTraitMethods
+    ): void {
+        if (!$classDef->traitAliases && !$classDef->traitIgnored) {
+            return;
+        }
+        $className = $classDef->getNamespacedName(false);
+
+        // An unqualified alias is registered under every used trait's key (the
+        // Preprocessor cannot know which trait declares the method), so its
+        // variants share one group: the group is satisfied when ANY variant
+        // matched a composed method.
+        $aliasGroups = [];
+        foreach ($classDef->traitAliases as $fullMethodName => $aliasList) {
+            foreach ($aliasList as $alias) {
+                $group = $alias['group'] ?? $fullMethodName;
+                $aliasGroups[$group] ??= ['alias' => $alias, 'matched' => false];
+                if (isset($seenTraitMethods[$fullMethodName])) {
+                    $aliasGroups[$group]['matched'] = true;
+                }
+            }
+        }
+        foreach ($aliasGroups as $groupInfo) {
+            if ($groupInfo['matched']) {
+                continue;
+            }
+            $alias = $groupInfo['alias'];
+            $method = $alias['method'] ?? '';
+            $explicitTrait = $alias['trait'] ?? null;
+            if ($explicitTrait !== null) {
+                if (!isset($usedTraits[strtolower($explicitTrait)])) {
+                    $this->fatalError($stmt,
+                        "Required Trait `{$explicitTrait}` wasn't added to `{$className}`");
+                }
+                $this->fatalError($stmt,
+                    "An alias was defined for `{$explicitTrait}::{$method}` but this method does not exist");
+            }
+            $newName = $alias['newName'] ?? $method;
+            $this->fatalError($stmt,
+                "An alias (`{$newName}`) was defined for method `{$method}()`, but this method does not exist");
+        }
+
+        foreach ($classDef->traitIgnored as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            foreach ([$rule['winnerTrait'], $rule['loserTrait']] as $traitName) {
+                if (!isset($usedTraits[strtolower($traitName)])) {
+                    $this->fatalError($stmt,
+                        "Required Trait `{$traitName}` wasn't added to `{$className}`");
+                }
+            }
+            if (!isset($seenTraitMethods[$this->getFullMethodName($rule['winnerTrait'], $rule['method'])])) {
+                $this->fatalError($stmt,
+                    "A precedence rule was defined for `{$rule['winnerTrait']}::{$rule['method']}` " .
+                    'but this method does not exist');
+            }
+        }
     }
 
     /**
