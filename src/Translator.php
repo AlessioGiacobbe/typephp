@@ -3372,10 +3372,11 @@ CODE;
                                 continue;
                             }
                             if (isset($traitConstants[$constName])) {
-                                [$existingConstStmt, $existingConst] = $traitConstants[$constName];
+                                [$existingConstStmt, $existingConst, $existingConstTrait] = $traitConstants[$constName];
+                                $typeStr = $this->typeNodeToStringOrNull($traitStmt->type);
                                 if ($existingConstStmt->flags !== $traitStmt->flags ||
-                                    $this->typeNodeToStringOrNull($existingConstStmt->type) !== $this->typeNodeToStringOrNull($traitStmt->type) ||
-                                    $this->printer->prettyPrintExpr($existingConst->value) !== $this->printer->prettyPrintExpr($const->value)) {
+                                    $this->typeNodeToStringOrNull($existingConstStmt->type) !== $typeStr ||
+                                    !$this->isSameTraitMemberValue($existingConst->value, $existingConstTrait, $const->value, $traitFullName, $typeStr)) {
                                     $this->fatalError($classStmt, "Trait `{$traitFullName}` constant `{$constName}` already exists");
                                 }
                                 unset($traitStmt->consts[$k2]);
@@ -3384,7 +3385,7 @@ CODE;
                                 }
                                 continue;
                             }
-                            $traitConstants[$constName] = [$traitStmt, $const];
+                            $traitConstants[$constName] = [$traitStmt, $const, $traitFullName];
                         }
                     }
                     if ($traitStmt instanceof Node\Stmt\Property) {
@@ -3401,12 +3402,13 @@ CODE;
                                 continue;
                             }
                             if (isset($traitProperties[$propName])) {
-                                [$existingPropStmt, $existingProp] = $traitProperties[$propName];
-                                $existingDefault = $existingProp->default ? $this->printer->prettyPrintExpr($existingProp->default) : null;
-                                $propDefault = $prop->default ? $this->printer->prettyPrintExpr($prop->default) : null;
+                                [$existingPropStmt, $existingProp, $existingPropTrait] = $traitProperties[$propName];
+                                $typeStr = $this->typeNodeToStringOrNull($traitStmt->type);
                                 if ($existingPropStmt->flags !== $traitStmt->flags ||
-                                    $this->typeNodeToStringOrNull($existingPropStmt->type) !== $this->typeNodeToStringOrNull($traitStmt->type) ||
-                                    $existingDefault !== $propDefault) {
+                                    $this->typeNodeToStringOrNull($existingPropStmt->type) !== $typeStr ||
+                                    ($existingProp->default === null) !== ($prop->default === null) ||
+                                    ($prop->default !== null
+                                        && !$this->isSameTraitMemberValue($existingProp->default, $existingPropTrait, $prop->default, $traitFullName, $typeStr))) {
                                     $this->fatalError($classStmt, "Trait `{$traitFullName}` property `{$propName}` already exists");
                                 }
                                 unset($traitStmt->props[$k2]);
@@ -3430,7 +3432,7 @@ CODE;
                                     "Readonly class `{$compositionOwner}` cannot use trait with a non-readonly property `{$traitFullName}::\${$prop->name->toString()}`",
                                 );
                             }
-                            $traitProperties[$propName] = [$traitStmt, $prop];
+                            $traitProperties[$propName] = [$traitStmt, $prop, $traitFullName];
                         }
                     }
                 }
@@ -3483,233 +3485,44 @@ CODE;
     }
 
     /**
-     * Validate that a concrete method satisfies an abstract requirement
-     * declared by a trait, following Zend's trait-composition rules: the
-     * static modifier must match, an abstract by-reference return must be
-     * kept, the implementation cannot require more parameters, parameter
-     * types are contravariant, and the return type is covariant. Visibility
-     * is deliberately not restricted — Zend allows an implementation of any
-     * visibility to fulfill an abstract trait requirement.
+     * Compare two trait data-member initializers by VALUE, as Zend does when
+     * flattening traits: `1 + 1` and `2`, or `[1, 2]` and `array(1, 2)`, are
+     * the same definition. Comparison is identity (===) after evaluating both
+     * constant expressions; an integer initializer of a float-typed member is
+     * coerced to float first, mirroring Zend's declaration-time coercion.
+     * Falls back to source-text equality when a value cannot be evaluated at
+     * compile time.
      */
-    private function validateTraitAbstractImplementation(
-        Node $errorNode,
-        Node\Stmt\ClassMethod $requirement,
-        string $requirementSource,
-        ?MethodDef $requirementDef,
-        Node\Stmt\ClassMethod $implementation,
-        string $implementationSource,
-        ?MethodDef $implementationDef,
-        ClassDef $usingClassDef,
-    ): void {
-        $requirementName = $requirement->name->toString();
-        $implementationName = $implementation->name->toString();
-        $consumingClass = $usingClassDef->getNamespacedName(false);
-
-        if ($requirement->isStatic() !== $implementation->isStatic()) {
-            $this->fatalError($errorNode, $requirement->isStatic()
-                ? "Cannot make static method `{$requirementSource}::{$requirementName}()` non static in class `{$consumingClass}`"
-                : "Cannot make non static method `{$requirementSource}::{$requirementName}()` static in class `{$consumingClass}`");
-        }
-
-        $incompatible = function () use ($errorNode, $implementationSource, $implementationName, $requirementSource, $requirementName): never {
-            $this->fatalError(
-                $errorNode,
-                "Declaration of `{$implementationSource}::{$implementationName}()` must be compatible " .
-                "with `{$requirementSource}::{$requirementName}()`"
-            );
-        };
-
-        // The requirement's by-reference return must be kept; the
-        // implementation may add one.
-        if ($requirement->byRef && !$implementation->byRef) {
-            $incompatible();
-        }
-
-        if ($this->countRequiredParams($implementation->params) > $this->countRequiredParams($requirement->params)) {
-            $incompatible();
-        }
-        $implParamCount = count($implementation->params);
-        $lastImplParam = $implParamCount > 0 ? $implementation->params[$implParamCount - 1] : null;
-        foreach ($requirement->params as $i => $requiredParam) {
-            // A trailing variadic accepts every remaining requirement position.
-            $implParam = $implementation->params[$i]
-                ?? ($lastImplParam?->variadic ? $lastImplParam : null);
-            if ($implParam === null
-                || $implParam->byRef !== $requiredParam->byRef
-                || ($requiredParam->variadic && !$implParam->variadic)
-            ) {
-                $incompatible();
-            }
-        }
-        foreach ($implementation->params as $i => $implParam) {
-            if ($i >= count($requirement->params) && !$implParam->default && !$implParam->variadic) {
-                $incompatible();
-            }
-        }
-
-        // Type variance is checked on the preprocessed definitions, whose
-        // names were resolved in each declaration's own lexical context.
-        $requirementFunc = $requirementDef?->functionDef;
-        $implementationFunc = $implementationDef?->functionDef;
-        if (!$requirementFunc || !$implementationFunc) {
-            return;
-        }
-
-        $implArgs = $implementationFunc->argInfoList;
-        $lastImplArg = $implArgs === [] ? null : $implArgs[count($implArgs) - 1];
-        foreach ($requirementFunc->argInfoList as $i => $requiredArg) {
-            $implArg = $implArgs[$i] ?? ($lastImplArg?->variadic ? $lastImplArg : null);
-            if ($implArg === null) {
-                continue;
-            }
-            if (!$this->isTraitParameterTypeCompatible(
-                $implArg,
-                $requiredArg,
-                $usingClassDef,
-                $errorNode,
-            )) {
-                $incompatible();
-            }
-        }
-
-        if ($requirementFunc->returnTypeUndeclared) {
-            return;
-        }
-        if ($implementationFunc->returnTypeUndeclared) {
-            $incompatible();
-        }
-        $requirementTypes = $this->getTraitReturnAcceptedTypes(
-            $requirementFunc,
-            $usingClassDef,
-            $errorNode,
-        );
-        $implementationTypes = $this->getTraitReturnAcceptedTypes(
-            $implementationFunc,
-            $usingClassDef,
-            $errorNode,
-        );
-        foreach ($implementationTypes as $implementationType) {
-            if (!$this->isReturnTypeCoveredBy($implementationType, $requirementTypes)) {
-                $incompatible();
-            }
-        }
-    }
-
-    /**
-     * @param array<Node\Param> $params
-     */
-    private function countRequiredParams(array $params): int
-    {
-        $required = 0;
-        foreach (array_values($params) as $i => $param) {
-            if (!$param->default && !$param->variadic) {
-                $required = $i + 1;
-            }
-        }
-        return $required;
-    }
-
-    private function isTraitParameterTypeCompatible(
-        ArgInfo $implementation,
-        ArgInfo $requirement,
-        ClassDef $usingClassDef,
-        Node $errorNode,
+    private function isSameTraitMemberValue(
+        Node\Expr $existingValue,
+        string $existingClass,
+        Node\Expr $incomingValue,
+        string $incomingClass,
+        ?string $declaredTypeStr,
     ): bool {
-        if ($this->isTopParameterType($implementation)) {
-            return true;
+        try {
+            $a = $this->evaluateTraitMemberValue($existingValue, $existingClass);
+            $b = $this->evaluateTraitMemberValue($incomingValue, $incomingClass);
+        } catch (\Throwable) {
+            return $this->printer->prettyPrintExpr($existingValue) === $this->printer->prettyPrintExpr($incomingValue);
         }
-        if ($this->isTopParameterType($requirement)) {
-            return false;
-        }
-
-        $requirementTypes = $this->getTraitParameterAcceptedTypes(
-            $requirement,
-            $usingClassDef,
-            $errorNode,
-        );
-        $implementationTypes = $this->getTraitParameterAcceptedTypes(
-            $implementation,
-            $usingClassDef,
-            $errorNode,
-        );
-        if ($requirementTypes === null || $implementationTypes === null) {
-            return $this->isParameterTypeOverrideCompatible($implementation, $requirement);
-        }
-        return $this->isAcceptedTypeSubset($requirementTypes, $implementationTypes);
-    }
-
-    private function getTraitParameterAcceptedTypes(
-        ArgInfo $argument,
-        ClassDef $usingClassDef,
-        Node $errorNode,
-    ): ?array {
-        if ($argument->typeKeyword !== '') {
-            return $this->getLateBoundTraitAcceptedType($argument->typeKeyword, $usingClassDef, $errorNode);
-        }
-        return $this->resolveLateBoundAcceptedTypes(
-            $this->getParameterAcceptedTypes($argument),
-            $usingClassDef,
-            $errorNode,
-        );
-    }
-
-    private function getTraitReturnAcceptedTypes(
-        FunctionDef $function,
-        ClassDef $usingClassDef,
-        Node $errorNode,
-    ): array {
-        if ($function->returnTypeKeyword !== '') {
-            return $this->getLateBoundTraitAcceptedType($function->returnTypeKeyword, $usingClassDef, $errorNode);
-        }
-        return $this->resolveLateBoundAcceptedTypes(
-            $this->getReturnAcceptedTypes($function, $usingClassDef->getNamespacedName(false)),
-            $usingClassDef,
-            $errorNode,
-        ) ?? [];
-    }
-
-    private function getLateBoundTraitAcceptedType(
-        string $keyword,
-        ClassDef $usingClassDef,
-        Node $errorNode,
-    ): array {
-        if ($keyword === 'static') {
-            return [['kind' => 'isStatic', 'class' => $usingClassDef->getNamespacedName(false)]];
-        }
-        $class = $this->resolveLateBoundClass($usingClassDef, $keyword);
-        if ($class === null) {
-            $this->fatalError($errorNode, 'Cannot use "parent" when current class scope has no parent');
-        }
-        return [['kind' => 'instanceof', 'class' => $class]];
-    }
-
-    private function resolveLateBoundAcceptedTypes(
-        ?array $types,
-        ClassDef $usingClassDef,
-        Node $errorNode,
-    ): ?array {
-        if ($types === null) {
-            return null;
-        }
-        foreach ($types as &$type) {
-            if (($type['kind'] ?? null) === 'allOf') {
-                $type['types'] = $this->resolveLateBoundAcceptedTypes(
-                    $type['types'],
-                    $usingClassDef,
-                    $errorNode,
-                );
-                continue;
+        if ($declaredTypeStr !== null
+            && (strcasecmp($declaredTypeStr, 'float') === 0 || strcasecmp($declaredTypeStr, '?float') === 0)) {
+            if (is_int($a)) {
+                $a = (float) $a;
             }
-            $lateBound = $type['lateBound'] ?? '';
-            if (!is_string($lateBound) || $lateBound === '') {
-                continue;
+            if (is_int($b)) {
+                $b = (float) $b;
             }
-            $resolved = $this->getLateBoundTraitAcceptedType($lateBound, $usingClassDef, $errorNode)[0];
-            $type['kind'] = $resolved['kind'];
-            $type['class'] = $resolved['class'];
-            unset($type['lateBound']);
         }
-        return $types;
+        return $a === $b;
+    }
+
+    private function evaluateTraitMemberValue(Node\Expr $expr, string $class): mixed
+    {
+        $constDef = new ConstantDef('', 0, '', '');
+        $constDef->valueExpr = $expr;
+        return $this->evaluateClassConstValue($expr, $constDef, $class, '');
     }
 
     private function cloneAstNode(Node $node): Node
@@ -6533,20 +6346,57 @@ CODE;
 
     private function isCompatibleTraitConstant(ConstantDef $existing, ConstantDef $incoming): bool
     {
-        return $existing->flags === $incoming->flags
-            && $existing->type === $incoming->type
-            && $existing->class === $incoming->class
-            && $existing->value === $incoming->value;
+        if ($existing->flags !== $incoming->flags
+            || $existing->type !== $incoming->type
+            || $existing->class !== $incoming->class
+        ) {
+            return false;
+        }
+        if ($existing->value === $incoming->value) {
+            return true;
+        }
+        // Different spellings of the same value (e.g. `1 + 1` and `2`) are
+        // compatible in Zend; compare the evaluated values.
+        if ($existing->valueExpr instanceof Node\Expr && $incoming->valueExpr instanceof Node\Expr) {
+            $floatOnly = $existing->declaredType === Type::FLOAT
+                || strcasecmp($existing->typeStr, 'float') === 0
+                || strcasecmp($existing->typeStr, '?float') === 0;
+            return $this->isSameTraitMemberValue(
+                $existing->valueExpr,
+                $this->getFullClassName(),
+                $incoming->valueExpr,
+                $this->getFullClassName(),
+                $floatOnly ? 'float' : null,
+            );
+        }
+        return false;
     }
 
     private function isCompatibleTraitProperty(PropertyDef $existing, PropertyDef $incoming): bool
     {
-        return $existing->flags === $incoming->flags
-            && $existing->type === $incoming->type
-            && $existing->class === $incoming->class
-            && $existing->nullable === $incoming->nullable
-            && $existing->default === $incoming->default
-            && $existing->arrayDef == $incoming->arrayDef;
+        if ($existing->flags !== $incoming->flags
+            || $existing->type !== $incoming->type
+            || $existing->class !== $incoming->class
+            || $existing->nullable !== $incoming->nullable
+        ) {
+            return false;
+        }
+        if ($existing->default === $incoming->default && $existing->arrayDef == $incoming->arrayDef) {
+            return true;
+        }
+        // Different spellings of the same default value (e.g. `1` and `1.0`
+        // on a float property, `[1, 2]` and `array(1, 2)`) are compatible in
+        // Zend; compare the evaluated values.
+        if ($existing->defaultExpr instanceof Node\Expr && $incoming->defaultExpr instanceof Node\Expr) {
+            return $this->isSameTraitMemberValue(
+                $existing->defaultExpr,
+                $this->getFullClassName(),
+                $incoming->defaultExpr,
+                $this->getFullClassName(),
+                $existing->type === Type::FLOAT ? 'float' : null,
+            );
+        }
+        return false;
     }
 
     private function resolveLateBoundClass(ClassDef $usingClassDef, string $keyword): ?string
