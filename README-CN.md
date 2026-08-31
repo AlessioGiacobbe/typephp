@@ -690,6 +690,12 @@ GitHub Actions 会在 PHP 8.4 和 8.5 上分别运行 PHPUnit 与自举 PHPT。�
 - [测试覆盖分析工具](docs/zh-cn/TEST_COVERAGE_ANALYZER.md) —— AST 与特性证据矩阵
 - [WASI 构建](docs/zh-cn/WASI_BUILD.md) —— WASI 目标
 
+## 致谢
+
+TypePHP 感谢每一位参与项目建设的开发者和贡献者。项目的实现同样离不开 GCC、
+Clang/LLVM、MSVC、ISO C++（WG21）、PHP、PHP-Parser 以及众多辅助开源社区的
+长期工作。完整名单与说明请参阅[致谢](docs/zh-cn/ACKNOWLEDGEMENTS.md)。
+
 ## 授权协议
 
 TypePHP 采用 [GNU General Public License v3.0](LICENSE) 授权。

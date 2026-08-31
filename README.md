@@ -741,6 +741,13 @@ rules and a PHPT whenever runtime output or diagnostics are observable.
 - [Test coverage analyzer](docs/en/TEST_COVERAGE_ANALYZER.md) — AST and feature evidence matrix
 - [WASI build](docs/en/WASI_BUILD.md) — WASI targets
 
+## Acknowledgements
+
+TypePHP thanks every developer and contributor who has helped build the project.
+It also stands on the work of the GCC, Clang/LLVM, MSVC, ISO C++ (WG21), PHP,
+PHP-Parser, and many supporting open-source communities. See the full
+[Acknowledgements](docs/en/ACKNOWLEDGEMENTS.md).
+
 ## License
 
 TypePHP is licensed under the [GNU General Public License v3.0](LICENSE).
