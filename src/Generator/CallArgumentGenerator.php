@@ -130,10 +130,37 @@ trait CallArgumentGenerator
         $variadicVar = null;
         $callableName = $functionDef->displayName ?: $functionDef->getNamespacedName();
 
+        // PHP evaluates arguments left to right. A later argument that hoists
+        // captured statements while being lowered (an assignment, a call)
+        // would execute those side effects before an earlier plain-variable
+        // argument is read: `two($j, $j = 5)` must pass the old value of $j.
+        // Record the last such argument so every earlier by-value variable
+        // read can be snapshotted at its own argument position.
+        $lastHoistingSourceIndex = -1;
+        foreach ($sourceArgs as $sourceIndex => [, , $arg]) {
+            if ($arg instanceof Node\Arg && $this->shouldMaterializeOrderedOperand($arg->value)) {
+                $lastHoistingSourceIndex = $sourceIndex;
+            }
+        }
+
         // Evaluate every supplied argument in PHP source order. The resulting
         // expressions/temporaries may then be rearranged safely for the native
         // C++ ABI without changing observable call order.
-        foreach ($sourceArgs as [$argIndex, $variadicName, $arg]) {
+        foreach ($sourceArgs as $sourceIndex => [$argIndex, $variadicName, $arg]) {
+            if ($sourceIndex < $lastHoistingSourceIndex
+                && $arg instanceof Node\Arg
+                && !$arg->unpack
+                && $this->isSnapshotableVariableRead($arg->value)
+            ) {
+                $paramInfo = $argIndex === $variadicArgIndex
+                    ? $functionDef->argInfoList[$variadicArgIndex]
+                    : $this->getArgInfo($arg, $nativeFunc, $argIndex);
+                if ($paramInfo !== null && !$paramInfo->byRef) {
+                    $snapshot = $this->parseOrderedOperand($arg->value, false, true);
+                    $arg = clone $arg;
+                    $arg->value = new Expr\Variable($snapshot, $arg->value->getAttributes());
+                }
+            }
             if ($argIndex !== $variadicArgIndex) {
                 $argInfo = $this->getArgInfo($arg, $nativeFunc, $argIndex);
                 $resolvedArgs[$argIndex] = $this->getTypeConvertedArg(

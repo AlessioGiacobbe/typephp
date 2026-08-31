@@ -810,8 +810,38 @@ trait BinaryOpTrait
         $useTwoOperandOverload = $prefixExpressions === []
             && $this->canUseTwoOperandConcatOverload($items);
 
+        // Zend lowers the left-associated chain i0.i1.i2... into one CONCAT
+        // opcode per node and reads a CV operand when its opcode executes:
+        // i0 and i1 are both read at the first op (after the side effects of
+        // both), and every later item ik at the k-th op (after the side
+        // effects of i0..ik, before those of later items). The flattened
+        // braced list hoists all captured side effects ahead of the whole
+        // expression, so a plain-variable item that Zend reads before a later
+        // item's side effects (`$m . ',' . ($m = 9)` must yield "1,9") is
+        // snapshotted into a temporary at its Zend read position.
+        $lastHoistingIndex = -1;
+        foreach ($items as $index => $item) {
+            if ($this->shouldMaterializeOrderedOperand($item)
+                || $this->isNativeObjectClass($this->detectClassOfExpr($item))
+            ) {
+                $lastHoistingIndex = $index;
+            }
+        }
+
+        // The first item is read together with the second at the first op,
+        // i.e. after the second item's side effects. Its snapshot is deferred
+        // until the second item has been lowered.
+        $deferFirstItemSnapshot = $lastHoistingIndex >= 2
+            && isset($items[1])
+            && $this->isSnapshotableVariableRead($items[0])
+            && !($this->isScalarString($items[1]) && $items[1]->value === '');
+
         $argList = $prefixExpressions;
-        foreach ($items as $item) {
+        foreach ($items as $index => $item) {
+            if ($deferFirstItemSnapshot && $index === 0) {
+                continue;
+            }
+
             // Keep one operand so concat still performs PHP string coercion.
             // Prefix expressions are operands too (for example, the left-hand
             // value of `.=`), so an empty RHS literal can be omitted there.
@@ -819,20 +849,34 @@ trait BinaryOpTrait
                 continue;
             }
 
+            $entryPosition = count($argList);
             $itemClass = $this->detectClassOfExpr($item);
             if ($this->isNativeObjectClass($itemClass)) {
                 $toString = new Expr\MethodCall($item, new Node\Identifier('toString'));
                 $argList[] = $this->parseOrderedOperand($toString, false);
-                continue;
+            } else {
+                $type = $this->detectTypeOfExpr($item);
+                // C++17 evaluates the braced-list elements in order. The
+                // temporary is still required because lowering a later operand
+                // may append captured beforeStmtLines ahead of the entire
+                // concat expression; without it, those statements could
+                // overtake an earlier Call.
+                $snapshotEarlierRead = $index >= 1
+                    && $index < $lastHoistingIndex
+                    && $this->isSnapshotableVariableRead($item);
+                $parsed = $this->parseOrderedOperand($item, false, $snapshotEarlierRead);
+                $argList[] = $this->prepareConcatOperand($parsed, $type);
             }
 
-            $type = $this->detectTypeOfExpr($item);
-            // C++17 evaluates the braced-list elements in order. The temporary
-            // is still required because lowering a later operand may append
-            // captured beforeStmtLines ahead of the entire concat expression;
-            // without it, those statements could overtake an earlier Call.
-            $parsed = $this->parseOrderedOperand($item, false);
-            $argList[] = $this->prepareConcatOperand($parsed, $type);
+            if ($deferFirstItemSnapshot && $index === 1) {
+                // Snapshot the first item now, after the second item's side
+                // effects, and keep its leading position in the operand list.
+                $firstType = $this->detectTypeOfExpr($items[0]);
+                $firstParsed = $this->parseOrderedOperand($items[0], false, true);
+                array_splice($argList, $entryPosition, 0, [
+                    $this->prepareConcatOperand($firstParsed, $firstType),
+                ]);
+            }
         }
 
         if ($useTwoOperandOverload && count($argList) === 2) {
@@ -840,6 +884,24 @@ trait BinaryOpTrait
         }
 
         return Symbol::concat() . '({' . implode(', ', $argList) . '})';
+    }
+
+    /**
+     * Whether an operand is a plain local variable read whose value can be
+     * snapshotted into a temporary to preserve left-to-right evaluation when
+     * a later operand hoists side-effecting statements. `$this` cannot be
+     * reassigned and $GLOBALS has dedicated lowering; both are left alone.
+     */
+    protected function isSnapshotableVariableRead(NodeAbstract $expr): bool
+    {
+        if (!$this->isVarExpr($expr) || !is_string($expr->name)) {
+            return false;
+        }
+        if ($expr->name === 'this' || $expr->name === 'GLOBALS') {
+            return false;
+        }
+        $var = (string) $this->parseIdentifier($expr);
+        return $this->hasVar($var) && !$this->isStdContainer($var);
     }
 
     protected function canUseTwoOperandConcatOverload(array $items): bool
