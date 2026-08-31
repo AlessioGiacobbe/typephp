@@ -4577,6 +4577,7 @@ CODE;
                 if ($modifiers & \ReflectionMethod::IS_FINAL) {
                     goto _final_error;
                 }
+                $this->validateInternalMethodOverrideSignature($v, $name, $this->methodDef, $extends);
                 break;
             }
             $classDef = $this->getClass($extends);
@@ -4764,6 +4765,199 @@ CODE;
             $parentFunction?->sourceFile,
             $parentFunction?->startLine,
         ));
+    }
+
+    /**
+     * Validate an override of a method inherited from a Zend built-in class.
+     * The parent signature is only available through host reflection, so this
+     * mirrors validateMethodOverrideSignature() (and Zend's
+     * zend_do_perform_implementation_check) on ReflectionMethod data:
+     * visibility may widen but not narrow, staticness must match, a by-ref
+     * return may be added but not dropped, the child may not require more
+     * arguments, parameters are contravariant with invariant by-ref-ness and
+     * variadic absorption, and the return type is covariant. Built-in methods
+     * whose return type is TENTATIVE are exempt from the return check: Zend
+     * only raises a deprecation for a tentative mismatch, never a fatal.
+     */
+    private function validateInternalMethodOverrideSignature(
+        Node\Stmt\ClassMethod $v,
+        string $methodName,
+        MethodDef $childMethodDef,
+        string $parentClass
+    ): void {
+        $parentRef = Reflection::getClass($parentClass);
+        if (!$parentRef || !$parentRef->hasMethod($methodName)) {
+            return;
+        }
+        try {
+            $parentMethod = $parentRef->getMethod($methodName);
+        } catch (\ReflectionException) {
+            return;
+        }
+        $className = $this->getFullClassName();
+
+        $parentVisibility = $parentMethod->isPublic()
+            ? Modifiers::PUBLIC
+            : ($parentMethod->isProtected() ? Modifiers::PROTECTED : Modifiers::PRIVATE);
+        if ($this->getVisibilityRank($childMethodDef->flags) < $this->getVisibilityRank($parentVisibility)) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        if ((($childMethodDef->flags & Modifiers::STATIC) !== 0) !== $parentMethod->isStatic()) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        $childFuncDef = $childMethodDef->functionDef;
+        if (!$childFuncDef) {
+            return;
+        }
+
+        // By-ref returns are covariant: the override may add `&`, but must not
+        // drop one promised by the built-in parent.
+        if ($parentMethod->returnsReference() && !$childFuncDef->returnsByRef) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        if ($childFuncDef->argCountRequired > $parentMethod->getNumberOfRequiredParameters()) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        $parentParams = $parentMethod->getParameters();
+        $parentVariadic = $parentMethod->isVariadic();
+        $childVariadic = $childFuncDef->hasVariadicArg();
+        if ($parentVariadic && !$childVariadic) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        $positions = count($parentParams);
+        if ($parentVariadic) {
+            $positions = max($positions, count($childFuncDef->argInfoList));
+        }
+        for ($i = 0; $i < $positions; $i++) {
+            $parentParam = $parentParams[$i] ?? $parentParams[count($parentParams) - 1];
+            $childArg = $childFuncDef->argInfoList[$i] ?? null;
+            if ($childArg === null) {
+                if (!$childVariadic) {
+                    $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+                }
+                $childArg = $childFuncDef->argInfoList[count($childFuncDef->argInfoList) - 1];
+            }
+            if ($childArg->byRef !== $parentParam->isPassedByReference()) {
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+            }
+            if (!$this->isParameterTypeOverrideCompatibleWithReflection($childArg, $parentParam, $parentClass)) {
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+            }
+        }
+
+        // Any extra child parameters must be optional or variadic.
+        for ($i = count($parentParams); $i < count($childFuncDef->argInfoList); $i++) {
+            $childArg = $childFuncDef->argInfoList[$i];
+            if (!$childArg->variadic && $childArg->defaultValue === null) {
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+            }
+        }
+
+        // getReturnType() is null for tentative return types, so only real
+        // declared return types are enforced here — matching Zend, which
+        // fatals on real mismatches and merely deprecates tentative ones.
+        $parentReturn = $parentMethod->getReturnType();
+        if ($parentReturn === null) {
+            return;
+        }
+        if ($childFuncDef->returnTypeUndeclared) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+        $parentTypes = $this->reflectionTypeToAcceptedTypes($parentReturn, $parentClass);
+        $childTypes = $this->getReturnAcceptedTypes($childFuncDef, $className);
+        foreach ($childTypes as $childType) {
+            if (!$this->isReturnTypeCoveredBy($childType, $parentTypes)) {
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+            }
+        }
+    }
+
+    private function isParameterTypeOverrideCompatibleWithReflection(
+        ArgInfo $childArg,
+        \ReflectionParameter $parentParam,
+        string $parentClass
+    ): bool {
+        // A child accepting anything is always contravariant-compatible.
+        if ($this->isTopParameterType($childArg)) {
+            return true;
+        }
+        $parentType = $parentParam->getType();
+        if ($parentType === null) {
+            // Untyped built-in parameter: the parent accepts anything, so a
+            // narrower child type breaks the contract.
+            return false;
+        }
+        $childAccepted = $this->getParameterAcceptedTypes($childArg);
+        if ($childAccepted === null) {
+            // The child type cannot be modelled in the accepted-types DNF;
+            // stay permissive rather than reject a potentially valid program.
+            return true;
+        }
+        $parentAccepted = $this->reflectionTypeToAcceptedTypes($parentType, $parentClass);
+        return $this->isAcceptedTypeSubset($parentAccepted, $childAccepted);
+    }
+
+    /**
+     * Map a host ReflectionType (named, nullable, union or intersection) into
+     * the accepted-types DNF used by the override comparison machinery.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function reflectionTypeToAcceptedTypes(\ReflectionType $type, string $declaringClass): array
+    {
+        if ($type instanceof \ReflectionUnionType) {
+            $entries = [];
+            foreach ($type->getTypes() as $member) {
+                foreach ($this->reflectionTypeToAcceptedTypes($member, $declaringClass) as $entry) {
+                    $entries[] = $entry;
+                }
+            }
+            return $entries;
+        }
+        if ($type instanceof \ReflectionIntersectionType) {
+            $members = [];
+            foreach ($type->getTypes() as $member) {
+                $members[] = $this->reflectionNamedTypeEntry($member, $declaringClass);
+            }
+            return [['kind' => 'allOf', 'types' => $members]];
+        }
+        /** @var \ReflectionNamedType $type */
+        $entries = [$this->reflectionNamedTypeEntry($type, $declaringClass)];
+        if ($type->allowsNull() && !in_array(strtolower($type->getName()), ['mixed', 'null'], true)) {
+            $entries[] = ['kind' => 'isNull'];
+        }
+        return $entries;
+    }
+
+    /** @return array<string, mixed> */
+    private function reflectionNamedTypeEntry(\ReflectionNamedType $type, string $declaringClass): array
+    {
+        $name = strtolower($type->getName());
+        return match ($name) {
+            'int' => ['kind' => 'isInt'],
+            'float' => ['kind' => 'isFloat'],
+            'string' => ['kind' => 'isString'],
+            'bool' => ['kind' => 'isBool'],
+            'array' => ['kind' => 'isArray'],
+            'object' => ['kind' => 'isObject'],
+            'mixed' => ['kind' => 'isMixed'],
+            'void' => ['kind' => 'isVoid'],
+            'never' => ['kind' => 'isNever'],
+            'null' => ['kind' => 'isNull'],
+            'true' => ['kind' => 'isTrue'],
+            'false' => ['kind' => 'isFalse'],
+            'callable' => ['kind' => 'callable'],
+            'iterable' => ['kind' => 'iterable'],
+            'static' => ['kind' => 'isStatic', 'class' => $declaringClass],
+            'self' => ['kind' => 'instanceof', 'class' => $declaringClass],
+            'parent' => ['kind' => 'instanceof', 'class' => get_parent_class($declaringClass) ?: $declaringClass],
+            default => ['kind' => 'instanceof', 'class' => $type->getName()],
+        };
     }
 
     private function isReturnTypeOverrideCompatible(
