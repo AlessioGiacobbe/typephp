@@ -2198,6 +2198,17 @@ class Preprocessor extends CompilerBase
             if ($class instanceof Node\Stmt\Enum_) {
                 $this->fatalError($v, "Enum `{$this->class}` cannot include abstract method `{$v->name}()`");
             }
+            // A private method cannot be overridden, so an abstract private
+            // method could never be implemented. Traits are exempt since PHP
+            // 8.0: the consuming class provides the private implementation.
+            if (!$class instanceof Node\Stmt\Trait_ && ($flags & Modifiers::PRIVATE)) {
+                $this->fatalError($v, "Abstract function `{$this->class}::{$name}()` cannot be declared private");
+            }
+            // An abstract method declares a signature only; Zend rejects a body
+            // instead of silently discarding it.
+            if ($v->stmts !== null) {
+                $this->fatalError($v, "Abstract function `{$this->class}::{$name}()` cannot contain body");
+            }
             if (!$class instanceof Node\Stmt\Trait_ && isset($class->flags) && !($class->flags & Modifiers::ABSTRACT)) {
                 $this->fatalError($v, "Non-abstract class {$this->class} contains abstract method {$v->name}");
             }
