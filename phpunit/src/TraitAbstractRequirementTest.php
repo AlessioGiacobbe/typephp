@@ -72,4 +72,52 @@ class TraitAbstractRequirementTest extends BaseTest
         // an abstract trait requirement.
         $this->compile('trait_abstract_variance_ok.php');
     }
+
+    public function testExplicitTraitReturnIsNotTreatedAsSelf(): void
+    {
+        $this->exec(
+            'Declaration of `InvalidExplicitTraitReturn::make()` must be compatible with `ExplicitTraitReturnRequirement::make()`',
+            'trait_abstract_explicit_trait_return.php'
+        );
+    }
+
+    public function testExplicitTraitTypeInUnionIsNotTreatedAsSelf(): void
+    {
+        $this->exec(
+            'Declaration of `InvalidExplicitTraitUnionReturn::make()` must be compatible with `ExplicitTraitUnionRequirement::make()`',
+            'trait_abstract_explicit_trait_union_return.php'
+        );
+    }
+
+    public function testExplicitTraitParameterIsNotTreatedAsSelf(): void
+    {
+        $this->exec(
+            'Declaration of `InvalidExplicitTraitParameter::accept()` must be compatible with `ExplicitTraitParameterRequirement::accept()`',
+            'trait_abstract_explicit_trait_parameter.php'
+        );
+    }
+
+    public function testParentReturnUsesTheConsumingClassParent(): void
+    {
+        $this->exec(
+            'Declaration of `InvalidParentReturnImplementation::make()` must be compatible with `ParentReturnRequirement::make()`',
+            'trait_abstract_parent_return.php'
+        );
+    }
+
+    public function testParentUnionParameterUsesTheConsumingClassParent(): void
+    {
+        $this->exec(
+            'Declaration of `InvalidParentParamImplementation::accept()` must be compatible with `ParentParamRequirement::accept()`',
+            'trait_abstract_parent_union_param.php'
+        );
+    }
+
+    public function testNestedTraitCannotResolveParentFromAnEventualConsumer(): void
+    {
+        $this->exec(
+            'Cannot use "parent" when current class scope has no parent',
+            'trait_abstract_nested_parent_unavailable.php'
+        );
+    }
 }

@@ -3067,8 +3067,9 @@ CODE;
         $traitMethods = [];
         $traitConstants = [];
         $traitProperties = [];
-        $consumingClass = $className->toString();
-        $classDef = $this->getClass($consumingClass);
+        $classDef = $this->getClass($className->toString());
+        $usingClassDef = $classDef;
+        $compositionOwner = $classDef->getNamespacedName(false);
 
         foreach ($stmt->stmts as $classStmt) {
             if ($classStmt instanceof Node\Stmt\ClassMethod) {
@@ -3130,7 +3131,11 @@ CODE;
                         // arginfo reflects the consuming class (PHP trait semantics) and
                         // passes ZendVM's runtime signature-compatibility checks. The
                         // alias clones below inherit this rewrite.
-                        $this->reresolveTraitMethodAstLateBoundTypes($classDef, $traitFullName, $traitStmt);
+                        $traitOrigin = (string) $traitStmt->getAttribute(
+                            self::TRAIT_ORIGIN_ATTRIBUTE,
+                            $traitFullName,
+                        );
+                        $this->reresolveTraitMethodAstLateBoundTypes($usingClassDef, $traitOrigin, $traitStmt);
                         // Every adaptation derives its flags from the original
                         // method's flags: a same-name visibility change must not
                         // leak into aliases of the same method that are processed
@@ -3153,9 +3158,9 @@ CODE;
                                     $this->validateTraitAbstractImplementation(
                                         $classStmt,
                                         $traitStmt, $requirementSource, $requirementDef,
-                                        $methods[$aliasName], $consumingClass,
+                                        $methods[$aliasName], $compositionOwner,
                                         $classDef->methods[$aliasName] ?? $classDef->abstractMethodDefs[$aliasName] ?? null,
-                                        $consumingClass,
+                                        $usingClassDef,
                                     );
                                 }
                             } elseif (!isset($traitMethods[$aliasName])) {
@@ -3183,9 +3188,9 @@ CODE;
                                 $this->validateTraitAbstractImplementation(
                                     $classStmt,
                                     $traitStmt, $requirementSource, $requirementDef,
-                                    $methods[$methodName], $consumingClass,
+                                    $methods[$methodName], $compositionOwner,
                                     $classDef->methods[$methodName] ?? $classDef->abstractMethodDefs[$methodName] ?? null,
-                                    $consumingClass,
+                                    $usingClassDef,
                                 );
                             }
                             unset($traitStmts[$k1]);
@@ -3216,7 +3221,7 @@ CODE;
                                     $classStmt,
                                     $traitStmt, $requirementSource, $requirementDef,
                                     $existingStmt, $implementationSource, $implementationDef,
-                                    $consumingClass,
+                                    $usingClassDef,
                                 );
                                 unset($traitStmts[$k1]);
                                 continue;
@@ -3233,7 +3238,7 @@ CODE;
                                     $classStmt,
                                     $existingStmt, $requirementSource, $requirementDef,
                                     $traitStmt, $implementationSource, $implementationDef,
-                                    $consumingClass,
+                                    $usingClassDef,
                                 );
                                 foreach ($stmt->stmts as $k3 => $mergedStmt) {
                                     if ($mergedStmt === $existingStmt) {
@@ -3374,10 +3379,11 @@ CODE;
         Node\Stmt\ClassMethod $implementation,
         string $implementationSource,
         ?MethodDef $implementationDef,
-        string $consumingClass,
+        ClassDef $usingClassDef,
     ): void {
         $requirementName = $requirement->name->toString();
         $implementationName = $implementation->name->toString();
+        $consumingClass = $usingClassDef->getNamespacedName(false);
 
         if ($requirement->isStatic() !== $implementation->isStatic()) {
             $this->fatalError($errorNode, $requirement->isStatic()
@@ -3436,13 +3442,12 @@ CODE;
             if ($implArg === null) {
                 continue;
             }
-            // Late-bound keywords (`self`, `static`, `parent`) were resolved
-            // against different declaring types but denote the same type once
-            // both methods are flattened into the consuming class.
-            if ($requiredArg->typeKeyword !== '' && $requiredArg->typeKeyword === $implArg->typeKeyword) {
-                continue;
-            }
-            if (!$this->isParameterTypeOverrideCompatible($implArg, $requiredArg)) {
+            if (!$this->isTraitParameterTypeCompatible(
+                $implArg,
+                $requiredArg,
+                $usingClassDef,
+                $errorNode,
+            )) {
                 $incompatible();
             }
         }
@@ -3453,20 +3458,15 @@ CODE;
         if ($implementationFunc->returnTypeUndeclared) {
             $incompatible();
         }
-        if ($requirementFunc->returnTypeKeyword !== ''
-            && $requirementFunc->returnTypeKeyword === $implementationFunc->returnTypeKeyword
-        ) {
-            return;
-        }
-        $requirementTypes = $this->remapInstanceofClass(
-            $this->getReturnAcceptedTypes($requirementFunc, $consumingClass),
-            $requirementSource,
-            $consumingClass,
+        $requirementTypes = $this->getTraitReturnAcceptedTypes(
+            $requirementFunc,
+            $usingClassDef,
+            $errorNode,
         );
-        $implementationTypes = $this->remapInstanceofClass(
-            $this->getReturnAcceptedTypes($implementationFunc, $consumingClass),
-            $implementationSource,
-            $consumingClass,
+        $implementationTypes = $this->getTraitReturnAcceptedTypes(
+            $implementationFunc,
+            $usingClassDef,
+            $errorNode,
         );
         foreach ($implementationTypes as $implementationType) {
             if (!$this->isReturnTypeCoveredBy($implementationType, $requirementTypes)) {
@@ -3489,24 +3489,105 @@ CODE;
         return $required;
     }
 
-    /**
-     * Replace `instanceof` references to a trait in a DNF type-check list with
-     * the consuming class. `self` (and `parent`) inside a trait were resolved
-     * to the trait itself during preprocessing, but once the method is
-     * flattened they denote the consuming class, and no object can ever be an
-     * instance of a trait.
-     */
-    private function remapInstanceofClass(array $types, string $from, string $to): array
-    {
-        if ($from === $to) {
-            return $types;
+    private function isTraitParameterTypeCompatible(
+        ArgInfo $implementation,
+        ArgInfo $requirement,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): bool {
+        if ($this->isTopParameterType($implementation)) {
+            return true;
+        }
+        if ($this->isTopParameterType($requirement)) {
+            return false;
+        }
+
+        $requirementTypes = $this->getTraitParameterAcceptedTypes(
+            $requirement,
+            $usingClassDef,
+            $errorNode,
+        );
+        $implementationTypes = $this->getTraitParameterAcceptedTypes(
+            $implementation,
+            $usingClassDef,
+            $errorNode,
+        );
+        if ($requirementTypes === null || $implementationTypes === null) {
+            return $this->isParameterTypeOverrideCompatible($implementation, $requirement);
+        }
+        return $this->isAcceptedTypeSubset($requirementTypes, $implementationTypes);
+    }
+
+    private function getTraitParameterAcceptedTypes(
+        ArgInfo $argument,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): ?array {
+        if ($argument->typeKeyword !== '') {
+            return $this->getLateBoundTraitAcceptedType($argument->typeKeyword, $usingClassDef, $errorNode);
+        }
+        return $this->resolveLateBoundAcceptedTypes(
+            $this->getParameterAcceptedTypes($argument),
+            $usingClassDef,
+            $errorNode,
+        );
+    }
+
+    private function getTraitReturnAcceptedTypes(
+        FunctionDef $function,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): array {
+        if ($function->returnTypeKeyword !== '') {
+            return $this->getLateBoundTraitAcceptedType($function->returnTypeKeyword, $usingClassDef, $errorNode);
+        }
+        return $this->resolveLateBoundAcceptedTypes(
+            $this->getReturnAcceptedTypes($function, $usingClassDef->getNamespacedName(false)),
+            $usingClassDef,
+            $errorNode,
+        ) ?? [];
+    }
+
+    private function getLateBoundTraitAcceptedType(
+        string $keyword,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): array {
+        if ($keyword === 'static') {
+            return [['kind' => 'isStatic', 'class' => $usingClassDef->getNamespacedName(false)]];
+        }
+        $class = $this->resolveLateBoundClass($usingClassDef, $keyword);
+        if ($class === null) {
+            $this->fatalError($errorNode, 'Cannot use "parent" when current class scope has no parent');
+        }
+        return [['kind' => 'instanceof', 'class' => $class]];
+    }
+
+    private function resolveLateBoundAcceptedTypes(
+        ?array $types,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): ?array {
+        if ($types === null) {
+            return null;
         }
         foreach ($types as &$type) {
             if (($type['kind'] ?? null) === 'allOf') {
-                $type['types'] = $this->remapInstanceofClass($type['types'], $from, $to);
-            } elseif (($type['kind'] ?? null) === 'instanceof' && ($type['class'] ?? null) === $from) {
-                $type['class'] = $to;
+                $type['types'] = $this->resolveLateBoundAcceptedTypes(
+                    $type['types'],
+                    $usingClassDef,
+                    $errorNode,
+                );
+                continue;
             }
+            $lateBound = $type['lateBound'] ?? '';
+            if (!is_string($lateBound) || $lateBound === '') {
+                continue;
+            }
+            $resolved = $this->getLateBoundTraitAcceptedType($lateBound, $usingClassDef, $errorNode)[0];
+            $type['kind'] = $resolved['kind'];
+            $type['class'] = $resolved['class'];
+            unset($type['lateBound']);
         }
         return $types;
     }
@@ -3538,21 +3619,26 @@ CODE;
             return;
         }
         $traitDef = $this->getClass($traitFullName);
-        if (!$traitDef->hasMethod($methodStmt->name->toString())) {
+        $methodName = strtolower($methodStmt->name->toString());
+        $methodDef = $traitDef->methods[$methodName]
+            ?? $traitDef->abstractMethodDefs[$methodName]
+            ?? null;
+        if ($methodDef === null) {
             return;
         }
-        $fn = $traitDef->getMethod($methodStmt->name->toString())->functionDef;
+        $fn = $methodDef->functionDef;
 
         if ($fn->returnTypeKeyword !== '' && $methodStmt->returnType instanceof Node\Name) {
-            if ($fn->returnTypeKeyword === 'static') {
-                // `static` remains late-bound in the composed method signature.
-                $methodStmt->returnType = new Node\Name('static');
-            } else {
-                $resolved = $this->resolveLateBoundClass($usingClassDef, $fn->returnTypeKeyword);
-                if ($resolved !== null) {
-                    $methodStmt->returnType = new Node\Name($resolved);
-                }
-            }
+            $methodStmt->returnType = $this->resolveTraitTypeNode(
+                $methodStmt->returnType,
+                $fn->returnTypeKeyword,
+                $usingClassDef,
+            );
+        } elseif ($methodStmt->returnType !== null) {
+            $methodStmt->returnType = $this->reresolveCompositeTraitTypeNode(
+                $methodStmt->returnType,
+                $usingClassDef,
+            );
         }
 
         foreach ($fn->argInfoList as $i => $arg) {
@@ -3561,16 +3647,89 @@ CODE;
                 && isset($methodStmt->params[$i])
                 && $methodStmt->params[$i]->type instanceof Node\Name
             ) {
-                if ($arg->typeKeyword === 'static') {
-                    $methodStmt->params[$i]->type = new Node\Name('static');
-                } else {
-                    $resolved = $this->resolveLateBoundClass($usingClassDef, $arg->typeKeyword);
-                    if ($resolved !== null) {
-                        $methodStmt->params[$i]->type = new Node\Name($resolved);
-                    }
-                }
+                $methodStmt->params[$i]->type = $this->resolveTraitTypeNode(
+                    $methodStmt->params[$i]->type,
+                    $arg->typeKeyword,
+                    $usingClassDef,
+                );
+            } elseif (isset($methodStmt->params[$i]) && $methodStmt->params[$i]->type !== null) {
+                $methodStmt->params[$i]->type = $this->reresolveCompositeTraitTypeNode(
+                    $methodStmt->params[$i]->type,
+                    $usingClassDef,
+                );
             }
         }
+    }
+
+    private function reresolveCompositeTraitTypeNode(
+        Node\ComplexType|Node\Identifier|Node\Name $type,
+        ClassDef $usingClassDef,
+    ): Node\ComplexType|Node\Identifier|Node\Name {
+        if ($type instanceof Node\NullableType) {
+            $type->type = $this->reresolveTraitTypeMember($type->type, $usingClassDef);
+            return $type;
+        }
+        if ($type instanceof Node\IntersectionType) {
+            foreach ($type->types as $i => $member) {
+                $type->types[$i] = $this->reresolveTraitTypeMember($member, $usingClassDef);
+            }
+            return $type;
+        }
+        if ($type instanceof Node\UnionType) {
+            foreach ($type->types as $i => $member) {
+                if ($member instanceof Node\IntersectionType) {
+                    foreach ($member->types as $j => $intersectionMember) {
+                        $member->types[$j] = $this->reresolveTraitTypeMember(
+                            $intersectionMember,
+                            $usingClassDef,
+                        );
+                    }
+                } else {
+                    $type->types[$i] = $this->reresolveTraitTypeMember($member, $usingClassDef);
+                }
+            }
+            return $type;
+        }
+        return $this->reresolveTraitTypeMember($type, $usingClassDef);
+    }
+
+    private function reresolveTraitTypeMember(
+        Node\Identifier|Node\Name $type,
+        ClassDef $usingClassDef,
+    ): Node\Identifier|Node\Name {
+        if (!$type instanceof Node\Name) {
+            return $type;
+        }
+        $keyword = $type->getAttribute(self::LATE_BOUND_TYPE_ATTRIBUTE);
+        if (!is_string($keyword) || $keyword === '') {
+            return $type;
+        }
+        return $this->resolveTraitTypeNode($type, $keyword, $usingClassDef);
+    }
+
+    private function resolveTraitTypeNode(
+        Node\Name $type,
+        string $keyword,
+        ClassDef $usingClassDef,
+    ): Node\Name {
+        if ($keyword === 'static') {
+            return new Node\Name('static', $type->getAttributes());
+        }
+        $resolved = $this->resolveLateBoundClass($usingClassDef, $keyword);
+        if ($resolved === null) {
+            // A trait can import another trait whose signature contains
+            // `parent` before any class consumes either one. PHP keeps that
+            // type late-bound until the outer trait is flattened into a
+            // class. Signature compatibility checks performed while traits
+            // are composed still reject `parent` in this scope, because
+            // there is no parent against which the two methods can be
+            // compared.
+            if ($keyword === 'parent' && $usingClassDef->trait !== null) {
+                return new Node\Name('parent', $type->getAttributes());
+            }
+            $this->fatalError($type, 'Cannot use "parent" when current class scope has no parent');
+        }
+        return new Node\Name\FullyQualified($resolved, $type->getAttributes());
     }
 
     /**

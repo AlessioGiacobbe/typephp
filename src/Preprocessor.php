@@ -774,6 +774,7 @@ class Preprocessor extends CompilerBase
 
     protected function parseParameterType(Node\Param $param, ArgInfo $argInfo, string $var): string
     {
+        $this->markLateBoundTypeNodes($param->type);
         // Capture the late-bound parameter type keyword *before* resolveTypeDecl
         // runs, because resolveTypeDecl mutates the `self`/`static`/`parent` node
         // name to the declaring class when the method belongs to a trait.
@@ -978,6 +979,7 @@ class Preprocessor extends CompilerBase
         }
 
         $fnName = $this->parseIdentifier($v->name);
+        $this->markLateBoundTypeNodes($v->returnType);
         // Capture the late-bound return type keyword *before* resolveTypeDecl runs,
         // because resolveTypeDecl mutates the `self`/`static`/`parent` node name to
         // the declaring class when the method belongs to a trait.

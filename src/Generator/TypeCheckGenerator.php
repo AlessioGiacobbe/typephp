@@ -19,6 +19,31 @@ use PhpParser\NodeAbstract;
 
 trait TypeCheckGenerator
 {
+    protected const string LATE_BOUND_TYPE_ATTRIBUTE = 'typephp_late_bound_type';
+
+    protected function markLateBoundTypeNodes(?NodeAbstract $type): void
+    {
+        if ($type === null) {
+            return;
+        }
+        if ($type instanceof NullableType) {
+            $this->markLateBoundTypeNodes($type->type);
+            return;
+        }
+        if ($type instanceof UnionType || $type instanceof IntersectionType) {
+            foreach ($type->types as $member) {
+                $this->markLateBoundTypeNodes($member);
+            }
+            return;
+        }
+        if ($type instanceof Node\Name) {
+            $name = strtolower($type->toString());
+            if (in_array($name, ['self', 'static', 'parent'], true)) {
+                $type->setAttribute(self::LATE_BOUND_TYPE_ATTRIBUTE, $name);
+            }
+        }
+    }
+
     protected function isStrictScalarType(string $type): bool
     {
         return in_array($type, [Type::INT, Type::FLOAT, Type::BOOL, Type::STR], true);
@@ -198,17 +223,31 @@ trait TypeCheckGenerator
             return [$entry];
         }
 
-        if ($name === 'self') {
+        $lateBound = $typeNode instanceof Node\Name
+            ? $typeNode->getAttribute(self::LATE_BOUND_TYPE_ATTRIBUTE, '')
+            : '';
+        $lateBound = is_string($lateBound) ? $lateBound : '';
+        if ($lateBound === 'self') {
             $class = $this->getFullClassLikeName();
-        } elseif ($name === 'parent') {
+        } elseif ($lateBound === 'parent') {
             $class = $this->classDef->extends ?? '';
-        } elseif ($name === 'static') {
+        } elseif ($lateBound === 'static') {
             $class = 'static';
         } else {
             $class = $this->getNamespacedClassName($name);
         }
 
-        return $class ? [['kind' => 'instanceof', 'class' => $class]] : [];
+        if ($lateBound !== '') {
+            $typeNode->setAttribute(self::LATE_BOUND_TYPE_ATTRIBUTE, $lateBound);
+        }
+        if ($class === '' && !($lateBound === 'parent' && $this->classDef?->trait !== null)) {
+            return [];
+        }
+        $entry = ['kind' => 'instanceof', 'class' => $class];
+        if ($lateBound !== '') {
+            $entry['lateBound'] = $lateBound;
+        }
+        return [$entry];
     }
 
     protected function typeCheckNodeToString(NodeAbstract $typeNode): string
