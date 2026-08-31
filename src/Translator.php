@@ -3169,6 +3169,8 @@ CODE;
         $traitMethods = [];
         $traitConstants = [];
         $traitProperties = [];
+        $usedTraits = [];
+        $seenTraitMethods = [];
         $classDef = $this->getClass($className->toString());
         $usingClassDef = $classDef;
         $compositionOwner = $classDef->getNamespacedName(false);
@@ -3207,6 +3209,7 @@ CODE;
                 if (!$traitDef->trait) {
                     $this->fatalError($classStmt, "Trait `{$traitFullName}` not found");
                 }
+                $usedTraits[strtolower($traitFullName)] = $traitFullName;
 
                 /** @var Node\Stmt\Trait_ $traitAst */
                 $traitAst = $this->cloneAstNode($traitDef->trait);
@@ -3227,6 +3230,10 @@ CODE;
                             $traitStmt->setAttribute(self::TRAIT_METHOD_ATTRIBUTE, $traitStmt->name->toString());
                         }
                         $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
+                        // Methods arriving from nested traits are keyed under
+                        // the directly-used trait, matching how adaptation
+                        // keys are registered.
+                        $seenTraitMethods[$fullMethodName] = true;
                         // A trait method's `self`/`static`/`parent` return and parameter
                         // types refer to the class that uses the trait, not the trait
                         // itself. Re-resolve them on the cloned AST so the generated
@@ -3441,6 +3448,86 @@ CODE;
             }
         }
 
+        $this->validateTraitAdaptations($stmt, $classDef, $usedTraits, $seenTraitMethods);
+    }
+
+    /**
+     * After every trait is composed into $classDef, verify that each trait
+     * adaptation named a real trait and a real method, as Zend does when
+     * binding traits:
+     *
+     *  - an alias must reference a used trait, and its method must exist in
+     *    that trait (in any used trait when written without a qualifier);
+     *  - a precedence rule's traits must all be used, and the preferred
+     *    method must exist in the preferred trait (the overridden trait need
+     *    not declare it).
+     *
+     * @param array<string, string> $usedTraits    lowercased name => full name
+     * @param array<string, true>   $seenTraitMethods "trait::method" keys seen
+     *                              during composition (nested trait methods
+     *                              are keyed under the directly-used trait)
+     */
+    private function validateTraitAdaptations(
+        Node\Stmt\ClassLike $stmt,
+        ClassDef $classDef,
+        array $usedTraits,
+        array $seenTraitMethods
+    ): void {
+        if (!$classDef->traitAliases && !$classDef->traitIgnored) {
+            return;
+        }
+        $className = $classDef->getNamespacedName(false);
+
+        // An unqualified alias is registered under every used trait's key (the
+        // Preprocessor cannot know which trait declares the method), so its
+        // variants share one group: the group is satisfied when ANY variant
+        // matched a composed method.
+        $aliasGroups = [];
+        foreach ($classDef->traitAliases as $fullMethodName => $aliasList) {
+            foreach ($aliasList as $alias) {
+                $group = $alias['group'] ?? $fullMethodName;
+                $aliasGroups[$group] ??= ['alias' => $alias, 'matched' => false];
+                if (isset($seenTraitMethods[$fullMethodName])) {
+                    $aliasGroups[$group]['matched'] = true;
+                }
+            }
+        }
+        foreach ($aliasGroups as $groupInfo) {
+            if ($groupInfo['matched']) {
+                continue;
+            }
+            $alias = $groupInfo['alias'];
+            $method = $alias['method'] ?? '';
+            $explicitTrait = $alias['trait'] ?? null;
+            if ($explicitTrait !== null) {
+                if (!isset($usedTraits[strtolower($explicitTrait)])) {
+                    $this->fatalError($stmt,
+                        "Required Trait `{$explicitTrait}` wasn't added to `{$className}`");
+                }
+                $this->fatalError($stmt,
+                    "An alias was defined for `{$explicitTrait}::{$method}` but this method does not exist");
+            }
+            $newName = $alias['newName'] ?? $method;
+            $this->fatalError($stmt,
+                "An alias (`{$newName}`) was defined for method `{$method}()`, but this method does not exist");
+        }
+
+        foreach ($classDef->traitIgnored as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            foreach ([$rule['winnerTrait'], $rule['loserTrait']] as $traitName) {
+                if (!isset($usedTraits[strtolower($traitName)])) {
+                    $this->fatalError($stmt,
+                        "Required Trait `{$traitName}` wasn't added to `{$className}`");
+                }
+            }
+            if (!isset($seenTraitMethods[$this->getFullMethodName($rule['winnerTrait'], $rule['method'])])) {
+                $this->fatalError($stmt,
+                    "A precedence rule was defined for `{$rule['winnerTrait']}::{$rule['method']}` " .
+                    'but this method does not exist');
+            }
+        }
     }
 
     /**
@@ -3523,6 +3610,236 @@ CODE;
         $constDef = new ConstantDef('', 0, '', '');
         $constDef->valueExpr = $expr;
         return $this->evaluateClassConstValue($expr, $constDef, $class, '');
+    }
+
+    /**
+     * Validate that a concrete method satisfies an abstract requirement
+     * declared by a trait, following Zend's trait-composition rules: the
+     * static modifier must match, an abstract by-reference return must be
+     * kept, the implementation cannot require more parameters, parameter
+     * types are contravariant, and the return type is covariant. Visibility
+     * is deliberately not restricted — Zend allows an implementation of any
+     * visibility to fulfill an abstract trait requirement.
+     */
+    private function validateTraitAbstractImplementation(
+        Node $errorNode,
+        Node\Stmt\ClassMethod $requirement,
+        string $requirementSource,
+        ?MethodDef $requirementDef,
+        Node\Stmt\ClassMethod $implementation,
+        string $implementationSource,
+        ?MethodDef $implementationDef,
+        ClassDef $usingClassDef,
+    ): void {
+        $requirementName = $requirement->name->toString();
+        $implementationName = $implementation->name->toString();
+        $consumingClass = $usingClassDef->getNamespacedName(false);
+
+        if ($requirement->isStatic() !== $implementation->isStatic()) {
+            $this->fatalError($errorNode, $requirement->isStatic()
+                ? "Cannot make static method `{$requirementSource}::{$requirementName}()` non static in class `{$consumingClass}`"
+                : "Cannot make non static method `{$requirementSource}::{$requirementName}()` static in class `{$consumingClass}`");
+        }
+
+        $incompatible = function () use ($errorNode, $implementationSource, $implementationName, $requirementSource, $requirementName): never {
+            $this->fatalError(
+                $errorNode,
+                "Declaration of `{$implementationSource}::{$implementationName}()` must be compatible " .
+                "with `{$requirementSource}::{$requirementName}()`"
+            );
+        };
+
+        // The requirement's by-reference return must be kept; the
+        // implementation may add one.
+        if ($requirement->byRef && !$implementation->byRef) {
+            $incompatible();
+        }
+
+        if ($this->countRequiredParams($implementation->params) > $this->countRequiredParams($requirement->params)) {
+            $incompatible();
+        }
+        $implParamCount = count($implementation->params);
+        $lastImplParam = $implParamCount > 0 ? $implementation->params[$implParamCount - 1] : null;
+        foreach ($requirement->params as $i => $requiredParam) {
+            // A trailing variadic accepts every remaining requirement position.
+            $implParam = $implementation->params[$i]
+                ?? ($lastImplParam?->variadic ? $lastImplParam : null);
+            if ($implParam === null
+                || $implParam->byRef !== $requiredParam->byRef
+                || ($requiredParam->variadic && !$implParam->variadic)
+            ) {
+                $incompatible();
+            }
+        }
+        foreach ($implementation->params as $i => $implParam) {
+            if ($i >= count($requirement->params) && !$implParam->default && !$implParam->variadic) {
+                $incompatible();
+            }
+        }
+
+        // Type variance is checked on the preprocessed definitions, whose
+        // names were resolved in each declaration's own lexical context.
+        $requirementFunc = $requirementDef?->functionDef;
+        $implementationFunc = $implementationDef?->functionDef;
+        if (!$requirementFunc || !$implementationFunc) {
+            return;
+        }
+
+        $implArgs = $implementationFunc->argInfoList;
+        $lastImplArg = $implArgs === [] ? null : $implArgs[count($implArgs) - 1];
+        foreach ($requirementFunc->argInfoList as $i => $requiredArg) {
+            $implArg = $implArgs[$i] ?? ($lastImplArg?->variadic ? $lastImplArg : null);
+            if ($implArg === null) {
+                continue;
+            }
+            if (!$this->isTraitParameterTypeCompatible(
+                $implArg,
+                $requiredArg,
+                $usingClassDef,
+                $errorNode,
+            )) {
+                $incompatible();
+            }
+        }
+
+        if ($requirementFunc->returnTypeUndeclared) {
+            return;
+        }
+        if ($implementationFunc->returnTypeUndeclared) {
+            $incompatible();
+        }
+        $requirementTypes = $this->getTraitReturnAcceptedTypes(
+            $requirementFunc,
+            $usingClassDef,
+            $errorNode,
+        );
+        $implementationTypes = $this->getTraitReturnAcceptedTypes(
+            $implementationFunc,
+            $usingClassDef,
+            $errorNode,
+        );
+        foreach ($implementationTypes as $implementationType) {
+            if (!$this->isReturnTypeCoveredBy($implementationType, $requirementTypes)) {
+                $incompatible();
+            }
+        }
+    }
+
+    /**
+     * @param array<Node\Param> $params
+     */
+    private function countRequiredParams(array $params): int
+    {
+        $required = 0;
+        foreach (array_values($params) as $i => $param) {
+            if (!$param->default && !$param->variadic) {
+                $required = $i + 1;
+            }
+        }
+        return $required;
+    }
+
+    private function isTraitParameterTypeCompatible(
+        ArgInfo $implementation,
+        ArgInfo $requirement,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): bool {
+        if ($this->isTopParameterType($implementation)) {
+            return true;
+        }
+        if ($this->isTopParameterType($requirement)) {
+            return false;
+        }
+
+        $requirementTypes = $this->getTraitParameterAcceptedTypes(
+            $requirement,
+            $usingClassDef,
+            $errorNode,
+        );
+        $implementationTypes = $this->getTraitParameterAcceptedTypes(
+            $implementation,
+            $usingClassDef,
+            $errorNode,
+        );
+        if ($requirementTypes === null || $implementationTypes === null) {
+            return $this->isParameterTypeOverrideCompatible($implementation, $requirement);
+        }
+        return $this->isAcceptedTypeSubset($requirementTypes, $implementationTypes);
+    }
+
+    private function getTraitParameterAcceptedTypes(
+        ArgInfo $argument,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): ?array {
+        if ($argument->typeKeyword !== '') {
+            return $this->getLateBoundTraitAcceptedType($argument->typeKeyword, $usingClassDef, $errorNode);
+        }
+        return $this->resolveLateBoundAcceptedTypes(
+            $this->getParameterAcceptedTypes($argument),
+            $usingClassDef,
+            $errorNode,
+        );
+    }
+
+    private function getTraitReturnAcceptedTypes(
+        FunctionDef $function,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): array {
+        if ($function->returnTypeKeyword !== '') {
+            return $this->getLateBoundTraitAcceptedType($function->returnTypeKeyword, $usingClassDef, $errorNode);
+        }
+        return $this->resolveLateBoundAcceptedTypes(
+            $this->getReturnAcceptedTypes($function, $usingClassDef->getNamespacedName(false)),
+            $usingClassDef,
+            $errorNode,
+        ) ?? [];
+    }
+
+    private function getLateBoundTraitAcceptedType(
+        string $keyword,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): array {
+        if ($keyword === 'static') {
+            return [['kind' => 'isStatic', 'class' => $usingClassDef->getNamespacedName(false)]];
+        }
+        $class = $this->resolveLateBoundClass($usingClassDef, $keyword);
+        if ($class === null) {
+            $this->fatalError($errorNode, 'Cannot use "parent" when current class scope has no parent');
+        }
+        return [['kind' => 'instanceof', 'class' => $class]];
+    }
+
+    private function resolveLateBoundAcceptedTypes(
+        ?array $types,
+        ClassDef $usingClassDef,
+        Node $errorNode,
+    ): ?array {
+        if ($types === null) {
+            return null;
+        }
+        foreach ($types as &$type) {
+            if (($type['kind'] ?? null) === 'allOf') {
+                $type['types'] = $this->resolveLateBoundAcceptedTypes(
+                    $type['types'],
+                    $usingClassDef,
+                    $errorNode,
+                );
+                continue;
+            }
+            $lateBound = $type['lateBound'] ?? '';
+            if (!is_string($lateBound) || $lateBound === '') {
+                continue;
+            }
+            $resolved = $this->getLateBoundTraitAcceptedType($lateBound, $usingClassDef, $errorNode)[0];
+            $type['kind'] = $resolved['kind'];
+            $type['class'] = $resolved['class'];
+            unset($type['lateBound']);
+        }
+        return $types;
     }
 
     private function cloneAstNode(Node $node): Node
@@ -6358,9 +6675,7 @@ CODE;
         // Different spellings of the same value (e.g. `1 + 1` and `2`) are
         // compatible in Zend; compare the evaluated values.
         if ($existing->valueExpr instanceof Node\Expr && $incoming->valueExpr instanceof Node\Expr) {
-            $floatOnly = $existing->declaredType === Type::FLOAT
-                || strcasecmp($existing->typeStr, 'float') === 0
-                || strcasecmp($existing->typeStr, '?float') === 0;
+            $floatOnly = $existing->declaredType === Type::FLOAT;
             return $this->isSameTraitMemberValue(
                 $existing->valueExpr,
                 $this->getFullClassName(),

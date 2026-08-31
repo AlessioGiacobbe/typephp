@@ -80,14 +80,18 @@ class ClassDef extends ClassLikeDef
     public array $usedTraits = [];
 
     /**
-     * FullMethodName -> alias list
-     * @var array<string, array<int, array{newName: string, newModifier: int}>>
+     * FullMethodName -> alias list. `group` identifies the source adaptation
+     * (an unqualified alias is registered under every used trait's key),
+     * `method` is the aliased method as written, and `trait` the explicit
+     * trait qualifier or null.
+     * @var array<string, array<int, array{newName: string, newModifier: int, group: string, method: string, trait: ?string}>>
      */
     public array $traitAliases = [];
 
     /**
-     * FullMethodName -> true
-     * @var array<string, bool>
+     * FullMethodName of the ignored (overridden) method -> precedence rule
+     * info for existence validation. Consumers test the key with isset().
+     * @var array<string, array{method: string, winnerTrait: string, loserTrait: string}>
      */
     public array $traitIgnored = [];
     public int $flags;

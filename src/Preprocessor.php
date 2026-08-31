@@ -2746,7 +2746,12 @@ class Preprocessor extends CompilerBase
 
     protected function parseTraitUseOptions(Node\Stmt\TraitUse $traitUse, array &$aliases, array &$ignored): void
     {
-        foreach ($traitUse->adaptations as $adaptation) {
+        // Adaptation identity used to verify during trait composition that
+        // every alias matched a real trait method (an unqualified alias is
+        // registered under every used trait's key, so its variants share one
+        // group and the group is satisfied when ANY variant matches).
+        $groupBase = $traitUse->getAttribute('startFilePos', $traitUse->getStartLine()) . '@';
+        foreach ($traitUse->adaptations as $adaptationIndex => $adaptation) {
             if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Alias) {
                 $traits = [];
                 if (!$adaptation->trait) {
@@ -2769,6 +2774,9 @@ class Preprocessor extends CompilerBase
                     $aliases[$this->getFullMethodName($traitName, $methodName)][] = [
                         'newName' => $adaptation->newName ? $adaptation->newName->toString() : $methodName,
                         'newModifier' => $adaptation->newModifier ?: 0,
+                        'group' => $groupBase . $adaptationIndex,
+                        'method' => $methodName,
+                        'trait' => $adaptation->trait ? $traitName : null,
                     ];
                 }
             }
@@ -2777,6 +2785,7 @@ class Preprocessor extends CompilerBase
                     $this->fatalError($traitUse, 'Trait precedence cannot be used without a trait');
                 }
                 $methodName = $adaptation->method->toString();
+                $winnerTrait = $this->getNamespacedClassName($this->parseIdentifier($adaptation->trait));
                 /*
                  * For example:
                  * use TraitA { TraitA::method insteadof TraitB}
@@ -2784,7 +2793,13 @@ class Preprocessor extends CompilerBase
                  */
                 foreach ($adaptation->insteadof as $trait2) {
                     $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait2));
-                    $ignored[$this->getFullMethodName($traitName, $methodName)] = true;
+                    // The value records the rule for existence validation
+                    // during composition; consumers only use isset() on the key.
+                    $ignored[$this->getFullMethodName($traitName, $methodName)] = [
+                        'method' => $methodName,
+                        'winnerTrait' => $winnerTrait,
+                        'loserTrait' => $traitName,
+                    ];
                 }
             }
         }
