@@ -4553,10 +4553,15 @@ CODE;
 
     /**
      * Check whether a parent method can be overridden: private methods cannot be
-     * overridden, and the signature must be compatible.
+     * overridden, and the signature must be compatible. With $childIsAbstract,
+     * the declaration additionally may not turn a concrete inherited method
+     * abstract (Zend: "Cannot make non abstract method ... abstract").
      */
-    protected function checkParentMethodCanBeOverridden(Node\Stmt\ClassMethod $v, string $name): void
-    {
+    protected function checkParentMethodCanBeOverridden(
+        Node\Stmt\ClassMethod $v,
+        string $name,
+        bool $childIsAbstract = false
+    ): void {
         // Zend exempts constructors from the LSP checks against a CONCRETE
         // parent constructor (subclasses may freely change the construction
         // signature and even narrow its visibility). A FINAL parent
@@ -4584,6 +4589,10 @@ CODE;
                 }
                 if ($modifiers & \ReflectionMethod::IS_FINAL) {
                     goto _final_error;
+                }
+                if ($childIsAbstract && $modifiers !== null && !($modifiers & \ReflectionMethod::IS_ABSTRACT)) {
+                    $this->fatalError($v,
+                        "Cannot make non abstract method `{$extends}::{$name}()` abstract in class `{$this->getFullClassName()}`");
                 }
                 break;
             }
@@ -4615,6 +4624,10 @@ CODE;
                     $this->fatalGeneratedMethodAttributeIfAny($v, $message, $extends, $name);
                     $this->fatalError($v,
                         $message);
+                }
+                if ($childIsAbstract) {
+                    $this->fatalError($v,
+                        "Cannot make non abstract method `{$extends}::{$name}()` abstract in class `{$this->getFullClassName()}`");
                 }
                 if (!$isConstructor) {
                     $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
@@ -5534,6 +5547,20 @@ CODE;
             // only run in the implementation phase.
             $this->checkParentMethodCanBeOverridden($v, $name);
             $methodCodes[$name] = $this->parseFunction($v);
+        } elseif ($this->classDef->trait === null
+            && !is_string($v->getAttribute(self::TRAIT_ORIGIN_ATTRIBUTE))
+            && $this->classDef->hasAbstractMethod($name)
+            && isset($this->classDef->abstractMethodDefs[strtolower($name)])
+        ) {
+            // An abstract method the class itself declares participates in
+            // the parent checks: it cannot turn a concrete inherited method
+            // abstract, and it must stay compatible with an inherited
+            // abstract contract. Abstract requirements arriving from traits
+            // are exempt — Zend lets an inherited concrete method satisfy
+            // them.
+            $this->methodDef = $this->classDef->getAbstractMethod($name);
+            $this->methodDef->node = $v;
+            $this->checkParentMethodCanBeOverridden($v, $name, childIsAbstract: true);
         }
 
         $this->resetMethod();
