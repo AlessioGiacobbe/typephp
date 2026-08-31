@@ -139,14 +139,50 @@ trait BinaryOpTrait
             return $constantDivisionByZero;
         }
 
-        if ($op === '%' and !($leftType === Type::INT and $rightType === Type::INT)) {
-            return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+        if ($op === '%') {
+            if (!($leftType === Type::INT and $rightType === Type::INT)) {
+                return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+            }
+            // PHP int modulo raises a catchable DivisionByZeroError for a
+            // zero divisor and defines PHP_INT_MIN % -1 as 0; the raw C++ '%'
+            // is undefined behavior for both. Route dynamic int modulo through
+            // the PHP mod function unless the user explicitly selected
+            // `use native_types`. Constant operands are folded below.
+            if (!$this->nativeTypes
+                && $this->evaluateConstantIntArithmetic($left, $right, '%') === null
+            ) {
+                return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+            }
         }
 
         if ($op === '<<' || $op === '>>') {
             $foldedShift = $this->tryFoldConstantShift($left, $right, $op, $leftExpr, $rightExpr);
             if ($foldedShift !== null) {
                 return $foldedShift;
+            }
+
+            // PHP shifts by >= the word size yield 0 (or -1 for a negative
+            // right-shifted value) and negative shift counts raise a catchable
+            // ArithmeticError, while the raw C++ shift is undefined behavior
+            // for both; a raw left shift into the sign bit is also undefined.
+            // Route dynamic int shifts through the encapsulated Variant
+            // operators unless the user explicitly selected `use native_types`.
+            // Constant shifts that C++ defines identically to PHP stay raw.
+            if (!$this->nativeTypes
+                && $leftType === Type::INT
+                && $rightType === Type::INT
+            ) {
+                $leftValue = $this->constantIntValue($left);
+                $shiftValue = $this->constantIntValue($right);
+                $safeConstantShift = $leftValue !== null
+                    && $shiftValue !== null
+                    && $leftValue >= 0
+                    && $shiftValue >= 0
+                    && $shiftValue < PHP_INT_SIZE * 8
+                    && ($op === '>>' || !$this->leftShiftTouchesSignBit($leftValue, $shiftValue));
+                if (!$safeConstantShift) {
+                    return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
+                }
             }
         }
 
@@ -168,6 +204,24 @@ trait BinaryOpTrait
             && $this->evaluateConstantIntArithmetic($left, $right, $op) === null
         ) {
             return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
+        }
+
+        // PHP division on native scalar operands cannot be emitted as a raw
+        // C++ '/': zend_long division truncates (7 / 2 is 3.5 in PHP, 3 in
+        // C++), division by zero must raise the catchable DivisionByZeroError
+        // (raw integer division is UB, raw double division yields INF/NAN),
+        // and PHP_INT_MIN / -1 promotes to float. Route dynamic division
+        // through the encapsulated Variant operator unless the user explicitly
+        // selected `use native_types`. Fully constant operands are folded
+        // above or are exact when emitted directly.
+        if (!$this->nativeTypes
+            && $op === '/'
+            && in_array($leftType, [Type::INT, Type::FLOAT], true)
+            && in_array($rightType, [Type::INT, Type::FLOAT], true)
+            && ($this->constantNumericValue($left, false) === null
+                || $this->constantNumericValue($right, false) === null)
+        ) {
+            return '((php::Var(' . $leftExpr . ')) / (php::Var(' . $rightExpr . ')))';
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
