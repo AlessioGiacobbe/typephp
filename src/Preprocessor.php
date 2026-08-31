@@ -46,6 +46,29 @@ use PhpParser\NodeVisitor\NameResolver;
 
 class Preprocessor extends CompilerBase
 {
+    /**
+     * Magic methods Zend rejects inside enum declarations. Enum cases are
+     * stateless singletons, so construction, destruction, cloning, (de)ser-
+     * ialization, string casting, and property magic are all forbidden;
+     * only __call, __callStatic, and __invoke remain legal.
+     */
+    private const array ENUM_FORBIDDEN_MAGIC_METHODS = [
+        '__construct' => true,
+        '__destruct' => true,
+        '__clone' => true,
+        '__get' => true,
+        '__set' => true,
+        '__unset' => true,
+        '__isset' => true,
+        '__sleep' => true,
+        '__wakeup' => true,
+        '__set_state' => true,
+        '__serialize' => true,
+        '__unserialize' => true,
+        '__tostring' => true,
+        '__debuginfo' => true,
+    ];
+
     protected string $targetName = 'app';
 
     /**
@@ -1198,6 +1221,11 @@ class Preprocessor extends CompilerBase
 
         if ($class instanceof Node\Stmt\Class_) {
             $flags = $class->flags;
+        } elseif ($class instanceof Node\Stmt\Enum_) {
+            // Zend marks every enum class entry ZEND_ACC_FINAL, which is what
+            // rejects `class B extends E`. Carrying the flag here lets the
+            // regular final-class inheritance check cover enums as well.
+            $flags = Modifiers::PUBLIC | Modifiers::FINAL;
         } else {
             $flags = Modifiers::PUBLIC;
         }
@@ -1248,11 +1276,40 @@ class Preprocessor extends CompilerBase
         if ($class instanceof Node\Stmt\Enum_) {
             $this->classDef->enum = true;
             if ($class->scalarType !== null) {
+                $backingType = strtolower($class->scalarType->name);
+                if ($backingType !== 'int' && $backingType !== 'string') {
+                    $this->fatalError(
+                        $class->scalarType,
+                        "Enum backing type must be `int` or `string`, `{$class->scalarType->name}` given",
+                    );
+                }
                 $this->classDef->enumBackingType = $class->scalarType->name;
             }
         }
         if (!$class instanceof Node\Stmt\Trait_) {
             $this->classDef->implements = $this->parseImplements($class->implements);
+            if ($class instanceof Node\Stmt\Enum_) {
+                // Zend adds UnitEnum (and BackedEnum for backed enums) itself;
+                // naming either explicitly is a compile-time error.
+                foreach ($this->classDef->implements as $i => $interfaceName) {
+                    $interfaceLower = strtolower($interfaceName);
+                    if ($interfaceLower !== 'unitenum' && $interfaceLower !== 'backedenum') {
+                        continue;
+                    }
+                    $errorNode = $class->implements[$i] ?? $class;
+                    if ($interfaceLower === 'backedenum' && $this->classDef->enumBackingType === null) {
+                        $this->fatalError(
+                            $errorNode,
+                            "Non-backed enum `{$fullClassName}` cannot implement interface `BackedEnum`",
+                        );
+                    }
+                    $interfaceDisplay = $interfaceLower === 'unitenum' ? 'UnitEnum' : 'BackedEnum';
+                    $this->fatalError(
+                        $errorNode,
+                        "Enum `{$fullClassName}` cannot implement previously implemented interface `{$interfaceDisplay}`",
+                    );
+                }
+            }
         } else {
             $this->classDef->trait = $class;
             // Trait members are compiled later in the consuming class, but
@@ -1326,6 +1383,19 @@ class Preprocessor extends CompilerBase
                     break;
                 case 'Stmt_EnumCase':
                     $caseName = $this->parseIdentifier($v->name);
+                    // Enum cases are class constants in Zend: a case may collide
+                    // with another case or with a `const` of the same name.
+                    if (array_key_exists($caseName, $this->classDef->enumCases)
+                        || $this->classDef->hasConstant($caseName)
+                    ) {
+                        $this->fatalError($v, "Cannot redefine class constant `{$fullClassName}::{$caseName}`");
+                    }
+                    if ($v->expr !== null && $this->classDef->enumBackingType === null) {
+                        $this->fatalError($v, "Case `{$caseName}` of non-backed enum `{$fullClassName}` must not have a value");
+                    }
+                    if ($v->expr === null && $this->classDef->enumBackingType !== null) {
+                        $this->fatalError($v, "Case `{$caseName}` of backed enum `{$fullClassName}` must have a value");
+                    }
                     $this->classDef->enumCases[$caseName] = $v->expr?->value;
                     break;
                 case 'Stmt_ClassMethod':
@@ -1996,6 +2066,11 @@ class Preprocessor extends CompilerBase
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
+        // Zend enum class entries have no property table at all: instance,
+        // static, and hooked properties are all rejected at compile time.
+        if ($this->classDef->enum) {
+            $this->fatalError($v, "Enum `{$this->classDef->getNamespacedName(false)}` cannot include properties");
+        }
         $arrayDef = $this->parseArrayDefinition($v);
         if ($this->classDef->nativeObject) {
             if ($v->type === null) {
@@ -2053,6 +2128,15 @@ class Preprocessor extends CompilerBase
         $this->method = $name;
         $this->assertKeywordMethodMayBeDeclared($v, $name, $this->classDef->nativeObject);
         $this->assertNativeMagicMethodSupported($v, $name);
+        // Zend forbids every magic method in enums except __call, __callStatic,
+        // and __invoke: enum cases are singletons without state, construction,
+        // cloning, serialization, or property access.
+        if ($this->classDef->enum && isset(self::ENUM_FORBIDDEN_MAGIC_METHODS[strtolower($name)])) {
+            $this->fatalError(
+                $v,
+                "Enum `{$this->classDef->getNamespacedName(false)}` cannot include magic method `{$name}`",
+            );
+        }
         $flags = $this->parseModifiers($v->flags);
         $abstract = $flags & Modifiers::ABSTRACT;
         if ($this->classDef->nativeObject && ($flags & Modifiers::STATIC)) {
@@ -2093,6 +2177,11 @@ class Preprocessor extends CompilerBase
         } else {
             if ($this->classDef->hasMethod($name) || $this->classDef->hasAbstractMethod($name)) {
                 $this->fatalError($v, "Duplicate method `{$this->method}`");
+            }
+            // Enums can never be declared abstract, so an abstract method in an
+            // enum body can never be implemented (Zend rejects it at link time).
+            if ($class instanceof Node\Stmt\Enum_) {
+                $this->fatalError($v, "Enum `{$this->class}` cannot include abstract method `{$v->name}()`");
             }
             if (!$class instanceof Node\Stmt\Trait_ && isset($class->flags) && !($class->flags & Modifiers::ABSTRACT)) {
                 $this->fatalError($v, "Non-abstract class {$this->class} contains abstract method {$v->name}");
