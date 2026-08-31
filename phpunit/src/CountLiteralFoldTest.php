@@ -37,6 +37,14 @@ class CountLiteralFoldTest extends TestCase
         self::assertStringNotContainsString('php::fn::count(', $cpp);
     }
 
+    public function testArgumentUnpackingUsesTheRuntimeCallPath(): void
+    {
+        $cpp = $this->compileToCpp('count-literal-fold-unpack.php');
+
+        self::assertSame(3, substr_count($cpp, '.appendUnpacked('));
+        self::assertStringNotContainsString('php::fn::count(', $cpp);
+    }
+
     private function compileToCpp(string $file): string
     {
         global $translator;

@@ -72,6 +72,19 @@ function main()
     var_dump(count([1.5, 'text', true, false, null]));
     var_dump(count([-2, +3, -1.5]));
     var_dump(count([]));
+
+    // Argument unpacking must happen before count() receives its arguments.
+    $countArgs = [[1, 2, 3]];
+    var_dump(count(...$countArgs));
+    var_dump(count(...[[1, 2, 3]]));
+
+    // An empty unpack must retain Zend's argument-count validation.
+    try {
+        var_dump(count(...[]));
+        echo "argument-count-error-not-thrown\n";
+    } catch (ArgumentCountError $e) {
+        echo "caught=", $e->getMessage(), "\n";
+    }
 }
 ?>
 --EXPECT--
@@ -93,3 +106,6 @@ int(2)
 int(5)
 int(3)
 int(0)
+int(3)
+int(3)
+caught=count() expects at least 1 argument, 0 given

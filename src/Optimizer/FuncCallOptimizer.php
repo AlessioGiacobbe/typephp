@@ -203,7 +203,11 @@ trait FuncCallOptimizer
             if ($this->isPlaceholderExpr($arg)) {
                 return false;
             }
-            if ($arg instanceof Node\Arg && $arg->name !== null) {
+            // Custom handlers, big-type dispatch and scalar conversions work
+            // with the syntactic argument list. Named arguments and unpacking
+            // require Zend's runtime binding/expansion semantics, so reject
+            // them before any optimizer-specific handler can consume them.
+            if ($arg instanceof Node\Arg && ($arg->name !== null || $arg->unpack)) {
                 return false;
             }
         }
