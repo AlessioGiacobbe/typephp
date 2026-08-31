@@ -1016,6 +1016,15 @@ class Preprocessor extends CompilerBase
                 $returnTypeKeyword = $rtLower;
             }
         }
+        // `self`/`static` return types need a class scope; Zend rejects them
+        // on free functions at compile time. `parent` is already rejected in
+        // parseTypeDecl for every declaration context.
+        if (($returnTypeKeyword === 'self' || $returnTypeKeyword === 'static')
+            && $v instanceof Node\Stmt\Function_
+            && $this->classDef === null
+        ) {
+            $this->fatalError($v->returnType, "Cannot use \"{$returnTypeKeyword}\" when no class scope is active");
+        }
         [$returnType, $class] = $this->resolveTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
         $this->assertSupportedNativeObjectTypeNode($v->returnType, self::DECL_TYPE_OF_RETURN, $v);
         $nullableNativeReturn = $this->resolveNullableNativeObjectType(
@@ -1293,15 +1302,15 @@ class Preprocessor extends CompilerBase
         }
         if (!$class instanceof Node\Stmt\Trait_) {
             $this->classDef->implements = $this->parseImplements($class->implements);
-            if ($class instanceof Node\Stmt\Enum_) {
-                // Zend adds UnitEnum (and BackedEnum for backed enums) itself;
-                // naming either explicitly is a compile-time error.
-                foreach ($this->classDef->implements as $i => $interfaceName) {
-                    $interfaceLower = strtolower($interfaceName);
-                    if ($interfaceLower !== 'unitenum' && $interfaceLower !== 'backedenum') {
-                        continue;
-                    }
-                    $errorNode = $class->implements[$i] ?? $class;
+            $implemented = [];
+            foreach ($this->classDef->implements as $i => $interfaceName) {
+                $interfaceLower = strtolower($interfaceName);
+                $errorNode = $class->implements[$i] ?? $class;
+                if ($class instanceof Node\Stmt\Enum_
+                    && ($interfaceLower === 'unitenum' || $interfaceLower === 'backedenum')
+                ) {
+                    // Zend adds UnitEnum (and BackedEnum for backed enums)
+                    // itself; naming either explicitly is a compile-time error.
                     if ($interfaceLower === 'backedenum' && $this->classDef->enumBackingType === null) {
                         $this->fatalError(
                             $errorNode,
@@ -1314,6 +1323,14 @@ class Preprocessor extends CompilerBase
                         "Enum `{$fullClassName}` cannot implement previously implemented interface `{$interfaceDisplay}`",
                     );
                 }
+                if (isset($implemented[$interfaceLower])) {
+                    $kind = $class instanceof Node\Stmt\Enum_ ? 'Enum' : 'Class';
+                    $this->fatalError(
+                        $errorNode,
+                        "{$kind} `{$fullClassName}` cannot implement previously implemented interface `{$interfaceName}`",
+                    );
+                }
+                $implemented[$interfaceLower] = true;
             }
         } else {
             $this->classDef->trait = $class;
@@ -1845,6 +1862,140 @@ class Preprocessor extends CompilerBase
         }
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
+    }
+
+    /**
+     * Validate compound well-formedness before resolving, so every context a
+     * type declaration is parsed in (parameters, returns, properties, class
+     * and interface constants, closures) shares the same Zend rules.
+     */
+    protected function resolveTypeDecl(?NodeAbstract $type, int $what): array
+    {
+        $this->validateCompoundTypeDecl($type);
+        return parent::resolveTypeDecl($type, $what);
+    }
+
+    /**
+     * Compile-time well-formedness of compound type declarations, mirroring
+     * Zend: standalone-only types inside unions, invalid nullable targets,
+     * duplicate members (after alias/namespace resolution, with iterable
+     * expanded to array|Traversable), the bool/true/false overlaps, and
+     * non-class standard types inside intersections. Redundancy between whole
+     * DNF groups is not checked.
+     */
+    private function validateCompoundTypeDecl(?NodeAbstract $type): void
+    {
+        if ($type instanceof NullableType) {
+            $inner = $type->type;
+            if (!$inner instanceof Node\Identifier && !$inner instanceof Node\Name) {
+                return;
+            }
+            $innerLower = strtolower($this->parseIdentifier($inner));
+            if ($innerLower === 'mixed') {
+                $this->fatalError($type, 'Type `mixed` cannot be marked as nullable since mixed already includes null');
+            }
+            if ($innerLower === 'null') {
+                $this->fatalError($type, '`null` cannot be marked as nullable');
+            }
+            if ($innerLower === 'void' || $innerLower === 'never') {
+                $this->fatalError($type, "Type `{$innerLower}` can only be used as a standalone type");
+            }
+            return;
+        }
+        if ($type instanceof UnionType) {
+            $this->validateUnionTypeDecl($type);
+        } elseif ($type instanceof IntersectionType) {
+            $this->validateIntersectionTypeDecl($type);
+        }
+    }
+
+    private function validateUnionTypeDecl(UnionType $type): void
+    {
+        $seen = [];
+        $addMember = function (string $key, string $display, NodeAbstract $node) use (&$seen): void {
+            if (isset($seen[$key])) {
+                $this->fatalError($node, "Duplicate type `{$display}` is redundant");
+            }
+            $seen[$key] = true;
+        };
+        foreach ($type->types as $member) {
+            if ($member instanceof IntersectionType) {
+                // A DNF group: its members obey the intersection rules.
+                $this->validateIntersectionTypeDecl($member);
+                continue;
+            }
+            $name = $this->parseIdentifier($member);
+            $nameLower = strtolower($name);
+            if ($nameLower === 'mixed' || $nameLower === 'void' || $nameLower === 'never') {
+                $this->fatalError($member, "Type `{$nameLower}` can only be used as a standalone type");
+            }
+            if ($nameLower === 'bool' || $nameLower === 'false' || $nameLower === 'true') {
+                // Zend folds false/true into bool: a union may not repeat the
+                // overlap, and naming both literals asks for bool instead.
+                if (($nameLower === 'true' && isset($seen['false']))
+                    || ($nameLower === 'false' && isset($seen['true']))
+                ) {
+                    $this->fatalError($member, 'Type contains both `true` and `false`, `bool` must be used instead');
+                }
+                if ($nameLower === 'bool') {
+                    foreach (['false', 'true'] as $literal) {
+                        if (isset($seen[$literal])) {
+                            $this->fatalError($member, "Duplicate type `{$literal}` is redundant");
+                        }
+                    }
+                } elseif (isset($seen['bool'])) {
+                    $this->fatalError($member, "Duplicate type `{$nameLower}` is redundant");
+                }
+                $addMember($nameLower, $nameLower, $member);
+                continue;
+            }
+            if ($nameLower === 'iterable') {
+                // Zend expands iterable to array|Traversable before the
+                // redundancy check and reports the overlapping component.
+                $addMember('iterable', 'iterable', $member);
+                $addMember('array', 'array', $member);
+                $addMember('traversable', 'Traversable', $member);
+                continue;
+            }
+            if (isset($this->zendTypeMap[$nameLower])
+                || in_array($nameLower, ['self', 'parent', 'static'], true)
+            ) {
+                $addMember($nameLower, $nameLower, $member);
+                continue;
+            }
+            $resolved = $member instanceof Node\Name\FullyQualified
+                ? $member->toString()
+                : $this->getNamespacedClassName($name);
+            $addMember(strtolower($resolved), $resolved, $member);
+        }
+    }
+
+    private function validateIntersectionTypeDecl(IntersectionType $type): void
+    {
+        $seen = [];
+        foreach ($type->types as $member) {
+            $name = $this->parseIdentifier($member);
+            $nameLower = strtolower($name);
+            if ($nameLower === 'self' || $nameLower === 'parent' || $nameLower === 'static') {
+                // Rejected later by buildTypeCheckFromNode with its
+                // established "cannot be part of an intersection type" text.
+                continue;
+            }
+            if (in_array($nameLower, [
+                'int', 'float', 'bool', 'false', 'true', 'string', 'array',
+                'object', 'mixed', 'null', 'void', 'never', 'callable', 'iterable',
+            ], true)) {
+                $this->fatalError($member, "Type `{$nameLower}` cannot be part of an intersection type");
+            }
+            $resolved = $member instanceof Node\Name\FullyQualified
+                ? $member->toString()
+                : $this->getNamespacedClassName($name);
+            $resolvedLower = strtolower($resolved);
+            if (isset($seen[$resolvedLower])) {
+                $this->fatalError($member, "Duplicate type `{$resolved}` is redundant");
+            }
+            $seen[$resolvedLower] = true;
+        }
     }
 
     /**
