@@ -5248,6 +5248,73 @@ CODE;
         return $this->getVisibilityRank($property->flags);
     }
 
+    /**
+     * Parse a class constant declaration and additionally record the
+     * accepted-types DNF of its declared type. The base implementation
+     * collapses composite declared types (unions, nullables, intersections)
+     * to a single variant type, which is too coarse for the covariant
+     * constant-override checks; the DNF preserves the full declaration.
+     */
+    protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
+    {
+        parent::parseClassConstDef($v);
+        if ($v->type === null) {
+            return;
+        }
+        $typeInfo = $this->buildTypeCheckFromNode($v->type, true);
+        foreach ($v->consts as $const) {
+            $constName = $this->parseIdentifier($const->name);
+            if ($this->classDef !== null && $this->classDef->hasConstant($constName)) {
+                $constDef = $this->classDef->getConstant($constName);
+                $constDef->typeCheck = $typeInfo['check'];
+                $constDef->typeStr = $typeInfo['typeStr'];
+            }
+        }
+    }
+
+    /**
+     * Accepted-types DNF for a constant's DECLARED type, or null when the
+     * constant is untyped (no type contract to enforce on overrides).
+     */
+    private function getConstantAcceptedTypes(ConstantDef $const): ?array
+    {
+        if ($const->declaredType === null) {
+            return null;
+        }
+        if ($const->typeCheck !== []) {
+            return $const->typeCheck;
+        }
+        return match ($const->declaredType) {
+            Type::INT => [['kind' => 'isInt']],
+            Type::FLOAT => [['kind' => 'isFloat']],
+            Type::BOOL => [['kind' => 'isBool']],
+            Type::STR => [['kind' => 'isString']],
+            Type::ARRAY => [['kind' => 'isArray']],
+            Type::RESOURCE => [['kind' => 'isResource']],
+            Type::OBJECT => $const->class !== ''
+                ? [['kind' => 'instanceof', 'class' => $const->class]]
+                : [['kind' => 'isObject']],
+            default => [['kind' => 'isMixed']],
+        };
+    }
+
+    /**
+     * PHP 8.3 typed class constants are covariant: an override may narrow the
+     * declared type but never widen it or move to an unrelated type.
+     */
+    private function isConstantTypeOverrideCompatible(ConstantDef $childConst, array $parentAccepted): bool
+    {
+        if ($childConst->declaredType === null) {
+            return false;
+        }
+        foreach ($this->getConstantAcceptedTypes($childConst) as $childType) {
+            if (!$this->isReturnTypeCoveredBy($childType, $parentAccepted)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private function checkConstantOverride(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $classStmt): void
     {
         $classDef = $this->classDef;
@@ -5272,30 +5339,16 @@ CODE;
                     // PHP only enforces type compatibility when the parent constant
                     // carries an explicit declared type. Overriding an untyped constant
                     // with a value of any type is permitted, so the type check is skipped
-                    // in that case. Visibility is always enforced below.
-                    if ($parentConst->declaredType !== null) {
-                        if ($childConst->declaredType === null) {
-                            $this->fatalError($classStmt,
-                                "Declaration of `{$className}::{$name}` must be compatible " .
-                                "with `{$parentClass}::{$name}`");
-                        }
-                        // An untyped child constant whose value is an expression (e.g.
-                        // `X = ParentClass::Y`) is inferred as a variant. Resolve its real
-                        // type from the referenced constant so the compatibility check uses
-                        // the actual value type.
-                        $childType = $childConst->type;
-                        if ($childType === Type::VAR
-                            && $childConst->valueExpr instanceof Node\Expr\ClassConstFetch) {
-                            $resolved = $this->resolveReferencedConstantType($childConst->valueExpr, $this->getFullClassName());
-                            if ($resolved !== null) {
-                                $childType = $resolved;
-                            }
-                        }
-                        if ($childType !== $parentConst->type || $childConst->class !== $parentConst->class) {
-                            $this->fatalError($classStmt,
-                                "Declaration of `{$className}::{$name}` must be compatible " .
-                                "with `{$parentClass}::{$name}`");
-                        }
+                    // in that case. Typed constants are covariant (PHP 8.3): the child
+                    // may narrow the declared type (e.g. int|string -> int) but never
+                    // widen it or move to an unrelated type. Visibility is always
+                    // enforced below.
+                    $parentAccepted = $this->getConstantAcceptedTypes($parentConst);
+                    if ($parentAccepted !== null
+                        && !$this->isConstantTypeOverrideCompatible($childConst, $parentAccepted)) {
+                        $this->fatalError($classStmt,
+                            "Declaration of `{$className}::{$name}` must be compatible " .
+                            "with `{$parentClass}::{$name}`");
                     }
                     if ($this->getVisibilityRank($childConst->flags) < $this->getVisibilityRank($parentConst->flags)) {
                         $this->fatalError($classStmt,
