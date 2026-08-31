@@ -2086,6 +2086,7 @@ class Preprocessor extends CompilerBase
         if ($this->classDef->enum) {
             $this->fatalError($v, "Enum `{$this->classDef->getNamespacedName(false)}` cannot include properties");
         }
+        $this->validateClassPropertyHookPlacement($v);
         $arrayDef = $this->parseArrayDefinition($v);
         if ($this->classDef->nativeObject) {
             if ($v->type === null) {
@@ -2134,6 +2135,74 @@ class Preprocessor extends CompilerBase
         }
 
         $this->context = $oriCtx;
+    }
+
+    /**
+     * Mirror Zend's compile-time placement rules for property hooks on class
+     * (and trait) properties; the interface path enforces its own subset in
+     * prepareInterfaceProperty(). Check order follows Zend 8.4 precedence:
+     * static, readonly, then the abstract-property rules.
+     */
+    private function validateClassPropertyHookPlacement(Node\Stmt\Property $v): void
+    {
+        $abstract = (bool) ($v->flags & Modifiers::ABSTRACT);
+        if ($v->hooks === [] && !$abstract) {
+            return;
+        }
+
+        $className = $this->classDef->getNamespacedName(false);
+        $propName = $v->props !== [] ? $this->parseIdentifier($v->props[0]->name) : '';
+        if ($v->hooks !== []) {
+            if ($v->flags & Modifiers::STATIC) {
+                $this->fatalError($v, 'Cannot declare hooks for static property');
+            }
+            // A readonly class marks every property readonly, exactly like an
+            // explicit per-property modifier.
+            if (($v->flags | $this->classDef->flags) & Modifiers::READONLY) {
+                $this->fatalError($v, 'Hooked properties cannot be readonly');
+            }
+        }
+
+        if ($abstract) {
+            if ($v->hooks === []) {
+                $this->fatalError($v, 'Only hooked properties may be declared abstract');
+            }
+            foreach ($v->props as $prop) {
+                if ($prop->default !== null) {
+                    $this->fatalError(
+                        $v,
+                        "Cannot specify default value for virtual hooked property {$className}::\${$propName}",
+                    );
+                }
+            }
+            $hasAbstractHook = false;
+            foreach ($v->hooks as $hook) {
+                if ($hook->body === null) {
+                    $hasAbstractHook = true;
+                    break;
+                }
+            }
+            if (!$hasAbstractHook) {
+                $this->fatalError(
+                    $v,
+                    "Abstract property `{$className}::\${$propName}` must specify at least one abstract hook",
+                );
+            }
+            if (!$this->classDef->trait && !($this->classDef->flags & Modifiers::ABSTRACT)) {
+                $this->fatalError(
+                    $v,
+                    "Non-abstract class `{$className}` contains abstract hooked property `\${$propName}`",
+                );
+            }
+            return;
+        }
+
+        // Without the abstract modifier every declared hook needs a body.
+        foreach ($v->hooks as $hook) {
+            if ($hook->body === null) {
+                $this->fatalError($hook, 'Non-abstract property hook must have a body');
+            }
+        }
     }
 
     protected function prepareClassMethod(Node\Stmt\ClassMethod $v, Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): void
