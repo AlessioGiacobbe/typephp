@@ -1,7 +1,8 @@
 # EXT/LIB integration tests
 
-This suite protects build-mode boundaries rather than duplicating the PHP
-syntax coverage in `tests/compiler`.
+This suite lives below `.github` because repository test fixtures with a `.php`
+suffix are intentionally ignored below `tests/`. It protects build-mode
+boundaries rather than duplicating the PHP syntax coverage in `tests/compiler`.
 
 - `ext/lifecycle` builds a real Zend extension and loads it through CLI,
   `php -S`, and PHP-FPM. The long-running hosts alternate implementations of

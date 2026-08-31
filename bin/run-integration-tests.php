@@ -13,7 +13,7 @@ use RuntimeException;
 use Throwable;
 
 const TYPEPHP_INTEGRATION_ROOT = __DIR__ . '/..';
-const TYPEPHP_INTEGRATION_TEST_ROOT = TYPEPHP_INTEGRATION_ROOT . '/tests/integration';
+const TYPEPHP_INTEGRATION_TEST_ROOT = TYPEPHP_INTEGRATION_ROOT . '/.github/integration';
 
 final class IntegrationFailure extends RuntimeException
 {
