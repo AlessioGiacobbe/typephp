@@ -3742,6 +3742,16 @@ CODE;
                 if ($parent->flags & Modifiers::FINAL) {
                     $this->fatalError($class, "Class `{$this->class}` cannot extend final class `{$parentClass}`");
                 }
+                // Readonly-ness is part of the inheritance contract in both
+                // directions (Zend: a readonly class seals its property
+                // semantics for the whole hierarchy).
+                $childReadonly = (bool) ($this->classDef->flags & Modifiers::READONLY);
+                $parentReadonly = (bool) ($parent->flags & Modifiers::READONLY);
+                if ($childReadonly !== $parentReadonly) {
+                    $this->fatalError($class, $parentReadonly
+                        ? "Non-readonly class `{$this->class}` cannot extend readonly class `{$parentClass}`"
+                        : "Readonly class `{$this->class}` cannot extend non-readonly class `{$parentClass}`");
+                }
             } else {
                 $this->fatalError($class, "Class `{$this->class}` inherits from a non-existent class `{$parentClass}`");
             }
@@ -5633,6 +5643,15 @@ CODE;
             return;
         }
         $interfaceDef = $this->getInterface($interfaceName);
+
+        // An interface can only extend other interfaces; naming a class here
+        // is a Zend fatal, not a lookup failure.
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentName) {
+            if (!$this->hasInterface($parentName) && !$this->isInternalInterface($parentName) && $this->hasClass($parentName)) {
+                $this->fatalError($interfaceStmt,
+                    "`{$interfaceName}` cannot implement `{$parentName}` - it is not an interface");
+            }
+        }
 
         $table = [];
         foreach ($interfaceDef->constants as $constName => $const) {
