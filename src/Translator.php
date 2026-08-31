@@ -82,6 +82,15 @@ class Translator extends Preprocessor
 
     // Windows resource file configuration (icon, version info, etc.)
     protected array $resourceConfig = [];
+
+    /**
+     * Memoized effective constant tables (constant name => constant and its
+     * original declaring class/interface), keyed by lowercased class-like
+     * name. See getEffectiveConstantTable().
+     *
+     * @var array<string, array<string, array{const: ConstantDef, origin: string}>>
+     */
+    private array $effectiveConstantTables = [];
     protected array $globalHeaders = [
         'cstring',
         'phpx.h',
@@ -2855,6 +2864,7 @@ CODE;
                 $this->parseConstDef($v);
             } elseif ($v instanceof Node\Stmt\Interface_) {
                 $this->validateInterfaceOverrideAttributes($v);
+                $this->validateInterfaceConstants($v);
             } elseif (!$v instanceof Node\Stmt\Nop) {
                 $this->unsupportedSyntax($v);
             }
@@ -3029,6 +3039,7 @@ CODE;
                 $this->parseGroupUse($v2);
             } elseif ($v2 instanceof Node\Stmt\Interface_) {
                 $this->validateInterfaceOverrideAttributes($v2);
+                $this->validateInterfaceConstants($v2);
             } elseif (!$v2 instanceof Node\Stmt\Nop) {
                 $this->unsupportedSyntax($v2);
             }
@@ -3067,6 +3078,8 @@ CODE;
         $traitMethods = [];
         $traitConstants = [];
         $traitProperties = [];
+        $usedTraits = [];
+        $seenTraitMethods = [];
         $classDef = $this->getClass($className->toString());
 
         foreach ($stmt->stmts as $classStmt) {
@@ -3103,6 +3116,7 @@ CODE;
                 if (!$traitDef->trait) {
                     $this->fatalError($classStmt, "Trait `{$traitFullName}` not found");
                 }
+                $usedTraits[strtolower($traitFullName)] = $traitFullName;
 
                 /** @var Node\Stmt\Trait_ $traitAst */
                 $traitAst = $this->cloneAstNode($traitDef->trait);
@@ -3119,6 +3133,10 @@ CODE;
                             $traitStmt->setAttribute(self::TRAIT_METHOD_ATTRIBUTE, $traitStmt->name->toString());
                         }
                         $fullMethodName = $this->getFullMethodName($traitFullName, $methodName);
+                        // Methods arriving from nested traits are keyed under
+                        // the directly-used trait, matching how adaptation
+                        // keys are registered.
+                        $seenTraitMethods[$fullMethodName] = true;
                         // A trait method's `self`/`static`/`parent` return and parameter
                         // types refer to the class that uses the trait, not the trait
                         // itself. Re-resolve them on the cloned AST so the generated
@@ -3194,10 +3212,11 @@ CODE;
                                 continue;
                             }
                             if (isset($traitConstants[$constName])) {
-                                [$existingConstStmt, $existingConst] = $traitConstants[$constName];
+                                [$existingConstStmt, $existingConst, $existingConstTrait] = $traitConstants[$constName];
+                                $typeStr = $this->typeNodeToStringOrNull($traitStmt->type);
                                 if ($existingConstStmt->flags !== $traitStmt->flags ||
-                                    $this->typeNodeToStringOrNull($existingConstStmt->type) !== $this->typeNodeToStringOrNull($traitStmt->type) ||
-                                    $this->printer->prettyPrintExpr($existingConst->value) !== $this->printer->prettyPrintExpr($const->value)) {
+                                    $this->typeNodeToStringOrNull($existingConstStmt->type) !== $typeStr ||
+                                    !$this->isSameTraitMemberValue($existingConst->value, $existingConstTrait, $const->value, $traitFullName, $typeStr)) {
                                     $this->fatalError($classStmt, "Trait `{$traitFullName}` constant `{$constName}` already exists");
                                 }
                                 unset($traitStmt->consts[$k2]);
@@ -3206,7 +3225,7 @@ CODE;
                                 }
                                 continue;
                             }
-                            $traitConstants[$constName] = [$traitStmt, $const];
+                            $traitConstants[$constName] = [$traitStmt, $const, $traitFullName];
                         }
                     }
                     if ($traitStmt instanceof Node\Stmt\Property) {
@@ -3220,12 +3239,13 @@ CODE;
                                 continue;
                             }
                             if (isset($traitProperties[$propName])) {
-                                [$existingPropStmt, $existingProp] = $traitProperties[$propName];
-                                $existingDefault = $existingProp->default ? $this->printer->prettyPrintExpr($existingProp->default) : null;
-                                $propDefault = $prop->default ? $this->printer->prettyPrintExpr($prop->default) : null;
+                                [$existingPropStmt, $existingProp, $existingPropTrait] = $traitProperties[$propName];
+                                $typeStr = $this->typeNodeToStringOrNull($traitStmt->type);
                                 if ($existingPropStmt->flags !== $traitStmt->flags ||
-                                    $this->typeNodeToStringOrNull($existingPropStmt->type) !== $this->typeNodeToStringOrNull($traitStmt->type) ||
-                                    $existingDefault !== $propDefault) {
+                                    $this->typeNodeToStringOrNull($existingPropStmt->type) !== $typeStr ||
+                                    ($existingProp->default === null) !== ($prop->default === null) ||
+                                    ($prop->default !== null
+                                        && !$this->isSameTraitMemberValue($existingProp->default, $existingPropTrait, $prop->default, $traitFullName, $typeStr))) {
                                     $this->fatalError($classStmt, "Trait `{$traitFullName}` property `{$propName}` already exists");
                                 }
                                 unset($traitStmt->props[$k2]);
@@ -3234,7 +3254,7 @@ CODE;
                                 }
                                 continue;
                             }
-                            $traitProperties[$propName] = [$traitStmt, $prop];
+                            $traitProperties[$propName] = [$traitStmt, $prop, $traitFullName];
                         }
                     }
                 }
@@ -3243,6 +3263,127 @@ CODE;
             }
         }
 
+        $this->validateTraitAdaptations($stmt, $classDef, $usedTraits, $seenTraitMethods);
+    }
+
+    /**
+     * After every trait is composed into $classDef, verify that each trait
+     * adaptation named a real trait and a real method, as Zend does when
+     * binding traits:
+     *
+     *  - an alias must reference a used trait, and its method must exist in
+     *    that trait (in any used trait when written without a qualifier);
+     *  - a precedence rule's traits must all be used, and the preferred
+     *    method must exist in the preferred trait (the overridden trait need
+     *    not declare it).
+     *
+     * @param array<string, string> $usedTraits    lowercased name => full name
+     * @param array<string, true>   $seenTraitMethods "trait::method" keys seen
+     *                              during composition (nested trait methods
+     *                              are keyed under the directly-used trait)
+     */
+    private function validateTraitAdaptations(
+        Node\Stmt\ClassLike $stmt,
+        ClassDef $classDef,
+        array $usedTraits,
+        array $seenTraitMethods
+    ): void {
+        if (!$classDef->traitAliases && !$classDef->traitIgnored) {
+            return;
+        }
+        $className = $classDef->getNamespacedName(false);
+
+        // An unqualified alias is registered under every used trait's key (the
+        // Preprocessor cannot know which trait declares the method), so its
+        // variants share one group: the group is satisfied when ANY variant
+        // matched a composed method.
+        $aliasGroups = [];
+        foreach ($classDef->traitAliases as $fullMethodName => $aliasList) {
+            foreach ($aliasList as $alias) {
+                $group = $alias['group'] ?? $fullMethodName;
+                $aliasGroups[$group] ??= ['alias' => $alias, 'matched' => false];
+                if (isset($seenTraitMethods[$fullMethodName])) {
+                    $aliasGroups[$group]['matched'] = true;
+                }
+            }
+        }
+        foreach ($aliasGroups as $groupInfo) {
+            if ($groupInfo['matched']) {
+                continue;
+            }
+            $alias = $groupInfo['alias'];
+            $method = $alias['method'] ?? '';
+            $explicitTrait = $alias['trait'] ?? null;
+            if ($explicitTrait !== null) {
+                if (!isset($usedTraits[strtolower($explicitTrait)])) {
+                    $this->fatalError($stmt,
+                        "Required Trait `{$explicitTrait}` wasn't added to `{$className}`");
+                }
+                $this->fatalError($stmt,
+                    "An alias was defined for `{$explicitTrait}::{$method}` but this method does not exist");
+            }
+            $newName = $alias['newName'] ?? $method;
+            $this->fatalError($stmt,
+                "An alias (`{$newName}`) was defined for method `{$method}()`, but this method does not exist");
+        }
+
+        foreach ($classDef->traitIgnored as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            foreach ([$rule['winnerTrait'], $rule['loserTrait']] as $traitName) {
+                if (!isset($usedTraits[strtolower($traitName)])) {
+                    $this->fatalError($stmt,
+                        "Required Trait `{$traitName}` wasn't added to `{$className}`");
+                }
+            }
+            if (!isset($seenTraitMethods[$this->getFullMethodName($rule['winnerTrait'], $rule['method'])])) {
+                $this->fatalError($stmt,
+                    "A precedence rule was defined for `{$rule['winnerTrait']}::{$rule['method']}` " .
+                    'but this method does not exist');
+            }
+        }
+    }
+
+    /**
+     * Compare two trait data-member initializers by VALUE, as Zend does when
+     * flattening traits: `1 + 1` and `2`, or `[1, 2]` and `array(1, 2)`, are
+     * the same definition. Comparison is identity (===) after evaluating both
+     * constant expressions; an integer initializer of a float-typed member is
+     * coerced to float first, mirroring Zend's declaration-time coercion.
+     * Falls back to source-text equality when a value cannot be evaluated at
+     * compile time.
+     */
+    private function isSameTraitMemberValue(
+        Node\Expr $existingValue,
+        string $existingClass,
+        Node\Expr $incomingValue,
+        string $incomingClass,
+        ?string $declaredTypeStr,
+    ): bool {
+        try {
+            $a = $this->evaluateTraitMemberValue($existingValue, $existingClass);
+            $b = $this->evaluateTraitMemberValue($incomingValue, $incomingClass);
+        } catch (\Throwable) {
+            return $this->printer->prettyPrintExpr($existingValue) === $this->printer->prettyPrintExpr($incomingValue);
+        }
+        if ($declaredTypeStr !== null
+            && (strcasecmp($declaredTypeStr, 'float') === 0 || strcasecmp($declaredTypeStr, '?float') === 0)) {
+            if (is_int($a)) {
+                $a = (float) $a;
+            }
+            if (is_int($b)) {
+                $b = (float) $b;
+            }
+        }
+        return $a === $b;
+    }
+
+    private function evaluateTraitMemberValue(Node\Expr $expr, string $class): mixed
+    {
+        $constDef = new ConstantDef('', 0, '', '');
+        $constDef->valueExpr = $expr;
+        return $this->evaluateClassConstValue($expr, $constDef, $class, '');
     }
 
     private function cloneAstNode(Node $node): Node
@@ -3678,6 +3819,7 @@ CODE;
         if (!$class instanceof Node\Stmt\Trait_) {
             $this->validateOverrideAttributes($class);
             $this->checkInterfaceImplementations($class);
+            $this->checkInheritedConstantContracts($class);
             $this->checkInheritedAbstractMethodsAreImplemented($class);
         }
         $code = $this->genNativeMethod($methodCodes);
@@ -4131,9 +4273,13 @@ CODE;
      */
     protected function checkParentMethodCanBeOverridden(Node\Stmt\ClassMethod $v, string $name): void
     {
-        if ($name === '__construct') {
-            return;
-        }
+        // Zend exempts constructors from the LSP checks against a CONCRETE
+        // parent constructor (subclasses may freely change the construction
+        // signature and even narrow its visibility). A FINAL parent
+        // constructor still cannot be overridden — even a final private one —
+        // and an ABSTRACT parent constructor imposes a real signature
+        // contract, exactly like an interface constructor.
+        $isConstructor = strtolower($name) === '__construct';
 
         $classDef = $this->classDef;
         $childFuncDef = $this->methodDef->functionDef;
@@ -4145,23 +4291,32 @@ CODE;
             // The parent class is a built-in class
             if ($classDef->inheritedFromInternalClass) {
                 $modifiers = Reflection::getClassMethodModifiers($extends, $name);
-                if ($modifiers & \ReflectionMethod::IS_PRIVATE) {
-                    goto _error;
+                if (!$isConstructor && ($modifiers & \ReflectionMethod::IS_PRIVATE)) {
+                    // Private methods are not inherited: a child may redeclare
+                    // one with any signature. Zend ignores FINAL on private
+                    // methods outside constructors (declaring one only raises
+                    // a warning), so no final check applies here either.
+                    break;
                 }
                 if ($modifiers & \ReflectionMethod::IS_FINAL) {
                     goto _final_error;
+                }
+                if (!$isConstructor) {
+                    $this->validateInternalMethodOverrideSignature($v, $name, $this->methodDef, $extends);
                 }
                 break;
             }
             $classDef = $this->getClass($extends);
             if ($classDef->hasMethod($name)) {
                 $methodDef = $classDef->getMethod($name);
-                if ($methodDef->flags & Modifiers::PRIVATE) {
-                    _error:
-                    $message = 'Cannot override private method `' . $extends . '::' . $name . '()`';
-                    $this->fatalGeneratedMethodAttributeIfAny($v, $message, $extends, $name);
-                    $this->fatalError($v,
-                        $message);
+                if (!$isConstructor && ($methodDef->flags & Modifiers::PRIVATE)) {
+                    // See the internal-parent branch above: a private method
+                    // may be redeclared freely. Generated code stays correct
+                    // because private calls are devirtualized to the declaring
+                    // class's body (canDevirtualize()), matching PHP's
+                    // private-scope binding, and Native classes never give
+                    // private methods a virtual slot (isNativeVirtualMethod()).
+                    break;
                 }
                 if ($methodDef->flags & Modifiers::FINAL) {
                     _final_error:
@@ -4180,10 +4335,14 @@ CODE;
                     $this->fatalError($v,
                         $message);
                 }
-                $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
+                if (!$isConstructor) {
+                    $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
+                }
                 break;
             }
             if ($classDef->hasAbstractMethod($name) && isset($classDef->abstractMethodDefs[strtolower($name)])) {
+                // An abstract parent constructor is validated like an
+                // interface constructor: its signature is a contract.
                 $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $classDef->getAbstractMethod($name), $extends);
                 break;
             }
@@ -4248,7 +4407,10 @@ CODE;
         )) {
             $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
-        if ($childFuncDef->returnsByRef !== $parentFuncDef->returnsByRef) {
+        // Zend treats by-ref returns as covariant: an override may add `&`
+        // (callers expecting a value still work), but it must not drop one
+        // promised by the parent contract.
+        if ($parentFuncDef->returnsByRef && !$childFuncDef->returnsByRef) {
             $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
 
@@ -4258,12 +4420,33 @@ CODE;
             $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
 
-        // Compare each parent-declared parameter position.
-        foreach ($parentFuncDef->argInfoList as $i => $parentArg) {
-            if (!isset($childFuncDef->argInfoList[$i])) {
-                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        // A variadic parent accepts unbounded arguments, so Zend requires the
+        // override to be variadic as well.
+        $parentVariadic = $parentFuncDef->hasVariadicArg();
+        $childVariadic = $childFuncDef->hasVariadicArg();
+        if ($parentVariadic && !$childVariadic) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        // Compare each parent-declared parameter position. Following Zend's
+        // inheritance check, a trailing child variadic stands in for every
+        // remaining parent position (the decorator pattern), and when the
+        // parent is variadic each extra child parameter is validated against
+        // the parent's variadic slot.
+        $positions = count($parentFuncDef->argInfoList);
+        if ($parentVariadic) {
+            $positions = max($positions, count($childFuncDef->argInfoList));
+        }
+        for ($i = 0; $i < $positions; $i++) {
+            $parentArg = $parentFuncDef->argInfoList[$i]
+                ?? $parentFuncDef->argInfoList[count($parentFuncDef->argInfoList) - 1];
+            $childArg = $childFuncDef->argInfoList[$i] ?? null;
+            if ($childArg === null) {
+                if (!$childVariadic) {
+                    $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+                }
+                $childArg = $childFuncDef->argInfoList[count($childFuncDef->argInfoList) - 1];
             }
-            $childArg = $childFuncDef->argInfoList[$i];
             if ($parentArg->immutable && !$childArg->immutable) {
                 $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
@@ -4271,9 +4454,6 @@ CODE;
                 $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
             if ($childArg->byRef !== $parentArg->byRef) {
-                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
-            }
-            if ($childArg->variadic !== $parentArg->variadic) {
                 $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
         }
@@ -4338,6 +4518,199 @@ CODE;
             $parentFunction?->sourceFile,
             $parentFunction?->startLine,
         ));
+    }
+
+    /**
+     * Validate an override of a method inherited from a Zend built-in class.
+     * The parent signature is only available through host reflection, so this
+     * mirrors validateMethodOverrideSignature() (and Zend's
+     * zend_do_perform_implementation_check) on ReflectionMethod data:
+     * visibility may widen but not narrow, staticness must match, a by-ref
+     * return may be added but not dropped, the child may not require more
+     * arguments, parameters are contravariant with invariant by-ref-ness and
+     * variadic absorption, and the return type is covariant. Built-in methods
+     * whose return type is TENTATIVE are exempt from the return check: Zend
+     * only raises a deprecation for a tentative mismatch, never a fatal.
+     */
+    private function validateInternalMethodOverrideSignature(
+        Node\Stmt\ClassMethod $v,
+        string $methodName,
+        MethodDef $childMethodDef,
+        string $parentClass
+    ): void {
+        $parentRef = Reflection::getClass($parentClass);
+        if (!$parentRef || !$parentRef->hasMethod($methodName)) {
+            return;
+        }
+        try {
+            $parentMethod = $parentRef->getMethod($methodName);
+        } catch (\ReflectionException) {
+            return;
+        }
+        $className = $this->getFullClassName();
+
+        $parentVisibility = $parentMethod->isPublic()
+            ? Modifiers::PUBLIC
+            : ($parentMethod->isProtected() ? Modifiers::PROTECTED : Modifiers::PRIVATE);
+        if ($this->getVisibilityRank($childMethodDef->flags) < $this->getVisibilityRank($parentVisibility)) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        if ((($childMethodDef->flags & Modifiers::STATIC) !== 0) !== $parentMethod->isStatic()) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        $childFuncDef = $childMethodDef->functionDef;
+        if (!$childFuncDef) {
+            return;
+        }
+
+        // By-ref returns are covariant: the override may add `&`, but must not
+        // drop one promised by the built-in parent.
+        if ($parentMethod->returnsReference() && !$childFuncDef->returnsByRef) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        if ($childFuncDef->argCountRequired > $parentMethod->getNumberOfRequiredParameters()) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        $parentParams = $parentMethod->getParameters();
+        $parentVariadic = $parentMethod->isVariadic();
+        $childVariadic = $childFuncDef->hasVariadicArg();
+        if ($parentVariadic && !$childVariadic) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        $positions = count($parentParams);
+        if ($parentVariadic) {
+            $positions = max($positions, count($childFuncDef->argInfoList));
+        }
+        for ($i = 0; $i < $positions; $i++) {
+            $parentParam = $parentParams[$i] ?? $parentParams[count($parentParams) - 1];
+            $childArg = $childFuncDef->argInfoList[$i] ?? null;
+            if ($childArg === null) {
+                if (!$childVariadic) {
+                    $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+                }
+                $childArg = $childFuncDef->argInfoList[count($childFuncDef->argInfoList) - 1];
+            }
+            if ($childArg->byRef !== $parentParam->isPassedByReference()) {
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+            }
+            if (!$this->isParameterTypeOverrideCompatibleWithReflection($childArg, $parentParam, $parentClass)) {
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+            }
+        }
+
+        // Any extra child parameters must be optional or variadic.
+        for ($i = count($parentParams); $i < count($childFuncDef->argInfoList); $i++) {
+            $childArg = $childFuncDef->argInfoList[$i];
+            if (!$childArg->variadic && $childArg->defaultValue === null) {
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+            }
+        }
+
+        // getReturnType() is null for tentative return types, so only real
+        // declared return types are enforced here — matching Zend, which
+        // fatals on real mismatches and merely deprecates tentative ones.
+        $parentReturn = $parentMethod->getReturnType();
+        if ($parentReturn === null) {
+            return;
+        }
+        if ($childFuncDef->returnTypeUndeclared) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+        $parentTypes = $this->reflectionTypeToAcceptedTypes($parentReturn, $parentClass);
+        $childTypes = $this->getReturnAcceptedTypes($childFuncDef, $className);
+        foreach ($childTypes as $childType) {
+            if (!$this->isReturnTypeCoveredBy($childType, $parentTypes)) {
+                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+            }
+        }
+    }
+
+    private function isParameterTypeOverrideCompatibleWithReflection(
+        ArgInfo $childArg,
+        \ReflectionParameter $parentParam,
+        string $parentClass
+    ): bool {
+        // A child accepting anything is always contravariant-compatible.
+        if ($this->isTopParameterType($childArg)) {
+            return true;
+        }
+        $parentType = $parentParam->getType();
+        if ($parentType === null) {
+            // Untyped built-in parameter: the parent accepts anything, so a
+            // narrower child type breaks the contract.
+            return false;
+        }
+        $childAccepted = $this->getParameterAcceptedTypes($childArg);
+        if ($childAccepted === null) {
+            // The child type cannot be modelled in the accepted-types DNF;
+            // stay permissive rather than reject a potentially valid program.
+            return true;
+        }
+        $parentAccepted = $this->reflectionTypeToAcceptedTypes($parentType, $parentClass);
+        return $this->isAcceptedTypeSubset($parentAccepted, $childAccepted);
+    }
+
+    /**
+     * Map a host ReflectionType (named, nullable, union or intersection) into
+     * the accepted-types DNF used by the override comparison machinery.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function reflectionTypeToAcceptedTypes(\ReflectionType $type, string $declaringClass): array
+    {
+        if ($type instanceof \ReflectionUnionType) {
+            $entries = [];
+            foreach ($type->getTypes() as $member) {
+                foreach ($this->reflectionTypeToAcceptedTypes($member, $declaringClass) as $entry) {
+                    $entries[] = $entry;
+                }
+            }
+            return $entries;
+        }
+        if ($type instanceof \ReflectionIntersectionType) {
+            $members = [];
+            foreach ($type->getTypes() as $member) {
+                $members[] = $this->reflectionNamedTypeEntry($member, $declaringClass);
+            }
+            return [['kind' => 'allOf', 'types' => $members]];
+        }
+        /** @var \ReflectionNamedType $type */
+        $entries = [$this->reflectionNamedTypeEntry($type, $declaringClass)];
+        if ($type->allowsNull() && !in_array(strtolower($type->getName()), ['mixed', 'null'], true)) {
+            $entries[] = ['kind' => 'isNull'];
+        }
+        return $entries;
+    }
+
+    /** @return array<string, mixed> */
+    private function reflectionNamedTypeEntry(\ReflectionNamedType $type, string $declaringClass): array
+    {
+        $name = strtolower($type->getName());
+        return match ($name) {
+            'int' => ['kind' => 'isInt'],
+            'float' => ['kind' => 'isFloat'],
+            'string' => ['kind' => 'isString'],
+            'bool' => ['kind' => 'isBool'],
+            'array' => ['kind' => 'isArray'],
+            'object' => ['kind' => 'isObject'],
+            'mixed' => ['kind' => 'isMixed'],
+            'void' => ['kind' => 'isVoid'],
+            'never' => ['kind' => 'isNever'],
+            'null' => ['kind' => 'isNull'],
+            'true' => ['kind' => 'isTrue'],
+            'false' => ['kind' => 'isFalse'],
+            'callable' => ['kind' => 'callable'],
+            'iterable' => ['kind' => 'iterable'],
+            'static' => ['kind' => 'isStatic', 'class' => $declaringClass],
+            'self' => ['kind' => 'instanceof', 'class' => $declaringClass],
+            'parent' => ['kind' => 'instanceof', 'class' => get_parent_class($declaringClass) ?: $declaringClass],
+            default => ['kind' => 'instanceof', 'class' => $type->getName()],
+        };
     }
 
     private function isReturnTypeOverrideCompatible(
@@ -4949,6 +5322,14 @@ CODE;
                             "`{$parentClass}::\${$name}`; property shadowing across inheritance is not allowed");
                     }
                     $matchedOverrides[$name] = true;
+                    // A static property and an instance property are different
+                    // kinds of storage; Zend forbids redeclaring one as the
+                    // other in either direction.
+                    if (($childProp->flags & Modifiers::STATIC) !== ($parentProp->flags & Modifiers::STATIC)) {
+                        $this->fatalError($classStmt, ($parentProp->flags & Modifiers::STATIC)
+                            ? "Cannot redeclare static `{$parentClass}::\${$name}` as non static `{$className}::\${$name}`"
+                            : "Cannot redeclare non static `{$parentClass}::\${$name}` as static `{$className}::\${$name}`");
+                    }
                     // PHP inherits get and set independently. A child may
                     // override only one hook, or redeclare the property
                     // without hooks while retaining both parent hooks.
@@ -5015,6 +5396,303 @@ CODE;
         return $this->getVisibilityRank($property->flags);
     }
 
+    /**
+     * Parse a class constant declaration and additionally record the
+     * accepted-types DNF of its declared type. The base implementation
+     * collapses composite declared types (unions, nullables, intersections)
+     * to a single variant type, which is too coarse for the covariant
+     * constant-override checks; the DNF preserves the full declaration.
+     */
+    protected function parseClassConstDef(Node\Stmt\ClassConst $v): void
+    {
+        parent::parseClassConstDef($v);
+        if ($v->type === null) {
+            return;
+        }
+        $typeInfo = $this->buildTypeCheckFromNode($v->type, true);
+        foreach ($v->consts as $const) {
+            $constName = $this->parseIdentifier($const->name);
+            if ($this->classDef !== null && $this->classDef->hasConstant($constName)) {
+                $constDef = $this->classDef->getConstant($constName);
+                $constDef->typeCheck = $typeInfo['check'];
+                $constDef->typeStr = $typeInfo['typeStr'];
+            }
+        }
+    }
+
+    /**
+     * Parse an interface declaration and additionally record the
+     * accepted-types DNF of each typed constant, mirroring the
+     * parseClassConstDef() override above. The base implementation collapses
+     * composite declared types to a single variant type.
+     */
+    protected function parseInterface(Node\Stmt\Interface_ $v): void
+    {
+        parent::parseInterface($v);
+        $name = $this->parseIdentifier($v->name);
+        $interfaceName = $this->namespace === '' ? $name : $this->namespace . '\\' . $name;
+        if (!$this->hasInterface($interfaceName)) {
+            return;
+        }
+        $interfaceDef = $this->getInterface($interfaceName);
+        foreach ($v->stmts as $stmt) {
+            if (!$stmt instanceof Node\Stmt\ClassConst || $stmt->type === null) {
+                continue;
+            }
+            $typeInfo = $this->buildTypeCheckFromNode($stmt->type, true);
+            foreach ($stmt->consts as $const) {
+                $constName = $this->parseIdentifier($const->name);
+                if (isset($interfaceDef->constants[$constName])) {
+                    $interfaceDef->constants[$constName]->typeCheck = $typeInfo['check'];
+                    $interfaceDef->constants[$constName]->typeStr = $typeInfo['typeStr'];
+                }
+            }
+        }
+    }
+
+    /**
+     * Accepted-types DNF for a constant's DECLARED type, or null when the
+     * constant is untyped (no type contract to enforce on overrides).
+     */
+    private function getConstantAcceptedTypes(ConstantDef $const): ?array
+    {
+        if ($const->declaredType === null) {
+            return null;
+        }
+        if ($const->typeCheck !== []) {
+            return $const->typeCheck;
+        }
+        return match ($const->declaredType) {
+            Type::INT => [['kind' => 'isInt']],
+            Type::FLOAT => [['kind' => 'isFloat']],
+            Type::BOOL => [['kind' => 'isBool']],
+            Type::STR => [['kind' => 'isString']],
+            Type::ARRAY => [['kind' => 'isArray']],
+            Type::RESOURCE => [['kind' => 'isResource']],
+            Type::OBJECT => $const->class !== ''
+                ? [['kind' => 'instanceof', 'class' => $const->class]]
+                : [['kind' => 'isObject']],
+            default => [['kind' => 'isMixed']],
+        };
+    }
+
+    /**
+     * PHP 8.3 typed class constants are covariant: an override may narrow the
+     * declared type but never widen it or move to an unrelated type.
+     */
+    private function isConstantTypeOverrideCompatible(ConstantDef $childConst, array $parentAccepted): bool
+    {
+        if ($childConst->declaredType === null) {
+            return false;
+        }
+        foreach ($this->getConstantAcceptedTypes($childConst) as $childType) {
+            if (!$this->isReturnTypeCoveredBy($childType, $parentAccepted)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The constants visible on a class-like, keyed by name, each entry
+     * carrying its ConstantDef and the ORIGINAL declaring class or interface.
+     * Mirrors Zend's constants-table build order (parent class first, own
+     * declarations, then interfaces). Conflicts between ancestors are resolved
+     * silently here — first entry wins — because they are reported by the
+     * declaring type's own validation pass when it is compiled.
+     *
+     * @return array<string, array{const: ConstantDef, origin: string}>
+     */
+    private function getEffectiveConstantTable(ClassDef|InterfaceDef $def): array
+    {
+        $ownName = $def->getNamespacedName(false);
+        $key = strtolower($ownName);
+        if (isset($this->effectiveConstantTables[$key])) {
+            return $this->effectiveConstantTables[$key];
+        }
+        $table = [];
+        if ($def instanceof ClassDef) {
+            if ($def->extends !== '' && !$def->inheritedFromInternalClass && $this->hasClass($def->extends)) {
+                foreach ($this->getEffectiveConstantTable($this->getClass($def->extends)) as $name => $entry) {
+                    // Private constants are not inherited.
+                    if (!($entry['const']->flags & Modifiers::PRIVATE)) {
+                        $table[$name] = $entry;
+                    }
+                }
+            }
+            foreach ($def->constants as $name => $const) {
+                $table[$name] = ['const' => $const, 'origin' => $ownName];
+            }
+            $parents = $def->implements;
+        } else {
+            foreach ($def->constants as $name => $const) {
+                $table[$name] = ['const' => $const, 'origin' => $ownName];
+            }
+            $parents = $def->extendsList ?: ($def->extends ? [$def->extends] : []);
+        }
+        foreach ($parents as $interfaceName) {
+            if (!$this->hasInterface($interfaceName)) {
+                continue;
+            }
+            foreach ($this->getEffectiveConstantTable($this->getInterface($interfaceName)) as $name => $entry) {
+                $table[$name] ??= $entry;
+            }
+        }
+        return $this->effectiveConstantTables[$key] = $table;
+    }
+
+    /**
+     * Validate the class's constants against every constant contract arriving
+     * through an interface — implemented directly, inherited through a parent
+     * interface, or carried by an ancestor class (Zend keeps the original
+     * declaring interface in the inherited constants table, so a final or
+     * typed interface constant binds every transitive subclass):
+     *
+     *  - a final interface constant cannot be overridden;
+     *  - the same constant name arriving from two different declarations is
+     *    ambiguous unless the class declares it itself;
+     *  - an override of an interface constant must stay public;
+     *  - typed constants are covariant (see checkConstantOverride()).
+     */
+    private function checkInheritedConstantContracts(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void
+    {
+        $classDef = $this->classDef;
+        $className = $classDef->getNamespacedName(false);
+
+        // Constants visible before this class's interfaces are merged: the
+        // parent chain's effective table, then the class's own declarations.
+        $table = [];
+        if ($classDef->extends !== '' && !$classDef->inheritedFromInternalClass && $this->hasClass($classDef->extends)) {
+            foreach ($this->getEffectiveConstantTable($this->getClass($classDef->extends)) as $name => $entry) {
+                if (!($entry['const']->flags & Modifiers::PRIVATE)) {
+                    $table[$name] = $entry;
+                }
+            }
+        }
+        foreach ($classDef->constants as $name => $const) {
+            if (isset($table[$name]) && $this->hasInterface($table[$name]['origin'])) {
+                // The nearest inherited declaration originates in an interface
+                // reached through an ancestor class; class-chain declarations
+                // are validated by checkConstantOverride() instead.
+                $this->validateConstantAgainstInheritedEntry(
+                    $classStmt,
+                    'Class',
+                    $className,
+                    $name,
+                    ['const' => $const, 'origin' => $className],
+                    $table[$name],
+                );
+            }
+            $table[$name] = ['const' => $const, 'origin' => $className];
+        }
+
+        foreach ($classDef->implements as $interfaceName) {
+            if (!$this->hasInterface($interfaceName)) {
+                continue;
+            }
+            foreach ($this->getEffectiveConstantTable($this->getInterface($interfaceName)) as $name => $entry) {
+                if (!isset($table[$name])) {
+                    $table[$name] = $entry;
+                    continue;
+                }
+                $this->validateConstantAgainstInheritedEntry(
+                    $classStmt,
+                    'Class',
+                    $className,
+                    $name,
+                    $table[$name],
+                    $entry,
+                );
+            }
+        }
+    }
+
+    /**
+     * Validate an interface's own constants against the ones inherited from
+     * its parent interfaces, and inherited same-name constants against each
+     * other (Zend: ambiguous unless declared by the interface itself).
+     */
+    private function validateInterfaceConstants(Node\Stmt\Interface_ $interfaceStmt): void
+    {
+        $name = $this->parseIdentifier($interfaceStmt->name);
+        $interfaceName = $this->namespace === '' ? $name : $this->namespace . '\\' . $name;
+        if (!$this->hasInterface($interfaceName)) {
+            return;
+        }
+        $interfaceDef = $this->getInterface($interfaceName);
+
+        $table = [];
+        foreach ($interfaceDef->constants as $constName => $const) {
+            $table[$constName] = ['const' => $const, 'origin' => $interfaceName];
+        }
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentName) {
+            if (!$this->hasInterface($parentName)) {
+                continue;
+            }
+            foreach ($this->getEffectiveConstantTable($this->getInterface($parentName)) as $constName => $entry) {
+                if (!isset($table[$constName])) {
+                    $table[$constName] = $entry;
+                    continue;
+                }
+                $this->validateConstantAgainstInheritedEntry(
+                    $interfaceStmt,
+                    'Interface',
+                    $interfaceName,
+                    $constName,
+                    $table[$constName],
+                    $entry,
+                );
+            }
+        }
+    }
+
+    /**
+     * Zend's do_inherit_constant_check: $existing is the constant already in
+     * the type's table (its own declaration, or one inherited earlier), and
+     * $incoming the same-name constant arriving from another declaration.
+     *
+     * @param array{const: ConstantDef, origin: string} $existing
+     * @param array{const: ConstantDef, origin: string} $incoming
+     */
+    private function validateConstantAgainstInheritedEntry(
+        NodeAbstract $node,
+        string $kind,
+        string $typeName,
+        string $constName,
+        array $existing,
+        array $incoming,
+    ): void {
+        if ($existing['origin'] === $incoming['origin']) {
+            // The same original declaration reached through two paths
+            // (diamond inheritance) never conflicts.
+            return;
+        }
+        if ($incoming['const']->flags & Modifiers::FINAL) {
+            $this->fatalError($node,
+                "`{$existing['origin']}::{$constName}` cannot override final constant " .
+                "`{$incoming['origin']}::{$constName}`");
+        }
+        if ($existing['origin'] !== $typeName) {
+            $this->fatalError($node,
+                "{$kind} `{$typeName}` inherits both `{$existing['origin']}::{$constName}` and " .
+                "`{$incoming['origin']}::{$constName}`, which is ambiguous");
+        }
+
+        // The type's own declaration overrides the inherited constant.
+        $childConst = $existing['const'];
+        if ($this->getVisibilityRank($childConst->flags) < $this->getVisibilityRank($incoming['const']->flags)) {
+            $this->fatalError($node,
+                "Access level to `{$typeName}::{$constName}` must be public " .
+                "(as in interface `{$incoming['origin']}`)");
+        }
+        $parentAccepted = $this->getConstantAcceptedTypes($incoming['const']);
+        if ($parentAccepted !== null && !$this->isConstantTypeOverrideCompatible($childConst, $parentAccepted)) {
+            $this->fatalError($node,
+                "Declaration of `{$typeName}::{$constName}` must be compatible " .
+                "with `{$incoming['origin']}::{$constName}`");
+        }
+    }
+
     private function checkConstantOverride(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $classStmt): void
     {
         $classDef = $this->classDef;
@@ -5039,30 +5717,16 @@ CODE;
                     // PHP only enforces type compatibility when the parent constant
                     // carries an explicit declared type. Overriding an untyped constant
                     // with a value of any type is permitted, so the type check is skipped
-                    // in that case. Visibility is always enforced below.
-                    if ($parentConst->declaredType !== null) {
-                        if ($childConst->declaredType === null) {
-                            $this->fatalError($classStmt,
-                                "Declaration of `{$className}::{$name}` must be compatible " .
-                                "with `{$parentClass}::{$name}`");
-                        }
-                        // An untyped child constant whose value is an expression (e.g.
-                        // `X = ParentClass::Y`) is inferred as a variant. Resolve its real
-                        // type from the referenced constant so the compatibility check uses
-                        // the actual value type.
-                        $childType = $childConst->type;
-                        if ($childType === Type::VAR
-                            && $childConst->valueExpr instanceof Node\Expr\ClassConstFetch) {
-                            $resolved = $this->resolveReferencedConstantType($childConst->valueExpr, $this->getFullClassName());
-                            if ($resolved !== null) {
-                                $childType = $resolved;
-                            }
-                        }
-                        if ($childType !== $parentConst->type || $childConst->class !== $parentConst->class) {
-                            $this->fatalError($classStmt,
-                                "Declaration of `{$className}::{$name}` must be compatible " .
-                                "with `{$parentClass}::{$name}`");
-                        }
+                    // in that case. Typed constants are covariant (PHP 8.3): the child
+                    // may narrow the declared type (e.g. int|string -> int) but never
+                    // widen it or move to an unrelated type. Visibility is always
+                    // enforced below.
+                    $parentAccepted = $this->getConstantAcceptedTypes($parentConst);
+                    if ($parentAccepted !== null
+                        && !$this->isConstantTypeOverrideCompatible($childConst, $parentAccepted)) {
+                        $this->fatalError($classStmt,
+                            "Declaration of `{$className}::{$name}` must be compatible " .
+                            "with `{$parentClass}::{$name}`");
                     }
                     if ($this->getVisibilityRank($childConst->flags) < $this->getVisibilityRank($parentConst->flags)) {
                         $this->fatalError($classStmt,
@@ -5216,20 +5880,57 @@ CODE;
 
     private function isCompatibleTraitConstant(ConstantDef $existing, ConstantDef $incoming): bool
     {
-        return $existing->flags === $incoming->flags
-            && $existing->type === $incoming->type
-            && $existing->class === $incoming->class
-            && $existing->value === $incoming->value;
+        if ($existing->flags !== $incoming->flags
+            || $existing->type !== $incoming->type
+            || $existing->class !== $incoming->class
+        ) {
+            return false;
+        }
+        if ($existing->value === $incoming->value) {
+            return true;
+        }
+        // Different spellings of the same value (e.g. `1 + 1` and `2`) are
+        // compatible in Zend; compare the evaluated values.
+        if ($existing->valueExpr instanceof Node\Expr && $incoming->valueExpr instanceof Node\Expr) {
+            $floatOnly = $existing->declaredType === Type::FLOAT
+                || strcasecmp($existing->typeStr, 'float') === 0
+                || strcasecmp($existing->typeStr, '?float') === 0;
+            return $this->isSameTraitMemberValue(
+                $existing->valueExpr,
+                $this->getFullClassName(),
+                $incoming->valueExpr,
+                $this->getFullClassName(),
+                $floatOnly ? 'float' : null,
+            );
+        }
+        return false;
     }
 
     private function isCompatibleTraitProperty(PropertyDef $existing, PropertyDef $incoming): bool
     {
-        return $existing->flags === $incoming->flags
-            && $existing->type === $incoming->type
-            && $existing->class === $incoming->class
-            && $existing->nullable === $incoming->nullable
-            && $existing->default === $incoming->default
-            && $existing->arrayDef == $incoming->arrayDef;
+        if ($existing->flags !== $incoming->flags
+            || $existing->type !== $incoming->type
+            || $existing->class !== $incoming->class
+            || $existing->nullable !== $incoming->nullable
+        ) {
+            return false;
+        }
+        if ($existing->default === $incoming->default && $existing->arrayDef == $incoming->arrayDef) {
+            return true;
+        }
+        // Different spellings of the same default value (e.g. `1` and `1.0`
+        // on a float property, `[1, 2]` and `array(1, 2)`) are compatible in
+        // Zend; compare the evaluated values.
+        if ($existing->defaultExpr instanceof Node\Expr && $incoming->defaultExpr instanceof Node\Expr) {
+            return $this->isSameTraitMemberValue(
+                $existing->defaultExpr,
+                $this->getFullClassName(),
+                $incoming->defaultExpr,
+                $this->getFullClassName(),
+                $existing->type === Type::FLOAT ? 'float' : null,
+            );
+        }
+        return false;
     }
 
     private function resolveLateBoundClass(ClassDef $usingClassDef, string $keyword): ?string
