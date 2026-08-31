@@ -28,6 +28,7 @@ use TypePhp\Transform\ArrayableLowering;
 use TypePhp\Transform\ClassFieldSelection;
 use TypePhp\Transform\FunctionAttributeLowering;
 use TypePhp\Transform\ConstantExpressionValidationVisitor;
+use TypePhp\Resolver\ClassConstantValueTrait;
 use TypePhp\Transform\RuntimeAttributeFactoryLowering;
 use TypePhp\Transform\Visitor;
 use TypePhp\Transform\VoidCastValidationVisitor;
@@ -46,6 +47,8 @@ use PhpParser\NodeVisitor\NameResolver;
 
 class Preprocessor extends CompilerBase
 {
+    use ClassConstantValueTrait;
+
     protected string $targetName = 'app';
 
     /**
@@ -1326,7 +1329,7 @@ class Preprocessor extends CompilerBase
                     break;
                 case 'Stmt_EnumCase':
                     $caseName = $this->parseIdentifier($v->name);
-                    $this->classDef->enumCases[$caseName] = $v->expr?->value;
+                    $this->classDef->enumCases[$caseName] = $this->evaluateEnumCaseValue($v);
                     break;
                 case 'Stmt_ClassMethod':
                     $this->prepareClassMethod($v, $class);
@@ -1627,6 +1630,35 @@ class Preprocessor extends CompilerBase
             return $this->resolveReferencedConstantType($refConst->valueExpr, $targetClass);
         }
         return null;
+    }
+
+    /**
+     * Resolve an enum case's backing value at prepare time. A backed case may
+     * use any constant expression (`case A = 1 + 1;`), so reading the raw AST
+     * `->value` property is not enough: expression nodes have no such
+     * property, which emitted an "Undefined property" diagnostic and stored
+     * null (the pure-case marker) for a backed case.
+     */
+    private function evaluateEnumCaseValue(Node\Stmt\EnumCase $case): int|string|null
+    {
+        $expr = $case->expr;
+        if ($expr === null) {
+            return null;
+        }
+        if ($expr instanceof Node\Scalar\Int_ || $expr instanceof Node\Scalar\String_) {
+            return $expr->value;
+        }
+        $constDef = new ConstantDef($this->parseIdentifier($case->name), 0, Type::VAR, '');
+        $constDef->valueExpr = $expr;
+        try {
+            $value = $this->evaluateClassConstValue($case, $constDef, $this->getFullClassName(), $constDef->name);
+        } catch (\Throwable) {
+            // The stub registration evaluates the expression independently; a
+            // value this evaluator cannot resolve only loses the compile-time
+            // placeholder, never the registered runtime case value.
+            return null;
+        }
+        return is_int($value) || is_string($value) ? $value : null;
     }
 
     private function parseClassLikeConstant(Node\Const_ $const, int $flags, string $type, string $class = '', ?string $declaredType = null): ConstantDef

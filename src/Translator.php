@@ -43,7 +43,6 @@ use TypePhp\Platform\PlatformFactory;
 use TypePhp\Platform\Wasi;
 use TypePhp\Platform\Windows;
 use TypePhp\Resolver\Reflection;
-use TypePhp\Resolver\ClassConstantValueTrait;
 use TypePhp\Transform\Visitor;
 use TypePhp\Transform\ConstructorLowering;
 use TypePhp\Transform\ConstantExpressionValidationVisitor;
@@ -66,7 +65,6 @@ class Translator extends Preprocessor
     use NativeCommandOptionsTrait;
     use SourcePipelineTrait;
     use ResourceCompilationTrait;
-    use ClassConstantValueTrait;
 
     public const string VERSION = '0.6.8';
     public const string APP_NAME = 'TypePHP Compiler (AOT)';
@@ -1141,6 +1139,8 @@ CODE;
 
         $code .= '// class array constants' . PHP_EOL;
         $code .= $this->genClassArrayConstants();
+        $code .= '// enum case class constants' . PHP_EOL;
+        $code .= $this->genClassEnumCaseConstants(false);
         $code .= '}' . PHP_EOL . PHP_EOL;
         // module_init end
 
@@ -1226,6 +1226,9 @@ CODE;
                 }
             }
         }
+
+        $code .= '// enum case class constants' . PHP_EOL;
+        $code .= $this->genClassEnumCaseConstants(true);
 
         // User-code symbols have request lifetime regardless of the build mode.
         // Embedded/library hosts may start more than one Zend request in the
@@ -2397,6 +2400,141 @@ CODE;
         $scanner = new FileScanner($path);
 
         return $scanner->scan();
+    }
+
+    /**
+     * Register class constants whose value is an enum case.
+     *
+     * Enum case objects have request lifetime, so the MINIT-registered zval
+     * can only hold a scalar placeholder (the backing value or case name),
+     * which dynamic access (`constant('K::CB')`, `$cls::CB`, reflection)
+     * would observe instead of the case object. Mirror the array-constant
+     * mechanism: write the real case object with php::updateConstant() on
+     * every request init, and reset the slot to null on request shutdown so
+     * no request-bound object dangles inside the persistent class entry.
+     */
+    protected function genClassEnumCaseConstants(bool $cleanup): string
+    {
+        $code = '';
+        $emit = function (object $classDef, ConstantDef $constant, object $ownerDef) use (&$code, $cleanup): void {
+            $case = $this->resolveEnumCaseClassConstant($ownerDef, $constant);
+            if ($case === null) {
+                return;
+            }
+            [$enumClass, $caseName] = $case;
+            $classNameStr = $this->genCharPtr($classDef->getNamespacedName(false), true);
+            $classConstStr = $this->genCharPtr($constant->name);
+            if ($cleanup) {
+                $code .= "php::updateConstant($classNameStr, $classConstStr, php::null);\n";
+                return;
+            }
+            $enumCe = 'php::getClassEntrySafe(' . $this->genCharPtr($enumClass, true) . ')';
+            $code .= "php::updateConstant($classNameStr, $classConstStr, "
+                . "php::getEnumCase($enumCe, " . $this->genCharPtr($caseName) . "));\n";
+        };
+
+        foreach ($this->getClassLikesWithConstants() as $classDef) {
+            if ($classDef instanceof ClassDef && $classDef->nativeObject) {
+                continue;
+            }
+            foreach ($classDef->constants as $constant) {
+                $emit($classDef, $constant, $classDef);
+            }
+        }
+
+        // Child class entries hold their own copy of the inherited constant
+        // placeholder, so constants inherited from parents and interfaces
+        // must be updated on the child explicitly, like array constants.
+        foreach ($this->symbols->classes() as $classDef) {
+            if ($classDef->nativeObject) {
+                continue;
+            }
+            $ownConstNames = [];
+            foreach ($classDef->constants as $constant) {
+                $ownConstNames[$constant->name] = true;
+            }
+
+            $parentName = $this->escapeClass($classDef->extends);
+            while ($parentName && $this->symbols->hasClass($parentName)) {
+                $parentDef = $this->symbols->class($parentName);
+                foreach ($parentDef->constants as $constant) {
+                    if (!isset($ownConstNames[$constant->name])) {
+                        $ownConstNames[$constant->name] = true;
+                        $emit($classDef, $constant, $parentDef);
+                    }
+                }
+                $parentName = $this->escapeClass($parentDef->extends);
+            }
+
+            foreach ($this->getClassImplementedInterfaces($classDef) as $interfaceName) {
+                if (!$this->hasInterface($interfaceName)) {
+                    continue;
+                }
+                $interfaceDef = $this->getInterface($interfaceName);
+                foreach ($interfaceDef->constants as $constant) {
+                    if (!isset($ownConstNames[$constant->name])) {
+                        $ownConstNames[$constant->name] = true;
+                        $emit($classDef, $constant, $interfaceDef);
+                    }
+                }
+            }
+        }
+
+        return $code;
+    }
+
+    /**
+     * Resolve a class constant whose value is an enum case fetch, possibly
+     * through a chain of other class constants (`const A = Other::B` where
+     * `Other::B = E::C`).
+     *
+     * @return array{string, string}|null [enum class name, case name]
+     */
+    protected function resolveEnumCaseClassConstant(object $ownerDef, ConstantDef $constant): ?array
+    {
+        $ownerClass = ltrim($ownerDef->getNamespacedName(false), '\\');
+        $expr = $constant->valueExpr;
+        for ($depth = 0; $depth < 16; $depth++) {
+            if (!$expr instanceof Node\Expr\ClassConstFetch
+                || !$expr->class instanceof Node\Name
+                || !$expr->name instanceof Node\Identifier
+            ) {
+                return null;
+            }
+            $constName = $expr->name->toString();
+            if (strcasecmp($constName, 'class') === 0) {
+                return null;
+            }
+            $className = $this->resolveClassConstFetchOwner($expr->class, $ownerClass);
+            if ($className === null || !$this->hasClass($className)) {
+                return null;
+            }
+            $targetDef = $this->getClass($className);
+            if ($targetDef->enum && array_key_exists($constName, $targetDef->enumCases)) {
+                return [$targetDef->getNamespacedName(false), $constName];
+            }
+            if (!$targetDef->hasConstant($constName)) {
+                return null;
+            }
+            $expr = $targetDef->getConstant($constName)->valueExpr;
+            $ownerClass = $className;
+        }
+        return null;
+    }
+
+    private function resolveClassConstFetchOwner(Node\Name $name, string $ownerClass): ?string
+    {
+        $raw = $name->toString();
+        if (strcasecmp($raw, 'self') === 0 || strcasecmp($raw, 'static') === 0) {
+            return $ownerClass;
+        }
+        if (strcasecmp($raw, 'parent') === 0) {
+            return $this->hasClass($ownerClass) && $this->getClass($ownerClass)->extends !== ''
+                ? $this->getClass($ownerClass)->extends
+                : null;
+        }
+        $resolved = $name->getAttribute('resolvedName');
+        return ltrim($resolved instanceof Node\Name ? $resolved->toString() : $raw, '\\');
     }
 
     protected function genClassArrayConstants(): string
