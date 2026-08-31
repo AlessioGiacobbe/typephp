@@ -174,20 +174,19 @@ final class LibPhpInstaller
         $this->console->write("libphp.so installed successfully in {$prefix}/lib");
     }
 
-    private function currentConfigureOptions(): string
+    /** @return list<string> */
+    private function currentConfigureOptions(): array
     {
         // Prefer the "Configure Command:" output from `PHP_BINARY -i`, which preserves
-        // the quoting of each argument and can therefore handle values containing spaces
-        // such as `CFLAGS=-g -O2`. In contrast, `php-config --configure-options` drops the
-        // quotes, causing space-containing values to be split incorrectly (for example,
-        // `-O2` being passed to configure as a separate argument).
+        // exact argument boundaries. In contrast, `php-config --configure-options` drops
+        // quotes around space-containing build assignments such as `CFLAGS=-g -O2`.
         $info = $this->capture([PHP_BINARY, '-n', '-i']);
         if (preg_match('/^Configure Command =>\s*(.+)$/mi', $info, $match)) {
             $words = PhpBuildConfiguration::parseShellWords(trim($match[1]));
-            if (($words[0] ?? null) === './configure') {
+            if (isset($words[0]) && basename($words[0]) === 'configure') {
                 array_shift($words);
             }
-            return implode(' ', array_map('escapeshellarg', $words));
+            return $words;
         }
 
         // Fallback: php-config --configure-options. On PPA multi-version installations
@@ -203,7 +202,9 @@ final class LibPhpInstaller
             $phpConfig = trim((string) shell_exec('command -v php-config 2>/dev/null'));
         }
         if ($phpConfig !== '') {
-            return trim($this->capture([$phpConfig, '--configure-options']));
+            return PhpBuildConfiguration::parsePhpConfigOptions(
+                trim($this->capture([$phpConfig, '--configure-options']))
+            );
         }
 
         throw new \RuntimeException('Unable to determine the current PHP configure options from php-config or php -i');
