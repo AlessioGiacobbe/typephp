@@ -3205,10 +3205,11 @@ CODE;
                                 continue;
                             }
                             if (isset($traitConstants[$constName])) {
-                                [$existingConstStmt, $existingConst] = $traitConstants[$constName];
+                                [$existingConstStmt, $existingConst, $existingConstTrait] = $traitConstants[$constName];
+                                $typeStr = $this->typeNodeToStringOrNull($traitStmt->type);
                                 if ($existingConstStmt->flags !== $traitStmt->flags ||
-                                    $this->typeNodeToStringOrNull($existingConstStmt->type) !== $this->typeNodeToStringOrNull($traitStmt->type) ||
-                                    $this->printer->prettyPrintExpr($existingConst->value) !== $this->printer->prettyPrintExpr($const->value)) {
+                                    $this->typeNodeToStringOrNull($existingConstStmt->type) !== $typeStr ||
+                                    !$this->isSameTraitMemberValue($existingConst->value, $existingConstTrait, $const->value, $traitFullName, $typeStr)) {
                                     $this->fatalError($classStmt, "Trait `{$traitFullName}` constant `{$constName}` already exists");
                                 }
                                 unset($traitStmt->consts[$k2]);
@@ -3217,7 +3218,7 @@ CODE;
                                 }
                                 continue;
                             }
-                            $traitConstants[$constName] = [$traitStmt, $const];
+                            $traitConstants[$constName] = [$traitStmt, $const, $traitFullName];
                         }
                     }
                     if ($traitStmt instanceof Node\Stmt\Property) {
@@ -3231,12 +3232,13 @@ CODE;
                                 continue;
                             }
                             if (isset($traitProperties[$propName])) {
-                                [$existingPropStmt, $existingProp] = $traitProperties[$propName];
-                                $existingDefault = $existingProp->default ? $this->printer->prettyPrintExpr($existingProp->default) : null;
-                                $propDefault = $prop->default ? $this->printer->prettyPrintExpr($prop->default) : null;
+                                [$existingPropStmt, $existingProp, $existingPropTrait] = $traitProperties[$propName];
+                                $typeStr = $this->typeNodeToStringOrNull($traitStmt->type);
                                 if ($existingPropStmt->flags !== $traitStmt->flags ||
-                                    $this->typeNodeToStringOrNull($existingPropStmt->type) !== $this->typeNodeToStringOrNull($traitStmt->type) ||
-                                    $existingDefault !== $propDefault) {
+                                    $this->typeNodeToStringOrNull($existingPropStmt->type) !== $typeStr ||
+                                    ($existingProp->default === null) !== ($prop->default === null) ||
+                                    ($prop->default !== null
+                                        && !$this->isSameTraitMemberValue($existingProp->default, $existingPropTrait, $prop->default, $traitFullName, $typeStr))) {
                                     $this->fatalError($classStmt, "Trait `{$traitFullName}` property `{$propName}` already exists");
                                 }
                                 unset($traitStmt->props[$k2]);
@@ -3245,7 +3247,7 @@ CODE;
                                 }
                                 continue;
                             }
-                            $traitProperties[$propName] = [$traitStmt, $prop];
+                            $traitProperties[$propName] = [$traitStmt, $prop, $traitFullName];
                         }
                     }
                 }
@@ -3254,6 +3256,47 @@ CODE;
             }
         }
 
+    }
+
+    /**
+     * Compare two trait data-member initializers by VALUE, as Zend does when
+     * flattening traits: `1 + 1` and `2`, or `[1, 2]` and `array(1, 2)`, are
+     * the same definition. Comparison is identity (===) after evaluating both
+     * constant expressions; an integer initializer of a float-typed member is
+     * coerced to float first, mirroring Zend's declaration-time coercion.
+     * Falls back to source-text equality when a value cannot be evaluated at
+     * compile time.
+     */
+    private function isSameTraitMemberValue(
+        Node\Expr $existingValue,
+        string $existingClass,
+        Node\Expr $incomingValue,
+        string $incomingClass,
+        ?string $declaredTypeStr,
+    ): bool {
+        try {
+            $a = $this->evaluateTraitMemberValue($existingValue, $existingClass);
+            $b = $this->evaluateTraitMemberValue($incomingValue, $incomingClass);
+        } catch (\Throwable) {
+            return $this->printer->prettyPrintExpr($existingValue) === $this->printer->prettyPrintExpr($incomingValue);
+        }
+        if ($declaredTypeStr !== null
+            && (strcasecmp($declaredTypeStr, 'float') === 0 || strcasecmp($declaredTypeStr, '?float') === 0)) {
+            if (is_int($a)) {
+                $a = (float) $a;
+            }
+            if (is_int($b)) {
+                $b = (float) $b;
+            }
+        }
+        return $a === $b;
+    }
+
+    private function evaluateTraitMemberValue(Node\Expr $expr, string $class): mixed
+    {
+        $constDef = new ConstantDef('', 0, '', '');
+        $constDef->valueExpr = $expr;
+        return $this->evaluateClassConstValue($expr, $constDef, $class, '');
     }
 
     private function cloneAstNode(Node $node): Node
@@ -5744,20 +5787,57 @@ CODE;
 
     private function isCompatibleTraitConstant(ConstantDef $existing, ConstantDef $incoming): bool
     {
-        return $existing->flags === $incoming->flags
-            && $existing->type === $incoming->type
-            && $existing->class === $incoming->class
-            && $existing->value === $incoming->value;
+        if ($existing->flags !== $incoming->flags
+            || $existing->type !== $incoming->type
+            || $existing->class !== $incoming->class
+        ) {
+            return false;
+        }
+        if ($existing->value === $incoming->value) {
+            return true;
+        }
+        // Different spellings of the same value (e.g. `1 + 1` and `2`) are
+        // compatible in Zend; compare the evaluated values.
+        if ($existing->valueExpr instanceof Node\Expr && $incoming->valueExpr instanceof Node\Expr) {
+            $floatOnly = $existing->declaredType === Type::FLOAT
+                || strcasecmp($existing->typeStr, 'float') === 0
+                || strcasecmp($existing->typeStr, '?float') === 0;
+            return $this->isSameTraitMemberValue(
+                $existing->valueExpr,
+                $this->getFullClassName(),
+                $incoming->valueExpr,
+                $this->getFullClassName(),
+                $floatOnly ? 'float' : null,
+            );
+        }
+        return false;
     }
 
     private function isCompatibleTraitProperty(PropertyDef $existing, PropertyDef $incoming): bool
     {
-        return $existing->flags === $incoming->flags
-            && $existing->type === $incoming->type
-            && $existing->class === $incoming->class
-            && $existing->nullable === $incoming->nullable
-            && $existing->default === $incoming->default
-            && $existing->arrayDef == $incoming->arrayDef;
+        if ($existing->flags !== $incoming->flags
+            || $existing->type !== $incoming->type
+            || $existing->class !== $incoming->class
+            || $existing->nullable !== $incoming->nullable
+        ) {
+            return false;
+        }
+        if ($existing->default === $incoming->default && $existing->arrayDef == $incoming->arrayDef) {
+            return true;
+        }
+        // Different spellings of the same default value (e.g. `1` and `1.0`
+        // on a float property, `[1, 2]` and `array(1, 2)`) are compatible in
+        // Zend; compare the evaluated values.
+        if ($existing->defaultExpr instanceof Node\Expr && $incoming->defaultExpr instanceof Node\Expr) {
+            return $this->isSameTraitMemberValue(
+                $existing->defaultExpr,
+                $this->getFullClassName(),
+                $incoming->defaultExpr,
+                $this->getFullClassName(),
+                $existing->type === Type::FLOAT ? 'float' : null,
+            );
+        }
+        return false;
     }
 
     private function resolveLateBoundClass(ClassDef $usingClassDef, string $keyword): ?string
