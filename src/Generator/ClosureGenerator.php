@@ -49,7 +49,7 @@ trait ClosureGenerator
                 . $this->escapeBool(!$param->variadic && $param->default === null) . '}';
         }
         return 'php::newClosureWithParameters(' . $callback . ', ' . $uses . ', ' . $thisArg . ', ' . $scope
-            . ', { ' . implode(', ', $parameterDescriptors) . ' })';
+            . ', { ' . implode(', ', $parameterDescriptors) . ' }, php::ClosureStrictTypes::Enabled)';
     }
 
     protected function parseArrowFunction(Expr\ArrowFunction $expr): string

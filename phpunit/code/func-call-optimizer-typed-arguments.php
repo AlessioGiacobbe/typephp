@@ -28,4 +28,8 @@ function optimizerTypedArgumentCalls(): void
     in_array('1', [1], optimizerDynamicBool());
     strlen(null);
     json_decode('null', null);
+    floor('1.5');
+    round('1.25');
+    floor(1.5);
+    round(1.25);
 }

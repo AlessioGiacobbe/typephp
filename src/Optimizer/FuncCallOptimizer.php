@@ -127,31 +127,43 @@ trait FuncCallOptimizer
             'defined'            => ['constFold' => self::FOLD_KNOWN_CONSTANT],
 
             // Big* dispatch
-            'abs' => ['bigDispatch' => [
-                Type::BIGINT => 'php::BigInt::abs',
-                Type::BIGFLOAT => 'php::BigFloat::abs',
-                Type::DECIMAL => 'php::Decimal::abs',
-                'fallback' => 'php::fn::abs',
-            ]],
+            'abs' => [
+                'bigDispatch' => [
+                    Type::BIGINT => 'php::BigInt::abs',
+                    Type::BIGFLOAT => 'php::BigFloat::abs',
+                    Type::DECIMAL => 'php::Decimal::abs',
+                    'fallback' => 'php::fn::abs',
+                ],
+                'fallbackArgTypes' => [[Type::INT, Type::FLOAT]],
+            ],
             'pow' => ['bigDispatch' => [
                 Type::BIGINT => 'php::BigInt::pow',
                 Type::DECIMAL => 'php::Decimal::pow',
                 'fallback' => 'php::fn::pow',
             ]],
-            'sqrt' => ['bigDispatch' => [
-                Type::BIGINT => 'php::BigInt::sqrt',
-                Type::DECIMAL => 'php::Decimal::sqrt',
-                Type::BIGFLOAT => 'php::BigFloat::sqrt',
-                'fallback' => 'php::fn::sqrt',
-            ]],
-            'floor' => ['bigDispatch' => [
-                Type::DECIMAL => 'php::Decimal::floor',
-                'fallback' => 'php::fn::floor',
-            ]],
-            'ceil' => ['bigDispatch' => [
-                Type::DECIMAL => 'php::Decimal::ceil',
-                'fallback' => 'php::fn::ceil',
-            ]],
+            'sqrt' => [
+                'bigDispatch' => [
+                    Type::BIGINT => 'php::BigInt::sqrt',
+                    Type::DECIMAL => 'php::Decimal::sqrt',
+                    Type::BIGFLOAT => 'php::BigFloat::sqrt',
+                    'fallback' => 'php::fn::sqrt',
+                ],
+                'fallbackArgTypes' => [[Type::INT, Type::FLOAT]],
+            ],
+            'floor' => [
+                'bigDispatch' => [
+                    Type::DECIMAL => 'php::Decimal::floor',
+                    'fallback' => 'php::fn::floor',
+                ],
+                'fallbackArgTypes' => [[Type::INT, Type::FLOAT]],
+            ],
+            'ceil' => [
+                'bigDispatch' => [
+                    Type::DECIMAL => 'php::Decimal::ceil',
+                    'fallback' => 'php::fn::ceil',
+                ],
+                'fallbackArgTypes' => [[Type::INT, Type::FLOAT]],
+            ],
 
             // Type conversions
             'strval'   => ['conversion' => self::ARG_TYPE_STR],
@@ -259,7 +271,11 @@ trait FuncCallOptimizer
             return $this->{$config['handler']}($name, $expr, $config);
         }
         if (isset($config['bigDispatch'])) {
-            return $this->dispatchBigType($expr, $config['bigDispatch']);
+            return $this->dispatchBigType(
+                $expr,
+                $config['bigDispatch'],
+                $config['fallbackArgTypes'] ?? [],
+            );
         }
         if (isset($config['conversion'])) {
             return $this->dispatchConversion($expr, $config['conversion']);
@@ -664,10 +680,25 @@ trait FuncCallOptimizer
         };
     }
 
-    protected function dispatchBigType(Node\Expr\FuncCall $expr, array $dispatch): string|false
+    protected function dispatchBigType(
+        Node\Expr\FuncCall $expr,
+        array $dispatch,
+        array $fallbackArgTypes = [],
+    ): string|false
     {
         $type = $this->detectTypeOfExpr($expr->args[0]->value);
-        $target = $dispatch[$type] ?? $dispatch['fallback'] ?? null;
+        $target = $dispatch[$type] ?? null;
+        if ($target === null) {
+            foreach ($fallbackArgTypes as $index => $acceptedTypes) {
+                $arg = $expr->args[$index] ?? null;
+                if (!$arg instanceof Node\Arg
+                    || !in_array($this->detectTypeOfExpr($arg->value), $acceptedTypes, true)
+                ) {
+                    return false;
+                }
+            }
+            $target = $dispatch['fallback'] ?? null;
+        }
         if (!$target) {
             return false;
         }
@@ -981,6 +1012,20 @@ trait FuncCallOptimizer
                 return 'php::Decimal::round(' . $a0 . ', ' . $this->parseExpr($e->args[1]->value) . ')';
             }
             return 'php::Decimal::round(' . $a0 . ')';
+        }
+        // Reflection reports int|float as a union, which is represented by a
+        // raw Variant in the generic ABI metadata. The direct round() wrapper
+        // accepts that Variant and performs its own numeric conversion, so it
+        // is only strict-compatible when the source type is already proven.
+        if (!in_array($type, [Type::INT, Type::FLOAT], true)) {
+            return false;
+        }
+        // PHP 8.4+ also declares $mode as int|RoundingMode. The direct PHPX
+        // wrapper takes an integer; enum objects must remain on Zend dispatch.
+        if (count($e->args) >= 3
+            && $this->detectTypeOfExpr($e->args[2]->value) !== Type::INT
+        ) {
+            return false;
         }
         if (!$this->hasOptimizerSafeReflectedArguments($n, $e, $c)) {
             return false;

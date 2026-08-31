@@ -20,7 +20,9 @@ final class FuncCallOptimizerTest extends BaseTest
         self::assertSame(1, substr_count($code, 'php::fn::in_array('));
         self::assertSame(1, substr_count($code, 'php::fn::hypot('));
         self::assertSame(1, substr_count($code, 'php::fn::json_decode('));
-        self::assertSame(3, substr_count($code, 'php::call('));
+        self::assertSame(1, substr_count($code, 'php::fn::floor('));
+        self::assertSame(1, substr_count($code, 'php::fn::round('));
+        self::assertSame(5, substr_count($code, 'php::call('));
         self::assertStringContainsString('php_optimizertypedbool()', $code);
         self::assertStringContainsString('php_optimizertypedint()', $code);
         self::assertStringContainsString('php_optimizertypedfloat()', $code);
@@ -31,5 +33,7 @@ final class FuncCallOptimizerTest extends BaseTest
         self::assertStringContainsString('php::fn::hypot(php::toFloat(', $code);
         self::assertStringContainsString('php::ArgList{php::null}', $code);
         self::assertMatchesRegularExpression('/php::fn::json_decode\([^;]+php::null\);/', $code);
+        self::assertStringContainsString('php::fn::floor(1.5)', $code);
+        self::assertStringContainsString('php::fn::round(1.25)', $code);
     }
 }
