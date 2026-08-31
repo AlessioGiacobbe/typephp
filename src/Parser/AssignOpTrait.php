@@ -890,6 +890,25 @@ trait AssignOpTrait
             return $nativePropertyAssignOp;
         }
 
+        // A compound assignment on a native int/float slot cannot be emitted
+        // as a raw C++ compound operator: `+=` overflow is UB where PHP
+        // promotes to float, `/=` truncates zend_long division and misses the
+        // catchable DivisionByZeroError, `%= 0` and out-of-range shifts are
+        // UB. Lower it to the equivalent plain assignment `$x = $x op $y`,
+        // which already routes through the PHP-semantics binary operators and
+        // performs the established coercion back into the typed slot.
+        if (!$this->nativeTypes
+            && $this->isVarExpr($node->var)
+            && $this->hasVar((string) $this->parseIdentifier($node->var))
+            && $this->assignOpNeedsPhpSemantics($this->detectVarType($node->var), $op)
+        ) {
+            return $this->parseAssign(new Expr\Assign(
+                $node->var,
+                $this->assignOpBinaryNode($node),
+                $node->getAttributes(),
+            ));
+        }
+
         $arrayDimFetch = $this->isArrayDimFetch($node->var);
         $var          = $arrayDimFetch ? '' : $this->parseWritableIdentifier($node->var);
         $expr         = $this->isAssignOpConcat($op) ? '' : (string) $this->parseIdentifier($node->expr);
@@ -1109,6 +1128,23 @@ trait AssignOpTrait
                 . ' of type ' . $this->getObjectPropertyTypeCheckTypeString($def)
             );
         }
+        // Int/float typed properties expose a raw scalar reference, so the
+        // compound C++ operator has the same UB/semantic divergences as a raw
+        // compound on a native local slot. Lower those operators to the plain
+        // assignment `$this->p = $this->p op $y`, whose binary expression is
+        // already routed through the PHP-semantics operators and whose write
+        // performs the established typed-property store.
+        if (!$this->nativeTypes
+            && in_array($def->type, [Type::INT, Type::FLOAT], true)
+            && $this->assignOpNeedsPhpSemantics($def->type, $op)
+        ) {
+            return $this->parseAssign(new Expr\Assign(
+                $node->var,
+                $this->assignOpBinaryNode($node),
+                $node->getAttributes(),
+            ));
+        }
+
         if (!$this->canUseNativePropertyAssignOp($def->type, $rightType, $op)) {
             return null;
         }
@@ -1128,6 +1164,48 @@ trait AssignOpTrait
             : $rightType;
 
         return $var . ' ' . $op . ' (' . $this->convertNativePropertyWriteExpr($def->type, $effectiveRightType, $rightExpr) . ')';
+    }
+
+    /**
+     * Whether `$x op= $y` on a native int/float slot must be lowered to the
+     * PHP-semantics plain assignment `$x = $x op $y` instead of a raw C++
+     * compound operator. Raw int compound arithmetic has undefined signed
+     * overflow (PHP promotes to float), raw division truncates and misses
+     * DivisionByZeroError, `%` is UB for a zero divisor and PHP_INT_MIN % -1,
+     * and shifts are UB for out-of-range counts. Raw float `/` yields
+     * INF instead of DivisionByZeroError, while float `%` and shifts operate
+     * on int casts in PHP and do not even compile on a C++ double.
+     * Bitwise `&= |= ^=` on ints and float `+= -= *=` are identical in C++
+     * and PHP and keep the raw compound form.
+     */
+    protected function assignOpNeedsPhpSemantics(string $slotType, string $op): bool
+    {
+        if ($slotType === Type::INT) {
+            return in_array($op, ['+=', '-=', '*=', '/=', '%=', '<<=', '>>='], true);
+        }
+        if ($slotType === Type::FLOAT) {
+            return in_array($op, ['/=', '%=', '<<=', '>>='], true);
+        }
+        return false;
+    }
+
+    /**
+     * Build the binary-op AST node equivalent to a compound assignment, so
+     * `$x op= $y` can reuse the plain `$x = $x op $y` lowering.
+     */
+    protected function assignOpBinaryNode(Expr\AssignOp $node): Expr\BinaryOp
+    {
+        $attributes = $node->getAttributes();
+        return match (true) {
+            $node instanceof Expr\AssignOp\Plus => new Expr\BinaryOp\Plus($node->var, $node->expr, $attributes),
+            $node instanceof Expr\AssignOp\Minus => new Expr\BinaryOp\Minus($node->var, $node->expr, $attributes),
+            $node instanceof Expr\AssignOp\Mul => new Expr\BinaryOp\Mul($node->var, $node->expr, $attributes),
+            $node instanceof Expr\AssignOp\Div => new Expr\BinaryOp\Div($node->var, $node->expr, $attributes),
+            $node instanceof Expr\AssignOp\Mod => new Expr\BinaryOp\Mod($node->var, $node->expr, $attributes),
+            $node instanceof Expr\AssignOp\ShiftLeft => new Expr\BinaryOp\ShiftLeft($node->var, $node->expr, $attributes),
+            $node instanceof Expr\AssignOp\ShiftRight => new Expr\BinaryOp\ShiftRight($node->var, $node->expr, $attributes),
+            default => $this->fatalError($node, 'Unsupported compound assignment lowering'),
+        };
     }
 
     protected function convertNativePropertyWriteExpr(string $propertyType, string $rightType, string $rightExpr): string
