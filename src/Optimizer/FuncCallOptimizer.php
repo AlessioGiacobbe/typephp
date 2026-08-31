@@ -527,8 +527,23 @@ trait FuncCallOptimizer
         return $target . '(' . implode(', ', $args) . ')';
     }
 
-    protected function dispatchConversion(Node\Expr\FuncCall $expr, string $convType): string
+    protected function dispatchConversion(Node\Expr\FuncCall $expr, string $convType): string|false
     {
+        // These four are lowered as single-argument Native casts, which cannot
+        // carry intval()'s $base. Any other arity must reach the runtime
+        // function instead of silently dropping the extra argument.
+        //
+        // An unpacked or named argument is a single Node\Arg whatever its
+        // runtime arity turns out to be, so neither may be read as the value
+        // being converted; both stay on the dynamic path like dispatchFuncCall()
+        // already does for every other builtin.
+        if (count($expr->args) !== 1
+            || !($expr->args[0] instanceof Node\Arg)
+            || $expr->args[0]->unpack
+            || $expr->args[0]->name !== null
+        ) {
+            return false;
+        }
         $arg = $expr->args[0]->value;
         $type = $this->detectTypeOfExpr($arg);
         $nativeClass = $this->detectClassOfExpr($arg);
