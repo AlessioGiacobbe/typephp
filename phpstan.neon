@@ -5,10 +5,9 @@ parameters:
     - src
     - bin
 
-  # Define CLI constants without executing bin/bootstrap.php inside PHPStan's
-  # process, where loading Composer's autoloader a second time is unsafe.
+  # Reuse the same constants and Composer autoloader setup as the CLI tools.
   bootstrapFiles:
-    - phpstan-bootstrap.php
+    - bin/bootstrap.php
 
   # gen_stub.php is maintained as a namespaced copy of php-src's generator.
   # Analyze TypePHP-owned compiler code independently from upstream diagnostics.
