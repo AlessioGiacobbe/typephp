@@ -4557,9 +4557,13 @@ CODE;
      */
     protected function checkParentMethodCanBeOverridden(Node\Stmt\ClassMethod $v, string $name): void
     {
-        if ($name === '__construct') {
-            return;
-        }
+        // Zend exempts constructors from the LSP checks against a CONCRETE
+        // parent constructor (subclasses may freely change the construction
+        // signature and even narrow its visibility). A FINAL parent
+        // constructor still cannot be overridden — even a final private one —
+        // and an ABSTRACT parent constructor imposes a real signature
+        // contract, exactly like an interface constructor.
+        $isConstructor = strtolower($name) === '__construct';
 
         $classDef = $this->classDef;
         $childFuncDef = $this->methodDef->functionDef;
@@ -4571,7 +4575,7 @@ CODE;
             // The parent class is a built-in class
             if ($classDef->inheritedFromInternalClass) {
                 $modifiers = Reflection::getClassMethodModifiers($extends, $name);
-                if ($modifiers & \ReflectionMethod::IS_PRIVATE) {
+                if (!$isConstructor && ($modifiers & \ReflectionMethod::IS_PRIVATE)) {
                     goto _error;
                 }
                 if ($modifiers & \ReflectionMethod::IS_FINAL) {
@@ -4582,7 +4586,7 @@ CODE;
             $classDef = $this->getClass($extends);
             if ($classDef->hasMethod($name)) {
                 $methodDef = $classDef->getMethod($name);
-                if ($methodDef->flags & Modifiers::PRIVATE) {
+                if (!$isConstructor && ($methodDef->flags & Modifiers::PRIVATE)) {
                     _error:
                     $message = 'Cannot override private method `' . $extends . '::' . $name . '()`';
                     $this->fatalGeneratedMethodAttributeIfAny($v, $message, $extends, $name);
@@ -4606,10 +4610,14 @@ CODE;
                     $this->fatalError($v,
                         $message);
                 }
-                $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
+                if (!$isConstructor) {
+                    $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
+                }
                 break;
             }
             if ($classDef->hasAbstractMethod($name) && isset($classDef->abstractMethodDefs[strtolower($name)])) {
+                // An abstract parent constructor is validated like an
+                // interface constructor: its signature is a contract.
                 $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $classDef->getAbstractMethod($name), $extends);
                 break;
             }
