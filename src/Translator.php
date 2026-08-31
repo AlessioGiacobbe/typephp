@@ -4261,12 +4261,33 @@ CODE;
             $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
 
-        // Compare each parent-declared parameter position.
-        foreach ($parentFuncDef->argInfoList as $i => $parentArg) {
-            if (!isset($childFuncDef->argInfoList[$i])) {
-                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        // A variadic parent accepts unbounded arguments, so Zend requires the
+        // override to be variadic as well.
+        $parentVariadic = $parentFuncDef->hasVariadicArg();
+        $childVariadic = $childFuncDef->hasVariadicArg();
+        if ($parentVariadic && !$childVariadic) {
+            $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+        }
+
+        // Compare each parent-declared parameter position. Following Zend's
+        // inheritance check, a trailing child variadic stands in for every
+        // remaining parent position (the decorator pattern), and when the
+        // parent is variadic each extra child parameter is validated against
+        // the parent's variadic slot.
+        $positions = count($parentFuncDef->argInfoList);
+        if ($parentVariadic) {
+            $positions = max($positions, count($childFuncDef->argInfoList));
+        }
+        for ($i = 0; $i < $positions; $i++) {
+            $parentArg = $parentFuncDef->argInfoList[$i]
+                ?? $parentFuncDef->argInfoList[count($parentFuncDef->argInfoList) - 1];
+            $childArg = $childFuncDef->argInfoList[$i] ?? null;
+            if ($childArg === null) {
+                if (!$childVariadic) {
+                    $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
+                }
+                $childArg = $childFuncDef->argInfoList[count($childFuncDef->argInfoList) - 1];
             }
-            $childArg = $childFuncDef->argInfoList[$i];
             if ($parentArg->immutable && !$childArg->immutable) {
                 $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
@@ -4274,9 +4295,6 @@ CODE;
                 $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
             if ($childArg->byRef !== $parentArg->byRef) {
-                $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
-            }
-            if ($childArg->variadic !== $parentArg->variadic) {
                 $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
             }
         }
