@@ -3067,7 +3067,8 @@ CODE;
         $traitMethods = [];
         $traitConstants = [];
         $traitProperties = [];
-        $classDef = $this->getClass($className->toString());
+        $consumingClass = $className->toString();
+        $classDef = $this->getClass($consumingClass);
 
         foreach ($stmt->stmts as $classStmt) {
             if ($classStmt instanceof Node\Stmt\ClassMethod) {
@@ -3130,23 +3131,63 @@ CODE;
                         // passes ZendVM's runtime signature-compatibility checks. The
                         // alias clones below inherit this rewrite.
                         $this->reresolveTraitMethodAstLateBoundTypes($classDef, $traitFullName, $traitStmt);
+                        // Every adaptation derives its flags from the original
+                        // method's flags: a same-name visibility change must not
+                        // leak into aliases of the same method that are processed
+                        // after it, so the original statement is only mutated once
+                        // all adaptations have been handled.
+                        $originalFlags = $traitStmt->flags;
+                        $adaptedFlags = $originalFlags;
                         foreach ($classDef->traitAliases[$fullMethodName] ?? [] as $alias) {
                             $aliasName = strtolower($alias['newName']);
                             if ($aliasName === $methodName) {
                                 if ($alias['newModifier']) {
-                                    $traitStmt->flags = $alias['newModifier'];
+                                    $adaptedFlags = $this->applyTraitAliasModifier($originalFlags, $alias['newModifier']);
                                 }
-                            } elseif (!isset($methods[$aliasName]) && !isset($traitMethods[$aliasName])) {
+                            } elseif (isset($methods[$aliasName])) {
+                                // The class defines the alias name itself. An
+                                // abstract source is still a requirement the
+                                // class method has to satisfy.
+                                if ($traitStmt->isAbstract()) {
+                                    [$requirementSource, $requirementDef] = $this->resolveTraitStmtMethodDef($traitStmt, $traitFullName);
+                                    $this->validateTraitAbstractImplementation(
+                                        $classStmt,
+                                        $traitStmt, $requirementSource, $requirementDef,
+                                        $methods[$aliasName], $consumingClass,
+                                        $classDef->methods[$aliasName] ?? $classDef->abstractMethodDefs[$aliasName] ?? null,
+                                        $consumingClass,
+                                    );
+                                }
+                            } elseif (!isset($traitMethods[$aliasName])) {
                                 $aliasStmt = clone $traitStmt;
                                 $aliasStmt->name = new Node\Identifier($alias['newName']);
                                 if ($alias['newModifier']) {
-                                    $aliasStmt->flags = $alias['newModifier'];
+                                    $aliasStmt->flags = $this->applyTraitAliasModifier($originalFlags, $alias['newModifier']);
                                 }
                                 $aliasStmts[] = $aliasStmt;
                                 $traitMethods[$aliasName] = [$traitFullName, $aliasStmt];
                             }
                         }
+                        $traitStmt->flags = $adaptedFlags;
                         if (isset($classDef->traitIgnored[$fullMethodName])) {
+                            unset($traitStmts[$k1]);
+                            continue;
+                        }
+                        if (isset($methods[$methodName])) {
+                            // The class's own method always wins: suppressed
+                            // trait copies must not take part in trait-vs-trait
+                            // conflict resolution. An abstract trait method is
+                            // still a requirement the class method must satisfy.
+                            if ($traitStmt->isAbstract()) {
+                                [$requirementSource, $requirementDef] = $this->resolveTraitStmtMethodDef($traitStmt, $traitFullName);
+                                $this->validateTraitAbstractImplementation(
+                                    $classStmt,
+                                    $traitStmt, $requirementSource, $requirementDef,
+                                    $methods[$methodName], $consumingClass,
+                                    $classDef->methods[$methodName] ?? $classDef->abstractMethodDefs[$methodName] ?? null,
+                                    $consumingClass,
+                                );
+                            }
                             unset($traitStmts[$k1]);
                             continue;
                         }
@@ -3167,23 +3208,49 @@ CODE;
                             }
 
                             if ($newAbstract && !$existingAbstract) {
-                                // Existing concrete wins over new abstract
+                                // Existing concrete wins over new abstract, but
+                                // it must satisfy the abstract requirement.
+                                [$requirementSource, $requirementDef] = $this->resolveTraitStmtMethodDef($traitStmt, $traitFullName);
+                                [$implementationSource, $implementationDef] = $this->resolveTraitStmtMethodDef($existingStmt, $existingTraitName);
+                                $this->validateTraitAbstractImplementation(
+                                    $classStmt,
+                                    $traitStmt, $requirementSource, $requirementDef,
+                                    $existingStmt, $implementationSource, $implementationDef,
+                                    $consumingClass,
+                                );
                                 unset($traitStmts[$k1]);
                                 continue;
                             }
 
                             if (!$newAbstract && $existingAbstract) {
-                                // New concrete replaces existing abstract
+                                // The new concrete method fulfills the abstract
+                                // requirement: validate it against the
+                                // requirement, then drop the already-collected
+                                // abstract declaration and keep this one.
+                                [$requirementSource, $requirementDef] = $this->resolveTraitStmtMethodDef($existingStmt, $existingTraitName);
+                                [$implementationSource, $implementationDef] = $this->resolveTraitStmtMethodDef($traitStmt, $traitFullName);
+                                $this->validateTraitAbstractImplementation(
+                                    $classStmt,
+                                    $existingStmt, $requirementSource, $requirementDef,
+                                    $traitStmt, $implementationSource, $implementationDef,
+                                    $consumingClass,
+                                );
+                                foreach ($stmt->stmts as $k3 => $mergedStmt) {
+                                    if ($mergedStmt === $existingStmt) {
+                                        unset($stmt->stmts[$k3]);
+                                    }
+                                }
+                                foreach ($aliasStmts as $k3 => $pendingAliasStmt) {
+                                    if ($pendingAliasStmt === $existingStmt) {
+                                        unset($aliasStmts[$k3]);
+                                    }
+                                }
                                 $traitMethods[$methodName] = [$traitFullName, $traitStmt];
-                                unset($traitStmts[$k1]);
                                 continue;
                             }
 
                             // Both concrete — error
                             $this->fatalError($classStmt, "Trait `{$traitFullName}` method `{$methodName}` already exists");
-                        }
-                        if (isset($methods[$methodName])) {
-                            unset($traitStmts[$k1]);
                         }
                         $traitMethods[$methodName] = [$traitFullName, $traitStmt];
                     }
@@ -3247,6 +3314,201 @@ CODE;
             }
         }
 
+    }
+
+    /**
+     * Apply a trait alias modifier the way PHP does: a new visibility replaces
+     * only the visibility bits, and every other flag (static, final, abstract)
+     * is kept. A modifier without visibility (e.g. `as final`) keeps the
+     * original visibility.
+     */
+    private function applyTraitAliasModifier(int $flags, int $newModifier): int
+    {
+        if ($newModifier & Modifiers::VISIBILITY_MASK) {
+            $flags &= ~Modifiers::VISIBILITY_MASK;
+        }
+        return $flags | $newModifier;
+    }
+
+    /**
+     * Resolve the trait a flattened method statement originated from and its
+     * preprocessed method definition. Recursive trait composition tags every
+     * copied statement with its true origin, which may be a nested trait
+     * rather than the trait currently being applied.
+     *
+     * @return array{string, ?MethodDef}
+     */
+    private function resolveTraitStmtMethodDef(Node\Stmt\ClassMethod $stmt, string $fallbackTrait): array
+    {
+        $origin = $stmt->getAttribute(self::TRAIT_ORIGIN_ATTRIBUTE);
+        if (!is_string($origin) || $origin === '') {
+            $origin = $fallbackTrait;
+        }
+        $originalName = $stmt->getAttribute(self::TRAIT_METHOD_ATTRIBUTE);
+        if (!is_string($originalName) || $originalName === '') {
+            $originalName = $stmt->name->toString();
+        }
+        $def = null;
+        if ($this->hasClass($origin)) {
+            $originDef = $this->getClass($origin);
+            $lower = strtolower($originalName);
+            $def = $originDef->methods[$lower] ?? $originDef->abstractMethodDefs[$lower] ?? null;
+        }
+        return [$origin, $def];
+    }
+
+    /**
+     * Validate that a concrete method satisfies an abstract requirement
+     * declared by a trait, following Zend's trait-composition rules: the
+     * static modifier must match, an abstract by-reference return must be
+     * kept, the implementation cannot require more parameters, parameter
+     * types are contravariant, and the return type is covariant. Visibility
+     * is deliberately not restricted — Zend allows an implementation of any
+     * visibility to fulfill an abstract trait requirement.
+     */
+    private function validateTraitAbstractImplementation(
+        Node $errorNode,
+        Node\Stmt\ClassMethod $requirement,
+        string $requirementSource,
+        ?MethodDef $requirementDef,
+        Node\Stmt\ClassMethod $implementation,
+        string $implementationSource,
+        ?MethodDef $implementationDef,
+        string $consumingClass,
+    ): void {
+        $requirementName = $requirement->name->toString();
+        $implementationName = $implementation->name->toString();
+
+        if ($requirement->isStatic() !== $implementation->isStatic()) {
+            $this->fatalError($errorNode, $requirement->isStatic()
+                ? "Cannot make static method `{$requirementSource}::{$requirementName}()` non static in class `{$consumingClass}`"
+                : "Cannot make non static method `{$requirementSource}::{$requirementName}()` static in class `{$consumingClass}`");
+        }
+
+        $incompatible = function () use ($errorNode, $implementationSource, $implementationName, $requirementSource, $requirementName): never {
+            $this->fatalError(
+                $errorNode,
+                "Declaration of `{$implementationSource}::{$implementationName}()` must be compatible " .
+                "with `{$requirementSource}::{$requirementName}()`"
+            );
+        };
+
+        // The requirement's by-reference return must be kept; the
+        // implementation may add one.
+        if ($requirement->byRef && !$implementation->byRef) {
+            $incompatible();
+        }
+
+        if ($this->countRequiredParams($implementation->params) > $this->countRequiredParams($requirement->params)) {
+            $incompatible();
+        }
+        $implParamCount = count($implementation->params);
+        $lastImplParam = $implParamCount > 0 ? $implementation->params[$implParamCount - 1] : null;
+        foreach ($requirement->params as $i => $requiredParam) {
+            // A trailing variadic accepts every remaining requirement position.
+            $implParam = $implementation->params[$i]
+                ?? ($lastImplParam?->variadic ? $lastImplParam : null);
+            if ($implParam === null
+                || $implParam->byRef !== $requiredParam->byRef
+                || ($requiredParam->variadic && !$implParam->variadic)
+            ) {
+                $incompatible();
+            }
+        }
+        foreach ($implementation->params as $i => $implParam) {
+            if ($i >= count($requirement->params) && !$implParam->default && !$implParam->variadic) {
+                $incompatible();
+            }
+        }
+
+        // Type variance is checked on the preprocessed definitions, whose
+        // names were resolved in each declaration's own lexical context.
+        $requirementFunc = $requirementDef?->functionDef;
+        $implementationFunc = $implementationDef?->functionDef;
+        if (!$requirementFunc || !$implementationFunc) {
+            return;
+        }
+
+        $implArgs = $implementationFunc->argInfoList;
+        $lastImplArg = $implArgs === [] ? null : $implArgs[count($implArgs) - 1];
+        foreach ($requirementFunc->argInfoList as $i => $requiredArg) {
+            $implArg = $implArgs[$i] ?? ($lastImplArg?->variadic ? $lastImplArg : null);
+            if ($implArg === null) {
+                continue;
+            }
+            // Late-bound keywords (`self`, `static`, `parent`) were resolved
+            // against different declaring types but denote the same type once
+            // both methods are flattened into the consuming class.
+            if ($requiredArg->typeKeyword !== '' && $requiredArg->typeKeyword === $implArg->typeKeyword) {
+                continue;
+            }
+            if (!$this->isParameterTypeOverrideCompatible($implArg, $requiredArg)) {
+                $incompatible();
+            }
+        }
+
+        if ($requirementFunc->returnTypeUndeclared) {
+            return;
+        }
+        if ($implementationFunc->returnTypeUndeclared) {
+            $incompatible();
+        }
+        if ($requirementFunc->returnTypeKeyword !== ''
+            && $requirementFunc->returnTypeKeyword === $implementationFunc->returnTypeKeyword
+        ) {
+            return;
+        }
+        $requirementTypes = $this->remapInstanceofClass(
+            $this->getReturnAcceptedTypes($requirementFunc, $consumingClass),
+            $requirementSource,
+            $consumingClass,
+        );
+        $implementationTypes = $this->remapInstanceofClass(
+            $this->getReturnAcceptedTypes($implementationFunc, $consumingClass),
+            $implementationSource,
+            $consumingClass,
+        );
+        foreach ($implementationTypes as $implementationType) {
+            if (!$this->isReturnTypeCoveredBy($implementationType, $requirementTypes)) {
+                $incompatible();
+            }
+        }
+    }
+
+    /**
+     * @param array<Node\Param> $params
+     */
+    private function countRequiredParams(array $params): int
+    {
+        $required = 0;
+        foreach (array_values($params) as $i => $param) {
+            if (!$param->default && !$param->variadic) {
+                $required = $i + 1;
+            }
+        }
+        return $required;
+    }
+
+    /**
+     * Replace `instanceof` references to a trait in a DNF type-check list with
+     * the consuming class. `self` (and `parent`) inside a trait were resolved
+     * to the trait itself during preprocessing, but once the method is
+     * flattened they denote the consuming class, and no object can ever be an
+     * instance of a trait.
+     */
+    private function remapInstanceofClass(array $types, string $from, string $to): array
+    {
+        if ($from === $to) {
+            return $types;
+        }
+        foreach ($types as &$type) {
+            if (($type['kind'] ?? null) === 'allOf') {
+                $type['types'] = $this->remapInstanceofClass($type['types'], $from, $to);
+            } elseif (($type['kind'] ?? null) === 'instanceof' && ($type['class'] ?? null) === $from) {
+                $type['class'] = $to;
+            }
+        }
+        return $types;
     }
 
     private function cloneAstNode(Node $node): Node
