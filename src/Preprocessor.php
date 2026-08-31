@@ -2272,8 +2272,23 @@ class Preprocessor extends CompilerBase
         $interfaceName = $this->interfaceDef->getNamespacedName(false);
         $interfaceNameLower = strtolower($interfaceName);
 
+        $extendedInterfaces = [];
         foreach ($v->extends as $parent) {
             $parentName = $this->getNamespacedClassName($this->parseIdentifier($parent));
+            // An interface may only extend interfaces. The parent's kind is
+            // only known once its declaration has been prepared; a parent
+            // declared later is validated by the Translator instead.
+            if ($this->hasClass($parentName) || $this->isInternalClass($parentName)) {
+                $this->fatalError($parent, "`{$interfaceName}` cannot implement `{$parentName}` - it is not an interface");
+            }
+            $parentNameLower = strtolower($parentName);
+            if (isset($extendedInterfaces[$parentNameLower])) {
+                $this->fatalError(
+                    $parent,
+                    "Interface `{$interfaceName}` cannot implement previously implemented interface `{$parentName}`",
+                );
+            }
+            $extendedInterfaces[$parentNameLower] = true;
             $this->interfaceDef->extendsList[] = $parentName;
             if ($this->interfaceDef->extends === '') {
                 $this->interfaceDef->extends = $parentName;
@@ -2295,6 +2310,12 @@ class Preprocessor extends CompilerBase
             if ($stmt instanceof Node\Stmt\ClassConst) {
                 foreach ($stmt->consts as $const) {
                     $constName = $this->parseIdentifier($const->name);
+                    if ($stmt->flags & (Modifiers::PRIVATE | Modifiers::PROTECTED)) {
+                        $this->fatalError(
+                            $stmt,
+                            "Access type for interface constant `{$interfaceName}::{$constName}` must be public",
+                        );
+                    }
                     if ($this->interfaceDef->hasConstant($constName)) {
                         $this->fatalError($stmt, "Duplicate constant `{$constName}`");
                     }
@@ -2317,6 +2338,20 @@ class Preprocessor extends CompilerBase
             if ($stmt instanceof Node\Stmt\ClassMethod) {
                 $methodName = $this->getMethodName($stmt);
                 $this->assertKeywordMethodMayBeDeclared($stmt, $methodName, false);
+                // Interface methods are implicitly public and abstract; Zend
+                // rejects the modifiers below in this exact precedence order.
+                if ($stmt->flags & (Modifiers::PRIVATE | Modifiers::PROTECTED)) {
+                    $this->fatalError($stmt, "Access type for interface method `{$interfaceName}::{$methodName}()` must be public");
+                }
+                if ($stmt->flags & Modifiers::ABSTRACT) {
+                    $this->fatalError($stmt, "Interface method `{$interfaceName}::{$methodName}()` must not be abstract");
+                }
+                if ($stmt->flags & Modifiers::FINAL) {
+                    $this->fatalError($stmt, "Interface method `{$interfaceName}::{$methodName}()` must not be final");
+                }
+                if ($stmt->stmts !== null) {
+                    $this->fatalError($stmt, "Interface function `{$interfaceName}::{$methodName}()` cannot contain body");
+                }
                 if ($this->interfaceDef->hasMethod($methodName)) {
                     $this->fatalError($stmt, "Duplicate method `{$methodName}`");
                 }
@@ -2361,6 +2396,12 @@ class Preprocessor extends CompilerBase
     {
         if ($property->hooks === []) {
             $this->fatalError($property, 'Interfaces may only include hooked properties');
+        }
+        if ($property->flags & Modifiers::ABSTRACT) {
+            $this->fatalError(
+                $property,
+                'Property in interface cannot be explicitly abstract. All interface members are implicitly abstract',
+            );
         }
         if ($property->flags & (Modifiers::PRIVATE | Modifiers::PROTECTED)) {
             $this->fatalError($property, 'Property in interface cannot be protected or private');
