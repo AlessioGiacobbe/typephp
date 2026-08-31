@@ -5174,6 +5174,14 @@ CODE;
                             "`{$parentClass}::\${$name}`; property shadowing across inheritance is not allowed");
                     }
                     $matchedOverrides[$name] = true;
+                    // A static property and an instance property are different
+                    // kinds of storage; Zend forbids redeclaring one as the
+                    // other in either direction.
+                    if (($childProp->flags & Modifiers::STATIC) !== ($parentProp->flags & Modifiers::STATIC)) {
+                        $this->fatalError($classStmt, ($parentProp->flags & Modifiers::STATIC)
+                            ? "Cannot redeclare static `{$parentClass}::\${$name}` as non static `{$className}::\${$name}`"
+                            : "Cannot redeclare non static `{$parentClass}::\${$name}` as static `{$className}::\${$name}`");
+                    }
                     // PHP inherits get and set independently. A child may
                     // override only one hook, or redeclare the property
                     // without hooks while retaining both parent hooks.
