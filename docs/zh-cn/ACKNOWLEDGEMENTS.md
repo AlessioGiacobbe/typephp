@@ -47,7 +47,7 @@ Issue 报告者、测试者、文档作者及社区参与者。
 - **Elijah**
 - **小尹**
 - **[杨维杰](https://github.com/yangweijie)**
-- **Albert Chen**
+- **[Albert Chen](https://github.com/albertcht)**
 - **[Nuno Maduro（`nunomaduro`）](https://x.com/enunomaduro)** —— 感谢其通过
   Twitter/X 向更广泛的 PHP 社区介绍 TypePHP。
 
@@ -91,6 +91,21 @@ Issue 报告者、测试者、文档作者及社区参与者。
    PHP-Parser 为 TypePHP 提供可靠的 PHP 解析器和抽象语法树，是语义分析、校验、
    降级转换及 C++ 代码生成流程的基础。感谢 Nikita Popov，以及 PHP-Parser 的每一位
    贡献者和维护者。
+
+7. **[GMP（GNU Multiple Precision Arithmetic Library）](https://gmplib.org/)**
+
+   GMP 提供高效的任意精度整数运算，是 TypePHP `BigInt` 及相关高精度整数运算的
+   底层基础。
+
+8. **[GNU MPFR](https://www.mpfr.org/)**
+
+   MPFR 提供舍入行为定义明确的可靠多精度浮点运算，是 TypePHP `BigFloat` 的数值
+   运算基础。
+
+9. **[mpdecimal / libmpdec](https://www.bytereef.org/mpdecimal/)**
+
+   mpdecimal 提供正确舍入的任意精度十进制运算，其 C 与 C++ 库是 TypePHP
+   `Decimal` 的数值运算基础。
 
 ## 辅助库与开发工具
 

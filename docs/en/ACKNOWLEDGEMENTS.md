@@ -53,7 +53,7 @@ help the project grow. We also thank:
 - **Elijah**
 - **小尹**
 - **[杨维杰](https://github.com/yangweijie)**
-- **Albert Chen**
+- **[Albert Chen](https://github.com/albertcht)**
 - **[Nuno Maduro (`nunomaduro`)](https://x.com/enunomaduro)** — for sharing
   TypePHP with the wider PHP community on Twitter/X.
 
@@ -101,6 +101,23 @@ We would especially like to thank:
    PHP-Parser provides the reliable PHP parser and abstract syntax tree on which
    TypePHP's analysis, validation, lowering, and C++ code generation pipeline is
    built. We thank Nikita Popov and every PHP-Parser contributor and maintainer.
+
+7. **[GMP — the GNU Multiple Precision Arithmetic Library](https://gmplib.org/)**
+
+   GMP provides the efficient arbitrary-precision integer arithmetic underlying
+   TypePHP's `BigInt` support and related high-precision integer operations.
+
+8. **[GNU MPFR](https://www.mpfr.org/)**
+
+   MPFR provides reliable multiple-precision floating-point arithmetic with
+   well-defined rounding. It forms the numerical foundation of TypePHP's
+   `BigFloat` support.
+
+9. **[mpdecimal / libmpdec](https://www.bytereef.org/mpdecimal/)**
+
+   mpdecimal provides correctly rounded arbitrary-precision decimal arithmetic.
+   Its C and C++ libraries form the numerical foundation of TypePHP's `Decimal`
+   support.
 
 ## Supporting libraries and development tools
 
