@@ -874,6 +874,11 @@ class Preprocessor extends CompilerBase
                 if (!$this->classDef or !$this->methodDef or $this->methodDef->name !== '__construct') {
                     $this->fatalError($param, 'Promoted properties are not supported');
                 }
+                // A variadic parameter collects arguments into an array, so no
+                // single value exists to promote into the property.
+                if ($param->variadic) {
+                    $this->fatalError($param, 'Cannot declare variadic promoted property');
+                }
                 $nullable = $param->type instanceof NullableType;
                 // Promoted property defaults belong to the constructor parameter,
                 // not to the property default table. The property itself must stay
@@ -1612,6 +1617,13 @@ class Preprocessor extends CompilerBase
     {
         $this->resetFunction();
         $flags = $this->parseModifiers($v->flags);
+        if ($v->type !== null && $this->typeDeclContainsCallable($v->type)) {
+            $constName = $v->consts !== [] ? $this->parseIdentifier($v->consts[0]->name) : '';
+            $this->fatalError(
+                $v,
+                "Class constant `{$this->classDef->getNamespacedName(false)}::{$constName}` cannot have type `{$this->typeCheckNodeToString($v->type)}`",
+            );
+        }
         [$declaredType, $class] = $v->type
             ? $this->resolveTypeDecl($v->type, self::DECL_TYPE_OF_CONST)
             : [null, ''];
@@ -1755,6 +1767,15 @@ class Preprocessor extends CompilerBase
             }
         }
         $this->validateAsymmetricPropertyDeclaration($name, $flags, $typeNode, $errorNode);
+        // `callable` is a runtime-context type (a string or array may or may
+        // not be callable depending on scope), so Zend forbids it in property
+        // types entirely - bare, nullable, or as a union member.
+        if ($typeNode !== null && $this->typeDeclContainsCallable($typeNode)) {
+            $this->fatalError(
+                $errorNode,
+                "Property `{$this->classDef->getNamespacedName(false)}::\${$name}` cannot have type `{$this->typeCheckNodeToString($typeNode)}`",
+            );
+        }
         [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);
         $this->assertSupportedNativeObjectTypeNode($typeNode, self::DECL_TYPE_OF_PROPERTY, $errorNode);
         $nullableNative = $this->resolveNullableNativeObjectType(
@@ -1824,6 +1845,30 @@ class Preprocessor extends CompilerBase
         }
         $this->classDef->properties[$name] = $propDef;
         return $propDef;
+    }
+
+    /**
+     * Whether a declared type mentions `callable` outside an intersection.
+     * Zend forbids callable in property and class-constant types; members of
+     * an intersection are rejected separately as non-class types.
+     */
+    private function typeDeclContainsCallable(NodeAbstract $typeNode): bool
+    {
+        if ($typeNode instanceof NullableType) {
+            return $this->typeDeclContainsCallable($typeNode->type);
+        }
+        if ($typeNode instanceof UnionType) {
+            foreach ($typeNode->types as $member) {
+                if ($this->typeDeclContainsCallable($member)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if ($typeNode instanceof IntersectionType) {
+            return false;
+        }
+        return strtolower($this->parseIdentifier($typeNode)) === 'callable';
     }
 
     private function validateAsymmetricPropertyDeclaration(
@@ -2444,6 +2489,12 @@ class Preprocessor extends CompilerBase
                             "Access type for interface constant `{$interfaceName}::{$constName}` must be public",
                         );
                     }
+                    if ($stmt->type !== null && $this->typeDeclContainsCallable($stmt->type)) {
+                        $this->fatalError(
+                            $stmt,
+                            "Class constant `{$interfaceName}::{$constName}` cannot have type `{$this->typeCheckNodeToString($stmt->type)}`",
+                        );
+                    }
                     if ($this->interfaceDef->hasConstant($constName)) {
                         $this->fatalError($stmt, "Duplicate constant `{$constName}`");
                     }
@@ -2579,6 +2630,12 @@ class Preprocessor extends CompilerBase
         $nullable = $property->type instanceof NullableType;
         foreach ($property->props as $prop) {
             $name = $this->parseIdentifier($prop->name);
+            if ($property->type !== null && $this->typeDeclContainsCallable($property->type)) {
+                $this->fatalError(
+                    $property,
+                    "Property `{$this->interfaceDef->getNamespacedName(false)}::\${$name}` cannot have type `{$this->typeCheckNodeToString($property->type)}`",
+                );
+            }
             if ($property->getAttribute(FunctionAttributeLowering::OVERRIDE_ATTRIBUTE, false)) {
                 $this->fatalCompileTimeAttribute(
                     $property,
