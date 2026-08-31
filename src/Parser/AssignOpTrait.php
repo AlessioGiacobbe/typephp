@@ -1585,9 +1585,21 @@ trait AssignOpTrait
             $code .= $this->getIndent() . '}()';
             return $code;
         }
-        $this->appendCapturedStmtLinesToContext($rightBefore);
-        foreach ($rightAfter as $stmt) {
-            $this->context->afterStmtLines[] = $stmt;
+        if ($rightBefore !== [] || $rightAfter !== []) {
+            // PHP evaluates the RHS of ??= only when the target is not set.
+            // A compound RHS materializes captured statements (call results,
+            // operand temporaries); appending them to the enclosing statement
+            // would run its side effects unconditionally. Wrap the not-set
+            // branch in an immediately-invoked lambda so they execute only
+            // when the assignment actually happens.
+            $code = '[&]() {' . PHP_EOL;
+            $code .= $this->getIndent() . 'if (' . $isset . ') { return ' . $var . '; }' . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($rightBefore);
+            $code .= $this->getIndent() . $var . ' = ' . $right . ';' . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($rightAfter);
+            $code .= $this->getIndent() . 'return ' . $var . ';' . PHP_EOL;
+            $code .= $this->getIndent() . '}()';
+            return $code;
         }
         return '(' . $isset . '?' . $var . ':(' . $var . ' = ' . $right . '))';
     }
