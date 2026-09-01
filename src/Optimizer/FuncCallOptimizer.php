@@ -1137,10 +1137,15 @@ trait FuncCallOptimizer
         $funcDef = $this->functionDef;
         foreach ($funcDef->argInfoList as $i => $argInfo) {
             if ($argInfo->variadic) {
-                return '(' . $argInfo->name . '.count() + ' . $i . ')';
+                // Array::count() is size_t, while func_num_args() is a PHP
+                // integer. Keep the folded expression in the exact native
+                // type so a surrounding toInt() cannot hit ambiguous C++
+                // scalar overloads.
+                return '(static_cast<' . Type::INT . '>(' . $argInfo->name . '.count()) + '
+                    . $this->genIntegerLiteral($i) . ')';
             }
         }
-        return (string) count($funcDef->argInfoList);
+        return $this->genIntegerLiteral(count($funcDef->argInfoList));
     }
 
     protected function genFunctionExists(string $name, Node\Expr\FuncCall $expr, array $config): string|false
