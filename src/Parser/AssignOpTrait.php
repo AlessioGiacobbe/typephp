@@ -844,6 +844,14 @@ trait AssignOpTrait
             $node->var = $this->stabilizeAssignOpArrayAccess($node->var);
         }
 
+        if ($node->var instanceof Expr\PropertyFetch && !$this->isVarExpr($node->var->var)) {
+            $stableProperty = $this->stabilizeAssignOpPropertyReceiver($node->var);
+            if ($stableProperty !== $node->var) {
+                $node = clone $node;
+                $node->var = $stableProperty;
+            }
+        }
+
         $this->assertImmutableMutationTarget($node->var);
         $this->assertNativeArrayAccessDirectWrite($node->var, false);
         $this->assertNativeObjectOperatorOperandSupported($node->var, $node, $op);
@@ -1001,8 +1009,14 @@ trait AssignOpTrait
             } else {
                 $this->context->beforeStmtLines[] = "{$tmpVar} = {$readProperty} {$binaryOp} ({$expr});";
             }
-            $this->context->afterStmtLines[] = $this->emitDynamicPropertyFetchWrite($node->var, $tmpVar, $propertyWriteTarget) . ';';
-            return $tmpVar;
+            // The write is part of the compound-assignment expression. Apart
+            // from matching PHP's sequencing, this ensures a materialized
+            // receiver remains alive until the write has completed.
+            return '((' . $this->emitDynamicPropertyFetchWrite(
+                $node->var,
+                $tmpVar,
+                $propertyWriteTarget,
+            ) . '), ' . $tmpVar . ')';
         }
 
         if ($this->isAssignOpConcat($op)) {
@@ -1050,6 +1064,41 @@ trait AssignOpTrait
     }
 
     /**
+     * Materialize a statically known object receiver used by a property
+     * compound assignment. The read and write phases may be emitted by
+     * different helpers, but PHP evaluates the receiver only once.
+     */
+    private function stabilizeAssignOpPropertyReceiver(Expr\PropertyFetch $property): Expr\PropertyFetch
+    {
+        $receiverClass = $this->detectClassOfExpr($property->var);
+        if ($receiverClass === '') {
+            return $property;
+        }
+
+        [$receiverExpr, $beforeStmts, $afterStmts] = $this->parseExprWithCapturedStmts($property->var);
+        $this->appendCapturedStmtLinesToContext($beforeStmts);
+
+        if ($this->isNativeObjectClass($receiverClass)) {
+            $tmp = $this->genTmpVarName();
+            $this->addLocalVar($tmp, $this->getNativeObjectPointerType($receiverClass));
+            $this->addNativeObject($tmp, $receiverClass);
+            $cleanup = $tmp . ' = nullptr;';
+        } else {
+            $tmp = $this->addTmpVar(Type::VAR);
+            $this->addObject($tmp, $receiverClass);
+            $cleanup = $tmp . '.unset();';
+        }
+
+        $this->context->beforeStmtLines[] = $tmp . ' = ' . $receiverExpr . ';';
+        $this->appendCapturedStmtLinesToContext($afterStmts);
+        $this->context->afterStmtLines[] = $cleanup;
+
+        $stableProperty = clone $property;
+        $stableProperty->var = new Variable($tmp, $property->var->getAttributes());
+        return $stableProperty;
+    }
+
+    /**
      * Preserve PHP's concat-assignment operation for statically typed strings.
      * String::append() calls concat_function() with the target as both the
      * result and left operand, allowing Zend to extend an unshared string in
@@ -1086,6 +1135,22 @@ trait AssignOpTrait
         }
 
         $rightType = $this->detectTypeOfExpr($node->expr);
+
+        // In ordinary PHP mode, an int compound assignment must perform the
+        // arithmetic before the typed-property write is validated. The result
+        // may therefore be a float (division or integer overflow), in which
+        // case Zend rejects the write and leaves the old property value intact.
+        // A direct zend_long reference would bypass that behavior completely.
+        // Native objects cannot cross the Variant boundary and retain their
+        // native C++ property access path.
+        if (!$this->nativeTypes
+            && $def->type === Type::INT
+            && !$this->isNativeObjectClass($this->detectClassOfExpr($node->var->var))
+            && in_array($op, ['+=', '-=', '*=', '/=', '%=', '**=', '<<=', '>>=', '&=', '|=', '^='], true)
+        ) {
+            return $this->parseCheckedIntPropertyAssignOp($node, $op);
+        }
+
         if (in_array($def->type, [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT], true)) {
             $binaryOp = $this->removeAssignOp($op);
             $leftExpr = $this->parseWritableIdentifier($node->var);
@@ -1146,10 +1211,73 @@ trait AssignOpTrait
         }
 
         return match ($propertyType) {
-            Type::INT => in_array($op, ['+=', '-=', '*=', '%=', '<<=', '>>=', '&=', '|=', '^='], true),
+            Type::INT => in_array($op, ['+=', '-=', '*=', '/=', '%=', '<<=', '>>=', '&=', '|=', '^='], true),
             Type::FLOAT => in_array($op, ['+=', '-=', '*=', '/='], true),
             default => false,
         };
+    }
+
+    /**
+     * Apply PHP arithmetic first, then let Zend validate the int property
+     * write. A complex receiver is materialized before the property read, so
+     * both the read and write refer to the same object and the receiver has
+     * exactly one observable evaluation.
+     */
+    private function parseCheckedIntPropertyAssignOp(Expr\AssignOp $node, string $op): string
+    {
+        /** @var Expr\PropertyFetch $property */
+        $property = $node->var;
+        $receiver = $property->var;
+        $receiverTmp = null;
+
+        if ($this->isVarExpr($receiver)) {
+            $objectExpr = $this->parseIdentifier($receiver);
+        } else {
+            [$receiverExpr, $receiverBefore, $receiverAfter] = $this->parseExprWithCapturedStmts($receiver);
+            $this->appendCapturedStmtLinesToContext($receiverBefore);
+
+            // Keep the object in a Variant: this path intentionally uses Zend
+            // object handlers, and a Variant also covers dynamically resolved
+            // receivers whose concrete class is known only at runtime.
+            $receiverTmp = $this->addTmpVar(Type::VAR);
+            $this->context->beforeStmtLines[] = $receiverTmp . ' = ' . $receiverExpr . ';';
+            $this->appendCapturedStmtLinesToContext($receiverAfter);
+            $objectExpr = $receiverTmp;
+        }
+
+        $target = new PropertyWriteTarget(
+            $property,
+            'object property',
+            $objectExpr,
+            $this->propertyNameToStr($property->name, literal: true),
+        );
+
+        // Read before evaluating the RHS, matching PHP compound-assignment
+        // order even when the RHS itself emits prerequisite statements.
+        $current = $this->addTmpVar(Type::VAR);
+        $this->context->beforeStmtLines[] = $current . ' = '
+            . $this->emitDynamicPropertyTargetRead($target) . ';';
+
+        [$rightExpr, $rightBefore, $rightAfter] = $this->parseExprWithCapturedStmts($node->expr);
+        $this->appendCapturedStmtLinesToContext($rightBefore);
+
+        $result = $this->addTmpVar(Type::VAR);
+        $binaryOp = $this->removeAssignOp($op);
+        $value = $binaryOp === '**'
+            ? 'php::fn::pow(' . $current . ', ' . $rightExpr . ')'
+            : $current . ' ' . $binaryOp . ' (' . $rightExpr . ')';
+        $this->context->beforeStmtLines[] = $result . ' = ' . $value . ';';
+        $this->appendCapturedStmtLinesToContext($rightAfter);
+
+        $this->context->afterStmtLines[] = $current . '.unset();';
+        if ($receiverTmp !== null) {
+            $this->context->afterStmtLines[] = $receiverTmp . '.unset();';
+        }
+
+        // Execute the checked write at the expression point. If Zend rejects
+        // the result, the exception is raised before this expression yields and
+        // the original property zval remains unchanged.
+        return '((' . $this->emitDynamicPropertyTargetWrite($target, $result) . '), ' . $result . ')';
     }
 
     protected function parseBigAssignOp(Expr\AssignOp $node, string $var, string $type, string $expr, string $rightType, string $op): string
