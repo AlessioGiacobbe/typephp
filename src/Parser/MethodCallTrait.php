@@ -457,6 +457,13 @@ trait MethodCallTrait
             $object = empty($expr->args)
                 ? $this->parseIdentifier($expr->var)
                 : $this->parseOrderedOperand($expr->var, false);
+            // Preserve the receiver expression boundary for no-argument
+            // calls. Without these parentheses, C++ member access binds more
+            // tightly than assignment, so `($b = $a)->method()` was emitted
+            // as `b = a.call(...)` instead of `(b = a).call(...)`.
+            if (empty($expr->args) && !$this->isVarExpr($expr->var)) {
+                $object = '(' . $object . ')';
+            }
         }
         if ($this->isVarExpr($expr->var)) {
             if (!$this->hasVar($object)) {
