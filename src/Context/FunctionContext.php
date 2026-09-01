@@ -18,6 +18,15 @@ class FunctionContext
     /** Map of SSA-stable object variable name => class name (SsaPropOptimizer). */
     public array $stableObjects = [];
 
+    /**
+     * SSA-stable variables whose sole definition is a concrete `new ClassName()`.
+     * Unlike a declared/returned object type, these entries prove the exact
+     * runtime class and may be used for conservative method devirtualization.
+     *
+     * @var array<string, string>
+     */
+    public array $exactObjects = [];
+
     /** Map of hoisted property refs: objName => [propName => true] (SsaPropOptimizer). */
     public array $hoistedProps = [];
 
@@ -126,6 +135,7 @@ class FunctionContext
         $this->objectProps = [];
         $this->ssaBuilder = null;
         $this->stableObjects = [];
+        $this->exactObjects = [];
         $this->hoistedProps = [];
         $this->unsafeObjectProps = [];
         $this->staticPropRefs = [];
