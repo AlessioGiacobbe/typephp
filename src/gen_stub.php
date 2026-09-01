@@ -2568,6 +2568,10 @@ class EvaluatedValue
     public SimpleType $type;
     public Expr $expr;
     public bool $isUnknownConstValue;
+    /** Case identity when the expression evaluates to an enum case; only
+     * class-constant registration may use it (persistent AST) — every other
+     * consumer sees the legacy scalar/object in $value. */
+    public ?\TypePhp\Entity\EnumCaseRef $enumCaseRef = null;
     /** @var ConstInfo[] */
     public array $originatingConsts;
 
@@ -2727,6 +2731,16 @@ class EvaluatedValue
 
         $result = $evaluator->evaluateDirectly($expr);
 
+        $enumCaseRef = null;
+        if ($result instanceof \TypePhp\Entity\EnumCaseRef) {
+            // Property/parameter defaults and attribute arguments must keep
+            // consuming the legacy value (persistent tables reject refcounted
+            // zvals, and those paths have their own runtime restore
+            // machinery); only class-constant registration uses the identity.
+            $enumCaseRef = $result;
+            $result = getTranslator()->enumCaseLegacyValue($result);
+        }
+
         // The declared type is useful when an UNKNOWN placeholder must be
         // emitted through its @cvalue macro. For a concrete null expression,
         // however, the zval must be initialized as null even when the declared
@@ -2735,13 +2749,15 @@ class EvaluatedValue
             ? SimpleType::null()
             : ($constType ?? SimpleType::fromValue($result));
 
-        return new EvaluatedValue(
+        $evaluated = new EvaluatedValue(
             $result, // note: we are generally not interested in the actual value of $result, unless it's a bare value, without constants
             $valueType,
             $cConstName === null ? $expr : new Expr\ConstFetch(new Node\Name($cConstName)),
             $visitor->visitedConstants,
             $isUnknownConstValue
         );
+        $evaluated->enumCaseRef = $enumCaseRef;
+        return $evaluated;
     }
 
     public static function null(): EvaluatedValue
@@ -2762,9 +2778,9 @@ class EvaluatedValue
         $this->isUnknownConstValue = $isUnknownConstValue;
     }
 
-    public function initializeZval(string $zvalName, bool $alreadyExists = false, string $forStringDef = '', string $varName = ''): string
+    public function initializeZval(string $zvalName, bool $alreadyExists = false, string $forStringDef = '', string $varName = '', bool $allowConstantAst = false): string
     {
-        if ($this->value instanceof \TypePhp\Entity\EnumCaseRef) {
+        if ($this->enumCaseRef !== null && $allowConstantAst) {
             return $this->initializeEnumCaseZval($zvalName, $alreadyExists);
         }
         $cExpr = $this->getCExpr();
@@ -2825,8 +2841,7 @@ class EvaluatedValue
      */
     private function initializeEnumCaseZval(string $zvalName, bool $alreadyExists): string
     {
-        /** @var \TypePhp\Entity\EnumCaseRef $case */
-        $case = $this->value;
+        $case = $this->enumCaseRef;
         $enumCName = '"' . getTranslator()->escapeString(ltrim($case->enumClass, '\\')) . '"';
         $caseCName = '"' . getTranslator()->escapeString($case->caseName) . '"';
         $id = preg_replace('/[^A-Za-z0-9_]/', '_', $zvalName);
@@ -3296,7 +3311,7 @@ class ConstInfo extends VariableLike
     {
         $constName = $this->name->getDeclarationName();
 
-        $zvalCode = $value->initializeZval("const_{$constName}_value");
+        $zvalCode = $value->initializeZval("const_{$constName}_value", allowConstantAst: true);
 
         $code = "\n" . $zvalCode;
 

@@ -155,6 +155,30 @@ trait ClassConstantValueTrait
         return $evaluator->evaluateDirectly($valueExpr);
     }
 
+    /**
+     * The pre-AST representation of an enum case for consumers that cannot
+     * register an IS_CONSTANT_AST (property and parameter defaults, attribute
+     * arguments): internal enums degrade to the host case object, compiled
+     * enums to the literal backing value or the case name — exactly the
+     * values those paths consumed before case identity existed.
+     */
+    public function enumCaseLegacyValue(\TypePhp\Entity\EnumCaseRef $ref): mixed
+    {
+        if ($this->isInternalClass($ref->enumClass)) {
+            $constName = $ref->enumClass . '::' . $ref->caseName;
+            if (defined($constName)) {
+                return constant($constName);
+            }
+        }
+        if ($this->hasClass($ref->enumClass)) {
+            $classDef = $this->getClass($ref->enumClass);
+            if (array_key_exists($ref->caseName, $classDef->enumCases)) {
+                return $classDef->enumCases[$ref->caseName] ?? $ref->caseName;
+            }
+        }
+        return $ref->caseName;
+    }
+
     public function getConstValue(string $name): mixed
     {
         if ($this->isInternalConstant($name)) {
