@@ -1749,10 +1749,12 @@ trait AssignOpTrait
 
     /**
      * Rewrite a coalesce-assignment target so that every side-effecting
-     * subexpression (a property receiver, an array key) is evaluated exactly
-     * once, in source order, before the target is mentioned. Containers of an
-     * array write keep their original node when they are plain variables —
-     * writing through a copied temporary would write to the copy — while
+     * subexpression is evaluated exactly once, in PHP source order —
+     * container/receiver first, then a dynamic property name, then the array
+     * dimension — before the target is mentioned. Containers of an array
+     * write keep their original node when they are plain variables (writing
+     * through a copied temporary would write to the copy), while a
+     * value-producing container is itself the temporary PHP writes into;
      * object receivers are handles, so a temporary preserves identity.
      */
     private function stabilizeCoalesceTarget(Expr $target): Expr
@@ -1761,14 +1763,29 @@ trait AssignOpTrait
             if (!$this->isCoalesceTargetTrivialSubexpr($target->var)) {
                 $target->var = $this->materializeCoalesceTargetSubexpr($target->var, true);
             }
+            if ($target->name instanceof Expr && !$this->isCoalesceTargetTrivialSubexpr($target->name)) {
+                $target->name = $this->materializeCoalesceTargetSubexpr($target->name, false);
+            }
+            return $target;
+        }
+        if ($target instanceof Expr\StaticPropertyFetch) {
+            if ($target->class instanceof Expr && !$this->isCoalesceTargetTrivialSubexpr($target->class)) {
+                $target->class = $this->materializeCoalesceTargetSubexpr($target->class, false);
+            }
+            if ($target->name instanceof Expr && !$this->isCoalesceTargetTrivialSubexpr($target->name)) {
+                $target->name = $this->materializeCoalesceTargetSubexpr($target->name, false);
+            }
             return $target;
         }
         if ($target instanceof Expr\ArrayDimFetch) {
             if ($target->var instanceof Expr\PropertyFetch
                 || $target->var instanceof Expr\NullsafePropertyFetch
+                || $target->var instanceof Expr\StaticPropertyFetch
                 || $target->var instanceof Expr\ArrayDimFetch
             ) {
                 $target->var = $this->stabilizeCoalesceTarget($target->var);
+            } elseif (!$this->isCoalesceTargetTrivialSubexpr($target->var)) {
+                $target->var = $this->materializeCoalesceTargetSubexpr($target->var, false);
             }
             if ($target->dim !== null && !$this->isCoalesceTargetTrivialSubexpr($target->dim)) {
                 $target->dim = $this->materializeCoalesceTargetSubexpr($target->dim, false);
@@ -1798,14 +1815,20 @@ trait AssignOpTrait
             $tmp = $this->genTmpVarName();
             $this->addLocalVar($tmp, $this->getNativeObjectPointerType($class));
             $this->addNativeObject($tmp, $class);
+            $cleanup = $tmp . ' = nullptr;';
         } else {
             // Keep the value in a Variant: the rewritten target then goes
             // through the generic Zend handlers, which also covers receivers
             // whose concrete class is known only at runtime.
             $tmp = $this->addTmpVar(Type::VAR);
+            $cleanup = $tmp . '.unset();';
         }
         $this->context->beforeStmtLines[] = $tmp . ' = ' . $code . ';';
         $this->appendCapturedStmtLinesToContext($after);
+        // The temporary must not outlive the statement: PHP destroys the
+        // target's receiver/container at the end of the statement, and a
+        // function-scoped Variant would defer destructors to function exit.
+        $this->context->afterStmtLines[] = $cleanup;
         return new Expr\Variable($tmp, $sub->getAttributes());
     }
 
