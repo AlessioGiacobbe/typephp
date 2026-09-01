@@ -6067,7 +6067,7 @@ CODE;
 
     /**
      * Memoized effective method tables of interfaces (method name => def and
-     * its original declaring interface), mirroring getEffectiveConstantTable().
+     * its original declaring interface).
      *
      * @var array<string, array<string, array{def: MethodDef, origin: string}>>
      */
@@ -6110,6 +6110,15 @@ CODE;
             return;
         }
         $interfaceDef = $this->getInterface($interfaceName);
+
+        // An interface can only extend other interfaces; naming a class here
+        // is a Zend fatal, not a lookup failure.
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentName) {
+            if (!$this->hasInterface($parentName) && !$this->isInternalInterface($parentName) && $this->hasClass($parentName)) {
+                $this->fatalError($interfaceStmt,
+                    "`{$interfaceName}` cannot implement `{$parentName}` - it is not an interface");
+            }
+        }
 
         $table = [];
         foreach ($interfaceDef->methods as $methodName => $methodDef) {
