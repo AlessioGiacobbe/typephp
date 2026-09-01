@@ -125,15 +125,19 @@ trait UnaryExpressionTrait
         }
         $code = $this->parseExprAsValue($expr->expr);
 
-        // An operand that already starts with `-` (a nested unary minus, a
-        // negative literal) would paste into the C++ pre-decrement token:
-        // `- -$a` -> `--a`. Parenthesize exactly then, so plain literals
-        // keep their compact `-7L` form.
-        if (str_starts_with($code, '-')) {
-            return '-(' . $code . ')';
+        // A bare numeric literal is a single C++ token; negating it directly
+        // cannot change the parse, and keeps the emitted code (and the test
+        // snapshots built on it) readable.
+        if (preg_match('/^(?:\d[\d\'.]*(?:[eE][+-]?\d+)?|0[xX][0-9a-fA-F\']+|0[bB][01\']+)(?:[uU]?[lL]{0,2})?$/', $code)) {
+            return '-' . $code;
         }
 
-        return '-' . $code;
+        // Parenthesize every other operand. An unparenthesized operand can
+        // change the C++ parse: `-($a ? $b : $c)` would emit
+        // `-cond ? b : c`, binding the minus to the condition and possibly
+        // selecting the wrong branch, and `- -$a` would paste into the C++
+        // pre-decrement token `--a`.
+        return '-(' . $code . ')';
     }
 
     protected function parseUnaryPlus(Expr\UnaryPlus $expr): string
