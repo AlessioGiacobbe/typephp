@@ -194,9 +194,15 @@ trait ForeachTrait
             $name = $this->parseIdentifier($node->expr);
             if ($this->hasVar($name)) {
                 $type = $this->getVarType($name);
-                if ($type === Type::ARRAY) {
-                    return $this->parseForeachIterable($node, $name);
-                } elseif ($type === Type::OBJECT) {
+                // A by-reference foreach must operate on the original variable.
+                // Copying a dynamically typed iterable into a temporary triggers
+                // normal PHP array COW, so references would update only that
+                // temporary instead of the source variable. ForeachIterator
+                // performs the runtime array/object validation itself.
+                if ($type === Type::ARRAY
+                    || $type === Type::OBJECT
+                    || ($node->byRef && ($type === Type::VAR || $type === Type::REF))
+                ) {
                     return $this->parseForeachIterable($node, $name);
                 } elseif ($this->isStdContainerType($type)) {
                     return $this->parseForeachStdContainer($node);
