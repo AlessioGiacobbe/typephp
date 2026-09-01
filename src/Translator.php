@@ -4070,6 +4070,16 @@ CODE;
                 if ($parent->flags & Modifiers::FINAL) {
                     $this->fatalError($class, "Class `{$this->class}` cannot extend final class `{$parentClass}`");
                 }
+                // Readonly-ness is part of the inheritance contract in both
+                // directions (Zend: a readonly class seals its property
+                // semantics for the whole hierarchy).
+                $childReadonly = (bool) ($this->classDef->flags & Modifiers::READONLY);
+                $parentReadonly = (bool) ($parent->flags & Modifiers::READONLY);
+                if ($childReadonly !== $parentReadonly) {
+                    $this->fatalError($class, $parentReadonly
+                        ? "Non-readonly class `{$this->class}` cannot extend readonly class `{$parentClass}`"
+                        : "Readonly class `{$this->class}` cannot extend non-readonly class `{$parentClass}`");
+                }
             } else {
                 $this->fatalError($class, "Class `{$this->class}` inherits from a non-existent class `{$parentClass}`");
             }
