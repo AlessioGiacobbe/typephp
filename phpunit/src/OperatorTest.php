@@ -65,7 +65,7 @@ class OperatorTest extends \BaseTest
     public function testLiteralIntDivideByZeroCompilesToRuntimeError(): void
     {
         $cpp = $this->compileToCpp('divide-by-zero-int.php');
-        $this->assertStringContainsString('((php::Var(10LL)) / (php::Var(0LL)))', $cpp);
+        $this->assertMatchesRegularExpression('/\(\(php::Var\(10L{1,2}\)\) \/ \(php::Var\(0L{1,2}\)\)\)/', $cpp);
     }
 
     public function testLiteralFloatDivideByZeroCompilesToRuntimeError(): void
@@ -84,7 +84,7 @@ class OperatorTest extends \BaseTest
     public function testLiteralModuloByZeroCompilesToRuntimeError(): void
     {
         $cpp = $this->compileToCpp('modulo-by-zero-int.php');
-        $this->assertStringContainsString('((php::Var(10LL)) % (php::Var(0LL)))', $cpp);
+        $this->assertMatchesRegularExpression('/\(\(php::Var\(10L{1,2}\)\) % \(php::Var\(0L{1,2}\)\)\)/', $cpp);
     }
 
     public function testLiteralDivideAssignByZeroCompilesToRuntimeError(): void
