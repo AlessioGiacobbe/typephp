@@ -12,6 +12,7 @@ use PhpParser\ConstExprEvaluator;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
 use TypePhp\Entity\ConstantDef;
+use TypePhp\Entity\EnumCaseRef;
 
 trait ClassConstantValueTrait
 {
@@ -48,7 +49,12 @@ trait ClassConstantValueTrait
         if ($this->isInternalClass($class)) {
             $constName = $class . '::' . $name;
             if (defined($constName)) {
-                return constant($constName);
+                $value = constant($constName);
+                // Internal enum cases (and internal constants holding one)
+                // must keep their identity through constant evaluation.
+                return $value instanceof \UnitEnum
+                    ? new EnumCaseRef(get_class($value), $value->name)
+                    : $value;
             }
         }
         [$inheritedFound, $inherited] = $this->resolveInheritedClassConst($class, $name);
@@ -58,8 +64,10 @@ trait ClassConstantValueTrait
         if ($this->hasClass($class)) {
             $classDef = $this->getClass($class);
             if ($classDef->enum && array_key_exists($name, $classDef->enumCases)) {
-                $caseValue = $classDef->enumCases[$name];
-                return $caseValue ?? $name;
+                // The case IDENTITY is the constant's value; folding to the
+                // backing scalar (or the case name) would make
+                // `K::CONST === E::Case` false through every dynamic path.
+                return new EnumCaseRef($classDef->getNamespacedName(false), $name);
             }
         }
         $this->fatalError($expr, "Class constant `{$class}::{$name}` not found");
@@ -89,7 +97,10 @@ trait ClassConstantValueTrait
             } elseif (Reflection::isInternalClass($current)) {
                 $constName = $current . '::' . $name;
                 if (defined($constName)) {
-                    return [true, constant($constName)];
+                    $value = constant($constName);
+                    return [true, $value instanceof \UnitEnum
+                        ? new EnumCaseRef(get_class($value), $value->name)
+                        : $value];
                 }
                 break;
             } else {

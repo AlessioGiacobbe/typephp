@@ -1346,7 +1346,16 @@ class Preprocessor extends CompilerBase
                     break;
                 case 'Stmt_EnumCase':
                     $caseName = $this->parseIdentifier($v->name);
-                    $this->classDef->enumCases[$caseName] = $v->expr?->value;
+                    // Only literal backing values are recorded here; an
+                    // expression-valued case (`case A = 1 + 1;`) cannot be
+                    // evaluated while declarations are still being collected,
+                    // and no compile-time consumer needs the scalar: case
+                    // identity flows as EnumCaseRef and gen_stub evaluates
+                    // the registration value from the AST itself.
+                    $this->classDef->enumCases[$caseName] =
+                        $v->expr instanceof Node\Scalar\Int_ || $v->expr instanceof Node\Scalar\String_
+                            ? $v->expr->value
+                            : null;
                     break;
                 case 'Stmt_ClassMethod':
                     $this->prepareClassMethod($v, $class);

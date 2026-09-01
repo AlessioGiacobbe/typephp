@@ -2764,6 +2764,9 @@ class EvaluatedValue
 
     public function initializeZval(string $zvalName, bool $alreadyExists = false, string $forStringDef = '', string $varName = ''): string
     {
+        if ($this->value instanceof \TypePhp\Entity\EnumCaseRef) {
+            return $this->initializeEnumCaseZval($zvalName, $alreadyExists);
+        }
         $cExpr = $this->getCExpr();
 
         $code = '';
@@ -2807,6 +2810,52 @@ class EvaluatedValue
             throw new Exception("Invalid default value: " . print_r($this->value, true) . ", type: " . print_r($this->type, true));
         }
 
+        return $code;
+    }
+
+    /**
+     * Initialize the zval as a persistent IS_CONSTANT_AST holding
+     * `EnumClass::CaseName`. Enum case objects have request lifetime and can
+     * never sit in the persistent class-entry tables, so the engine's own
+     * mechanism for internal enums is reused: declaring an AST constant makes
+     * Zend separate the class constants table into request-local mutable
+     * storage, evaluate the fetch there on first access, and clean it up at
+     * request shutdown. This keeps case identity intact for static access,
+     * constant(), and reflection, and is safe under concurrent ZTS requests.
+     */
+    private function initializeEnumCaseZval(string $zvalName, bool $alreadyExists): string
+    {
+        /** @var \TypePhp\Entity\EnumCaseRef $case */
+        $case = $this->value;
+        $enumCName = '"' . getTranslator()->escapeString(ltrim($case->enumClass, '\\')) . '"';
+        $caseCName = '"' . getTranslator()->escapeString($case->caseName) . '"';
+        $id = preg_replace('/[^A-Za-z0-9_]/', '_', $zvalName);
+
+        $code = $alreadyExists ? '' : "\tzval $zvalName;\n";
+        $code .= "\t{\n";
+        $code .= "\t\tzend_string *{$id}_enum_name = zend_string_init_interned($enumCName, sizeof($enumCName) - 1, 1);\n";
+        $code .= "\t\tzend_string *{$id}_case_name = zend_string_init_interned($caseCName, sizeof($caseCName) - 1, 1);\n";
+        $code .= "\t\tzend_ast_zval *{$id}_class_ast = (zend_ast_zval *) pemalloc(sizeof(zend_ast_zval), 1);\n";
+        $code .= "\t\t{$id}_class_ast->kind = ZEND_AST_ZVAL;\n";
+        $code .= "\t\t{$id}_class_ast->attr = ZEND_NAME_FQ;\n";
+        $code .= "\t\tZVAL_INTERNED_STR(&{$id}_class_ast->val, {$id}_enum_name);\n";
+        $code .= "\t\tZ_LINENO({$id}_class_ast->val) = 0;\n";
+        $code .= "\t\tzend_ast_zval *{$id}_const_ast = (zend_ast_zval *) pemalloc(sizeof(zend_ast_zval), 1);\n";
+        $code .= "\t\t{$id}_const_ast->kind = ZEND_AST_ZVAL;\n";
+        $code .= "\t\t{$id}_const_ast->attr = 0;\n";
+        $code .= "\t\tZVAL_INTERNED_STR(&{$id}_const_ast->val, {$id}_case_name);\n";
+        $code .= "\t\tZ_LINENO({$id}_const_ast->val) = 0;\n";
+        $code .= "\t\tzend_ast_ref *{$id}_ast_ref = (zend_ast_ref *) pemalloc(sizeof(zend_ast_ref) + ZEND_MM_ALIGNED_SIZE(zend_ast_size(2)), 1);\n";
+        $code .= "\t\tGC_SET_REFCOUNT({$id}_ast_ref, 1);\n";
+        $code .= "\t\tGC_TYPE_INFO({$id}_ast_ref) = GC_CONSTANT_AST | ((GC_PERSISTENT | GC_IMMUTABLE) << GC_FLAGS_SHIFT);\n";
+        $code .= "\t\tzend_ast *{$id}_fetch_ast = GC_AST({$id}_ast_ref);\n";
+        $code .= "\t\t{$id}_fetch_ast->kind = ZEND_AST_CLASS_CONST;\n";
+        $code .= "\t\t{$id}_fetch_ast->attr = 0;\n";
+        $code .= "\t\t{$id}_fetch_ast->lineno = 0;\n";
+        $code .= "\t\t{$id}_fetch_ast->child[0] = (zend_ast *) {$id}_class_ast;\n";
+        $code .= "\t\t{$id}_fetch_ast->child[1] = (zend_ast *) {$id}_const_ast;\n";
+        $code .= "\t\tZVAL_AST(&$zvalName, {$id}_ast_ref);\n";
+        $code .= "\t}\n";
         return $code;
     }
 
