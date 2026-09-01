@@ -104,6 +104,15 @@ trait NameResolutionTrait
             if (isset($this->zendTypeMap[strtolower($typeName)]) || in_array(strtolower($typeName), ['self', 'static', 'parent'], true)) {
                 return $type;
             }
+            // NameResolver has already applied the declaring file's namespace
+            // imports. Keep that canonical identity when a trait signature is
+            // copied into its consuming class. In particular, after
+            // `use X\X; use X\Y;`, resolving Y produces X\Y; feeding that string
+            // through the import table again would incorrectly produce X\X\Y.
+            $resolvedName = $type->getAttribute('resolvedName');
+            if ($resolvedName instanceof Node\Name\FullyQualified) {
+                return new Node\Name\FullyQualified($resolvedName->toString(), $type->getAttributes());
+            }
             $resolved = $typeName;
             $firstSegment = explode('\\', $typeName, 2)[0];
             $hasImportedPrefix = $this->getClassImportAlias($firstSegment) !== null;
