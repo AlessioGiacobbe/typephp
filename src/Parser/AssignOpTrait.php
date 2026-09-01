@@ -917,7 +917,14 @@ trait AssignOpTrait
                 return $this->parseBigAssignOp($node, $var, $type, $expr, $rightType, $op);
             }
 
-            $rightExprStr = $this->convertExprType($expr, $type, $rightType);
+            // A dynamic local must retain the RHS runtime type. Variant's
+            // compound operators already implement PHP coercion and checked
+            // integer overflow; eagerly converting an int-looking expression
+            // both adds an unnecessary unbox/rebox pair and can collapse an
+            // overflowed float back to int before the assignment.
+            $rightExprStr = $type === Type::VAR
+                ? $expr
+                : $this->convertExprType($expr, $type, $rightType);
             if ($this->isAssignOpConcat($op)) {
                 if ($this->isArrayVar($node->var)) {
                     $this->fatalError($node->var, 'Cannot concat string to array');
@@ -932,6 +939,9 @@ trait AssignOpTrait
             if ($this->isAssignOpPow($op)) {
                 $powExpr = 'php::fn::pow(' . $var . ', ' . $rightExprStr . ')';
                 return $var . ' = ' . $this->convertVarType($var, $powExpr);
+            }
+            if ($type === Type::VAR && $op === '+=') {
+                return $var . '.addAssign(' . $rightExprStr . ')';
             }
             return $var . ' ' . $op . ' ' . $rightExprStr;
         }

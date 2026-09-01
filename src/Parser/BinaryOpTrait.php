@@ -169,7 +169,10 @@ trait BinaryOpTrait
             && in_array($op, ['+', '-', '*'], true)
             && $this->evaluateConstantIntArithmetic($left, $right, $op) === null
         ) {
-            return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
+            // Keep the potentially widening result boxed, but pass the native
+            // RHS directly so PHPX can use its inline checked-int overload
+            // without constructing and destroying another temporary zval.
+            return '((php::Var(' . $leftExpr . ')) ' . $op . ' (' . $rightExpr . '))';
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';

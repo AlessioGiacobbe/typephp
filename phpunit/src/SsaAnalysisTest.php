@@ -1199,7 +1199,7 @@ class SsaAnalysisTest extends TestCase
         $this->assertArrayNotHasKey('i', $locals);
     }
 
-    public function testLoopVarOptimizerRejectsUnsafeUseAfterLoop(): void
+    public function testLoopVarOptimizerAllowsCheckedArithmeticAfterLoop(): void
     {
         $locals = $this->optimizeLoopVarsForCode('
             $n = 10;
@@ -1207,6 +1207,19 @@ class SsaAnalysisTest extends TestCase
                 echo $i;
             }
             $x = $i + PHP_INT_MAX;
+        ');
+
+        $this->assertSame(Type::INT, $locals['i'] ?? null);
+    }
+
+    public function testLoopVarOptimizerRejectsMutatingUseAfterLoop(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            $n = 10;
+            for ($i = 0; $i < $n; $i++) {
+                echo $i;
+            }
+            $i += PHP_INT_MAX;
         ');
 
         $this->assertArrayNotHasKey('i', $locals);
