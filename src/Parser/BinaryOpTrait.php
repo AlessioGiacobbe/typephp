@@ -158,20 +158,20 @@ trait BinaryOpTrait
         }
 
         // Declared int parameters use the native Int ABI even in ordinary PHP
-        // mode. A direct C++ +/−/* would therefore have undefined signed
-        // overflow, while PHP promotes the result to float. Route dynamic
+        // mode. Direct C++ +/−/* can overflow, while C++ integer division
+        // truncates and cannot raise PHP's DivisionByZeroError. Route dynamic
         // integer arithmetic through the encapsulated Variant operators unless
         // the user explicitly selected `use native_types`. Fully constant
         // expressions remain safe to emit directly after the checks above.
         if (!$this->nativeTypes
             && $leftType === Type::INT
             && $rightType === Type::INT
-            && in_array($op, ['+', '-', '*'], true)
+            && in_array($op, ['+', '-', '*', '/'], true)
             && $this->evaluateConstantIntArithmetic($left, $right, $op) === null
         ) {
             // Keep the potentially widening result boxed, but pass the native
-            // RHS directly so PHPX can use its inline checked-int overload
-            // without constructing and destroying another temporary zval.
+            // RHS directly so PHPX can use its inline checked arithmetic
+            // overload without constructing and destroying another zval.
             return '((php::Var(' . $leftExpr . ')) ' . $op . ' (' . $rightExpr . '))';
         }
 

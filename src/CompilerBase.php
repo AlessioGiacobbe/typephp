@@ -3047,6 +3047,13 @@ class CompilerBase implements PropertyAccessContext
                         if ($evaluation !== null && is_float($evaluation['result'])) {
                             return Type::FLOAT;
                         }
+                        // Runtime integer division has a value-dependent PHP
+                        // result: exact quotients are int, fractional quotients
+                        // and PHP_INT_MIN / -1 are float. Keep it boxed when the
+                        // operands are not compile-time constants.
+                        if ($exprType === 'Expr_BinaryOp_Div' && $evaluation === null) {
+                            return Type::VAR;
+                        }
                     }
                 }
                 if ($leftType === Type::INT || $rightType === Type::INT) {
