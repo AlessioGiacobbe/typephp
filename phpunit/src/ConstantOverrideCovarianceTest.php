@@ -14,6 +14,11 @@ class ConstantOverrideCovarianceTest extends BaseTest
         $this->compile('const_override_covariant.php');
     }
 
+    public function testNarrowingDnfDeclaredTypeCompiles(): void
+    {
+        $this->compile('const_override_dnf_covariant.php');
+    }
+
     public function testWideningDeclaredTypeIsRejected(): void
     {
         $this->exec(

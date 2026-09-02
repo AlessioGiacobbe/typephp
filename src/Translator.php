@@ -91,6 +91,9 @@ class Translator extends Preprocessor
      * @var array<string, array<string, array{const: ConstantDef, origin: string}>>
      */
     private array $effectiveConstantTables = [];
+
+    /** @var array<string, true> Class-like constants tables being constructed. */
+    private array $effectiveConstantTableVisiting = [];
     protected array $globalHeaders = [
         'cstring',
         'phpx.h',
@@ -5794,42 +5797,52 @@ CODE;
      *
      * @return array<string, array{const: ConstantDef, origin: string}>
      */
-    private function getEffectiveConstantTable(ClassDef|InterfaceDef $def): array
+    private function getEffectiveConstantTable(ClassDef|InterfaceDef $def, NodeAbstract $errorNode): array
     {
         $ownName = $def->getNamespacedName(false);
         $key = strtolower($ownName);
         if (isset($this->effectiveConstantTables[$key])) {
             return $this->effectiveConstantTables[$key];
         }
-        $table = [];
-        if ($def instanceof ClassDef) {
-            if ($def->extends !== '' && !$def->inheritedFromInternalClass && $this->hasClass($def->extends)) {
-                foreach ($this->getEffectiveConstantTable($this->getClass($def->extends)) as $name => $entry) {
-                    // Private constants are not inherited.
-                    if (!($entry['const']->flags & Modifiers::PRIVATE)) {
-                        $table[$name] = $entry;
+        if (isset($this->effectiveConstantTableVisiting[$key])) {
+            $kind = $def instanceof InterfaceDef ? 'Interface' : 'Class';
+            $this->fatalError($errorNode, "{$kind} inheritance cycle detected at `{$ownName}`");
+        }
+
+        $this->effectiveConstantTableVisiting[$key] = true;
+        try {
+            $table = [];
+            if ($def instanceof ClassDef) {
+                if ($def->extends !== '' && !$def->inheritedFromInternalClass && $this->hasClass($def->extends)) {
+                    foreach ($this->getEffectiveConstantTable($this->getClass($def->extends), $errorNode) as $name => $entry) {
+                        // Private constants are not inherited.
+                        if (!($entry['const']->flags & Modifiers::PRIVATE)) {
+                            $table[$name] = $entry;
+                        }
                     }
                 }
+                foreach ($def->constants as $name => $const) {
+                    $table[$name] = ['const' => $const, 'origin' => $ownName];
+                }
+                $parents = $def->implements;
+            } else {
+                foreach ($def->constants as $name => $const) {
+                    $table[$name] = ['const' => $const, 'origin' => $ownName];
+                }
+                $parents = $def->extendsList ?: ($def->extends ? [$def->extends] : []);
             }
-            foreach ($def->constants as $name => $const) {
-                $table[$name] = ['const' => $const, 'origin' => $ownName];
+            foreach ($parents as $interfaceName) {
+                if (!$this->hasInterface($interfaceName)) {
+                    continue;
+                }
+                foreach ($this->getEffectiveConstantTable($this->getInterface($interfaceName), $errorNode) as $name => $entry) {
+                    $table[$name] ??= $entry;
+                }
             }
-            $parents = $def->implements;
-        } else {
-            foreach ($def->constants as $name => $const) {
-                $table[$name] = ['const' => $const, 'origin' => $ownName];
-            }
-            $parents = $def->extendsList ?: ($def->extends ? [$def->extends] : []);
+            return $this->effectiveConstantTables[$key] = $table;
+        } finally {
+            unset($this->effectiveConstantTableVisiting[$key]);
         }
-        foreach ($parents as $interfaceName) {
-            if (!$this->hasInterface($interfaceName)) {
-                continue;
-            }
-            foreach ($this->getEffectiveConstantTable($this->getInterface($interfaceName)) as $name => $entry) {
-                $table[$name] ??= $entry;
-            }
-        }
-        return $this->effectiveConstantTables[$key] = $table;
     }
 
     /**
@@ -5854,7 +5867,7 @@ CODE;
         // parent chain's effective table, then the class's own declarations.
         $table = [];
         if ($classDef->extends !== '' && !$classDef->inheritedFromInternalClass && $this->hasClass($classDef->extends)) {
-            foreach ($this->getEffectiveConstantTable($this->getClass($classDef->extends)) as $name => $entry) {
+            foreach ($this->getEffectiveConstantTable($this->getClass($classDef->extends), $classStmt) as $name => $entry) {
                 if (!($entry['const']->flags & Modifiers::PRIVATE)) {
                     $table[$name] = $entry;
                 }
@@ -5881,7 +5894,7 @@ CODE;
             if (!$this->hasInterface($interfaceName)) {
                 continue;
             }
-            foreach ($this->getEffectiveConstantTable($this->getInterface($interfaceName)) as $name => $entry) {
+            foreach ($this->getEffectiveConstantTable($this->getInterface($interfaceName), $classStmt) as $name => $entry) {
                 if (!isset($table[$name])) {
                     $table[$name] = $entry;
                     continue;
@@ -5920,7 +5933,7 @@ CODE;
             if (!$this->hasInterface($parentName)) {
                 continue;
             }
-            foreach ($this->getEffectiveConstantTable($this->getInterface($parentName)) as $constName => $entry) {
+            foreach ($this->getEffectiveConstantTable($this->getInterface($parentName), $interfaceStmt) as $constName => $entry) {
                 if (!isset($table[$constName])) {
                     $table[$constName] = $entry;
                     continue;

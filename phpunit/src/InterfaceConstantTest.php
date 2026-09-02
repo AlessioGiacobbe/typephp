@@ -71,4 +71,20 @@ class InterfaceConstantTest extends BaseTest
             'enum_interface_const_final.php',
         );
     }
+
+    public function testInterfaceInheritanceCycleFailsWithoutRecursingForever(): void
+    {
+        $this->exec(
+            'Interface inheritance cycle detected',
+            'interface_const_inheritance_cycle.php',
+        );
+    }
+
+    public function testTraitConstantMustSatisfyImplementedInterface(): void
+    {
+        $this->exec(
+            'Declaration of `TraitConstantImplementation::VALUE` must be compatible with `TraitConstantContract::VALUE`',
+            'interface_const_trait_mismatch.php',
+        );
+    }
 }
