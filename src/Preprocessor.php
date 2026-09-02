@@ -1567,6 +1567,9 @@ class Preprocessor extends CompilerBase
     {
         $this->resetFunction();
         $flags = $this->parseModifiers($v->flags);
+        if ($v->type !== null) {
+            $this->assertTypeDeclIntersectionsHaveNoCallable($v->type, $v);
+        }
         if ($v->type !== null && $this->typeDeclContainsCallable($v->type)) {
             $constName = $v->consts !== [] ? $this->parseIdentifier($v->consts[0]->name) : '';
             $this->fatalError(
@@ -1720,6 +1723,9 @@ class Preprocessor extends CompilerBase
         // `callable` is a runtime-context type (a string or array may or may
         // not be callable depending on scope), so Zend forbids it in property
         // types entirely - bare, nullable, or as a union member.
+        if ($typeNode !== null) {
+            $this->assertTypeDeclIntersectionsHaveNoCallable($typeNode, $errorNode);
+        }
         if ($typeNode !== null && $this->typeDeclContainsCallable($typeNode)) {
             $this->fatalError(
                 $errorNode,
@@ -1798,9 +1804,41 @@ class Preprocessor extends CompilerBase
     }
 
     /**
+     * Zend rejects `callable` as an intersection member while compiling the
+     * type itself ("Type callable cannot be part of an intersection type"),
+     * in every declaration context and before any property/constant-specific
+     * rule fires (probed: `callable|(Traversable&callable)` reports the
+     * intersection conflict, not the property one). This covers bare
+     * intersections and DNF members like `(Traversable&callable)|stdClass`;
+     * without it the type reaches gen_stub, which asserts that intersection
+     * members are never builtin.
+     */
+    private function assertTypeDeclIntersectionsHaveNoCallable(NodeAbstract $typeNode, NodeAbstract $errorNode): void
+    {
+        if ($typeNode instanceof NullableType) {
+            $this->assertTypeDeclIntersectionsHaveNoCallable($typeNode->type, $errorNode);
+            return;
+        }
+        if ($typeNode instanceof UnionType) {
+            foreach ($typeNode->types as $member) {
+                $this->assertTypeDeclIntersectionsHaveNoCallable($member, $errorNode);
+            }
+            return;
+        }
+        if ($typeNode instanceof IntersectionType) {
+            foreach ($typeNode->types as $member) {
+                if (strtolower($this->parseIdentifier($member)) === 'callable') {
+                    $this->fatalError($errorNode, 'Type callable cannot be part of an intersection type');
+                }
+            }
+        }
+    }
+
+    /**
      * Whether a declared type mentions `callable` outside an intersection.
-     * Zend forbids callable in property and class-constant types; members of
-     * an intersection are rejected separately as non-class types.
+     * Zend forbids callable in property and class-constant types; callable
+     * inside an intersection is rejected first, with its own diagnostic, by
+     * assertTypeDeclIntersectionsHaveNoCallable().
      */
     private function typeDeclContainsCallable(NodeAbstract $typeNode): bool
     {
@@ -2489,6 +2527,9 @@ class Preprocessor extends CompilerBase
                             "Access type for interface constant `{$interfaceName}::{$constName}` must be public",
                         );
                     }
+                    if ($stmt->type !== null) {
+                        $this->assertTypeDeclIntersectionsHaveNoCallable($stmt->type, $stmt);
+                    }
                     if ($stmt->type !== null && $this->typeDeclContainsCallable($stmt->type)) {
                         $this->fatalError(
                             $stmt,
@@ -2630,6 +2671,9 @@ class Preprocessor extends CompilerBase
         $nullable = $property->type instanceof NullableType;
         foreach ($property->props as $prop) {
             $name = $this->parseIdentifier($prop->name);
+            if ($property->type !== null) {
+                $this->assertTypeDeclIntersectionsHaveNoCallable($property->type, $property);
+            }
             if ($property->type !== null && $this->typeDeclContainsCallable($property->type)) {
                 $this->fatalError(
                     $property,

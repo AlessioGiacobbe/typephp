@@ -31,4 +31,42 @@ class PromotionAndPropertyTypeTest extends BaseTest
     {
         $this->exec('Class constant `Bag::FN` cannot have type `callable`', 'const_rule_callable.php');
     }
+
+    public function testCallableInBareIntersectionIsRejected(): void
+    {
+        // Zend rejects callable while compiling the intersection type itself,
+        // with a dedicated diagnostic; without this check the type reaches
+        // gen_stub, which asserts intersection members are never builtin.
+        $this->exec('Type callable cannot be part of an intersection type', 'property_rule_callable_intersection.php');
+    }
+
+    public function testCallableInDnfPropertyTypeIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'property_rule_callable_dnf.php');
+    }
+
+    public function testCallableInSecondDnfMemberIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'property_rule_callable_dnf_second_member.php');
+    }
+
+    public function testCallableInDnfPromotedPropertyTypeIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'property_rule_callable_dnf_promoted.php');
+    }
+
+    public function testCallableInDnfClassConstantTypeIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'const_rule_callable_dnf.php');
+    }
+
+    public function testCallableInDnfInterfaceMemberTypesIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'interface_rule_callable_dnf.php');
+    }
+
+    public function testCallableFreeDnfPropertyTypeStillCompiles(): void
+    {
+        $this->compile('property_rule_dnf_valid.php');
+    }
 }
