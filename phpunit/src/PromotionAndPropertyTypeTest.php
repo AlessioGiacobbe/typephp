@@ -2,8 +2,11 @@
 
 /**
  * Constructor promotion and property/constant type restrictions:
- * no variadic promoted properties, and `callable` is banned from
- * property and class-constant types (bare, nullable, or union member).
+ * no variadic promoted properties, `callable` is banned from
+ * property and class-constant types (bare, nullable, or union member),
+ * and `callable` inside an intersection or DNF member is rejected in
+ * every declaration context - parameters, returns, properties, promoted
+ * properties, constants, interface members, and closures.
  */
 class PromotionAndPropertyTypeTest extends BaseTest
 {
@@ -65,8 +68,38 @@ class PromotionAndPropertyTypeTest extends BaseTest
         $this->exec('Type callable cannot be part of an intersection type', 'interface_rule_callable_dnf.php');
     }
 
+    public function testCallableInIntersectionParameterTypeIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'param_rule_callable_intersection.php');
+    }
+
+    public function testCallableInDnfParameterTypeIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'param_rule_callable_dnf.php');
+    }
+
+    public function testCallableInIntersectionReturnTypeIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'return_rule_callable_intersection.php');
+    }
+
+    public function testCallableInIntersectionClosureParameterTypeIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'closure_rule_callable_intersection_param.php');
+    }
+
+    public function testCallableInIntersectionClosureReturnTypeIsRejected(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'closure_rule_callable_intersection_return.php');
+    }
+
     public function testCallableFreeDnfPropertyTypeStillCompiles(): void
     {
         $this->compile('property_rule_dnf_valid.php');
+    }
+
+    public function testBareCallableParameterTypeStillCompiles(): void
+    {
+        $this->compile('param_rule_callable_valid.php');
     }
 }

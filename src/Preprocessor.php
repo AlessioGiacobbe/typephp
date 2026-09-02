@@ -1567,9 +1567,9 @@ class Preprocessor extends CompilerBase
     {
         $this->resetFunction();
         $flags = $this->parseModifiers($v->flags);
-        if ($v->type !== null) {
-            $this->assertTypeDeclIntersectionsHaveNoCallable($v->type, $v);
-        }
+        [$declaredType, $class] = $v->type
+            ? $this->resolveTypeDecl($v->type, self::DECL_TYPE_OF_CONST)
+            : [null, ''];
         if ($v->type !== null && $this->typeDeclContainsCallable($v->type)) {
             $constName = $v->consts !== [] ? $this->parseIdentifier($v->consts[0]->name) : '';
             $this->fatalError(
@@ -1577,9 +1577,6 @@ class Preprocessor extends CompilerBase
                 "Class constant `{$this->classDef->getNamespacedName(false)}::{$constName}` cannot have type `{$this->typeCheckNodeToString($v->type)}`",
             );
         }
-        [$declaredType, $class] = $v->type
-            ? $this->resolveTypeDecl($v->type, self::DECL_TYPE_OF_CONST)
-            : [null, ''];
 
         foreach ($v->consts as $const) {
             $type = $declaredType;
@@ -1720,19 +1717,19 @@ class Preprocessor extends CompilerBase
             }
         }
         $this->validateAsymmetricPropertyDeclaration($name, $flags, $typeNode, $errorNode);
+        // Resolving the declaration also runs the common compound-type
+        // validation (callable as an intersection/DNF member is rejected
+        // there, ahead of the property-specific rule, matching Zend).
+        [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);
         // `callable` is a runtime-context type (a string or array may or may
         // not be callable depending on scope), so Zend forbids it in property
         // types entirely - bare, nullable, or as a union member.
-        if ($typeNode !== null) {
-            $this->assertTypeDeclIntersectionsHaveNoCallable($typeNode, $errorNode);
-        }
         if ($typeNode !== null && $this->typeDeclContainsCallable($typeNode)) {
             $this->fatalError(
                 $errorNode,
                 "Property `{$this->classDef->getNamespacedName(false)}::\${$name}` cannot have type `{$this->typeCheckNodeToString($typeNode)}`",
             );
         }
-        [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);
         $this->assertSupportedNativeObjectTypeNode($typeNode, self::DECL_TYPE_OF_PROPERTY, $errorNode);
         $nullableNative = $this->resolveNullableNativeObjectType(
             $typeNode,
@@ -1804,41 +1801,10 @@ class Preprocessor extends CompilerBase
     }
 
     /**
-     * Zend rejects `callable` as an intersection member while compiling the
-     * type itself ("Type callable cannot be part of an intersection type"),
-     * in every declaration context and before any property/constant-specific
-     * rule fires (probed: `callable|(Traversable&callable)` reports the
-     * intersection conflict, not the property one). This covers bare
-     * intersections and DNF members like `(Traversable&callable)|stdClass`;
-     * without it the type reaches gen_stub, which asserts that intersection
-     * members are never builtin.
-     */
-    private function assertTypeDeclIntersectionsHaveNoCallable(NodeAbstract $typeNode, NodeAbstract $errorNode): void
-    {
-        if ($typeNode instanceof NullableType) {
-            $this->assertTypeDeclIntersectionsHaveNoCallable($typeNode->type, $errorNode);
-            return;
-        }
-        if ($typeNode instanceof UnionType) {
-            foreach ($typeNode->types as $member) {
-                $this->assertTypeDeclIntersectionsHaveNoCallable($member, $errorNode);
-            }
-            return;
-        }
-        if ($typeNode instanceof IntersectionType) {
-            foreach ($typeNode->types as $member) {
-                if (strtolower($this->parseIdentifier($member)) === 'callable') {
-                    $this->fatalError($errorNode, 'Type callable cannot be part of an intersection type');
-                }
-            }
-        }
-    }
-
-    /**
      * Whether a declared type mentions `callable` outside an intersection.
      * Zend forbids callable in property and class-constant types; callable
      * inside an intersection is rejected first, with its own diagnostic, by
-     * assertTypeDeclIntersectionsHaveNoCallable().
+     * the common declaration validation in parseTypeDecl().
      */
     private function typeDeclContainsCallable(NodeAbstract $typeNode): bool
     {
@@ -2527,20 +2493,14 @@ class Preprocessor extends CompilerBase
                             "Access type for interface constant `{$interfaceName}::{$constName}` must be public",
                         );
                     }
-                    if ($stmt->type !== null) {
-                        $this->assertTypeDeclIntersectionsHaveNoCallable($stmt->type, $stmt);
-                    }
-                    if ($stmt->type !== null && $this->typeDeclContainsCallable($stmt->type)) {
-                        $this->fatalError(
-                            $stmt,
-                            "Class constant `{$interfaceName}::{$constName}` cannot have type `{$this->typeCheckNodeToString($stmt->type)}`",
-                        );
-                    }
-                    if ($this->interfaceDef->hasConstant($constName)) {
-                        $this->fatalError($stmt, "Duplicate constant `{$constName}`");
-                    }
                     if ($stmt->type) {
                         [$type, $class] = $this->resolveTypeDecl($stmt->type, self::DECL_TYPE_OF_CONST);
+                        if ($this->typeDeclContainsCallable($stmt->type)) {
+                            $this->fatalError(
+                                $stmt,
+                                "Class constant `{$interfaceName}::{$constName}` cannot have type `{$this->typeCheckNodeToString($stmt->type)}`",
+                            );
+                        }
                     } else {
                         $class = '';
                         $type = match ($const->value->getType()) {
@@ -2548,6 +2508,9 @@ class Preprocessor extends CompilerBase
                             'Scalar_String' => Type::STR,
                             default => Type::VAR,
                         };
+                    }
+                    if ($this->interfaceDef->hasConstant($constName)) {
+                        $this->fatalError($stmt, "Duplicate constant `{$constName}`");
                     }
                     $constInfo = $this->parseClassLikeConstant($const, $this->parseModifiers($stmt->flags), $type, $class, $stmt->type ? $type : null);
                     $this->interfaceDef->constants[$constName] = $constInfo;
@@ -2671,9 +2634,6 @@ class Preprocessor extends CompilerBase
         $nullable = $property->type instanceof NullableType;
         foreach ($property->props as $prop) {
             $name = $this->parseIdentifier($prop->name);
-            if ($property->type !== null) {
-                $this->assertTypeDeclIntersectionsHaveNoCallable($property->type, $property);
-            }
             if ($property->type !== null && $this->typeDeclContainsCallable($property->type)) {
                 $this->fatalError(
                     $property,
