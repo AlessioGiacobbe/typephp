@@ -998,14 +998,15 @@ class Preprocessor extends CompilerBase
                 $returnTypeKeyword = $rtLower;
             }
         }
-        // `self`/`static` return types need a class scope; Zend rejects them
-        // on free functions at compile time. `parent` is already rejected in
-        // parseTypeDecl for every declaration context.
-        if (($returnTypeKeyword === 'self' || $returnTypeKeyword === 'static')
-            && $v instanceof Node\Stmt\Function_
-            && $this->classDef === null
-        ) {
-            $this->fatalError($v->returnType, "Cannot use \"{$returnTypeKeyword}\" when no class scope is active");
+        // Class-scope type keywords need an active class scope, in every
+        // declaration context and at any nesting depth. Methods always have
+        // one (class, interface, trait, enum); a free function never does,
+        // no matter where it is declared.
+        $classScope = $v instanceof Node\Stmt\ClassMethod;
+        $scopeHasParent = $classScope && $this->currentClassScopeHasParent();
+        $this->validateClassScopeTypeKeywords($v->returnType, $classScope, $scopeHasParent);
+        foreach ($v->params as $param) {
+            $this->validateClassScopeTypeKeywords($param->type, $classScope, $scopeHasParent);
         }
         [$returnType, $class] = $this->resolveTypeDecl($v->returnType, self::DECL_TYPE_OF_RETURN);
         $this->assertSupportedNativeObjectTypeNode($v->returnType, self::DECL_TYPE_OF_RETURN, $v);
@@ -1598,6 +1599,7 @@ class Preprocessor extends CompilerBase
     {
         $this->resetFunction();
         $flags = $this->parseModifiers($v->flags);
+        $this->validateClassScopeTypeKeywords($v->type, true, $this->currentClassScopeHasParent());
         [$declaredType, $class] = $v->type
             ? $this->resolveTypeDecl($v->type, self::DECL_TYPE_OF_CONST)
             : [null, ''];
@@ -1751,6 +1753,7 @@ class Preprocessor extends CompilerBase
         // Resolving the declaration also runs the common compound-type
         // validation (callable as an intersection/DNF member is rejected
         // there, ahead of the property-specific rule, matching Zend).
+        $this->validateClassScopeTypeKeywords($typeNode, true, $this->currentClassScopeHasParent());
         [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);
         // `callable` is a runtime-context type (a string or array may or may
         // not be callable depending on scope), so Zend forbids it in property
@@ -1846,9 +1849,11 @@ class Preprocessor extends CompilerBase
      * Compile-time well-formedness of compound type declarations, mirroring
      * Zend: standalone-only types inside unions, invalid nullable targets,
      * duplicate members (after alias/namespace resolution, with iterable
-     * expanded to array|Traversable), the bool/true/false overlaps, and
-     * non-class standard types inside intersections. Redundancy between whole
-     * DNF groups is not checked.
+     * expanded to array|Traversable), the bool/true/false overlaps,
+     * non-class standard types inside intersections, redundancy between
+     * whole DNF groups (a repeated member set in any order, or a group
+     * strictly more restrictive than another group or plain class member),
+     * and `object` absorbing every class type.
      */
     private function validateCompoundTypeDecl(?NodeAbstract $type): void
     {
@@ -1885,10 +1890,23 @@ class Preprocessor extends CompilerBase
             }
             $seen[$key] = true;
         };
+        // Rendered like Zend's zend_type_to_string(): class types keep their
+        // source order in front, standard types follow in a fixed order.
+        $classish = [];
+        $builtins = [];
+        $hasObject = false;
+        $hasClassType = false;
+        // Every DNF group and plain class member, as a canonical member set,
+        // for Zend's whole-list redundancy comparison.
+        $groups = [];
         foreach ($type->types as $member) {
             if ($member instanceof IntersectionType) {
                 // A DNF group: its members obey the intersection rules.
-                $this->validateIntersectionTypeDecl($member);
+                $groupMembers = $this->validateIntersectionTypeDecl($member);
+                $display = implode('&', $groupMembers);
+                $classish[] = '(' . $display . ')';
+                $hasClassType = true;
+                $groups[] = [array_keys($groupMembers), $display, $member];
                 continue;
             }
             $name = $this->parseIdentifier($member);
@@ -1914,30 +1932,86 @@ class Preprocessor extends CompilerBase
                     $this->fatalError($member, "Duplicate type `{$nameLower}` is redundant");
                 }
                 $addMember($nameLower, $nameLower, $member);
+                $builtins[] = $nameLower;
                 continue;
             }
             if ($nameLower === 'iterable') {
                 // Zend expands iterable to array|Traversable before the
                 // redundancy check and reports the overlapping component.
+                // The expansion alone does not count as a class type for the
+                // object-redundancy rule.
                 $addMember('iterable', 'iterable', $member);
                 $addMember('array', 'array', $member);
                 $addMember('traversable', 'Traversable', $member);
+                $classish[] = 'Traversable';
+                $builtins[] = 'array';
                 continue;
             }
-            if (isset($this->zendTypeMap[$nameLower])
-                || in_array($nameLower, ['self', 'parent', 'static'], true)
-            ) {
+            if (isset($this->zendTypeMap[$nameLower])) {
                 $addMember($nameLower, $nameLower, $member);
+                if ($nameLower === 'object') {
+                    $hasObject = true;
+                } else {
+                    $builtins[] = $nameLower;
+                }
+                continue;
+            }
+            if (in_array($nameLower, ['self', 'parent', 'static'], true)) {
+                $addMember($nameLower, $nameLower, $member);
+                $classish[] = $nameLower;
+                $hasClassType = true;
                 continue;
             }
             $resolved = $member instanceof Node\Name\FullyQualified
                 ? $member->toString()
                 : $this->getNamespacedClassName($name);
             $addMember(strtolower($resolved), $resolved, $member);
+            $classish[] = $resolved;
+            $hasClassType = true;
+            $groups[] = [[strtolower($resolved)], $resolved, $member];
+        }
+
+        // Whole-DNF redundancy: Zend compares every pair of intersection
+        // groups and plain class members as canonical member sets. An equal
+        // set in any member order is a repeat; a strict superset is redundant
+        // because it is more restrictive than the smaller type it can never
+        // widen: (A&B)|(B&A), (A&B)|A and A|(A&B) are all rejected.
+        $groupCount = count($groups);
+        for ($i = 0; $i < $groupCount; $i++) {
+            for ($j = $i + 1; $j < $groupCount; $j++) {
+                [$setI, $displayI] = $groups[$i];
+                [$setJ, $displayJ, $nodeJ] = $groups[$j];
+                if (count($setI) === count($setJ)) {
+                    if (array_diff($setI, $setJ) === []) {
+                        $this->fatalError($nodeJ, "Type `{$displayJ}` is redundant with type `{$displayI}`");
+                    }
+                } elseif (count($setI) > count($setJ)) {
+                    if (array_diff($setJ, $setI) === []) {
+                        $this->fatalError($groups[$i][2], "Type `{$displayI}` is redundant as it is more restrictive than type `{$displayJ}`");
+                    }
+                } elseif (array_diff($setI, $setJ) === []) {
+                    $this->fatalError($nodeJ, "Type `{$displayJ}` is redundant as it is more restrictive than type `{$displayI}`");
+                }
+            }
+        }
+
+        if ($hasObject && $hasClassType) {
+            // `object` already accepts every object: naming a class type
+            // (including self/parent/static and DNF groups) beside it is
+            // redundant. Zend rejects the whole declared type.
+            $order = array_flip(['callable', 'object', 'array', 'string', 'int', 'float', 'bool', 'false', 'true', 'null']);
+            $builtins[] = 'object';
+            usort($builtins, static fn (string $a, string $b): int => ($order[$a] ?? 99) <=> ($order[$b] ?? 99));
+            $typeStr = implode('|', array_merge($classish, $builtins));
+            $this->fatalError($type, "Type `{$typeStr}` contains both object and a class type, which is redundant");
         }
     }
 
-    private function validateIntersectionTypeDecl(IntersectionType $type): void
+    /**
+     * @return array<string, string> resolved member names in declaration
+     *                               order, keyed by their lowercase form
+     */
+    private function validateIntersectionTypeDecl(IntersectionType $type): array
     {
         $seen = [];
         foreach ($type->types as $member) {
@@ -1961,8 +2035,65 @@ class Preprocessor extends CompilerBase
             if (isset($seen[$resolvedLower])) {
                 $this->fatalError($member, "Duplicate type `{$resolved}` is redundant");
             }
-            $seen[$resolvedLower] = true;
+            $seen[$resolvedLower] = $resolved;
         }
+        return $seen;
+    }
+
+    /**
+     * Zend rejects class-scope type keywords at compile time in every
+     * declaration context and at any nesting depth (nullable, union,
+     * intersection, DNF): `self`, `parent`, and `static` need an active
+     * class scope, and `parent` additionally needs that scope to have a
+     * parent class. A free function never has a class scope, no matter
+     * where it is declared; traits keep `parent` late-bound until the
+     * consuming class is known. (`static` outside a return type never
+     * reaches the compiler: PHP's grammar rejects it in parameter and
+     * property types, and class-constant types — where Zend accepts it —
+     * always have a class scope.)
+     */
+    private function validateClassScopeTypeKeywords(?NodeAbstract $type, bool $classScope, bool $hasParent): void
+    {
+        if ($type === null) {
+            return;
+        }
+        if ($type instanceof NullableType) {
+            $this->validateClassScopeTypeKeywords($type->type, $classScope, $hasParent);
+            return;
+        }
+        if ($type instanceof UnionType || $type instanceof IntersectionType) {
+            foreach ($type->types as $member) {
+                $this->validateClassScopeTypeKeywords($member, $classScope, $hasParent);
+            }
+            return;
+        }
+        if (!$type instanceof Node\Identifier && !$type instanceof Node\Name) {
+            return;
+        }
+        $nameLower = strtolower($this->parseIdentifier($type));
+        if (!in_array($nameLower, ['self', 'parent', 'static'], true)) {
+            return;
+        }
+        if (!$classScope) {
+            $this->fatalError($type, "Cannot use \"{$nameLower}\" when no class scope is active");
+        }
+        if ($nameLower === 'parent' && !$hasParent) {
+            $this->fatalError($type, 'Cannot use "parent" when current class scope has no parent');
+        }
+    }
+
+    /**
+     * Whether `parent` may appear in a type declared in the current
+     * class-like scope: the class has a parent, or the scope is a trait
+     * where `parent` stays late-bound until the consuming class is known.
+     * Interfaces and enums never have a parent class.
+     */
+    private function currentClassScopeHasParent(): bool
+    {
+        if ($this->classDef === null) {
+            return false;
+        }
+        return $this->classDef->trait !== null || $this->classDef->extends !== '';
     }
 
     /**
@@ -2722,6 +2853,9 @@ class Preprocessor extends CompilerBase
                         );
                     }
                     if ($stmt->type) {
+                        // Interface constants have a class scope but never a
+                        // parent class, matching Zend.
+                        $this->validateClassScopeTypeKeywords($stmt->type, true, false);
                         [$type, $class] = $this->resolveTypeDecl($stmt->type, self::DECL_TYPE_OF_CONST);
                         if ($this->typeDeclContainsCallable($stmt->type)) {
                             $this->fatalError(
@@ -2858,6 +2992,8 @@ class Preprocessor extends CompilerBase
             }
         }
 
+        // Interface properties have a class scope but never a parent class.
+        $this->validateClassScopeTypeKeywords($property->type, true, false);
         [$type, $class] = $this->resolveTypeDecl($property->type, self::DECL_TYPE_OF_PROPERTY);
         $nullable = $property->type instanceof NullableType;
         foreach ($property->props as $prop) {

@@ -4,7 +4,8 @@
  * Compound type well-formedness, shared across parameters, returns,
  * properties, and constants: duplicate members, bool/true/false
  * overlap, standalone-only types, nullable restrictions, intersection
- * member rules, class-scope type keywords, and duplicate implements.
+ * member rules, whole-DNF redundancy, `object` absorbing class types,
+ * class-scope type keywords, and duplicate implements.
  */
 class CompoundTypeValidationTest extends BaseTest
 {
@@ -58,14 +59,115 @@ class CompoundTypeValidationTest extends BaseTest
         $this->exec('Duplicate type `Ix` is redundant', 'type_rule_intersect_dup.php');
     }
 
+    public function testObjectWithClassTypeIsRedundant(): void
+    {
+        $this->exec(
+            'Type `Foo|object` contains both object and a class type, which is redundant',
+            'type_rule_object_class_union.php',
+        );
+    }
+
+    public function testObjectWithClassTypeIsRedundantInEitherOrder(): void
+    {
+        $this->exec(
+            'Type `Foo|object` contains both object and a class type, which is redundant',
+            'type_rule_object_class_union_reversed.php',
+        );
+    }
+
+    public function testObjectWithInterfaceTypeIsRedundant(): void
+    {
+        $this->exec(
+            'Type `Ifc|object` contains both object and a class type, which is redundant',
+            'type_rule_object_interface_union.php',
+        );
+    }
+
+    public function testObjectWithDnfGroupIsRedundant(): void
+    {
+        $this->exec(
+            'Type `(A&B)|object` contains both object and a class type, which is redundant',
+            'type_rule_object_dnf_union.php',
+        );
+    }
+
+    public function testPermutedDnfGroupIsRedundant(): void
+    {
+        $this->exec('Type `B&A` is redundant with type `A&B`', 'type_rule_dnf_permuted.php');
+    }
+
+    public function testDnfGroupMoreRestrictiveThanPlainMemberIsRedundant(): void
+    {
+        $this->exec(
+            'Type `A&B` is redundant as it is more restrictive than type `A`',
+            'type_rule_dnf_subset.php',
+        );
+    }
+
+    public function testDnfGroupMoreRestrictiveThanPlainMemberIsRedundantInEitherOrder(): void
+    {
+        $this->exec(
+            'Type `A&B` is redundant as it is more restrictive than type `A`',
+            'type_rule_dnf_subset_reversed.php',
+        );
+    }
+
+    public function testDnfSupersetGroupIsRedundant(): void
+    {
+        $this->exec(
+            'Type `A&B&C2` is redundant as it is more restrictive than type `A&B`',
+            'type_rule_dnf_superset_group.php',
+        );
+    }
+
     public function testStaticReturnRequiresClassScope(): void
     {
         $this->exec('Cannot use "static" when no class scope is active', 'type_rule_static_return_global.php');
     }
 
+    public function testStaticUnionReturnRequiresClassScope(): void
+    {
+        $this->exec('Cannot use "static" when no class scope is active', 'type_rule_static_union_return_global.php');
+    }
+
     public function testSelfReturnRequiresClassScope(): void
     {
         $this->exec('Cannot use "self" when no class scope is active', 'type_rule_self_return_global.php');
+    }
+
+    public function testSelfParameterRequiresClassScope(): void
+    {
+        $this->exec('Cannot use "self" when no class scope is active', 'type_rule_self_param_global.php');
+    }
+
+    public function testSelfUnionReturnRequiresClassScope(): void
+    {
+        $this->exec('Cannot use "self" when no class scope is active', 'type_rule_self_union_return_global.php');
+    }
+
+    public function testSelfNullableParameterRequiresClassScope(): void
+    {
+        $this->exec('Cannot use "self" when no class scope is active', 'type_rule_self_nullable_param_global.php');
+    }
+
+    public function testSelfDnfParameterRequiresClassScope(): void
+    {
+        $this->exec('Cannot use "self" when no class scope is active', 'type_rule_self_dnf_param_global.php');
+    }
+
+    public function testParentParameterRequiresClassScope(): void
+    {
+        $this->exec('Cannot use "parent" when no class scope is active', 'type_rule_parent_param_global.php');
+    }
+
+    public function testParentParameterRequiresParentClass(): void
+    {
+        $this->exec('Cannot use "parent" when current class scope has no parent', 'type_rule_parent_no_parent_method.php');
+    }
+
+    public function testParentPropertyRequiresParentClass(): void
+    {
+        $this->exec('Cannot use "parent" when current class scope has no parent', 'type_rule_parent_no_parent_property.php');
     }
 
     public function testDuplicateImplementsIsRejected(): void
@@ -76,5 +178,10 @@ class CompoundTypeValidationTest extends BaseTest
     public function testWellFormedCompoundTypesStillCompile(): void
     {
         $this->compile('type_rule_valid.php');
+    }
+
+    public function testClassScopeKeywordsInsideClassLikeScopesStillCompile(): void
+    {
+        $this->compile('type_rule_scope_valid.php');
     }
 }
