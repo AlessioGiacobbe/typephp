@@ -1451,6 +1451,15 @@ class Preprocessor extends CompilerBase
                         $this->classDef->enumCases[$caseName] = null;
                         if ($v->expr !== null) {
                             $this->classDef->enumCaseExprs[$caseName] = $v->expr;
+                            // The expression is evaluated lazily in the
+                            // convert phase, possibly while another file is
+                            // being converted. Keep the declaring file's
+                            // import tables so names in the expression
+                            // resolve in the enum's own lexical context.
+                            $this->classDef->enumUseNamespaces = $this->useNamespaces;
+                            $this->classDef->enumUseAliases = $this->useAliases;
+                            $this->classDef->enumUseFunctions = $this->useFunctions;
+                            $this->classDef->enumUseConstants = $this->useConstants;
                         }
                     }
                     break;

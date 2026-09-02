@@ -61,10 +61,26 @@ class ClassDef extends ClassLikeDef
      * Backed case values that are not scalar literals, keyed by case name.
      * The expression AST is captured during prepare (the symbol environment
      * is incomplete there) and evaluated+memoized into $enumCases on first
-     * convert-phase access.
+     * convert-phase access. The entry survives until evaluation succeeds.
      * @var array<string, \PhpParser\Node\Expr>
      */
     public array $enumCaseExprs = [];
+
+    /**
+     * Lexical import context of the file declaring the enum, captured when a
+     * backed case value is kept as an expression AST. The lazy evaluation may
+     * run while the translator is converting a different file, so names in
+     * the stored expressions must resolve against the enum's own namespace
+     * and `use` imports rather than the current conversion context.
+     * @var list<string>
+     */
+    public array $enumUseNamespaces = [];
+    /** @var array<string, string> */
+    public array $enumUseAliases = [];
+    /** @var array<string, string> */
+    public array $enumUseFunctions = [];
+    /** @var array<string, string> */
+    public array $enumUseConstants = [];
     /**
      * Abstract method name (lowercase) => flags
      * @var array<string, int>

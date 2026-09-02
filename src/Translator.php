@@ -6513,17 +6513,42 @@ CODE;
             $this->error("Internal compiler error: `{$traitName}` is not a trait AST template");
         }
 
+        return $this->withDeclarationNameContext(
+            $traitDef->namespace,
+            $traitDef->traitUseNamespaces,
+            $traitDef->traitUseAliases,
+            $traitDef->traitUseFunctions,
+            $traitDef->traitUseConstants,
+            $callback,
+        );
+    }
+
+    /**
+     * Run $callback with the translator's name-resolution state (namespace and
+     * `use` import tables) swapped to the lexical context of a declaration
+     * compiled outside its own file, e.g. a trait AST composed into a
+     * consuming class or an enum case expression evaluated on first access.
+     * The current context is restored even when the callback throws.
+     */
+    private function withDeclarationNameContext(
+        string $namespace,
+        array $useNamespaces,
+        array $useAliases,
+        array $useFunctions,
+        array $useConstants,
+        callable $callback,
+    ): mixed {
         $savedNamespace = $this->namespace;
         $savedUseNamespaces = $this->useNamespaces;
         $savedUseAliases = $this->useAliases;
         $savedUseFunctions = $this->useFunctions;
         $savedUseConstants = $this->useConstants;
 
-        $this->namespace = $traitDef->namespace;
-        $this->useNamespaces = $traitDef->traitUseNamespaces;
-        $this->useAliases = $traitDef->traitUseAliases;
-        $this->useFunctions = $traitDef->traitUseFunctions;
-        $this->useConstants = $traitDef->traitUseConstants;
+        $this->namespace = $namespace;
+        $this->useNamespaces = $useNamespaces;
+        $this->useAliases = $useAliases;
+        $this->useFunctions = $useFunctions;
+        $this->useConstants = $useConstants;
         try {
             return $callback();
         } finally {

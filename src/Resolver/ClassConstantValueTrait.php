@@ -11,11 +11,21 @@ namespace TypePhp\Resolver;
 use PhpParser\ConstExprEvaluator;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
+use TypePhp\Entity\ClassDef;
 use TypePhp\Entity\ConstantDef;
 use TypePhp\Entity\EnumCaseRef;
 
 trait ClassConstantValueTrait
 {
+    /**
+     * Backed enum cases whose stored value expression is currently being
+     * evaluated, keyed by lowercased "Enum\Fqn::CaseName". Guards the lazy
+     * evaluation against self-referencing and mutually recursive case values,
+     * which would otherwise recurse until the stack is exhausted.
+     * @var array<string, true>
+     */
+    private array $enumCaseExprsInProgress = [];
+
     public function getDefinedConstants(): array
     {
         return $this->internalConstants;
@@ -68,12 +78,7 @@ trait ClassConstantValueTrait
                     // A backed case value beyond a scalar literal was kept as
                     // an expression AST during prepare; the full symbol table
                     // exists now, so evaluate once and memoize the result.
-                    $classDef->enumCases[$name] = $this->evaluateConstantExpression(
-                        $expr,
-                        $classDef->enumCaseExprs[$name],
-                        $class,
-                    );
-                    unset($classDef->enumCaseExprs[$name]);
+                    $this->evaluateEnumCaseExpr($expr, $classDef, $class, $name);
                 }
                 // The case IDENTITY is the constant's value; folding to the
                 // backing scalar (or the case name) would make
@@ -82,6 +87,52 @@ trait ClassConstantValueTrait
             }
         }
         $this->fatalError($expr, "Class constant `{$class}::{$name}` not found");
+    }
+
+    /**
+     * Evaluate a backed enum case value kept as an expression AST during
+     * prepare (ClassDef::$enumCaseExprs) and memoize it into $enumCases. The
+     * stored AST survives until evaluation succeeds, so an aborted evaluation
+     * never leaves a half-initialized null behind, and two rules govern the
+     * evaluation itself:
+     *
+     * - Cycle guard: a case expression may (transitively) fetch the very case
+     *   it declares. Zend detects this while updating the constant and fails
+     *   with "Cannot declare self-referencing constant E::A"; without a guard
+     *   the compiler would recurse here until the stack is exhausted. The
+     *   case is marked in progress for the duration of its evaluation
+     *   (mirroring CONST_RECURSIVE on a Zend class-constant fetch), so the
+     *   reported name is the first case fetched again while its own value is
+     *   still being computed: `E::A` for `case A = E::A;` and `E::B` for
+     *   `case A = E::B; case B = E::A;` (both probed on Zend 8.4.13).
+     *
+     * - Declaration context: the first fetch of the case may happen while the
+     *   translator is converting a different file. Names inside the stored
+     *   expression must resolve against the namespace and `use` imports of
+     *   the file declaring the enum, not the current conversion context.
+     */
+    private function evaluateEnumCaseExpr(NodeAbstract $expr, ClassDef $classDef, string $class, string $name): void
+    {
+        $enumName = $classDef->getNamespacedName(false);
+        $key = strtolower($enumName . '::' . $name);
+        if (isset($this->enumCaseExprsInProgress[$key])) {
+            $this->fatalError($expr, "Cannot declare self-referencing constant `{$enumName}::{$name}`");
+        }
+        $this->enumCaseExprsInProgress[$key] = true;
+        try {
+            $value = $this->withDeclarationNameContext(
+                $classDef->namespace,
+                $classDef->enumUseNamespaces,
+                $classDef->enumUseAliases,
+                $classDef->enumUseFunctions,
+                $classDef->enumUseConstants,
+                fn (): mixed => $this->evaluateConstantExpression($expr, $classDef->enumCaseExprs[$name], $class),
+            );
+        } finally {
+            unset($this->enumCaseExprsInProgress[$key]);
+        }
+        $classDef->enumCases[$name] = $value;
+        unset($classDef->enumCaseExprs[$name]);
     }
 
     /** @return array{bool, mixed} */
@@ -149,7 +200,7 @@ trait ClassConstantValueTrait
             }
             if ($expr instanceof Node\Expr\ClassConstFetch && $expr->class instanceof Node\Name) {
                 $constName = $expr->name->toString();
-                $className = $expr->class->toString();
+                $className = $this->constantExpressionClassName($expr->class);
                 if (strcasecmp($constName, 'class') === 0) {
                     // `::class` is a compile-time magic constant that resolves to the
                     // fully qualified class name of the referenced class.
@@ -195,6 +246,28 @@ trait ClassConstantValueTrait
             }
         }
         return $ref->caseName;
+    }
+
+    /**
+     * Class names inside a constant expression AST were already resolved by
+     * the NameResolver against the file that declared the expression. Prefer
+     * that resolution (the `resolvedName` attribute, or the node being fully
+     * qualified) over re-resolving the bare string, which would apply the
+     * namespace the translator happens to be converting when a stored
+     * expression is evaluated lazily. The leading backslash keeps
+     * getNamespacedClassName() from prefixing a namespace again; `self`,
+     * `parent` and `static` carry no resolution and stay as written.
+     */
+    private function constantExpressionClassName(Node\Name $name): string
+    {
+        $resolved = $name->getAttribute('resolvedName');
+        if ($resolved instanceof Node\Name) {
+            return '\\' . ltrim($resolved->toString(), '\\');
+        }
+        if ($name instanceof Node\Name\FullyQualified) {
+            return '\\' . $name->toString();
+        }
+        return $name->toString();
     }
 
     /**

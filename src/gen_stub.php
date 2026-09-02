@@ -189,6 +189,11 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
         }
 
         return $fileInfo;
+    } catch (TypePhp\Exception\TestError $e) {
+        // Compile-time diagnostics raised while evaluating constant
+        // expressions during stub generation (e.g. self-referencing enum
+        // cases) must keep their type so the test harness can assert them.
+        throw $e;
     } catch (Exception $e) {
         throw new RuntimeException("In " . getTranslator()->getRelativePath($stubFile) . ": {$e->getMessage()}\n". $e->getTraceAsString());
     }
