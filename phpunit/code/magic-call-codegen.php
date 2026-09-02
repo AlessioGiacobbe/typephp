@@ -16,6 +16,10 @@ class RuntimeMagicMethod extends ExactMagicHandler
     }
 }
 
+final class ExactInternalMethod extends ArrayObject
+{
+}
+
 function exactMagicCall(): mixed
 {
     $handler = new ExactMagicHandler();
@@ -27,3 +31,9 @@ function runtimeMagicCall(ExactMagicHandler $handler): mixed
     return $handler->missing();
 }
 
+function exactInternalMethod(): mixed
+{
+    $object = new ExactInternalMethod();
+    $object->append('value');
+    return $object->count();
+}

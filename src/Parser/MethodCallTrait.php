@@ -318,23 +318,26 @@ trait MethodCallTrait
         // otherwise getNativeMethod() would continue into the internal parent
         // and incorrectly diagnose the absent magic method.
         $currentClass = $exactClass;
-        $hasCompiledMagicMethod = false;
-        while ($this->hasClass($currentClass)) {
+        while (true) {
+            if (!$this->hasClass($currentClass)) {
+                return null;
+            }
             $currentDef = $this->getClass($currentClass);
             if ($currentDef->hasMethod('__call')) {
-                $hasCompiledMagicMethod = true;
                 break;
             }
-            if ($currentDef->extends === '') {
-                break;
+            if ($currentDef->extends === '' || !$this->hasClass($currentDef->extends)) {
+                return null;
             }
             $currentClass = $currentDef->extends;
         }
-        if (!$hasCompiledMagicMethod) {
-            return null;
-        }
 
-        $nativeFunc = $this->getNativeMethod($expr, $exactClass, '__call', false);
+        // Start from the class that actually declares the compiled method.
+        // This keeps getNativeMethod() out of an internal Zend parent: a real
+        // inherited internal method also uses DynamicCall, but an internal
+        // parent without __call must not be diagnosed while probing this
+        // optimization.
+        $nativeFunc = $this->getNativeMethod($expr, $currentClass, '__call', false);
         if ($nativeFunc === false || !$this->hasFunction($nativeFunc)) {
             return null;
         }

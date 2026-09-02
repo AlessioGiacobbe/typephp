@@ -15,6 +15,10 @@ final class MagicCallCodegenTest extends \BaseTest
         $runtimeBody = $this->functionBody($code, 'php_runtimemagiccall');
         self::assertStringContainsString('.call(', $runtimeBody);
         self::assertStringNotContainsString('php_exactmagichandler____call(', $runtimeBody);
+
+        $internalBody = $this->functionBody($code, 'php_exactinternalmethod');
+        self::assertStringContainsString('.call(', $internalBody);
+        self::assertStringNotContainsString('__call(', $internalBody);
     }
 
     private function compileFixture(): string
