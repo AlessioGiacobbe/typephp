@@ -868,6 +868,31 @@ trait AssignOpTrait
         $propertyWriteTarget = $this->preparePropertyWriteTarget($node->var);
         $this->guardLiteralDivisionByZero($node->expr, $op);
 
+        // A compound division/modulo on a NATIVE scalar slot with a proven
+        // zero divisor cannot fall through to the raw C++ operator (SIGFPE
+        // for ints, INF for floats). A zero divisor always throws the
+        // catchable DivisionByZeroError before any assignment happens, so
+        // lower the whole expression to the PHP-semantics binary operation
+        // and leave the target untouched.
+        if (($op === '/=' || $op === '%=')
+            && !$this->nativeTypes
+            && $this->isZeroLiteral($node->expr)
+            && $this->isVarExpr($node->var)
+            && $this->hasVar((string) $this->parseIdentifier($node->var))
+            && in_array($this->detectVarType($node->var), [Type::INT, Type::FLOAT], true)
+        ) {
+            // std::int()/std::float() values are an explicit opt-in to native
+            // C++ arithmetic; changing them to PHP semantics here would be as
+            // wrong as the undefined raw operation. Keep the compile-time
+            // rejection native_types mode uses.
+            if ($this->isExplicitNativeArithmeticExpr($node->var)) {
+                $this->fatalError($node->expr, 'Cannot divide or modulo by zero');
+            }
+            $binOp = $op === '/=' ? '/' : '%';
+            return '((php::Var(' . $this->parseExprAsValue($node->var) . ')) '
+                . $binOp . ' (php::Var(' . $this->parseExprAsValue($node->expr) . ')))';
+        }
+
         if ($node->var instanceof Expr\PropertyFetch && $this->isNativeObjectPropertyHook($node->var)) {
             $this->fatalError(
                 $node->var,

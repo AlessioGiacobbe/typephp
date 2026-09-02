@@ -141,14 +141,54 @@ trait BinaryOpTrait
             return $constantDivisionByZero;
         }
 
-        if ($op === '%' and !($leftType === Type::INT and $rightType === Type::INT)) {
-            return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+        if ($op === '%') {
+            if (!($leftType === Type::INT and $rightType === Type::INT)) {
+                return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+            }
+            // PHP int modulo raises a catchable DivisionByZeroError for a
+            // zero divisor and defines PHP_INT_MIN % -1 as 0; the raw C++ '%'
+            // is undefined behavior for both. Route dynamic int modulo through
+            // the PHP mod function unless the user explicitly selected
+            // `use native_types`. Constant operands are folded below.
+            if (!$this->nativeTypes
+                && !$this->isExplicitNativeArithmeticExpr($left)
+                && !$this->isExplicitNativeArithmeticExpr($right)
+                && $this->evaluateConstantIntArithmetic($left, $right, '%') === null
+            ) {
+                return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
+            }
         }
 
         if ($op === '<<' || $op === '>>') {
             $foldedShift = $this->tryFoldConstantShift($left, $right, $op, $leftExpr, $rightExpr);
             if ($foldedShift !== null) {
                 return $foldedShift;
+            }
+
+            // PHP shifts by >= the word size yield 0 (or -1 for a negative
+            // right-shifted value) and negative shift counts raise a catchable
+            // ArithmeticError, while the raw C++ shift is undefined behavior
+            // for both; a raw left shift into the sign bit is also undefined.
+            // Route dynamic int shifts through the encapsulated Variant
+            // operators unless the user explicitly selected `use native_types`.
+            // Constant shifts that C++ defines identically to PHP stay raw.
+            if (!$this->nativeTypes
+                && !$this->isExplicitNativeArithmeticExpr($left)
+                && !$this->isExplicitNativeArithmeticExpr($right)
+                && $leftType === Type::INT
+                && $rightType === Type::INT
+            ) {
+                $leftValue = $this->constantIntValue($left);
+                $shiftValue = $this->constantIntValue($right);
+                $safeConstantShift = $leftValue !== null
+                    && $shiftValue !== null
+                    && $leftValue >= 0
+                    && $shiftValue >= 0
+                    && $shiftValue < PHP_INT_SIZE * 8
+                    && ($op === '>>' || !$this->leftShiftTouchesSignBit($leftValue, $shiftValue));
+                if (!$safeConstantShift) {
+                    return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
+                }
             }
         }
 
@@ -175,6 +215,26 @@ trait BinaryOpTrait
             // RHS directly so PHPX can use its inline checked arithmetic
             // overload without constructing and destroying another zval.
             return '((php::Var(' . $leftExpr . ')) ' . $op . ' (' . $rightExpr . '))';
+        }
+
+        // PHP division on native scalar operands cannot be emitted as a raw
+        // C++ '/': zend_long division truncates (7 / 2 is 3.5 in PHP, 3 in
+        // C++), division by zero must raise the catchable DivisionByZeroError
+        // (raw integer division is UB, raw double division yields INF/NAN),
+        // and PHP_INT_MIN / -1 promotes to float. Route dynamic division
+        // through the encapsulated Variant operator unless the user explicitly
+        // selected `use native_types`. Fully constant operands are folded
+        // above or are exact when emitted directly.
+        if (!$this->nativeTypes
+            && $op === '/'
+            && !$this->isExplicitNativeArithmeticExpr($left)
+            && !$this->isExplicitNativeArithmeticExpr($right)
+            && in_array($leftType, [Type::INT, Type::FLOAT], true)
+            && in_array($rightType, [Type::INT, Type::FLOAT], true)
+            && ($this->constantNumericValue($left, false) === null
+                || $this->constantNumericValue($right, false) === null)
+        ) {
+            return '((php::Var(' . $leftExpr . ')) / (php::Var(' . $rightExpr . ')))';
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
@@ -523,21 +583,25 @@ trait BinaryOpTrait
         string $leftExpr,
         string $rightExpr
     ): ?string {
-        if (($op !== '/' && $op !== '%') || $this->isZeroLiteral($right)) {
+        if ($op !== '/' && $op !== '%') {
             return null;
         }
 
-        $rightValue = $this->constantNumericValue($right, $this->nativeTypes);
-        if ($rightValue === null || $rightValue != 0) {
-            return null;
+        if (!$this->isZeroLiteral($right)) {
+            $rightValue = $this->constantNumericValue($right, $this->nativeTypes);
+            if ($rightValue === null || $rightValue != 0) {
+                return null;
+            }
         }
 
         if ($this->nativeTypes) {
             $this->fatalError($right, 'Constant division or modulo by zero has undefined behavior in C++ native mode');
         }
 
-        // Preserve PHP's catchable DivisionByZeroError for a nested constant
-        // zero. Literal zero keeps the compiler's established diagnostic.
+        // Preserve PHP's catchable DivisionByZeroError for a constant zero
+        // divisor, whether spelled as a literal or a folded expression. Even
+        // statically detectable, the operation only throws when the statement
+        // actually executes, so it must not reject compilation.
         return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
     }
 
@@ -1264,7 +1328,13 @@ trait BinaryOpTrait
     protected function guardLiteralDivisionByZero(NodeAbstract $right, string $op): void
     {
         if (($op === '/' or $op === '%' or $op === '/=' or $op === '%=') and $this->isZeroLiteral($right)) {
-            $this->fatalError($right, 'Cannot divide or modulo by zero');
+            if ($this->nativeTypes) {
+                $this->fatalError($right, 'Cannot divide or modulo by zero');
+            }
+            // PHP raises a catchable DivisionByZeroError at runtime, and only
+            // when the statement actually executes; dead or guarded code with
+            // a literal zero divisor is valid PHP. Warn instead of rejecting.
+            $this->warning($right, 'Division or modulo by zero throws DivisionByZeroError at runtime');
         }
     }
 

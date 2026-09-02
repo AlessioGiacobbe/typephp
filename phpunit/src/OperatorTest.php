@@ -56,34 +56,61 @@ class OperatorTest extends \BaseTest
         $this->assertStringContainsString('php::toBool(php::call(', $cpp);
     }
 
-    public function testLiteralIntDivideByZeroDoesNotCompile(): void
+    /**
+     * A literal zero divisor is valid PHP: it raises a catchable
+     * DivisionByZeroError only when the statement executes, so it must
+     * compile (with a warning) and defer to the runtime error, exactly like
+     * the already-accepted `1 % (1 - 1)` and `10 / ZERO` spellings.
+     */
+    public function testLiteralIntDivideByZeroCompilesToRuntimeError(): void
     {
-        $this->exec('Cannot divide or modulo by zero', 'divide-by-zero-int.php');
+        $cpp = $this->compileToCpp('divide-by-zero-int.php');
+        $this->assertMatchesRegularExpression('/\(\(php::Var\(10L{1,2}\)\) \/ \(php::Var\(0L{1,2}\)\)\)/', $cpp);
     }
 
-    public function testLiteralFloatDivideByZeroDoesNotCompile(): void
+    public function testLiteralFloatDivideByZeroCompilesToRuntimeError(): void
     {
-        $this->exec('Cannot divide or modulo by zero', 'divide-by-zero-float.php');
+        $cpp = $this->compileToCpp('divide-by-zero-float.php');
+        $this->assertStringContainsString('((php::Var(1.0)) / (php::Var(0.0)))', $cpp);
     }
 
-    public function testLiteralStringDivideByZeroDoesNotCompile(): void
+    public function testLiteralStringDivideByZeroCompilesToRuntimeError(): void
     {
-        $this->exec('Cannot divide or modulo by zero', 'divide-by-zero-string.php');
+        // The string operand keeps the Variant operator, which raises the
+        // catchable DivisionByZeroError at runtime.
+        $this->compile('divide-by-zero-string.php');
     }
 
-    public function testLiteralModuloByZeroDoesNotCompile(): void
+    public function testLiteralModuloByZeroCompilesToRuntimeError(): void
     {
-        $this->exec('Cannot divide or modulo by zero', 'modulo-by-zero-int.php');
+        $cpp = $this->compileToCpp('modulo-by-zero-int.php');
+        $this->assertMatchesRegularExpression('/\(\(php::Var\(10L{1,2}\)\) % \(php::Var\(0L{1,2}\)\)\)/', $cpp);
     }
 
-    public function testLiteralDivideAssignByZeroDoesNotCompile(): void
+    public function testLiteralDivideAssignByZeroCompilesToRuntimeError(): void
     {
-        $this->exec('Cannot divide or modulo by zero', 'assign-divide-by-zero.php');
+        $cpp = $this->compileToCpp('assign-divide-by-zero.php');
+        $this->assertStringContainsString('value /= ', $cpp);
     }
 
-    public function testLiteralModuloAssignByZeroDoesNotCompile(): void
+    public function testLiteralModuloAssignByZeroCompilesToRuntimeError(): void
     {
-        $this->exec('Cannot divide or modulo by zero', 'assign-modulo-by-zero.php');
+        $cpp = $this->compileToCpp('assign-modulo-by-zero.php');
+        $this->assertStringContainsString('value %= ', $cpp);
+    }
+
+    private function compileToCpp(string $file): string
+    {
+        global $translator;
+        $compiler = \TypePhp\CompilerTest::create(TYPEPHP_ROOT_PATH);
+        $translator = $compiler;
+        $testFile = __DIR__ . '/../code/' . $file;
+        $compiler->addFiles([$testFile]);
+        $compiler->prepareFile($testFile);
+        $cppFile = $compiler->convertFile($testFile);
+        $cpp = file_get_contents($cppFile);
+        $this->assertIsString($cpp);
+        return $cpp;
     }
 
     public function testFloatLiteralSpecialValuesAndWholeNumbers(): void
