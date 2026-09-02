@@ -151,6 +151,8 @@ trait BinaryOpTrait
             // the PHP mod function unless the user explicitly selected
             // `use native_types`. Constant operands are folded below.
             if (!$this->nativeTypes
+                && !$this->isExplicitNativeArithmeticExpr($left)
+                && !$this->isExplicitNativeArithmeticExpr($right)
                 && $this->evaluateConstantIntArithmetic($left, $right, '%') === null
             ) {
                 return 'php::fn::mod(' . $leftExpr . ', ' . $rightExpr . ')';
@@ -171,6 +173,8 @@ trait BinaryOpTrait
             // operators unless the user explicitly selected `use native_types`.
             // Constant shifts that C++ defines identically to PHP stay raw.
             if (!$this->nativeTypes
+                && !$this->isExplicitNativeArithmeticExpr($left)
+                && !$this->isExplicitNativeArithmeticExpr($right)
                 && $leftType === Type::INT
                 && $rightType === Type::INT
             ) {
@@ -223,6 +227,8 @@ trait BinaryOpTrait
         // above or are exact when emitted directly.
         if (!$this->nativeTypes
             && $op === '/'
+            && !$this->isExplicitNativeArithmeticExpr($left)
+            && !$this->isExplicitNativeArithmeticExpr($right)
             && in_array($leftType, [Type::INT, Type::FLOAT], true)
             && in_array($rightType, [Type::INT, Type::FLOAT], true)
             && ($this->constantNumericValue($left, false) === null

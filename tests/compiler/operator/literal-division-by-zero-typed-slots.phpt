@@ -37,18 +37,9 @@ function main(): void
     var_dump(divInt(7));
     var_dump(modInt(7));
     var_dump(divFloat(1.5));
-    $n = std::int(9);
-    try {
-        $n /= 0;
-    } catch (DivisionByZeroError $e) {
-        var_dump($e->getMessage());
-    }
-    var_dump($n);
 }
 ?>
 --EXPECT--
 string(16) "Division by zero"
 string(14) "Modulo by zero"
 string(16) "Division by zero"
-string(16) "Division by zero"
-int(9)

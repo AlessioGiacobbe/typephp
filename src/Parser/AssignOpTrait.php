@@ -881,6 +881,13 @@ trait AssignOpTrait
             && $this->hasVar((string) $this->parseIdentifier($node->var))
             && in_array($this->detectVarType($node->var), [Type::INT, Type::FLOAT], true)
         ) {
+            // std::int()/std::float() values are an explicit opt-in to native
+            // C++ arithmetic; changing them to PHP semantics here would be as
+            // wrong as the undefined raw operation. Keep the compile-time
+            // rejection native_types mode uses.
+            if ($this->isExplicitNativeArithmeticExpr($node->var)) {
+                $this->fatalError($node->expr, 'Cannot divide or modulo by zero');
+            }
             $binOp = $op === '/=' ? '/' : '%';
             return '((php::Var(' . $this->parseExprAsValue($node->var) . ')) '
                 . $binOp . ' (php::Var(' . $this->parseExprAsValue($node->expr) . ')))';
