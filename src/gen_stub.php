@@ -2728,9 +2728,17 @@ class EvaluatedValue
 
         $result = $evaluator->evaluateDirectly($expr);
 
+        // The declared type is useful when an UNKNOWN placeholder must be
+        // emitted through its @cvalue macro. For a concrete null expression,
+        // however, the zval must be initialized as null even when the declared
+        // type is nullable (for example, `const ?int VALUE = null`).
+        $valueType = $result === null && !$isUnknownConstValue
+            ? SimpleType::null()
+            : ($constType ?? SimpleType::fromValue($result));
+
         return new EvaluatedValue(
             $result, // note: we are generally not interested in the actual value of $result, unless it's a bare value, without constants
-            $constType ?? SimpleType::fromValue($result),
+            $valueType,
             $cConstName === null ? $expr : new Expr\ConstFetch(new Node\Name($cConstName)),
             $visitor->visitedConstants,
             $isUnknownConstValue
@@ -2828,6 +2836,13 @@ class EvaluatedValue
             // leaking heredoc/nowdoc source syntax into generated C++.
             return '"' . getTranslator()->escapeString((string) $this->value) . '"';
         } elseif ($this->type->isInt()) {
+            // PHP_INT_MIN cannot be spelled as one negative literal: C parses
+            // "-9223372036854775808" as negation applied to an out-of-range
+            // positive literal, which is ill-formed. Reuse the ZEND_LONG_MIN
+            // macro, exactly like the expression path (genIntegerLiteral).
+            if ($this->value === PHP_INT_MIN) {
+                return 'ZEND_LONG_MIN';
+            }
             return strval($this->value);
         } elseif ($this->type->isFloat()) {
             return getTranslator()->genFloatLiteral((float) $this->value);
@@ -2900,7 +2915,7 @@ abstract class VariableLike
         $typeCode = "";
         if ($this->type) {
             if ($this->type->isDnf()) {
-                assert($this instanceof PropertyInfo);
+                assert($this instanceof PropertyInfo || $this instanceof ConstInfo);
                 return $this->type->getDnfTypeExpression($this->getDnfTypeFactorySymbol(), '0');
             }
             $arginfoType = $this->type->toArginfoType();
@@ -3060,6 +3075,22 @@ class ConstInfo extends VariableLike
     protected function getVariableTypeName(): string
     {
         return "constant";
+    }
+
+    public function getDnfTypeFactorySymbol(): string
+    {
+        assert($this->name instanceof ClassConstName);
+        return 'constant_' . implode('_', $this->name->class->getParts())
+            . '_' . $this->name->getDeclarationName() . '_dnf';
+    }
+
+    public function getDnfTypeFactoryCode(): string
+    {
+        if (!$this->type?->isDnf()) {
+            return '';
+        }
+        assert($this->name instanceof ClassConstName);
+        return $this->type->getDnfTypeDeclarations($this->getDnfTypeFactorySymbol());
     }
 
     protected function getFieldSynopsisDefaultLinkend(): string
@@ -4044,6 +4075,15 @@ class ClassInfo {
         $code = '';
         foreach ($this->propertyInfos as $propertyInfo) {
             $code .= $propertyInfo->getDnfTypeFactoryCode();
+        }
+        return $code;
+    }
+
+    public function getDnfConstantTypeFactoryCode(): string
+    {
+        $code = '';
+        foreach ($this->constInfos as $constInfo) {
+            $code .= $constInfo->getDnfTypeFactoryCode();
         }
         return $code;
     }
@@ -5847,6 +5887,7 @@ function generateArgInfoCode(
         . " * Stub hash: $stubHash */\n";
 
     foreach ($fileInfo->classInfos as $classInfo) {
+        $code .= $classInfo->getDnfConstantTypeFactoryCode();
         $code .= $classInfo->getDnfPropertyTypeFactoryCode();
     }
     if (!str_ends_with($code, "*/\n")) {

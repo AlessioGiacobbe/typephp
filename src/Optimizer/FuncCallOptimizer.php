@@ -965,7 +965,7 @@ trait FuncCallOptimizer
             );
         }
         if ($this->isScalarString($arg)) {
-            $cls = $this->getClass($arg->value);
+            $cls = $this->getClassDef($arg->value);
             if ($cls && $cls->extends) return $this->getLiteralString($cls->extends);
             if ($cls && !$cls->extends) return 'false';
         }
@@ -1005,6 +1005,14 @@ trait FuncCallOptimizer
 
     protected function genRound(string $n, Node\Expr\FuncCall $e, array $c): string|false
     {
+        // An unpacked or named argument is a single Node\Arg whatever its
+        // runtime arity turns out to be, so the syntactic count below cannot
+        // stand in for the real one and no position may be read directly.
+        foreach ($e->args as $arg) {
+            if (!$arg instanceof Node\Arg || $arg->unpack || $arg->name !== null) {
+                return false;
+            }
+        }
         $type = $this->detectTypeOfExpr($e->args[0]->value);
         if ($type === Type::DECIMAL) {
             $a0 = $this->parseExpr($e->args[0]->value);
@@ -1032,7 +1040,14 @@ trait FuncCallOptimizer
         }
         $args = count($e->args);
         if ($args >= 3) {
-            return 'php::fn::round(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ', ' . $this->convertIntExpr($this->getArg($e, 2)) . ')';
+            // php::fn::round() models the mode as an Int and calls
+            // _php_math_round() directly, bypassing Zend's validation of the
+            // parameter. A RoundingMode enum lowered to an int selects a
+            // different mode, and an out-of-range int aborts the process in
+            // php_round_helper instead of raising ValueError. A static int
+            // type does not prove the runtime value is one of the eight valid
+            // modes, so every explicit mode goes to the dynamic Zend path.
+            return false;
         }
         if ($args >= 2) {
             return 'php::fn::round(' . $this->getArg($e, 0) . ', ' . $this->convertIntExpr($this->getArg($e, 1)) . ')';

@@ -283,6 +283,81 @@ trait MethodCallTrait
         return false;
     }
 
+    /**
+     * Directly invoke a TypePHP-compiled __call() only when the receiver's
+     * exact runtime class is statically proven. A declared class is not enough:
+     * a subclass may provide the requested real method instead of invoking the
+     * parent's __call().
+     */
+    protected function parseDirectNativeMagicCall(
+        Expr\MethodCall $expr,
+        string $object,
+        string $class,
+        string $method,
+    ): ?string {
+        if ($class === '' || !$this->hasClass($class)) {
+            return null;
+        }
+
+        $exactClass = null;
+        if ($object === 'this_' && $this->isCurrentClassFinal()) {
+            $exactClass = $this->getFullClassName();
+        } elseif (isset($this->context->exactObjects[$object])) {
+            $exactClass = $this->context->exactObjects[$object];
+        } elseif ($this->isFinalClass($class)) {
+            $exactClass = $class;
+        }
+
+        if ($exactClass === null || strcasecmp(ltrim($exactClass, '\\'), ltrim($class, '\\')) !== 0) {
+            return null;
+        }
+
+        // A DynamicCall is also used for real methods inherited from an
+        // internal Zend class. Only attempt __call devirtualization when the
+        // TypePHP class hierarchy actually provides a compiled __call method;
+        // otherwise getNativeMethod() would continue into the internal parent
+        // and incorrectly diagnose the absent magic method.
+        $currentClass = $exactClass;
+        $hasCompiledMagicMethod = false;
+        while ($this->hasClass($currentClass)) {
+            $currentDef = $this->getClass($currentClass);
+            if ($currentDef->hasMethod('__call')) {
+                $hasCompiledMagicMethod = true;
+                break;
+            }
+            if ($currentDef->extends === '') {
+                break;
+            }
+            $currentClass = $currentDef->extends;
+        }
+        if (!$hasCompiledMagicMethod) {
+            return null;
+        }
+
+        $nativeFunc = $this->getNativeMethod($expr, $exactClass, '__call', false);
+        if ($nativeFunc === false || !$this->hasFunction($nativeFunc)) {
+            return null;
+        }
+        $this->checkFunction($nativeFunc);
+
+        if ($this->getVarType($object) !== Type::OBJECT) {
+            $tmpObject = $this->genTmpVarName();
+            $this->context->beforeStmtLines[] = Type::OBJECT . ' ' . $tmpObject . ' = ' . $object . ';';
+            $object = $tmpObject;
+        }
+
+        // __call receives one PHP array containing positional and named
+        // arguments. Reuse the dynamic call argument builder so evaluation
+        // order, unpacking and named keys remain identical to the Zend path.
+        $arguments = $this->parseCallArgs(
+            $expr->args,
+            separateNamedArgs: false,
+            forceArrayArgs: true,
+        );
+
+        return self::PREFIX . $nativeFunc . '(' . $object . ', ' . $method . ', ' . $arguments . ')';
+    }
+
     protected function parseNativeMethodCall(string $object, string $nativeFunc, array $args): string
     {
         if ($this->getVarType($object) != Type::OBJECT) {
@@ -694,6 +769,14 @@ trait MethodCallTrait
                 );
                 if ($extension !== null) {
                     return $this->parseUniversalMethodCall($expr, $object, $methodName, $extension);
+                }
+                try {
+                    $directMagicCall = $this->parseDirectNativeMagicCall($expr, $object, $class, $method);
+                    if ($directMagicCall !== null) {
+                        return $directMagicCall;
+                    }
+                } catch (PlaceHolder) {
+                    return $this->genPlaceHolder($this->genArray([$object, $method]));
                 }
                 $magicMethod = true;
             }

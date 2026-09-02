@@ -24,6 +24,8 @@ trait BinaryOpTrait
         $this->assertExprCanBeUsedAsValue($left, 'binary operand');
         $this->assertExprCanBeUsedAsValue($right, 'binary operand');
 
+        $this->demoteAutoDecimalLiteralAgainstFloat($left, $right);
+
         // Arithmetic logic: convert to a numeric type first when possible
         $leftExpr  = $this->parseOrderedBinaryOperand($left);
         $rightExpr = $this->parseOrderedBinaryOperand($right);
@@ -156,21 +158,39 @@ trait BinaryOpTrait
         }
 
         // Declared int parameters use the native Int ABI even in ordinary PHP
-        // mode. A direct C++ +/−/* would therefore have undefined signed
-        // overflow, while PHP promotes the result to float. Route dynamic
+        // mode. Direct C++ +/−/* can overflow, while C++ integer division
+        // truncates and cannot raise PHP's DivisionByZeroError. Route dynamic
         // integer arithmetic through the encapsulated Variant operators unless
         // the user explicitly selected `use native_types`. Fully constant
         // expressions remain safe to emit directly after the checks above.
         if (!$this->nativeTypes
             && $leftType === Type::INT
             && $rightType === Type::INT
-            && in_array($op, ['+', '-', '*'], true)
+            && in_array($op, ['+', '-', '*', '/'], true)
+            && !$this->isExplicitNativeArithmeticExpr($left)
+            && !$this->isExplicitNativeArithmeticExpr($right)
             && $this->evaluateConstantIntArithmetic($left, $right, $op) === null
         ) {
-            return '((php::Var(' . $leftExpr . ')) ' . $op . ' (php::Var(' . $rightExpr . ')))';
+            // Keep the potentially widening result boxed, but pass the native
+            // RHS directly so PHPX can use its inline checked arithmetic
+            // overload without constructing and destroying another zval.
+            return '((php::Var(' . $leftExpr . ')) ' . $op . ' (' . $rightExpr . '))';
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
+    }
+
+    /**
+     * std::int/float/bool explicitly opt a value into native C++ arithmetic,
+     * independently of the file-wide `use native_types` declaration.
+     */
+    protected function isExplicitNativeArithmeticExpr(NodeAbstract $expr): bool
+    {
+        if ($this->isVarExpr($expr) && is_string($expr->name)) {
+            return isset($this->context->explicitNativeTypeVars[$this->parseIdentifier($expr)]);
+        }
+
+        return $expr->getAttribute('nativeType') !== null;
     }
 
     /**
@@ -393,10 +413,13 @@ trait BinaryOpTrait
             return $value === null ? null : -$value;
         }
         if ($expr instanceof Node\Expr\ConstFetch) {
-            $name = strtolower($expr->name->toString());
+            // PHP constants are case-sensitive and unqualified names resolve
+            // through the namespace first, so only a fetch that provably
+            // names the global constant may fold to its value.
+            $name = $this->resolveGlobalFoldableConstantName($expr);
             return match ($name) {
-                'php_int_max' => PHP_INT_MAX,
-                'php_int_min' => PHP_INT_MIN,
+                'PHP_INT_MAX' => PHP_INT_MAX,
+                'PHP_INT_MIN' => PHP_INT_MIN,
                 default => null,
             };
         }
@@ -439,6 +462,34 @@ trait BinaryOpTrait
                 : null,
             default => null,
         };
+    }
+
+    /**
+     * Resolve a constant fetch to the global constant name it provably
+     * denotes, or null when the fetch may refer to something else.
+     *
+     * A `use const` alias resolves to its target. A fully qualified name is
+     * already global. An unqualified name inside a namespace participates in
+     * PHP's runtime fallback (Namespace\NAME can be defined before the fetch
+     * executes), so it never provably names the global constant. A qualified
+     * relative name resolves inside a namespace/import and is never global.
+     */
+    protected function resolveGlobalFoldableConstantName(Node\Expr\ConstFetch $expr): ?string
+    {
+        $name = ltrim($expr->name->toString(), '\\');
+        if (isset($this->useConstants[$name])) {
+            return ltrim($this->useConstants[$name], '\\');
+        }
+        if ($expr->name instanceof Node\Name\FullyQualified) {
+            return $name;
+        }
+        if (!$expr->name->isUnqualified()) {
+            return null;
+        }
+        if ($this->namespace) {
+            return null;
+        }
+        return $name;
     }
 
     protected function constantDivisionValue(int|float $left, int|float $right, bool $nativeSemantics): int|float|null
@@ -951,6 +1002,7 @@ trait BinaryOpTrait
         if ($pythonOperator !== null) {
             return $pythonOperator;
         }
+        $this->demoteAutoDecimalLiteralAgainstFloat($expr->left, $expr->right);
         $left  = $this->parseCompareExpr($expr->left);
         $right = $this->parseCompareExpr($expr->right);
         $leftIsNative = $this->isNativeObjectClass($this->detectClassOfExpr($expr->left));
@@ -1113,8 +1165,36 @@ trait BinaryOpTrait
             ?? 'php::compare(' . $this->parseOrderedOperand($expr->left, false) . ', ' . $this->parseOrderedOperand($expr->right, false) . ')';
     }
 
+    /**
+     * When an auto-Decimal-classified float literal meets a float-typed
+     * expression in a binary operation, demote the literal to its exact
+     * double. PHP evaluates every float literal as a double, so rejecting
+     * the mix ("Cannot convert float expression to Decimal") refuses valid
+     * PHP — e.g. `0.1 + 0.2 == 0.30000000000000004` from a var_export round
+     * trip — and keeping the Decimal would change comparison semantics.
+     */
+    protected function demoteAutoDecimalLiteralAgainstFloat(NodeAbstract $left, NodeAbstract $right): void
+    {
+        if ($this->decimalTypes) {
+            return;
+        }
+        $leftType = $this->detectTypeOfExpr($left);
+        $rightType = $this->detectTypeOfExpr($right);
+        foreach ([[$left, $leftType, $rightType], [$right, $rightType, $leftType]] as [$node, $type, $otherType]) {
+            if ($type === Type::DECIMAL
+                && $otherType === Type::FLOAT
+                && $node instanceof Node\Scalar\Float_
+                && $this->isDecimalLiteral($node)
+            ) {
+                $node->setAttribute(self::ATTR_FORCE_FLOAT_LITERAL, true);
+            }
+        }
+    }
+
     protected function genBigNumericCmp(Expr\BinaryOp $expr, string $suffix = ''): ?string
     {
+        $this->demoteAutoDecimalLiteralAgainstFloat($expr->left, $expr->right);
+
         $leftType = $this->detectTypeOfExpr($expr->left);
         $rightType = $this->detectTypeOfExpr($expr->right);
 

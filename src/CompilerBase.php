@@ -160,6 +160,7 @@ class CompilerBase implements PropertyAccessContext
     protected const string ATTR_STATEMENT_EXPRESSION = 'aotStatementExpression';
     protected const string ATTR_MULTI_RETURN_IMPL = 'aotMultiReturnImpl';
     protected const string ATTR_SCOPED_CALLBACK = 'aotScopedCallback';
+    protected const string ATTR_FORCE_FLOAT_LITERAL = 'aotForceFloatLiteral';
 
     /**
      * Keyword methods (to* builtins) with mandated return types.
@@ -3045,6 +3046,13 @@ class CompilerBase implements PropertyAccessContext
                         $evaluation = $this->evaluateConstantIntArithmetic($expr->left, $expr->right, $op);
                         if ($evaluation !== null && is_float($evaluation['result'])) {
                             return Type::FLOAT;
+                        }
+                        // Runtime integer division has a value-dependent PHP
+                        // result: exact quotients are int, fractional quotients
+                        // and PHP_INT_MIN / -1 are float. Keep it boxed when the
+                        // operands are not compile-time constants.
+                        if ($exprType === 'Expr_BinaryOp_Div' && $evaluation === null) {
+                            return Type::VAR;
                         }
                     }
                 }
