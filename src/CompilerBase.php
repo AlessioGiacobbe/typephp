@@ -619,9 +619,13 @@ class CompilerBase implements PropertyAccessContext
         throw new Unsupported($message);
     }
 
-    protected function getIndent(): string
+    /**
+     * Return indentation relative to the current code-generation level.
+     * Level 1 is the current level, level 2 is one nested level, and so on.
+     */
+    protected function getIndent(int $level = 1): string
     {
-        return str_repeat($this->indentStr, $this->indentLevel);
+        return str_repeat($this->indentStr, $this->indentLevel + $level - 1);
     }
 
     protected function getPhpxDir(): string
