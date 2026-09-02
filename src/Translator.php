@@ -83,6 +83,9 @@ class Translator extends Preprocessor
     protected array $argInfoHeaderFiles = [];
     protected array $registerSymbols = [];
 
+    /** Generated per-file teardown functions for persistent AST class constants. */
+    protected array $releaseAstConstantFns = [];
+
     // Windows resource file configuration (icon, version info, etc.)
     protected array $resourceConfig = [];
 
@@ -1113,6 +1116,12 @@ CODE;
         // minit end
 
         $code .= 'PHP_MSHUTDOWN_FUNCTION(' . $this->getModuleName() . ') {' . PHP_EOL;
+        // Persistent AST class constants must be restored before Zend's
+        // class teardown runs (its debug assertion only tolerates
+        // CONST_ENUM_INIT there), and their contiguous blocks freed.
+        foreach (array_unique($this->releaseAstConstantFns) as $releaseFn) {
+            $code .= $releaseFn . '();' . PHP_EOL;
+        }
         // The cache owns no Zend symbols, but its pointers must not survive a
         // complete module shutdown/startup cycle in an embedded process.
         $code .= 'for (auto &slot : ' . self::PREFIX . self::PERSISTENT_CLASS_MAP . ') {' . PHP_EOL;
@@ -3104,6 +3113,9 @@ CODE;
         generateStubFile($file, $this->getIncludeDir() . '/' . $headerFile, true, $this->getPhpVersion());
 
         $headerCode = file_get_contents($this->getBuildDir() . '/include/' . $headerFile);
+        if (preg_match('/\\bstatic\\s+void\\s+(typephp_release_ast_constants_[A-Za-z0-9_]+)\\s*\\(void\\)/', $headerCode, $releaseMatch)) {
+            $this->releaseAstConstantFns[] = $releaseMatch[1];
+        }
         $needsAttributeSymbols = str_contains($headerCode, 'zend_add_function_attribute(')
             || str_contains($headerCode, 'zend_add_parameter_attribute(')
             || str_contains($headerCode, 'zend_add_global_constant_attribute(');
