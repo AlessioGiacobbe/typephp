@@ -21,4 +21,22 @@ class MethodOverrideByRefReturnTest extends BaseTest
             'override_byref_return_dropped.php',
         );
     }
+
+    public function testAbstractMethodImplementationCannotDropByRefReturn(): void
+    {
+        $this->exec(
+            'Declaration of `ConcreteByRefReturn::value()` must be compatible with '
+                . '`AbstractByRefReturn::value()`',
+            'override_byref_return_abstract_dropped.php',
+        );
+    }
+
+    public function testInterfaceImplementationCannotDropByRefReturn(): void
+    {
+        $this->exec(
+            'Declaration of `ByRefReturnImplementation::value()` must be compatible with '
+                . '`ByRefReturnContract::value()`',
+            'override_byref_return_interface_dropped.php',
+        );
+    }
 }
