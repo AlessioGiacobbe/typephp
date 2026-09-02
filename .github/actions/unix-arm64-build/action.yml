@@ -30,7 +30,7 @@ runs:
         php-version: ${{ inputs.php-version }}
         coverage: none
         extensions: mbstring
-        ini-values: precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
+        ini-values: opcache.jit=0, precision=17, memory_limit=4G, error_reporting=E_ERROR|E_WARNING, display_errors=1, display_startup_errors=1, log_errors=0
         tools: composer:v2
       env:
         fail-fast: true
@@ -137,7 +137,9 @@ runs:
           -ex 'set print thread-events off' \
           -ex run \
           -ex 'info registers' \
+          -ex 'info proc mappings' \
           -ex 'info sharedlibrary' \
+          -ex 'x/32i $pc-32' \
           -ex 'thread apply all bt full' \
           --args ./tpc --version \
           > "${debug_dir}/gdb.txt" 2>&1 || true
