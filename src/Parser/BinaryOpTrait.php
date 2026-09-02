@@ -167,6 +167,8 @@ trait BinaryOpTrait
             && $leftType === Type::INT
             && $rightType === Type::INT
             && in_array($op, ['+', '-', '*', '/'], true)
+            && !$this->isExplicitNativeArithmeticExpr($left)
+            && !$this->isExplicitNativeArithmeticExpr($right)
             && $this->evaluateConstantIntArithmetic($left, $right, $op) === null
         ) {
             // Keep the potentially widening result boxed, but pass the native
@@ -176,6 +178,19 @@ trait BinaryOpTrait
         }
 
         return '((' . $leftExpr . ') ' . $op . ' (' . $rightExpr . '))';
+    }
+
+    /**
+     * std::int/float/bool explicitly opt a value into native C++ arithmetic,
+     * independently of the file-wide `use native_types` declaration.
+     */
+    protected function isExplicitNativeArithmeticExpr(NodeAbstract $expr): bool
+    {
+        if ($this->isVarExpr($expr) && is_string($expr->name)) {
+            return isset($this->context->explicitNativeTypeVars[$this->parseIdentifier($expr)]);
+        }
+
+        return $expr->getAttribute('nativeType') !== null;
     }
 
     /**

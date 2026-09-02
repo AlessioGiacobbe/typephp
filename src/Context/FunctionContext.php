@@ -68,6 +68,8 @@ class FunctionContext
      */
     public array $stdContainers = [];
     public array $localVars = [];
+    /** @var array<string, true> Locals explicitly created through std::int/float/bool. */
+    public array $explicitNativeTypeVars = [];
     /** @var array<string, string> C++ initializers folded into function-scope local declarations. */
     public array $localVarInitializers = [];
     public array $staticVars = [];
@@ -121,6 +123,7 @@ class FunctionContext
     public function __construct()
     {
         $this->localVars = [];
+        $this->explicitNativeTypeVars = [];
         $this->localVarInitializers = [];
         $this->staticVars = [];
         $this->arguments = [];

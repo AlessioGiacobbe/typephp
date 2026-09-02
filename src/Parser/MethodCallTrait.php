@@ -312,6 +312,28 @@ trait MethodCallTrait
             return null;
         }
 
+        // A DynamicCall is also used for real methods inherited from an
+        // internal Zend class. Only attempt __call devirtualization when the
+        // TypePHP class hierarchy actually provides a compiled __call method;
+        // otherwise getNativeMethod() would continue into the internal parent
+        // and incorrectly diagnose the absent magic method.
+        $currentClass = $exactClass;
+        $hasCompiledMagicMethod = false;
+        while ($this->hasClass($currentClass)) {
+            $currentDef = $this->getClass($currentClass);
+            if ($currentDef->hasMethod('__call')) {
+                $hasCompiledMagicMethod = true;
+                break;
+            }
+            if ($currentDef->extends === '') {
+                break;
+            }
+            $currentClass = $currentDef->extends;
+        }
+        if (!$hasCompiledMagicMethod) {
+            return null;
+        }
+
         $nativeFunc = $this->getNativeMethod($expr, $exactClass, '__call', false);
         if ($nativeFunc === false || !$this->hasFunction($nativeFunc)) {
             return null;

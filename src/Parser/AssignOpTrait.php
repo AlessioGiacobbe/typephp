@@ -621,11 +621,15 @@ trait AssignOpTrait
                                 $finalVarType = $right->getAttribute('nativeType');
                                 $this->addLocalVar($var, $finalVarType);
                             }
+                            $this->context->explicitNativeTypeVars[$var] = true;
                             return $var . ' = ' . $valueExpr;
                         }
                     }
                 } elseif ($this->isVarExpr($right)) {
                     $rightVar = $this->parseIdentifier($right);
+                    if (isset($this->context->explicitNativeTypeVars[$rightVar])) {
+                        $this->context->explicitNativeTypeVars[$var] = true;
+                    }
                     $this->assertStdContainerDoesNotEscapeNativeObjects($right, $rightVar);
                     $type = $this->isStdContainer($rightVar) ? Type::ARRAY : $this->getVarType($rightVar);
                     $finalVarType = $this->getNormalAssignType($type);
