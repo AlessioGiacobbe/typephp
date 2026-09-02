@@ -2909,6 +2909,7 @@ CODE;
             } elseif ($v instanceof Node\Stmt\Interface_) {
                 $this->validateInterfaceOverrideAttributes($v);
                 $this->validateInterfaceConstants($v);
+                $this->validateInterfaceMethodCompatibility($v);
             } elseif (!$v instanceof Node\Stmt\Nop) {
                 $this->unsupportedSyntax($v);
             }
@@ -3084,6 +3085,7 @@ CODE;
             } elseif ($v2 instanceof Node\Stmt\Interface_) {
                 $this->validateInterfaceOverrideAttributes($v2);
                 $this->validateInterfaceConstants($v2);
+                $this->validateInterfaceMethodCompatibility($v2);
             } elseif (!$v2 instanceof Node\Stmt\Nop) {
                 $this->unsupportedSyntax($v2);
             }
@@ -4203,6 +4205,7 @@ CODE;
             $this->validateOverrideAttributes($class);
             $this->checkInterfaceImplementations($class);
             $this->checkInheritedConstantContracts($class);
+            $this->checkInterfaceMethodCollisions($class);
             $this->checkInheritedAbstractMethodsAreImplemented($class);
         }
         $code = $this->genNativeMethod($methodCodes);
@@ -4762,9 +4765,10 @@ CODE;
         string $methodName,
         MethodDef $childMethodDef,
         MethodDef $parentMethodDef,
-        string $parentClass
+        string $parentClass,
+        ?string $childClass = null
     ): void {
-        $className = $this->getFullClassName();
+        $className = $childClass ?? $this->getFullClassName();
 
         // PHP allows widening visibility in overrides (e.g. protected -> public),
         // but forbids narrowing it.
@@ -6108,6 +6112,154 @@ CODE;
             $this->fatalError($node,
                 "Declaration of `{$typeName}::{$constName}` must be compatible " .
                 "with `{$incoming['origin']}::{$constName}`");
+        }
+    }
+
+    /**
+     * Memoized effective method tables of interfaces (method name => def and
+     * its original declaring interface).
+     *
+     * @var array<string, array<string, array{def: MethodDef, origin: string}>>
+     */
+    private array $effectiveInterfaceMethodTables = [];
+
+    /** @var array<string, true> Interface method tables being constructed. */
+    private array $effectiveInterfaceMethodTableVisiting = [];
+
+    /** @return array<string, array{def: MethodDef, origin: string}> */
+    private function getEffectiveInterfaceMethodTable(InterfaceDef $def, NodeAbstract $errorNode): array
+    {
+        $ownName = $def->getNamespacedName(false);
+        $key = strtolower($ownName);
+        if (isset($this->effectiveInterfaceMethodTables[$key])) {
+            return $this->effectiveInterfaceMethodTables[$key];
+        }
+        if (isset($this->effectiveInterfaceMethodTableVisiting[$key])) {
+            // A cyclic extends graph would recurse forever; fail promptly with
+            // the same diagnostic getEffectiveConstantTable() uses, so the
+            // helper stays safe regardless of which validation runs first.
+            $this->fatalError($errorNode, "Interface inheritance cycle detected at `{$ownName}`");
+        }
+
+        $this->effectiveInterfaceMethodTableVisiting[$key] = true;
+        try {
+            $table = [];
+            foreach ($def->methods as $name => $methodDef) {
+                $table[$name] = ['def' => $methodDef, 'origin' => $ownName];
+            }
+            foreach ($def->extendsList ?: ($def->extends ? [$def->extends] : []) as $parentName) {
+                if (!$this->hasInterface($parentName)) {
+                    continue;
+                }
+                foreach ($this->getEffectiveInterfaceMethodTable($this->getInterface($parentName), $errorNode) as $name => $entry) {
+                    $table[$name] ??= $entry;
+                }
+            }
+            return $this->effectiveInterfaceMethodTables[$key] = $table;
+        } finally {
+            unset($this->effectiveInterfaceMethodTableVisiting[$key]);
+        }
+    }
+
+    /**
+     * Zend's interface merge validates the FIRST-seen declaration of a method
+     * as an override of every LATER same-name declaration ("Declaration of
+     * I1::f() must be compatible with I2::f()"): the interface's own method,
+     * or the one inherited from the earliest-listed parent, is the child.
+     */
+    private function validateInterfaceMethodCompatibility(Node\Stmt\Interface_ $interfaceStmt): void
+    {
+        $name = $this->parseIdentifier($interfaceStmt->name);
+        $interfaceName = $this->namespace === '' ? $name : $this->namespace . '\\' . $name;
+        if (!$this->hasInterface($interfaceName)) {
+            return;
+        }
+        $interfaceDef = $this->getInterface($interfaceName);
+
+        // An interface can only extend other interfaces; naming a class here
+        // is a Zend fatal, not a lookup failure.
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentName) {
+            if (!$this->hasInterface($parentName) && !$this->isInternalInterface($parentName) && $this->hasClass($parentName)) {
+                $this->fatalError($interfaceStmt,
+                    "`{$interfaceName}` cannot implement `{$parentName}` - it is not an interface");
+            }
+        }
+
+        $table = [];
+        foreach ($interfaceDef->methods as $methodName => $methodDef) {
+            $table[$methodName] = ['def' => $methodDef, 'origin' => $interfaceName];
+        }
+        foreach ($interfaceDef->extendsList ?: ($interfaceDef->extends ? [$interfaceDef->extends] : []) as $parentName) {
+            if (!$this->hasInterface($parentName)) {
+                continue;
+            }
+            foreach ($this->getEffectiveInterfaceMethodTable($this->getInterface($parentName), $interfaceStmt) as $methodName => $entry) {
+                if (!isset($table[$methodName])) {
+                    $table[$methodName] = $entry;
+                    continue;
+                }
+                $existing = $table[$methodName];
+                if ($existing['origin'] === $entry['origin']) {
+                    continue; // diamond: same original declaration
+                }
+                $this->validateMethodOverrideSignature(
+                    $interfaceStmt,
+                    $existing['def']->name,
+                    $existing['def'],
+                    $entry['def'],
+                    $entry['origin'],
+                    $existing['origin'],
+                );
+            }
+        }
+    }
+
+    /**
+     * When a class(-like) implements several interfaces declaring the same
+     * method and neither the class nor a userland ancestor defines it, Zend
+     * still validates the interface declarations against each other
+     * (first-seen as the child). A defined method silences this pairwise
+     * check — it is instead validated against every interface individually.
+     */
+    private function checkInterfaceMethodCollisions(Node\Stmt\Class_|Node\Stmt\Enum_ $classStmt): void
+    {
+        $classDef = $this->classDef;
+        $definedInChain = function (string $methodName) use ($classDef): bool {
+            $current = $classDef;
+            while (true) {
+                if ($current->hasMethod($methodName) || $current->hasAbstractMethod($methodName)) {
+                    return true;
+                }
+                if ($current->extends === '' || $current->inheritedFromInternalClass || !$this->hasClass($current->extends)) {
+                    return false;
+                }
+                $current = $this->getClass($current->extends);
+            }
+        };
+
+        $table = [];
+        foreach ($this->getClassImplementedInterfaces($classDef) as $interfaceName) {
+            if (!$this->hasInterface($interfaceName)) {
+                continue;
+            }
+            foreach ($this->getEffectiveInterfaceMethodTable($this->getInterface($interfaceName), $classStmt) as $methodName => $entry) {
+                if (!isset($table[$methodName])) {
+                    $table[$methodName] = $entry;
+                    continue;
+                }
+                $existing = $table[$methodName];
+                if ($existing['origin'] === $entry['origin'] || $definedInChain($methodName)) {
+                    continue;
+                }
+                $this->validateMethodOverrideSignature(
+                    $classStmt,
+                    $existing['def']->name,
+                    $existing['def'],
+                    $entry['def'],
+                    $entry['origin'],
+                    $existing['origin'],
+                );
+            }
         }
     }
 
