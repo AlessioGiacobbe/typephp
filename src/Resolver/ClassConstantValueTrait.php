@@ -164,10 +164,16 @@ trait ClassConstantValueTrait
                 } elseif (strcasecmp($className, 'parent') === 0) {
                     $className = $this->getParentClass($class);
                 }
-                // $class is already fully qualified; mark it absolute so
-                // getClassConstValue() does not prepend the current file's
-                // namespace a second time (`TypePhp\TypePhp\...`).
-                if ($className !== '' && strcasecmp($expr->class->toString(), $className) !== 0) {
+                // A resolved self/parent/static target is already fully
+                // qualified, and a `\App3\C` source spelling is fully
+                // qualified even though Name::toString() strips the leading
+                // backslash. Mark both absolute so getClassConstValue() does
+                // not prepend the current file's namespace a second time
+                // (`TypePhp\TypePhp\...`, `App3\App3\...`).
+                if ($className !== ''
+                    && ($expr->class instanceof Node\Name\FullyQualified
+                        || strcasecmp($expr->class->toString(), $className) !== 0)
+                ) {
                     $className = '\\' . ltrim($className, '\\');
                 }
                 return $this->getClassConstValue($origin ?? $expr, $className, $constName, $class, $enumCasesAsIdentity);
