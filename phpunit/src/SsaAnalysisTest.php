@@ -1241,6 +1241,43 @@ class SsaAnalysisTest extends TestCase
         $this->assertArrayNotHasKey('n', $locals);
     }
 
+    public function testLoopVarOptimizerRejectsCounterReusedAsForeachKey(): void
+    {
+        $locals = $this->optimizeLoopVarsForCode('
+            foreach (["name" => 1] as $i => $value) {
+                echo $value;
+            }
+            for ($i = 0; $i < 10; $i++) {
+                echo $i;
+            }
+        ');
+
+        $this->assertArrayNotHasKey('i', $locals);
+    }
+
+    public function testLoopVarOptimizerRejectsCounterReusedAsForeachValueOrDestructuringTarget(): void
+    {
+        $valueLocals = $this->optimizeLoopVarsForCode('
+            foreach (["value"] as $i) {
+                echo $i;
+            }
+            for ($i = 0; $i < 10; $i++) {
+                echo $i;
+            }
+        ');
+        $listLocals = $this->optimizeLoopVarsForCode('
+            foreach ([["value"]] as [$i]) {
+                echo $i;
+            }
+            for ($i = 0; $i < 10; $i++) {
+                echo $i;
+            }
+        ');
+
+        $this->assertArrayNotHasKey('i', $valueLocals);
+        $this->assertArrayNotHasKey('i', $listLocals);
+    }
+
     // ========================================================================
     // SsaTypeOptimizer: detectSsaDefType
     // ========================================================================

@@ -758,6 +758,17 @@ trait LoopVarOptimizer
             }
         }
 
+        if ($expr instanceof Stmt\Foreach_) {
+            // Foreach key/value variables are assigned implicitly on every
+            // iteration. A name that is also used by a range-proven `for`
+            // counter cannot share a function-scoped php::Int slot with an
+            // arbitrary key or value (including list destructuring targets).
+            if (($expr->keyVar instanceof Node && $this->exprUsesVar($expr->keyVar, $varName))
+                || $this->exprUsesVar($expr->valueVar, $varName)) {
+                return true;
+            }
+        }
+
         foreach ($expr->getSubNodeNames() as $name) {
             $value = $expr->$name;
             if ($value instanceof Node) {
