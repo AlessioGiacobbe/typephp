@@ -47,4 +47,37 @@ class PropertyHookPlacementTest extends BaseTest
     {
         $this->compile('hook_rule_valid.php');
     }
+
+    public function testAbstractPrivateHookIsRejected(): void
+    {
+        // An abstract (bodiless) hook must be implementable by a subclass,
+        // which a private property forbids.
+        $this->exec('Property hook cannot be both abstract and private', 'hook_rule_abstract_private.php');
+    }
+
+    public function testAbstractPrivateHookIsRejectedInTrait(): void
+    {
+        // Unlike abstract private trait methods, Zend does not exempt traits
+        // from the abstract-private hook conflict.
+        $this->exec('Property hook cannot be both abstract and private', 'hook_rule_abstract_private_trait.php');
+    }
+
+    public function testAbstractFinalHookIsRejected(): void
+    {
+        // A bodiless hook must be overridable to ever gain a body; it cannot
+        // carry final.
+        $this->exec('Property hook cannot be both abstract and final', 'hook_rule_abstract_final.php');
+    }
+
+    public function testFinalPrivateHookWinsDiagnosticPrecedence(): void
+    {
+        // `abstract private int $x { final get; }` violates all three rules;
+        // Zend reports the final+private conflict first (probed on 8.4.13).
+        $this->exec('Property hook cannot be both final and private', 'hook_rule_final_private.php');
+    }
+
+    public function testProtectedAbstractHookStaysLegal(): void
+    {
+        $this->compile('hook_rule_abstract_protected_valid.php');
+    }
 }

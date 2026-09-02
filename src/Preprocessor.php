@@ -2076,11 +2076,40 @@ class Preprocessor extends CompilerBase
             if (($v->flags | $this->classDef->flags) & Modifiers::READONLY) {
                 $this->fatalError($v, 'Hooked properties cannot be readonly');
             }
+            // Zend checks hook-level modifier conflicts right after the
+            // property-level placement rules, before any abstract-property
+            // rule: a final hook on a private property is rejected first even
+            // when the hook is also bodiless (probed:
+            // `abstract private int $x { final get; }` reports final+private).
+            // A private property cannot be overridden, so a final hook on it
+            // is meaningless; the rule applies in traits as well.
+            foreach ($v->hooks as $hook) {
+                if (($hook->flags & Modifiers::FINAL) && ($v->flags & Modifiers::PRIVATE)) {
+                    $this->fatalError($hook, 'Property hook cannot be both final and private');
+                }
+            }
         }
 
         if ($abstract) {
             if ($v->hooks === []) {
                 $this->fatalError($v, 'Only hooked properties may be declared abstract');
+            }
+            // A bodiless hook of an abstract property is itself abstract. An
+            // abstract hook must be implementable by a subclass, which a
+            // private property forbids, and must be overridable, which final
+            // forbids. Zend reports these per hook, before the default-value
+            // and abstract-hook-presence rules (probed on 8.4.13), and —
+            // unlike abstract private trait METHODS — does not exempt traits.
+            foreach ($v->hooks as $hook) {
+                if ($hook->body !== null) {
+                    continue;
+                }
+                if ($v->flags & Modifiers::PRIVATE) {
+                    $this->fatalError($hook, 'Property hook cannot be both abstract and private');
+                }
+                if ($hook->flags & Modifiers::FINAL) {
+                    $this->fatalError($hook, 'Property hook cannot be both abstract and final');
+                }
             }
             foreach ($v->props as $prop) {
                 if ($prop->default !== null) {
