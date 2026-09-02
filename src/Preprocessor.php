@@ -1209,6 +1209,21 @@ class Preprocessor extends CompilerBase
         if (isset($this->symbolDeclInFile[$fullClassNameLower])) {
             $this->fatalError($class, "Duplicate class `{$fullClassName}`");
         }
+        // Dynamic properties and readonly semantics are mutually exclusive:
+        // every property of a readonly class is readonly and declared, so
+        // Zend rejects the attribute at compile time.
+        if ($class instanceof Node\Stmt\Class_ && ($flags & Modifiers::READONLY)) {
+            foreach ($class->attrGroups as $group) {
+                foreach ($group->attrs as $attribute) {
+                    if (strcasecmp($this->getResolvedPhpName($attribute->name), 'AllowDynamicProperties') === 0) {
+                        $this->fatalError(
+                            $attribute,
+                            "Cannot apply #[AllowDynamicProperties] to readonly class `{$fullClassName}`",
+                        );
+                    }
+                }
+            }
+        }
 
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
         $this->classDef->nativeObject = NativeClassAttributeLowering::isNative($class);

@@ -3354,6 +3354,21 @@ CODE;
                                 }
                                 continue;
                             }
+                            // A trait property keeps its own declaration: the
+                            // consuming class's `readonly` modifier does not
+                            // upgrade it, so Zend refuses to compose a
+                            // non-readonly (or static, which can never be
+                            // readonly) trait property into a readonly class.
+                            // Zend names the directly used trait, even when
+                            // the property originated in a nested trait.
+                            if (($classDef->flags & Modifiers::READONLY)
+                                && !($traitStmt->flags & Modifiers::READONLY)
+                            ) {
+                                $this->fatalError(
+                                    $traitStmt,
+                                    "Readonly class `{$compositionOwner}` cannot use trait with a non-readonly property `{$traitFullName}::\${$prop->name->toString()}`",
+                                );
+                            }
                             $traitProperties[$propName] = [$traitStmt, $prop];
                         }
                     }
@@ -4073,15 +4088,26 @@ CODE;
                 // Readonly-ness is part of the inheritance contract in both
                 // directions (Zend: a readonly class seals its property
                 // semantics for the whole hierarchy).
-                $childReadonly = (bool) ($this->classDef->flags & Modifiers::READONLY);
-                $parentReadonly = (bool) ($parent->flags & Modifiers::READONLY);
-                if ($childReadonly !== $parentReadonly) {
-                    $this->fatalError($class, $parentReadonly
-                        ? "Non-readonly class `{$this->class}` cannot extend readonly class `{$parentClass}`"
-                        : "Readonly class `{$this->class}` cannot extend non-readonly class `{$parentClass}`");
-                }
+                $this->assertReadonlyInheritanceContract(
+                    $class,
+                    $parentClass,
+                    (bool) ($parent->flags & Modifiers::READONLY),
+                );
             } else {
                 $this->fatalError($class, "Class `{$this->class}` inherits from a non-existent class `{$parentClass}`");
+            }
+        } elseif ($this->classDef->extends and $this->classDef->inheritedFromInternalClass and $class instanceof Node\Stmt\Class_) {
+            // Internal parents are not in the symbol table; the host runtime's
+            // reflection is authoritative for their readonly-ness (e.g.
+            // BcMath\Number is an internal readonly class, ArrayObject is not),
+            // so the contract holds in both directions here as well.
+            $parentClass = $this->getNamespacedClassName($this->parseIdentifier($class->extends));
+            if (class_exists($parentClass)) {
+                $this->assertReadonlyInheritanceContract(
+                    $class,
+                    $parentClass,
+                    (new \ReflectionClass($parentClass))->isReadOnly(),
+                );
             }
         }
 
@@ -6184,6 +6210,23 @@ CODE;
                 $classDef->properties[$prop->name] = $prop;
             }
         }
+    }
+
+    /**
+     * Zend seals readonly-ness across a class hierarchy in both directions: a
+     * readonly class cannot extend a non-readonly one and vice versa. The
+     * parent's readonly-ness comes from the symbol table for compiled classes
+     * and from host reflection for internal ones.
+     */
+    private function assertReadonlyInheritanceContract(NodeAbstract $errorNode, string $parentClass, bool $parentReadonly): void
+    {
+        $childReadonly = (bool) ($this->classDef->flags & Modifiers::READONLY);
+        if ($childReadonly === $parentReadonly) {
+            return;
+        }
+        $this->fatalError($errorNode, $parentReadonly
+            ? "Non-readonly class `{$this->class}` cannot extend readonly class `{$parentClass}`"
+            : "Readonly class `{$this->class}` cannot extend non-readonly class `{$parentClass}`");
     }
 
     private function installComposedTraitDataMembers(Node\Stmt\ClassLike $class): void

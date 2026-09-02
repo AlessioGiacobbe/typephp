@@ -27,4 +27,14 @@ class ClassKindInheritanceTest extends BaseTest
     {
         $this->compile('readonly_class_extends_valid.php');
     }
+
+    public function testReadonlyCannotExtendNonReadonlyInternalClass(): void
+    {
+        // Internal parents are not in the symbol table; host reflection
+        // (ReflectionClass::isReadOnly) is authoritative for them.
+        $this->exec(
+            'Readonly class `Cfg` cannot extend non-readonly class `ArrayObject`',
+            'readonly_class_extends_internal.php'
+        );
+    }
 }
