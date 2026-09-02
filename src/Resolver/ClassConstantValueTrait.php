@@ -16,12 +16,19 @@ use TypePhp\Entity\EnumCaseRef;
 
 trait ClassConstantValueTrait
 {
+    /**
+     * Prefix of the marker string an enum case evaluates to when the caller
+     * asked for identity semantics (see getClassConstValue()). The NUL bytes
+     * make a collision with a real string constant value impossible.
+     */
+    public const ENUM_CASE_IDENTITY_PREFIX = "\0enum-case\0";
+
     public function getDefinedConstants(): array
     {
         return $this->internalConstants;
     }
 
-    public function getClassConstValue(NodeAbstract $expr, string $_class, string $name, string $currentClass = ''): mixed
+    public function getClassConstValue(NodeAbstract $expr, string $_class, string $name, string $currentClass = '', bool $enumCasesAsIdentity = false): mixed
     {
         $namespace = $this->namespace;
         if (!$namespace and $currentClass and !str_contains($_class, '\\')) {
@@ -64,6 +71,16 @@ trait ClassConstantValueTrait
         if ($this->hasClass($class)) {
             $classDef = $this->getClass($class);
             if ($classDef->enum && array_key_exists($name, $classDef->enumCases)) {
+                if ($enumCasesAsIdentity) {
+                    // Each enum case is a distinct object in Zend: two cases
+                    // are the same value only when both the enum class and
+                    // the case name match, never through a shared case name
+                    // or backing scalar. Callers comparing values for
+                    // identity get an uncollidable marker instead.
+                    return self::ENUM_CASE_IDENTITY_PREFIX
+                        . strtolower(ltrim($classDef->getNamespacedName(false), '\\'))
+                        . '::' . $name;
+                }
                 // The case IDENTITY is the constant's value; folding to the
                 // backing scalar (or the case name) would make
                 // `K::CONST === E::Case` false through every dynamic path.
@@ -110,14 +127,14 @@ trait ClassConstantValueTrait
         return [false, null];
     }
 
-    protected function evaluateClassConstValue(?NodeAbstract $origin, ConstantDef $constDef, string $class, string $name): mixed
+    protected function evaluateClassConstValue(?NodeAbstract $origin, ConstantDef $constDef, string $class, string $name, bool $enumCasesAsIdentity = false): mixed
     {
         $valueExpr = $constDef->valueExpr;
         if (!$valueExpr instanceof Node\Expr) {
             $this->fatalError($origin, "Class constant `{$class}::{$name}` has no constant expression");
         }
 
-        $evaluator = new ConstExprEvaluator(function (Node\Expr $expr) use ($origin, $class) {
+        $evaluator = new ConstExprEvaluator(function (Node\Expr $expr) use ($origin, $class, $enumCasesAsIdentity) {
             if ($expr instanceof Node\Expr\ConstFetch) {
                 $constName = $expr->name->toString();
                 return match (strtolower($constName)) {
@@ -147,7 +164,7 @@ trait ClassConstantValueTrait
                 } elseif (strcasecmp($className, 'parent') === 0) {
                     $className = $this->getParentClass($class);
                 }
-                return $this->getClassConstValue($origin ?? $expr, $className, $constName, $class);
+                return $this->getClassConstValue($origin ?? $expr, $className, $constName, $class, $enumCasesAsIdentity);
             }
             throw new \RuntimeException('Unsupported class constant expression');
         });

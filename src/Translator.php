@@ -3626,7 +3626,11 @@ CODE;
     {
         $constDef = new ConstantDef('', 0, '', '');
         $constDef->valueExpr = $expr;
-        return $this->evaluateClassConstValue($expr, $constDef, $class, '');
+        // Enum cases must keep their (enum class, case name) identity here:
+        // Zend compares the case OBJECTS when flattening traits, so E1::Value
+        // and E2::Value are different definitions even though both would
+        // otherwise evaluate to the same case-name/backing scalar.
+        return $this->evaluateClassConstValue($expr, $constDef, $class, '', enumCasesAsIdentity: true);
     }
 
     /**
@@ -6686,11 +6690,12 @@ CODE;
         ) {
             return false;
         }
-        if ($existing->value === $incoming->value) {
-            return true;
-        }
-        // Different spellings of the same value (e.g. `1 + 1` and `2`) are
-        // compatible in Zend; compare the evaluated values.
+        // Zend compares the EVALUATED definitions, so different spellings of
+        // one value (`1 + 1` and `2`) are compatible. The evaluated values are
+        // authoritative whenever both expressions are known: the lowered value
+        // string is not an identity (every non-literal initializer shares '',
+        // and E1::Value and E2::Value would both normalize to 'Value' even
+        // though Zend treats the two case objects as distinct).
         if ($existing->valueExpr instanceof Node\Expr && $incoming->valueExpr instanceof Node\Expr) {
             $floatOnly = $existing->declaredType === Type::FLOAT;
             return $this->isSameTraitMemberValue(
@@ -6701,7 +6706,7 @@ CODE;
                 $floatOnly ? 'float' : null,
             );
         }
-        return false;
+        return $existing->value === $incoming->value;
     }
 
     private function isCompatibleTraitProperty(PropertyDef $existing, PropertyDef $incoming): bool
