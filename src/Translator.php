@@ -871,6 +871,9 @@ class Translator extends Preprocessor
         $this->indentLevel++;
 
         $code = $this->genIncludeHeaderFiles();
+        // Only the generated module entry allocates request-cache storage.
+        // Keep <new> out of the shared PCH dependency set used by every source.
+        $code .= '#include <new>' . PHP_EOL;
 
         if ($this->isBuildModeEmbed()) {
             $code .= '#include <typephp_runtime.h>' . PHP_EOL;
@@ -911,16 +914,29 @@ class Translator extends Preprocessor
             $code .= 'zend_class_entry *' . $ce . ';' . PHP_EOL;
         }
 
+        $code .= "// request-local caches \n";
+        // Keep only one pointer in ELF TLS. Large generated TLS arrays can
+        // exceed AArch64's static TLS addressing range when Opcache JIT is
+        // enabled, while the cache entries themselves have request lifetime.
+        // Ensure each array has at least one element to remain valid C++ when
+        // a project does not use that cache kind.
+        $code .= 'struct php_request_cache_storage final {' . PHP_EOL;
+        $code .= $this->getIndent() . 'zend_class_entry *' . self::CLASS_MAP . '['
+            . max(1, count($this->classMap)) . ']{};' . PHP_EOL;
+        $code .= $this->getIndent() . 'zend_function *' . self::FUNC_MAP . '['
+            . max(1, count($this->funcMap)) . ']{};' . PHP_EOL;
+        $code .= $this->getIndent() . 'php::PropertyCacheSlot property_cache_map['
+            . max(1, $this->propertyAccessCacheIndex) . ']{};' . PHP_EOL;
+        $code .= '};' . PHP_EOL;
+        $code .= 'static THREAD_LOCAL php_request_cache_storage *php_request_cache = nullptr;' . PHP_EOL;
+
         $code .= "// class entry \n";
-        // Ensure the array has at least one element to avoid C/C++ compile errors.
-        $code .= 'static THREAD_LOCAL zend_class_entry *' . self::PREFIX . self::CLASS_MAP . '[' . max(1, count($this->classMap)) . '];' . PHP_EOL;
         // Internal/compiled symbols have module lifetime. They are initialized
         // lazily after PHP startup, so disable_functions/disable_classes have
         // already finalized the runtime tables. ZTS publishes them atomically.
         $code .= 'static php::PersistentCacheSlot<zend_class_entry *> ' . self::PREFIX . self::PERSISTENT_CLASS_MAP . '[' . max(1, count($this->persistentClassMap)) . ']{};' . PHP_EOL;
 
         $code .= "// func \n";
-        $code .= 'static THREAD_LOCAL zend_function *' . self::PREFIX . self::FUNC_MAP . '[' . max(1, count($this->funcMap)) . '];' . PHP_EOL;
         $code .= 'static php::PersistentCacheSlot<zend_function *> ' . self::PREFIX . self::PERSISTENT_FUNC_MAP . '[' . max(1, count($this->persistentFuncMap)) . ']{};' . PHP_EOL;
 
         $code .= $this->genPythonModuleStorage();
@@ -929,38 +945,35 @@ class Translator extends Preprocessor
         // No dynamic propMap: the property offset cache only covers declared
         // properties of compiled/built-in classes (see getPropertyId).
         $code .= 'static php::PersistentCacheSlot<uint32_t> ' . self::PREFIX . self::PERSISTENT_PROP_MAP . '[' . max(1, count($this->persistentPropMap)) . ']{};' . PHP_EOL;
-        // Zend's object handlers use three adjacent pointers as one cache
-        // entry. Keep these slots request-local: a named access may receive a
-        // class provided by an ordinary PHP script whose CE is not persistent.
-        $code .= 'static THREAD_LOCAL php::PropertyCacheSlot ' . self::PREFIX . 'property_cache_map['
-            . max(1, $this->propertyAccessCacheIndex) . ']{};' . PHP_EOL;
-
         $code .= "// functions \n";
 
         $code .= <<<'CODE'
 zend_class_entry *get_class(RequestClassId class_id, const php::Str &class_name) {
     const auto index = static_cast<uint32_t>(class_id);
-    if (UNEXPECTED(php_class_map[index] == nullptr)) {
-        php_class_map[index] = php::getClassEntrySafe(class_name);
+    auto &slot = php_request_cache->class_map[index];
+    if (UNEXPECTED(slot == nullptr)) {
+        slot = php::getClassEntrySafe(class_name);
     }
-    return php_class_map[index];
+    return slot;
 }
 
 zend_function *get_func(RequestFuncId func_id, const php::Str &func_name) {
     const auto index = static_cast<uint32_t>(func_id);
-    if (UNEXPECTED(php_func_map[index] == nullptr)) {
-        php_func_map[index] = php::getFunction(func_name);
+    auto &slot = php_request_cache->func_map[index];
+    if (UNEXPECTED(slot == nullptr)) {
+        slot = php::getFunction(func_name);
     }
-    return php_func_map[index];
+    return slot;
 }
 
 zend_function *get_method(RequestFuncId func_id, const php::Str &method_name, RequestClassId class_id, const php::Str &class_name) {
     const auto index = static_cast<uint32_t>(func_id);
-    if (UNEXPECTED(php_func_map[index] == nullptr)) {
+    auto &slot = php_request_cache->func_map[index];
+    if (UNEXPECTED(slot == nullptr)) {
         auto ce = get_class(class_id, class_name);
-        php_func_map[index] = php::getMethod(ce, method_name);
+        slot = php::getMethod(ce, method_name);
     }
-    return php_func_map[index];
+    return slot;
 }
 
 zend_class_entry *get_persistent_class(PersistentClassId class_id, const php::Str &class_name) {
@@ -994,7 +1007,7 @@ uint32_t get_persistent_prop(PersistentPropertyId prop_id, const php::Str &prop_
 }
 
 php::PropertyCacheSlot &get_property_cache(PropertyCacheId cache_id) {
-    return php_property_cache_map[static_cast<uint32_t>(cache_id)];
+    return php_request_cache->property_cache_map[static_cast<uint32_t>(cache_id)];
 }
 CODE;
         $code .= "\n\n";
@@ -1263,19 +1276,21 @@ CODE;
             }
         }
 
-        // User-code symbols have request lifetime regardless of the build mode.
-        // Embedded/library hosts may start more than one Zend request in the
-        // same process, so never let these pointers survive RSHUTDOWN.
-        // Internal/compiled symbols remain in the module-lifetime persistent maps.
-        $code .= 'std::memset(' . self::PREFIX . self::FUNC_MAP . ', 0, sizeof(' . self::PREFIX . self::FUNC_MAP . '));' . PHP_EOL;
-        $code .= 'std::memset(' . self::PREFIX . self::CLASS_MAP . ', 0, sizeof(' . self::PREFIX . self::CLASS_MAP . '));' . PHP_EOL;
-
         $code .= '}' . PHP_EOL . PHP_EOL;
         // module_clean end
 
         $moduleName = $this->getModuleName();
         // rinit begin
         $code .= 'PHP_RINIT_FUNCTION(' . $moduleName . ') {' . PHP_EOL;
+        $code .= 'if (UNEXPECTED(php_request_cache != nullptr)) {' . PHP_EOL;
+        $code .= $this->getIndent() . 'php_error_docref(nullptr, E_WARNING, "TypePHP request cache is already initialized");' . PHP_EOL;
+        $code .= $this->getIndent() . 'return FAILURE;' . PHP_EOL;
+        $code .= '}' . PHP_EOL;
+        $code .= 'php_request_cache = new (std::nothrow) php_request_cache_storage{};' . PHP_EOL;
+        $code .= 'if (UNEXPECTED(php_request_cache == nullptr)) {' . PHP_EOL;
+        $code .= $this->getIndent() . 'php_error_docref(nullptr, E_WARNING, "Unable to allocate TypePHP request cache");' . PHP_EOL;
+        $code .= $this->getIndent() . 'return FAILURE;' . PHP_EOL;
+        $code .= '}' . PHP_EOL;
         $code .= 'php::request_init();' . PHP_EOL;
         $code .= 'module_init();' . PHP_EOL;
 
@@ -1311,9 +1326,8 @@ CODE;
 
         $code .= <<<CODE
 PHP_RSHUTDOWN_FUNCTION({$moduleName}) {
-    for (auto &slot : php_property_cache_map) {
-        slot.reset();
-    }
+    delete php_request_cache;
+    php_request_cache = nullptr;
     php::request_shutdown();
     module_clean();
     return SUCCESS;

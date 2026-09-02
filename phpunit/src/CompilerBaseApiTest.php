@@ -1213,7 +1213,7 @@ YAML);
         $this->assertContains('/usr/local/lib', $libraryPaths);
     }
 
-    public function testRequestShutdownClearsRuntimeMapsInEveryBuildMode(): void
+    public function testRequestLifecycleOwnsRuntimeCacheStorageInEveryBuildMode(): void
     {
         global $translator;
         foreach ([CompilerBase::BUILD_MODE_BIN, CompilerBase::BUILD_MODE_LIB, CompilerBase::BUILD_MODE_EXT] as $mode) {
@@ -1227,21 +1227,24 @@ YAML);
             $compiler->convertFile($testFile);
             $code = file_get_contents($compiler->genExtension());
 
-            $this->assertStringContainsString('#include <cstring>', $code, $mode);
+            $this->assertStringContainsString('struct php_request_cache_storage final {', $code, $mode);
             $this->assertStringContainsString(
-                'std::memset(php_func_map, 0, sizeof(php_func_map));',
+                'static THREAD_LOCAL php_request_cache_storage *php_request_cache = nullptr;',
                 $code,
                 $mode,
             );
             $this->assertStringContainsString(
-                'std::memset(php_class_map, 0, sizeof(php_class_map));',
+                'php_request_cache = new (std::nothrow) php_request_cache_storage{};',
                 $code,
                 $mode,
             );
+            $this->assertStringContainsString('delete php_request_cache;', $code, $mode);
+            $this->assertStringContainsString('php_request_cache = nullptr;', $code, $mode);
+            $this->assertStringNotContainsString('std::memset(php_func_map', $code, $mode);
+            $this->assertStringNotContainsString('std::memset(php_class_map', $code, $mode);
+            $this->assertStringNotContainsString('static THREAD_LOCAL zend_function *php_func_map[', $code, $mode);
+            $this->assertStringNotContainsString('static THREAD_LOCAL zend_class_entry *php_class_map[', $code, $mode);
             $this->assertStringNotContainsString('php_property_map', $code, $mode);
-            $this->assertStringNotContainsString('func_map = {}', $code, $mode);
-            $this->assertStringNotContainsString('class_map = {}', $code, $mode);
-            $this->assertStringNotContainsString('property_map = {}', $code, $mode);
         }
     }
 
@@ -1284,7 +1287,8 @@ YAML);
             $this->assertStringNotContainsString('slot.reset()', $moduleInit, $mode);
             $this->assertMatchesRegularExpression(
                 '/PHP_RSHUTDOWN_FUNCTION\([^)]*\)\s*\{\s*'
-                    . 'for \(auto &slot : php_property_cache_map\) \{\s*slot\.reset\(\);\s*\}\s*'
+                    . 'delete php_request_cache;\s*'
+                    . 'php_request_cache = nullptr;\s*'
                     . 'php::request_shutdown\(\);/s',
                 $extension,
                 $mode,
