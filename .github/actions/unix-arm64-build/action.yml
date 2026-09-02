@@ -103,6 +103,48 @@ runs:
         file ./tpc | grep -Eiq 'arm64|aarch64|ARM aarch64'
         ./tpc --version
 
+    - name: Diagnose tpc crash
+      if: failure() && inputs.os == 'linux'
+      shell: bash
+      run: |
+        if [[ ! -x ./tpc ]]; then
+          exit 0
+        fi
+
+        debug_dir=".github/ci-debug/${{ inputs.os }}-arm64-php-${{ inputs.php-version }}"
+        mkdir -p "${debug_dir}"
+
+        if ! command -v gdb >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install --yes gdb
+        fi
+
+        {
+          uname -a
+          g++ --version
+          php -v
+          php-config --configure-options
+          php -m
+          file ./tpc
+          ldd ./tpc
+          sha256sum ./tpc "${PHPX_HOME}/lib/libphpx.so" "${PHP_HOME}/lib/libphp.so"
+          readelf -n ./tpc
+          readelf -d ./tpc
+        } > "${debug_dir}/environment.txt" 2>&1
+
+        gdb -q -batch \
+          -ex 'set pagination off' \
+          -ex 'set print thread-events off' \
+          -ex run \
+          -ex 'info registers' \
+          -ex 'info sharedlibrary' \
+          -ex 'thread apply all bt full' \
+          --args ./tpc --version \
+          > "${debug_dir}/gdb.txt" 2>&1 || true
+
+        cp -L "${PHPX_HOME}/lib/libphpx.so" "${debug_dir}/libphpx.so"
+        cp -L "${PHP_HOME}/lib/libphp.so" "${debug_dir}/libphp.so"
+
     - name: Run platform smoke test
       shell: bash
       run: |
@@ -150,6 +192,11 @@ runs:
         retention-days: 7
         path: |
           tpc
+          tpc.rsp
+          build/**/*.cc
+          build/**/*.h
+          build/**/*.rsp
+          .github/ci-debug/**
           .github/smoke/${{ inputs.smoke-directory }}/${{ inputs.smoke-binary }}
           .github/smoke/${{ inputs.smoke-directory }}/build/**/*.cc
           .github/smoke/${{ inputs.smoke-directory }}/build/**/*.h
