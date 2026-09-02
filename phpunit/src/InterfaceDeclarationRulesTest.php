@@ -51,4 +51,12 @@ class InterfaceDeclarationRulesTest extends BaseTest
     {
         $this->exec('Property in interface cannot be explicitly abstract', 'interface_rule_prop_abstract.php');
     }
+
+    public function testCyclicExtendsGraphIsRejectedPromptly(): void
+    {
+        // Zend cannot even declare such a graph (`Interface "B" not found`);
+        // ahead-of-time the cycle exists, so the merged-member table builders
+        // must detect it instead of recursing forever.
+        $this->exec('Interface inheritance cycle detected at `B`', 'interface_extends_cycle.php');
+    }
 }

@@ -6073,27 +6073,42 @@ CODE;
      */
     private array $effectiveInterfaceMethodTables = [];
 
+    /** @var array<string, true> Interface method tables being constructed. */
+    private array $effectiveInterfaceMethodTableVisiting = [];
+
     /** @return array<string, array{def: MethodDef, origin: string}> */
-    private function getEffectiveInterfaceMethodTable(InterfaceDef $def): array
+    private function getEffectiveInterfaceMethodTable(InterfaceDef $def, NodeAbstract $errorNode): array
     {
         $ownName = $def->getNamespacedName(false);
         $key = strtolower($ownName);
         if (isset($this->effectiveInterfaceMethodTables[$key])) {
             return $this->effectiveInterfaceMethodTables[$key];
         }
-        $table = [];
-        foreach ($def->methods as $name => $methodDef) {
-            $table[$name] = ['def' => $methodDef, 'origin' => $ownName];
+        if (isset($this->effectiveInterfaceMethodTableVisiting[$key])) {
+            // A cyclic extends graph would recurse forever; fail promptly with
+            // the same diagnostic getEffectiveConstantTable() uses, so the
+            // helper stays safe regardless of which validation runs first.
+            $this->fatalError($errorNode, "Interface inheritance cycle detected at `{$ownName}`");
         }
-        foreach ($def->extendsList ?: ($def->extends ? [$def->extends] : []) as $parentName) {
-            if (!$this->hasInterface($parentName)) {
-                continue;
+
+        $this->effectiveInterfaceMethodTableVisiting[$key] = true;
+        try {
+            $table = [];
+            foreach ($def->methods as $name => $methodDef) {
+                $table[$name] = ['def' => $methodDef, 'origin' => $ownName];
             }
-            foreach ($this->getEffectiveInterfaceMethodTable($this->getInterface($parentName)) as $name => $entry) {
-                $table[$name] ??= $entry;
+            foreach ($def->extendsList ?: ($def->extends ? [$def->extends] : []) as $parentName) {
+                if (!$this->hasInterface($parentName)) {
+                    continue;
+                }
+                foreach ($this->getEffectiveInterfaceMethodTable($this->getInterface($parentName), $errorNode) as $name => $entry) {
+                    $table[$name] ??= $entry;
+                }
             }
+            return $this->effectiveInterfaceMethodTables[$key] = $table;
+        } finally {
+            unset($this->effectiveInterfaceMethodTableVisiting[$key]);
         }
-        return $this->effectiveInterfaceMethodTables[$key] = $table;
     }
 
     /**
@@ -6128,7 +6143,7 @@ CODE;
             if (!$this->hasInterface($parentName)) {
                 continue;
             }
-            foreach ($this->getEffectiveInterfaceMethodTable($this->getInterface($parentName)) as $methodName => $entry) {
+            foreach ($this->getEffectiveInterfaceMethodTable($this->getInterface($parentName), $interfaceStmt) as $methodName => $entry) {
                 if (!isset($table[$methodName])) {
                     $table[$methodName] = $entry;
                     continue;
@@ -6177,7 +6192,7 @@ CODE;
             if (!$this->hasInterface($interfaceName)) {
                 continue;
             }
-            foreach ($this->getEffectiveInterfaceMethodTable($this->getInterface($interfaceName)) as $methodName => $entry) {
+            foreach ($this->getEffectiveInterfaceMethodTable($this->getInterface($interfaceName), $classStmt) as $methodName => $entry) {
                 if (!isset($table[$methodName])) {
                     $table[$methodName] = $entry;
                     continue;
