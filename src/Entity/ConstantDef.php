@@ -24,6 +24,16 @@ class ConstantDef
     /** Explicit declared type (e.g. `const int FOO`); null for inferred/untyped constants. */
     public ?string $declaredType = null;
 
+    /**
+     * Accepted-types DNF for the explicitly declared type, in the same format
+     * as ArgInfo::$typeCheck. Empty when the constant is untyped or the
+     * declared type accepts everything (`mixed`).
+     */
+    public array $typeCheck = [];
+
+    /** Human-readable declared type string for diagnostics ('' when untyped). */
+    public string $typeStr = '';
+
     public function __construct(string $name, int $flags, string $type, string $value)
     {
         $this->name  = $name;
