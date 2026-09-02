@@ -712,7 +712,19 @@ trait BinaryOpTrait
         }
 
         $type = $this->detectTypeOfExpr($expr);
-        return $type;
+        if ($expr instanceof Expr\Variable
+            || in_array($type, [Type::BIGINT, Type::DECIMAL, Type::BIGFLOAT], true)
+            || ($this->nativeTypes && $this->isNativeType($type))
+        ) {
+            return $type;
+        }
+        // A wrapper expression (unary minus, a cast, error suppression, ...)
+        // around a side effect is materialized for evaluation order, but its
+        // lowered C++ form can still be dynamic — `-strlen($s)` on an
+        // unqualified namespaced call lowers to `-(php::call(...))`, a
+        // Variant. Outside native-types mode the temporary must stay dynamic,
+        // matching the call and binary-op policy above.
+        return Type::VAR;
     }
 
     protected function appendCapturedStmtLinesToContext(array $stmts): void
