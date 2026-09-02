@@ -22,3 +22,20 @@ function plainArithmeticUnchanged(): int
     $k = 1;
     return $k + ($k = 5);
 }
+
+function pairValue(mixed $a, mixed $b): string
+{
+    return $a . ',' . $b;
+}
+
+function castWrappedCallArgOrder(): string
+{
+    $i = 1;
+    return pair($i, (int) ($i = 5));
+}
+
+function notWrappedCallArgOrder(): string
+{
+    $k = 1;
+    return pairValue($k, !($k = 0));
+}

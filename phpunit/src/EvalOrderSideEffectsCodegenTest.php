@@ -47,6 +47,40 @@ final class EvalOrderSideEffectsCodegenTest extends \BaseTest
         );
     }
 
+    public function testCastWrappedAssignmentStillSnapshotsEarlierArgument(): void
+    {
+        $code = $this->compileFixture();
+        $body = $this->extractFunctionBody($code, 'php_castwrappedcallargorder()');
+
+        self::assertMatchesRegularExpression(
+            '/(tmp_var_\d+) = i;\s*\n\s*(tmp_var_\d+) = php::toInt\(i = 5L{1,2}\);/',
+            $body,
+            'the old value of $i must be captured before the cast-wrapped $i = 5 executes',
+        );
+        self::assertDoesNotMatchRegularExpression(
+            '/php_pair\(php::toIntArgExact\(i,/',
+            $body,
+            '$i must not be read directly alongside the wrapped assignment',
+        );
+    }
+
+    public function testBooleanNotWrappedAssignmentStillSnapshotsEarlierArgument(): void
+    {
+        $code = $this->compileFixture();
+        $body = $this->extractFunctionBody($code, 'php_notwrappedcallargorder()');
+
+        self::assertMatchesRegularExpression(
+            '/(tmp_var_\d+) = k;\s*\n\s*(tmp_var_\d+) = !\(php::toBool\(k = 0L{1,2}\)\);/',
+            $body,
+            'the old value of $k must be captured before the negated $k = 0 executes',
+        );
+        self::assertDoesNotMatchRegularExpression(
+            '/php_pairvalue\(k,/',
+            $body,
+            '$k must not be read directly alongside the wrapped assignment',
+        );
+    }
+
     public function testPlainArithmeticKeepsZendCvReadSemantics(): void
     {
         $code = $this->compileFixture();

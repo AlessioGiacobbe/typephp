@@ -9,6 +9,11 @@ function pair(int $a, int $b): string
     return $a . ',' . $b;
 }
 
+function pairValue(mixed $a, mixed $b): string
+{
+    return $a . ',' . $b;
+}
+
 function main(): void
 {
     // Call arguments are sent strictly left to right.
@@ -51,6 +56,30 @@ function main(): void
     // Zend reads the CV when the ADD executes, after the nested assignment.
     $k = 1;
     var_dump($k + ($k = 5));
+
+    // A side-effecting argument stays side-effecting inside an expression
+    // wrapper (a cast, boolean not, unary minus, error suppression): the
+    // earlier by-value argument still reads the value before the assignment.
+    $c = 1;
+    var_dump(pair($c, (int) ($c = 5)));
+    var_dump($c);
+
+    $b = 1;
+    var_dump(pairValue($b, !($b = 0)));
+    var_dump($b);
+
+    $d = 1;
+    var_dump(pair($d, -($d = 5)));
+
+    $e = 1;
+    var_dump(pairValue($e, @($e = 5)));
+
+    // Wrapped side effects inside a concat chain follow the same read order.
+    $g = 1;
+    var_dump($g . ',' . (int) ($g = 9));
+
+    $h = 1;
+    var_dump($h . ',' . !($h = 0));
 }
 ?>
 --EXPECT--
@@ -66,3 +95,11 @@ string(3) "pbb"
 string(4) "pa,b"
 string(5) "preaz"
 int(10)
+string(3) "1,5"
+int(5)
+string(3) "1,1"
+int(0)
+string(4) "1,-5"
+string(3) "1,5"
+string(3) "1,9"
+string(3) "1,1"

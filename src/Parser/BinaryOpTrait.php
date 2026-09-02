@@ -544,12 +544,13 @@ trait BinaryOpTrait
 
     protected function shouldMaterializeOrderedOperand(NodeAbstract $expr): bool
     {
-        if ($expr instanceof Expr\BinaryOp) {
-            return $this->shouldMaterializeOrderedOperand($expr->left)
-                || $this->shouldMaterializeOrderedOperand($expr->right);
+        // A closure or arrow function body does not run when the closure is
+        // created, so nothing inside it can execute at this operand position.
+        if ($expr instanceof Expr\Closure || $expr instanceof Expr\ArrowFunction) {
+            return false;
         }
 
-        return $expr instanceof Expr\FuncCall
+        if ($expr instanceof Expr\FuncCall
             || $expr instanceof Expr\MethodCall
             || $expr instanceof Expr\StaticCall
             || $expr instanceof Expr\New_
@@ -571,7 +572,31 @@ trait BinaryOpTrait
             || $expr instanceof Expr\NullsafePropertyFetch
             || $expr instanceof Expr\Clone_
             || $expr instanceof Expr\Include_
-            || $expr instanceof Expr\Eval_;
+            || $expr instanceof Expr\Eval_
+            || $expr instanceof Expr\Throw_
+            || $expr instanceof Expr\Yield_
+            || $expr instanceof Expr\YieldFrom
+            || $expr instanceof Expr\ShellExec
+        ) {
+            return true;
+        }
+
+        // Recurse structurally through every remaining expression wrapper
+        // (binary ops, casts, unary plus/minus, boolean/bitwise not, error
+        // suppression, instanceof, isset/empty, interpolation, ...). A nested
+        // side effect stays a side effect no matter what wraps it, and it is
+        // not always hoisted: `(int) ($i = 5)` lowers to the inline C++
+        // expression `php::toInt(i = 5LL)`, which mutates `i` at an
+        // unsequenced point unless the operand is materialized in order.
+        foreach ($expr->getSubNodeNames() as $name) {
+            $subNode = $expr->{$name};
+            foreach (is_array($subNode) ? $subNode : [$subNode] as $child) {
+                if ($child instanceof Expr && $this->shouldMaterializeOrderedOperand($child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     protected function parseOrderedBinaryOperand(NodeAbstract $expr): string
