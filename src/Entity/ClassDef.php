@@ -89,9 +89,12 @@ class ClassDef extends ClassLikeDef
     public array $traitAliases = [];
 
     /**
-     * FullMethodName of the ignored (overridden) method -> precedence rule
-     * info for existence validation. Consumers test the key with isset().
-     * @var array<string, array{method: string, winnerTrait: string, loserTrait: string}>
+     * FullMethodName of the ignored (overridden) method -> EVERY precedence
+     * rule that named it as the loser, for existence validation (several
+     * rules may target one loser, and each winner must exist). Consumers
+     * test the key with isset(); legacy writers may store `true` instead of
+     * a rule list, so readers guard with is_array().
+     * @var array<string, array<int, array{method: string, winnerTrait: string, loserTrait: string}>|true>
      */
     public array $traitIgnored = [];
     public int $flags;

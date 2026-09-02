@@ -55,4 +55,27 @@ class TraitAdaptationValidationTest extends BaseTest
             'trait_insteadof_trait_not_used.php',
         );
     }
+
+    public function testEveryPrecedenceRuleForOneLoserIsValidated(): void
+    {
+        // The later `C::f insteadof B` names the same loser as the invalid
+        // `A::f insteadof B` and must not overwrite (and thereby absolve) it.
+        $this->exec(
+            'A precedence rule was defined for `A::f` but this method does not exist',
+            'trait_insteadof_overwritten_rule.php',
+        );
+    }
+
+    public function testMethodExcludedTwiceIsRejected(): void
+    {
+        $this->exec(
+            'Failed to evaluate a trait precedence (`f`). Method of trait `B` was defined to be excluded multiple times',
+            'trait_insteadof_excluded_twice.php',
+        );
+    }
+
+    public function testOneWinnerMayExcludeTwoLosers(): void
+    {
+        $this->compile('trait_insteadof_two_losers.php');
+    }
 }

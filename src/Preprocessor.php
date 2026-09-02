@@ -2793,9 +2793,11 @@ class Preprocessor extends CompilerBase
                  */
                 foreach ($adaptation->insteadof as $trait2) {
                     $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait2));
-                    // The value records the rule for existence validation
-                    // during composition; consumers only use isset() on the key.
-                    $ignored[$this->getFullMethodName($traitName, $methodName)] = [
+                    // The value records EVERY rule targeting this loser method
+                    // for existence validation during composition (several
+                    // precedence rules may name the same loser, and each
+                    // winner must exist); consumers only isset() the key.
+                    $ignored[$this->getFullMethodName($traitName, $methodName)][] = [
                         'method' => $methodName,
                         'winnerTrait' => $winnerTrait,
                         'loserTrait' => $traitName,
@@ -2824,6 +2826,12 @@ class Preprocessor extends CompilerBase
                 $this->classDef->traitAliases[$fullMethodName][] = $alias;
             }
         }
-        $this->classDef->traitIgnored = array_merge($this->classDef->traitIgnored, $ignored);
+        foreach ($ignored as $fullMethodName => $rules) {
+            // Append per key: array_merge() would drop the rules an earlier
+            // `use` clause registered for the same ignored method.
+            foreach ($rules as $rule) {
+                $this->classDef->traitIgnored[$fullMethodName][] = $rule;
+            }
+        }
     }
 }

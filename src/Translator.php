@@ -3512,20 +3512,37 @@ CODE;
                 "An alias (`{$newName}`) was defined for method `{$method}()`, but this method does not exist");
         }
 
-        foreach ($classDef->traitIgnored as $rule) {
-            if (!is_array($rule)) {
+        // Every precedence rule that named a loser method is validated: Zend
+        // checks each rule's winner individually, so a later `C::f insteadof
+        // B` never absolves an earlier `A::f insteadof B` whose winner method
+        // does not exist.
+        foreach ($classDef->traitIgnored as $rules) {
+            if (!is_array($rules)) {
                 continue;
             }
-            foreach ([$rule['winnerTrait'], $rule['loserTrait']] as $traitName) {
-                if (!isset($usedTraits[strtolower($traitName)])) {
+            foreach ($rules as $rule) {
+                foreach ([$rule['winnerTrait'], $rule['loserTrait']] as $traitName) {
+                    if (!isset($usedTraits[strtolower($traitName)])) {
+                        $this->fatalError($stmt,
+                            "Required Trait `{$traitName}` wasn't added to `{$className}`");
+                    }
+                }
+                if (!isset($seenTraitMethods[$this->getFullMethodName($rule['winnerTrait'], $rule['method'])])) {
                     $this->fatalError($stmt,
-                        "Required Trait `{$traitName}` wasn't added to `{$className}`");
+                        "A precedence rule was defined for `{$rule['winnerTrait']}::{$rule['method']}` " .
+                        'but this method does not exist');
                 }
             }
-            if (!isset($seenTraitMethods[$this->getFullMethodName($rule['winnerTrait'], $rule['method'])])) {
+        }
+        // A trait method may be excluded only once, even across several `use`
+        // clauses; Zend reports duplicates after every rule passed the
+        // existence checks above.
+        foreach ($classDef->traitIgnored as $rules) {
+            if (is_array($rules) && count($rules) > 1) {
+                $rule = $rules[0];
                 $this->fatalError($stmt,
-                    "A precedence rule was defined for `{$rule['winnerTrait']}::{$rule['method']}` " .
-                    'but this method does not exist');
+                    "Failed to evaluate a trait precedence (`{$rule['method']}`). " .
+                    "Method of trait `{$rule['loserTrait']}` was defined to be excluded multiple times");
             }
         }
     }
