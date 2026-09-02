@@ -1795,7 +1795,11 @@ trait AssignOpTrait
             ) {
                 $target->var = $this->stabilizeCoalesceTarget($target->var);
             } elseif (!$this->isCoalesceTargetTrivialSubexpr($target->var)) {
-                $target->var = $this->materializeCoalesceTargetSubexpr($target->var, false);
+                $target->var = $this->materializeCoalesceTargetSubexpr(
+                    $target->var,
+                    isReceiver: false,
+                    writableContainer: true,
+                );
             }
             if ($target->dim !== null && !$this->isCoalesceTargetTrivialSubexpr($target->dim)) {
                 $target->dim = $this->materializeCoalesceTargetSubexpr($target->dim, false);
@@ -1813,7 +1817,11 @@ trait AssignOpTrait
             || $expr instanceof Expr\ClassConstFetch;
     }
 
-    private function materializeCoalesceTargetSubexpr(Expr $sub, bool $isReceiver): Expr\Variable
+    private function materializeCoalesceTargetSubexpr(
+        Expr $sub,
+        bool $isReceiver,
+        bool $writableContainer = false,
+    ): Expr\Variable
     {
         [$code, $before, $after] = $this->parseExprWithCapturedStmts($sub);
         $this->appendCapturedStmtLinesToContext($before);
@@ -1826,6 +1834,16 @@ trait AssignOpTrait
             $this->addLocalVar($tmp, $this->getNativeObjectPointerType($class));
             $this->addNativeObject($tmp, $class);
             $cleanup = $tmp . ' = nullptr;';
+        } elseif ($writableContainer && $this->resolveRefReturningCall($sub) !== false) {
+            // A call result used as an array write target may be a reference to
+            // external storage. Boxing it in a Variant applies normal PHP value
+            // semantics and dereferences it, so the later write would modify a
+            // detached array copy. A Reference temporary preserves known
+            // by-reference returns as well as runtime-resolved dynamic calls;
+            // assigning a normal value to it still provides the disposable
+            // temporary container required by PHP.
+            $tmp = $this->addTmpVar(Type::REF);
+            $cleanup = $tmp . '.unset();';
         } else {
             // Keep the value in a Variant: the rewritten target then goes
             // through the generic Zend handlers, which also covers receivers
