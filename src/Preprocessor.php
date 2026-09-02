@@ -2001,6 +2001,7 @@ class Preprocessor extends CompilerBase
 
     protected function parseClassPropertyDef(Node\Stmt\Property $v): void
     {
+        $this->validateClassPropertyHookPlacement($v);
         $arrayDef = $this->parseArrayDefinition($v);
         if ($this->classDef->nativeObject) {
             if ($v->type === null) {
@@ -2049,6 +2050,103 @@ class Preprocessor extends CompilerBase
         }
 
         $this->context = $oriCtx;
+    }
+
+    /**
+     * Mirror Zend's compile-time placement rules for property hooks on class
+     * (and trait) properties; the interface path enforces its own subset in
+     * prepareInterfaceProperty(). Check order follows Zend 8.4 precedence:
+     * static, readonly, then the abstract-property rules.
+     */
+    private function validateClassPropertyHookPlacement(Node\Stmt\Property $v): void
+    {
+        $abstract = (bool) ($v->flags & Modifiers::ABSTRACT);
+        if ($v->hooks === [] && !$abstract) {
+            return;
+        }
+
+        $className = $this->classDef->getNamespacedName(false);
+        $propName = $v->props !== [] ? $this->parseIdentifier($v->props[0]->name) : '';
+        if ($v->hooks !== []) {
+            if ($v->flags & Modifiers::STATIC) {
+                $this->fatalError($v, 'Cannot declare hooks for static property');
+            }
+            // A readonly class marks every property readonly, exactly like an
+            // explicit per-property modifier.
+            if (($v->flags | $this->classDef->flags) & Modifiers::READONLY) {
+                $this->fatalError($v, 'Hooked properties cannot be readonly');
+            }
+            // Zend checks hook-level modifier conflicts right after the
+            // property-level placement rules, before any abstract-property
+            // rule: a final hook on a private property is rejected first even
+            // when the hook is also bodiless (probed:
+            // `abstract private int $x { final get; }` reports final+private).
+            // A private property cannot be overridden, so a final hook on it
+            // is meaningless; the rule applies in traits as well.
+            foreach ($v->hooks as $hook) {
+                if (($hook->flags & Modifiers::FINAL) && ($v->flags & Modifiers::PRIVATE)) {
+                    $this->fatalError($hook, 'Property hook cannot be both final and private');
+                }
+            }
+        }
+
+        if ($abstract) {
+            if ($v->hooks === []) {
+                $this->fatalError($v, 'Only hooked properties may be declared abstract');
+            }
+            // A bodiless hook of an abstract property is itself abstract. An
+            // abstract hook must be implementable by a subclass, which a
+            // private property forbids, and must be overridable, which final
+            // forbids. Zend reports these per hook, before the default-value
+            // and abstract-hook-presence rules (probed on 8.4.13), and —
+            // unlike abstract private trait METHODS — does not exempt traits.
+            foreach ($v->hooks as $hook) {
+                if ($hook->body !== null) {
+                    continue;
+                }
+                if ($v->flags & Modifiers::PRIVATE) {
+                    $this->fatalError($hook, 'Property hook cannot be both abstract and private');
+                }
+                if ($hook->flags & Modifiers::FINAL) {
+                    $this->fatalError($hook, 'Property hook cannot be both abstract and final');
+                }
+            }
+            foreach ($v->props as $prop) {
+                if ($prop->default !== null) {
+                    $this->fatalError(
+                        $v,
+                        "Cannot specify default value for virtual hooked property {$className}::\${$propName}",
+                    );
+                }
+            }
+            $hasAbstractHook = false;
+            foreach ($v->hooks as $hook) {
+                if ($hook->body === null) {
+                    $hasAbstractHook = true;
+                    break;
+                }
+            }
+            if (!$hasAbstractHook) {
+                $this->fatalError(
+                    $v,
+                    "Abstract property `{$className}::\${$propName}` must specify at least one abstract hook",
+                );
+            }
+            if (!$this->classDef->trait && !($this->classDef->flags & Modifiers::ABSTRACT)) {
+                $this->fatalError(
+                    $v,
+                    "Non-abstract class `{$className}` contains abstract hooked property `\${$propName}`",
+                );
+            }
+            return;
+        }
+
+        // Without the abstract modifier every declared hook needs a body.
+        foreach ($v->hooks as $hook) {
+            if ($hook->body === null) {
+                $this->fatalError($hook, 'Non-abstract property hook must have a body');
+            }
+        }
     }
 
     protected function prepareClassMethod(Node\Stmt\ClassMethod $v, Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_ $class): void
