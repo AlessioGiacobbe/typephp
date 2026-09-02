@@ -1718,6 +1718,19 @@ trait AssignOpTrait
         if ($this->isVarExpr($expr->expr) and !$this->hasVar($right)) {
             $this->errorUndefinedVariable($expr->expr);
         }
+
+        $arrayAccessTarget = $this->resolveCoalesceArrayAccessTarget($expr->var);
+        if ($arrayAccessTarget !== null) {
+            return $this->emitCoalesceArrayAccessAssignment(
+                $arrayAccessTarget,
+                $isset,
+                $var,
+                $right,
+                $rightBefore,
+                $rightAfter,
+            );
+        }
+
         $targetClass = $var !== null && $this->isNativeObjectVar($var)
             ? $this->getNativeObjectVarClass($var)
             : $this->detectClassOfExpr($expr->var);
@@ -1762,6 +1775,82 @@ trait AssignOpTrait
     }
 
     /**
+     * ArrayAccess dimensions do not expose writable buckets: offsetGet()
+     * returns a value, while a write must dispatch through offsetSet(). Keep
+     * ordinary arrays on the existing lvalue path so assignments into array
+     * references continue to update the referenced bucket in place.
+     *
+     * @return array{container: string, key: string, objectCondition: string}|null
+     */
+    private function resolveCoalesceArrayAccessTarget(Expr $target): ?array
+    {
+        if (!$target instanceof Expr\ArrayDimFetch
+            || $target->dim === null
+            || !$this->isVarExpr($target->var)
+            || $this->isStdContainerExpr($target)
+        ) {
+            return null;
+        }
+
+        $container = $this->parseIdentifier($target->var);
+        $containerType = $this->getVarType($container);
+        if (!in_array($containerType, [Type::OBJECT, Type::VAR, Type::REF], true)) {
+            return null;
+        }
+
+        return [
+            'container' => $container,
+            'key' => $this->parseIdentifier($target->dim),
+            // Even a statically object-typed PHP variable may currently hold
+            // null. PHP converts that null to an array on dimension write, so
+            // only the runtime object case may dispatch through offsetSet().
+            'objectCondition' => $container . '.isObject()',
+        ];
+    }
+
+    /**
+     * @param array{container: string, key: string, objectCondition: string} $target
+     * @param list<string> $rightBefore
+     * @param list<string> $rightAfter
+     */
+    private function emitCoalesceArrayAccessAssignment(
+        array $target,
+        string $isset,
+        string $readTarget,
+        string $right,
+        array $rightBefore,
+        array $rightAfter,
+    ): string {
+        $current = $this->genTmpVarName();
+        $rhs = $this->genTmpVarName();
+        $container = $target['container'];
+        $key = $target['key'];
+        $isObject = $this->genTmpVarName();
+
+        $code = '[&]() -> php::Var {' . PHP_EOL;
+        $code .= $this->getIndent() . 'const bool ' . $isObject . ' = '
+            . $target['objectCondition'] . ';' . PHP_EOL;
+        $code .= $this->getIndent() . 'if (' . $isset . ') {' . PHP_EOL;
+        $code .= $this->getIndent(2) . 'php::Var ' . $current . ' = ' . $isObject
+            . ' ? ' . $container . '.offsetGet(' . $key . ') : ' . $readTarget . ';' . PHP_EOL;
+        $code .= $this->getIndent(2) . 'if (!' . $current . '.isNull()) {' . PHP_EOL;
+        $code .= $this->getIndent(3) . 'return ' . $current . ';' . PHP_EOL;
+        $code .= $this->getIndent(2) . '}' . PHP_EOL;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $code .= $this->formatCapturedStmtLines($rightBefore);
+        $code .= $this->getIndent() . 'php::Var ' . $rhs . ' = ' . $right . ';' . PHP_EOL;
+        $code .= $this->formatCapturedStmtLines($rightAfter);
+        $code .= $this->getIndent() . 'if (' . $isObject . ') {' . PHP_EOL;
+        $code .= $this->getIndent(2) . $container . '.offsetSet(' . $key . ', ' . $rhs . ');' . PHP_EOL;
+        $code .= $this->getIndent() . '} else {' . PHP_EOL;
+        $code .= $this->getIndent(2) . $readTarget . ' = ' . $rhs . ';' . PHP_EOL;
+        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $code .= $this->getIndent() . 'return ' . $rhs . ';' . PHP_EOL;
+        $code .= $this->getIndent() . '}()';
+        return $code;
+    }
+
+    /**
      * Rewrite a coalesce-assignment target so that every side-effecting
      * subexpression is evaluated exactly once, in PHP source order —
      * container/receiver first, then a dynamic property name, then the array
@@ -1802,6 +1891,21 @@ trait AssignOpTrait
                 $target->var = $this->materializeCoalesceTargetSubexpr(
                     $target->var,
                     isReceiver: false,
+                    writableContainer: true,
+                );
+            }
+            // An object container is a handle, so copying it into a temporary
+            // preserves identity and lets ArrayAccess presence/read/write all
+            // use the same property or nested-dimension result. Do not do this
+            // for arrays: their write must continue through the original
+            // bucket/property lvalue.
+            if (!$this->isVarExpr($target->var)
+                && $this->detectTypeOfExpr($target->var) === Type::OBJECT
+                && !$this->isNativeObjectClass($this->detectClassOfExpr($target->var))
+            ) {
+                $target->var = $this->materializeCoalesceTargetSubexpr(
+                    $target->var,
+                    isReceiver: true,
                     writableContainer: true,
                 );
             }
