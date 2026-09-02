@@ -6472,6 +6472,10 @@ CODE;
     {
         $name = $methodStmt->name->toString();
         $this->assertNativeMagicMethodSupported($methodStmt, $name);
+        // Composed trait methods land in the consuming class's method table,
+        // so an enum picks up Zend's magic-method ban here too — including a
+        // trait alias that renames an ordinary method to a forbidden name.
+        $this->assertEnumMayIncludeMethod($methodStmt, $name);
         if ($this->classDef->hasMethod($name)) {
             return;
         }

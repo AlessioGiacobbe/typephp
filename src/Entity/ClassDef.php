@@ -56,6 +56,15 @@ class ClassDef extends ClassLikeDef
      * @var array<string, int|string|null>
      */
     public array $enumCases = [];
+
+    /**
+     * Backed case values that are not scalar literals, keyed by case name.
+     * The expression AST is captured during prepare (the symbol environment
+     * is incomplete there) and evaluated+memoized into $enumCases on first
+     * convert-phase access.
+     * @var array<string, \PhpParser\Node\Expr>
+     */
+    public array $enumCaseExprs = [];
     /**
      * Abstract method name (lowercase) => flags
      * @var array<string, int>

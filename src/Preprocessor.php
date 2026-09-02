@@ -72,6 +72,24 @@ class Preprocessor extends CompilerBase
     protected string $targetName = 'app';
 
     /**
+     * Zend forbids every magic method in enums except __call, __callStatic,
+     * and __invoke: enum cases are singletons without state, construction,
+     * cloning, serialization, or property access. The ban applies to every
+     * method that ends up in the enum: declared in the enum body, composed
+     * from a trait, or created by a trait alias that renames a method to a
+     * magic name — so trait composition must run this check as well.
+     */
+    protected function assertEnumMayIncludeMethod(Node $node, string $name): void
+    {
+        if ($this->classDef->enum && isset(self::ENUM_FORBIDDEN_MAGIC_METHODS[strtolower($name)])) {
+            $this->fatalError(
+                $node,
+                "Enum `{$this->classDef->getNamespacedName(false)}` cannot include magic method `{$name}`",
+            );
+        }
+    }
+
+    /**
      * Discover Native class names before parsing any signatures or fields.
      *
      * PHP permits forward class references across both declaration and file
@@ -1421,16 +1439,20 @@ class Preprocessor extends CompilerBase
                     if ($v->expr === null && $this->classDef->enumBackingType !== null) {
                         $this->fatalError($v, "Case `{$caseName}` of backed enum `{$fullClassName}` must have a value");
                     }
-                    // Only literal backing values are recorded here; an
-                    // expression-valued case (`case A = 1 + 1;`) cannot be
-                    // evaluated while declarations are still being collected,
-                    // and no compile-time consumer needs the scalar: case
-                    // identity flows as EnumCaseRef and gen_stub evaluates
-                    // the registration value from the AST itself.
-                    $this->classDef->enumCases[$caseName] =
-                        $v->expr instanceof Node\Scalar\Int_ || $v->expr instanceof Node\Scalar\String_
-                            ? $v->expr->value
-                            : null;
+                    if ($v->expr instanceof Node\Scalar\Int_ || $v->expr instanceof Node\Scalar\String_) {
+                        $this->classDef->enumCases[$caseName] = $v->expr->value;
+                    } else {
+                        // A backed case value may be any constant expression
+                        // (arithmetic, constant references, ...). The symbol
+                        // environment is incomplete during prepare, so keep the
+                        // expression AST and evaluate it lazily in the convert
+                        // phase, where the constant-expression machinery has
+                        // the full symbol table.
+                        $this->classDef->enumCases[$caseName] = null;
+                        if ($v->expr !== null) {
+                            $this->classDef->enumCaseExprs[$caseName] = $v->expr;
+                        }
+                    }
                     break;
                 case 'Stmt_ClassMethod':
                     $this->prepareClassMethod($v, $class);
@@ -2319,15 +2341,7 @@ class Preprocessor extends CompilerBase
         $this->method = $name;
         $this->assertKeywordMethodMayBeDeclared($v, $name, $this->classDef->nativeObject);
         $this->assertNativeMagicMethodSupported($v, $name);
-        // Zend forbids every magic method in enums except __call, __callStatic,
-        // and __invoke: enum cases are singletons without state, construction,
-        // cloning, serialization, or property access.
-        if ($this->classDef->enum && isset(self::ENUM_FORBIDDEN_MAGIC_METHODS[strtolower($name)])) {
-            $this->fatalError(
-                $v,
-                "Enum `{$this->classDef->getNamespacedName(false)}` cannot include magic method `{$name}`",
-            );
-        }
+        $this->assertEnumMayIncludeMethod($v, $name);
         $flags = $this->parseModifiers($v->flags);
         $abstract = $flags & Modifiers::ABSTRACT;
         if ($this->classDef->nativeObject && ($flags & Modifiers::STATIC)) {

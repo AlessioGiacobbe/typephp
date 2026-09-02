@@ -64,6 +64,17 @@ trait ClassConstantValueTrait
         if ($this->hasClass($class)) {
             $classDef = $this->getClass($class);
             if ($classDef->enum && array_key_exists($name, $classDef->enumCases)) {
+                if (isset($classDef->enumCaseExprs[$name])) {
+                    // A backed case value beyond a scalar literal was kept as
+                    // an expression AST during prepare; the full symbol table
+                    // exists now, so evaluate once and memoize the result.
+                    $classDef->enumCases[$name] = $this->evaluateConstantExpression(
+                        $expr,
+                        $classDef->enumCaseExprs[$name],
+                        $class,
+                    );
+                    unset($classDef->enumCaseExprs[$name]);
+                }
                 // The case IDENTITY is the constant's value; folding to the
                 // backing scalar (or the case name) would make
                 // `K::CONST === E::Case` false through every dynamic path.
@@ -117,6 +128,15 @@ trait ClassConstantValueTrait
             $this->fatalError($origin, "Class constant `{$class}::{$name}` has no constant expression");
         }
 
+        return $this->evaluateConstantExpression($origin, $valueExpr, $class);
+    }
+
+    /**
+     * Evaluate a constant expression AST (class constant initializer, backed
+     * enum case value) with the complete symbol table of the convert phase.
+     */
+    protected function evaluateConstantExpression(?NodeAbstract $origin, Node\Expr $valueExpr, string $class): mixed
+    {
         $evaluator = new ConstExprEvaluator(function (Node\Expr $expr) use ($origin, $class) {
             if ($expr instanceof Node\Expr\ConstFetch) {
                 $constName = $expr->name->toString();
@@ -124,9 +144,7 @@ trait ClassConstantValueTrait
                     'true' => true,
                     'false' => false,
                     'null' => null,
-                    default => defined($constName)
-                        ? constant($constName)
-                        : throw new \RuntimeException("Constant `{$constName}` not found"),
+                    default => $this->resolveConstFetchConstantValue($origin, $expr, $class),
                 };
             }
             if ($expr instanceof Node\Expr\ClassConstFetch && $expr->class instanceof Node\Name) {
@@ -177,6 +195,43 @@ trait ClassConstantValueTrait
             }
         }
         return $ref->caseName;
+    }
+
+    /**
+     * Resolve a plain constant fetch inside a constant expression: program
+     * constants declared with `const`/`define()` in the compiled sources win
+     * (their initializer ASTs are recorded by parseConstDef()); anything else
+     * falls back to constants defined in the compiler's own runtime
+     * (PHP_INT_MAX, M_PI, ...), mirroring the previous behavior.
+     */
+    private function resolveConstFetchConstantValue(?NodeAbstract $origin, Node\Expr\ConstFetch $expr, string $class): mixed
+    {
+        $constName = $expr->name->toString();
+        $candidates = [];
+        $resolved = $expr->name->getAttribute('resolvedName');
+        if ($resolved instanceof Node\Name) {
+            $candidates[] = $resolved->toString();
+        }
+        // Unqualified names in a namespace fall back to the global constant;
+        // the NameResolver records the namespaced candidate to try first.
+        $namespaced = $expr->name->getAttribute('namespacedName');
+        if ($namespaced instanceof Node\Name) {
+            $candidates[] = $namespaced->toString();
+        }
+        $candidates[] = ltrim($constName, '\\');
+        foreach ($candidates as $candidate) {
+            if (!$this->hasConstant($candidate)) {
+                continue;
+            }
+            $constInfo = $this->constants[$this->escapeConstVar($candidate)];
+            if ($constInfo->valueExpr instanceof Node\Expr) {
+                return $this->evaluateConstantExpression($origin, $constInfo->valueExpr, $class);
+            }
+        }
+        if (defined($constName)) {
+            return constant($constName);
+        }
+        throw new \RuntimeException("Constant `{$constName}` not found");
     }
 
     public function getConstValue(string $name): mixed

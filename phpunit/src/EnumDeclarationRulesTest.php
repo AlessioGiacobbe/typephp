@@ -79,4 +79,18 @@ class EnumDeclarationRulesTest extends BaseTest
     {
         $this->compile('enum_rule_valid.php');
     }
+
+    public function testTraitInjectedMagicMethodIsRejected(): void
+    {
+        // The forbidden-magic-method check must also cover methods composed
+        // into the enum from a trait, not only ones declared in its body.
+        $this->exec('Enum `Suit` cannot include magic method `__construct`', 'enum_rule_trait_magic_construct.php');
+    }
+
+    public function testTraitAliasToMagicNameIsRejected(): void
+    {
+        // A trait alias that renames an ordinary method to a forbidden magic
+        // name installs that magic method into the enum; Zend rejects it.
+        $this->exec('Enum `Suit` cannot include magic method `__destruct`', 'enum_rule_trait_alias_magic.php');
+    }
 }
