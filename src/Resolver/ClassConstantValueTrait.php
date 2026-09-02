@@ -12,17 +12,11 @@ use PhpParser\ConstExprEvaluator;
 use PhpParser\Node;
 use PhpParser\NodeAbstract;
 use TypePhp\Entity\ConstantDef;
+use TypePhp\Entity\EnumCaseIdentity;
 use TypePhp\Entity\EnumCaseRef;
 
 trait ClassConstantValueTrait
 {
-    /**
-     * Prefix of the marker string an enum case evaluates to when the caller
-     * asked for identity semantics (see getClassConstValue()). The NUL bytes
-     * make a collision with a real string constant value impossible.
-     */
-    public const ENUM_CASE_IDENTITY_PREFIX = "\0enum-case\0";
-
     public function getDefinedConstants(): array
     {
         return $this->internalConstants;
@@ -76,10 +70,11 @@ trait ClassConstantValueTrait
                     // are the same value only when both the enum class and
                     // the case name match, never through a shared case name
                     // or backing scalar. Callers comparing values for
-                    // identity get an uncollidable marker instead.
-                    return self::ENUM_CASE_IDENTITY_PREFIX
-                        . strtolower(ltrim($classDef->getNamespacedName(false), '\\'))
-                        . '::' . $name;
+                    // identity get an interned compiler-internal object that
+                    // no user constant expression can construct or collide
+                    // with (strings are binary-safe, so a marker string would
+                    // still be spellable).
+                    return EnumCaseIdentity::intern($classDef->getNamespacedName(false), $name);
                 }
                 // The case IDENTITY is the constant's value; folding to the
                 // backing scalar (or the case name) would make

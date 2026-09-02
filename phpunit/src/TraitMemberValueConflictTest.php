@@ -54,4 +54,19 @@ class TraitMemberValueConflictTest extends BaseTest
     {
         $this->exec('constant `x` already exists', 'trait_const_enum_backed_conflict.php');
     }
+
+    public function testStringSpellingAnEnumCaseMarkerConflicts(): void
+    {
+        $this->exec('constant `x` already exists', 'trait_const_enum_marker_string_collision.php');
+    }
+
+    public function testSameEnumCaseInsideArraysCompiles(): void
+    {
+        $this->compile('trait_const_enum_case_array_same.php');
+    }
+
+    public function testDifferentEnumCasesInsideArraysConflict(): void
+    {
+        $this->exec('constant `x` already exists', 'trait_const_enum_case_array_conflict.php');
+    }
 }
