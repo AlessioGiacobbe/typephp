@@ -42,6 +42,13 @@ jobs:
           phpts: ts
           update: true
 
+      - name: Show PHP environment
+        shell: pwsh
+        run: |
+          php -v
+          php --ini
+          php -r 'printf("PHP_ZTS=%d\nopcache.enable=%s\nopcache.enable_cli=%s\nopcache.jit=%s\nopcache.jit_buffer_size=%s\npcre.jit=%s\n", PHP_ZTS, ini_get("opcache.enable"), ini_get("opcache.enable_cli"), ini_get("opcache.jit"), ini_get("opcache.jit_buffer_size"), ini_get("pcre.jit"));'
+
       - name: Resolve PHP build environment
         id: php-build-env
         shell: pwsh

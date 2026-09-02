@@ -51,6 +51,14 @@ jobs:
           phpts: ts
           update: true
 
+      - name: Show PHP environment
+        shell: bash
+        run: |
+          php -v
+          php-config --version
+          php --ini
+          php -r 'printf("PHP_ZTS=%d\nopcache.enable=%s\nopcache.enable_cli=%s\nopcache.jit=%s\nopcache.jit_buffer_size=%s\npcre.jit=%s\n", PHP_ZTS, ini_get("opcache.enable"), ini_get("opcache.enable_cli"), ini_get("opcache.jit"), ini_get("opcache.jit_buffer_size"), ini_get("pcre.jit"));'
+
       - name: Verify ZTS PHP
         shell: bash
         run: |
@@ -164,6 +172,14 @@ jobs:
           phpts: ts
           update: true
 
+      - name: Show PHP environment
+        shell: bash
+        run: |
+          php -v
+          php-config --version
+          php --ini
+          php -r 'printf("PHP_ZTS=%d\nopcache.enable=%s\nopcache.enable_cli=%s\nopcache.jit=%s\nopcache.jit_buffer_size=%s\npcre.jit=%s\n", PHP_ZTS, ini_get("opcache.enable"), ini_get("opcache.enable_cli"), ini_get("opcache.jit"), ini_get("opcache.jit_buffer_size"), ini_get("pcre.jit"));'
+
       - name: Verify ZTS PHP
         shell: bash
         run: |
@@ -243,6 +259,14 @@ jobs:
           fail-fast: true
           phpts: ts
           update: true
+
+      - name: Show PHP environment
+        shell: bash
+        run: |
+          php -v
+          php-config --version
+          php --ini
+          php -r 'printf("PHP_ZTS=%d\nopcache.enable=%s\nopcache.enable_cli=%s\nopcache.jit=%s\nopcache.jit_buffer_size=%s\npcre.jit=%s\n", PHP_ZTS, ini_get("opcache.enable"), ini_get("opcache.enable_cli"), ini_get("opcache.jit"), ini_get("opcache.jit_buffer_size"), ini_get("pcre.jit"));'
 
       - name: Verify ZTS PHP and FPM
         shell: bash
@@ -346,6 +370,14 @@ jobs:
           fail-fast: true
           phpts: ts
           update: true
+
+      - name: Show PHP environment
+        shell: bash
+        run: |
+          php -v
+          php-config --version
+          php --ini
+          php -r 'printf("PHP_ZTS=%d\nopcache.enable=%s\nopcache.enable_cli=%s\nopcache.jit=%s\nopcache.jit_buffer_size=%s\npcre.jit=%s\n", PHP_ZTS, ini_get("opcache.enable"), ini_get("opcache.enable_cli"), ini_get("opcache.jit"), ini_get("opcache.jit_buffer_size"), ini_get("pcre.jit"));'
 
       - name: Verify ZTS PHP
         shell: bash
