@@ -11,10 +11,20 @@ namespace {
     }
 }
 
+namespace TypePhpIntegration\PrivateSupport {
+    // The peer provider defines the same non-exported symbol with a different
+    // implementation. Both DSOs must retain their own hidden copy.
+    #[\NoExport]
+    function adjust(int $value): int
+    {
+        return $value + 1;
+    }
+}
+
 namespace TypePhpIntegration\Library {
     function add(int $left, int $right): int
     {
-        return $left + $right;
+        return \TypePhpIntegration\PrivateSupport\adjust($left + $right - 1);
     }
 
     final class Counter

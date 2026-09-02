@@ -222,6 +222,11 @@ function assertLifecycleBody(string $body, int $request, ?int &$expectedPid, str
             "1@{$request}|{$kind}-handler[{$kind}:{$request}]",
             "2@{$request}|{$kind}-handler[{$kind}:{$request}]",
         ],
+        'peer_results' => [
+            "peer-1@{$request}|{$kind}-handler[{$kind}:{$request}]",
+            "peer-2@{$request}|{$kind}-handler[{$kind}:{$request}]",
+        ],
+        'extensions_loaded' => [true, true],
         'main_registered' => false,
     ];
     if ($actual !== $expected) {
@@ -442,38 +447,63 @@ function requestFastCgi(int $port, string $script, int $request, float $timeout 
 
 function runExtIntegration(array $options, string $temporaryRoot): void
 {
-    fwrite(STDOUT, "\n[EXT] build and Zend host lifecycle\n");
-    $extension = $temporaryRoot . '/typephp_integration_ext.' . PHP_SHLIB_SUFFIX;
-    $buildDirectory = $temporaryRoot . '/ext-build';
-    runIntegrationCommand([
-        $options['compiler'],
-        TYPEPHP_INTEGRATION_TEST_ROOT . '/ext/lifecycle/src/extension.php',
-        '--mode', 'ext',
-        '--output', $extension,
-        '--build-dir', $buildDirectory,
-        '--job', '1',
-        '--no-progress',
-    ]);
-    assertIntegrationTrue(is_file($extension), 'Extension artifact was not generated: ' . $extension);
+    fwrite(STDOUT, "\n[EXT] build two modules and verify shared Zend host lifecycle\n");
+    $extensions = [];
+    foreach ([
+        'primary' => 'extension.php',
+        'peer' => 'peer-extension.php',
+    ] as $name => $source) {
+        $extension = $temporaryRoot . '/integration_ext_' . $name . '.' . PHP_SHLIB_SUFFIX;
+        runIntegrationCommand([
+            $options['compiler'],
+            TYPEPHP_INTEGRATION_TEST_ROOT . '/ext/lifecycle/src/' . $source,
+            '--mode', 'ext',
+            '--output', $extension,
+            '--build-dir', $temporaryRoot . '/ext-build-' . $name,
+            '--job', '1',
+            '--no-progress',
+        ]);
+        assertIntegrationTrue(is_file($extension), 'Extension artifact was not generated: ' . $extension);
+        $extensions[$name] = $extension;
+    }
 
     $hostScript = realpath(TYPEPHP_INTEGRATION_TEST_ROOT . '/ext/lifecycle/host/request.php');
     if ($hostScript === false) {
         throw new IntegrationFailure('Extension host script is missing');
     }
-    for ($request = 1; $request <= 2; ++$request) {
-        $result = runIntegrationCommand([
-            $options['php'], '-n', '-d', 'extension=' . $extension, $hostScript,
-        ], null, ['TYPEPHP_INTEGRATION_REQUEST' => (string) $request]);
-        $cliPid = null;
-        assertLifecycleBody(trim($result['stdout']), $request, $cliPid, 'CLI extension');
+    foreach ([$extensions, array_reverse($extensions)] as $orderIndex => $extensionOrder) {
+        for ($request = 1; $request <= 2; ++$request) {
+            $command = [$options['php'], '-n'];
+            foreach ($extensionOrder as $extension) {
+                array_push($command, '-d', 'extension=' . $extension);
+            }
+            $command[] = $hostScript;
+            $result = runIntegrationCommand(
+                $command,
+                null,
+                ['TYPEPHP_INTEGRATION_REQUEST' => (string) $request],
+            );
+            $cliPid = null;
+            assertLifecycleBody(
+                trim($result['stdout']),
+                $request,
+                $cliPid,
+                'CLI extensions, load order ' . ($orderIndex + 1),
+            );
+        }
     }
 
     $serverPort = reserveIntegrationPort();
-    $server = startIntegrationProcess([
-        $options['php'], '-n', '-d', 'extension=' . $extension,
+    $serverCommand = [$options['php'], '-n'];
+    foreach ($extensions as $extension) {
+        array_push($serverCommand, '-d', 'extension=' . $extension);
+    }
+    array_push(
+        $serverCommand,
         '-d', 'display_errors=1', '-S', "127.0.0.1:{$serverPort}",
         '-t', dirname($hostScript),
-    ]);
+    );
+    $server = startIntegrationProcess($serverCommand);
     $serverLogs = '';
     try {
         $first = waitForIntegrationServer($server, fn(): string => requestHttp($serverPort, 1));
@@ -507,11 +537,16 @@ clear_env = no
 catch_workers_output = yes
 
 INI);
-    $fpm = startIntegrationProcess([
-        $options['php_fpm'], '-n', '-d', 'extension=' . $extension,
+    $fpmCommand = [$options['php_fpm'], '-n'];
+    foreach (array_reverse($extensions) as $extension) {
+        array_push($fpmCommand, '-d', 'extension=' . $extension);
+    }
+    array_push(
+        $fpmCommand,
         '-d', 'display_errors=1', '-d', 'log_errors=0',
         '-y', $fpmConfig, '-F', '-O',
-    ]);
+    );
+    $fpm = startIntegrationProcess($fpmCommand);
     $fpmLogs = '';
     try {
         $first = waitForIntegrationServer(
@@ -555,48 +590,76 @@ function copyIntegrationTree(string $source, string $destination): void
 
 function runLibIntegration(array $options, string $temporaryRoot): void
 {
-    fwrite(STDOUT, "\n[LIB] provider/import stub/consumer boundary\n");
-    $providerRoot = $temporaryRoot . '/provider';
-    copyIntegrationTree(TYPEPHP_INTEGRATION_TEST_ROOT . '/lib/provider', $providerRoot);
-    runIntegrationCommand([
-        $options['compiler'], $providerRoot . '/project.yml',
-        '--output', $providerRoot . '/integration_provider.' . PHP_SHLIB_SUFFIX,
-        '--build-dir', $providerRoot . '/build', '--job', '1', '--no-progress',
-    ]);
+    fwrite(STDOUT, "\n[LIB] two providers/import stubs/one consumer boundary\n");
+    $providers = [];
+    foreach ([
+        'integration_provider' => 'provider',
+        'integration_peer' => 'peer-provider',
+    ] as $target => $fixture) {
+        $providerRoot = $temporaryRoot . '/' . $fixture;
+        copyIntegrationTree(TYPEPHP_INTEGRATION_TEST_ROOT . '/lib/' . $fixture, $providerRoot);
+        runIntegrationCommand([
+            $options['compiler'], $providerRoot . '/project.yml',
+            '--output', $providerRoot . '/' . $target . '.' . PHP_SHLIB_SUFFIX,
+            '--build-dir', $providerRoot . '/build', '--job', '1', '--no-progress',
+        ]);
 
-    $library = $providerRoot . '/integration_provider.' . PHP_SHLIB_SUFFIX;
-    $stub = $providerRoot . '/integration_provider.stub.php';
-    assertIntegrationTrue(is_file($library), 'Library artifact was not generated: ' . $library);
-    assertIntegrationTrue(is_file($stub), 'Library import stub was not generated: ' . $stub);
-    $stubCode = file_get_contents($stub);
-    assertIntegrationTrue(is_string($stubCode) && str_contains($stubCode, '@import-library'), 'Invalid library stub');
-    assertIntegrationTrue(!str_contains($stubCode, 'function main('), 'Library stub must not export bin main()');
+        $library = $providerRoot . '/' . $target . '.' . PHP_SHLIB_SUFFIX;
+        $stub = $providerRoot . '/' . $target . '.stub.php';
+        assertIntegrationTrue(is_file($library), 'Library artifact was not generated: ' . $library);
+        assertIntegrationTrue(is_file($stub), 'Library import stub was not generated: ' . $stub);
+        $stubCode = file_get_contents($stub);
+        assertIntegrationTrue(
+            is_string($stubCode) && str_contains($stubCode, '@import-library'),
+            'Invalid library stub: ' . $stub,
+        );
+        assertIntegrationTrue(!str_contains($stubCode, 'function main('), 'Library stub must not export bin main()');
+        assertIntegrationTrue(
+            !str_contains($stubCode, 'PrivateSupport'),
+            'Library stub exported a #[NoExport] private helper: ' . $stub,
+        );
+        $providers[$target] = ['library' => $library, 'stub' => $stub];
+    }
 
-    // The published stub automatically adds -lintegration_provider to its
-    // consumer. Keep the provider target name (and therefore its stub ABI name)
-    // independent from the Unix lib prefix used by the linker.
-    $linkLibrary = $providerRoot . '/libintegration_provider.' . PHP_SHLIB_SUFFIX;
-    if (!copy($library, $linkLibrary)) {
-        throw new IntegrationFailure('Cannot prepare linker-visible provider library');
+    // Import stubs automatically add both -l<target> options. Place both
+    // linker-visible names in one directory so the consumer exercises a real
+    // multi-library link rather than two independent executions.
+    $linkRoot = $temporaryRoot . '/lib-link';
+    if (!mkdir($linkRoot, 0777, true) && !is_dir($linkRoot)) {
+        throw new IntegrationFailure('Cannot create library link directory: ' . $linkRoot);
+    }
+    foreach ($providers as $target => $provider) {
+        $linkLibrary = $linkRoot . '/lib' . $target . '.' . PHP_SHLIB_SUFFIX;
+        if (!copy($provider['library'], $linkLibrary)) {
+            throw new IntegrationFailure('Cannot prepare linker-visible provider library: ' . $target);
+        }
     }
 
     $consumerRoot = $temporaryRoot . '/consumer';
     copyIntegrationTree(TYPEPHP_INTEGRATION_TEST_ROOT . '/lib/consumer', $consumerRoot);
-    copy($stub, $consumerRoot . '/integration_provider.stub.php');
+    foreach ($providers as $target => $provider) {
+        if (!copy($provider['stub'], $consumerRoot . '/' . $target . '.stub.php')) {
+            throw new IntegrationFailure('Cannot prepare provider import stub: ' . $target);
+        }
+    }
     $consumer = $temporaryRoot . '/integration_consumer';
     runIntegrationCommand([
         $options['compiler'], $consumerRoot,
         '--mode', 'bin', '--output', $consumer,
         '--build-dir', $consumerRoot . '/build',
-        '--link-path', $providerRoot,
+        '--link-path', $linkRoot,
         '--job', '1', '--no-progress',
     ]);
-    $libraryPath = $providerRoot;
+    $libraryPath = $linkRoot;
     $environment = PHP_OS_FAMILY === 'Darwin'
         ? ['DYLD_LIBRARY_PATH' => $libraryPath . ':' . (getenv('DYLD_LIBRARY_PATH') ?: '')]
         : ['LD_LIBRARY_PATH' => $libraryPath . ':' . (getenv('LD_LIBRARY_PATH') ?: '')];
     $result = runIntegrationCommand([$consumer], null, $environment);
-    assertIntegrationSame("42\ncounter=7\n", $result['stdout'], 'TypePHP library consumer returned unexpected output');
+    assertIntegrationSame(
+        "42\ncounter=7\nscaled=21\nlabel=[peer]\n",
+        $result['stdout'],
+        'TypePHP multi-library consumer returned unexpected output',
+    );
 }
 
 function removeIntegrationTree(string $path): void

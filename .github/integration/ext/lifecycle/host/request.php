@@ -52,6 +52,14 @@ echo json_encode([
         typephp_integration_probe($request),
         typephp_integration_probe($request),
     ],
+    'peer_results' => [
+        typephp_integration_peer_probe($request),
+        typephp_integration_peer_probe($request),
+    ],
+    'extensions_loaded' => [
+        extension_loaded('typephp_integration_ext_primary'),
+        extension_loaded('typephp_integration_ext_peer'),
+    ],
     'main_registered' => function_exists('main'),
     'pid' => getmypid(),
 ], JSON_THROW_ON_ERROR);
