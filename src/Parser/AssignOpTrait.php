@@ -1611,6 +1611,15 @@ trait AssignOpTrait
         $this->assertNativeArrayAccessDirectWrite($expr->var, false);
         $this->checkLeftValue($expr->var);
 
+        // Zend evaluates the target's receiver and array keys exactly once,
+        // before the isset check and regardless of its outcome. The lowering
+        // below mentions the target several times (isset, read, write), so
+        // side-effecting subexpressions of the target are materialized into
+        // temporaries first and the target is rewritten to reference them.
+        if (!$this->isVarExpr($expr->var)) {
+            $expr->var = $this->stabilizeCoalesceTarget($expr->var);
+        }
+
         $rightClass = $this->detectClassOfExpr($expr->expr);
         $nativeRight = $this->isNativeObjectClass($rightClass);
 
@@ -1713,11 +1722,114 @@ trait AssignOpTrait
             $code .= $this->getIndent() . '}()';
             return $code;
         }
-        $this->appendCapturedStmtLinesToContext($rightBefore);
-        foreach ($rightAfter as $stmt) {
-            $this->context->afterStmtLines[] = $stmt;
+        if ($rightBefore !== [] || $rightAfter !== []) {
+            // PHP evaluates the RHS of ??= only when the target is not set.
+            // A compound RHS materializes captured statements (call results,
+            // operand temporaries); appending them to the enclosing statement
+            // would run its side effects unconditionally. Wrap the not-set
+            // branch in an immediately-invoked lambda so they execute only
+            // when the assignment actually happens. The RHS is completed —
+            // including its deferred write-backs (a postfix ++ on the RHS
+            // must finish before the outer assignment, which a set hook on
+            // the target can observe) — into a temporary before the target
+            // is written, and the assignment expression itself is returned
+            // so the target is not read again afterwards.
+            $rhsTmp = $this->genTmpVarName();
+            $code = '[&]() {' . PHP_EOL;
+            $code .= $this->getIndent() . 'if (' . $isset . ') { return ' . $var . '; }' . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($rightBefore);
+            $code .= $this->getIndent() . 'auto ' . $rhsTmp . ' = ' . $right . ';' . PHP_EOL;
+            $code .= $this->formatCapturedStmtLines($rightAfter);
+            $code .= $this->getIndent() . 'return (' . $var . ' = ' . $rhsTmp . ');' . PHP_EOL;
+            $code .= $this->getIndent() . '}()';
+            return $code;
         }
         return '(' . $isset . '?' . $var . ':(' . $var . ' = ' . $right . '))';
+    }
+
+    /**
+     * Rewrite a coalesce-assignment target so that every side-effecting
+     * subexpression is evaluated exactly once, in PHP source order —
+     * container/receiver first, then a dynamic property name, then the array
+     * dimension — before the target is mentioned. Containers of an array
+     * write keep their original node when they are plain variables (writing
+     * through a copied temporary would write to the copy), while a
+     * value-producing container is itself the temporary PHP writes into;
+     * object receivers are handles, so a temporary preserves identity.
+     */
+    private function stabilizeCoalesceTarget(Expr $target): Expr
+    {
+        if ($target instanceof Expr\PropertyFetch || $target instanceof Expr\NullsafePropertyFetch) {
+            if (!$this->isCoalesceTargetTrivialSubexpr($target->var)) {
+                $target->var = $this->materializeCoalesceTargetSubexpr($target->var, true);
+            }
+            if ($target->name instanceof Expr && !$this->isCoalesceTargetTrivialSubexpr($target->name)) {
+                $target->name = $this->materializeCoalesceTargetSubexpr($target->name, false);
+            }
+            return $target;
+        }
+        if ($target instanceof Expr\StaticPropertyFetch) {
+            if ($target->class instanceof Expr && !$this->isCoalesceTargetTrivialSubexpr($target->class)) {
+                $target->class = $this->materializeCoalesceTargetSubexpr($target->class, false);
+            }
+            if ($target->name instanceof Expr && !$this->isCoalesceTargetTrivialSubexpr($target->name)) {
+                $target->name = $this->materializeCoalesceTargetSubexpr($target->name, false);
+            }
+            return $target;
+        }
+        if ($target instanceof Expr\ArrayDimFetch) {
+            if ($target->var instanceof Expr\PropertyFetch
+                || $target->var instanceof Expr\NullsafePropertyFetch
+                || $target->var instanceof Expr\StaticPropertyFetch
+                || $target->var instanceof Expr\ArrayDimFetch
+            ) {
+                $target->var = $this->stabilizeCoalesceTarget($target->var);
+            } elseif (!$this->isCoalesceTargetTrivialSubexpr($target->var)) {
+                $target->var = $this->materializeCoalesceTargetSubexpr($target->var, false);
+            }
+            if ($target->dim !== null && !$this->isCoalesceTargetTrivialSubexpr($target->dim)) {
+                $target->dim = $this->materializeCoalesceTargetSubexpr($target->dim, false);
+            }
+            return $target;
+        }
+        return $target;
+    }
+
+    private function isCoalesceTargetTrivialSubexpr(Expr $expr): bool
+    {
+        return $expr instanceof Expr\Variable
+            || $expr instanceof Node\Scalar
+            || $expr instanceof Expr\ConstFetch
+            || $expr instanceof Expr\ClassConstFetch;
+    }
+
+    private function materializeCoalesceTargetSubexpr(Expr $sub, bool $isReceiver): Expr\Variable
+    {
+        [$code, $before, $after] = $this->parseExprWithCapturedStmts($sub);
+        $this->appendCapturedStmtLinesToContext($before);
+
+        $class = $isReceiver ? $this->detectClassOfExpr($sub) : '';
+        if ($isReceiver && $this->isNativeObjectClass($class)) {
+            // Boxing a raw Native pointer in a Variant would coerce it to
+            // bool; keep the typed pointer slot instead.
+            $tmp = $this->genTmpVarName();
+            $this->addLocalVar($tmp, $this->getNativeObjectPointerType($class));
+            $this->addNativeObject($tmp, $class);
+            $cleanup = $tmp . ' = nullptr;';
+        } else {
+            // Keep the value in a Variant: the rewritten target then goes
+            // through the generic Zend handlers, which also covers receivers
+            // whose concrete class is known only at runtime.
+            $tmp = $this->addTmpVar(Type::VAR);
+            $cleanup = $tmp . '.unset();';
+        }
+        $this->context->beforeStmtLines[] = $tmp . ' = ' . $code . ';';
+        $this->appendCapturedStmtLinesToContext($after);
+        // The temporary must not outlive the statement: PHP destroys the
+        // target's receiver/container at the end of the statement, and a
+        // function-scoped Variant would defer destructors to function exit.
+        $this->context->afterStmtLines[] = $cleanup;
+        return new Expr\Variable($tmp, $sub->getAttributes());
     }
 
     protected function getNormalAssignType(string $type): string
