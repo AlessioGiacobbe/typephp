@@ -120,8 +120,7 @@ function processStubFile(string $stubFile, Context $context, bool $includeOnly =
         }
 
         if (!$includeOnly) {
-            global $translator;
-            $stubFilenameWithoutExtension = $translator->getArgInfoStubFilename($stubFile);
+            $stubFilenameWithoutExtension = getTranslator()->getArgInfoStubFilename($stubFile);
             $arginfoFile = $context->objectFile;
             $legacyFile = "{$stubFilenameWithoutExtension}_legacy_arginfo.h";
 
@@ -6817,8 +6816,7 @@ function normalizeConstExprValue(mixed $constValue): mixed
 
 function getTranslator(): Translator
 {
-    global $translator;
-    return $translator;
+    return Translator::getInstance();
 }
 
 /**

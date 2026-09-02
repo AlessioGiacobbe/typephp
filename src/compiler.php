@@ -53,9 +53,7 @@ function main(int $argc, array $argv): void
         return;
     }
 
-    global $translator;
-
-    $translator = new Translator(TYPEPHP_ROOT_PATH);
+    $translator = Translator::getInstance();
     $translator->setIndent('    ');
     // Scan all PHP files and preprocess them.
     $files = $translator->prepare($translator->parseArgv($argv));

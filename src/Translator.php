@@ -60,6 +60,9 @@ use function TypePhp\StubGenerator\generateStubFile;
 
 class Translator extends Preprocessor
 {
+    /** Active compiler used by the upstream-derived stub generator. */
+    private static ?Translator $instance = null;
+
     private const string TRAIT_ORIGIN_ATTRIBUTE = 'typephp_trait_origin';
     private const string TRAIT_METHOD_ATTRIBUTE = 'typephp_trait_method';
     use DefaultArgumentGenerator;
@@ -154,6 +157,15 @@ class Translator extends Preprocessor
 
         // Detect the OS, the compiler, and (on Windows) the PHP lib files.
         $this->detectPlatform();
+        self::$instance = $this;
+    }
+
+    public static function getInstance(): Translator
+    {
+        if (self::$instance === null) {
+            self::$instance = new self(TYPEPHP_ROOT_PATH);
+        }
+        return self::$instance;
     }
 
     protected function loadInternalConstants(): array
