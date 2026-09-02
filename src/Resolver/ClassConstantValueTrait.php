@@ -159,10 +159,16 @@ trait ClassConstantValueTrait
                     }
                     return ltrim($this->getNamespacedClassName($className, $this->getNamespaceOfClass($class)), '\\');
                 }
-                if (strcasecmp($className, 'self') === 0) {
+                if (strcasecmp($className, 'self') === 0 || strcasecmp($className, 'static') === 0) {
                     $className = $class;
                 } elseif (strcasecmp($className, 'parent') === 0) {
                     $className = $this->getParentClass($class);
+                }
+                // $class is already fully qualified; mark it absolute so
+                // getClassConstValue() does not prepend the current file's
+                // namespace a second time (`TypePhp\TypePhp\...`).
+                if ($className !== '' && strcasecmp($expr->class->toString(), $className) !== 0) {
+                    $className = '\\' . ltrim($className, '\\');
                 }
                 return $this->getClassConstValue($origin ?? $expr, $className, $constName, $class, $enumCasesAsIdentity);
             }

@@ -35,6 +35,11 @@ class TraitMemberValueConflictTest extends BaseTest
         $this->compile('trait_const_enum_case_same.php');
     }
 
+    public function testSelfConstantReferenceEvaluatesInNamespace(): void
+    {
+        $this->compile('trait_const_self_reference_namespaced.php');
+    }
+
     public function testSameNamedCasesOfDifferentEnumsConflict(): void
     {
         $this->exec('constant `x` already exists', 'trait_const_enum_case_conflict.php');
