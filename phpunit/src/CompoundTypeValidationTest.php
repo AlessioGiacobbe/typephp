@@ -59,6 +59,51 @@ class CompoundTypeValidationTest extends BaseTest
         $this->exec('Duplicate type `Ix` is redundant', 'type_rule_intersect_dup.php');
     }
 
+    public function testSelfCannotJoinBareIntersection(): void
+    {
+        $this->exec('Type `self` cannot be part of an intersection type', 'type_rule_self_intersect_method.php');
+    }
+
+    public function testSelfCannotJoinDnfIntersection(): void
+    {
+        $this->exec('Type `self` cannot be part of an intersection type', 'type_rule_self_dnf_method.php');
+    }
+
+    public function testParentCannotJoinDnfIntersection(): void
+    {
+        $this->exec('Type `parent` cannot be part of an intersection type', 'type_rule_parent_dnf_method.php');
+    }
+
+    public function testStaticCannotJoinBareIntersectionReturn(): void
+    {
+        $this->exec('Type `static` cannot be part of an intersection type', 'type_rule_static_intersect_return.php');
+    }
+
+    public function testStaticCannotJoinDnfIntersectionReturn(): void
+    {
+        $this->exec('Type `static` cannot be part of an intersection type', 'type_rule_static_dnf_return.php');
+    }
+
+    public function testSelfCannotJoinDnfIntersectionInProperty(): void
+    {
+        $this->exec('Type `self` cannot be part of an intersection type', 'type_rule_self_dnf_property.php');
+    }
+
+    public function testParentCannotJoinDnfIntersectionInConstant(): void
+    {
+        $this->exec('Type `parent` cannot be part of an intersection type', 'type_rule_parent_dnf_const.php');
+    }
+
+    public function testSelfCannotJoinDnfIntersectionInPromotedParam(): void
+    {
+        $this->exec('Type `self` cannot be part of an intersection type', 'type_rule_self_dnf_promoted.php');
+    }
+
+    public function testClassScopeKeywordBesideDnfGroupStillCompiles(): void
+    {
+        $this->compile('type_rule_keyword_beside_dnf_valid.php');
+    }
+
     public function testObjectWithClassTypeIsRedundant(): void
     {
         $this->exec(

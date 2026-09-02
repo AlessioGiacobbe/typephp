@@ -159,7 +159,7 @@ trait TypeCheckGenerator
             foreach ($typeNode->types as $subType) {
                 $nameLower = strtolower($this->parseIdentifier($subType));
                 if ($nameLower === 'self' || $nameLower === 'parent' || $nameLower === 'static') {
-                    $this->fatalError($subType, "Type '{$nameLower}' cannot be part of an intersection type");
+                    $this->fatalError($subType, "Type `{$nameLower}` cannot be part of an intersection type");
                 }
             }
             $clause = $this->buildTypeCheckClause($typeNode);

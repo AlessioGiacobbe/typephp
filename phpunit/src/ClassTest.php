@@ -812,17 +812,17 @@ class ClassTest extends \BaseTest
 
     public function testSelfCannotBePartOfIntersectionType()
     {
-        $this->exec("Type 'self' cannot be part of an intersection type", 'intersection_type_self_not_allowed.php');
+        $this->exec('Type `self` cannot be part of an intersection type', 'intersection_type_self_not_allowed.php');
     }
 
     public function testParentCannotBePartOfIntersectionType()
     {
-        $this->exec("Type 'parent' cannot be part of an intersection type", 'intersection_type_parent_not_allowed.php');
+        $this->exec('Type `parent` cannot be part of an intersection type', 'intersection_type_parent_not_allowed.php');
     }
 
     public function testStaticCannotBePartOfIntersectionType()
     {
-        $this->exec("Type 'static' cannot be part of an intersection type", 'intersection_type_static_not_allowed.php');
+        $this->exec('Type `static` cannot be part of an intersection type', 'intersection_type_static_not_allowed.php');
     }
 
     public function testConstructorCannotDeclareReturnType()

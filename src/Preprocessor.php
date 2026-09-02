@@ -1850,7 +1850,8 @@ class Preprocessor extends CompilerBase
      * Zend: standalone-only types inside unions, invalid nullable targets,
      * duplicate members (after alias/namespace resolution, with iterable
      * expanded to array|Traversable), the bool/true/false overlaps,
-     * non-class standard types inside intersections, redundancy between
+     * non-class standard types and class-scope keywords (self, parent,
+     * static) inside intersections, whether bare or DNF, redundancy between
      * whole DNF groups (a repeated member set in any order, or a group
      * strictly more restrictive than another group or plain class member),
      * and `object` absorbing every class type.
@@ -2018,9 +2019,14 @@ class Preprocessor extends CompilerBase
             $name = $this->parseIdentifier($member);
             $nameLower = strtolower($name);
             if ($nameLower === 'self' || $nameLower === 'parent' || $nameLower === 'static') {
-                // Rejected later by buildTypeCheckFromNode with its
-                // established "cannot be part of an intersection type" text.
-                continue;
+                // Zend never resolves class-scope keywords inside an
+                // intersection, bare or as a DNF member of a union: the
+                // scope errors ("no class scope", "no parent") take
+                // precedence via validateClassScopeTypeKeywords, then any
+                // surviving keyword is rejected here. buildTypeCheckFromNode
+                // only catches the top-level intersection case, so DNF
+                // members must be rejected at this layer.
+                $this->fatalError($member, "Type `{$nameLower}` cannot be part of an intersection type");
             }
             if (in_array($nameLower, [
                 'int', 'float', 'bool', 'false', 'true', 'string', 'array',
