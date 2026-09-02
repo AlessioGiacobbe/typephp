@@ -1097,7 +1097,24 @@ CODE;
         $code .= $this->getIndent() . "ZEND_FE_END\n};\n// clang-format on" . PHP_EOL . PHP_EOL;
 
         // minit begin
+        $releaseAstConstantFns = array_unique($this->releaseAstConstantFns);
         $code .= 'PHP_MINIT_FUNCTION(' . $this->getModuleName() . ') {' . PHP_EOL;
+        if ($releaseAstConstantFns !== []) {
+            // Lifecycle contract for persistent enum-case AST constants: Zend's
+            // internal-class teardown (destroy_zend_class) only tolerates them
+            // after this module's MSHUTDOWN has released them. A temporary
+            // module loaded through dl() cannot honor that ordering —
+            // module_destructor() runs clean_module_classes() before the
+            // shutdown callback — so reject the load here, before any class is
+            // registered: with nothing registered, teardown is trivially safe.
+            $code .= 'if (type == MODULE_TEMPORARY) {' . PHP_EOL;
+            $code .= $this->getIndent() . 'zend_error(E_WARNING, "' . $this->getModuleName()
+                . ' registers enum-case class constants that must be released by MSHUTDOWN'
+                . ' before class destruction; a temporary module loaded with dl() destroys'
+                . ' its classes first. Load the extension from php.ini instead.");' . PHP_EOL;
+            $code .= $this->getIndent() . 'return FAILURE;' . PHP_EOL;
+            $code .= '}' . PHP_EOL;
+        }
         $code .= '// class/interface class entries' . PHP_EOL;
         $code .= 'if (typephp_install_reflection_attribute_handlers() != SUCCESS) {' . PHP_EOL;
         $code .= $this->getIndent() . 'return FAILURE;' . PHP_EOL;
@@ -1105,12 +1122,28 @@ CODE;
         if (!$this->isWasiTarget()) {
             $code .= 'typephp_register_fiber_generator_class();' . PHP_EOL;
         }
-        $code .= $this->genClassPropertyInit() . PHP_EOL;
 
-        $code .= '// register symbols' . PHP_EOL;
+        // The register_class_*() calls below install the persistent AST
+        // constants. Their release runs in MSHUTDOWN, and Zend only calls
+        // MSHUTDOWN once module_started is set — i.e. once MINIT returned
+        // SUCCESS. So from the first class registration to the end of MINIT
+        // no step may return FAILURE; every fallible step stays above. This
+        // is enforced at generation time.
+        $registrationCode = $this->genClassPropertyInit() . PHP_EOL;
+        $registrationCode .= '// register symbols' . PHP_EOL;
         foreach ($this->registerSymbols as $registerSymbolFn) {
-            $code .= $registerSymbolFn . '(module_number);' . PHP_EOL;
+            $registrationCode .= $registerSymbolFn . '(module_number);' . PHP_EOL;
         }
+        if ($releaseAstConstantFns !== [] && str_contains($registrationCode, 'return FAILURE')) {
+            throw new \LogicException(
+                'MINIT must not fail after class registration begins: a FAILURE return would'
+                . ' leave persistent enum-case AST constants in the class table with no'
+                . ' MSHUTDOWN guaranteed to release them before destroy_zend_class().'
+                . ' Move the fallible step before the first register_class_*() call, or'
+                . ' release the AST constants on its failure path.'
+            );
+        }
+        $code .= $registrationCode;
         $code .= 'return SUCCESS;' . PHP_EOL;
         $code .= '}' . PHP_EOL . PHP_EOL;
         // minit end
@@ -1119,7 +1152,7 @@ CODE;
         // Persistent AST class constants must be restored before Zend's
         // class teardown runs (its debug assertion only tolerates
         // CONST_ENUM_INIT there), and their contiguous blocks freed.
-        foreach (array_unique($this->releaseAstConstantFns) as $releaseFn) {
+        foreach ($releaseAstConstantFns as $releaseFn) {
             $code .= $releaseFn . '();' . PHP_EOL;
         }
         // The cache owns no Zend symbols, but its pointers must not survive a
