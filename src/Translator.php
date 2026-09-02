@@ -4057,6 +4057,26 @@ CODE;
 
         $methodCodes = [];
 
+        // Trait methods are flattened into the consuming class and therefore
+        // participate in that class's lexical visibility. Install every
+        // composed declaration before lowering any method body: a class method
+        // may call a protected/private trait method on another instance, and
+        // runtime dispatch needs to know that the call carries class scope.
+        $composedTraitMethods = [];
+        if ($composedClass !== null) {
+            foreach ($composedClass->stmts as $stmt) {
+                if (!$stmt instanceof Node\Stmt\ClassMethod
+                    || !is_string($stmt->getAttribute(self::TRAIT_ORIGIN_ATTRIBUTE))) {
+                    continue;
+                }
+                $origin = (string) $stmt->getAttribute(self::TRAIT_ORIGIN_ATTRIBUTE);
+                $this->withTraitNameContext($origin, function () use ($stmt): void {
+                    $this->installComposedTraitMethod($stmt);
+                });
+                $composedTraitMethods[] = [$stmt, $origin];
+            }
+        }
+
         foreach ($class->stmts as $v) {
             $type = $v->getType();
             switch ($type) {
@@ -4078,28 +4098,13 @@ CODE;
                     break;
             }
         }
-        if ($composedClass !== null) {
-            $composedTraitMethods = [];
-            foreach ($composedClass->stmts as $stmt) {
-                if (!$stmt instanceof Node\Stmt\ClassMethod
-                    || !is_string($stmt->getAttribute(self::TRAIT_ORIGIN_ATTRIBUTE))) {
-                    continue;
-                }
-                $origin = (string) $stmt->getAttribute(self::TRAIT_ORIGIN_ATTRIBUTE);
-                $this->withTraitNameContext($origin, function () use ($stmt): void {
-                    $this->installComposedTraitMethod($stmt);
-                });
-                $composedTraitMethods[] = [$stmt, $origin];
-            }
-            // Every method must be visible before any body is lowered. Trait
-            // methods may call a private helper declared later in the same
-            // trait; compiling as we install would incorrectly lower that call
-            // as a dynamic callback instead of a native class method call.
-            foreach ($composedTraitMethods as [$stmt, $origin]) {
-                $this->withTraitNameContext($origin, function () use ($stmt, &$methodCodes): void {
-                    $this->parseClassMethod($stmt, $methodCodes);
-                });
-            }
+        // All composed declarations are now visible. Lower their bodies in a
+        // separate pass so one trait method can call another method declared
+        // later in the same or a nested trait.
+        foreach ($composedTraitMethods as [$stmt, $origin]) {
+            $this->withTraitNameContext($origin, function () use ($stmt, &$methodCodes): void {
+                $this->parseClassMethod($stmt, $methodCodes);
+            });
         }
         if (!$class instanceof Node\Stmt\Trait_) {
             $this->validateOverrideAttributes($class);
