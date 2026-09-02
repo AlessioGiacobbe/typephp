@@ -4579,13 +4579,22 @@ CODE;
 
     /**
      * Check whether a parent method can be overridden: private methods cannot be
-     * overridden, and the signature must be compatible.
+     * overridden, and the signature must be compatible. With $childIsAbstract,
+     * the declaration additionally may not turn a concrete inherited method
+     * abstract (Zend: "Cannot make non abstract method ... abstract").
      */
-    protected function checkParentMethodCanBeOverridden(Node\Stmt\ClassMethod $v, string $name): void
-    {
-        if ($name === '__construct') {
-            return;
-        }
+    protected function checkParentMethodCanBeOverridden(
+        Node\Stmt\ClassMethod $v,
+        string $name,
+        bool $childIsAbstract = false
+    ): void {
+        // Zend exempts constructors from the LSP checks against a CONCRETE
+        // parent constructor (subclasses may freely change the construction
+        // signature and even narrow its visibility). A FINAL parent
+        // constructor still cannot be overridden — even a final private one —
+        // and an ABSTRACT parent constructor imposes a real signature
+        // contract, exactly like an interface constructor.
+        $isConstructor = strtolower($name) === '__construct';
 
         $classDef = $this->classDef;
         $childFuncDef = $this->methodDef->functionDef;
@@ -4597,24 +4606,42 @@ CODE;
             // The parent class is a built-in class
             if ($classDef->inheritedFromInternalClass) {
                 $modifiers = Reflection::getClassMethodModifiers($extends, $name);
-                if ($modifiers & \ReflectionMethod::IS_PRIVATE) {
-                    goto _error;
+                if (!$isConstructor && ($modifiers & \ReflectionMethod::IS_PRIVATE)) {
+                    // Private methods are not inherited: a child may redeclare
+                    // one with any signature. Zend ignores FINAL on private
+                    // methods outside constructors (declaring one only raises
+                    // a warning), so no final check applies here either.
+                    break;
                 }
                 if ($modifiers & \ReflectionMethod::IS_FINAL) {
                     goto _final_error;
                 }
-                $this->validateInternalMethodOverrideSignature($v, $name, $this->methodDef, $extends);
+                if ($childIsAbstract && $modifiers !== null && !($modifiers & \ReflectionMethod::IS_ABSTRACT)) {
+                    $this->fatalError($v,
+                        "Cannot make non abstract method `{$extends}::{$name}()` abstract in class `{$this->getFullClassName()}`");
+                }
+                // Concrete parent constructors are exempt from signature
+                // compatibility, while abstract constructors still define a
+                // contract. Ordinary internal methods always use the full
+                // Reflection-based override validation added on master.
+                if (!$isConstructor
+                    || ($modifiers !== null && ($modifiers & \ReflectionMethod::IS_ABSTRACT))
+                ) {
+                    $this->validateInternalMethodOverrideSignature($v, $name, $this->methodDef, $extends);
+                }
                 break;
             }
             $classDef = $this->getClass($extends);
             if ($classDef->hasMethod($name)) {
                 $methodDef = $classDef->getMethod($name);
-                if ($methodDef->flags & Modifiers::PRIVATE) {
-                    _error:
-                    $message = 'Cannot override private method `' . $extends . '::' . $name . '()`';
-                    $this->fatalGeneratedMethodAttributeIfAny($v, $message, $extends, $name);
-                    $this->fatalError($v,
-                        $message);
+                if (!$isConstructor && ($methodDef->flags & Modifiers::PRIVATE)) {
+                    // See the internal-parent branch above: a private method
+                    // may be redeclared freely. Generated code stays correct
+                    // because private calls are devirtualized to the declaring
+                    // class's body (canDevirtualize()), matching PHP's
+                    // private-scope binding, and Native classes never give
+                    // private methods a virtual slot (isNativeVirtualMethod()).
+                    break;
                 }
                 if ($methodDef->flags & Modifiers::FINAL) {
                     _final_error:
@@ -4633,10 +4660,18 @@ CODE;
                     $this->fatalError($v,
                         $message);
                 }
-                $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
+                if ($childIsAbstract) {
+                    $this->fatalError($v,
+                        "Cannot make non abstract method `{$extends}::{$name}()` abstract in class `{$this->getFullClassName()}`");
+                }
+                if (!$isConstructor) {
+                    $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $methodDef, $extends);
+                }
                 break;
             }
             if ($classDef->hasAbstractMethod($name) && isset($classDef->abstractMethodDefs[strtolower($name)])) {
+                // An abstract parent constructor is validated like an
+                // interface constructor: its signature is a contract.
                 $this->validateMethodOverrideSignature($v, $name, $this->methodDef, $classDef->getAbstractMethod($name), $extends);
                 break;
             }
@@ -6062,6 +6097,20 @@ CODE;
             // only run in the implementation phase.
             $this->checkParentMethodCanBeOverridden($v, $name);
             $methodCodes[$name] = $this->parseFunction($v);
+        } elseif ($this->classDef->trait === null
+            && !is_string($v->getAttribute(self::TRAIT_ORIGIN_ATTRIBUTE))
+            && $this->classDef->hasAbstractMethod($name)
+            && isset($this->classDef->abstractMethodDefs[strtolower($name)])
+        ) {
+            // An abstract method the class itself declares participates in
+            // the parent checks: it cannot turn a concrete inherited method
+            // abstract, and it must stay compatible with an inherited
+            // abstract contract. Abstract requirements arriving from traits
+            // are exempt — Zend lets an inherited concrete method satisfy
+            // them.
+            $this->methodDef = $this->classDef->getAbstractMethod($name);
+            $this->methodDef->node = $v;
+            $this->checkParentMethodCanBeOverridden($v, $name, childIsAbstract: true);
         }
 
         $this->resetMethod();
