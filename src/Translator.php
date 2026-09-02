@@ -4674,7 +4674,10 @@ CODE;
         )) {
             $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
-        if ($childFuncDef->returnsByRef !== $parentFuncDef->returnsByRef) {
+        // Zend treats by-ref returns as covariant: an override may add `&`
+        // (callers expecting a value still work), but it must not drop one
+        // promised by the parent contract.
+        if ($parentFuncDef->returnsByRef && !$childFuncDef->returnsByRef) {
             $this->fatalMethodOverrideIncompatible($v, $className, $methodName, $parentClass);
         }
 
