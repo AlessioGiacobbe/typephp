@@ -1209,6 +1209,21 @@ class Preprocessor extends CompilerBase
         if (isset($this->symbolDeclInFile[$fullClassNameLower])) {
             $this->fatalError($class, "Duplicate class `{$fullClassName}`");
         }
+        // Dynamic properties and readonly semantics are mutually exclusive:
+        // every property of a readonly class is readonly and declared, so
+        // Zend rejects the attribute at compile time.
+        if ($class instanceof Node\Stmt\Class_ && ($flags & Modifiers::READONLY)) {
+            foreach ($class->attrGroups as $group) {
+                foreach ($group->attrs as $attribute) {
+                    if (strcasecmp($this->getResolvedPhpName($attribute->name), 'AllowDynamicProperties') === 0) {
+                        $this->fatalError(
+                            $attribute,
+                            "Cannot apply #[AllowDynamicProperties] to readonly class `{$fullClassName}`",
+                        );
+                    }
+                }
+            }
+        }
 
         $this->classDef = new ClassDef($this->class, $flags, $this->namespace);
         $this->classDef->nativeObject = NativeClassAttributeLowering::isNative($class);
@@ -1674,6 +1689,21 @@ class Preprocessor extends CompilerBase
             );
         }
         $flags = $this->parseModifiers($flags);
+        // A `readonly class` marks every property readonly, so the class-level
+        // flag participates in the same Zend declaration rules as an explicit
+        // per-property `readonly` modifier.
+        if (($flags | $this->classDef->flags) & Modifiers::READONLY) {
+            $className = $this->classDef->getNamespacedName(false);
+            if ($flags & Modifiers::STATIC) {
+                $this->fatalError($errorNode, "Static property `{$className}::\${$name}` cannot be readonly");
+            }
+            if ($typeNode === null) {
+                $this->fatalError($errorNode, "Readonly property `{$className}::\${$name}` must have type");
+            }
+            if ($defaultNode !== null) {
+                $this->fatalError($errorNode, "Readonly property `{$className}::\${$name}` cannot have default value");
+            }
+        }
         $this->validateAsymmetricPropertyDeclaration($name, $flags, $typeNode, $errorNode);
         [$type, $class] = $this->resolveTypeDecl($typeNode, self::DECL_TYPE_OF_PROPERTY);
         $this->assertSupportedNativeObjectTypeNode($typeNode, self::DECL_TYPE_OF_PROPERTY, $errorNode);
