@@ -1276,6 +1276,19 @@ YAML);
             $this->assertStringContainsString('zend_class_entry *get_class(', $extension, $mode);
             $this->assertStringContainsString('static void module_init()', $extension, $mode);
             $this->assertStringContainsString('static void module_clean()', $extension, $mode);
+            $moduleInitStart = strpos($extension, 'static void module_init()');
+            $moduleCleanStart = strpos($extension, 'static void module_clean()');
+            $this->assertIsInt($moduleInitStart, $mode);
+            $this->assertIsInt($moduleCleanStart, $mode);
+            $moduleInit = substr($extension, $moduleInitStart, $moduleCleanStart - $moduleInitStart);
+            $this->assertStringNotContainsString('slot.reset()', $moduleInit, $mode);
+            $this->assertMatchesRegularExpression(
+                '/PHP_RSHUTDOWN_FUNCTION\([^)]*\)\s*\{\s*'
+                    . 'for \(auto &slot : php_property_cache_map\) \{\s*slot\.reset\(\);\s*\}\s*'
+                    . 'php::request_shutdown\(\);/s',
+                $extension,
+                $mode,
+            );
             $this->assertStringContainsString('typephp_register_fiber_generator_class();', $extension, $mode);
             $this->assertStringContainsString('typephp_unregister_fiber_generator_class();', $extension, $mode);
             $this->assertStringNotContainsString('php_app_init', $extension, $mode);

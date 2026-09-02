@@ -819,7 +819,8 @@ class Translator extends Preprocessor
         $lines[] = 'enum class PersistentClassId : uint32_t {};';
         $lines[] = 'enum class RequestFuncId : uint32_t {};';
         $lines[] = 'enum class PersistentFuncId : uint32_t {};';
-        $lines[] = 'enum class PersistentPropertyId : uint32_t {};' . PHP_EOL;
+        $lines[] = 'enum class PersistentPropertyId : uint32_t {};';
+        $lines[] = 'enum class PropertyCacheId : uint32_t {};' . PHP_EOL;
 
         $lines[] = 'zend_class_entry *get_class(RequestClassId class_id, const php::Str &class_name);';
         $lines[] = 'zend_function *get_func(RequestFuncId func_id, const php::Str &func_name);';
@@ -828,6 +829,7 @@ class Translator extends Preprocessor
         $lines[] = 'zend_function *get_persistent_func(PersistentFuncId func_id, const php::Str &func_name);';
         $lines[] = 'zend_function *get_persistent_method(PersistentFuncId func_id, const php::Str &method_name, PersistentClassId class_id, const php::Str &class_name);';
         $lines[] = 'uint32_t get_persistent_prop(PersistentPropertyId prop_id, const php::Str &prop_name, const php::Str &class_name);' . PHP_EOL;
+        $lines[] = 'php::PropertyCacheSlot &get_property_cache(PropertyCacheId cache_id);' . PHP_EOL;
 
         foreach ($this->getClassLikesWithConstants() as $classDef) {
             foreach ($classDef->constants as $constant) {
@@ -927,6 +929,11 @@ class Translator extends Preprocessor
         // No dynamic propMap: the property offset cache only covers declared
         // properties of compiled/built-in classes (see getPropertyId).
         $code .= 'static php::PersistentCacheSlot<uint32_t> ' . self::PREFIX . self::PERSISTENT_PROP_MAP . '[' . max(1, count($this->persistentPropMap)) . ']{};' . PHP_EOL;
+        // Zend's object handlers use three adjacent pointers as one cache
+        // entry. Keep these slots request-local: a named access may receive a
+        // class provided by an ordinary PHP script whose CE is not persistent.
+        $code .= 'static THREAD_LOCAL php::PropertyCacheSlot ' . self::PREFIX . 'property_cache_map['
+            . max(1, $this->propertyAccessCacheIndex) . ']{};' . PHP_EOL;
 
         $code .= "// functions \n";
 
@@ -984,6 +991,10 @@ uint32_t get_persistent_prop(PersistentPropertyId prop_id, const php::Str &prop_
         return php::getPropertyOffset(class_name, prop_name) + 1024;
     });
     return value - 1024;
+}
+
+php::PropertyCacheSlot &get_property_cache(PropertyCacheId cache_id) {
+    return php_property_cache_map[static_cast<uint32_t>(cache_id)];
 }
 CODE;
         $code .= "\n\n";
@@ -1300,6 +1311,9 @@ CODE;
 
         $code .= <<<CODE
 PHP_RSHUTDOWN_FUNCTION({$moduleName}) {
+    for (auto &slot : php_property_cache_map) {
+        slot.reset();
+    }
     php::request_shutdown();
     module_clean();
     return SUCCESS;

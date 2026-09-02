@@ -331,6 +331,12 @@ class CompilerBase implements PropertyAccessContext
      */
     protected array $persistentPropMap = [];
     protected int $persistentPropIndex = 0;
+    /**
+     * Per-generated-access-site Zend object-handler cache slots. Unlike the
+     * declared-property offset cache above, these are request-local and may
+     * cache a runtime class together with a dynamic/hooked-property sentinel.
+     */
+    protected int $propertyAccessCacheIndex = 0;
     /** @var array<string, array<Node\Stmt>> Prepared declaration ASTs keyed by real path. */
     protected array $preparedFileAsts = [];
     protected bool $declarationExpressionsFinalized = false;
@@ -1287,6 +1293,13 @@ class CompilerBase implements PropertyAccessContext
         $id = $this->persistentPropIndex++;
         $this->persistentPropMap[$key] = $id;
         return $id;
+    }
+
+    protected function getPropertyAccessCache(): string
+    {
+        $this->assertCompilerPhase(self::PHASE_CONVERT, 'property access cache ID allocation');
+        $id = $this->propertyAccessCacheIndex++;
+        return 'get_property_cache(PropertyCacheId{' . $id . '})';
     }
 
     protected function getClassEntryPtr(string $className): string

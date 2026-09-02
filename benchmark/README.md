@@ -7,6 +7,8 @@ machine instead of committing absolute timing expectations.
 
 - `bench.php` and `micro_bench.php` are the original general workloads moved
   from `examples/`.
+- `bridge/` measures calls, property operations, and container operations that
+  cross the generated-code/PHPX/Zend boundary.
 - `property-access/` builds and compares dynamic/static property access under
   Zend PHP and TypePHP.
 
