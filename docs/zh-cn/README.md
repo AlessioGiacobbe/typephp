@@ -6,6 +6,7 @@
 
 - [AOT 与 PHP 不兼容特性清单](INCOMPATIBLE_PHP_FEATURES.md)：当前限制的简明清单。
 - [不兼容性分类](PHP_INCOMPATIBILITY_CLASSIFICATION.md)：区分 Hard Limit、Intentional Rule、Pending 和 Partial。
+- [兼容性工程准则](COMPATIBILITY_POLICY.md)：PHP 兼容性工作的优先级、PHPX 抽象边界与 Code Review 规则。
 - [编译器命令行](COMPILER_CLI.md)：当前 CLI 参数和项目配置。
 - [编译模式](COMPILATION_MODES.md)：binary、extension、library 模式。
 - [快速入门](QUICKSTART.md)：最小编译流程。

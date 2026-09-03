@@ -6,6 +6,7 @@ This directory contains compiler implementation, compatibility, build-mode, and 
 
 - [AOT and PHP Incompatible Features Checklist](INCOMPATIBLE_PHP_FEATURES.md): a concise list of current limitations.
 - [Incompatibility Classification](PHP_INCOMPATIBILITY_CLASSIFICATION.md): distinguishes Hard Limit, Intentional Rule, Pending, and Partial.
+- [Compatibility Engineering Policy](COMPATIBILITY_POLICY.md): prioritization, PHPX abstraction boundaries, and review rules for PHP compatibility work.
 - [Compiler CLI](COMPILER_CLI.md): current CLI arguments and project configuration.
 - [Compilation Modes](COMPILATION_MODES.md): binary, extension, library modes.
 - [Quick Start](QUICKSTART.md): the minimal compile flow.

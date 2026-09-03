@@ -61,6 +61,11 @@
 
 ## 表达式与控制流
 
+- 动态维度写入使用 PHPX 的 array/object/string 抽象。当 key 表达式、
+  `ArrayAccess` 回调或右值在读写阶段之间重新绑定 container/key 时，不承诺
+  复刻 ZendVM 的全部行为。不支持的标量 container 会抛出稳定、统一的 PHPX
+  错误，而不是复刻 Zend 的全部转换、废弃警告和诊断细节。
+- TypePHP 明确将 null 数组 key 视为追加操作，而不是转换为空字符串 key。
 - `match` 的 arm condition 不能是 `match` 表达式。
 - `foreach` by reference 的 value 只能是变量。
 - `foreach` list destructuring 不支持按引用绑定元素。

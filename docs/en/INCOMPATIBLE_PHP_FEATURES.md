@@ -135,6 +135,13 @@ incompatible with or more restrictive than standard PHP.
 
 ## Expressions and control flow
 
+- Dynamic dimension writes use PHPX's array/object/string abstractions. Exact
+  ZendVM behavior is not promised when a key expression, `ArrayAccess` callback,
+  or right-hand side rebinds the container or key between the read and write
+  phases. Unsupported scalar containers raise a stable PHPX error instead of
+  reproducing every Zend conversion, deprecation, and diagnostic detail.
+- TypePHP intentionally treats a null array key as an append operation rather
+  than converting it to an empty-string key.
 - A `match` arm condition may not itself be a `match` expression.
 - The value target in a by-reference `foreach` may only be a variable.
 - `foreach` list destructuring does not support binding elements by reference.

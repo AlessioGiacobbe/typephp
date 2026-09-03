@@ -11,7 +11,7 @@ The goal is to distinguish:
 - Partial support where the current behavior is known to differ from PHP.
 
 The main compatibility checklist remains
-[INCOMPATIBLE_PHP_FEATURES.md](en/INCOMPATIBLE_PHP_FEATURES.md). This document
+[INCOMPATIBLE_PHP_FEATURES.md](INCOMPATIBLE_PHP_FEATURES.md). This document
 explains how those items should be interpreted.
 
 ## Categories
@@ -111,6 +111,7 @@ These items should be documented with the exact boundary.
 | Dynamic properties and dynamic property chains | Partial | Dynamic property reads and writes use the runtime property API; native property optimization is not guaranteed. |
 | Native typed properties | Partial / Intentional Rule | Fast native paths may not preserve every PHP dynamic state transition. Unknown or incompatible values can fall back to `setProperty()`. |
 | Reflection metadata | Partial | Runtime declarations preserve constructor-promotion and asymmetric-visibility flags; other AOT-specific metadata may still be incomplete. |
+| Dynamic dimension assignment | Partial / Intentional Rule | Ordinary array and `ArrayAccess` paths must remain correct, but callback-driven container/key rebinding, deprecated scalar conversions, exact string-offset results, and diagnostic ordering are not promised to mirror ZendVM. A null array key is intentionally treated as append. |
 
 ## Self-hosting Compatibility Notes
 
