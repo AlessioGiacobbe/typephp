@@ -2387,6 +2387,26 @@ class Preprocessor extends CompilerBase
             return;
         }
         $this->methodOverrideFlagsFinalized = true;
+
+        // Trait composition introduces real methods into the consuming class.
+        // They participate in virtual dispatch exactly like methods declared
+        // in the class body, so mark them before any method body is lowered.
+        // This is deliberately conservative: an extra mark only disables a
+        // native direct-call optimization, while a missing mark bypasses the
+        // trait override at runtime.
+        foreach ($this->symbols->classes() as $classDef) {
+            if ($classDef->trait !== null || $classDef->usedTraits === []) {
+                continue;
+            }
+            $traitMethods = [];
+            $visitedTraits = [];
+            $this->collectComposedTraitMethodNames($classDef, $traitMethods, $visitedTraits);
+            $className = strtolower($classDef->getNamespacedName(false));
+            foreach (array_keys($traitMethods) as $method) {
+                $this->classMethodOverride[$className . '::' . $method] ??= false;
+            }
+        }
+
         foreach (array_keys($this->classMethodOverride) as $fullMethodNameLower) {
             $pos = strrpos($fullMethodNameLower, '::');
             if ($pos === false) {
@@ -2401,6 +2421,44 @@ class Preprocessor extends CompilerBase
                 }
                 $classLower = strtolower($parentClass);
             }
+        }
+    }
+
+    /**
+     * Collect every concrete method a class may receive through direct or
+     * nested trait composition. Conflict suppression may make this set larger
+     * than the final method table; those false positives safely retain Zend
+     * dynamic dispatch.
+     *
+     * @param array<string, true> $methods
+     * @param array<string, true> $visitedTraits
+     */
+    private function collectComposedTraitMethodNames(
+        ClassDef $owner,
+        array &$methods,
+        array &$visitedTraits,
+    ): void {
+        foreach ($owner->usedTraits as $traitName) {
+            $traitKey = strtolower($traitName);
+            if (isset($visitedTraits[$traitKey]) || !$this->hasClass($traitName)) {
+                continue;
+            }
+            $visitedTraits[$traitKey] = true;
+            $traitDef = $this->getClass($traitName);
+            if ($traitDef->trait === null) {
+                continue;
+            }
+            foreach ($traitDef->methods as $method) {
+                if (!($method->flags & Modifiers::ABSTRACT)) {
+                    $methods[strtolower($method->name)] = true;
+                }
+            }
+            foreach ($owner->traitAliases as $aliases) {
+                foreach ($aliases as $alias) {
+                    $methods[strtolower($alias['newName'])] = true;
+                }
+            }
+            $this->collectComposedTraitMethodNames($traitDef, $methods, $visitedTraits);
         }
     }
 
@@ -2741,6 +2799,7 @@ class Preprocessor extends CompilerBase
         }
         foreach ($v->traits as $trait) {
             $traitName = $this->getNamespacedClassName($this->parseIdentifier($trait));
+            $this->classDef->usedTraits[] = $traitName;
             if (!$this->isInternalClass($traitName)) {
                 $this->symbolCallInFile[$this->file][] = strtolower($traitName);
             }

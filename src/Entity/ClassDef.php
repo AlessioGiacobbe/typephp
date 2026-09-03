@@ -76,6 +76,8 @@ class ClassDef extends ClassLikeDef
     public array $traitUseFunctions = [];
     /** @var array<string, string> */
     public array $traitUseConstants = [];
+    /** @var list<string> Traits directly used by this class or trait. */
+    public array $usedTraits = [];
 
     /**
      * FullMethodName -> alias list
