@@ -3915,10 +3915,12 @@ class PropertyInfo extends VariableLike
 }
 
 class EnumCaseInfo {
+    private /* readonly */ string $enumClass;
     private /* readonly */ string $name;
     private /* readonly */ ?Expr $value;
 
-    public function __construct(string $name, ?Expr $value) {
+    public function __construct(string $enumClass, string $name, ?Expr $value) {
+        $this->enumClass = $enumClass;
         $this->name = $name;
         $this->value = $value;
     }
@@ -3929,7 +3931,29 @@ class EnumCaseInfo {
         if ($this->value === null) {
             $code = "\n\tzend_enum_add_case_cstr(class_entry, \"$escapedName\", NULL);\n";
         } else {
-            $value = EvaluatedValue::createFromExpression($this->value, null, null, $allConstInfos);
+            $expr = $this->value;
+            if (!$expr instanceof Node\Scalar\Int_ && !$expr instanceof String_) {
+                // A backed case value beyond a scalar literal (arithmetic,
+                // constant fetches, enum-case property fetches such as
+                // `E::One->value + 1`) is resolved by the translator's
+                // constant-expression machinery, which owns cycle detection
+                // and declaration-context name resolution. Registration
+                // consumes that resolved value instead of re-evaluating the
+                // AST with the independent evaluator here, which cannot see
+                // property fetches.
+                $resolved = getTranslator()->resolvedEnumCaseValue($expr, $this->enumClass, $this->name);
+                if (is_int($resolved)) {
+                    $expr = new Node\Scalar\Int_($resolved);
+                } elseif (is_string($resolved)) {
+                    $expr = new String_($resolved);
+                } else {
+                    throw new Exception(
+                        "Enum case {$this->enumClass}::{$this->name} must have an int or string backing value, "
+                        . gettype($resolved) . " given"
+                    );
+                }
+            }
+            $value = EvaluatedValue::createFromExpression($expr, null, null, $allConstInfos);
 
             $zvalName = "enum_case_{$escapedName}_value";
             $code = "\n" . $value->initializeZval($zvalName);
@@ -5146,7 +5170,7 @@ class FileInfo {
                         );
                     } else if ($classStmt instanceof Stmt\EnumCase) {
                         $enumCaseInfos[] = new EnumCaseInfo(
-                            $classStmt->name->toString(), $classStmt->expr);
+                            $className->toString(), $classStmt->name->toString(), $classStmt->expr);
                     } else if ($classStmt instanceof Stmt\TraitUse) {
                         continue;
                     } else {

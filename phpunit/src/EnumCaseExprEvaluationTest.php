@@ -24,6 +24,39 @@ class EnumCaseExprEvaluationTest extends BaseTest
         $this->exec('Cannot declare self-referencing constant `E::B`', 'enum_case_mutual_reference.php');
     }
 
+    public function testCaseValueMayFetchEnumCaseProperties(): void
+    {
+        // A backed case value may fetch `->value` and `->name` of another
+        // case (PHP 8.2 "fetch properties in const expressions"). Verified
+        // against Zend 8.4.13: E::Two->value is 2 (E::One->value + 1) and
+        // S::B->value is "A!" (S::A->name . '!').
+        [$stub] = $this->convertFiles(['enum_case_property_fetch.php']);
+        self::assertStringContainsString('ZVAL_LONG(&enum_case_Two_value, 2)', $stub);
+        self::assertStringContainsString('enum_case_B_value_str = zend_string_init_interned("A!"', $stub);
+    }
+
+    public function testCaseNamesAreCaseSensitive(): void
+    {
+        // Enum class names are case-insensitive but case names are not: `A`
+        // and `a` are distinct cases with a dependency between their values.
+        // Resolving Holder::REF holds F::A and F::a in the in-progress guard
+        // at once — a cycle key that lowercased the case name reported a
+        // false "self-referencing constant F::a" here. Verified against Zend
+        // 8.4.13: Holder::REF is enum(F::A), F::A->value 2, F::a->value 3.
+        [$stub] = $this->convertFiles(['enum_case_sensitive_names.php']);
+        self::assertStringContainsString('ZVAL_LONG(&enum_case_A_value, 2)', $stub);
+        self::assertStringContainsString('ZVAL_LONG(&enum_case_a_value, 3)', $stub);
+        self::assertStringContainsString('const_REF_value_case_name = zend_string_init_interned("A"', $stub);
+    }
+
+    public function testSelfReferenceThroughPropertyFetchIsRejected(): void
+    {
+        // A true cycle through a property fetch (`case A = G::A->value + 1;`)
+        // must still be detected: Zend 8.4.13 fails with "Cannot declare
+        // self-referencing constant G::A".
+        $this->exec('Cannot declare self-referencing constant `G::A`', 'enum_case_property_self_reference.php');
+    }
+
     public function testCaseExprResolvesInDeclaringNamespace(): void
     {
         // Verified against Zend 8.4.13: A\E::X->value is 21 (A\Helper::V + 1,

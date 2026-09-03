@@ -19,9 +19,12 @@ trait ClassConstantValueTrait
 {
     /**
      * Backed enum cases whose stored value expression is currently being
-     * evaluated, keyed by lowercased "Enum\Fqn::CaseName". Guards the lazy
-     * evaluation against self-referencing and mutually recursive case values,
-     * which would otherwise recurse until the stack is exhausted.
+     * evaluated, keyed by "enum\fqn::CaseName" — the enum name lowercased
+     * (class names are case-insensitive) but the case name kept as written
+     * (case names are case-sensitive: `case A` and `case a` coexist). Guards
+     * the lazy evaluation against self-referencing and mutually recursive
+     * case values, which would otherwise recurse until the stack is
+     * exhausted.
      * @var array<string, true>
      */
     private array $enumCaseExprsInProgress = [];
@@ -114,23 +117,36 @@ trait ClassConstantValueTrait
     private function evaluateEnumCaseExpr(NodeAbstract $expr, ClassDef $classDef, string $class, string $name): void
     {
         $enumName = $classDef->getNamespacedName(false);
-        $key = strtolower($enumName . '::' . $name);
+        $key = strtolower($enumName) . '::' . $name;
         if (isset($this->enumCaseExprsInProgress[$key])) {
             $this->fatalError($expr, "Cannot declare self-referencing constant `{$enumName}::{$name}`");
         }
         $this->enumCaseExprsInProgress[$key] = true;
         try {
-            $value = $this->withDeclarationNameContext(
-                $classDef->namespace,
-                $classDef->enumUseNamespaces,
-                $classDef->enumUseAliases,
-                $classDef->enumUseFunctions,
-                $classDef->enumUseConstants,
-                fn (): mixed => $this->evaluateConstantExpression($expr, $classDef->enumCaseExprs[$name], $class),
-            );
+            $this->evaluateEnumCaseExprUnguarded($expr, $classDef, $class, $name);
         } finally {
             unset($this->enumCaseExprsInProgress[$key]);
         }
+    }
+
+    /**
+     * The evaluation itself, without marking the case in progress. Direct
+     * consumers of the backing value (stub registration) enter here: Zend's
+     * enum case fetch does not set CONST_RECURSIVE either — only class
+     * constant fetches nested in the expression walk do — so the name a cycle
+     * reports stays the first case fetched again while its own value is being
+     * computed, never the case whose registration started the walk.
+     */
+    private function evaluateEnumCaseExprUnguarded(NodeAbstract $expr, ClassDef $classDef, string $class, string $name): void
+    {
+        $value = $this->withDeclarationNameContext(
+            $classDef->namespace,
+            $classDef->enumUseNamespaces,
+            $classDef->enumUseAliases,
+            $classDef->enumUseFunctions,
+            $classDef->enumUseConstants,
+            fn (): mixed => $this->evaluateConstantExpression($expr, $classDef->enumCaseExprs[$name], $class),
+        );
         $classDef->enumCases[$name] = $value;
         unset($classDef->enumCaseExprs[$name]);
     }
@@ -218,10 +234,71 @@ trait ClassConstantValueTrait
                 }
                 return $this->getClassConstValue($origin ?? $expr, $className, $constName, $class);
             }
+            if ($expr instanceof Node\Expr\PropertyFetch) {
+                return $this->evaluateConstantPropertyFetch($origin, $expr, $class);
+            }
             throw new \RuntimeException('Unsupported class constant expression');
         });
 
         return $evaluator->evaluateDirectly($valueExpr);
+    }
+
+    /**
+     * `EnumCase->value` / `EnumCase->name` inside a constant expression (PHP
+     * 8.2 "fetch properties in const expressions"): the object must itself be
+     * a constant expression evaluating to an enum case; `->name` is the case
+     * name and `->value` the backing value of a backed case. Property names
+     * are case-sensitive (`->VALUE` is undefined), unlike class names and the
+     * case-insensitive constant fetches above.
+     */
+    private function evaluateConstantPropertyFetch(?NodeAbstract $origin, Node\Expr\PropertyFetch $expr, string $class): mixed
+    {
+        if (!$expr->name instanceof Node\Identifier) {
+            throw new \RuntimeException('Unsupported class constant expression');
+        }
+        $object = $this->evaluateConstantExpression($origin, $expr->var, $class);
+        if (!$object instanceof EnumCaseRef) {
+            $this->fatalError($origin ?? $expr, 'Fetching properties in constant expressions is only supported on enum cases');
+        }
+        $property = $expr->name->toString();
+        if ($property === 'name') {
+            return $object->caseName;
+        }
+        if ($property === 'value') {
+            $value = $this->resolvedEnumCaseValue($origin ?? $expr, $object->enumClass, $object->caseName);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+        $this->fatalError($origin ?? $expr, "Undefined property `{$object->enumClass}::\${$property}`");
+    }
+
+    /**
+     * The backing value of a backed enum case, for consumers that need the
+     * scalar rather than the case identity (`->value` fetches above, stub
+     * registration in gen_stub.php). Triggers the lazy evaluation of a stored
+     * case value expression, so cycle detection and declaration-context name
+     * resolution apply no matter which consumer asks first. Null when the
+     * case exists but is not backed.
+     */
+    public function resolvedEnumCaseValue(NodeAbstract $origin, string $enumClass, string $caseName): mixed
+    {
+        if ($this->isInternalClass($enumClass)) {
+            $constName = $enumClass . '::' . $caseName;
+            if (defined($constName)) {
+                $case = constant($constName);
+                return $case instanceof \BackedEnum ? $case->value : null;
+            }
+        } elseif ($this->hasClass($enumClass)) {
+            $classDef = $this->getClass($enumClass);
+            if ($classDef->enum && array_key_exists($caseName, $classDef->enumCases)) {
+                if (isset($classDef->enumCaseExprs[$caseName])) {
+                    $this->evaluateEnumCaseExprUnguarded($origin, $classDef, $classDef->getNamespacedName(false), $caseName);
+                }
+                return $classDef->enumCases[$caseName];
+            }
+        }
+        $this->fatalError($origin, "Enum case `{$enumClass}::{$caseName}` not found");
     }
 
     /**
