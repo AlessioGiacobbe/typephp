@@ -1711,9 +1711,24 @@ trait AssignOpTrait
             }
         }
 
-        $isset = $var !== null && $this->isNativeObjectVar($var)
-            ? $var . ' != nullptr'
-            : $this->parseChainedExpr($expr->var, self::OP_ISSET);
+        $arrayAccessTarget = $this->resolveCoalesceArrayAccessTarget($expr->var);
+        $arrayAccessSelectedValue = null;
+        $arrayAccessContainer = null;
+        $arrayAccessKey = null;
+        if ($arrayAccessTarget !== null) {
+            $arrayAccessSelectedValue = $this->addTmpVar(Type::VAR);
+            $arrayAccessPresence = $this->parseArrayAccessCoalescePresence(
+                $arrayAccessTarget,
+                $arrayAccessSelectedValue,
+            );
+            $isset = $arrayAccessPresence['condition'];
+            $arrayAccessContainer = $arrayAccessPresence['container'];
+            $arrayAccessKey = $arrayAccessPresence['key'];
+        } else {
+            $isset = $var !== null && $this->isNativeObjectVar($var)
+                ? $var . ' != nullptr'
+                : $this->parseChainedExpr($expr->var, self::OP_ISSET);
+        }
 
         $var ??= $this->parseWritableIdentifier($expr->var);
         $propertyWriteTarget = $this->preparePropertyWriteTarget($expr->var);
@@ -1744,12 +1759,13 @@ trait AssignOpTrait
             $this->errorUndefinedVariable($expr->expr);
         }
 
-        $arrayAccessTarget = $this->resolveCoalesceArrayAccessTarget($expr->var);
         if ($arrayAccessTarget !== null) {
             return $this->emitCoalesceArrayAccessAssignment(
                 $arrayAccessTarget,
                 $isset,
-                $var,
+                $arrayAccessSelectedValue,
+                $arrayAccessContainer,
+                $arrayAccessKey,
                 $right,
                 $rightBefore,
                 $rightAfter,
@@ -1800,79 +1816,128 @@ trait AssignOpTrait
     }
 
     /**
-     * ArrayAccess dimensions do not expose writable buckets: offsetGet()
-     * returns a value, while a write must dispatch through offsetSet(). Keep
-     * ordinary arrays on the existing lvalue path so assignments into array
-     * references continue to update the referenced bucket in place.
-     *
-     * @return array{container: string, key: string, objectCondition: string}|null
+     * Use the separated ArrayAccess read/write path only when the dimension
+     * container may be an object at runtime. Fixed arrays keep their existing
+     * bucket-lvalue path.
      */
-    private function resolveCoalesceArrayAccessTarget(Expr $target): ?array
+    private function resolveCoalesceArrayAccessTarget(Expr $target): ?Expr\ArrayDimFetch
     {
         if (!$target instanceof Expr\ArrayDimFetch
             || $target->dim === null
-            || !$this->isVarExpr($target->var)
             || $this->isStdContainerExpr($target)
+            || $this->isNativeObjectClass($this->detectClassOfExpr($target->var))
         ) {
             return null;
         }
 
-        $container = $this->parseIdentifier($target->var);
-        $containerType = $this->getVarType($container);
-        if (!in_array($containerType, [Type::OBJECT, Type::VAR, Type::REF], true)) {
-            return null;
+        return in_array(
+            $this->detectTypeOfExpr($target->var),
+            [Type::OBJECT, Type::VAR, Type::REF],
+            true,
+        ) ? $target : null;
+    }
+
+    /**
+     * Resolve nested ArrayAccess presence from outermost to innermost. This
+     * avoids assigning to the value returned by offsetGet() and avoids the
+     * generic exists() chain invoking offsetExists() more than once.
+     *
+     * @return array{condition: string, container: string, key: string}
+     */
+    private function parseArrayAccessCoalescePresence(
+        Expr\ArrayDimFetch $target,
+        string $selectedValue,
+    ): array {
+        if ($this->isVarExpr($target->var)) {
+            $container = $this->parseIdentifier($target->var);
+            $this->checkVarMustExist($target->var, $container);
+            $containerPresence = null;
+        } elseif ($target->var instanceof Expr\ArrayDimFetch && $target->var->dim !== null) {
+            $container = $this->addTmpVar(Type::VAR);
+            $outerPresence = $this->parseArrayAccessCoalescePresence(
+                $target->var,
+                $container,
+            );
+            $containerPresence = $outerPresence['condition'];
+        } else {
+            $container = $this->parseIdentifier($target->var);
+            $containerPresence = null;
         }
 
+        $key = $this->parseIdentifier($target->dim);
+        $stableContainer = $this->addTmpVar(Type::VAR);
+        $stableKey = $this->addTmpVar(Type::VAR);
+        $objectPresence = '(' . $stableContainer . '.offsetExists(' . $stableKey . ')'
+            . ' && ((' . $selectedValue . ' = ' . $stableContainer . '.offsetGet(' . $stableKey . ')),'
+            . ' !' . $selectedValue . '.isNull()))';
+        $otherPresence = 'php::exists(' . $stableContainer . ', '
+            . '{{php::ArrayDimFetch, ' . Type::VAR . '(' . $stableKey . ')}}, '
+            . $selectedValue . ')';
+        $probe = '((' . $stableContainer . ' = ' . $container . '), ('
+            . $stableKey . ' = ' . $key . '), (' . $stableContainer . '.isObject() ? '
+            . $objectPresence . ' : ' . $otherPresence . '))';
+
         return [
-            'container' => $container,
-            'key' => $this->parseIdentifier($target->dim),
-            // Even a statically object-typed PHP variable may currently hold
-            // null. PHP converts that null to an array on dimension write, so
-            // only the runtime object case may dispatch through offsetSet().
-            'objectCondition' => $container . '.isObject()',
+            'condition' => $containerPresence === null
+                ? $probe
+                : '(' . $containerPresence . ' && ' . $probe . ')',
+            'container' => $stableContainer,
+            'key' => $stableKey,
         ];
     }
 
     /**
-     * @param array{container: string, key: string, objectCondition: string} $target
+     * Arrays expose a writable bucket. Every other supported dynamic receiver
+     * goes through PHPX offsetSet(); unsupported scalars fail there with one
+     * stable PHPX error rather than silently discarding the write.
+     */
+    private function parseArrayAccessCoalesceStore(
+        Expr\ArrayDimFetch $target,
+        string $stableContainer,
+        string $stableKey,
+        string $value,
+    ): string {
+        $array = $this->parseWritableIdentifier($target->var);
+
+        return '(' . $stableContainer . '.isObject()'
+            . ' ? (' . $stableContainer . '.offsetSet(' . $stableKey . ', ' . $value . '), ' . $value . ')'
+            . ' : (' . $array . '.item(' . $stableKey . ', true) = ' . $value . '))';
+    }
+
+    /**
      * @param list<string> $rightBefore
      * @param list<string> $rightAfter
      */
     private function emitCoalesceArrayAccessAssignment(
-        array $target,
+        Expr\ArrayDimFetch $target,
         string $isset,
-        string $readTarget,
+        string $selectedValue,
+        string $stableContainer,
+        string $stableKey,
         string $right,
         array $rightBefore,
         array $rightAfter,
     ): string {
-        $current = $this->genTmpVarName();
-        $rhs = $this->genTmpVarName();
-        $container = $target['container'];
-        $key = $target['key'];
-        $isObject = $this->genTmpVarName();
+        $rhs = $this->addTmpVar(Type::VAR);
+        $store = $this->parseArrayAccessCoalesceStore(
+            $target,
+            $stableContainer,
+            $stableKey,
+            $rhs,
+        );
+
+        if ($rightBefore === [] && $rightAfter === []) {
+            return '(' . $isset . ' ? ' . $selectedValue
+                . ' : ((' . $rhs . ' = ' . $right . '), ' . $store . '))';
+        }
 
         $code = '[&]() -> php::Var {' . PHP_EOL;
-        $code .= $this->getIndent() . 'const bool ' . $isObject . ' = '
-            . $target['objectCondition'] . ';' . PHP_EOL;
-        $code .= $this->getIndent() . 'if (' . $isset . ') {' . PHP_EOL;
-        $code .= $this->getIndent(2) . 'php::Var ' . $current . ' = ' . $isObject
-            . ' ? ' . $container . '.offsetGet(' . $key . ') : ' . $readTarget . ';' . PHP_EOL;
-        $code .= $this->getIndent(2) . 'if (!' . $current . '.isNull()) {' . PHP_EOL;
-        $code .= $this->getIndent(3) . 'return ' . $current . ';' . PHP_EOL;
-        $code .= $this->getIndent(2) . '}' . PHP_EOL;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
+        $code .= $this->getIndent() . 'if (' . $isset . ') { return ' . $selectedValue . '; }' . PHP_EOL;
         $code .= $this->formatCapturedStmtLines($rightBefore);
-        $code .= $this->getIndent() . 'php::Var ' . $rhs . ' = ' . $right . ';' . PHP_EOL;
+        $code .= $this->getIndent() . $rhs . ' = ' . $right . ';' . PHP_EOL;
         $code .= $this->formatCapturedStmtLines($rightAfter);
-        $code .= $this->getIndent() . 'if (' . $isObject . ') {' . PHP_EOL;
-        $code .= $this->getIndent(2) . $container . '.offsetSet(' . $key . ', ' . $rhs . ');' . PHP_EOL;
-        $code .= $this->getIndent() . '} else {' . PHP_EOL;
-        $code .= $this->getIndent(2) . $readTarget . ' = ' . $rhs . ';' . PHP_EOL;
-        $code .= $this->getIndent() . '}' . PHP_EOL;
-        $code .= $this->getIndent() . 'return ' . $rhs . ';' . PHP_EOL;
-        $code .= $this->getIndent() . '}()';
-        return $code;
+        $code .= $this->getIndent() . 'return ' . $store . ';' . PHP_EOL;
+        return $code . $this->getIndent() . '}()';
     }
 
     /**
