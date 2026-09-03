@@ -26,11 +26,14 @@ class EnumCaseExprEvaluationTest extends BaseTest
 
     public function testCaseExprResolvesInDeclaringNamespace(): void
     {
-        // Verified against Zend 8.4.13: B\Holder::REF and A\E::X->value are
-        // both 21 (A\Helper::V + 1); the decoy B\Helper::V is 999.
+        // Verified against Zend 8.4.13: A\E::X->value is 21 (A\Helper::V + 1,
+        // never the decoy B\Helper::V of 999), and B\Holder::REF is the case
+        // OBJECT enum(A\E::X) — registered as a persistent enum-case AST, not
+        // a folded scalar.
         [$stub] = $this->convertFiles(['enum_case_cross_namespace.php']);
         self::assertStringContainsString('ZVAL_LONG(&enum_case_X_value, 21)', $stub);
-        self::assertStringContainsString('ZVAL_LONG(&const_REF_value, 21)', $stub);
+        self::assertStringContainsString('const_REF_value_enum_name = zend_string_init_interned("A\\\\E"', $stub);
+        self::assertStringContainsString('const_REF_value_case_name = zend_string_init_interned("X"', $stub);
         self::assertStringNotContainsString('1000', $stub);
     }
 
@@ -39,12 +42,15 @@ class EnumCaseExprEvaluationTest extends BaseTest
         // The referencing file converts first, so the lazy evaluation of
         // A\E::X runs while namespace Consumer is active; Provider inside the
         // case expression must still resolve through the declaring file's
-        // `use Lib\Provider`. Verified against Zend 8.4.13: both values are 42.
+        // `use Lib\Provider`. Verified against Zend 8.4.13: the backing value
+        // is 42, and Consumer\Holder::REF is the case object enum(A\E::X) —
+        // registered as a persistent enum-case AST.
         [$ref, $def] = $this->convertFiles([
             'enum_case_cross_file_ref.php',
             'enum_case_cross_file_def.php',
         ]);
-        self::assertStringContainsString('ZVAL_LONG(&const_REF_value, 42)', $ref);
+        self::assertStringContainsString('const_REF_value_enum_name = zend_string_init_interned("A\\\\E"', $ref);
+        self::assertStringContainsString('const_REF_value_case_name = zend_string_init_interned("X"', $ref);
         self::assertStringContainsString('ZVAL_LONG(&enum_case_X_value, 42)', $def);
     }
 
