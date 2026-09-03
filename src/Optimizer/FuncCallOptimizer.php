@@ -1015,6 +1015,13 @@ trait FuncCallOptimizer
         }
         $type = $this->detectTypeOfExpr($e->args[0]->value);
         if ($type === Type::DECIMAL) {
+            // Decimal is a PHPX Box resource at the Zend boundary, so the
+            // generic round() function cannot implement its rounding mode.
+            // Reject the unsupported extension form instead of silently
+            // dropping the explicit argument or producing a resource TypeError.
+            if (count($e->args) > 2) {
+                $this->fatalError($e, 'round() with Decimal supports at most 2 arguments');
+            }
             $a0 = $this->parseExpr($e->args[0]->value);
             if (count($e->args) >= 2) {
                 return 'php::Decimal::round(' . $a0 . ', ' . $this->parseExpr($e->args[1]->value) . ')';

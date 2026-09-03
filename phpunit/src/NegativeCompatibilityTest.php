@@ -145,6 +145,30 @@ function main(): void
 PHP,
         ];
 
+        yield 'Decimal round mode' => [
+            'convert',
+            'round() with Decimal supports at most 2 arguments',
+            <<<'PHP'
+<?php
+function main(): void
+{
+    round(std::decimal('2.5'), 0, PHP_ROUND_HALF_DOWN); // @diagnostic
+}
+PHP,
+        ];
+
+        yield 'round excessive arguments with Decimal' => [
+            'convert',
+            'round() expects at most 3 argument(s), 4 given',
+            <<<'PHP'
+<?php
+function main(): void
+{
+    round(std::decimal('2.5'), 0, PHP_ROUND_HALF_DOWN, 4); // @diagnostic
+}
+PHP,
+        ];
+
         yield 'break level exceeds enclosing depth' => [
             'convert',
             "Cannot 'break' 2 levels",

@@ -56,6 +56,13 @@ class RoundModeTest extends TestCase
         self::assertSame(2, substr_count($cpp, 'php::fn::round('));
     }
 
+    public function testDecimalCallsWithoutAModeKeepTheDecimalFastPath(): void
+    {
+        $cpp = $this->compileToCpp('round-decimal-native-path.php');
+
+        self::assertSame(2, substr_count($cpp, 'php::Decimal::round('));
+    }
+
     private function compileToCpp(string $file): string
     {
         global $translator;
