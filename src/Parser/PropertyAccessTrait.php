@@ -1170,7 +1170,7 @@ trait PropertyAccessTrait
             return $this->getNativeObjectMemberReceiver($objectName)
                 . $this->getNativeObjectPropertyCppName($resolution->propertyDef, $resolution->classDef);
         }
-        $objectVar = $objectName;
+        $objectVar = $this->parenthesizeOpenOperand($objectName);
         $directMagic = !$update && !$this->isNativePropertyAccess($expr)
             ? $this->resolveDirectMagicPropertyAccess($expr, $objectVar, '__get')
             : null;
@@ -1335,4 +1335,39 @@ trait PropertyAccessTrait
         return $result;
     }
 
+
+    /**
+     * A folded constant value can be a full C++ expression (e.g. the ternary
+     * of `const VALUE = cond ? E::A : E::B;`). Appending `.attr(...)` to it
+     * unparenthesized would bind the member access to the last operand only,
+     * so any operand with top-level operators is wrapped first. Simple
+     * identifiers and closed call chains stay untouched.
+     */
+    private function parenthesizeOpenOperand(string $code): string
+    {
+        $depth = 0;
+        $inString = false;
+        $length = strlen($code);
+        for ($i = 0; $i < $length; $i++) {
+            $char = $code[$i];
+            if ($inString) {
+                if ($char === '\\') {
+                    $i++;
+                } elseif ($char === '"') {
+                    $inString = false;
+                }
+                continue;
+            }
+            if ($char === '"') {
+                $inString = true;
+            } elseif ($char === '(' || $char === '{' || $char === '[') {
+                $depth++;
+            } elseif ($char === ')' || $char === '}' || $char === ']') {
+                $depth--;
+            } elseif ($depth === 0 && ($char === ' ' || $char === '?')) {
+                return '(' . $code . ')';
+            }
+        }
+        return $code;
+    }
 }

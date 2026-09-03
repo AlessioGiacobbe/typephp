@@ -2568,6 +2568,10 @@ class EvaluatedValue
     public SimpleType $type;
     public Expr $expr;
     public bool $isUnknownConstValue;
+    /** Case identity when the expression evaluates to an enum case; only
+     * class-constant registration may use it (persistent AST) — every other
+     * consumer sees the legacy scalar/object in $value. */
+    public ?\TypePhp\Entity\EnumCaseRef $enumCaseRef = null;
     /** @var ConstInfo[] */
     public array $originatingConsts;
 
@@ -2727,6 +2731,16 @@ class EvaluatedValue
 
         $result = $evaluator->evaluateDirectly($expr);
 
+        $enumCaseRef = null;
+        if ($result instanceof \TypePhp\Entity\EnumCaseRef) {
+            // Property/parameter defaults and attribute arguments must keep
+            // consuming the legacy value (persistent tables reject refcounted
+            // zvals, and those paths have their own runtime restore
+            // machinery); only class-constant registration uses the identity.
+            $enumCaseRef = $result;
+            $result = getTranslator()->enumCaseLegacyValue($result);
+        }
+
         // The declared type is useful when an UNKNOWN placeholder must be
         // emitted through its @cvalue macro. For a concrete null expression,
         // however, the zval must be initialized as null even when the declared
@@ -2735,13 +2749,15 @@ class EvaluatedValue
             ? SimpleType::null()
             : ($constType ?? SimpleType::fromValue($result));
 
-        return new EvaluatedValue(
+        $evaluated = new EvaluatedValue(
             $result, // note: we are generally not interested in the actual value of $result, unless it's a bare value, without constants
             $valueType,
             $cConstName === null ? $expr : new Expr\ConstFetch(new Node\Name($cConstName)),
             $visitor->visitedConstants,
             $isUnknownConstValue
         );
+        $evaluated->enumCaseRef = $enumCaseRef;
+        return $evaluated;
     }
 
     public static function null(): EvaluatedValue
@@ -2762,8 +2778,11 @@ class EvaluatedValue
         $this->isUnknownConstValue = $isUnknownConstValue;
     }
 
-    public function initializeZval(string $zvalName, bool $alreadyExists = false, string $forStringDef = '', string $varName = ''): string
+    public function initializeZval(string $zvalName, bool $alreadyExists = false, string $forStringDef = '', string $varName = '', bool $allowConstantAst = false): string
     {
+        if ($this->enumCaseRef !== null && $allowConstantAst) {
+            return $this->initializeEnumCaseZval($zvalName, $alreadyExists);
+        }
         $cExpr = $this->getCExpr();
 
         $code = '';
@@ -2807,6 +2826,60 @@ class EvaluatedValue
             throw new Exception("Invalid default value: " . print_r($this->value, true) . ", type: " . print_r($this->type, true));
         }
 
+        return $code;
+    }
+
+    /**
+     * Initialize the zval as a persistent IS_CONSTANT_AST holding
+     * `EnumClass::CaseName`. Enum case objects have request lifetime and can
+     * never sit in the persistent class-entry tables, so the engine's own
+     * mechanism for internal enums is reused: declaring an AST constant makes
+     * Zend separate the class constants table into request-local mutable
+     * storage, evaluate the fetch there on first access, and clean it up at
+     * request shutdown. This keeps case identity intact for static access,
+     * constant(), and reflection, and is safe under concurrent ZTS requests.
+     */
+    /** @var array<int, array{string, string}> [declaring class, constant name] of every emitted AST constant, per generated file */
+    public static array $emittedAstConstants = [];
+
+    private function initializeEnumCaseZval(string $zvalName, bool $alreadyExists): string
+    {
+        $case = $this->enumCaseRef;
+        $enumCName = '"' . getTranslator()->escapeString(ltrim($case->enumClass, '\\')) . '"';
+        $caseCName = '"' . getTranslator()->escapeString($case->caseName) . '"';
+        $id = preg_replace('/[^A-Za-z0-9_]/', '_', $zvalName);
+
+        // One contiguous persistent allocation holds the ast_ref, the root
+        // CLASS_CONST node and both zval children, mirroring Zend's own
+        // persistent enum AST builder: teardown frees exactly one block.
+        $code = $alreadyExists ? '' : "\tzval $zvalName;\n";
+        $code .= "\t{\n";
+        $code .= "\t\tzend_string *{$id}_enum_name = zend_string_init_interned($enumCName, sizeof($enumCName) - 1, 1);\n";
+        $code .= "\t\tzend_string *{$id}_case_name = zend_string_init_interned($caseCName, sizeof($caseCName) - 1, 1);\n";
+        $code .= "\t\tsize_t {$id}_root_size = ZEND_MM_ALIGNED_SIZE(zend_ast_size(2));\n";
+        $code .= "\t\tsize_t {$id}_child_size = ZEND_MM_ALIGNED_SIZE(sizeof(zend_ast_zval));\n";
+        $code .= "\t\tchar *{$id}_block = (char *) pemalloc(sizeof(zend_ast_ref) + {$id}_root_size + 2 * {$id}_child_size, 1);\n";
+        $code .= "\t\tzend_ast_ref *{$id}_ast_ref = (zend_ast_ref *) {$id}_block;\n";
+        $code .= "\t\tGC_SET_REFCOUNT({$id}_ast_ref, 1);\n";
+        $code .= "\t\tGC_TYPE_INFO({$id}_ast_ref) = GC_CONSTANT_AST | ((GC_PERSISTENT | GC_IMMUTABLE) << GC_FLAGS_SHIFT);\n";
+        $code .= "\t\tzend_ast *{$id}_fetch_ast = GC_AST({$id}_ast_ref);\n";
+        $code .= "\t\tzend_ast_zval *{$id}_class_ast = (zend_ast_zval *) ({$id}_block + sizeof(zend_ast_ref) + {$id}_root_size);\n";
+        $code .= "\t\tzend_ast_zval *{$id}_const_ast = (zend_ast_zval *) ({$id}_block + sizeof(zend_ast_ref) + {$id}_root_size + {$id}_child_size);\n";
+        $code .= "\t\t{$id}_class_ast->kind = ZEND_AST_ZVAL;\n";
+        $code .= "\t\t{$id}_class_ast->attr = ZEND_NAME_FQ;\n";
+        $code .= "\t\tZVAL_INTERNED_STR(&{$id}_class_ast->val, {$id}_enum_name);\n";
+        $code .= "\t\tZ_LINENO({$id}_class_ast->val) = 0;\n";
+        $code .= "\t\t{$id}_const_ast->kind = ZEND_AST_ZVAL;\n";
+        $code .= "\t\t{$id}_const_ast->attr = 0;\n";
+        $code .= "\t\tZVAL_INTERNED_STR(&{$id}_const_ast->val, {$id}_case_name);\n";
+        $code .= "\t\tZ_LINENO({$id}_const_ast->val) = 0;\n";
+        $code .= "\t\t{$id}_fetch_ast->kind = ZEND_AST_CLASS_CONST;\n";
+        $code .= "\t\t{$id}_fetch_ast->attr = 0;\n";
+        $code .= "\t\t{$id}_fetch_ast->lineno = 0;\n";
+        $code .= "\t\t{$id}_fetch_ast->child[0] = (zend_ast *) {$id}_class_ast;\n";
+        $code .= "\t\t{$id}_fetch_ast->child[1] = (zend_ast *) {$id}_const_ast;\n";
+        $code .= "\t\tZVAL_AST(&$zvalName, {$id}_ast_ref);\n";
+        $code .= "\t}\n";
         return $code;
     }
 
@@ -3247,7 +3320,10 @@ class ConstInfo extends VariableLike
     {
         $constName = $this->name->getDeclarationName();
 
-        $zvalCode = $value->initializeZval("const_{$constName}_value");
+        $zvalCode = $value->initializeZval("const_{$constName}_value", allowConstantAst: true);
+        if ($value->enumCaseRef !== null) {
+            EvaluatedValue::$emittedAstConstants[] = [ClassInfo::$currentClass, $constName];
+        }
 
         $code = "\n" . $zvalCode;
 
@@ -5885,6 +5961,8 @@ function generateArgInfoCode(
     $code = "/* This is a generated file, edit the .stub.php file instead.\n"
         . " * Stub hash: $stubHash */\n";
 
+    EvaluatedValue::$emittedAstConstants = [];
+
     foreach ($fileInfo->classInfos as $classInfo) {
         $code .= $classInfo->getDnfConstantTypeFactoryCode();
         $code .= $classInfo->getDnfPropertyTypeFactoryCode();
@@ -5962,6 +6040,31 @@ function generateArgInfoCode(
         }
 
         $code .= $fileInfo->generateClassEntryCode($allConstInfos);
+    }
+
+    if (EvaluatedValue::$emittedAstConstants !== []) {
+        // Zend's internal-class teardown asserts (in debug builds) that every
+        // remaining persistent AST constant is CONST_ENUM_INIT and frees only
+        // the ast_ref allocation. Restore the emitted CLASS_CONST ASTs before
+        // destroy_zend_class() runs — the module MSHUTDOWN calls this — and
+        // free their single contiguous block.
+        $fnName = 'typephp_release_ast_constants_'
+            . preg_replace('/[^A-Za-z0-9_]/', '_', $stubFilenameWithoutExtension);
+        $code .= "\nstatic void {$fnName}(void) {\n";
+        foreach (EvaluatedValue::$emittedAstConstants as [$className, $constName]) {
+            $classLc = '"' . getTranslator()->escapeString(strtolower(ltrim($className, '\\'))) . '"';
+            $constC = '"' . getTranslator()->escapeString($constName) . '"';
+            $code .= "\t{\n";
+            $code .= "\t\tzend_class_entry *ce = (zend_class_entry *) zend_hash_str_find_ptr(CG(class_table), $classLc, sizeof($classLc) - 1);\n";
+            $code .= "\t\tzend_class_constant *c = ce ? (zend_class_constant *) zend_hash_str_find_ptr(&ce->constants_table, $constC, sizeof($constC) - 1) : NULL;\n";
+            $code .= "\t\tif (c && Z_TYPE(c->value) == IS_CONSTANT_AST) {\n";
+            $code .= "\t\t\tpefree(Z_AST(c->value), 1);\n";
+            $code .= "\t\t\tZVAL_NULL(&c->value);\n";
+            $code .= "\t\t}\n";
+            $code .= "\t}\n";
+        }
+        $code .= "}\n";
+        EvaluatedValue::$emittedAstConstants = [];
     }
 
     return $code;
