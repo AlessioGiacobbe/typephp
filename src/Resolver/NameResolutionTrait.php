@@ -168,6 +168,7 @@ trait NameResolutionTrait
         if ($type === null) {
             return Type::VAR;
         }
+        $this->assertTypeDeclIntersectionsHaveNoCallable($type);
         if ($type instanceof UnionType || $type instanceof NullableType || $type instanceof IntersectionType) {
             // Complex types are uniformly treated as mixed/var at the static stage; the runtime typeCheck provides the fallback.
             return Type::VAR;
@@ -198,6 +199,39 @@ trait NameResolutionTrait
                     $type->name = $class;
                 }
                 return Type::OBJECT;
+            }
+        }
+    }
+
+    /**
+     * Zend rejects `callable` as an intersection member while compiling the
+     * type itself ("Type callable cannot be part of an intersection type"),
+     * in every declaration context - parameters, returns, properties,
+     * promoted properties, class and interface constants, closures - and
+     * before any property/constant-specific rule fires (probed on 8.4.13:
+     * `callable|(Traversable&callable)` reports the intersection conflict,
+     * not the property one). Running the walk here, on the common
+     * declaration path, covers bare intersections and DNF members like
+     * `(Traversable&callable)|stdClass`; without it the type reaches
+     * gen_stub, which asserts that intersection members are never builtin.
+     */
+    private function assertTypeDeclIntersectionsHaveNoCallable(NodeAbstract $typeNode): void
+    {
+        if ($typeNode instanceof NullableType) {
+            $this->assertTypeDeclIntersectionsHaveNoCallable($typeNode->type);
+            return;
+        }
+        if ($typeNode instanceof UnionType) {
+            foreach ($typeNode->types as $member) {
+                $this->assertTypeDeclIntersectionsHaveNoCallable($member);
+            }
+            return;
+        }
+        if ($typeNode instanceof IntersectionType) {
+            foreach ($typeNode->types as $member) {
+                if (strtolower($this->parseIdentifier($member)) === 'callable') {
+                    $this->fatalError($member, 'Type callable cannot be part of an intersection type');
+                }
             }
         }
     }

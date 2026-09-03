@@ -116,6 +116,20 @@ trait ClosureGenerator
 
     private function doGenClosure(Expr\ArrowFunction|Expr\Closure $expr, array $params, array $uses = []): string
     {
+        // Closure signatures flow through the same declaration validation in
+        // parseTypeDecl() as named functions (e.g. callable inside an
+        // intersection or DNF member). Bare class names are skipped here: the
+        // native-object walk below already resolves each of them through
+        // parseTypeDecl() and owns the trait-context name rewrite, so
+        // resolving them twice would re-qualify an already qualified name.
+        foreach ($params as $param) {
+            if (!$param->type instanceof Node\Name) {
+                $this->resolveTypeDecl($param->type, self::DECL_TYPE_OF_PARAM);
+            }
+        }
+        if (!$expr->returnType instanceof Node\Name) {
+            $this->resolveTypeDecl($expr->returnType, self::DECL_TYPE_OF_RETURN);
+        }
         if ($this->classDef?->nativeObject && !$expr->static) {
             $this->fatalError($expr, 'Native objects cannot be bound as $this to Zend closures');
         }
