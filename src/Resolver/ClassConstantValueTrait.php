@@ -38,12 +38,14 @@ trait ClassConstantValueTrait
         if ($nativeConst and $expr->hasAttribute('nativeConst')) {
             $constDef = $expr->getAttribute('nativeConst');
             if ($constDef->valueExpr !== null) {
-                return $this->evaluateClassConstValue($expr, $constDef, $class, $name);
+                return $this->evaluateClassConstValue($expr, $constDef, $class, $name, $enumCasesAsIdentity);
             }
             if ($constDef->class !== '') {
                 $refConst = $constDef->class . '::' . $name;
                 if (defined($refConst)) {
-                    return constant($refConst);
+                    return $enumCasesAsIdentity
+                        ? $this->internHostEnumCase(constant($refConst))
+                        : constant($refConst);
                 }
             }
         }
@@ -51,6 +53,9 @@ trait ClassConstantValueTrait
             $constName = $class . '::' . $name;
             if (defined($constName)) {
                 $value = constant($constName);
+                if ($enumCasesAsIdentity) {
+                    return $this->internHostEnumCase($value);
+                }
                 // Internal enum cases (and internal constants holding one)
                 // must keep their identity through constant evaluation.
                 return $value instanceof \UnitEnum
@@ -58,7 +63,7 @@ trait ClassConstantValueTrait
                     : $value;
             }
         }
-        [$inheritedFound, $inherited] = $this->resolveInheritedClassConst($class, $name);
+        [$inheritedFound, $inherited] = $this->resolveInheritedClassConst($class, $name, $enumCasesAsIdentity);
         if ($inheritedFound) {
             return $inherited;
         }
@@ -86,7 +91,7 @@ trait ClassConstantValueTrait
     }
 
     /** @return array{bool, mixed} */
-    protected function resolveInheritedClassConst(string $class, string $name): array
+    protected function resolveInheritedClassConst(string $class, string $name, bool $enumCasesAsIdentity = false): array
     {
         $current = ltrim($class, '\\');
         $visited = [];
@@ -97,10 +102,11 @@ trait ClassConstantValueTrait
                 if ($classDef->hasConstant($name)) {
                     $constDef = $classDef->getConstant($name);
                     if ($constDef->valueExpr !== null) {
-                        return [true, $this->evaluateClassConstValue(null, $constDef, $current, $name)];
+                        return [true, $this->evaluateClassConstValue(null, $constDef, $current, $name, $enumCasesAsIdentity)];
                     }
                     if ($constDef->class !== '' && defined($constDef->class . '::' . $name)) {
-                        return [true, constant($constDef->class . '::' . $name)];
+                        $value = constant($constDef->class . '::' . $name);
+                        return [true, $enumCasesAsIdentity ? $this->internHostEnumCase($value) : $value];
                     }
                 }
                 $current = $classDef->extends;
@@ -110,6 +116,9 @@ trait ClassConstantValueTrait
                 $constName = $current . '::' . $name;
                 if (defined($constName)) {
                     $value = constant($constName);
+                    if ($enumCasesAsIdentity) {
+                        return [true, $this->internHostEnumCase($value)];
+                    }
                     return [true, $value instanceof \UnitEnum
                         ? new EnumCaseRef(get_class($value), $value->name)
                         : $value];
@@ -120,6 +129,21 @@ trait ClassConstantValueTrait
             }
         }
         return [false, null];
+    }
+
+    /**
+     * A value read from the host runtime (constant() on an internal or
+     * already-linked constant) can be a live enum case object. Under identity
+     * semantics it must intern to the same EnumCaseIdentity a compiled enum
+     * case produces, so one case reached through a native, nested or
+     * inherited constant compares identical to the same case reached
+     * directly — and different cases never do.
+     */
+    private function internHostEnumCase(mixed $value): mixed
+    {
+        return $value instanceof \UnitEnum
+            ? EnumCaseIdentity::intern(get_class($value), $value->name)
+            : $value;
     }
 
     protected function evaluateClassConstValue(?NodeAbstract $origin, ConstantDef $constDef, string $class, string $name, bool $enumCasesAsIdentity = false): mixed
@@ -137,7 +161,9 @@ trait ClassConstantValueTrait
                     'false' => false,
                     'null' => null,
                     default => defined($constName)
-                        ? constant($constName)
+                        ? ($enumCasesAsIdentity
+                            ? $this->internHostEnumCase(constant($constName))
+                            : constant($constName))
                         : throw new \RuntimeException("Constant `{$constName}` not found"),
                 };
             }
