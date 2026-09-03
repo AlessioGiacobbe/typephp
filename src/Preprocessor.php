@@ -1835,218 +1835,6 @@ class Preprocessor extends CompilerBase
     }
 
     /**
-     * Validate compound well-formedness before resolving, so every context a
-     * type declaration is parsed in (parameters, returns, properties, class
-     * and interface constants, closures) shares the same Zend rules.
-     */
-    protected function resolveTypeDecl(?NodeAbstract $type, int $what): array
-    {
-        $this->validateCompoundTypeDecl($type);
-        return parent::resolveTypeDecl($type, $what);
-    }
-
-    /**
-     * Compile-time well-formedness of compound type declarations, mirroring
-     * Zend: standalone-only types inside unions, invalid nullable targets,
-     * duplicate members (after alias/namespace resolution, with iterable
-     * expanded to array|Traversable), the bool/true/false overlaps,
-     * non-class standard types and class-scope keywords (self, parent,
-     * static) inside intersections, whether bare or DNF, redundancy between
-     * whole DNF groups (a repeated member set in any order, or a group
-     * strictly more restrictive than another group or plain class member),
-     * and `object` absorbing every class type.
-     */
-    private function validateCompoundTypeDecl(?NodeAbstract $type): void
-    {
-        if ($type instanceof NullableType) {
-            $inner = $type->type;
-            if (!$inner instanceof Node\Identifier && !$inner instanceof Node\Name) {
-                return;
-            }
-            $innerLower = strtolower($this->parseIdentifier($inner));
-            if ($innerLower === 'mixed') {
-                $this->fatalError($type, 'Type `mixed` cannot be marked as nullable since mixed already includes null');
-            }
-            if ($innerLower === 'null') {
-                $this->fatalError($type, '`null` cannot be marked as nullable');
-            }
-            if ($innerLower === 'void' || $innerLower === 'never') {
-                $this->fatalError($type, "Type `{$innerLower}` can only be used as a standalone type");
-            }
-            return;
-        }
-        if ($type instanceof UnionType) {
-            $this->validateUnionTypeDecl($type);
-        } elseif ($type instanceof IntersectionType) {
-            $this->validateIntersectionTypeDecl($type);
-        }
-    }
-
-    private function validateUnionTypeDecl(UnionType $type): void
-    {
-        $seen = [];
-        $addMember = function (string $key, string $display, NodeAbstract $node) use (&$seen): void {
-            if (isset($seen[$key])) {
-                $this->fatalError($node, "Duplicate type `{$display}` is redundant");
-            }
-            $seen[$key] = true;
-        };
-        // Rendered like Zend's zend_type_to_string(): class types keep their
-        // source order in front, standard types follow in a fixed order.
-        $classish = [];
-        $builtins = [];
-        $hasObject = false;
-        $hasClassType = false;
-        // Every DNF group and plain class member, as a canonical member set,
-        // for Zend's whole-list redundancy comparison.
-        $groups = [];
-        foreach ($type->types as $member) {
-            if ($member instanceof IntersectionType) {
-                // A DNF group: its members obey the intersection rules.
-                $groupMembers = $this->validateIntersectionTypeDecl($member);
-                $display = implode('&', $groupMembers);
-                $classish[] = '(' . $display . ')';
-                $hasClassType = true;
-                $groups[] = [array_keys($groupMembers), $display, $member];
-                continue;
-            }
-            $name = $this->parseIdentifier($member);
-            $nameLower = strtolower($name);
-            if ($nameLower === 'mixed' || $nameLower === 'void' || $nameLower === 'never') {
-                $this->fatalError($member, "Type `{$nameLower}` can only be used as a standalone type");
-            }
-            if ($nameLower === 'bool' || $nameLower === 'false' || $nameLower === 'true') {
-                // Zend folds false/true into bool: a union may not repeat the
-                // overlap, and naming both literals asks for bool instead.
-                if (($nameLower === 'true' && isset($seen['false']))
-                    || ($nameLower === 'false' && isset($seen['true']))
-                ) {
-                    $this->fatalError($member, 'Type contains both `true` and `false`, `bool` must be used instead');
-                }
-                if ($nameLower === 'bool') {
-                    foreach (['false', 'true'] as $literal) {
-                        if (isset($seen[$literal])) {
-                            $this->fatalError($member, "Duplicate type `{$literal}` is redundant");
-                        }
-                    }
-                } elseif (isset($seen['bool'])) {
-                    $this->fatalError($member, "Duplicate type `{$nameLower}` is redundant");
-                }
-                $addMember($nameLower, $nameLower, $member);
-                $builtins[] = $nameLower;
-                continue;
-            }
-            if ($nameLower === 'iterable') {
-                // Zend expands iterable to array|Traversable before the
-                // redundancy check and reports the overlapping component.
-                // The expansion alone does not count as a class type for the
-                // object-redundancy rule.
-                $addMember('iterable', 'iterable', $member);
-                $addMember('array', 'array', $member);
-                $addMember('traversable', 'Traversable', $member);
-                $classish[] = 'Traversable';
-                $builtins[] = 'array';
-                continue;
-            }
-            if (isset($this->zendTypeMap[$nameLower])) {
-                $addMember($nameLower, $nameLower, $member);
-                if ($nameLower === 'object') {
-                    $hasObject = true;
-                } else {
-                    $builtins[] = $nameLower;
-                }
-                continue;
-            }
-            if (in_array($nameLower, ['self', 'parent', 'static'], true)) {
-                $addMember($nameLower, $nameLower, $member);
-                $classish[] = $nameLower;
-                $hasClassType = true;
-                continue;
-            }
-            $resolved = $member instanceof Node\Name\FullyQualified
-                ? $member->toString()
-                : $this->getNamespacedClassName($name);
-            $addMember(strtolower($resolved), $resolved, $member);
-            $classish[] = $resolved;
-            $hasClassType = true;
-            $groups[] = [[strtolower($resolved)], $resolved, $member];
-        }
-
-        // Whole-DNF redundancy: Zend compares every pair of intersection
-        // groups and plain class members as canonical member sets. An equal
-        // set in any member order is a repeat; a strict superset is redundant
-        // because it is more restrictive than the smaller type it can never
-        // widen: (A&B)|(B&A), (A&B)|A and A|(A&B) are all rejected.
-        $groupCount = count($groups);
-        for ($i = 0; $i < $groupCount; $i++) {
-            for ($j = $i + 1; $j < $groupCount; $j++) {
-                [$setI, $displayI] = $groups[$i];
-                [$setJ, $displayJ, $nodeJ] = $groups[$j];
-                if (count($setI) === count($setJ)) {
-                    if (array_diff($setI, $setJ) === []) {
-                        $this->fatalError($nodeJ, "Type `{$displayJ}` is redundant with type `{$displayI}`");
-                    }
-                } elseif (count($setI) > count($setJ)) {
-                    if (array_diff($setJ, $setI) === []) {
-                        $this->fatalError($groups[$i][2], "Type `{$displayI}` is redundant as it is more restrictive than type `{$displayJ}`");
-                    }
-                } elseif (array_diff($setI, $setJ) === []) {
-                    $this->fatalError($nodeJ, "Type `{$displayJ}` is redundant as it is more restrictive than type `{$displayI}`");
-                }
-            }
-        }
-
-        if ($hasObject && $hasClassType) {
-            // `object` already accepts every object: naming a class type
-            // (including self/parent/static and DNF groups) beside it is
-            // redundant. Zend rejects the whole declared type.
-            $order = array_flip(['callable', 'object', 'array', 'string', 'int', 'float', 'bool', 'false', 'true', 'null']);
-            $builtins[] = 'object';
-            usort($builtins, static fn (string $a, string $b): int => ($order[$a] ?? 99) <=> ($order[$b] ?? 99));
-            $typeStr = implode('|', array_merge($classish, $builtins));
-            $this->fatalError($type, "Type `{$typeStr}` contains both object and a class type, which is redundant");
-        }
-    }
-
-    /**
-     * @return array<string, string> resolved member names in declaration
-     *                               order, keyed by their lowercase form
-     */
-    private function validateIntersectionTypeDecl(IntersectionType $type): array
-    {
-        $seen = [];
-        foreach ($type->types as $member) {
-            $name = $this->parseIdentifier($member);
-            $nameLower = strtolower($name);
-            if ($nameLower === 'self' || $nameLower === 'parent' || $nameLower === 'static') {
-                // Zend never resolves class-scope keywords inside an
-                // intersection, bare or as a DNF member of a union: the
-                // scope errors ("no class scope", "no parent") take
-                // precedence via validateClassScopeTypeKeywords, then any
-                // surviving keyword is rejected here. buildTypeCheckFromNode
-                // only catches the top-level intersection case, so DNF
-                // members must be rejected at this layer.
-                $this->fatalError($member, "Type `{$nameLower}` cannot be part of an intersection type");
-            }
-            if (in_array($nameLower, [
-                'int', 'float', 'bool', 'false', 'true', 'string', 'array',
-                'object', 'mixed', 'null', 'void', 'never', 'callable', 'iterable',
-            ], true)) {
-                $this->fatalError($member, "Type `{$nameLower}` cannot be part of an intersection type");
-            }
-            $resolved = $member instanceof Node\Name\FullyQualified
-                ? $member->toString()
-                : $this->getNamespacedClassName($name);
-            $resolvedLower = strtolower($resolved);
-            if (isset($seen[$resolvedLower])) {
-                $this->fatalError($member, "Duplicate type `{$resolved}` is redundant");
-            }
-            $seen[$resolvedLower] = $resolved;
-        }
-        return $seen;
-    }
-
-    /**
      * Zend rejects class-scope type keywords at compile time in every
      * declaration context and at any nesting depth (nullable, union,
      * intersection, DNF): `self`, `parent`, and `static` need an active
@@ -2057,6 +1845,14 @@ class Preprocessor extends CompilerBase
      * reaches the compiler: PHP's grammar rejects it in parameter and
      * property types, and class-constant types — where Zend accepts it —
      * always have a class scope.)
+     *
+     * Deliberately applied per declaration context rather than on the shared
+     * parseTypeDecl() path that carries the compound well-formedness rules:
+     * Zend compiles a global closure or arrow function declaring self/static
+     * because it may later be bound to a class scope, so closure signatures
+     * must never run through this check. (Keywords inside an intersection are
+     * still rejected even there — validateIntersectionTypeDecl handles that
+     * on the shared path.)
      */
     private function validateClassScopeTypeKeywords(?NodeAbstract $type, bool $classScope, bool $hasParent): void
     {
@@ -2101,11 +1897,6 @@ class Preprocessor extends CompilerBase
         }
         return $this->classDef->trait !== null || $this->classDef->extends !== '';
     }
-
-    /**
-     * Whether a declared type mentions `callable` outside an intersection.
-     * Zend forbids callable in property and class-constant types; members of
-     * an intersection are rejected separately as non-class types.
 
     /**
      * Whether a declared type mentions `callable` outside an intersection.

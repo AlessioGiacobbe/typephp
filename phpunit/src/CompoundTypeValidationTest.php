@@ -229,4 +229,54 @@ class CompoundTypeValidationTest extends BaseTest
     {
         $this->compile('type_rule_scope_valid.php');
     }
+
+    /*
+     * Closure and arrow-function signatures inside function bodies are only
+     * resolved during conversion, so they exercise the compound rules on the
+     * shared parseTypeDecl() path rather than through the preprocessor.
+     */
+
+    public function testClosureDuplicateUnionMemberIsRejected(): void
+    {
+        $this->exec('Duplicate type `int` is redundant', 'type_rule_closure_dup_union.php');
+    }
+
+    public function testArrowFunctionDuplicateUnionMemberIsRejected(): void
+    {
+        $this->exec('Duplicate type `int` is redundant', 'type_rule_arrow_dup_union.php');
+    }
+
+    public function testClosureScalarCannotJoinIntersection(): void
+    {
+        $this->exec('Type `int` cannot be part of an intersection type', 'type_rule_closure_intersect_scalar.php');
+    }
+
+    public function testClosureCallableCannotJoinDnfIntersection(): void
+    {
+        $this->exec('Type callable cannot be part of an intersection type', 'type_rule_closure_callable_dnf.php');
+    }
+
+    public function testClosurePermutedDnfGroupIsRedundant(): void
+    {
+        $this->exec('Type `B&A` is redundant with type `A&B`', 'type_rule_closure_dnf_permuted.php');
+    }
+
+    public function testGlobalClosureSelfCannotJoinIntersection(): void
+    {
+        // Zend rejects class-scope keywords inside an intersection even in a
+        // global closure that could later be bound to a class scope.
+        $this->exec('Type `self` cannot be part of an intersection type', 'type_rule_closure_self_intersect_global.php');
+    }
+
+    public function testGlobalClosureMayDeclareSelfType(): void
+    {
+        // Zend compiles a global closure declaring self: the closure may be
+        // bound to a class scope before it is ever called.
+        $this->compile('type_rule_closure_self_return_valid.php');
+    }
+
+    public function testGlobalClosureMayDeclareStaticReturn(): void
+    {
+        $this->compile('type_rule_closure_static_return_valid.php');
+    }
 }
